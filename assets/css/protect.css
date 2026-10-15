@@ -1,0 +1,89 @@
+/* Content Protect – frontend */
+
+/* Επιλογή κειμένου: κλειστή στο περιεχόμενο, ανοιχτή σε φόρμες και .pncp-allow */
+body.pncp-no-select {
+	-webkit-user-select: none;
+	user-select: none;
+	-webkit-touch-callout: none;
+}
+
+body.pncp-no-select input,
+body.pncp-no-select textarea,
+body.pncp-no-select select,
+body.pncp-no-select [contenteditable=""],
+body.pncp-no-select [contenteditable="true"],
+body.pncp-no-select .pncp-allow,
+body.pncp-no-select .pncp-allow * {
+	-webkit-user-select: text;
+	user-select: text;
+	-webkit-touch-callout: default;
+}
+
+body.pncp-protected img {
+	-webkit-user-drag: none;
+}
+
+/* Μήνυμα: role="status", ευανάγνωστο (αντίθεση > 7:1), όχι στη μέση της οθόνης */
+.pncp-toast {
+	position: fixed;
+	left: 50%;
+	bottom: 24px;
+	z-index: 999999;
+	max-width: min(92vw, 420px);
+	padding: 12px 18px;
+	border-left: 4px solid #1a7f4b;
+	border-radius: 8px;
+	background: #ffffff;
+	color: #1d2327;
+	box-shadow: 0 6px 24px rgba(0, 0, 0, 0.18);
+	font-size: 15px;
+	line-height: 1.45;
+	text-align: left;
+	opacity: 0;
+	visibility: hidden;
+	transform: translate(-50%, 8px);
+	transition: opacity 0.2s ease, transform 0.2s ease, visibility 0.2s;
+	pointer-events: none;
+}
+
+.pncp-toast--visible {
+	opacity: 1;
+	visibility: visible;
+	transform: translate(-50%, 0);
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.pncp-toast {
+		transition: none;
+	}
+}
+
+/* Εκτύπωση */
+@media print {
+	.pncp-toast {
+		display: none !important;
+	}
+
+	body.pncp-print-source::after {
+		content: attr(data-pncp-source);
+		display: block;
+		margin-top: 24px;
+		padding-top: 8px;
+		border-top: 1px solid #999;
+		font-size: 11pt;
+		color: #000;
+	}
+
+	body.pncp-print-block > * {
+		display: none !important;
+	}
+
+	body.pncp-print-block::after {
+		content: attr(data-pncp-print-block);
+		display: block;
+		padding: 40px;
+		font-size: 14pt;
+		color: #000;
+		text-align: center;
+	}
+}
