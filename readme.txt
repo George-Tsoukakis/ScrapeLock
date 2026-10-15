@@ -4,7 +4,7 @@ Tags: content protection, copy protection, no right click
 Requires at least: 6.0
 Tested up to: 7.1
 Requires PHP: 7.4
-Stable tag: 1.3.0
+Stable tag: 1.4.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -14,6 +14,9 @@ License URI: https://www.gnu.org/licenses/gpl-2.0.html
 Δυσκολεύει την αντιγραφή κειμένων και εικόνων, προσθέτει την πηγή όταν κάποιος αντιγράφει ή εκτυπώνει, κρύβει το κείμενο από το REST API και τα feeds, μπλοκάρει scrapers και AI bots και βάζει προαιρετικά υδατογράφημα στις εικόνες. Φόρμες, καλάθι, ταμείο, συνδεδεμένοι συντάκτες και μηχανές αναζήτησης δεν επηρεάζονται.
 
 == Changelog ==
+= 1.4.0 =
+* Widget στον Πίνακα ελέγχου και κουμπί στη γραμμή διαχείρισης με την κατάσταση και ενεργοποίηση/απενεργοποίηση με ένα κλικ.
+
 = 1.3.0 =
 * Ιδιωτικά URLs (XML feeds) με token ή IP.
 * Πραγματική IP επισκέπτη πίσω από CDN/proxy.

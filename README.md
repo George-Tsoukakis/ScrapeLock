@@ -25,6 +25,7 @@ WordPress plugin προστασίας περιεχομένου. Δυσκολεύ
 | Όριο σελίδων ανά IP | ανενεργό (0) | 429 με `Retry-After: 60` πάνω από Ν σελίδες/λεπτό. Τιμή εκκίνησης: 60. |
 | Ιδιωτικά URLs | κενή λίστα | Διαδρομές (π.χ. `/skroutz.xml`, `/feeds/*.xml`) που απαντούν μόνο με `?cp_token=…` ή σε επιτρεπόμενες IP/CIDR. Αλλιώς 403. |
 | Πραγματική IP επισκέπτη | REMOTE_ADDR | Header με την πραγματική IP πίσω από CDN/proxy. Η σελίδα ρυθμίσεων δείχνει τι βλέπει ο server. |
+| Ένδειξη κατάστασης | πάντα | Widget στον Πίνακα ελέγχου και κουμπί «Προστασία: ON/OFF» στη γραμμή διαχείρισης, με ενεργοποίηση/απενεργοποίηση με ένα κλικ (μόνο διαχειριστές). |
 | Υδατογράφημα | ανενεργό | PNG από τη βιβλιοθήκη (ή το domain ως κείμενο) κάτω δεξιά, στα μεγέθη των **νέων** uploads. Το πρωτότυπο αρχείο δεν αλλάζει. Μεγέθη που ξαναφτιάχνονται από το «Επεξεργασία εικόνας» ή από επανάληψη αποτυχημένου upload μένουν χωρίς υδατογράφημα. |
 
 ### Τι δεν αλλάζει για τις μηχανές αναζήτησης
@@ -132,6 +133,7 @@ includes/class-pncp-feed.php        RSS/Atom
 includes/class-pncp-bots.php        bots, όριο σελίδων, robots.txt, επαλήθευση μηχανών αναζήτησης
 includes/class-pncp-watermark.php   υδατογράφημα νέων uploads
 includes/class-pncp-private-urls.php ιδιωτικά URLs (XML feeds) με token ή IP
+includes/class-pncp-status.php      widget κατάστασης και κουμπί ON/OFF
 includes/class-pncp-admin.php       σελίδα ρυθμίσεων (Settings API)
 assets/js/protect.js                η προστασία στον browser
 assets/css/protect.css              επιλογή κειμένου, μήνυμα, εκτύπωση
