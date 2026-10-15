@@ -2,7 +2,7 @@
 /**
  * Plugin Name:       Content Protect
  * Description:       Προστασία περιεχομένου: αποτρέπει την αντιγραφή κειμένου και εικόνων, κλείνει το κείμενο στο REST API και στο RSS, μπλοκάρει scrapers και AI bots και βάζει προαιρετικά υδατογράφημα. Δεν επηρεάζει φόρμες, καλάθι, ταμείο και μηχανές αναζήτησης.
- * Version:           1.3.0
+ * Version:           1.4.0
  * Requires at least: 6.0
  * Requires PHP:      7.4
  * Author:            The-Greek
@@ -19,7 +19,7 @@ if ( defined( 'PNCP_VERSION' ) ) {
 	return;
 }
 
-define( 'PNCP_VERSION', '1.3.0' );
+define( 'PNCP_VERSION', '1.4.0' );
 define( 'PNCP_FILE', __FILE__ );
 define( 'PNCP_DIR', plugin_dir_path( __FILE__ ) );
 define( 'PNCP_URL', plugin_dir_url( __FILE__ ) );
@@ -32,6 +32,7 @@ require_once PNCP_DIR . 'includes/class-pncp-feed.php';
 require_once PNCP_DIR . 'includes/class-pncp-bots.php';
 require_once PNCP_DIR . 'includes/class-pncp-watermark.php';
 require_once PNCP_DIR . 'includes/class-pncp-private-urls.php';
+require_once PNCP_DIR . 'includes/class-pncp-status.php';
 
 if ( is_admin() ) {
 	require_once PNCP_DIR . 'includes/class-pncp-admin.php';
@@ -44,6 +45,7 @@ PNCP_Feed::init();
 PNCP_Bots::init();
 PNCP_Watermark::init();
 PNCP_Private_Urls::init();
+PNCP_Status::init();
 
 /**
  * Φορτώνει τις μεταφράσεις.
