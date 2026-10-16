@@ -1,11 +1,12 @@
 <?xml version="1.0"?>
-<ruleset name="Content Protect">
-	<description>WordPress Coding Standards για το plugin Content Protect.</description>
+<ruleset name="ScrapeLock">
+	<description>WordPress Coding Standards για το plugin ScrapeLock.</description>
 
 	<file>.</file>
 
 	<exclude-pattern>*/assets/*</exclude-pattern>
 	<exclude-pattern>*/tests/*</exclude-pattern>
+	<exclude-pattern>*/wporg-assets/*</exclude-pattern>
 
 	<arg name="extensions" value="php"/>
 	<arg name="colors"/>
@@ -20,7 +21,7 @@
 	<rule ref="WordPress.WP.I18n">
 		<properties>
 			<property name="text_domain" type="array">
-				<element value="content-protect"/>
+				<element value="scrapelock"/>
 			</property>
 		</properties>
 	</rule>

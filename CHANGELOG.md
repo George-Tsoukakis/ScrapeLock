@@ -1,5 +1,24 @@
 # Αλλαγές
 
+## Χωρίς έκδοση ακόμη
+
+### Στοιχεία
+- **Author:** «CodeBunny» αντί για «The-Greek», ως προετοιμασία για τον κατάλογο του WordPress.org.
+- **Όνομα:** «ScrapeLock – Content & AI Bot Protection» αντί για «Content Protect».
+- **Φάκελος και αρχείο:** `scrapelock/scrapelock.php` αντί για `content-protect/content-protect.php`, για το slug `scrapelock` του WordPress.org. Σε υπάρχον site: απενεργοποίηση του παλιού, ενεργοποίηση του ScrapeLock. Ρυθμίσεις (`pncp_settings`), tokens και αρχείο μένουν. Αν μείνουν ενεργά και τα δύο, φορτώνεται μόνο το πρώτο (`PNCP_VERSION`).
+- **Text domain:** `scrapelock` αντί για `content-protect`.
+- **Κείμενα στα αγγλικά:** όλα τα κείμενα του plugin, η περιγραφή και τα σχόλια των κανόνων Nginx / Apache είναι πλέον στα αγγλικά. Τα ελληνικά έρχονται από `languages/scrapelock-el.po` / `.mo` (314 κείμενα), μαζί με `scrapelock.pot` για άλλες γλώσσες. Στους κανόνες server το `ΤΟ_TOKEN_ΣΑΣ` έγινε `YOUR_TOKEN`. Η καρτέλα «Αρχείο» λέγεται στα αγγλικά «Log».
+- **WP Rocket:** η εξαίρεση του `protect.js` βγαίνει από τον πραγματικό φάκελο του plugin και όχι από σταθερό `content-protect/`.
+- **readme.txt** για τον κατάλογο του WordPress.org (Contributors: codebunnyhube), με την ενότητα «External services» για τις λίστες IP της Google, της Bing και του Cloudflare.
+- **Plugin Check (κανόνες του WordPress.org):** 0 errors. Οι λίστες IP του Cloudflare έρχονται πλέον από το `api.cloudflare.com/client/v4/ips` (JSON), γιατί οι διευθύνσεις `www.cloudflare.com` έμοιαζαν με CDN. Στη λίστα hotlink το `googleusercontent.com` έγινε `googleusercontent.` (ίδιο ταίριασμα).
+- **Εξωτερικές κλήσεις (οδηγία 7):** οι λίστες Google / Bing κατεβαίνουν μόνο όταν η προστασία είναι ενεργή. Η λίστα του Cloudflare κατεβαίνει μόνο όταν η πραγματική IP διαβάζεται από `CF-Connecting-IP` ή `X-Forwarded-For` με εμπιστοσύνη στο Cloudflare. Το User-Agent των αιτημάτων δεν περιέχει πλέον τη διεύθυνση του site. Όλα περιγράφονται στο «External services» του `readme.txt`.
+- **Σχόλια κώδικα στα αγγλικά**, και των μεταφραστών (`translators:`). Ο κώδικας δεν άλλαξε.
+- **Πακέτο:** ο ελληνικός οδηγός χρήσης μεταφέρθηκε στο `docs/user-guide-el.md` και δεν μπαίνει στο zip. Τα tests ήταν ήδη έξω από το πακέτο.
+- **Μόνο αγγλικά στο πακέτο:** η ελληνική μετάφραση (`.po` / `.mo`) και το `load_plugin_textdomain()` βγήκαν από το plugin. Το `.po` φυλάγεται στο `translations/scrapelock-el.po`, για υποβολή στο translate.wordpress.org.
+- **Παντού ScrapeLock:** τίτλος σελίδας ρυθμίσεων, μενού (Settings → ScrapeLock), widget, κείμενο πολιτικής απορρήτου, σχόλια των κανόνων Nginx / robots.txt και `@package`. Η σελίδα ρυθμίσεων είναι πλέον `options-general.php?page=scrapelock`. Οι δείκτες Apache έγιναν `# BEGIN ScrapeLock` / `# END ScrapeLock`: όποιος είχε επικολλήσει το παλιό μπλοκ «Content Protect» το αντικαθιστά με το νέο. Το αρχείο Nginx στο παράδειγμα λέγεται `scrapelock.conf`.
+- **Αποθετήριο:** το plugin μένει στη ρίζα· το κύριο αρχείο είναι το `scrapelock.php` (από `content-protect.php`). Νέοι φάκελοι εκτός πακέτου: `docs/`, `translations/`, `wporg-assets/`, και CI στο `.github/workflows/ci.yml` (zip ως artifact για 3 ημέρες).
+- Μένουν ίδια για συμβατότητα: prefix `pncp_`, option `pncp_settings`, header `X-Content-Protect-Token` και παράμετρος `cp_token` (τα χρησιμοποιούν ERP και πλατφόρμες τιμών).
+
 ## 2.2.1 — 2026-10-16
 
 ### Ασφάλεια

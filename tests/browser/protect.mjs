@@ -1,4 +1,4 @@
-// Content Protect 2.1 — το protect.js σε πραγματικό Chromium (Playwright), πάνω σε πραγματικό WordPress.
+// ScrapeLock — το protect.js σε πραγματικό Chromium (Playwright), πάνω σε πραγματικό WordPress.
 //
 //   WP_CLI="wp --path=/path/to/wordpress" BASE=http://127.0.0.1:8099 POST_PATH=/arthro/ node protect.mjs
 //

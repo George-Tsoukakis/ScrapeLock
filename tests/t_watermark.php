@@ -1,6 +1,6 @@
 <?php
 /**
- * Content Protect 2.1 — υδατογράφημα σε πραγματικό WordPress (χρειάζεται GD).
+ * ScrapeLock — υδατογράφημα σε πραγματικό WordPress (χρειάζεται GD).
  *
  *   WP_DIR=/path/to/wordpress php t_watermark.php
  *

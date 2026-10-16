@@ -1,26 +1,26 @@
 <?php
 /**
- * RSS/Atom: πλήρες κείμενο, μόνο περίληψη με σύνδεσμο, ή καθόλου feeds.
+ * RSS/Atom: full text, excerpt only with a link, or no feeds at all.
  *
- * @package Content_Protect
+ * @package ScrapeLock
  */
 
 defined( 'ABSPATH' ) || exit;
 
 /**
- * Ελέγχει τι δίνουν τα feeds.
+ * Controls what the feeds provide.
  */
 final class PNCP_Feed {
 
 	/**
-	 * Δένει τα hooks ανάλογα με τη ρύθμιση.
+	 * Attaches the hooks according to the setting.
 	 */
 	public static function init() {
 		add_action( 'init', array( __CLASS__, 'setup' ) );
 	}
 
 	/**
-	 * Η ρύθμιση διαβάζεται στο init, ώστε να έχουν φορτωθεί οι μεταφράσεις.
+	 * The setting is read on init, so that translations have been loaded.
 	 */
 	public static function setup() {
 		$s = PNCP_Options::get();
@@ -37,8 +37,8 @@ final class PNCP_Feed {
 			return;
 		}
 
-		// excerpt: το WordPress τότε δεν βγάζει καθόλου το content:encoded.
-		// Όχι στο wp-admin, ώστε να μην αποθηκευτεί κατά λάθος στις Ρυθμίσεις → Ανάγνωση.
+		// excerpt: WordPress then does not output content:encoded at all.
+		// Not in wp-admin, so that it is not saved by mistake in Settings → Reading.
 		if ( is_admin() ) {
 			return;
 		}
@@ -48,7 +48,7 @@ final class PNCP_Feed {
 	}
 
 	/**
-	 * Πάντα περίληψη στα feeds.
+	 * Always an excerpt in feeds.
 	 *
 	 * @return string
 	 */
@@ -57,7 +57,7 @@ final class PNCP_Feed {
 	}
 
 	/**
-	 * Για feeds που δείχνουν περιεχόμενο παρ' όλα αυτά (π.χ. Atom), δίνουμε μόνο την περίληψη.
+	 * For feeds that show content anyway (e.g. Atom), we provide only the excerpt.
 	 *
 	 * @return string
 	 */
@@ -66,15 +66,15 @@ final class PNCP_Feed {
 	}
 
 	/**
-	 * Προσθέτει «Διαβάστε το πλήρες άρθρο στο …» στο τέλος της περίληψης.
+	 * Appends "Read the full article at …" to the end of the excerpt.
 	 *
-	 * @param string $excerpt Η περίληψη.
+	 * @param string $excerpt The excerpt.
 	 * @return string
 	 */
 	public static function append_link( $excerpt ) {
 		$text = sprintf(
-			/* translators: 1: όνομα site, 2: σύνδεσμος του άρθρου */
-			__( 'Διαβάστε το πλήρες άρθρο στο %1$s: %2$s', 'content-protect' ),
+			/* translators: 1: site name, 2: article link */
+			__( 'Read the full article at %1$s: %2$s', 'scrapelock' ),
 			wp_strip_all_tags( get_bloginfo( 'name' ) ),
 			get_permalink()
 		);
@@ -82,7 +82,7 @@ final class PNCP_Feed {
 	}
 
 	/**
-	 * Η περίληψη του τρέχοντος άρθρου ως απλό κείμενο.
+	 * The current article's excerpt as plain text.
 	 *
 	 * @return string
 	 */
@@ -98,7 +98,7 @@ final class PNCP_Feed {
 	}
 
 	/**
-	 * Σύνδεσμος προς το άρθρο.
+	 * Link to the article.
 	 *
 	 * @return string
 	 */
@@ -108,8 +108,8 @@ final class PNCP_Feed {
 			esc_url( get_permalink() ),
 			esc_html(
 				sprintf(
-					/* translators: %s: όνομα site */
-					__( 'Διαβάστε το πλήρες άρθρο στο %s', 'content-protect' ),
+					/* translators: %s: site name */
+					__( 'Read the full article at %s', 'scrapelock' ),
 					wp_strip_all_tags( get_bloginfo( 'name' ) )
 				)
 			)
@@ -117,12 +117,12 @@ final class PNCP_Feed {
 	}
 
 	/**
-	 * Απάντηση όταν τα feeds είναι κλειστά.
+	 * Response when feeds are closed.
 	 */
 	public static function disabled() {
 		wp_die(
-			esc_html__( 'Τα feeds αυτού του site είναι απενεργοποιημένα.', 'content-protect' ),
-			esc_html__( 'Μη διαθέσιμο', 'content-protect' ),
+			esc_html__( 'The feeds of this site are disabled.', 'scrapelock' ),
+			esc_html__( 'Unavailable', 'scrapelock' ),
 			array( 'response' => 410 )
 		);
 	}

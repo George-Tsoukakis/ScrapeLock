@@ -1,34 +1,34 @@
 <?php
 /**
- * Ρυθμίσεις: προεπιλογές, ανάγνωση, καθάρισμα εισόδου, προφίλ και Emergency Mode.
+ * Settings: defaults, reading, input sanitizing, profiles and Emergency Mode.
  *
- * @package Content_Protect
+ * @package ScrapeLock
  */
 
 defined( 'ABSPATH' ) || exit;
 
 /**
- * Κεντρικό σημείο για το option `pncp_settings`.
+ * Central point for the `pncp_settings` option.
  *
- * - stored():    ό,τι έχει αποθηκευτεί, συμπληρωμένο με προεπιλογές (για τη σελίδα ρυθμίσεων).
- * - get():       οι ρυθμίσεις που ισχύουν τώρα: stored() + αυστηρότερες τιμές όσο τρέχει το Emergency Mode.
+ * - stored():    whatever is stored, filled in with defaults (for the settings page).
+ * - get():       the settings in effect now: stored() + stricter values while Emergency Mode runs.
  */
 final class PNCP_Options {
 
 	/**
-	 * Option με τη λήξη του Emergency Mode (timestamp, 0 = ανενεργό).
+	 * Option holding the Emergency Mode expiry (timestamp, 0 = inactive).
 	 */
 	const EMERGENCY_OPTION = 'pncp_emergency_until';
 
 	/**
-	 * Cache του get() για το τρέχον αίτημα.
+	 * Cache of get() for the current request.
 	 *
 	 * @var array<string, mixed>|null
 	 */
 	private static $cache = null;
 
 	/**
-	 * Επιτρεπτές τιμές για τα πεδία επιλογής.
+	 * Allowed values for the choice fields.
 	 *
 	 * @return array<string, string[]>
 	 */
@@ -45,7 +45,7 @@ final class PNCP_Options {
 	}
 
 	/**
-	 * Τα boolean πεδία.
+	 * The boolean fields.
 	 *
 	 * @return string[]
 	 */
@@ -85,7 +85,7 @@ final class PNCP_Options {
 	}
 
 	/**
-	 * Ακέραια πεδία: κλειδί => [ελάχιστο, μέγιστο].
+	 * Integer fields: key => [minimum, maximum].
 	 *
 	 * @return array<string, int[]>
 	 */
@@ -105,7 +105,7 @@ final class PNCP_Options {
 	}
 
 	/**
-	 * Πεδία-λίστες (μία τιμή ανά γραμμή).
+	 * List fields (one value per line).
 	 *
 	 * @return string[]
 	 */
@@ -114,7 +114,7 @@ final class PNCP_Options {
 	}
 
 	/**
-	 * Πεδία με IP / CIDR (μία ανά γραμμή).
+	 * IP / CIDR fields (one per line).
 	 *
 	 * @return string[]
 	 */
@@ -123,8 +123,8 @@ final class PNCP_Options {
 	}
 
 	/**
-	 * Σε ποια καρτέλα της σελίδας ρυθμίσεων ανήκει κάθε πεδίο. Κάθε καρτέλα αποθηκεύει μόνο τα δικά της
-	 * πεδία· τα υπόλοιπα κρατούν την τιμή τους.
+	 * Which settings page tab each field belongs to. Each tab saves only its own
+	 * fields; the rest keep their value.
 	 *
 	 * @return array<string, string[]>
 	 */
@@ -138,7 +138,7 @@ final class PNCP_Options {
 	}
 
 	/**
-	 * Η λίστα της 1.4 (για να ξέρει η αναβάθμιση αν ο χρήστης την είχε αλλάξει).
+	 * The 1.4 list (so the upgrade knows whether the user had changed it).
 	 *
 	 * @return string[]
 	 */
@@ -147,8 +147,8 @@ final class PNCP_Options {
 	}
 
 	/**
-	 * Οι User-Agents που μπλοκάρονται από προεπιλογή (υποσυμβολοσειρά, χωρίς διάκριση πεζών/κεφαλαίων).
-	 * Δεν περιέχει ποτέ μηχανές αναζήτησης, previews κοινωνικών δικτύων ή πλατφόρμες σύγκρισης τιμών.
+	 * The User-Agents blocked by default (substring, case-insensitive).
+	 * Never contains search engines, social network previews or price comparison platforms.
 	 *
 	 * @return string[]
 	 */
@@ -156,7 +156,7 @@ final class PNCP_Options {
 		return array_merge(
 			self::legacy_bot_list(),
 			array(
-				// AI crawlers και agents.
+				// AI crawlers and agents.
 				'OAI-SearchBot',
 				'Claude-User',
 				'Claude-SearchBot',
@@ -186,7 +186,7 @@ final class PNCP_Options {
 				'TikTokSpider',
 				'iaskspider',
 				'QualifiedBot',
-				// Εργαλεία scraping και headless browsers.
+				// Scraping tools and headless browsers.
 				'HeadlessChrome',
 				'PhantomJS',
 				'Puppeteer',
@@ -210,9 +210,9 @@ final class PNCP_Options {
 	}
 
 	/**
-	 * AI μηχανές αναζήτησης και βοηθοί: φέρνουν το site στις απαντήσεις (με σύνδεσμο) ή ανοίγουν μια σελίδα
-	 * επειδή τη ζήτησε ένας χρήστης. Δεν είναι οι crawlers εκπαίδευσης (GPTBot, ClaudeBot, CCBot,
-	 * Google-Extended, Applebot-Extended κ.ά.), που μένουν μπλοκαρισμένοι.
+	 * AI search engines and assistants: they bring the site into answers (with a link) or open a page
+	 * because a user asked for it. They are not the training crawlers (GPTBot, ClaudeBot, CCBot,
+	 * Google-Extended, Applebot-Extended etc.), which stay blocked.
 	 *
 	 * @return string[]
 	 */
@@ -224,7 +224,7 @@ final class PNCP_Options {
 	}
 
 	/**
-	 * Οι AI μηχανές αναζήτησης που επιτρέπονται με τις τρέχουσες ρυθμίσεις (κενό αν η επιλογή είναι ανενεργή).
+	 * The AI search engines allowed with the current settings (empty if the option is off).
 	 *
 	 * @return string[]
 	 */
@@ -233,7 +233,7 @@ final class PNCP_Options {
 	}
 
 	/**
-	 * Η προεπιλεγμένη λίστα ως κείμενο.
+	 * The default list as text.
 	 *
 	 * @return string
 	 */
@@ -242,8 +242,8 @@ final class PNCP_Options {
 	}
 
 	/**
-	 * User-Agents που περνούν πάντα τον έλεγχο λίστας και «headers browser» (previews συνδέσμων, πλατφόρμες
-	 * τιμών, monitoring). Το User-Agent πλαστογραφείται, οπότε το όριο σελίδων ισχύει κανονικά και για αυτούς.
+	 * User-Agents that always pass the list check and the "browser headers" check (link previews, price
+	 * platforms, monitoring). The User-Agent can be spoofed, so the page limit still applies to them as usual.
 	 *
 	 * @return string
 	 */
@@ -255,7 +255,7 @@ final class PNCP_Options {
 	}
 
 	/**
-	 * Προεπιλογές.
+	 * Defaults.
 	 *
 	 * @return array<string, mixed>
 	 */
@@ -280,8 +280,8 @@ final class PNCP_Options {
 			'print_mode'              => 'source',
 			'exempt_cap'              => 'edit_posts',
 			'excluded_ids'            => '',
-			// Πριν από το after_setup_theme (π.χ. στον έλεγχο των feeds) οι μεταφράσεις δεν φορτώνονται ακόμη.
-			'message'                 => did_action( 'after_setup_theme' ) ? __( 'Το περιεχόμενο αυτής της σελίδας προστατεύεται.', 'content-protect' ) : 'Το περιεχόμενο αυτής της σελίδας προστατεύεται.',
+			// Before after_setup_theme (e.g. in the feeds check) the translations are not loaded yet.
+			'message'                 => did_action( 'after_setup_theme' ) ? __( 'The content of this page is protected.', 'scrapelock' ) : 'The content of this page is protected.',
 			'rest_hide_content'       => 1,
 			'graphql_hide_content'    => 1,
 			'feed_mode'               => 'excerpt',
@@ -322,8 +322,8 @@ final class PNCP_Options {
 	}
 
 	/**
-	 * Τα έτοιμα προφίλ: τιμές που γράφονται στις ρυθμίσεις όταν πατηθεί το κουμπί.
-	 * Δεν αγγίζουν πεδία, λίστες, feeds, υδατογράφημα και IP.
+	 * The preset profiles: values written to the settings when the button is pressed.
+	 * They do not touch fields, lists, feeds, watermark and IPs.
 	 *
 	 * @return array<string, array<string, mixed>>
 	 */
@@ -396,9 +396,9 @@ final class PNCP_Options {
 	}
 
 	/**
-	 * Ποιο προφίλ ταιριάζει ακριβώς με τις ρυθμίσεις (ή '' για «Προσαρμοσμένο»).
+	 * Which profile exactly matches the settings (or '' for "Custom").
 	 *
-	 * @param array<string, mixed> $s Ρυθμίσεις.
+	 * @param array<string, mixed> $s Settings.
 	 * @return string
 	 */
 	public static function current_profile( $s ) {
@@ -418,9 +418,9 @@ final class PNCP_Options {
 	}
 
 	/**
-	 * Οι αυστηρότερες τιμές του Emergency Mode. Τα όρια παίρνουν το μικρότερο από τα δύο.
+	 * The stricter Emergency Mode values. Limits take the smaller of the two.
 	 *
-	 * @param array<string, mixed> $s Ρυθμίσεις.
+	 * @param array<string, mixed> $s Settings.
 	 * @return array<string, mixed>
 	 */
 	public static function emergency_overlay( $s ) {
@@ -447,7 +447,7 @@ final class PNCP_Options {
 	}
 
 	/**
-	 * Πότε λήγει το Emergency Mode (0 = ανενεργό).
+	 * When Emergency Mode expires (0 = inactive).
 	 *
 	 * @return int
 	 */
@@ -457,9 +457,9 @@ final class PNCP_Options {
 	}
 
 	/**
-	 * Ξεκινά ή σταματά το Emergency Mode.
+	 * Starts or stops Emergency Mode.
 	 *
-	 * @param int $hours Διάρκεια σε ώρες (0 = τέλος).
+	 * @param int $hours Duration in hours (0 = stop).
 	 */
 	public static function set_emergency( $hours ) {
 		$hours = max( 0, min( 72, (int) $hours ) );
@@ -469,7 +469,7 @@ final class PNCP_Options {
 	}
 
 	/**
-	 * Οι αποθηκευμένες ρυθμίσεις, συμπληρωμένες με προεπιλογές.
+	 * The stored settings, filled in with defaults.
 	 *
 	 * @return array<string, mixed>
 	 */
@@ -482,7 +482,7 @@ final class PNCP_Options {
 	}
 
 	/**
-	 * Οι ρυθμίσεις που ισχύουν τώρα (με το Emergency Mode, αν τρέχει).
+	 * The settings in effect now (with Emergency Mode, if running).
 	 *
 	 * @return array<string, mixed>
 	 */
@@ -498,16 +498,16 @@ final class PNCP_Options {
 	}
 
 	/**
-	 * Ξεχνά την cache του αιτήματος (μετά από αλλαγή ρυθμίσεων).
+	 * Forgets the request cache (after a settings change).
 	 */
 	public static function flush() {
 		self::$cache = null;
 	}
 
 	/**
-	 * Καθαρίζει ό,τι έρχεται από τη φόρμα. Κρατά μόνο γνωστά κλειδιά.
+	 * Sanitizes whatever comes from the form. Keeps only known keys.
 	 *
-	 * @param mixed $input Τιμές της φόρμας.
+	 * @param mixed $input Form values.
 	 * @return array<string, mixed>
 	 */
 	public static function sanitize( $input ) {
@@ -549,13 +549,13 @@ final class PNCP_Options {
 
 		$stored = self::stored();
 
-		// Η επιλογή «εμπιστοσύνη σε κάθε proxy» μένει μόνο για όσους την είχαν ήδη (αναβάθμιση από 1.4).
-		// Από τη φόρμα μπορεί μόνο να κλείσει, όχι να ανοίξει (η αναβάθμιση την ανοίγει από κώδικα).
+		// The "trust every proxy" option remains only for those who already had it (upgrade from 1.4).
+		// The form can only turn it off, not on (the upgrade turns it on in code).
 		if ( isset( $input['_sections'] ) && empty( $stored['trust_any_proxy'] ) ) {
 			$clean['trust_any_proxy'] = 0;
 		}
 
-		// Φόρμα μιας καρτέλας: αλλάζουν μόνο τα πεδία της· τα υπόλοιπα κρατούν την αποθηκευμένη τιμή.
+		// Single-tab form: only its fields change; the rest keep their stored value.
 		if ( isset( $input['_sections'] ) ) {
 			$keep = array();
 			foreach ( self::sections() as $section => $keys ) {
@@ -573,9 +573,9 @@ final class PNCP_Options {
 	}
 
 	/**
-	 * Λίστα γραμμών: χωρίς κενά, διπλότυπα και χαρακτήρες ελέγχου, έως 200 γραμμές των 100 χαρακτήρων.
+	 * Line list: no blanks, duplicates or control characters, up to 200 lines of 100 characters.
 	 *
-	 * @param string $raw Κείμενο με μία τιμή ανά γραμμή.
+	 * @param string $raw Text with one value per line.
 	 * @return string[]
 	 */
 	public static function parse_list( $raw ) {
@@ -591,9 +591,9 @@ final class PNCP_Options {
 	}
 
 	/**
-	 * Λίστα IP / CIDR: κρατά μόνο έγκυρες τιμές.
+	 * IP / CIDR list: keeps only valid values.
 	 *
-	 * @param string $raw Κείμενο με μία τιμή ανά γραμμή.
+	 * @param string $raw Text with one value per line.
 	 * @return string[]
 	 */
 	public static function parse_ip_list( $raw ) {
@@ -607,9 +607,9 @@ final class PNCP_Options {
 	}
 
 	/**
-	 * Τα IDs που εξαιρούνται, ως ακέραιοι.
+	 * The excluded IDs, as integers.
 	 *
-	 * @param array<string, mixed> $settings Ρυθμίσεις.
+	 * @param array<string, mixed> $settings Settings.
 	 * @return int[]
 	 */
 	public static function excluded_ids( $settings ) {
@@ -617,9 +617,9 @@ final class PNCP_Options {
 	}
 
 	/**
-	 * Εξαιρείται ο τρέχων χρήστης από την προστασία;
+	 * Is the current user excluded from protection?
 	 *
-	 * @param array<string, mixed> $settings Ρυθμίσεις.
+	 * @param array<string, mixed> $settings Settings.
 	 * @return bool
 	 */
 	public static function user_is_exempt( $settings ) {

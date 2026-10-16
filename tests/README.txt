@@ -1,4 +1,4 @@
-Content Protect 2.2 — δοκιμές σε πραγματικό WordPress (όχι stubs). Η βάση και τα uploads του WordPress
+ScrapeLock — δοκιμές σε πραγματικό WordPress (όχι stubs). Η βάση και τα uploads του WordPress
 δοκιμών αλλάζουν: ΠΟΤΕ σε πραγματικό site.
 
 Στήσιμο (και χωρίς MySQL):
@@ -6,7 +6,7 @@ Content Protect 2.2 — δοκιμές σε πραγματικό WordPress (όχ
   composer require wp-cli/wp-cli-bundle aaemnnosttv/wp-sqlite-db   (db.php -> wp/wp-content/db.php)
   wp config create --dbname=wp --dbuser=x --dbpass=x --skip-check && wp config set WP_DEBUG true --raw
   wp core install --url=http://127.0.0.1:8099 ... && wp rewrite structure '/%postname%/'
-  ln -s $PWD/../content-protect wp/wp-content/plugins/content-protect && wp plugin activate content-protect
+  ln -s $PWD/.. wp/wp-content/plugins/scrapelock && wp plugin activate scrapelock
   ln -s $PWD/lib/mu-test-harness.php wp/wp-content/mu-plugins/
   php -S 127.0.0.1:8099 -t wp lib/router.php &
   wp post create --post_status=publish --post_title=Δοκιμή --post_content="…"
@@ -39,7 +39,7 @@ Ubuntu 24.04 (ως root, ΜΟΝΟ σε μηχάνημα δοκιμών):
   mysql: CREATE DATABASE wpt; χρήστης wpt/wpt
   WordPress στο /srv/wpt (MariaDB), permalinks /%postname%/, WP_ENVIRONMENT_TYPE=local (application passwords)
   Plugins (επίσημα zip από τα GitHub releases): woocommerce 11.2.1, wp-graphql 2.6.0, wp-super-cache 3.1.1
-  (cache_enabled + super_cache_enabled, simple mode), content-protect (symlink), mu-plugin lib/mu-test-harness.php
+  (cache_enabled + super_cache_enabled, simple mode), scrapelock (symlink), mu-plugin lib/mu-test-harness.php
   Nginx στη 8080: root /srv/wpt, fastcgi στο PHP-FPM, και μέσα στο server { }:  include /etc/nginx/pncp-rules.conf;
   Apache στη 8081 (mpm_prefork + mod_php + rewrite), AllowOverride All, /srv/wpt/.htaccess.wp = το μπλοκ του WordPress
   Redis drop-in: το includes/object-cache.php του rhubarbgroup/redis-cache 3.0.0 (δίνεται ως REDIS_DROPIN)

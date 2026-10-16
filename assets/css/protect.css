@@ -1,6 +1,6 @@
-/* Content Protect – frontend */
+/* ScrapeLock – frontend */
 
-/* Επιλογή κειμένου: κλειστή στο περιεχόμενο, ανοιχτή σε φόρμες και .pncp-allow */
+/* Text selection: off in content, on in forms and .pncp-allow */
 body.pncp-no-select {
 	-webkit-user-select: none;
 	user-select: none;
@@ -23,12 +23,12 @@ body.pncp-protected img {
 	-webkit-user-drag: none;
 }
 
-/* Κινητό: όχι μενού «Αποθήκευση εικόνας» με παρατεταμένο πάτημα (iOS Safari) */
+/* Mobile: no "Save image" menu on long press (iOS Safari) */
 body.pncp-no-img-save img {
 	-webkit-touch-callout: none;
 }
 
-/* Θόλωμα όσο ανοίγει εργαλείο στιγμιότυπου οθόνης (προαιρετικό) */
+/* Blur while a screenshot tool is open (optional) */
 html.pncp-blurred body {
 	filter: blur(14px);
 }
@@ -39,7 +39,7 @@ html.pncp-blurred body {
 	}
 }
 
-/* Μήνυμα: role="status", ευανάγνωστο (αντίθεση > 7:1), όχι στη μέση της οθόνης */
+/* Message: role="status", readable (contrast > 7:1), not in the middle of the screen */
 .pncp-toast {
 	position: fixed;
 	left: 50%;
@@ -74,7 +74,7 @@ html.pncp-blurred body {
 	}
 }
 
-/* Εκτύπωση */
+/* Print */
 @media print {
 	.pncp-toast {
 		display: none !important;

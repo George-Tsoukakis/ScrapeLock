@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0b1220"/>
+      <stop offset="1" stop-color="#1d3b8f"/>
+    </linearGradient>
+    <linearGradient id="body" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#34e3c4"/>
+      <stop offset="1" stop-color="#14b8a6"/>
+    </linearGradient>
+  </defs>
+  <rect width="256" height="256" rx="56" fill="url(#bg)"/>
+  <!-- scraper lines hitting the lock from the left, stopped at its edge -->
+  <g stroke="#60a5fa" stroke-width="9" stroke-linecap="round" opacity="0.55">
+    <line x1="22" y1="136" x2="58" y2="136"/>
+    <line x1="34" y1="164" x2="58" y2="164"/>
+    <line x1="22" y1="192" x2="58" y2="192"/>
+  </g>
+  <g stroke="#60a5fa" stroke-width="9" stroke-linecap="round" opacity="0.55">
+    <line x1="198" y1="136" x2="234" y2="136"/>
+    <line x1="198" y1="164" x2="222" y2="164"/>
+    <line x1="198" y1="192" x2="234" y2="192"/>
+  </g>
+  <!-- shackle -->
+  <path d="M90 116 V88 a38 38 0 0 1 76 0 V116" fill="none" stroke="#e2e8f0" stroke-width="18" stroke-linecap="round"/>
+  <!-- body -->
+  <rect x="68" y="112" width="120" height="104" rx="22" fill="url(#body)"/>
+  <!-- keyhole -->
+  <circle cx="128" cy="152" r="14" fill="#0b1220"/>
+  <path d="M121 158 h14 l5 30 h-24 z" fill="#0b1220"/>
+</svg>

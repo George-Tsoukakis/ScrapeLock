@@ -1,23 +1,23 @@
 <?php
 /**
- * Προστασία στον server: scrapers και AI bots, ψεύτικες μηχανές αναζήτησης, όρια ανά endpoint,
- * προσωρινός αποκλεισμός IP, παγίδα για bots και robots.txt.
+ * Server-side protection: scrapers and AI bots, fake search engines, per-endpoint limits,
+ * temporary IP blocking, a bot trap and robots.txt.
  *
- * Ισχύει μόνο για αιτήματα που φτάνουν στην PHP. Σελίδες που σερβίρονται από page cache
- * (Nginx FastCGI, WP Rocket κ.λπ.) δεν περνούν από εδώ: δείτε τους κανόνες server στις ρυθμίσεις.
+ * Applies only to requests that reach PHP. Pages served from a page cache
+ * (Nginx FastCGI, WP Rocket, etc.) do not pass through here: see the server rules in the settings.
  *
- * @package Content_Protect
+ * @package ScrapeLock
  */
 
 defined( 'ABSPATH' ) || exit;
 
 /**
- * Bots, όρια και αποκλεισμοί.
+ * Bots, limits and blocks.
  */
 final class PNCP_Bots {
 
 	/**
-	 * Μηχανές αναζήτησης που επαληθεύονται: μοτίβα User-Agent, domains reverse DNS και επίσημη λίστα IP.
+	 * Verifiable search engines: User-Agent patterns, reverse DNS domains and official IP list.
 	 *
 	 * @var array<string, array<string, mixed>>
 	 */
@@ -45,7 +45,7 @@ final class PNCP_Bots {
 	);
 
 	/**
-	 * Δένει τα hooks.
+	 * Registers the hooks.
 	 */
 	public static function init() {
 		add_action( 'init', array( __CLASS__, 'trap_guard' ), 0 );
@@ -54,12 +54,12 @@ final class PNCP_Bots {
 		add_action( 'wp_footer', array( __CLASS__, 'trap_link' ), 99 );
 		add_filter( 'wp_speculation_rules_href_exclude_paths', array( __CLASS__, 'speculation_exclude' ) );
 		add_filter( 'robots_txt', array( __CLASS__, 'robots_txt' ), 99, 2 );
-		// Οι μπλοκαρισμένοι User-Agents δεν παίρνουν σελίδες από την cache του WP Rocket, ώστε να φτάσουν εδώ.
+		// Blocked User-Agents do not get pages from WP Rocket's cache, so that they reach this point.
 		add_filter( 'rocket_cache_reject_ua', array( __CLASS__, 'rocket_reject_ua' ) );
 	}
 
 	/**
-	 * Η IP του επισκέπτη (για συμβατότητα με κώδικα που καλούσε την 1.4).
+	 * The visitor's IP (for compatibility with code that called 1.4).
 	 *
 	 * @return string
 	 */
@@ -68,7 +68,7 @@ final class PNCP_Bots {
 	}
 
 	/**
-	 * Το User-Agent του αιτήματος.
+	 * The request User-Agent.
 	 *
 	 * @return string
 	 */
@@ -77,7 +77,7 @@ final class PNCP_Bots {
 	}
 
 	/**
-	 * Προβολές σελίδων και αναζήτηση.
+	 * Page views and search.
 	 */
 	public static function page_guard() {
 		if ( is_robots() || is_favicon() ) {
@@ -90,60 +90,60 @@ final class PNCP_Bots {
 	}
 
 	/**
-	 * REST API (/wp-json/): μόνο για αιτήματα ανάγνωσης από επισκέπτες.
+	 * REST API (/wp-json/): only for read requests from visitors.
 	 *
-	 * @param mixed           $result  Αποτέλεσμα (null = συνέχεια).
+	 * @param mixed           $result  Result (null = continue).
 	 * @param WP_REST_Server  $server  Server.
-	 * @param WP_REST_Request $request Αίτημα.
+	 * @param WP_REST_Request $request Request.
 	 * @return mixed
 	 */
 	public static function rest_guard( $result, $server, $request ) {
 		if ( null !== $result || ! $request instanceof WP_REST_Request ) {
 			return $result;
 		}
-		// Μόνο ανάγνωση: καλάθι, ταμείο, φόρμες και webhooks πληρωμών (POST) δεν ελέγχονται.
+		// Read-only: cart, checkout, forms and payment webhooks (POST) are not checked.
 		if ( ! in_array( strtoupper( (string) $request->get_method() ), array( 'GET', 'HEAD' ), true ) ) {
 			return $result;
 		}
-		// Το Store API του WooCommerce (καλάθι, mini-cart) καλείται από κάθε σελίδα: δεν μετρά στο όριο.
+		// WooCommerce's Store API (cart, mini-cart) is called from every page: it does not count toward the limit.
 		$count   = 0 !== strpos( (string) $request->get_route(), '/wc/store' );
 		$verdict = self::check( 'rest', $count );
 		if ( ! $verdict ) {
 			return $result;
 		}
-		// Το 403 / 429 δεν πρέπει να μπει σε cache του REST (π.χ. LiteSpeed Cache).
+		// The 403 / 429 must not end up in a REST cache (e.g. LiteSpeed Cache).
 		self::no_cache();
-		do_action( 'litespeed_control_set_nocache', 'content-protect' ); // phpcs:ignore WordPress.NamingConventions.PrefixAllGlobals.NonPrefixedHooknameFound -- Hook του LiteSpeed Cache.
+		do_action( 'litespeed_control_set_nocache', 'scrapelock' ); // phpcs:ignore WordPress.NamingConventions.PrefixAllGlobals.NonPrefixedHooknameFound -- LiteSpeed Cache hook.
 		if ( 429 === $verdict['code'] ) {
 			$server->send_header( 'Retry-After', '60' );
 		}
 		return new WP_Error(
 			429 === $verdict['code'] ? 'pncp_rate_limited' : 'pncp_forbidden',
-			429 === $verdict['code'] ? __( 'Πάρα πολλά αιτήματα. Δοκιμάστε ξανά σε ένα λεπτό.', 'content-protect' ) : __( 'Η πρόσβαση δεν επιτρέπεται.', 'content-protect' ),
+			429 === $verdict['code'] ? __( 'Too many requests. Please try again in a minute.', 'scrapelock' ) : __( 'Access denied.', 'scrapelock' ),
 			array( 'status' => $verdict['code'] )
 		);
 	}
 
 	/**
-	 * Ο κεντρικός έλεγχος.
+	 * The main check.
 	 *
-	 * Bots, ψεύτικες μηχανές αναζήτησης και αποκλεισμοί ισχύουν για κάθε μέθοδο (μια σελίδα δίνεται και με
-	 * POST). Τα όρια μετρούν μόνο προβολές (GET/HEAD, όχι prefetch), ώστε φόρμες και ταμείο να μη μετράνε.
+	 * Bots, fake search engines and blocks apply to every method (a page can also be served via
+	 * POST). Limits count only views (GET/HEAD, not prefetch), so that forms and checkout do not count.
 	 *
 	 * @param string $context page | search | rest | graphql.
-	 * @param bool   $count   Να μετρήσει στο όριο.
-	 * @return array{code:int, reason:string}|null Null αν το αίτημα περνά.
+	 * @param bool   $count   Whether to count toward the limit.
+	 * @return array{code:int, reason:string}|null Null if the request passes.
 	 */
 	public static function check( $context, $count = true ) {
 		$s = PNCP_Options::get();
-		// Όχι εξαίρεση για wp_doing_ajax(): το WooCommerce δηλώνει DOING_AJAX στα wc-ajax, οπότε κάθε bot θα
-		// περνούσε (επιβεβαιωμένο με πραγματικό WooCommerce). Το admin-ajax.php δεν φτάνει έτσι κι αλλιώς εδώ.
+		// No exemption for wp_doing_ajax(): WooCommerce defines DOING_AJAX on wc-ajax, so every bot would
+		// get through (confirmed with real WooCommerce). admin-ajax.php does not reach this point anyway.
 		if ( empty( $s['enabled'] ) || wp_doing_cron() ) {
 			return null;
 		}
-		// Εξαιρούνται μόνο οι ρόλοι της ρύθμισης «Ποιοι εξαιρούνται», όχι κάθε συνδεδεμένος χρήστης: ένας
-		// λογαριασμός πελάτη στο WooCommerce φτιάχνεται από τον καθένα. Στο REST / GraphQL εξαιρούνται και όσοι
-		// γράφουν περιεχόμενο, γιατί ο block editor κάνει δεκάδες αιτήματα το λεπτό.
+		// Only the roles in the "Who is exempt" setting are exempt, not every logged-in user: a
+		// WooCommerce customer account can be created by anyone. On REST / GraphQL, those who
+		// write content are also exempt, because the block editor makes dozens of requests per minute.
 		if ( PNCP_Options::user_is_exempt( $s ) || ( in_array( $context, array( 'rest', 'graphql' ), true ) && current_user_can( 'edit_posts' ) ) ) {
 			return null;
 		}
@@ -151,12 +151,12 @@ final class PNCP_Bots {
 		if ( 'graphql' !== $context && ( ! in_array( $method, array( 'GET', 'HEAD' ), true ) || self::is_prefetch() ) ) {
 			$count = false;
 		}
-		// AJAX του WooCommerce (καλάθι, ταμείο): δεν μετρά στο όριο σελίδων, αλλά bots, ψεύτικοι crawlers και
-		// αποκλεισμοί ελέγχονται κανονικά. Μόνο για ενέργειες που έχει δηλώσει το WooCommerce (ή επέκτασή του).
+		// WooCommerce AJAX (cart, checkout): does not count toward the page limit, but bots, fake crawlers and
+		// blocks are checked as usual. Only for actions registered by WooCommerce (or an extension of it).
 		if ( self::is_wc_ajax() || ( 'page' === $context && self::is_shop_transaction_page() ) ) {
 			$count = false;
 		}
-		// Ιδιωτικό URL (XML feed) με σωστό token: η υπηρεσία μπορεί να έχει οποιοδήποτε User-Agent.
+		// Private URL (XML feed) with a valid token: the service may use any User-Agent.
 		if ( PNCP_Private_Urls::granted() ) {
 			return null;
 		}
@@ -167,15 +167,15 @@ final class PNCP_Bots {
 		if ( '' === $ip || PNCP_Ip::is_local( $ip ) ) {
 			return null;
 		}
-		// Πάντα επιτρεπτές IP: μόνο αν η IP δεν μπορεί να πλαστογραφηθεί (όχι «εμπιστοσύνη σε κάθε proxy»).
+		// Always-allowed IPs: only if the IP cannot be spoofed (not "trust every proxy").
 		if ( PNCP_Ip::reliable() && PNCP_Ip::in_any( $ip, PNCP_Options::parse_list( $s['allow_ips'] ) ) ) {
 			return null;
 		}
 
 		/**
-		 * Φίλτρο για να αφήσετε ένα αίτημα να περάσει όλους τους ελέγχους.
+		 * Filter to let a request skip all checks.
 		 *
-		 * @param bool   $skip    Αν θα παραλειφθεί ο έλεγχος.
+		 * @param bool   $skip    Whether the check will be skipped.
 		 * @param string $context page | search | rest | graphql.
 		 * @param string $ip      IP.
 		 */
@@ -183,11 +183,11 @@ final class PNCP_Bots {
 			return null;
 		}
 
-		// Πρώτα η επαλήθευση: μια πραγματική μηχανή αναζήτησης περνά ακόμη κι αν κάποιος κατάφερε να
-		// αποκλειστεί η IP της.
+		// Verification first: a real search engine gets through even if someone managed to
+		// get its IP blocked.
 		$family = self::claimed_crawler( $ua );
 		if ( '' !== $family && self::is_verified_crawler( $family, $ip ) ) {
-			return null; // Επαληθευμένες μηχανές αναζήτησης: ποτέ μπλοκάρισμα, ποτέ όριο.
+			return null; // Verified search engines: never blocked, never limited.
 		}
 
 		if ( PNCP_Log::is_banned( $ip ) ) {
@@ -210,8 +210,8 @@ final class PNCP_Bots {
 			}
 		}
 
-		// Κάθε browser στέλνει Accept-Language και «Mozilla/» στο User-Agent· τα περισσότερα scripts όχι.
-		// Όχι στα wc-ajax: κάποιες πύλες πληρωμών / επεκτάσεις τα καλούν από server, χωρίς Accept-Language.
+		// Every browser sends Accept-Language and "Mozilla/" in the User-Agent; most scripts do not.
+		// Not on wc-ajax: some payment gateways / extensions call them server-side, without Accept-Language.
 		if ( ! empty( $s['require_browser_headers'] ) && ! $allowed_ua && in_array( $context, array( 'page', 'search' ), true ) && ! self::is_wc_ajax() && ! self::looks_like_browser( $ua ) ) {
 			return self::verdict( 403, 'no_browser', $ip );
 		}
@@ -227,7 +227,7 @@ final class PNCP_Bots {
 			if ( $limit > 0 ) {
 				$count = self::hit( $ip, $limits[ $context ][1] );
 				if ( $count > $limit ) {
-					// Μία «παράβαση» ανά λεπτό που ξεπεράστηκε το όριο, όχι μία ανά αίτημα.
+					// One "violation" per minute in which the limit was exceeded, not one per request.
 					if ( $count === $limit + 1 ) {
 						PNCP_Log::strike( $ip, $limits[ $context ][1] );
 					}
@@ -240,10 +240,10 @@ final class PNCP_Bots {
 	}
 
 	/**
-	 * Καταγράφει και επιστρέφει την απόφαση.
+	 * Logs and returns the decision.
 	 *
-	 * @param int    $code   HTTP κωδικός.
-	 * @param string $reason Λόγος.
+	 * @param int    $code   HTTP status code.
+	 * @param string $reason Reason.
 	 * @param string $ip     IP.
 	 * @return array{code:int, reason:string}
 	 */
@@ -256,21 +256,21 @@ final class PNCP_Bots {
 	}
 
 	/**
-	 * Είναι πραγματικό αίτημα wc-ajax; Το WooCommerce πρέπει να είναι ενεργό και η ενέργεια δηλωμένη
-	 * (`wc_ajax_{ενέργεια}`), αλλιώς ένα σκέτο ?wc-ajax=x στο URL θα αρκούσε.
+	 * Is it a real wc-ajax request? WooCommerce must be active and the action registered
+	 * (`wc_ajax_{action}`), otherwise a bare ?wc-ajax=x in the URL would be enough.
 	 *
 	 * @return bool
 	 */
 	public static function is_wc_ajax() {
-		// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Μόνο το όνομα της ενέργειας.
+		// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Only the action name.
 		$action = isset( $_GET['wc-ajax'] ) ? sanitize_key( wp_unslash( $_GET['wc-ajax'] ) ) : '';
 		return '' !== $action && class_exists( 'WooCommerce' ) && has_action( 'wc_ajax_' . $action );
 	}
 
 	/**
-	 * Σελίδα συναλλαγής του WooCommerce (καλάθι, ταμείο, «Ευχαριστούμε», «Ο λογαριασμός μου»). Δεν μετρά
-	 * στο όριο σελίδων: ένας πελάτης που αγοράζει ανοίγει 4–5 τέτοιες σελίδες μέσα σε ένα λεπτό.
-	 * Bots και αποκλεισμοί ελέγχονται κανονικά.
+	 * WooCommerce transaction page (cart, checkout, "Thank you", "My account"). Does not count
+	 * toward the page limit: a customer making a purchase opens 4–5 such pages within a minute.
+	 * Bots and blocks are checked as usual.
 	 *
 	 * @return bool
 	 */
@@ -278,13 +278,13 @@ final class PNCP_Bots {
 		if ( ! function_exists( 'is_cart' ) || ! did_action( 'wp' ) ) {
 			return false;
 		}
-		// Όχι σκέτο is_wc_endpoint_url(): είναι true για κάθε URL με ?orders=1 κ.λπ., άρα θα έκλεινε το όριο παντού.
-		// Η σελίδα «Ευχαριστούμε» και οι σελίδες λογαριασμού καλύπτονται από τα is_checkout() / is_account_page().
+		// Not plain is_wc_endpoint_url(): it is true for any URL with ?orders=1 etc., so it would disable the limit everywhere.
+		// The "Thank you" page and account pages are covered by is_checkout() / is_account_page().
 		return is_cart() || is_checkout() || is_account_page();
 	}
 
 	/**
-	 * Prefetch / prerender (browser, επέκταση ή speculative loading): δεν είναι προβολή.
+	 * Prefetch / prerender (browser, extension or speculative loading): not a view.
 	 *
 	 * @return bool
 	 */
@@ -298,7 +298,7 @@ final class PNCP_Bots {
 	}
 
 	/**
-	 * Μοιάζει με browser;
+	 * Does it look like a browser?
 	 *
 	 * @param string $ua User-Agent.
 	 * @return bool
@@ -309,10 +309,10 @@ final class PNCP_Bots {
 	}
 
 	/**
-	 * Ταιριάζει το User-Agent με κάποιο στοιχείο της λίστας; (υποσυμβολοσειρά, χωρίς διάκριση πεζών/κεφαλαίων)
+	 * Does the User-Agent match any item in the list? (substring, case-insensitive)
 	 *
 	 * @param string   $ua   User-Agent.
-	 * @param string[] $needles Λίστα.
+	 * @param string[] $needles List.
 	 * @return bool
 	 */
 	public static function ua_in_list( $ua, $needles ) {
@@ -325,7 +325,7 @@ final class PNCP_Bots {
 	}
 
 	/**
-	 * Ποια μηχανή αναζήτησης δηλώνει το User-Agent ('' = καμία).
+	 * Which search engine the User-Agent claims to be ('' = none).
 	 *
 	 * @param string $ua User-Agent.
 	 * @return string
@@ -340,8 +340,8 @@ final class PNCP_Bots {
 	}
 
 	/**
-	 * Είναι πραγματική μηχανή αναζήτησης; Πρώτα η επίσημη λίστα IP (Google, Bing), μετά reverse DNS
-	 * και forward DNS που πρέπει να επιστρέφει την ίδια IP. Θετικό αποτέλεσμα 24 ώρες, αρνητικό 1 ώρα.
+	 * Is it a real search engine? First the official IP list (Google, Bing), then reverse DNS
+	 * and forward DNS, which must return the same IP. Positive result cached 24 hours, negative 1 hour.
 	 *
 	 * @param string $family google | bing | apple | yandex.
 	 * @param string $ip     IP.
@@ -362,8 +362,8 @@ final class PNCP_Bots {
 			return 'yes' === $cached;
 		}
 
-		// Το DNS μπλοκάρει τον PHP worker: έως 20 έλεγχοι το λεπτό σε όλο το site. Πάνω από αυτό, μη
-		// επαληθευμένο (Google και Bing επαληθεύονται ήδη από τις λίστες IP, χωρίς DNS).
+		// DNS blocks the PHP worker: up to 20 checks per minute site-wide. Beyond that, treated as
+		// unverified (Google and Bing are already verified via the IP lists, without DNS).
 		$budget = 'pncp_dns_' . (int) floor( time() / MINUTE_IN_SECONDS );
 		$used   = (int) PNCP_Log::cache_get( $budget );
 		if ( $used >= (int) apply_filters( 'pncp_dns_lookups_per_minute', 20 ) ) {
@@ -391,7 +391,7 @@ final class PNCP_Bots {
 	}
 
 	/**
-	 * Ανήκει η IP στις επίσημες λίστες της Google ή της Bing; (τέτοιες IP δεν αποκλείονται ποτέ)
+	 * Is the IP in Google's or Bing's official lists? (such IPs are never blocked)
 	 *
 	 * @param string $ip IP.
 	 * @return bool
@@ -401,7 +401,7 @@ final class PNCP_Bots {
 	}
 
 	/**
-	 * Οι IPv4/IPv6 ενός hostname.
+	 * The IPv4/IPv6 addresses of a hostname.
 	 *
 	 * @param string $host Hostname.
 	 * @return string[]
@@ -412,7 +412,7 @@ final class PNCP_Bots {
 			return $pre;
 		}
 		$ips     = array();
-		$records = @dns_get_record( $host, DNS_A | DNS_AAAA ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged -- Αποτυχία DNS = μη επαληθευμένο.
+		$records = @dns_get_record( $host, DNS_A | DNS_AAAA ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged -- DNS failure = unverified.
 		if ( is_array( $records ) ) {
 			foreach ( $records as $record ) {
 				if ( ! empty( $record['ip'] ) ) {
@@ -427,10 +427,10 @@ final class PNCP_Bots {
 	}
 
 	/**
-	 * Μετράει τα αιτήματα της IP στο τρέχον λεπτό, ανά είδος. Object cache αν υπάρχει, αλλιώς transient.
+	 * Counts the IP's requests in the current minute, per type. Object cache if available, otherwise a transient.
 	 *
 	 * @param string $ip     IP.
-	 * @param string $bucket Είδος (rate_page, rate_search, rate_rest).
+	 * @param string $bucket Type (rate_page, rate_search, rate_rest).
 	 * @return int
 	 */
 	private static function hit( $ip, $bucket ) {
@@ -443,21 +443,21 @@ final class PNCP_Bots {
 		if ( null !== $count ) {
 			return $count;
 		}
-		// Βάση χωρίς ON DUPLICATE KEY (π.χ. SQLite): απλό transient, όχι ατομικό.
+		// Database without ON DUPLICATE KEY (e.g. SQLite): plain transient, not atomic.
 		$count = (int) get_transient( $key ) + 1;
 		set_transient( $key, $count, 2 * MINUTE_IN_SECONDS );
 		return $count;
 	}
 
 	/**
-	 * Ατομικός μετρητής στη βάση, για sites χωρίς object cache. Με ταυτόχρονα αιτήματα, το «διάβασε +1
-	 * γράψε» των transients χάνει μετρήσεις (επιβεβαιωμένο: όριο 50, πέρναγαν έως 65). Εδώ η αύξηση
-	 * γίνεται μέσα στη MySQL και η νέα τιμή διαβάζεται με LAST_INSERT_ID() της ίδιας σύνδεσης.
-	 * Γράφεται ως κανονικό transient (με timeout), οπότε το καθαρίζει το WordPress όπως όλα τα transients.
+	 * Atomic counter in the database, for sites without an object cache. With concurrent requests, the "read +1
+	 * write" of transients loses counts (confirmed: limit 50, up to 65 got through). Here the increment
+	 * happens inside MySQL and the new value is read with LAST_INSERT_ID() on the same connection.
+	 * It is stored as a regular transient (with timeout), so WordPress cleans it up like all transients.
 	 *
-	 * @param string $key Κλειδί transient.
-	 * @param int    $ttl Δευτερόλεπτα.
-	 * @return int|null Null αν η βάση δεν το υποστηρίζει.
+	 * @param string $key Transient key.
+	 * @param int    $ttl Seconds.
+	 * @return int|null Null if the database does not support it.
 	 */
 	private static function db_incr( $key, $ttl ) {
 		global $wpdb;
@@ -465,7 +465,7 @@ final class PNCP_Bots {
 			return null;
 		}
 		$suppress = $wpdb->suppress_errors( true );
-		// phpcs:disable WordPress.DB.DirectDatabaseQuery -- Ατομικός μετρητής: δεν γίνεται με το options API.
+		// phpcs:disable WordPress.DB.DirectDatabaseQuery -- Atomic counter: not possible with the options API.
 		$rows = $wpdb->query(
 			$wpdb->prepare(
 				"INSERT INTO {$wpdb->options} (option_name, option_value, autoload) VALUES (%s, '1', 'off')
@@ -477,9 +477,9 @@ final class PNCP_Bots {
 			$wpdb->suppress_errors( $suppress );
 			return null;
 		}
-		$insert_id = (int) $wpdb->insert_id; // mysqli_insert_id() της ίδιας σύνδεσης (εγγραφής): = option_value + 1.
+		$insert_id = (int) $wpdb->insert_id; // mysqli_insert_id() of the same (write) connection: = option_value + 1.
 		if ( 1 === (int) $rows ) {
-			// Νέα εγγραφή: η λήξη, για τον καθαρισμό των transients.
+			// New row: the expiry, for transient cleanup.
 			$wpdb->query(
 				$wpdb->prepare(
 					"INSERT IGNORE INTO {$wpdb->options} (option_name, option_value, autoload) VALUES (%s, %s, 'off')",
@@ -489,11 +489,11 @@ final class PNCP_Bots {
 			);
 			$count = 1;
 		} else {
-			// Όχι ξεχωριστό SELECT LAST_INSERT_ID(): με HyperDB / read-write split θα πήγαινε σε replica.
+			// No separate SELECT LAST_INSERT_ID(): with HyperDB / read-write split it would go to a replica.
 			$count = $insert_id;
 			if ( $count < 2 ) {
 				$wpdb->suppress_errors( $suppress );
-				return null; // Απρόσμενο: πίσω στο transient.
+				return null; // Unexpected: fall back to the transient.
 			}
 		}
 		// phpcs:enable
@@ -502,13 +502,13 @@ final class PNCP_Bots {
 	}
 
 	/**
-	 * Η απάντηση δεν μπαίνει σε καμία cache: headers για browsers / CDN, DONOTCACHEPAGE για τα plugins
-	 * cache της PHP (WP Super Cache, W3TC, WP Rocket κ.ά.) και X-LiteSpeed-Cache-Control για τον LiteSpeed.
-	 * Αλλιώς ένα 403 για bot θα σερβιριζόταν μετά σε επισκέπτες, ή ένα feed με token σε όλους.
+	 * The response is not stored in any cache: headers for browsers / CDN, DONOTCACHEPAGE for PHP
+	 * cache plugins (WP Super Cache, W3TC, WP Rocket, etc.) and X-LiteSpeed-Cache-Control for LiteSpeed.
+	 * Otherwise a 403 for a bot would later be served to visitors, or a token feed to everyone.
 	 */
 	public static function no_cache() {
 		if ( ! defined( 'DONOTCACHEPAGE' ) ) {
-			define( 'DONOTCACHEPAGE', true ); // phpcs:ignore WordPress.NamingConventions.PrefixAllGlobals.NonPrefixedConstantFound -- Σταθερά των plugins cache.
+			define( 'DONOTCACHEPAGE', true ); // phpcs:ignore WordPress.NamingConventions.PrefixAllGlobals.NonPrefixedConstantFound -- Cache plugins constant.
 		}
 		if ( ! headers_sent() ) {
 			nocache_headers();
@@ -517,35 +517,35 @@ final class PNCP_Bots {
 	}
 
 	/**
-	 * Τερματίζει το αίτημα με 403 ή 429, χωρίς να μπει στην cache.
+	 * Ends the request with 403 or 429, without it being cached.
 	 *
-	 * @param int $code HTTP κωδικός.
+	 * @param int $code HTTP status code.
 	 */
 	public static function die_html( $code ) {
 		self::no_cache();
 		if ( 429 === $code ) {
 			header( 'Retry-After: 60' );
-			$message = __( 'Πάρα πολλά αιτήματα. Δοκιμάστε ξανά σε ένα λεπτό.', 'content-protect' );
+			$message = __( 'Too many requests. Please try again in a minute.', 'scrapelock' );
 		} else {
-			$message = __( 'Η πρόσβαση δεν επιτρέπεται.', 'content-protect' );
+			$message = __( 'Access denied.', 'scrapelock' );
 		}
 		wp_die( esc_html( $message ), esc_html( (string) $code ), array( 'response' => (int) $code ) );
 	}
 
-	/* ---------- Παγίδα για bots ---------- */
+	/* ---------- Bot trap ---------- */
 
 	/**
-	 * Η διαδρομή της παγίδας: σταθερή για το site, διαφορετική σε κάθε site.
+	 * The trap path: fixed for the site, different on every site.
 	 *
-	 * @return string π.χ. /cp-a1b2c3d4e5/
+	 * @return string e.g. /cp-a1b2c3d4e5/
 	 */
 	public static function trap_path() {
 		return '/cp-' . substr( hash_hmac( 'sha256', 'pncp-trap', wp_salt( 'nonce' ) ), 0, 10 ) . '/';
 	}
 
 	/**
-	 * Αόρατος σύνδεσμος στο τέλος κάθε σελίδας: οι άνθρωποι δεν τον βλέπουν, οι screen readers
-	 * τον αγνοούν (aria-hidden, tabindex=-1), οι μηχανές αναζήτησης τον αγνοούν (robots.txt, nofollow).
+	 * Invisible link at the end of every page: humans do not see it, screen readers
+	 * ignore it (aria-hidden, tabindex=-1), search engines ignore it (robots.txt, nofollow).
 	 */
 	public static function trap_link() {
 		$s = PNCP_Options::get();
@@ -555,14 +555,14 @@ final class PNCP_Bots {
 		printf(
 			'<a href="%s" rel="nofollow noindex" tabindex="-1" aria-hidden="true" class="pncp-hp" style="position:absolute!important;left:-10000px!important;top:auto!important;width:1px!important;height:1px!important;overflow:hidden!important">%s</a>',
 			esc_url( home_url( self::trap_path() ) ),
-			esc_html__( 'Αρχείο', 'content-protect' )
+			esc_html__( 'Archive', 'scrapelock' )
 		);
 	}
 
 	/**
-	 * Το speculative loading του WordPress δεν προφορτώνει ποτέ την παγίδα.
+	 * WordPress's speculative loading never preloads the trap.
 	 *
-	 * @param string[] $paths Διαδρομές.
+	 * @param string[] $paths Paths.
 	 * @return string[]
 	 */
 	public static function speculation_exclude( $paths ) {
@@ -572,11 +572,11 @@ final class PNCP_Bots {
 	}
 
 	/**
-	 * Όποιος ανοίγει την παγίδα αποκλείεται.
+	 * Whoever opens the trap gets blocked.
 	 *
-	 * Ένα ξένο site δεν μπορεί να κάνει τους επισκέπτες σας να αποκλειστούν (π.χ. με <img src="…παγίδα">):
-	 * οι browsers στέλνουν Sec-Fetch-Site/Sec-Fetch-Dest, και αποκλεισμός γίνεται μόνο για πλοήγηση
-	 * από το ίδιο το site ή για αίτημα χωρίς αυτά τα headers (bots). Το prefetch δεν μετράει.
+	 * A third-party site cannot get your visitors blocked (e.g. with <img src="…trap">):
+	 * browsers send Sec-Fetch-Site/Sec-Fetch-Dest, and blocking happens only for navigation
+	 * from the site itself or for requests without these headers (bots). Prefetch does not count.
 	 */
 	public static function trap_guard() {
 		$s = PNCP_Options::get();
@@ -595,7 +595,7 @@ final class PNCP_Bots {
 		$ip = PNCP_Ip::client_ip();
 		if ( self::trap_should_ban( $ip ) ) {
 			PNCP_Log::add( 'trap', 403, $ip );
-			// «Αποκλεισμός μετά από 0 παραβάσεις» = ποτέ αποκλεισμός: μόνο καταγραφή.
+			// "Block after 0 violations" = never block: log only.
 			if ( (int) $s['ban_strikes'] > 0 ) {
 				PNCP_Log::ban( $ip, (int) $s['ban_minutes'], 'trap' );
 			}
@@ -608,8 +608,8 @@ final class PNCP_Bots {
 	}
 
 	/**
-	 * Μηχανές αναζήτησης χωρίς επαλήθευση (δεν δημοσιεύουν λίστες IP / DNS που ελέγχουμε). Αν δεν είδαν
-	 * το Disallow (π.χ. φυσικό robots.txt ή παλιό αντίγραφο), δεν αποκλείονται από την παγίδα.
+	 * Search engines without verification (they publish no IP / DNS lists we check). If they did not see
+	 * the Disallow (e.g. a physical robots.txt or a stale copy), they are not blocked by the trap.
 	 *
 	 * @return string[]
 	 */
@@ -618,12 +618,12 @@ final class PNCP_Bots {
 	}
 
 	/**
-	 * Πρέπει να αποκλειστεί η IP που άνοιξε την παγίδα;
+	 * Should the IP that opened the trap be blocked?
 	 *
-	 * Ποτέ: συνδεδεμένοι χρήστες, ο server, πάντα επιτρεπτές IP, IP της Google / Bing, μηχανές αναζήτησης,
-	 * IP που ίσως είναι πλαστογραφημένη (εμπιστοσύνη σε κάθε proxy), prefetch, αιτήματα από ξένο site ή
-	 * που δεν είναι πλοήγηση, και κλικ ανθρώπου (Sec-Fetch-User, π.χ. σύνδεσμος σε σχόλιο).
-	 * Browser χωρίς Sec-Fetch (παλιό Safari / Firefox): αποκλεισμός μόνο στη δεύτερη φορά μέσα σε 10 λεπτά.
+	 * Never: logged-in users, the server, always-allowed IPs, Google / Bing IPs, search engines,
+	 * IPs that may be spoofed (trust every proxy), prefetch, requests from a third-party site or
+	 * that are not navigation, and human clicks (Sec-Fetch-User, e.g. a link in a comment).
+	 * Browser without Sec-Fetch (old Safari / Firefox): blocked only on the second hit within 10 minutes.
 	 *
 	 * @param string $ip IP.
 	 * @return bool
@@ -650,16 +650,16 @@ final class PNCP_Bots {
 		$site   = $header( 'HTTP_SEC_FETCH_SITE' );
 		$dest   = $header( 'HTTP_SEC_FETCH_DEST' );
 		if ( '' !== $site && ! in_array( $site, array( 'same-origin', 'none' ), true ) ) {
-			return false; // Από ξένο site (cross-site / same-site): όχι αποκλεισμός.
+			return false; // From another site (cross-site / same-site): no block.
 		}
 		if ( '' !== $dest && 'document' !== $dest ) {
-			return false; // Εικόνα, iframe, script κ.λπ.: όχι πλοήγηση.
+			return false; // Image, iframe, script, etc.: not navigation.
 		}
 		if ( '?1' === $header( 'HTTP_SEC_FETCH_USER' ) ) {
-			return false; // Κλικ ανθρώπου σε σύνδεσμο (π.χ. κάποιος έβαλε τη διεύθυνση σε σχόλιο).
+			return false; // Human click on a link (e.g. someone posted the address in a comment).
 		}
 		if ( '' === $site && 0 === strpos( $ua, 'Mozilla/' ) ) {
-			// Browser χωρίς Sec-Fetch: ίσως παλιός browser που φόρτωσε <img> ξένου site. Δεύτερη φορά = bot.
+			// Browser without Sec-Fetch: perhaps an old browser that loaded another site's <img>. Second time = bot.
 			$key  = 'pncp_tr_' . md5( $ip );
 			$seen = (int) PNCP_Log::cache_get( $key );
 			PNCP_Log::cache_set( $key, $seen + 1, 10 * MINUTE_IN_SECONDS );
@@ -668,10 +668,10 @@ final class PNCP_Bots {
 		return true;
 	}
 
-	/* ---------- robots.txt και WP Rocket ---------- */
+	/* ---------- robots.txt and WP Rocket ---------- */
 
 	/**
-	 * Τα AI crawlers που δηλώνονται στο robots.txt.
+	 * The AI crawlers listed in robots.txt.
 	 *
 	 * @return string[]
 	 */
@@ -683,10 +683,10 @@ final class PNCP_Bots {
 	}
 
 	/**
-	 * Disallow για AI crawlers και για την παγίδα στο εικονικό robots.txt. Δεν αγγίζει μηχανές αναζήτησης.
+	 * Disallow for AI crawlers and for the trap in the virtual robots.txt. Does not affect search engines.
 	 *
-	 * @param string $output    Το robots.txt.
-	 * @param bool   $is_public Αν το site επιτρέπει ευρετηρίαση.
+	 * @param string $output    The robots.txt.
+	 * @param bool   $is_public Whether the site allows indexing.
 	 * @return string
 	 */
 	public static function robots_txt( $output, $is_public ) {
@@ -697,14 +697,14 @@ final class PNCP_Bots {
 
 		$block = '';
 		if ( ! empty( $s['trap_enabled'] ) ) {
-			$block .= "\n# Content Protect\nUser-agent: *\nDisallow: " . wp_parse_url( home_url( self::trap_path() ), PHP_URL_PATH ) . "\n";
+			$block .= "\n# ScrapeLock\nUser-agent: *\nDisallow: " . wp_parse_url( home_url( self::trap_path() ), PHP_URL_PATH ) . "\n";
 		}
 		if ( ! empty( $s['robots_ai_block'] ) ) {
-			$block .= "\n# Content Protect: AI crawlers\n";
+			$block .= "\n# ScrapeLock: AI crawlers\n";
 			$search = array_map( 'strtolower', PNCP_Options::allowed_ai_search() );
 			foreach ( self::robots_agents() as $agent ) {
 				if ( in_array( strtolower( $agent ), $search, true ) ) {
-					continue; // AI αναζήτηση επιτρεπτή: δεν δηλώνεται Disallow.
+					continue; // AI search allowed: no Disallow is added.
 				}
 				$block .= 'User-agent: ' . $agent . "\n";
 			}
@@ -714,7 +714,7 @@ final class PNCP_Bots {
 	}
 
 	/**
-	 * Λέει στο WP Rocket να μη σερβίρει cache στους μπλοκαρισμένους User-Agents.
+	 * Tells WP Rocket not to serve cache to blocked User-Agents.
 	 *
 	 * @param string[] $uas User-Agents.
 	 * @return string[]

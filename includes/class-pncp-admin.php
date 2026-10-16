@@ -1,23 +1,23 @@
 <?php
 /**
- * Σελίδα ρυθμίσεων στο wp-admin (Ρυθμίσεις → Προστασία περιεχομένου), με καρτέλες.
+ * Settings page in wp-admin (Settings → ScrapeLock), with tabs.
  *
- * @package Content_Protect
+ * @package ScrapeLock
  */
 
 defined( 'ABSPATH' ) || exit;
 
 /**
- * Admin UI. Οι ρυθμίσεις περνούν από το Settings API (nonce και capability τα ελέγχει το options.php).
- * Οι ενέργειες (προφίλ, token, αποκλεισμοί, εργαλείο εικόνων) περνούν από admin-post / AJAX με nonce.
+ * Admin UI. Settings go through the Settings API (options.php checks nonce and capability).
+ * Actions (profiles, token, bans, image tool) go through admin-post / AJAX with a nonce.
  */
 final class PNCP_Admin {
 
-	const PAGE  = 'content-protect';
+	const PAGE  = 'scrapelock';
 	const GROUP = 'pncp_settings_group';
 
 	/**
-	 * Δένει τα hooks.
+	 * Registers the hooks.
 	 */
 	public static function init() {
 		add_action( 'admin_menu', array( __CLASS__, 'menu' ) );
@@ -32,12 +32,12 @@ final class PNCP_Admin {
 	}
 
 	/**
-	 * Εγγραφή στο μενού Ρυθμίσεις.
+	 * Adds the entry to the Settings menu.
 	 */
 	public static function menu() {
 		add_options_page(
-			__( 'Προστασία περιεχομένου', 'content-protect' ),
-			__( 'Προστασία περιεχομένου', 'content-protect' ),
+			__( 'ScrapeLock', 'scrapelock' ),
+			__( 'ScrapeLock', 'scrapelock' ),
 			'manage_options',
 			self::PAGE,
 			array( __CLASS__, 'render' )
@@ -45,7 +45,7 @@ final class PNCP_Admin {
 	}
 
 	/**
-	 * Εγγραφή του option στο Settings API.
+	 * Registers the option with the Settings API.
 	 */
 	public static function register() {
 		register_setting(
@@ -61,9 +61,9 @@ final class PNCP_Admin {
 	}
 
 	/**
-	 * CSS και JS μόνο στη σελίδα του plugin.
+	 * CSS and JS only on the plugin page.
 	 *
-	 * @param string $hook Σελίδα.
+	 * @param string $hook Page hook.
 	 */
 	public static function assets( $hook ) {
 		if ( 'settings_page_' . self::PAGE !== $hook ) {
@@ -78,66 +78,66 @@ final class PNCP_Admin {
 				'ajaxUrl' => admin_url( 'admin-ajax.php' ),
 				'nonce'   => wp_create_nonce( 'pncp_wm_batch' ),
 				'i18n'    => array(
-					'confirmApply'  => __( 'Θα ξαναφτιαχτούν όλες οι εικόνες της βιβλιοθήκης με υδατογράφημα. Έχετε backup του φακέλου uploads; Συνέχεια;', 'content-protect' ),
-					'confirmRemove' => __( 'Θα αφαιρεθεί το υδατογράφημα από όλες τις εικόνες. Συνέχεια;', 'content-protect' ),
-					/* translators: 1: εικόνες που έγιναν, 2: σύνολο */
-					'progress'      => __( 'Επεξεργάστηκαν %1$s από %2$s εικόνες…', 'content-protect' ),
-					/* translators: 1: σύνολο εικόνων, 2: σφάλματα */
-					'done'          => __( 'Ολοκληρώθηκε: %1$s εικόνες. Σφάλματα: %2$s.', 'content-protect' ),
-					'error'         => __( 'Διακοπή λόγω σφάλματος. Πατήστε ξανά το κουμπί για να συνεχίσει από εκεί που σταμάτησε.', 'content-protect' ),
-					'copied'        => __( 'Αντιγράφηκε', 'content-protect' ),
+					'confirmApply'  => __( 'All images in the library will be regenerated with a watermark. Do you have a backup of the uploads folder? Continue?', 'scrapelock' ),
+					'confirmRemove' => __( 'The watermark will be removed from all images. Continue?', 'scrapelock' ),
+					/* translators: 1: images done, 2: total */
+					'progress'      => __( 'Processed %1$s of %2$s images…', 'scrapelock' ),
+					/* translators: 1: total images, 2: errors */
+					'done'          => __( 'Done: %1$s images. Errors: %2$s.', 'scrapelock' ),
+					'error'         => __( 'Stopped because of an error. Click the button again to resume where it stopped.', 'scrapelock' ),
+					'copied'        => __( 'Copied', 'scrapelock' ),
 				),
 			)
 		);
 	}
 
 	/**
-	 * Σύνδεσμος «Ρυθμίσεις» στη λίστα πρόσθετων.
+	 * "Settings" link in the plugins list.
 	 *
-	 * @param string[] $links Σύνδεσμοι.
+	 * @param string[] $links Links.
 	 * @return string[]
 	 */
 	public static function action_links( $links ) {
-		array_unshift( $links, '<a href="' . esc_url( PNCP_Status::settings_url() ) . '">' . esc_html__( 'Ρυθμίσεις', 'content-protect' ) . '</a>' );
+		array_unshift( $links, '<a href="' . esc_url( PNCP_Status::settings_url() ) . '">' . esc_html__( 'Settings', 'scrapelock' ) . '</a>' );
 		return $links;
 	}
 
 	/**
-	 * Οι καρτέλες.
+	 * The tabs.
 	 *
 	 * @return array<string, string>
 	 */
 	private static function tabs() {
 		return array(
-			'general' => __( 'Στη σελίδα', 'content-protect' ),
-			'bots'    => __( 'Bots και όρια', 'content-protect' ),
-			'content' => __( 'Feeds και API', 'content-protect' ),
-			'images'  => __( 'Εικόνες', 'content-protect' ),
-			'rules'   => __( 'Κανόνες server', 'content-protect' ),
-			'log'     => __( 'Αρχείο', 'content-protect' ),
+			'general' => __( 'On the page', 'scrapelock' ),
+			'bots'    => __( 'Bots and limits', 'scrapelock' ),
+			'content' => __( 'Feeds and API', 'scrapelock' ),
+			'images'  => __( 'Images', 'scrapelock' ),
+			'rules'   => __( 'Server rules', 'scrapelock' ),
+			'log'     => __( 'Log', 'scrapelock' ),
 		);
 	}
 
 	/**
-	 * Η τρέχουσα καρτέλα.
+	 * The current tab.
 	 *
 	 * @return string
 	 */
 	private static function current_tab() {
-		// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Μόνο επιλογή καρτέλας.
+		// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Only selects a tab.
 		$tab = isset( $_GET['tab'] ) ? sanitize_key( wp_unslash( $_GET['tab'] ) ) : 'general';
 		return array_key_exists( $tab, self::tabs() ) ? $tab : 'general';
 	}
 
-	/* ---------- Πεδία ---------- */
+	/* ---------- Fields ---------- */
 
 	/**
-	 * Checkbox γραμμή.
+	 * Checkbox row.
 	 *
-	 * @param array<string, mixed> $s     Ρυθμίσεις.
-	 * @param string               $key   Κλειδί.
-	 * @param string               $label Κείμενο.
-	 * @param string               $help  Βοήθεια (προαιρετικό).
+	 * @param array<string, mixed> $s     Settings.
+	 * @param string               $key   Key.
+	 * @param string               $label Label text.
+	 * @param string               $help  Help text (optional).
 	 */
 	private static function checkbox( $s, $key, $label, $help = '' ) {
 		$id = 'pncp-' . $key;
@@ -157,12 +157,12 @@ final class PNCP_Admin {
 	}
 
 	/**
-	 * Radio ομάδα.
+	 * Radio group.
 	 *
-	 * @param array<string, mixed>  $s       Ρυθμίσεις.
-	 * @param string                $key     Κλειδί.
-	 * @param string                $legend  Τίτλος.
-	 * @param array<string, string> $options τιμή => κείμενο.
+	 * @param array<string, mixed>  $s       Settings.
+	 * @param string                $key     Key.
+	 * @param string                $legend  Legend.
+	 * @param array<string, string> $options value => label.
 	 */
 	private static function radios( $s, $key, $legend, $options ) {
 		echo '<fieldset><legend class="screen-reader-text">' . esc_html( $legend ) . '</legend>';
@@ -184,10 +184,10 @@ final class PNCP_Admin {
 	/**
 	 * Select.
 	 *
-	 * @param array<string, mixed>  $s       Ρυθμίσεις.
-	 * @param string                $key     Κλειδί.
-	 * @param array<string, string> $options τιμή => κείμενο.
-	 * @param string                $help    Βοήθεια.
+	 * @param array<string, mixed>  $s       Settings.
+	 * @param string                $key     Key.
+	 * @param array<string, string> $options value => label.
+	 * @param string                $help    Help text.
 	 */
 	private static function select( $s, $key, $options, $help = '' ) {
 		$id = 'pncp-' . $key;
@@ -202,12 +202,12 @@ final class PNCP_Admin {
 	}
 
 	/**
-	 * Πεδίο αριθμού με ετικέτα και βοήθεια.
+	 * Number field with label and help text.
 	 *
-	 * @param array<string, mixed> $s     Ρυθμίσεις.
-	 * @param string               $key   Κλειδί.
-	 * @param string               $label Κείμενο.
-	 * @param string               $help  Βοήθεια.
+	 * @param array<string, mixed> $s     Settings.
+	 * @param string               $key   Key.
+	 * @param string               $label Label text.
+	 * @param string               $help  Help text.
 	 */
 	private static function number( $s, $key, $label, $help = '' ) {
 		$range = PNCP_Options::int_ranges()[ $key ];
@@ -229,13 +229,13 @@ final class PNCP_Admin {
 	}
 
 	/**
-	 * Textarea με ετικέτα.
+	 * Textarea with label.
 	 *
-	 * @param array<string, mixed> $s     Ρυθμίσεις.
-	 * @param string               $key   Κλειδί.
-	 * @param string               $label Ετικέτα.
-	 * @param string               $help  Βοήθεια.
-	 * @param int                  $rows  Γραμμές.
+	 * @param array<string, mixed> $s     Settings.
+	 * @param string               $key   Key.
+	 * @param string               $label Label.
+	 * @param string               $help  Help text.
+	 * @param int                  $rows  Rows.
 	 */
 	private static function textarea( $s, $key, $label, $help = '', $rows = 4 ) {
 		$id = 'pncp-' . $key;
@@ -255,9 +255,9 @@ final class PNCP_Admin {
 	}
 
 	/**
-	 * Αρχή φόρμας ρυθμίσεων μιας καρτέλας.
+	 * Opens a tab's settings form.
 	 *
-	 * @param string $section Καρτέλα.
+	 * @param string $section Tab.
 	 */
 	private static function form_open( $section ) {
 		echo '<form method="post" action="options.php">';
@@ -267,20 +267,20 @@ final class PNCP_Admin {
 	}
 
 	/**
-	 * Τέλος φόρμας ρυθμίσεων.
+	 * Closes the settings form.
 	 */
 	private static function form_close() {
 		echo '</table>';
-		submit_button( __( 'Αποθήκευση αλλαγών', 'content-protect' ) );
+		submit_button( __( 'Save changes', 'scrapelock' ) );
 		echo '</form>';
 	}
 
 	/**
-	 * Φόρμα admin-post με nonce (για ενέργειες).
+	 * admin-post form with nonce (for actions).
 	 *
 	 * @param string $action  Action.
 	 * @param string $nonce   Nonce action.
-	 * @param string $classes Κλάσεις.
+	 * @param string $classes CSS classes.
 	 */
 	private static function action_form_open( $action, $nonce, $classes = '' ) {
 		printf( '<form method="post" action="%s" class="%s">', esc_url( admin_url( 'admin-post.php' ) ), esc_attr( $classes ) );
@@ -288,10 +288,10 @@ final class PNCP_Admin {
 		wp_nonce_field( $nonce );
 	}
 
-	/* ---------- Σελίδα ---------- */
+	/* ---------- Page ---------- */
 
 	/**
-	 * Η σελίδα ρυθμίσεων.
+	 * The settings page.
 	 */
 	public static function render() {
 		if ( ! current_user_can( 'manage_options' ) ) {
@@ -300,14 +300,14 @@ final class PNCP_Admin {
 		$tab = self::current_tab();
 		?>
 		<div class="wrap pncp-admin">
-			<h1><?php esc_html_e( 'Προστασία περιεχομένου', 'content-protect' ); ?></h1>
+			<h1><?php esc_html_e( 'ScrapeLock', 'scrapelock' ); ?></h1>
 			<?php
-			// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Μόνο εμφάνιση της επιβεβαίωσης.
+			// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Only displays the confirmation.
 			if ( isset( $_GET['pncp_confirm'] ) && PNCP_Status::is_enabled() ) {
 				self::render_disable_confirm();
 			}
 			?>
-			<nav class="nav-tab-wrapper" aria-label="<?php esc_attr_e( 'Ενότητες ρυθμίσεων', 'content-protect' ); ?>">
+			<nav class="nav-tab-wrapper" aria-label="<?php esc_attr_e( 'Settings sections', 'scrapelock' ); ?>">
 				<?php foreach ( self::tabs() as $key => $label ) : ?>
 					<a href="<?php echo esc_url( PNCP_Status::settings_url( array( 'tab' => $key ) ) ); ?>" class="nav-tab<?php echo $tab === $key ? ' nav-tab-active' : ''; ?>"<?php echo $tab === $key ? ' aria-current="page"' : ''; ?>><?php echo esc_html( $label ); ?></a>
 				<?php endforeach; ?>
@@ -321,18 +321,18 @@ final class PNCP_Admin {
 	}
 
 	/**
-	 * Επιβεβαίωση απενεργοποίησης (από τη μπάρα ή το widget).
+	 * Disable confirmation (from the admin bar or the widget).
 	 */
 	private static function render_disable_confirm() {
 		?>
 		<div class="notice notice-warning pncp-confirm">
-			<p><strong><?php esc_html_e( 'Να απενεργοποιηθεί η προστασία σε όλο το site;', 'content-protect' ); ?></strong></p>
-			<p><?php esc_html_e( 'Μέχρι να την ενεργοποιήσετε ξανά, bots και επισκέπτες θα μπορούν να αντιγράφουν ελεύθερα κείμενα, εικόνες και feeds.', 'content-protect' ); ?></p>
+			<p><strong><?php esc_html_e( 'Disable protection on the whole site?', 'scrapelock' ); ?></strong></p>
+			<p><?php esc_html_e( 'Until you enable it again, bots and visitors will be able to copy texts, images and feeds freely.', 'scrapelock' ); ?></p>
 			<?php self::action_form_open( PNCP_Status::ACTION, PNCP_Status::ACTION ); ?>
 				<input type="hidden" name="state" value="off">
 				<p>
-					<button type="submit" class="button button-primary"><?php esc_html_e( 'Ναι, απενεργοποίηση', 'content-protect' ); ?></button>
-					<a class="button" href="<?php echo esc_url( PNCP_Status::settings_url() ); ?>"><?php esc_html_e( 'Ακύρωση', 'content-protect' ); ?></a>
+					<button type="submit" class="button button-primary"><?php esc_html_e( 'Yes, disable', 'scrapelock' ); ?></button>
+					<a class="button" href="<?php echo esc_url( PNCP_Status::settings_url() ); ?>"><?php esc_html_e( 'Cancel', 'scrapelock' ); ?></a>
 				</p>
 			</form>
 		</div>
@@ -340,121 +340,121 @@ final class PNCP_Admin {
 	}
 
 	/**
-	 * Καρτέλα «Στη σελίδα»: κατάσταση, προφίλ, Emergency Mode και τι μπλοκάρεται στον browser.
+	 * "On the page" tab: status, profiles, Emergency Mode and what is blocked in the browser.
 	 *
-	 * @param array<string, mixed> $s Ρυθμίσεις.
+	 * @param array<string, mixed> $s Settings.
 	 */
 	private static function tab_general( $s ) {
 		self::render_profiles( $s );
 		self::form_open( 'general' );
 		?>
 		<tr>
-			<th scope="row"><?php esc_html_e( 'Κατάσταση', 'content-protect' ); ?></th>
-			<td><?php self::checkbox( $s, 'enabled', __( 'Η προστασία είναι ενεργή', 'content-protect' ) ); ?></td>
+			<th scope="row"><?php esc_html_e( 'Status', 'scrapelock' ); ?></th>
+			<td><?php self::checkbox( $s, 'enabled', __( 'Protection is active', 'scrapelock' ) ); ?></td>
 		</tr>
 		<tr>
-			<th scope="row"><?php esc_html_e( 'Πού εφαρμόζεται', 'content-protect' ); ?></th>
+			<th scope="row"><?php esc_html_e( 'Where it applies', 'scrapelock' ); ?></th>
 			<td>
 				<?php
-				self::checkbox( $s, 'scope_posts', __( 'Άρθρα', 'content-protect' ) );
-				self::checkbox( $s, 'scope_pages', __( 'Σελίδες', 'content-protect' ) );
-				self::checkbox( $s, 'scope_home', __( 'Αρχική, κατηγορίες, αναζήτηση και αρχεία', 'content-protect' ) );
-				self::checkbox( $s, 'scope_products', __( 'Προϊόντα WooCommerce', 'content-protect' ) );
-				self::checkbox( $s, 'skip_woo_pages', __( 'Να μην εφαρμόζεται σε καλάθι, ταμείο και «Ο λογαριασμός μου»', 'content-protect' ), __( 'Συνιστάται: οι πελάτες πρέπει να μπορούν να αντιγράφουν αριθμό παραγγελίας και κωδικούς κουπονιών.', 'content-protect' ) );
+				self::checkbox( $s, 'scope_posts', __( 'Posts', 'scrapelock' ) );
+				self::checkbox( $s, 'scope_pages', __( 'Pages', 'scrapelock' ) );
+				self::checkbox( $s, 'scope_home', __( 'Home, categories, search and archives', 'scrapelock' ) );
+				self::checkbox( $s, 'scope_products', __( 'WooCommerce products', 'scrapelock' ) );
+				self::checkbox( $s, 'skip_woo_pages', __( 'Do not apply on cart, checkout and “My account”', 'scrapelock' ), __( 'Recommended: customers must be able to copy order numbers and coupon codes.', 'scrapelock' ) );
 				?>
 			</td>
 		</tr>
 		<tr>
-			<th scope="row"><label for="pncp-excluded_ids"><?php esc_html_e( 'Εξαιρέσεις', 'content-protect' ); ?></label></th>
+			<th scope="row"><label for="pncp-excluded_ids"><?php esc_html_e( 'Exceptions', 'scrapelock' ); ?></label></th>
 			<td>
 				<input type="text" class="regular-text" id="pncp-excluded_ids" name="<?php echo esc_attr( PNCP_OPTION ); ?>[excluded_ids]" value="<?php echo esc_attr( $s['excluded_ids'] ); ?>" aria-describedby="pncp-excluded_ids-help" inputmode="numeric">
-				<p class="description" id="pncp-excluded_ids-help"><?php esc_html_e( 'IDs σελίδων ή άρθρων χωρισμένα με κόμμα, π.χ. 12, 45. Για ένα μόνο κομμάτι κειμένου (τηλέφωνο, email, κωδικό), βάλτε του την CSS κλάση pncp-allow.', 'content-protect' ); ?></p>
+				<p class="description" id="pncp-excluded_ids-help"><?php esc_html_e( 'Comma-separated page or post IDs, e.g. 12, 45. For a single piece of text (phone, email, code), give it the CSS class pncp-allow.', 'scrapelock' ); ?></p>
 			</td>
 		</tr>
 		<tr>
-			<th scope="row"><?php esc_html_e( 'Τι μπλοκάρεται', 'content-protect' ); ?></th>
+			<th scope="row"><?php esc_html_e( 'What is blocked', 'scrapelock' ); ?></th>
 			<td>
 				<?php
-				self::checkbox( $s, 'block_selection', __( 'Επιλογή κειμένου με το ποντίκι ή το δάχτυλο', 'content-protect' ) );
-				self::checkbox( $s, 'block_context_menu', __( 'Δεξί κλικ', 'content-protect' ) );
-				self::checkbox( $s, 'block_shortcuts', __( 'Συντομεύσεις Ctrl/Cmd + A, C, X, S, U', 'content-protect' ), __( 'Η πλοήγηση με πληκτρολόγιο (Tab, βελάκια, Enter) δεν επηρεάζεται ποτέ.', 'content-protect' ) );
-				self::checkbox( $s, 'block_devtools', __( 'Συντομεύσεις εργαλείων προγραμματιστή (F12, Ctrl+Shift+I/J/C/K, Cmd+Opt+I/J/C/U)', 'content-protect' ), __( 'Κοσμητικό: κόβει μόνο τις συντομεύσεις. Δεν ανιχνεύει τα DevTools και δεν «σπάει» τη σελίδα.', 'content-protect' ) );
-				self::checkbox( $s, 'block_image_drag', __( 'Σύρσιμο εικόνων και «Αποθήκευση εικόνας» με παρατεταμένο πάτημα στο κινητό', 'content-protect' ) );
-				self::checkbox( $s, 'block_text_drag', __( 'Σύρσιμο επιλεγμένου κειμένου σε άλλο παράθυρο', 'content-protect' ) );
-				self::checkbox( $s, 'blur_on_capture', __( 'Θόλωμα της σελίδας όταν πατηθεί Print Screen ή συντόμευση στιγμιότυπου οθόνης', 'content-protect' ), __( 'Προαιρετικό. Πιάνει μόνο τις συντομεύσεις που βλέπει ο browser (Print Screen, Win+Shift+S, Cmd+Shift+3/4/5). Δεν σταματά εργαλεία εκτός browser ή φωτογραφία με κινητό.', 'content-protect' ) );
+				self::checkbox( $s, 'block_selection', __( 'Text selection with the mouse or finger', 'scrapelock' ) );
+				self::checkbox( $s, 'block_context_menu', __( 'Right click', 'scrapelock' ) );
+				self::checkbox( $s, 'block_shortcuts', __( 'Shortcuts Ctrl/Cmd + A, C, X, S, U', 'scrapelock' ), __( 'Keyboard navigation (Tab, arrows, Enter) is never affected.', 'scrapelock' ) );
+				self::checkbox( $s, 'block_devtools', __( 'Developer tools shortcuts (F12, Ctrl+Shift+I/J/C/K, Cmd+Opt+I/J/C/U)', 'scrapelock' ), __( 'Cosmetic: it only blocks the shortcuts. It does not detect DevTools and does not “break” the page.', 'scrapelock' ) );
+				self::checkbox( $s, 'block_image_drag', __( 'Dragging images and “Save image” with a long press on mobile', 'scrapelock' ) );
+				self::checkbox( $s, 'block_text_drag', __( 'Dragging selected text to another window', 'scrapelock' ) );
+				self::checkbox( $s, 'blur_on_capture', __( 'Blur the page when Print Screen or a screenshot shortcut is pressed', 'scrapelock' ), __( 'Optional. It only catches the shortcuts the browser sees (Print Screen, Win+Shift+S, Cmd+Shift+3/4/5). It does not stop tools outside the browser or a photo taken with a phone.', 'scrapelock' ) );
 				?>
 			</td>
 		</tr>
 		<tr>
-			<th scope="row"><?php esc_html_e( 'Όταν κάποιος αντιγράφει', 'content-protect' ); ?></th>
+			<th scope="row"><?php esc_html_e( 'When someone copies', 'scrapelock' ); ?></th>
 			<td>
 				<?php
 				self::radios(
 					$s,
 					'copy_mode',
-					__( 'Όταν κάποιος αντιγράφει', 'content-protect' ),
+					__( 'When someone copies', 'scrapelock' ),
 					array(
-						'block'       => __( 'Να μπλοκάρεται η αντιγραφή', 'content-protect' ),
-						'attribution' => __( 'Να επιτρέπεται, με την πηγή και τον σύνδεσμο προσαρτημένα στο τέλος', 'content-protect' ),
-						'allow'       => __( 'Να επιτρέπεται κανονικά', 'content-protect' ),
+						'block'       => __( 'Block copying', 'scrapelock' ),
+						'attribution' => __( 'Allow, with the source and link appended at the end', 'scrapelock' ),
+						'allow'       => __( 'Allow normally', 'scrapelock' ),
 					)
 				);
-				self::number( $s, 'attribution_min_chars', __( 'Η πηγή προσαρτάται από τόσους χαρακτήρες και πάνω:', 'content-protect' ), __( 'Μικρότερα αποσπάσματα (π.χ. μια λέξη ή ένα τηλέφωνο) αντιγράφονται χωρίς πηγή. 0 = πάντα.', 'content-protect' ) );
+				self::number( $s, 'attribution_min_chars', __( 'Append the source from this many characters and up:', 'scrapelock' ), __( 'Shorter snippets (e.g. a word or a phone number) are copied without the source. 0 = always.', 'scrapelock' ) );
 				?>
-				<p class="description"><?php esc_html_e( 'Η επιλογή με την πηγή έχει νόημα όταν η επιλογή κειμένου είναι ανοιχτή.', 'content-protect' ); ?></p>
+				<p class="description"><?php esc_html_e( 'The source option makes sense when text selection is allowed.', 'scrapelock' ); ?></p>
 			</td>
 		</tr>
 		<tr>
-			<th scope="row"><?php esc_html_e( 'Εκτύπωση', 'content-protect' ); ?></th>
+			<th scope="row"><?php esc_html_e( 'Printing', 'scrapelock' ); ?></th>
 			<td>
 				<?php
 				self::radios(
 					$s,
 					'print_mode',
-					__( 'Εκτύπωση', 'content-protect' ),
+					__( 'Printing', 'scrapelock' ),
 					array(
-						'source' => __( 'Επιτρέπεται, με τον σύνδεσμο της σελίδας στο κάτω μέρος (συνιστάται)', 'content-protect' ),
-						'allow'  => __( 'Επιτρέπεται κανονικά', 'content-protect' ),
-						'block'  => __( 'Δεν επιτρέπεται', 'content-protect' ),
+						'source' => __( 'Allowed, with the page link at the bottom (recommended)', 'scrapelock' ),
+						'allow'  => __( 'Allowed normally', 'scrapelock' ),
+						'block'  => __( 'Not allowed', 'scrapelock' ),
 					)
 				);
 				?>
 			</td>
 		</tr>
 		<tr>
-			<th scope="row"><label for="pncp-exempt_cap"><?php esc_html_e( 'Ποιοι εξαιρούνται', 'content-protect' ); ?></label></th>
+			<th scope="row"><label for="pncp-exempt_cap"><?php esc_html_e( 'Who is excluded', 'scrapelock' ); ?></label></th>
 			<td>
 				<?php
 				self::select(
 					$s,
 					'exempt_cap',
 					array(
-						'edit_posts'        => __( 'Συνδεδεμένοι συντάκτες και διαχειριστές', 'content-protect' ),
-						'edit_others_posts' => __( 'Συνδεδεμένοι αρχισυντάκτες και διαχειριστές', 'content-protect' ),
-						'manage_options'    => __( 'Μόνο οι διαχειριστές', 'content-protect' ),
-						'none'              => __( 'Κανείς (για δοκιμή της προστασίας)', 'content-protect' ),
+						'edit_posts'        => __( 'Logged-in authors and administrators', 'scrapelock' ),
+						'edit_others_posts' => __( 'Logged-in editors and administrators', 'scrapelock' ),
+						'manage_options'    => __( 'Administrators only', 'scrapelock' ),
+						'none'              => __( 'Nobody (for testing the protection)', 'scrapelock' ),
 					),
-					__( 'Ισχύει για την προστασία στη σελίδα και για τους ελέγχους στον server (bots, όρια, αποκλεισμοί). Πελάτες με λογαριασμό δεν εξαιρούνται.', 'content-protect' )
+					__( 'Applies to the on-page protection and to the server checks (bots, limits, blocks). Customers with an account are not excluded.', 'scrapelock' )
 				);
 				?>
 			</td>
 		</tr>
 		<tr>
-			<th scope="row"><?php esc_html_e( 'Μήνυμα στον επισκέπτη', 'content-protect' ); ?></th>
+			<th scope="row"><?php esc_html_e( 'Message to the visitor', 'scrapelock' ); ?></th>
 			<td>
-				<?php self::checkbox( $s, 'show_message', __( 'Να εμφανίζεται μήνυμα όταν μπλοκάρεται κάτι', 'content-protect' ) ); ?>
-				<label for="pncp-message" class="screen-reader-text"><?php esc_html_e( 'Κείμενο μηνύματος', 'content-protect' ); ?></label>
+				<?php self::checkbox( $s, 'show_message', __( 'Show a message when something is blocked', 'scrapelock' ) ); ?>
+				<label for="pncp-message" class="screen-reader-text"><?php esc_html_e( 'Message text', 'scrapelock' ); ?></label>
 				<input type="text" class="large-text" id="pncp-message" name="<?php echo esc_attr( PNCP_OPTION ); ?>[message]" value="<?php echo esc_attr( $s['message'] ); ?>" maxlength="200">
 			</td>
 		</tr>
 		<tr>
-			<th scope="row"><?php esc_html_e( 'Iframe και AI', 'content-protect' ); ?></th>
+			<th scope="row"><?php esc_html_e( 'Iframe and AI', 'scrapelock' ); ?></th>
 			<td>
 				<?php
-				self::checkbox( $s, 'block_framing', __( 'Οι σελίδες δεν ανοίγουν μέσα σε iframe άλλου site', 'content-protect' ), __( 'Headers X-Frame-Options και CSP frame-ancestors. Τα embeds του WordPress (oEmbed) συνεχίζουν να λειτουργούν.', 'content-protect' ) );
-				self::checkbox( $s, 'tdm_reservation', __( 'Δήλωση εξαίρεσης από εκπαίδευση AI και εξόρυξη κειμένου (TDM)', 'content-protect' ), __( 'Header και meta tdm-reservation, /.well-known/tdmrep.json και noai/noimageai. Νομική βάση: Οδηγία (ΕΕ) 2019/790, άρθρο 4 παρ. 3 (ν. 4996/2022): η επιφύλαξη δικαιωμάτων σε μηχαναγνώσιμη μορφή.', 'content-protect' ) );
+				self::checkbox( $s, 'block_framing', __( 'Pages do not open inside another site\'s iframe', 'scrapelock' ), __( 'X-Frame-Options and CSP frame-ancestors headers. WordPress embeds (oEmbed) keep working.', 'scrapelock' ) );
+				self::checkbox( $s, 'tdm_reservation', __( 'Opt-out declaration from AI training and text and data mining (TDM)', 'scrapelock' ), __( 'tdm-reservation header and meta, /.well-known/tdmrep.json and noai/noimageai. Legal basis: Directive (EU) 2019/790, Article 4(3): reservation of rights in a machine-readable format.', 'scrapelock' ) );
 				?>
-				<p><label for="pncp-tdm_policy_url"><?php esc_html_e( 'Σελίδα με τους όρους αδειοδότησης (προαιρετικό):', 'content-protect' ); ?></label>
+				<p><label for="pncp-tdm_policy_url"><?php esc_html_e( 'Page with the licensing terms (optional):', 'scrapelock' ); ?></label>
 				<input type="url" class="regular-text code" id="pncp-tdm_policy_url" name="<?php echo esc_attr( PNCP_OPTION ); ?>[tdm_policy_url]" value="<?php echo esc_attr( $s['tdm_policy_url'] ); ?>" placeholder="https://"></p>
 			</td>
 		</tr>
@@ -463,24 +463,24 @@ final class PNCP_Admin {
 	}
 
 	/**
-	 * Προφίλ και Emergency Mode.
+	 * Profiles and Emergency Mode.
 	 *
-	 * @param array<string, mixed> $s Ρυθμίσεις.
+	 * @param array<string, mixed> $s Settings.
 	 */
 	private static function render_profiles( $s ) {
 		$current  = PNCP_Options::current_profile( $s );
 		$profiles = array(
-			'balanced' => array( __( 'Ισορροπημένο', 'content-protect' ), __( 'Αντιγραφή με πηγή, όριο 60 σελίδες/λεπτό, αποκλεισμός μετά από 3 παραβάσεις. Για τα περισσότερα sites.', 'content-protect' ) ),
-			'strict'   => array( __( 'Αυστηρό', 'content-protect' ), __( 'Χωρίς επιλογή και αντιγραφή κειμένου, όριο 40 σελίδες/λεπτό, αποκλεισμός 3 ωρών μετά από 2 παραβάσεις.', 'content-protect' ) ),
-			'maximum'  => array( __( 'Μέγιστο', 'content-protect' ), __( 'Και χωρίς εκτύπωση και RSS, μόνο browsers, θόλωμα σε screenshot, όριο 30/λεπτό, αποκλεισμός 12 ωρών μετά από 2 παραβάσεις. Μπορεί να ενοχλήσει κάποιους επισκέπτες.', 'content-protect' ) ),
+			'balanced' => array( __( 'Balanced', 'scrapelock' ), __( 'Copy with source, limit 60 pages/minute, block after 3 violations. For most sites.', 'scrapelock' ) ),
+			'strict'   => array( __( 'Strict', 'scrapelock' ), __( 'No text selection or copying, limit 40 pages/minute, 3-hour block after 2 violations.', 'scrapelock' ) ),
+			'maximum'  => array( __( 'Maximum', 'scrapelock' ), __( 'Also no printing and no RSS, browsers only, blur on screenshot, limit 30/minute, 12-hour block after 2 violations. May annoy some visitors.', 'scrapelock' ) ),
 		);
 		$until    = PNCP_Options::emergency_until();
 		?>
 		<div class="pncp-cards">
 			<section class="pncp-card" aria-labelledby="pncp-profiles-title">
-				<h2 id="pncp-profiles-title"><?php esc_html_e( 'Έτοιμα προφίλ', 'content-protect' ); ?></h2>
-				<p class="description"><?php esc_html_e( 'Ένα κλικ αλλάζει τις ρυθμίσεις προστασίας και ορίων. Λίστες, feeds, IP και υδατογράφημα δεν αλλάζουν. Μετά μπορείτε να προσαρμόσετε ό,τι θέλετε.', 'content-protect' ); ?></p>
-				<p><?php esc_html_e( 'Τώρα:', 'content-protect' ); ?> <strong><?php echo esc_html( '' === $current ? __( 'Προσαρμοσμένο', 'content-protect' ) : $profiles[ $current ][0] ); ?></strong></p>
+				<h2 id="pncp-profiles-title"><?php esc_html_e( 'Presets', 'scrapelock' ); ?></h2>
+				<p class="description"><?php esc_html_e( 'One click changes the protection and limit settings. Lists, feeds, IPs and watermark do not change. You can adjust anything afterwards.', 'scrapelock' ); ?></p>
+				<p><?php esc_html_e( 'Current:', 'scrapelock' ); ?> <strong><?php echo esc_html( '' === $current ? __( 'Custom', 'scrapelock' ) : $profiles[ $current ][0] ); ?></strong></p>
 				<?php self::action_form_open( 'pncp_profile', 'pncp_profile', 'pncp-profile-form' ); ?>
 					<?php foreach ( $profiles as $key => $profile ) : ?>
 						<div class="pncp-profile<?php echo $current === $key ? ' is-current' : ''; ?>">
@@ -491,32 +491,32 @@ final class PNCP_Admin {
 				</form>
 			</section>
 			<section class="pncp-card pncp-card--emergency" aria-labelledby="pncp-emergency-title">
-				<h2 id="pncp-emergency-title"><?php esc_html_e( 'Emergency Mode', 'content-protect' ); ?></h2>
-				<p class="description"><?php esc_html_e( 'Για επίθεση scraping σε εξέλιξη: μόνο browsers, όριο 20 σελίδες/λεπτό, αποκλεισμός 6 ωρών μετά από 2 παραβάσεις, REST/GraphQL χωρίς κείμενο. Οι ρυθμίσεις σας δεν αλλάζουν: στη λήξη ισχύουν ξανά όπως ήταν.', 'content-protect' ); ?></p>
+				<h2 id="pncp-emergency-title"><?php esc_html_e( 'Emergency Mode', 'scrapelock' ); ?></h2>
+				<p class="description"><?php esc_html_e( 'For a scraping attack in progress: browsers only, limit 20 pages/minute, 6-hour block after 2 violations, REST/GraphQL without content. Your settings do not change: when it ends, they apply again as they were.', 'scrapelock' ); ?></p>
 				<?php if ( $until ) : ?>
 					<p class="pncp-emergency-on">
 						<?php
 						echo esc_html(
 							sprintf(
-								/* translators: %s: ημερομηνία και ώρα */
-								__( 'Σε λειτουργία μέχρι %s.', 'content-protect' ),
+								/* translators: %s: date and time */
+								__( 'Active until %s.', 'scrapelock' ),
 								wp_date( get_option( 'date_format' ) . ' ' . get_option( 'time_format' ), $until )
 							)
 						);
 						?>
 					</p>
-					<p><a class="button" href="<?php echo esc_url( PNCP_Status::emergency_stop_url() ); ?>"><?php esc_html_e( 'Τέλος τώρα', 'content-protect' ); ?></a></p>
+					<p><a class="button" href="<?php echo esc_url( PNCP_Status::emergency_stop_url() ); ?>"><?php esc_html_e( 'End now', 'scrapelock' ); ?></a></p>
 				<?php else : ?>
 					<?php self::action_form_open( PNCP_Status::EMERGENCY, PNCP_Status::EMERGENCY ); ?>
 						<p>
-							<label for="pncp-emergency-hours"><?php esc_html_e( 'Διάρκεια:', 'content-protect' ); ?></label>
+							<label for="pncp-emergency-hours"><?php esc_html_e( 'Duration:', 'scrapelock' ); ?></label>
 							<select id="pncp-emergency-hours" name="hours">
-								<option value="1"><?php esc_html_e( '1 ώρα', 'content-protect' ); ?></option>
-								<option value="6"><?php esc_html_e( '6 ώρες', 'content-protect' ); ?></option>
-								<option value="24" selected><?php esc_html_e( '24 ώρες', 'content-protect' ); ?></option>
-								<option value="72"><?php esc_html_e( '3 ημέρες', 'content-protect' ); ?></option>
+								<option value="1"><?php esc_html_e( '1 hour', 'scrapelock' ); ?></option>
+								<option value="6"><?php esc_html_e( '6 hours', 'scrapelock' ); ?></option>
+								<option value="24" selected><?php esc_html_e( '24 hours', 'scrapelock' ); ?></option>
+								<option value="72"><?php esc_html_e( '3 days', 'scrapelock' ); ?></option>
 							</select>
-							<button type="submit" class="button pncp-button-danger"><?php esc_html_e( 'Έναρξη Emergency Mode', 'content-protect' ); ?></button>
+							<button type="submit" class="button pncp-button-danger"><?php esc_html_e( 'Start Emergency Mode', 'scrapelock' ); ?></button>
 						</p>
 					</form>
 				<?php endif; ?>
@@ -526,101 +526,101 @@ final class PNCP_Admin {
 	}
 
 	/**
-	 * Καρτέλα «Bots και όρια».
+	 * "Bots and limits" tab.
 	 *
-	 * @param array<string, mixed> $s Ρυθμίσεις.
+	 * @param array<string, mixed> $s Settings.
 	 */
 	private static function tab_bots( $s ) {
 		self::form_open( 'bots' );
 		?>
 		<tr>
-			<th scope="row"><?php esc_html_e( 'Scrapers και AI bots', 'content-protect' ); ?></th>
+			<th scope="row"><?php esc_html_e( 'Scrapers and AI bots', 'scrapelock' ); ?></th>
 			<td>
 				<?php
-				self::checkbox( $s, 'block_bots', __( 'Μπλοκάρισμα (403) των User-Agents της λίστας', 'content-protect' ) );
-				self::checkbox( $s, 'block_empty_ua', __( 'Μπλοκάρισμα αιτημάτων χωρίς User-Agent', 'content-protect' ) );
-				self::checkbox( $s, 'block_fake_crawlers', __( 'Μπλοκάρισμα ψεύτικων Googlebot, Bingbot, Applebot και Yandex', 'content-protect' ), __( 'Η IP ελέγχεται με τις επίσημες λίστες της Google και της Bing και με reverse DNS. Οι πραγματικές μηχανές αναζήτησης περνούν πάντα, χωρίς όριο.', 'content-protect' ) );
-				self::checkbox( $s, 'require_browser_headers', __( 'Μόνο browsers: 403 σε σελίδες χωρίς Accept-Language ή χωρίς «Mozilla/» στο User-Agent', 'content-protect' ), __( 'Κόβει τα περισσότερα scripts. Τα previews συνδέσμων (Facebook, Viber, WhatsApp κ.ά.) της λίστας «Πάντα επιτρεπτά» περνούν.', 'content-protect' ) );
-				self::checkbox( $s, 'trap_enabled', __( 'Παγίδα για bots', 'content-protect' ), __( 'Αόρατος σύνδεσμος σε κάθε σελίδα, απαγορευμένος στο robots.txt. Όποιος τον ανοίγει αποκλείεται προσωρινά, ακόμη κι αν παριστάνει browser. Οι επισκέπτες δεν τον βλέπουν και ένα ξένο site δεν μπορεί να τους παγιδεύσει.', 'content-protect' ) );
-				self::textarea( $s, 'bot_list', __( 'Λίστα User-Agents που μπλοκάρονται (ένα ανά γραμμή, ταιριάζει οπουδήποτε στο User-Agent, χωρίς διάκριση πεζών/κεφαλαίων):', 'content-protect' ), __( 'Περιέχει δύο κατηγορίες AI: crawlers εκπαίδευσης (GPTBot, ClaudeBot, CCBot, Google-Extended κ.ά.) και AI αναζήτηση / βοηθούς (OAI-SearchBot, ChatGPT-User, Claude-SearchBot, PerplexityBot κ.ά.). Τη δεύτερη μπορείτε να την επιτρέψετε με την επιλογή από κάτω.', 'content-protect' ), 10 );
-				self::checkbox( $s, 'allow_ai_search', __( 'Επιτρέπονται οι AI μηχανές αναζήτησης και βοηθοί (όχι οι crawlers εκπαίδευσης)', 'content-protect' ), sprintf( /* translators: %s: λίστα User-Agents */ __( 'Για να εμφανίζεται το site στις απαντήσεις AI αναζήτησης με σύνδεσμο, χωρίς να δίνεται για εκπαίδευση μοντέλων. Επιτρέπονται: %s. Βγαίνουν και από το Disallow του robots.txt και από τους κανόνες server. Το όριο σελίδων ισχύει κανονικά, γιατί το User-Agent πλαστογραφείται.', 'content-protect' ), implode( ', ', PNCP_Options::ai_search_agents() ) ) );
-				self::textarea( $s, 'allow_list', __( 'Πάντα επιτρεπτά User-Agents (previews συνδέσμων, πλατφόρμες τιμών, monitoring):', 'content-protect' ), __( 'Υπερισχύουν της λίστας bots και του «Μόνο browsers». Το όριο σελίδων ισχύει και για αυτούς, γιατί το User-Agent πλαστογραφείται εύκολα.', 'content-protect' ), 5 );
-				self::textarea( $s, 'allow_ips', __( 'Πάντα επιτρεπτές IP / CIDR (γραφείο, ERP, monitoring), μία ανά γραμμή:', 'content-protect' ), __( 'Δεν ελέγχονται, δεν μετρούν στα όρια και δεν αποκλείονται ποτέ.', 'content-protect' ), 3 );
-				self::checkbox( $s, 'robots_ai_block', __( 'Δήλωση των AI crawlers στο robots.txt (Disallow)', 'content-protect' ), __( 'Ισχύει για το εικονικό robots.txt του WordPress. Αν υπάρχει φυσικό αρχείο robots.txt, αυτό έχει προτεραιότητα.', 'content-protect' ) );
+				self::checkbox( $s, 'block_bots', __( 'Block (403) the User-Agents in the list', 'scrapelock' ) );
+				self::checkbox( $s, 'block_empty_ua', __( 'Block requests without a User-Agent', 'scrapelock' ) );
+				self::checkbox( $s, 'block_fake_crawlers', __( 'Block fake Googlebot, Bingbot, Applebot and Yandex', 'scrapelock' ), __( 'The IP is checked against the official Google and Bing lists and with reverse DNS. Real search engines always pass, without limits.', 'scrapelock' ) );
+				self::checkbox( $s, 'require_browser_headers', __( 'Browsers only: 403 for pages without Accept-Language or without “Mozilla/” in the User-Agent', 'scrapelock' ), __( 'Stops most scripts. Link previews (Facebook, Viber, WhatsApp etc.) in the “Always allowed” list pass.', 'scrapelock' ) );
+				self::checkbox( $s, 'trap_enabled', __( 'Bot trap', 'scrapelock' ), __( 'Invisible link on every page, disallowed in robots.txt. Whoever opens it is blocked temporarily, even if it pretends to be a browser. Visitors do not see it, and another site cannot trap them.', 'scrapelock' ) );
+				self::textarea( $s, 'bot_list', __( 'User-Agents to block (one per line, matches anywhere in the User-Agent, case-insensitive):', 'scrapelock' ), __( 'It contains two AI categories: training crawlers (GPTBot, ClaudeBot, CCBot, Google-Extended etc.) and AI search / assistants (OAI-SearchBot, ChatGPT-User, Claude-SearchBot, PerplexityBot etc.). You can allow the second one with the option below.', 'scrapelock' ), 10 );
+				self::checkbox( $s, 'allow_ai_search', __( 'Allow AI search engines and assistants (not training crawlers)', 'scrapelock' ), sprintf( /* translators: %s: list of User-Agents */ __( 'So the site appears in AI search answers with a link, without being given for model training. Allowed: %s. They are also removed from the robots.txt Disallow and from the server rules. The page limit still applies, because the User-Agent can be spoofed.', 'scrapelock' ), implode( ', ', PNCP_Options::ai_search_agents() ) ) );
+				self::textarea( $s, 'allow_list', __( 'Always allowed User-Agents (link previews, price comparison platforms, monitoring):', 'scrapelock' ), __( 'They override the bot list and “Browsers only”. The page limit applies to them too, because the User-Agent is easy to spoof.', 'scrapelock' ), 5 );
+				self::textarea( $s, 'allow_ips', __( 'Always allowed IPs / CIDR (office, ERP, monitoring), one per line:', 'scrapelock' ), __( 'They are never checked, never count towards limits and are never blocked.', 'scrapelock' ), 3 );
+				self::checkbox( $s, 'robots_ai_block', __( 'Declare AI crawlers in robots.txt (Disallow)', 'scrapelock' ), __( 'Applies to the virtual robots.txt of WordPress. If a physical robots.txt file exists, it takes precedence.', 'scrapelock' ) );
 				?>
 			</td>
 		</tr>
 		<tr>
-			<th scope="row"><?php esc_html_e( 'Όρια ανά IP', 'content-protect' ); ?></th>
+			<th scope="row"><?php esc_html_e( 'Limits per IP', 'scrapelock' ); ?></th>
 			<td>
 				<?php
-				self::number( $s, 'rate_limit', __( 'Σελίδες ανά λεπτό (0 = ανενεργό):', 'content-protect' ), __( 'Τιμή εκκίνησης: 60. Πάνω από το όριο απαντά 429. Προσοχή σε δίκτυα με κοινή IP (εταιρείες, κινητή τηλεφωνία) και σε CDN: ορίστε πρώτα σωστά την «Πραγματική IP επισκέπτη».', 'content-protect' ) );
-				self::number( $s, 'rate_limit_search', __( 'Αναζητήσεις (?s=) ανά λεπτό (0 = ανενεργό):', 'content-protect' ), __( 'Η αναζήτηση είναι βαριά για τον server και αγαπημένη των scrapers. Τιμή εκκίνησης: 20.', 'content-protect' ) );
-				self::number( $s, 'rate_limit_rest', __( 'Αιτήματα REST API (/wp-json/) και GraphQL ανά λεπτό (0 = ανενεργό):', 'content-protect' ), __( 'Μόνο αιτήματα ανάγνωσης από επισκέπτες. Καλάθι, ταμείο και φόρμες (POST) δεν μετράνε. Τιμή εκκίνησης: 60.', 'content-protect' ) );
+				self::number( $s, 'rate_limit', __( 'Pages per minute (0 = off):', 'scrapelock' ), __( 'Starting value: 60. Above the limit it returns 429. Be careful with networks that share an IP (companies, mobile carriers) and with CDNs: set the “Real visitor IP” correctly first.', 'scrapelock' ) );
+				self::number( $s, 'rate_limit_search', __( 'Searches (?s=) per minute (0 = off):', 'scrapelock' ), __( 'Search is heavy for the server and a favourite of scrapers. Starting value: 20.', 'scrapelock' ) );
+				self::number( $s, 'rate_limit_rest', __( 'REST API (/wp-json/) and GraphQL requests per minute (0 = off):', 'scrapelock' ), __( 'Only read requests from visitors. Cart, checkout and forms (POST) do not count. Starting value: 60.', 'scrapelock' ) );
 				?>
 			</td>
 		</tr>
 		<tr>
-			<th scope="row"><?php esc_html_e( 'Προσωρινός αποκλεισμός', 'content-protect' ); ?></th>
+			<th scope="row"><?php esc_html_e( 'Temporary block', 'scrapelock' ); ?></th>
 			<td>
 				<?php
-				self::number( $s, 'ban_strikes', __( 'Αποκλεισμός μετά από τόσες παραβάσεις μέσα σε 10 λεπτά (0 = ποτέ):', 'content-protect' ), __( 'Παράβαση: κάθε λεπτό που η IP ξεπέρασε ένα όριο, και κάθε ψεύτικο Googlebot. Η παγίδα αποκλείει αμέσως.', 'content-protect' ) );
-				self::number( $s, 'ban_minutes', __( 'Διάρκεια αποκλεισμού (λεπτά):', 'content-protect' ) );
+				self::number( $s, 'ban_strikes', __( 'Block after this many violations within 10 minutes (0 = never):', 'scrapelock' ), __( 'Violation: every minute in which the IP exceeded a limit, and every fake Googlebot. The trap blocks immediately.', 'scrapelock' ) );
+				self::number( $s, 'ban_minutes', __( 'Block duration (minutes):', 'scrapelock' ) );
 				?>
-				<p><label for="pncp-log_retention"><?php esc_html_e( 'Διατήρηση αρχείου αποκλεισμών:', 'content-protect' ); ?></label>
+				<p><label for="pncp-log_retention"><?php esc_html_e( 'Keep the block log for:', 'scrapelock' ); ?></label>
 				<?php
 				self::select(
 					$s,
 					'log_retention',
 					array(
-						'1'  => __( '1 ημέρα', 'content-protect' ),
-						'7'  => __( '7 ημέρες', 'content-protect' ),
-						'30' => __( '30 ημέρες', 'content-protect' ),
+						'1'  => __( '1 day', 'scrapelock' ),
+						'7'  => __( '7 days', 'scrapelock' ),
+						'30' => __( '30 days', 'scrapelock' ),
 					),
-					__( 'Το αρχείο κρατά IP και User-Agent, δηλαδή προσωπικά δεδομένα (GDPR). Σβήνεται αυτόματα.', 'content-protect' )
+					__( 'The log keeps IP and User-Agent, i.e. personal data (GDPR). It is deleted automatically.', 'scrapelock' )
 				);
 				?>
 				</p>
 			</td>
 		</tr>
 		<tr>
-			<th scope="row"><label for="pncp-ip_header"><?php esc_html_e( 'Πραγματική IP επισκέπτη', 'content-protect' ); ?></label></th>
+			<th scope="row"><label for="pncp-ip_header"><?php esc_html_e( 'Real visitor IP', 'scrapelock' ); ?></label></th>
 			<td>
 				<?php
 				self::select(
 					$s,
 					'ip_header',
 					array(
-						'remote_addr'      => __( 'REMOTE_ADDR (χωρίς CDN/proxy)', 'content-protect' ),
+						'remote_addr'      => __( 'REMOTE_ADDR (no CDN/proxy)', 'scrapelock' ),
 						'cf_connecting_ip' => 'CF-Connecting-IP (Cloudflare)',
 						'x_forwarded_for'  => 'X-Forwarded-For',
 						'x_real_ip'        => 'X-Real-IP',
 						'true_client_ip'   => 'True-Client-IP',
 					),
-					__( 'Πίσω από CDN ή reverse proxy όλοι οι επισκέπτες φαίνονται με την IP του CDN. Επιλέξτε το header με την πραγματική IP.', 'content-protect' )
+					__( 'Behind a CDN or reverse proxy all visitors appear with the CDN\'s IP. Choose the header with the real IP.', 'scrapelock' )
 				);
 				?>
-				<p><strong><?php esc_html_e( 'Trusted Proxy:', 'content-protect' ); ?></strong> <?php esc_html_e( 'το header διαβάζεται μόνο όταν το αίτημα έρχεται από proxy που εμπιστεύεστε. Αλλιώς ο καθένας θα μπορούσε να γράψει όποια IP θέλει και να παρακάμψει όρια και αποκλεισμούς. CF-Connecting-IP: μόνο από το Cloudflare. X-Real-IP / X-Forwarded-For: και από τον ίδιο τον server ή ιδιωτικό δίκτυο (Nginx μπροστά από τον Apache). True-Client-IP: μόνο από τους proxies της λίστας.', 'content-protect' ); ?></p>
+				<p><strong><?php esc_html_e( 'Trusted Proxy:', 'scrapelock' ); ?></strong> <?php esc_html_e( 'the header is read only when the request comes from a proxy you trust. Otherwise anyone could write any IP they want and bypass limits and blocks. CF-Connecting-IP: only from Cloudflare. X-Real-IP / X-Forwarded-For: also from the server itself or a private network (Nginx in front of Apache). True-Client-IP: only from the proxies in the list.', 'scrapelock' ); ?></p>
 				<?php
-				self::checkbox( $s, 'trust_cloudflare', __( 'Αξιόπιστες οι διευθύνσεις του Cloudflare', 'content-protect' ), __( 'Η επίσημη λίστα του Cloudflare ανανεώνεται κάθε μέρα.', 'content-protect' ) );
+				self::checkbox( $s, 'trust_cloudflare', __( 'Trust Cloudflare addresses', 'scrapelock' ), __( 'The official Cloudflare list is refreshed every day.', 'scrapelock' ) );
 				if ( ! empty( $s['trust_any_proxy'] ) ) {
 					echo '<div class="pncp-inline-warning">';
-					self::checkbox( $s, 'trust_any_proxy', __( 'Εμπιστοσύνη σε κάθε αίτημα (συμπεριφορά της 1.4, μη ασφαλής)', 'content-protect' ), __( 'Ενεργή γιατί έτσι δούλευε η έκδοση 1.4. Συμπληρώστε τους proxies σας παρακάτω και ξετσεκάρετέ την. Αφού κλείσει, δεν ξανανοίγει.', 'content-protect' ) );
+					self::checkbox( $s, 'trust_any_proxy', __( 'Trust every request (1.4 behaviour, insecure)', 'scrapelock' ), __( 'On because this is how version 1.4 worked. Fill in your proxies below and uncheck it. Once turned off, it cannot be turned on again.', 'scrapelock' ) );
 					echo '</div>';
 				}
-				self::textarea( $s, 'trusted_proxies', __( 'Άλλοι αξιόπιστοι proxies / load balancers (IP ή CIDR, μία ανά γραμμή):', 'content-protect' ), '', 3 );
+				self::textarea( $s, 'trusted_proxies', __( 'Other trusted proxies / load balancers (IP or CIDR, one per line):', 'scrapelock' ), '', 3 );
 				?>
 				<p class="description">
 					<?php
-					esc_html_e( 'Τι βλέπει ο server σε αυτό το αίτημα:', 'content-protect' );
+					esc_html_e( 'What the server sees on this request:', 'scrapelock' );
 					echo '<br><code>REMOTE_ADDR = ' . esc_html( PNCP_Ip::remote_addr() ) . '</code>';
 					foreach ( PNCP_Ip::ip_headers() as $key ) {
 						if ( ! empty( $_SERVER[ $key ] ) ) {
 							echo '<br><code>' . esc_html( $key . ' = ' . sanitize_text_field( wp_unslash( $_SERVER[ $key ] ) ) ) . '</code>';
 						}
 					}
-					echo '<br>' . esc_html__( 'Αξιόπιστος proxy:', 'content-protect' ) . ' <code>' . esc_html( PNCP_Ip::is_trusted_proxy( PNCP_Ip::remote_addr(), $s, (string) $s['ip_header'] ) ? __( 'ναι', 'content-protect' ) : __( 'όχι', 'content-protect' ) ) . '</code>';
-					echo '<br>' . esc_html__( 'IP που χρησιμοποιεί τώρα το plugin:', 'content-protect' ) . ' <code>' . esc_html( PNCP_Ip::client_ip() ) . '</code>';
+					echo '<br>' . esc_html__( 'Trusted proxy:', 'scrapelock' ) . ' <code>' . esc_html( PNCP_Ip::is_trusted_proxy( PNCP_Ip::remote_addr(), $s, (string) $s['ip_header'] ) ? __( 'yes', 'scrapelock' ) : __( 'no', 'scrapelock' ) ) . '</code>';
+					echo '<br>' . esc_html__( 'IP the plugin uses now:', 'scrapelock' ) . ' <code>' . esc_html( PNCP_Ip::client_ip() ) . '</code>';
 					?>
 				</p>
 			</td>
@@ -631,7 +631,7 @@ final class PNCP_Admin {
 	}
 
 	/**
-	 * Κατάσταση των επίσημων λιστών IP.
+	 * Status of the official IP lists.
 	 */
 	private static function render_ip_lists() {
 		$updated = PNCP_Ip::lists_updated();
@@ -641,19 +641,19 @@ final class PNCP_Admin {
 			'cloudflare' => 'Cloudflare',
 		);
 		?>
-		<h2><?php esc_html_e( 'Επίσημες λίστες IP', 'content-protect' ); ?></h2>
+		<h2><?php esc_html_e( 'Official IP lists', 'scrapelock' ); ?></h2>
 		<ul class="pncp-list-status">
 			<?php foreach ( $names as $key => $label ) : ?>
 				<li>
 					<strong><?php echo esc_html( $label ); ?>:</strong>
 					<?php
 					if ( empty( $updated[ $key ] ) ) {
-						echo esc_html( 'cloudflare' === $key ? __( 'ενσωματωμένη λίστα (δεν έχει κατέβει ακόμη)', 'content-protect' ) : __( 'δεν έχει κατέβει ακόμη, χρησιμοποιείται μόνο DNS', 'content-protect' ) );
+						echo esc_html( 'cloudflare' === $key ? __( 'built-in list (not downloaded yet)', 'scrapelock' ) : __( 'not downloaded yet, only DNS is used', 'scrapelock' ) );
 					} else {
 						echo esc_html(
 							sprintf(
-								/* translators: 1: πλήθος διευθύνσεων, 2: ημερομηνία */
-								__( '%1$s διευθύνσεις, ενημέρωση %2$s', 'content-protect' ),
+								/* translators: 1: number of addresses, 2: date */
+								__( '%1$s addresses, updated %2$s', 'scrapelock' ),
 								number_format_i18n( count( PNCP_Ip::list_of( $key ) ) ),
 								wp_date( get_option( 'date_format' ) . ' ' . get_option( 'time_format' ), $updated[ $key ] )
 							)
@@ -665,56 +665,56 @@ final class PNCP_Admin {
 		</ul>
 		<?php self::action_form_open( 'pncp_log', 'pncp_log' ); ?>
 			<input type="hidden" name="op" value="refresh_lists">
-			<?php submit_button( __( 'Ανανέωση τώρα', 'content-protect' ), 'secondary', 'submit', false ); ?>
+			<?php submit_button( __( 'Refresh now', 'scrapelock' ), 'secondary', 'submit', false ); ?>
 		</form>
 		<?php
 	}
 
 	/**
-	 * Καρτέλα «Feeds και API».
+	 * "Feeds and API" tab.
 	 *
-	 * @param array<string, mixed> $s Ρυθμίσεις.
+	 * @param array<string, mixed> $s Settings.
 	 */
 	private static function tab_content( $s ) {
 		self::render_tokens( $s );
 		self::form_open( 'content' );
 		?>
 		<tr>
-			<th scope="row"><?php esc_html_e( 'Προστατευμένα feeds', 'content-protect' ); ?></th>
+			<th scope="row"><?php esc_html_e( 'Protected feeds', 'scrapelock' ); ?></th>
 			<td>
 				<?php
-				self::textarea( $s, 'private_paths', __( 'Διαδρομές που δεν είναι δημόσιες (μία ανά γραμμή, το * σημαίνει «οτιδήποτε»), π.χ. /skroutz.xml, /feeds/*.xml:', 'content-protect' ) );
-				self::textarea( $s, 'private_ips', __( 'Ή επιτρεπόμενες IP / CIDR της υπηρεσίας (μία ανά γραμμή):', 'content-protect' ), __( 'Χωρίς σωστό token ή επιτρεπόμενη IP απαντά 403. Ισχύει για feeds που φτιάχνει η PHP. Για στατικά αρχεία .xml δείτε την καρτέλα «Κανόνες server».', 'content-protect' ), 3 );
+				self::textarea( $s, 'private_paths', __( 'Paths that are not public (one per line, * means “anything”), e.g. /skroutz.xml, /feeds/*.xml:', 'scrapelock' ) );
+				self::textarea( $s, 'private_ips', __( 'Or allowed IPs / CIDR of the service (one per line):', 'scrapelock' ), __( 'Without a valid token or an allowed IP it returns 403. Applies to feeds generated by PHP. For static .xml files see the “Server rules” tab.', 'scrapelock' ), 3 );
 				?>
 			</td>
 		</tr>
 		<tr>
-			<th scope="row"><?php esc_html_e( 'REST API', 'content-protect' ); ?></th>
+			<th scope="row"><?php esc_html_e( 'REST API', 'scrapelock' ); ?></th>
 			<td>
-				<?php self::checkbox( $s, 'rest_hide_content', __( 'Κρύψιμο του κειμένου (content, excerpt) των άρθρων, σελίδων και προϊόντων από επισκέπτες', 'content-protect' ), __( 'Το REST μένει ανοιχτό για φόρμες, oEmbed, SEO plugins και δικά σας endpoints. Όσοι μπορούν να γράψουν άρθρα βλέπουν κανονικά το κείμενο. Εξαιρέσεις από κώδικα: φίλτρο pncp_rest_hide_content.', 'content-protect' ) ); ?>
+				<?php self::checkbox( $s, 'rest_hide_content', __( 'Hide the text (content, excerpt) of posts, pages and products from visitors', 'scrapelock' ), __( 'REST stays open for forms, oEmbed, SEO plugins and your own endpoints. Users who can write posts see the text normally. Exceptions from code: filter pncp_rest_hide_content.', 'scrapelock' ) ); ?>
 			</td>
 		</tr>
 		<tr>
-			<th scope="row"><?php esc_html_e( 'GraphQL', 'content-protect' ); ?></th>
+			<th scope="row"><?php esc_html_e( 'GraphQL', 'scrapelock' ); ?></th>
 			<td>
 				<?php
-				self::checkbox( $s, 'graphql_hide_content', __( 'Κρύψιμο του κειμένου στο WPGraphQL (content, excerpt, περιγραφές προϊόντων)', 'content-protect' ) );
-				echo '<p class="description">' . esc_html( PNCP_Graphql::active() ? __( 'Το WPGraphQL είναι ενεργό: ισχύουν και ο έλεγχος bots, οι αποκλεισμοί και το όριο REST / GraphQL.', 'content-protect' ) : __( 'Το WPGraphQL δεν είναι εγκατεστημένο· η ρύθμιση θα ισχύσει αν το εγκαταστήσετε.', 'content-protect' ) ) . '</p>';
+				self::checkbox( $s, 'graphql_hide_content', __( 'Hide the text in WPGraphQL (content, excerpt, product descriptions)', 'scrapelock' ) );
+				echo '<p class="description">' . esc_html( PNCP_Graphql::active() ? __( 'WPGraphQL is active: the bot check, blocks and the REST / GraphQL limit apply too.', 'scrapelock' ) : __( 'WPGraphQL is not installed; the setting will apply if you install it.', 'scrapelock' ) ) . '</p>';
 				?>
 			</td>
 		</tr>
 		<tr>
-			<th scope="row"><?php esc_html_e( 'RSS / Atom feeds', 'content-protect' ); ?></th>
+			<th scope="row"><?php esc_html_e( 'RSS / Atom feeds', 'scrapelock' ); ?></th>
 			<td>
 				<?php
 				self::radios(
 					$s,
 					'feed_mode',
-					__( 'RSS / Atom feeds', 'content-protect' ),
+					__( 'RSS / Atom feeds', 'scrapelock' ),
 					array(
-						'excerpt'  => __( 'Μόνο σύντομη περίληψη με σύνδεσμο προς το άρθρο (συνιστάται)', 'content-protect' ),
-						'full'     => __( 'Πλήρες κείμενο', 'content-protect' ),
-						'disabled' => __( 'Απενεργοποιημένα', 'content-protect' ),
+						'excerpt'  => __( 'Short excerpt only, with a link to the post (recommended)', 'scrapelock' ),
+						'full'     => __( 'Full text', 'scrapelock' ),
+						'disabled' => __( 'Disabled', 'scrapelock' ),
 					)
 				);
 				?>
@@ -725,32 +725,32 @@ final class PNCP_Admin {
 	}
 
 	/**
-	 * Token, URLs ανά υπηρεσία και στατιστικά των feeds.
+	 * Token, per-service URLs and feed statistics.
 	 *
-	 * @param array<string, mixed> $s Ρυθμίσεις.
+	 * @param array<string, mixed> $s Settings.
 	 */
 	private static function render_tokens( $s ) {
 		$data  = PNCP_Private_Urls::token_data();
 		$key   = 'pncp_new_token_' . get_current_user_id();
 		$fresh = (string) get_transient( $key );
 		if ( '' !== $fresh ) {
-			delete_transient( $key ); // Φαίνεται μία μόνο φορά.
+			delete_transient( $key ); // Shown only once.
 		}
 		$paths = PNCP_Options::parse_list( $s['private_paths'] );
 		$stats = PNCP_Private_Urls::stats();
 		?>
 		<section class="pncp-card pncp-card--wide" aria-labelledby="pncp-token-title">
-			<h2 id="pncp-token-title"><?php esc_html_e( 'Token πρόσβασης', 'content-protect' ); ?></h2>
+			<h2 id="pncp-token-title"><?php esc_html_e( 'Access token', 'scrapelock' ); ?></h2>
 			<?php if ( '' !== $fresh ) : ?>
 				<div class="notice notice-success inline pncp-fresh-token">
-					<p><strong><?php esc_html_e( 'Νέο token. Αντιγράψτε το τώρα: δεν θα ξαναεμφανιστεί.', 'content-protect' ); ?></strong></p>
-					<p><code id="pncp-token-value" class="pncp-token"><?php echo esc_html( $fresh ); ?></code> <button type="button" class="button pncp-copy" data-target="pncp-token-value"><?php esc_html_e( 'Αντιγραφή', 'content-protect' ); ?></button></p>
-					<p><?php esc_html_e( 'Header για ERP / API:', 'content-protect' ); ?> <code>X-Content-Protect-Token: <?php echo esc_html( $fresh ); ?></code> <?php esc_html_e( 'ή', 'content-protect' ); ?> <code>Authorization: Bearer <?php echo esc_html( $fresh ); ?></code></p>
+					<p><strong><?php esc_html_e( 'New token. Copy it now: it will not be shown again.', 'scrapelock' ); ?></strong></p>
+					<p><code id="pncp-token-value" class="pncp-token"><?php echo esc_html( $fresh ); ?></code> <button type="button" class="button pncp-copy" data-target="pncp-token-value"><?php esc_html_e( 'Copy', 'scrapelock' ); ?></button></p>
+					<p><?php esc_html_e( 'Header for ERP / API:', 'scrapelock' ); ?> <code>X-Content-Protect-Token: <?php echo esc_html( $fresh ); ?></code> <?php esc_html_e( 'or', 'scrapelock' ); ?> <code>Authorization: Bearer <?php echo esc_html( $fresh ); ?></code></p>
 					<?php if ( $paths ) : ?>
-						<p><?php esc_html_e( 'URL για Skroutz, BestPrice, Google Merchant (δέχονται μόνο URL):', 'content-protect' ); ?></p>
+						<p><?php esc_html_e( 'URL for Skroutz, BestPrice, Google Merchant (they accept only URLs):', 'scrapelock' ); ?></p>
 						<ul>
 							<?php foreach ( $paths as $i => $pattern ) : ?>
-								<li><code id="pncp-url-<?php echo (int) $i; ?>"><?php echo esc_html( PNCP_Private_Urls::example_url( $pattern, $fresh ) ); ?></code> <button type="button" class="button button-small pncp-copy" data-target="pncp-url-<?php echo (int) $i; ?>"><?php esc_html_e( 'Αντιγραφή', 'content-protect' ); ?></button></li>
+								<li><code id="pncp-url-<?php echo (int) $i; ?>"><?php echo esc_html( PNCP_Private_Urls::example_url( $pattern, $fresh ) ); ?></code> <button type="button" class="button button-small pncp-copy" data-target="pncp-url-<?php echo (int) $i; ?>"><?php esc_html_e( 'Copy', 'scrapelock' ); ?></button></li>
 							<?php endforeach; ?>
 						</ul>
 					<?php endif; ?>
@@ -759,12 +759,12 @@ final class PNCP_Admin {
 			<p>
 				<?php
 				if ( '' === $data['hash'] ) {
-					esc_html_e( 'Δεν υπάρχει token. Δημιουργήστε ένα για να δώσετε πρόσβαση στις υπηρεσίες.', 'content-protect' );
+					esc_html_e( 'There is no token. Create one to give the services access.', 'scrapelock' );
 				} else {
 					echo esc_html(
 						sprintf(
-							/* translators: 1: τελευταίοι 4 χαρακτήρες, 2: ημερομηνία */
-							__( 'Ενεργό token που τελειώνει σε …%1$s, από %2$s. Αποθηκεύεται μόνο το hash του, οπότε δεν μπορεί να εμφανιστεί ξανά.', 'content-protect' ),
+							/* translators: 1: last 4 characters, 2: date */
+							__( 'Active token ending in …%1$s, since %2$s. Only its hash is stored, so it cannot be shown again.', 'scrapelock' ),
 							$data['hint'],
 							$data['created'] ? wp_date( get_option( 'date_format' ), $data['created'] ) : '—'
 						)
@@ -777,8 +777,8 @@ final class PNCP_Admin {
 					<?php
 					echo esc_html(
 						sprintf(
-							/* translators: 1: τελευταίοι 4 χαρακτήρες, 2: ημερομηνία */
-							__( 'Το προηγούμενο token (…%1$s) ισχύει ακόμη μέχρι %2$s, ώστε να προλάβετε να αλλάξετε το URL στις υπηρεσίες.', 'content-protect' ),
+							/* translators: 1: last 4 characters, 2: date */
+							__( 'The previous token (…%1$s) is still valid until %2$s, so you have time to change the URL in the services.', 'scrapelock' ),
 							$data['prev_hint'],
 							wp_date( get_option( 'date_format' ) . ' ' . get_option( 'time_format' ), $data['prev_until'] )
 						)
@@ -787,45 +787,45 @@ final class PNCP_Admin {
 				</p>
 				<?php self::action_form_open( 'pncp_token', 'pncp_token' ); ?>
 					<input type="hidden" name="op" value="revoke_prev">
-					<?php submit_button( __( 'Ακύρωση του προηγούμενου τώρα', 'content-protect' ), 'secondary', 'submit', false ); ?>
+					<?php submit_button( __( 'Revoke the previous one now', 'scrapelock' ), 'secondary', 'submit', false ); ?>
 				</form>
 			<?php endif; ?>
 			<?php self::action_form_open( 'pncp_token', 'pncp_token', 'pncp-token-form' ); ?>
 				<input type="hidden" name="op" value="rotate">
 				<p>
 					<?php if ( '' !== $data['hash'] ) : ?>
-						<label for="pncp-grace"><?php esc_html_e( 'Το τρέχον token να ισχύει ακόμη:', 'content-protect' ); ?></label>
+						<label for="pncp-grace"><?php esc_html_e( 'Keep the current token valid for:', 'scrapelock' ); ?></label>
 						<select id="pncp-grace" name="grace">
-							<option value="0"><?php esc_html_e( 'Καθόλου (ακύρωση αμέσως)', 'content-protect' ); ?></option>
-							<option value="1"><?php esc_html_e( '1 ημέρα', 'content-protect' ); ?></option>
-							<option value="7" selected><?php esc_html_e( '7 ημέρες', 'content-protect' ); ?></option>
-							<option value="30"><?php esc_html_e( '30 ημέρες', 'content-protect' ); ?></option>
+							<option value="0"><?php esc_html_e( 'Not at all (revoke immediately)', 'scrapelock' ); ?></option>
+							<option value="1"><?php esc_html_e( '1 day', 'scrapelock' ); ?></option>
+							<option value="7" selected><?php esc_html_e( '7 days', 'scrapelock' ); ?></option>
+							<option value="30"><?php esc_html_e( '30 days', 'scrapelock' ); ?></option>
 						</select>
 					<?php endif; ?>
-					<button type="submit" class="button button-primary"><?php echo esc_html( '' === $data['hash'] ? __( 'Δημιουργία token', 'content-protect' ) : __( 'Νέο token (εναλλαγή)', 'content-protect' ) ); ?></button>
+					<button type="submit" class="button button-primary"><?php echo esc_html( '' === $data['hash'] ? __( 'Create token', 'scrapelock' ) : __( 'New token (rotate)', 'scrapelock' ) ); ?></button>
 				</p>
 			</form>
-			<p class="description"><?php esc_html_e( 'Header για ERP και δικά σας integrations (δεν φαίνεται σε logs και ιστορικό). Token στο URL για Skroutz, BestPrice και Google Merchant, που δέχονται μόνο URL.', 'content-protect' ); ?></p>
+			<p class="description"><?php esc_html_e( 'Header for ERP and your own integrations (not visible in logs and history). Token in the URL for Skroutz, BestPrice and Google Merchant, which accept only URLs.', 'scrapelock' ); ?></p>
 
 			<?php if ( $paths ) : ?>
-				<h3><?php esc_html_e( 'Πρόσβαση ανά feed', 'content-protect' ); ?></h3>
+				<h3><?php esc_html_e( 'Access per feed', 'scrapelock' ); ?></h3>
 				<table class="widefat striped pncp-table">
 					<thead>
 						<tr>
-							<th scope="col"><?php esc_html_e( 'Διαδρομή', 'content-protect' ); ?></th>
-							<th scope="col"><?php esc_html_e( 'Επιτυχίες', 'content-protect' ); ?></th>
-							<th scope="col"><?php esc_html_e( 'Τελευταία πρόσβαση', 'content-protect' ); ?></th>
-							<th scope="col"><?php esc_html_e( 'Με', 'content-protect' ); ?></th>
-							<th scope="col"><?php esc_html_e( 'Αρνήσεις', 'content-protect' ); ?></th>
+							<th scope="col"><?php esc_html_e( 'Path', 'scrapelock' ); ?></th>
+							<th scope="col"><?php esc_html_e( 'Successes', 'scrapelock' ); ?></th>
+							<th scope="col"><?php esc_html_e( 'Last access', 'scrapelock' ); ?></th>
+							<th scope="col"><?php esc_html_e( 'Via', 'scrapelock' ); ?></th>
+							<th scope="col"><?php esc_html_e( 'Denials', 'scrapelock' ); ?></th>
 						</tr>
 					</thead>
 					<tbody>
 						<?php
 						$via_labels = array(
-							'header' => __( 'header', 'content-protect' ),
-							'url'    => __( 'token στο URL', 'content-protect' ),
-							'ip'     => __( 'επιτρεπόμενη IP', 'content-protect' ),
-							'admin'  => __( 'διαχειριστής', 'content-protect' ),
+							'header' => __( 'header', 'scrapelock' ),
+							'url'    => __( 'token in URL', 'scrapelock' ),
+							'ip'     => __( 'allowed IP', 'scrapelock' ),
+							'admin'  => __( 'administrator', 'scrapelock' ),
 						);
 						foreach ( $paths as $pattern ) :
 							$row = isset( $stats[ strtolower( $pattern ) ] ) ? $stats[ strtolower( $pattern ) ] : array();
@@ -833,7 +833,7 @@ final class PNCP_Admin {
 							<tr>
 								<td><code><?php echo esc_html( $pattern ); ?></code></td>
 								<td><?php echo esc_html( number_format_i18n( isset( $row['ok'] ) ? (int) $row['ok'] : 0 ) ); ?></td>
-								<td><?php echo esc_html( ! empty( $row['last_ok'] ) ? wp_date( get_option( 'date_format' ) . ' ' . get_option( 'time_format' ), (int) $row['last_ok'] ) . ' · ' . $row['last_ip'] : __( 'Ποτέ', 'content-protect' ) ); ?></td>
+								<td><?php echo esc_html( ! empty( $row['last_ok'] ) ? wp_date( get_option( 'date_format' ) . ' ' . get_option( 'time_format' ), (int) $row['last_ok'] ) . ' · ' . $row['last_ip'] : __( 'Never', 'scrapelock' ) ); ?></td>
 								<td><?php echo esc_html( ! empty( $row['last_via'] ) && isset( $via_labels[ $row['last_via'] ] ) ? $via_labels[ $row['last_via'] ] : '—' ); ?></td>
 								<td><?php echo esc_html( number_format_i18n( isset( $row['denied'] ) ? (int) $row['denied'] : 0 ) ); ?></td>
 							</tr>
@@ -846,53 +846,53 @@ final class PNCP_Admin {
 	}
 
 	/**
-	 * Καρτέλα «Εικόνες».
+	 * "Images" tab.
 	 *
-	 * @param array<string, mixed> $s Ρυθμίσεις.
+	 * @param array<string, mixed> $s Settings.
 	 */
 	private static function tab_images( $s ) {
 		self::form_open( 'images' );
 		?>
 		<tr>
-			<th scope="row"><?php esc_html_e( 'Υδατογράφημα', 'content-protect' ); ?></th>
+			<th scope="row"><?php esc_html_e( 'Watermark', 'scrapelock' ); ?></th>
 			<td>
 				<?php
-				self::checkbox( $s, 'watermark_enabled', __( 'Υδατογράφημα στις νέες εικόνες', 'content-protect' ), __( 'Μπαίνει στα μεγέθη που φτιάχνει το WordPress (thumbnails, medium, large). Για εικόνες που υπάρχουν ήδη, χρησιμοποιήστε το εργαλείο πιο κάτω. Το εικονίδιο site, το λογότυπο και το ίδιο το υδατογράφημα δεν το παίρνουν ποτέ.', 'content-protect' ) );
+				self::checkbox( $s, 'watermark_enabled', __( 'Watermark new images', 'scrapelock' ), __( 'It is added to the sizes WordPress generates (thumbnails, medium, large). For existing images, use the tool below. The site icon, the logo and the watermark itself never get it.', 'scrapelock' ) );
 				if ( ! PNCP_Watermark::available() ) {
-					echo '<p class="pncp-inline-warning"><strong>' . esc_html__( 'Η βιβλιοθήκη GD της PHP δεν είναι διαθέσιμη στον server, οπότε το υδατογράφημα δεν θα εφαρμοστεί.', 'content-protect' ) . '</strong></p>';
+					echo '<p class="pncp-inline-warning"><strong>' . esc_html__( 'The PHP GD library is not available on the server, so the watermark will not be applied.', 'scrapelock' ) . '</strong></p>';
 				}
-				self::checkbox( $s, 'watermark_full', __( 'Υδατογράφημα και στην εικόνα πλήρους μεγέθους', 'content-protect' ), __( 'Χωρίς αυτό, η πλήρης εικόνα μένει καθαρή και κατεβαίνει από τη διεύθυνσή της. Το καθαρό πρωτότυπο φυλάγεται σε κρυφό φάκελο, ώστε να γίνεται πάντα επαναφορά.', 'content-protect' ) );
-				self::checkbox( $s, 'watermark_products', __( 'Υδατογράφημα και στις εικόνες προϊόντων WooCommerce', 'content-protect' ) );
+				self::checkbox( $s, 'watermark_full', __( 'Watermark the full-size image too', 'scrapelock' ), __( 'Without this, the full image stays clean and can be downloaded from its URL. The clean original is kept in a hidden folder, so it can always be restored.', 'scrapelock' ) );
+				self::checkbox( $s, 'watermark_products', __( 'Watermark WooCommerce product images too', 'scrapelock' ) );
 				?>
-				<p class="pncp-inline-warning" id="pncp-products-warning"><?php esc_html_e( 'Δεν συνιστάται: Google Merchant Center, Skroutz και BestPrice απορρίπτουν εικόνες προϊόντων με υδατογράφημα, και τα feeds δείχνουν συνήθως την εικόνα πλήρους μεγέθους. Για τα προϊόντα, η προστασία από hotlink (καρτέλα «Κανόνες server») είναι καλύτερη επιλογή. Αν μια εικόνα με υδατογράφημα γίνει αργότερα εικόνα προϊόντος, λογότυπο ή εικονίδιο, το υδατογράφημα αφαιρείται αυτόματα.', 'content-protect' ); ?></p>
+				<p class="pncp-inline-warning" id="pncp-products-warning"><?php esc_html_e( 'Not recommended: Google Merchant Center, Skroutz and BestPrice reject product images with a watermark, and feeds usually show the full-size image. For products, hotlink protection (“Server rules” tab) is a better choice. If a watermarked image later becomes a product image, logo or icon, the watermark is removed automatically.', 'scrapelock' ); ?></p>
 			</td>
 		</tr>
 		<tr>
-			<th scope="row"><?php esc_html_e( 'Εμφάνιση', 'content-protect' ); ?></th>
+			<th scope="row"><?php esc_html_e( 'Appearance', 'scrapelock' ); ?></th>
 			<td>
 				<?php
-				self::number( $s, 'watermark_image_id', __( 'ID εικόνας PNG από τη Βιβλιοθήκη πολυμέσων (0 = το domain του site ως κείμενο):', 'content-protect' ), __( 'Συνιστάται PNG με διάφανο φόντο (π.χ. το λογότυπο). Το ID φαίνεται στη διεύθυνση όταν ανοίγετε την εικόνα στη Βιβλιοθήκη.', 'content-protect' ) );
+				self::number( $s, 'watermark_image_id', __( 'PNG image ID from the Media Library (0 = the site\'s domain as text):', 'scrapelock' ), __( 'A PNG with a transparent background is recommended (e.g. the logo). The ID appears in the address when you open the image in the Library.', 'scrapelock' ) );
 				?>
-				<p><label for="pncp-watermark_position"><?php esc_html_e( 'Θέση:', 'content-protect' ); ?></label>
+				<p><label for="pncp-watermark_position"><?php esc_html_e( 'Position:', 'scrapelock' ); ?></label>
 				<?php
 				self::select(
 					$s,
 					'watermark_position',
 					array(
-						'br'     => __( 'Κάτω δεξιά', 'content-protect' ),
-						'bl'     => __( 'Κάτω αριστερά', 'content-protect' ),
-						'tr'     => __( 'Πάνω δεξιά', 'content-protect' ),
-						'tl'     => __( 'Πάνω αριστερά', 'content-protect' ),
-						'center' => __( 'Στο κέντρο', 'content-protect' ),
-						'tiled'  => __( 'Επανάληψη σε όλη την εικόνα, διαγώνια (δύσκολα αφαιρείται)', 'content-protect' ),
+						'br'     => __( 'Bottom right', 'scrapelock' ),
+						'bl'     => __( 'Bottom left', 'scrapelock' ),
+						'tr'     => __( 'Top right', 'scrapelock' ),
+						'tl'     => __( 'Top left', 'scrapelock' ),
+						'center' => __( 'Centre', 'scrapelock' ),
+						'tiled'  => __( 'Repeat diagonally across the whole image (hard to remove)', 'scrapelock' ),
 					)
 				);
 				?>
 				</p>
 				<?php
-				self::number( $s, 'watermark_size', __( 'Μέγεθος (% του πλάτους της εικόνας):', 'content-protect' ), __( 'Στη διαγώνια επανάληψη, το μέγεθος κάθε επανάληψης.', 'content-protect' ) );
-				self::number( $s, 'watermark_opacity', __( 'Αδιαφάνεια (%):', 'content-protect' ) );
-				self::number( $s, 'watermark_min_width', __( 'Μόνο σε μεγέθη με πλάτος από (px):', 'content-protect' ), __( 'Τα μικρά thumbnails μένουν καθαρά.', 'content-protect' ) );
+				self::number( $s, 'watermark_size', __( 'Size (% of the image width):', 'scrapelock' ), __( 'With diagonal repeat, the size of each repetition.', 'scrapelock' ) );
+				self::number( $s, 'watermark_opacity', __( 'Opacity (%):', 'scrapelock' ) );
+				self::number( $s, 'watermark_min_width', __( 'Only on sizes with width from (px):', 'scrapelock' ), __( 'Small thumbnails stay clean.', 'scrapelock' ) );
 				?>
 			</td>
 		</tr>
@@ -902,23 +902,23 @@ final class PNCP_Admin {
 	}
 
 	/**
-	 * Εργαλείο εφαρμογής / αφαίρεσης σε εικόνες που υπάρχουν ήδη.
+	 * Apply / remove tool for existing images.
 	 *
-	 * @param array<string, mixed> $s Ρυθμίσεις.
+	 * @param array<string, mixed> $s Settings.
 	 */
 	private static function render_watermark_tool( $s ) {
 		$total = self::image_count();
 		?>
 		<section class="pncp-card pncp-card--wide" aria-labelledby="pncp-tool-title">
-			<h2 id="pncp-tool-title"><?php esc_html_e( 'Εικόνες που υπάρχουν ήδη', 'content-protect' ); ?></h2>
-			<p><?php echo esc_html( sprintf( /* translators: %s: πλήθος */ __( 'Εικόνες JPEG / PNG / WebP στη βιβλιοθήκη: %s.', 'content-protect' ), number_format_i18n( $total ) ) ); ?></p>
-			<p class="description"><?php esc_html_e( 'Κάθε εικόνα ξαναφτιάχνεται από το καθαρό πρωτότυπο, οπότε δεν μπαίνει ποτέ διπλό υδατογράφημα, ούτε σε εικόνες που πήραν υδατογράφημα από την έκδοση 1.x. Αν η σελίδα κλείσει στη μέση, πατήστε ξανά: συνεχίζει από εκεί που σταμάτησε. Κρατήστε backup του φακέλου uploads πριν ξεκινήσετε.', 'content-protect' ); ?></p>
+			<h2 id="pncp-tool-title"><?php esc_html_e( 'Existing images', 'scrapelock' ); ?></h2>
+			<p><?php echo esc_html( sprintf( /* translators: %s: count */ __( 'JPEG / PNG / WebP images in the library: %s.', 'scrapelock' ), number_format_i18n( $total ) ) ); ?></p>
+			<p class="description"><?php esc_html_e( 'Each image is regenerated from the clean original, so a watermark is never added twice, not even on images watermarked by version 1.x. If the page closes midway, click again: it resumes where it stopped. Keep a backup of the uploads folder before you start.', 'scrapelock' ); ?></p>
 			<?php if ( empty( $s['watermark_enabled'] ) ) : ?>
-				<p class="pncp-inline-warning"><?php esc_html_e( 'Το υδατογράφημα είναι ανενεργό: η «Εφαρμογή» θα αφήσει τις εικόνες καθαρές. Ενεργοποιήστε το και αποθηκεύστε πρώτα.', 'content-protect' ); ?></p>
+				<p class="pncp-inline-warning"><?php esc_html_e( 'The watermark is off: “Apply” will leave the images clean. Enable it and save first.', 'scrapelock' ); ?></p>
 			<?php endif; ?>
 			<p class="pncp-tool-buttons">
-				<button type="button" class="button button-primary pncp-wm-run" data-mode="apply" data-total="<?php echo (int) $total; ?>"<?php disabled( ! PNCP_Watermark::available() ); ?>><?php esc_html_e( 'Εφαρμογή υδατογραφήματος', 'content-protect' ); ?></button>
-				<button type="button" class="button pncp-wm-run" data-mode="remove" data-total="<?php echo (int) $total; ?>"><?php esc_html_e( 'Αφαίρεση υδατογραφήματος', 'content-protect' ); ?></button>
+				<button type="button" class="button button-primary pncp-wm-run" data-mode="apply" data-total="<?php echo (int) $total; ?>"<?php disabled( ! PNCP_Watermark::available() ); ?>><?php esc_html_e( 'Apply watermark', 'scrapelock' ); ?></button>
+				<button type="button" class="button pncp-wm-run" data-mode="remove" data-total="<?php echo (int) $total; ?>"><?php esc_html_e( 'Remove watermark', 'scrapelock' ); ?></button>
 			</p>
 			<div class="pncp-progress" hidden>
 				<progress max="100" value="0" aria-labelledby="pncp-progress-text"></progress>
@@ -929,37 +929,37 @@ final class PNCP_Admin {
 	}
 
 	/**
-	 * Πόσες εικόνες έχει η βιβλιοθήκη.
+	 * How many images the library has.
 	 *
 	 * @return int
 	 */
 	private static function image_count() {
 		global $wpdb;
-		// phpcs:ignore WordPress.DB.DirectDatabaseQuery -- Οθόνη διαχείρισης.
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery -- Admin screen.
 		return (int) $wpdb->get_var( "SELECT COUNT(*) FROM {$wpdb->posts} WHERE post_type = 'attachment' AND post_mime_type IN ('image/jpeg','image/png','image/webp')" );
 	}
 
 	/**
-	 * AJAX: μια παρτίδα εικόνων. Ο δείκτης (cursor) είναι το τελευταίο ID που ολοκληρώθηκε.
+	 * AJAX: one batch of images. The cursor is the last completed ID.
 	 */
 	public static function ajax_wm_batch() {
 		check_ajax_referer( 'pncp_wm_batch', 'nonce' );
 		if ( ! current_user_can( 'manage_options' ) ) {
-			wp_send_json_error( array( 'message' => __( 'Δεν έχετε δικαίωμα.', 'content-protect' ) ), 403 );
+			wp_send_json_error( array( 'message' => __( 'You are not allowed to do this.', 'scrapelock' ) ), 403 );
 		}
 		$mode   = isset( $_POST['mode'] ) && 'remove' === $_POST['mode'] ? 'remove' : 'apply';
 		$cursor = isset( $_POST['cursor'] ) ? absint( $_POST['cursor'] ) : 0;
 		$other  = 'apply' === $mode ? 'remove' : 'apply';
 		if ( 0 === $cursor ) {
-			// Νέα εκτέλεση: αν η ίδια ενέργεια είχε διακοπεί, συνεχίζει από εκεί που σταμάτησε. Η άλλη
-			// ενέργεια ξεχνά τη θέση της (μετά από «Αφαίρεση» η «Εφαρμογή» ξεκινά από την αρχή).
+			// New run: if the same action was interrupted, it resumes where it stopped. The other
+			// action forgets its position (after "Remove", "Apply" starts from the beginning).
 			$cursor = (int) get_option( 'pncp_wm_cursor_' . $mode, 0 );
 			delete_option( 'pncp_wm_cursor_' . $other );
 		}
 
 		global $wpdb;
 		$batch = (int) apply_filters( 'pncp_watermark_batch_size', 3 );
-		// phpcs:ignore WordPress.DB.DirectDatabaseQuery -- Παρτίδα του εργαλείου.
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery -- Tool batch.
 		$ids = $wpdb->get_col( $wpdb->prepare( "SELECT ID FROM {$wpdb->posts} WHERE post_type = 'attachment' AND post_mime_type IN ('image/jpeg','image/png','image/webp') AND ID > %d ORDER BY ID ASC LIMIT %d", $cursor, max( 1, $batch ) ) );
 
 		$errors = 0;
@@ -974,7 +974,7 @@ final class PNCP_Admin {
 		if ( $done ) {
 			delete_option( 'pncp_wm_cursor_' . $mode );
 		}
-		// phpcs:ignore WordPress.DB.DirectDatabaseQuery -- Πρόοδος του εργαλείου.
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery -- Tool progress.
 		$position = (int) $wpdb->get_var( $wpdb->prepare( "SELECT COUNT(*) FROM {$wpdb->posts} WHERE post_type = 'attachment' AND post_mime_type IN ('image/jpeg','image/png','image/webp') AND ID <= %d", $cursor ) );
 		wp_send_json_success(
 			array(
@@ -987,55 +987,55 @@ final class PNCP_Admin {
 	}
 
 	/**
-	 * Καρτέλα «Κανόνες server».
+	 * "Server rules" tab.
 	 *
-	 * @param array<string, mixed> $s Ρυθμίσεις.
+	 * @param array<string, mixed> $s Settings.
 	 */
-	private static function tab_rules( $s ) { // phpcs:ignore Generic.CodeAnalysis.UnusedFunctionParameter.Found -- Ίδια υπογραφή με τις άλλες καρτέλες.
+	private static function tab_rules( $s ) { // phpcs:ignore Generic.CodeAnalysis.UnusedFunctionParameter.Found -- Same signature as the other tabs.
 		?>
-		<p><?php esc_html_e( 'Το plugin ελέγχει μόνο αιτήματα που φτάνουν στην PHP. Σελίδες από page cache, εικόνες και στατικά αρχεία τα σερβίρει απευθείας ο server ή το CDN. Οι παρακάτω κανόνες είναι φτιαγμένοι για το δικό σας site, με τις τρέχουσες ρυθμίσεις. Δοκιμάστε τους πρώτα σε staging.', 'content-protect' ); ?></p>
-		<p class="description"><?php esc_html_e( 'Το plugin δεν κρατά API token του Cloudflare στη βάση: εσείς περνάτε τους κανόνες, εκεί που έχετε ήδη πρόσβαση.', 'content-protect' ); ?></p>
+		<p><?php esc_html_e( 'The plugin only checks requests that reach PHP. Pages from page cache, images and static files are served directly by the server or the CDN. The rules below are generated for your site, with the current settings. Test them on staging first.', 'scrapelock' ); ?></p>
+		<p class="description"><?php esc_html_e( 'The plugin does not keep a Cloudflare API token in the database: you add the rules yourself, where you already have access.', 'scrapelock' ); ?></p>
 
-		<h2><?php esc_html_e( 'Cloudflare', 'content-protect' ); ?></h2>
-		<p class="description"><?php esc_html_e( 'Security → WAF → Custom rules → Create rule → Edit expression. Επικολλήστε την έκφραση και επιλέξτε την ενέργεια που αναφέρεται.', 'content-protect' ); ?></p>
+		<h2><?php esc_html_e( 'Cloudflare', 'scrapelock' ); ?></h2>
+		<p class="description"><?php esc_html_e( 'Security → WAF → Custom rules → Create rule → Edit expression. Paste the expression and choose the action shown.', 'scrapelock' ); ?></p>
 		<?php foreach ( PNCP_Rules::cloudflare() as $key => $rule ) : ?>
 			<h3><?php echo esc_html( $rule['title'] ); ?> <span class="pncp-badge"><?php echo esc_html( $rule['action'] ); ?></span></h3>
 			<?php self::code_block( 'pncp-cf-' . $key, $rule['expression'], 3 ); ?>
 		<?php endforeach; ?>
 
-		<h2><?php esc_html_e( 'Nginx', 'content-protect' ); ?></h2>
-		<p class="description"><?php esc_html_e( '1) Μέσα στο http { }, π.χ. στο αρχείο /etc/nginx/conf.d/content-protect.conf:', 'content-protect' ); ?></p>
+		<h2><?php esc_html_e( 'Nginx', 'scrapelock' ); ?></h2>
+		<p class="description"><?php esc_html_e( '1) Inside http { }, e.g. in the file /etc/nginx/conf.d/scrapelock.conf:', 'scrapelock' ); ?></p>
 		<?php self::code_block( 'pncp-nginx-http', PNCP_Rules::nginx_http(), 8 ); ?>
-		<p class="description"><?php esc_html_e( '2) Μέσα στο server { } του site, πριν από τα υπόλοιπα location. Μετά: nginx -t και reload.', 'content-protect' ); ?></p>
+		<p class="description"><?php esc_html_e( '2) Inside the site\'s server { }, before the other location blocks. Then: nginx -t and reload.', 'scrapelock' ); ?></p>
 		<?php self::code_block( 'pncp-nginx-server', PNCP_Rules::nginx_server(), 18 ); ?>
 
-		<h2><?php esc_html_e( 'Apache (.htaccess, πάνω από το # BEGIN WordPress)', 'content-protect' ); ?></h2>
+		<h2><?php esc_html_e( 'Apache (.htaccess, above # BEGIN WordPress)', 'scrapelock' ); ?></h2>
 		<?php self::code_block( 'pncp-apache', PNCP_Rules::apache(), 14 ); ?>
 		<?php
 	}
 
 	/**
-	 * Πεδίο κώδικα μόνο για ανάγνωση με κουμπί αντιγραφής.
+	 * Read-only code field with a copy button.
 	 *
 	 * @param string $id   ID.
-	 * @param string $code Κώδικας.
-	 * @param int    $rows Γραμμές.
+	 * @param string $code Code.
+	 * @param int    $rows Rows.
 	 */
 	private static function code_block( $id, $code, $rows ) {
 		printf(
 			'<div class="pncp-code"><textarea id="%1$s" class="large-text code" rows="%2$d" readonly aria-label="%3$s">%4$s</textarea><p><button type="button" class="button pncp-copy" data-target="%1$s">%5$s</button></p></div>',
 			esc_attr( $id ),
 			(int) $rows,
-			esc_attr__( 'Κανόνες για αντιγραφή', 'content-protect' ),
+			esc_attr__( 'Rules to copy', 'scrapelock' ),
 			esc_textarea( $code ),
-			esc_html__( 'Αντιγραφή', 'content-protect' )
+			esc_html__( 'Copy', 'scrapelock' )
 		);
 	}
 
 	/**
-	 * Καρτέλα «Αρχείο»: σύνοψη 24ώρου, ενεργοί αποκλεισμοί, τελευταία συμβάντα.
+	 * "Log" tab: 24-hour summary, active bans, recent events.
 	 *
-	 * @param array<string, mixed> $s Ρυθμίσεις.
+	 * @param array<string, mixed> $s Settings.
 	 */
 	private static function tab_log( $s ) {
 		$summary = PNCP_Log::summary( 24 );
@@ -1043,34 +1043,34 @@ final class PNCP_Admin {
 		$bans    = PNCP_Log::active_bans();
 		$format  = get_option( 'date_format' ) . ' ' . get_option( 'time_format' );
 		?>
-		<h2><?php esc_html_e( 'Τελευταίες 24 ώρες', 'content-protect' ); ?></h2>
-		<p class="pncp-big-number"><?php echo esc_html( sprintf( /* translators: %s: πλήθος */ __( '%s μπλοκαρισμένα αιτήματα', 'content-protect' ), number_format_i18n( $summary['total'] ) ) ); ?></p>
+		<h2><?php esc_html_e( 'Last 24 hours', 'scrapelock' ); ?></h2>
+		<p class="pncp-big-number"><?php echo esc_html( sprintf( /* translators: %s: count */ __( '%s blocked requests', 'scrapelock' ), number_format_i18n( $summary['total'] ) ) ); ?></p>
 		<div class="pncp-cards">
 			<section class="pncp-card">
-				<h3><?php esc_html_e( 'Ανά λόγο', 'content-protect' ); ?></h3>
+				<h3><?php esc_html_e( 'By reason', 'scrapelock' ); ?></h3>
 				<?php self::count_list( $summary['reasons'], $reasons ); ?>
 			</section>
 			<section class="pncp-card">
-				<h3><?php esc_html_e( 'Κορυφαίες IP', 'content-protect' ); ?></h3>
+				<h3><?php esc_html_e( 'Top IPs', 'scrapelock' ); ?></h3>
 				<?php self::count_list( $summary['ips'] ); ?>
 			</section>
 			<section class="pncp-card">
-				<h3><?php esc_html_e( 'Κορυφαία User-Agents', 'content-protect' ); ?></h3>
+				<h3><?php esc_html_e( 'Top User-Agents', 'scrapelock' ); ?></h3>
 				<?php self::count_list( $summary['uas'] ); ?>
 			</section>
 		</div>
 
-		<h2><?php esc_html_e( 'Αποκλεισμένες IP τώρα', 'content-protect' ); ?></h2>
+		<h2><?php esc_html_e( 'IPs blocked now', 'scrapelock' ); ?></h2>
 		<?php if ( ! $bans ) : ?>
-			<p><?php esc_html_e( 'Καμία.', 'content-protect' ); ?></p>
+			<p><?php esc_html_e( 'None.', 'scrapelock' ); ?></p>
 		<?php else : ?>
 			<table class="widefat striped pncp-table">
 				<thead>
 					<tr>
-						<th scope="col"><?php esc_html_e( 'IP', 'content-protect' ); ?></th>
-						<th scope="col"><?php esc_html_e( 'Αιτία', 'content-protect' ); ?></th>
-						<th scope="col"><?php esc_html_e( 'Λήγει', 'content-protect' ); ?></th>
-						<th scope="col"><span class="screen-reader-text"><?php esc_html_e( 'Ενέργεια', 'content-protect' ); ?></span></th>
+						<th scope="col"><?php esc_html_e( 'IP', 'scrapelock' ); ?></th>
+						<th scope="col"><?php esc_html_e( 'Reason', 'scrapelock' ); ?></th>
+						<th scope="col"><?php esc_html_e( 'Expires', 'scrapelock' ); ?></th>
+						<th scope="col"><span class="screen-reader-text"><?php esc_html_e( 'Action', 'scrapelock' ); ?></span></th>
 					</tr>
 				</thead>
 				<tbody>
@@ -1083,7 +1083,7 @@ final class PNCP_Admin {
 								<?php self::action_form_open( 'pncp_log', 'pncp_log', 'pncp-inline-form' ); ?>
 									<input type="hidden" name="op" value="unban">
 									<input type="hidden" name="ip" value="<?php echo esc_attr( $ip ); ?>">
-									<button type="submit" class="button button-small"><?php esc_html_e( 'Άρση', 'content-protect' ); ?></button>
+									<button type="submit" class="button button-small"><?php esc_html_e( 'Unblock', 'scrapelock' ); ?></button>
 								</form>
 							</td>
 						</tr>
@@ -1092,24 +1092,24 @@ final class PNCP_Admin {
 			</table>
 			<?php self::action_form_open( 'pncp_log', 'pncp_log' ); ?>
 				<input type="hidden" name="op" value="unban_all">
-				<?php submit_button( __( 'Άρση όλων', 'content-protect' ), 'secondary', 'submit', true ); ?>
+				<?php submit_button( __( 'Unblock all', 'scrapelock' ), 'secondary', 'submit', true ); ?>
 			</form>
 		<?php endif; ?>
 
-		<h2><?php esc_html_e( 'Τελευταία συμβάντα', 'content-protect' ); ?></h2>
+		<h2><?php esc_html_e( 'Latest events', 'scrapelock' ); ?></h2>
 		<?php $rows = PNCP_Log::recent( 100 ); ?>
 		<?php if ( ! $rows ) : ?>
-			<p><?php esc_html_e( 'Δεν υπάρχουν συμβάντα.', 'content-protect' ); ?></p>
+			<p><?php esc_html_e( 'No events.', 'scrapelock' ); ?></p>
 		<?php else : ?>
 			<table class="widefat striped pncp-table pncp-log-table">
 				<thead>
 					<tr>
-						<th scope="col"><?php esc_html_e( 'Ώρα', 'content-protect' ); ?></th>
-						<th scope="col"><?php esc_html_e( 'IP', 'content-protect' ); ?></th>
-						<th scope="col"><?php esc_html_e( 'Λόγος', 'content-protect' ); ?></th>
-						<th scope="col"><?php esc_html_e( 'Αιτήματα', 'content-protect' ); ?></th>
-						<th scope="col"><?php esc_html_e( 'Διαδρομή', 'content-protect' ); ?></th>
-						<th scope="col"><?php esc_html_e( 'User-Agent', 'content-protect' ); ?></th>
+						<th scope="col"><?php esc_html_e( 'Time', 'scrapelock' ); ?></th>
+						<th scope="col"><?php esc_html_e( 'IP', 'scrapelock' ); ?></th>
+						<th scope="col"><?php esc_html_e( 'Reason', 'scrapelock' ); ?></th>
+						<th scope="col"><?php esc_html_e( 'Requests', 'scrapelock' ); ?></th>
+						<th scope="col"><?php esc_html_e( 'Path', 'scrapelock' ); ?></th>
+						<th scope="col"><?php esc_html_e( 'User-Agent', 'scrapelock' ); ?></th>
 					</tr>
 				</thead>
 				<tbody>
@@ -1130,8 +1130,8 @@ final class PNCP_Admin {
 			<?php
 			echo esc_html(
 				sprintf(
-					/* translators: %s: ημέρες */
-					__( 'Το αρχείο σβήνεται αυτόματα μετά από %s ημέρες (ρύθμιση στην καρτέλα «Bots και όρια»).', 'content-protect' ),
+					/* translators: %s: days */
+					__( 'The log is deleted automatically after %s days (setting in the “Bots and limits” tab).', 'scrapelock' ),
 					$s['log_retention']
 				)
 			);
@@ -1139,20 +1139,20 @@ final class PNCP_Admin {
 		</p>
 		<?php self::action_form_open( 'pncp_log', 'pncp_log' ); ?>
 			<input type="hidden" name="op" value="clear_log">
-			<?php submit_button( __( 'Διαγραφή αρχείου', 'content-protect' ), 'delete', 'submit', false ); ?>
+			<?php submit_button( __( 'Delete log', 'scrapelock' ), 'delete', 'submit', false ); ?>
 		</form>
 		<?php
 	}
 
 	/**
-	 * Λίστα «τιμή — πλήθος».
+	 * "value — count" list.
 	 *
-	 * @param array<string, int>    $counts Πλήθη.
-	 * @param array<string, string> $labels Ετικέτες (προαιρετικά).
+	 * @param array<string, int>    $counts Counts.
+	 * @param array<string, string> $labels Labels (optional).
 	 */
 	private static function count_list( $counts, $labels = array() ) {
 		if ( ! $counts ) {
-			echo '<p>' . esc_html__( 'Τίποτα.', 'content-protect' ) . '</p>';
+			echo '<p>' . esc_html__( 'Nothing.', 'scrapelock' ) . '</p>';
 			return;
 		}
 		echo '<ol class="pncp-count-list">';
@@ -1162,25 +1162,25 @@ final class PNCP_Admin {
 		echo '</ol>';
 	}
 
-	/* ---------- Ενέργειες ---------- */
+	/* ---------- Actions ---------- */
 
 	/**
-	 * Έλεγχος δικαιώματος και nonce για τις ενέργειες.
+	 * Capability and nonce check for the actions.
 	 *
 	 * @param string $nonce Nonce action.
 	 */
 	private static function verify( $nonce ) {
 		if ( ! current_user_can( 'manage_options' ) ) {
-			wp_die( esc_html__( 'Δεν έχετε δικαίωμα να αλλάξετε αυτή τη ρύθμιση.', 'content-protect' ), '', array( 'response' => 403 ) );
+			wp_die( esc_html__( 'You are not allowed to change this setting.', 'scrapelock' ), '', array( 'response' => 403 ) );
 		}
 		check_admin_referer( $nonce );
 	}
 
 	/**
-	 * Επιστροφή σε καρτέλα με μήνυμα.
+	 * Redirects back to a tab with a notice.
 	 *
-	 * @param string $tab     Καρτέλα.
-	 * @param string $message Κωδικός μηνύματος.
+	 * @param string $tab     Tab.
+	 * @param string $message Notice code.
 	 */
 	private static function back( $tab, $message ) {
 		wp_safe_redirect(
@@ -1195,10 +1195,10 @@ final class PNCP_Admin {
 	}
 
 	/**
-	 * Εφαρμογή προφίλ.
+	 * Applies a profile.
 	 */
 	public static function handle_profile() {
-		// phpcs:disable WordPress.Security.NonceVerification.Missing -- Το nonce ελέγχεται στο verify().
+		// phpcs:disable WordPress.Security.NonceVerification.Missing -- The nonce is checked in verify().
 		self::verify( 'pncp_profile' );
 		$profile  = isset( $_POST['profile'] ) ? sanitize_key( wp_unslash( $_POST['profile'] ) ) : '';
 		$profiles = PNCP_Options::profiles();
@@ -1212,17 +1212,17 @@ final class PNCP_Admin {
 	}
 
 	/**
-	 * Token: νέο / εναλλαγή / ακύρωση του προηγούμενου.
+	 * Token: new / rotate / revoke the previous one.
 	 */
 	public static function handle_token() {
-		// phpcs:disable WordPress.Security.NonceVerification.Missing -- Το nonce ελέγχεται στο verify().
+		// phpcs:disable WordPress.Security.NonceVerification.Missing -- The nonce is checked in verify().
 		self::verify( 'pncp_token' );
 		$op = isset( $_POST['op'] ) ? sanitize_key( wp_unslash( $_POST['op'] ) ) : '';
 		if ( 'rotate' === $op ) {
 			$grace = isset( $_POST['grace'] ) ? absint( $_POST['grace'] ) : 0;
 			$grace = in_array( $grace, array( 0, 1, 7, 30 ), true ) ? $grace : 7;
 			$token = PNCP_Private_Urls::rotate( $grace );
-			// Μία εμφάνιση, μόνο σε αυτόν τον χρήστη, για λίγα λεπτά.
+			// Shown once, only to this user, for a few minutes.
 			set_transient( 'pncp_new_token_' . get_current_user_id(), $token, 10 * MINUTE_IN_SECONDS );
 			self::back( 'content', 'token' );
 		}
@@ -1235,10 +1235,10 @@ final class PNCP_Admin {
 	}
 
 	/**
-	 * Αρχείο και αποκλεισμοί.
+	 * Log and bans.
 	 */
 	public static function handle_log() {
-		// phpcs:disable WordPress.Security.NonceVerification.Missing -- Το nonce ελέγχεται στο verify().
+		// phpcs:disable WordPress.Security.NonceVerification.Missing -- The nonce is checked in verify().
 		self::verify( 'pncp_log' );
 		$op = isset( $_POST['op'] ) ? sanitize_key( wp_unslash( $_POST['op'] ) ) : '';
 		switch ( $op ) {
@@ -1267,7 +1267,7 @@ final class PNCP_Admin {
 	}
 
 	/**
-	 * Μηνύματα μετά τις ενέργειες, και ειδοποιήσεις της αναβάθμισης από την 1.4.
+	 * Notices after actions, and upgrade notices from 1.4.
 	 */
 	public static function upgrade_notices() {
 		if ( ! current_user_can( 'manage_options' ) ) {
@@ -1276,38 +1276,38 @@ final class PNCP_Admin {
 		$screen = function_exists( 'get_current_screen' ) ? get_current_screen() : null;
 		$ours   = $screen && 'settings_page_' . self::PAGE === $screen->id;
 
-		// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Μόνο εμφάνιση μηνύματος.
+		// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Only displays a notice.
 		$message = $ours && isset( $_GET['pncp_message'] ) ? sanitize_key( wp_unslash( $_GET['pncp_message'] ) ) : '';
 		$texts   = array(
-			'profile'       => array( 'success', __( 'Το προφίλ εφαρμόστηκε.', 'content-protect' ) ),
-			'token'         => array( 'success', __( 'Δημιουργήθηκε νέο token.', 'content-protect' ) ),
-			'revoked'       => array( 'success', __( 'Το προηγούμενο token ακυρώθηκε.', 'content-protect' ) ),
-			'unbanned'      => array( 'success', __( 'Ο αποκλεισμός άρθηκε.', 'content-protect' ) ),
-			'cleared'       => array( 'success', __( 'Το αρχείο διαγράφηκε.', 'content-protect' ) ),
-			'lists'         => array( 'success', __( 'Οι λίστες IP ανανεώθηκαν.', 'content-protect' ) ),
-			'lists_partial' => array( 'warning', __( 'Κάποιες λίστες IP δεν κατέβηκαν· κρατήθηκε η προηγούμενη εκδοχή τους. Θα ξαναδοκιμάσει αύριο.', 'content-protect' ) ),
-			'error'         => array( 'error', __( 'Η ενέργεια δεν ολοκληρώθηκε.', 'content-protect' ) ),
+			'profile'       => array( 'success', __( 'Preset applied.', 'scrapelock' ) ),
+			'token'         => array( 'success', __( 'New token created.', 'scrapelock' ) ),
+			'revoked'       => array( 'success', __( 'Previous token revoked.', 'scrapelock' ) ),
+			'unbanned'      => array( 'success', __( 'Block lifted.', 'scrapelock' ) ),
+			'cleared'       => array( 'success', __( 'Log deleted.', 'scrapelock' ) ),
+			'lists'         => array( 'success', __( 'IP lists refreshed.', 'scrapelock' ) ),
+			'lists_partial' => array( 'warning', __( 'Some IP lists could not be downloaded; their previous version was kept. It will try again tomorrow.', 'scrapelock' ) ),
+			'error'         => array( 'error', __( 'The action was not completed.', 'scrapelock' ) ),
 		);
 		if ( isset( $texts[ $message ] ) ) {
 			printf( '<div class="notice notice-%1$s is-dismissible"><p>%2$s</p></div>', esc_attr( $texts[ $message ][0] ), esc_html( $texts[ $message ][1] ) );
 		}
 
-		// Το token της 1.x ισχύει ακόμη, αλλά υπάρχει μόνο ως hash: δεν μπορεί να εμφανιστεί.
+		// The 1.x token is still valid but exists only as a hash: it cannot be shown.
 		if ( $ours && get_option( 'pncp_legacy_token_migrated' ) ) {
 			delete_option( 'pncp_legacy_token_migrated' );
 			printf(
 				'<div class="notice notice-info"><p>%1$s <a href="%2$s">%3$s</a></p></div>',
-				esc_html__( 'Από την 2.1 το token των feeds αποθηκεύεται μόνο ως hash. Το παλιό token εξακολουθεί να ισχύει, αλλά δεν μπορεί πλέον να εμφανιστεί. Αν δεν το έχετε αποθηκευμένο, δημιουργήστε νέο token.', 'content-protect' ),
+				esc_html__( 'Since 2.1 the feed token is stored only as a hash. The old token is still valid but can no longer be shown. If you have not saved it, create a new token.', 'scrapelock' ),
 				esc_url( PNCP_Status::settings_url( array( 'tab' => 'feeds' ) ) ),
-				esc_html__( 'Feeds και token', 'content-protect' )
+				esc_html__( 'Feeds and token', 'scrapelock' )
 			);
 		}
 		if ( ! empty( PNCP_Options::stored()['trust_any_proxy'] ) ) {
 			printf(
 				'<div class="notice notice-warning"><p>%1$s <a href="%2$s">%3$s</a></p></div>',
-				esc_html__( 'Προστασία περιεχομένου: η πραγματική IP διαβάζεται από header χωρίς έλεγχο του proxy (όπως στην 1.4). Αυτό επιτρέπει πλαστογράφηση της IP.', 'content-protect' ),
+				esc_html__( 'ScrapeLock: the real IP is read from a header without checking the proxy (as in 1.4). This allows IP spoofing.', 'scrapelock' ),
 				esc_url( PNCP_Status::settings_url( array( 'tab' => 'bots' ) ) ),
-				esc_html__( 'Ρύθμιση Trusted Proxy', 'content-protect' )
+				esc_html__( 'Trusted Proxy settings', 'scrapelock' )
 			);
 		}
 	}
