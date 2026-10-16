@@ -174,6 +174,49 @@ for ( $i = 0; $i < 3; $i++ ) {
 t( 'όριο REST 2: 200,200,429', array( 200, 200, 429 ) === $codes, implode( ',', $codes ) );
 settings( array( 'rate_limit_rest' => 0, 'ban_strikes' => 3 ) );
 
+/* ---------- IPv6: όριο ανά δίκτυο /64 ---------- */
+fresh();
+settings( array( 'rate_limit' => 2, 'ban_strikes' => 0 ) );
+$codes = array();
+foreach ( array( '2001:db8:5:6::1', '2001:db8:5:6::2', '2001:db8:5:6:aaaa::3' ) as $v6 ) {
+	$codes[] = req( $url, browser( $v6 ) )[0];
+}
+t( 'IPv6: νέα διεύθυνση στο ίδιο /64 δεν παρακάμπτει το όριο (200,200,429)', array( 200, 200, 429 ) === $codes, implode( ',', $codes ) );
+list( $code ) = req( $url, browser( '2001:db8:5:7::1' ) );
+t( 'IPv6: άλλο /64 δεν επηρεάζεται', 200 === $code, (string) $code );
+t( 'IPv6: ::ffff:198.51.100.7 μετρά ως 198.51.100.7', '198.51.100.7' === PNCP_Ip::limit_key( '::ffff:198.51.100.7' ) );
+settings( array( 'rate_limit' => 0, 'ban_strikes' => 3 ) );
+
+/* ---------- Applebot / YandexBot: χωρίς αποκλεισμό όταν το DNS δεν δίνει απάντηση ---------- */
+$ab = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Safari/605.1.15 (Applebot/0.1; +http://www.apple.com/go/applebot)';
+fresh();
+settings( array( 'ban_strikes' => 1, 'ban_minutes' => 30 ) );
+// Ο προϋπολογισμός DNS εξαντλημένος (π.χ. από ψεύτικα «Applebot» άλλων IP), και για το επόμενο λεπτό.
+$minute = (int) floor( time() / MINUTE_IN_SECONDS );
+PNCP_Log::cache_set( 'pncp_dns_' . $minute, 1000, 2 * MINUTE_IN_SECONDS );
+PNCP_Log::cache_set( 'pncp_dns_' . ( $minute + 1 ), 1000, 2 * MINUTE_IN_SECONDS );
+$codes = array();
+for ( $i = 0; $i < 2; $i++ ) {
+	$codes[] = req( $url, array( 'X-Test-IP' => '17.58.101.10', 'User-Agent' => $ab, 'X-Test-RDNS' => '17-58-101-10.applebot.apple.com', 'X-Test-FDNS' => '17.58.101.10' ) )[0];
+}
+wp_cache_flush(); PNCP_Log::reset_cache();
+t( 'Applebot χωρίς διαθέσιμο DNS: 403 αλλά χωρίς αποκλεισμό', array( 403, 403 ) === $codes && ! isset( PNCP_Log::active_bans()['17.58.101.10'] ), implode( ',', $codes ) );
+fresh();
+list( $code ) = req( $url, array( 'X-Test-IP' => '17.58.101.11', 'User-Agent' => $ab, 'X-Test-RDNS' => '17.58.101.11' ) );
+wp_cache_flush(); PNCP_Log::reset_cache();
+t( 'Applebot χωρίς reverse DNS: 403 αλλά χωρίς αποκλεισμό', 403 === $code && ! isset( PNCP_Log::active_bans()['17.58.101.11'] ), (string) $code );
+list( $code ) = req( $url, array( 'X-Test-IP' => '17.58.101.11', 'User-Agent' => $ab, 'X-Test-RDNS' => '17.58.101.11' ) );
+wp_cache_flush(); PNCP_Log::reset_cache();
+t( 'Applebot χωρίς reverse DNS, 2ο αίτημα (από την cache): πάλι χωρίς αποκλεισμό', 403 === $code && ! isset( PNCP_Log::active_bans()['17.58.101.11'] ), (string) $code );
+fresh();
+list( $code ) = req( $url, array( 'X-Test-IP' => '17.58.101.12', 'User-Agent' => $ab, 'X-Test-RDNS' => '17-58-101-12.applebot.apple.com', 'X-Test-FDNS' => '17.58.101.12' ) );
+t( 'πραγματικό Applebot (rDNS + forward DNS): 200', 200 === $code, (string) $code );
+list( $code ) = req( $url, array( 'X-Test-IP' => '45.1.2.9', 'User-Agent' => $ab, 'X-Test-RDNS' => 'scraper.example.net' ) );
+wp_cache_flush(); PNCP_Log::reset_cache();
+t( 'ψεύτικο Applebot (λάθος rDNS): 403 και αποκλεισμός, όπως πριν', 403 === $code && isset( PNCP_Log::active_bans()['45.1.2.9'] ), (string) $code );
+fresh();
+settings( array( 'ban_strikes' => 3, 'ban_minutes' => 60 ) );
+
 /* ---------- Άλλες μέθοδοι ---------- */
 list( $code ) = req( $url, array( 'X-Test-IP' => '198.51.100.11', 'User-Agent' => 'GPTBot/1.2' ), 'POST' );
 t( 'POST σελίδας από GPTBot: 403 (στην 1.4 περνούσε)', 403 === $code, (string) $code );

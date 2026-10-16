@@ -45,6 +45,14 @@ final class PNCP_Bots {
 	);
 
 	/**
+	 * Whether the last crawler verification could not reach a verdict (DNS budget used up or
+	 * reverse DNS failed). Such a request is refused, but it is not counted as a violation.
+	 *
+	 * @var bool
+	 */
+	private static $verify_inconclusive = false;
+
+	/**
 	 * Registers the hooks.
 	 */
 	public static function init() {
@@ -195,7 +203,11 @@ final class PNCP_Bots {
 		}
 
 		if ( '' !== $family && ! empty( $s['block_fake_crawlers'] ) ) {
-			PNCP_Log::strike( $ip, 'fake_crawler' );
+			// No violation when the check could not finish: otherwise anyone could use up the DNS budget
+			// with fake "Applebot" requests and get the real Applebot / YandexBot banned.
+			if ( ! self::$verify_inconclusive ) {
+				PNCP_Log::strike( $ip, 'fake_crawler' );
+			}
 			return self::verdict( 403, 'fake_crawler', $ip );
 		}
 
@@ -341,13 +353,16 @@ final class PNCP_Bots {
 
 	/**
 	 * Is it a real search engine? First the official IP list (Google, Bing), then reverse DNS
-	 * and forward DNS, which must return the same IP. Positive result cached 24 hours, negative 1 hour.
+	 * and forward DNS, which must return the same IP. Positive result cached 24 hours, negative 1 hour,
+	 * failed reverse DNS 5 minutes. Without a verdict (DNS budget used up, reverse DNS failed) it returns
+	 * false and the request is refused, but not counted as a violation.
 	 *
 	 * @param string $family google | bing | apple | yandex.
 	 * @param string $ip     IP.
 	 * @return bool
 	 */
 	public static function is_verified_crawler( $family, $ip ) {
+		self::$verify_inconclusive = false;
 		if ( ! isset( self::$crawlers[ $family ] ) || '' === $ip ) {
 			return false;
 		}
@@ -359,6 +374,7 @@ final class PNCP_Bots {
 		$key    = 'pncp_se_' . md5( $family . '|' . $ip );
 		$cached = PNCP_Log::cache_get( $key );
 		if ( false !== $cached ) {
+			self::$verify_inconclusive = 'unknown' === $cached;
 			return 'yes' === $cached;
 		}
 
@@ -367,6 +383,7 @@ final class PNCP_Bots {
 		$budget = 'pncp_dns_' . (int) floor( time() / MINUTE_IN_SECONDS );
 		$used   = (int) PNCP_Log::cache_get( $budget );
 		if ( $used >= (int) apply_filters( 'pncp_dns_lookups_per_minute', 20 ) ) {
+			self::$verify_inconclusive = true;
 			return false;
 		}
 		PNCP_Log::cache_set( $budget, $used + 1, 2 * MINUTE_IN_SECONDS );
@@ -376,13 +393,17 @@ final class PNCP_Bots {
 		if ( '' === $host ) {
 			$host = (string) gethostbyaddr( $ip );
 		}
-		if ( $host && $host !== $ip ) {
-			$host_lc = strtolower( rtrim( $host, '.' ) );
-			foreach ( $def['dns'] as $domain ) {
-				if ( substr( $host_lc, -strlen( $domain ) ) === $domain ) {
-					$verified = in_array( $ip, self::forward_ips( $host_lc ), true );
-					break;
-				}
+		if ( '' === $host || $host === $ip ) {
+			// No PTR record or DNS failure: perhaps temporary, so it is retried in 5 minutes.
+			self::$verify_inconclusive = true;
+			PNCP_Log::cache_set( $key, 'unknown', 5 * MINUTE_IN_SECONDS );
+			return false;
+		}
+		$host_lc = strtolower( rtrim( $host, '.' ) );
+		foreach ( $def['dns'] as $domain ) {
+			if ( substr( $host_lc, -strlen( $domain ) ) === $domain ) {
+				$verified = in_array( $ip, self::forward_ips( $host_lc ), true );
+				break;
 			}
 		}
 
@@ -427,14 +448,15 @@ final class PNCP_Bots {
 	}
 
 	/**
-	 * Counts the IP's requests in the current minute, per type. Object cache if available, otherwise a transient.
+	 * Counts the IP's requests in the current minute, per type (IPv6: per /64, see PNCP_Ip::limit_key()).
+	 * Object cache if available, otherwise a transient.
 	 *
 	 * @param string $ip     IP.
 	 * @param string $bucket Type (rate_page, rate_search, rate_rest).
 	 * @return int
 	 */
 	private static function hit( $ip, $bucket ) {
-		$key = 'pncp_rl_' . md5( $bucket . '|' . $ip ) . '_' . (int) floor( time() / MINUTE_IN_SECONDS );
+		$key = 'pncp_rl_' . md5( $bucket . '|' . PNCP_Ip::limit_key( $ip ) ) . '_' . (int) floor( time() / MINUTE_IN_SECONDS );
 		if ( wp_using_ext_object_cache() ) {
 			wp_cache_add( $key, 0, 'pncp', 2 * MINUTE_IN_SECONDS );
 			return (int) wp_cache_incr( $key, 1, 'pncp' );
@@ -638,8 +660,8 @@ final class PNCP_Bots {
 		}
 		$ua     = self::user_agent();
 		$family = self::claimed_crawler( $ua );
-		if ( ( '' !== $family && self::is_verified_crawler( $family, $ip ) ) || self::ua_in_list( $ua, self::trap_exempt_agents() ) ) {
-			return false;
+		if ( ( '' !== $family && ( self::is_verified_crawler( $family, $ip ) || self::$verify_inconclusive ) ) || self::ua_in_list( $ua, self::trap_exempt_agents() ) ) {
+			return false; // Verified, or not verifiable right now: a real search engine is never banned.
 		}
 		if ( self::is_prefetch() ) {
 			return false;
