@@ -85,7 +85,7 @@ t( 'αποκλεισμένη IP με browser (περνά την cache) → 403, 
 
 /* ---------- Feed με token δεν μπαίνει στην cache ---------- */
 $token = PNCP_Private_Urls::rotate( 0 );
-list( $code, $body ) = req( '/skroutz.xml', $chrome, '203.0.113.233', array( 'X-Content-Protect-Token' => $token ) );
+list( $code, $body ) = req( '/skroutz.xml', $chrome, '203.0.113.233', array( 'X-ScrapeLock-Token' => $token ) );
 t( 'feed με token στο header: 200', 200 === $code && false !== strpos( $body, 'ΤΙΜΟΚΑΤΑΛΟΓΟΣ' ), (string) $code );
 list( $code, $body ) = req( '/skroutz.xml', $chrome, '203.0.113.234' );
 t( 'αμέσως μετά, χωρίς token: 403 (το feed δεν σερβίρεται από την cache)', 403 === $code && false === strpos( $body, 'ΤΙΜΟΚΑΤΑΛΟΓΟΣ' ), (string) $code );

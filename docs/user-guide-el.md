@@ -77,7 +77,7 @@ real_ip_header CF-Connecting-IP;
 
 ## Apache και `Authorization: Bearer`
 
-Με PHP-FPM/CGI ο Apache δεν περνά το `Authorization` στην PHP. Οι κανόνες Apache της καρτέλας περιέχουν τη γραμμή που το διορθώνει. Εναλλακτικά χρησιμοποιήστε το header `X-Content-Protect-Token`.
+Με PHP-FPM/CGI ο Apache δεν περνά το `Authorization` στην PHP. Οι κανόνες Apache της καρτέλας περιέχουν τη γραμμή που το διορθώνει. Εναλλακτικά χρησιμοποιήστε το header `X-ScrapeLock-Token`.
 
 ## Αντίγραφα εικόνων
 

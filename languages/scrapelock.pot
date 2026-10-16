@@ -39,11 +39,11 @@ msgid "Invalid request."
 msgstr ""
 
 #: includes/class-pncp-status.php:185
-msgid "Content protection enabled."
+msgid "ScrapeLock enabled."
 msgstr ""
 
 #: includes/class-pncp-status.php:185
-msgid "Content protection disabled. The site is not protected."
+msgid "ScrapeLock disabled. The site is not protected."
 msgstr ""
 
 #: includes/class-pncp-status.php:193

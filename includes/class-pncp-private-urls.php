@@ -4,7 +4,7 @@
  * text in a single file. Access only with a secret token or from allowed IPs.
  *
  * The token is accepted:
- * - in the X-Content-Protect-Token or Authorization: Bearer … header (for ERPs and your own integrations);
+ * - in the X-ScrapeLock-Token or Authorization: Bearer … header (for ERPs and your own integrations);
  * - in the URL, ?cp_token=… (for Skroutz, BestPrice, Google Merchant, which accept only a URL).
  *
  * Only the token's SHA-256 is stored in the database. The token is shown once, when it is created.
@@ -124,13 +124,14 @@ final class PNCP_Private_Urls {
 	}
 
 	/**
-	 * The token from X-Content-Protect-Token or Authorization: Bearer.
+	 * The token from X-ScrapeLock-Token or Authorization: Bearer. The header of the old name
+	 * (X-Content-Protect-Token) is still accepted, so existing integrations keep working.
 	 * Apache with PHP-FPM/CGI hides Authorization: see the rule in the README.
 	 *
 	 * @return string
 	 */
 	private static function header_token() {
-		foreach ( array( 'HTTP_X_CONTENT_PROTECT_TOKEN' ) as $key ) {
+		foreach ( array( 'HTTP_X_SCRAPELOCK_TOKEN', 'HTTP_X_CONTENT_PROTECT_TOKEN' ) as $key ) {
 			if ( ! empty( $_SERVER[ $key ] ) ) {
 				return trim( sanitize_text_field( wp_unslash( $_SERVER[ $key ] ) ) );
 			}

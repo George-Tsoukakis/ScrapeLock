@@ -40,12 +40,12 @@ msgid "Invalid request."
 msgstr "Άκυρο αίτημα."
 
 #: includes/class-pncp-status.php:185
-msgid "Content protection enabled."
-msgstr "Η προστασία περιεχομένου ενεργοποιήθηκε."
+msgid "ScrapeLock enabled."
+msgstr "Το ScrapeLock ενεργοποιήθηκε."
 
 #: includes/class-pncp-status.php:185
-msgid "Content protection disabled. The site is not protected."
-msgstr "Η προστασία περιεχομένου απενεργοποιήθηκε. Το site δεν προστατεύεται."
+msgid "ScrapeLock disabled. The site is not protected."
+msgstr "Το ScrapeLock απενεργοποιήθηκε. Το site δεν προστατεύεται."
 
 #: includes/class-pncp-status.php:193
 msgid "Emergency Mode started."

@@ -11,6 +11,8 @@
 
 ### Στοιχεία
 - **Μετάφραση:** στο `translations/scrapelock-el.po` το παράδειγμα Nginx έλεγε ακόμη `content-protect.conf` αντί για `scrapelock.conf`.
+- **Header του token: `X-ScrapeLock-Token`** αντί για `X-Content-Protect-Token`, στη σελίδα ρυθμίσεων, στους κανόνες Nginx / Apache και στον οδηγό. Το plugin δέχεται **και** το παλιό header, οπότε τα ERP που το στέλνουν ήδη συνεχίζουν να δουλεύουν. Μόνο για feeds που είναι στατικά αρχεία και προστατεύονται από τους κανόνες server: αν ξαναεπικολλήσετε τους νέους κανόνες, το ERP πρέπει να στέλνει το νέο header (ή `cp_token` στο URL). Η παράμετρος `cp_token` μένει ίδια, γιατί υπάρχει ήδη στα URL των Skroutz / BestPrice.
+- **Μηνύματα διαχείρισης:** «ScrapeLock enabled.» / «ScrapeLock disabled. The site is not protected.» αντί για «Content protection …» (και στο `.pot` / `.po`).
 - **Author:** «CodeBunny» αντί για «The-Greek», ως προετοιμασία για τον κατάλογο του WordPress.org.
 - **Όνομα:** «ScrapeLock – Content & AI Bot Protection» αντί για «Content Protect».
 - **Φάκελος και αρχείο:** `scrapelock/scrapelock.php` αντί για `content-protect/content-protect.php`, για το slug `scrapelock` του WordPress.org. Σε υπάρχον site: απενεργοποίηση του παλιού, ενεργοποίηση του ScrapeLock. Ρυθμίσεις (`pncp_settings`), tokens και αρχείο μένουν. Αν μείνουν ενεργά και τα δύο, φορτώνεται μόνο το πρώτο (`PNCP_VERSION`).
