@@ -1,6 +1,6 @@
 <?php
 /**
- * Content Protect — συμβατότητα με πραγματικό WooCommerce (καλάθι, checkout, Store API, wc-ajax).
+ * ScrapeLock — συμβατότητα με πραγματικό WooCommerce (καλάθι, checkout, Store API, wc-ajax).
  *
  *   WP_DIR=/srv/wpt BASE=http://127.0.0.1:8080 php t_woocommerce.php
  *
@@ -226,7 +226,7 @@ t( 'Store API λίστα προϊόντων: χωρίς περιγραφές, μ
 /* ---------- Webhooks πληρωμών ---------- */
 $gateway = new Shopper( '198.51.100.120', 'Go-http-client/1.1' );
 list( $code, , $body ) = $gateway->req( '/wc-api/pncp_test/', 'POST', 'event=paid' );
-t( 'webhook πληρωμής (wc-api, POST, User-Agent Go-http-client): όχι 403 από το plugin', false === strpos( $body, 'Η πρόσβαση δεν επιτρέπεται' ), (string) $code );
+t( 'webhook πληρωμής (wc-api, POST, User-Agent Go-http-client): όχι 403 από το plugin', false === strpos( $body, 'Access denied.' ), (string) $code );
 list( $code, , $body ) = $gateway->req( '/wp-json/wc/v3/webhooks-test', 'POST', '{}', array( 'Content-Type' => 'application/json' ) );
 t( 'webhook στο REST (POST): όχι 403 από το plugin', false === strpos( $body, 'pncp_' ), $code . ' ' . substr( $body, 0, 80 ) );
 

@@ -1,30 +1,30 @@
 <?php
 /**
- * WPGraphQL (/graphql): ίδια προστασία με το REST API, αν το plugin WPGraphQL είναι εγκατεστημένο.
+ * WPGraphQL (/graphql): same protection as the REST API, if the WPGraphQL plugin is installed.
  *
- * - Κρύβει από επισκέπτες το κείμενο (content, excerpt) των άρθρων/σελίδων και την περιγραφή των
- *   προϊόντων (WooGraphQL: description, shortDescription).
- * - Εφαρμόζει τον έλεγχο bots, τους αποκλεισμούς και το όριο REST / GraphQL.
+ * - Hides from visitors the text (content, excerpt) of posts/pages and the description of
+ *   products (WooGraphQL: description, shortDescription).
+ * - Applies the bot check, the blocks and the REST / GraphQL limit.
  *
- * @package Content_Protect
+ * @package ScrapeLock
  */
 
 defined( 'ABSPATH' ) || exit;
 
 /**
- * Ενσωμάτωση με το WPGraphQL.
+ * Integration with WPGraphQL.
  */
 final class PNCP_Graphql {
 
 	/**
-	 * Πεδία που αδειάζουν.
+	 * Fields that are emptied.
 	 *
 	 * @var string[]
 	 */
 	private static $fields = array( 'content', 'excerpt', 'description', 'shortDescription' );
 
 	/**
-	 * Δένει τα hooks (δεν κάνουν τίποτα αν δεν υπάρχει το WPGraphQL).
+	 * Registers the hooks (they do nothing if WPGraphQL is not present).
 	 */
 	public static function init() {
 		add_action( 'do_graphql_request', array( __CLASS__, 'guard' ), 0 );
@@ -32,7 +32,7 @@ final class PNCP_Graphql {
 	}
 
 	/**
-	 * Είναι ενεργό το WPGraphQL;
+	 * Is WPGraphQL active?
 	 *
 	 * @return bool
 	 */
@@ -41,7 +41,7 @@ final class PNCP_Graphql {
 	}
 
 	/**
-	 * Έλεγχος bots / ορίου στην αρχή κάθε αιτήματος GraphQL.
+	 * Bot / limit check at the start of every GraphQL request.
 	 */
 	public static function guard() {
 		$verdict = PNCP_Bots::check( 'graphql' );
@@ -58,7 +58,7 @@ final class PNCP_Graphql {
 			array(
 				'errors' => array(
 					array(
-						'message' => 429 === $verdict['code'] ? __( 'Πάρα πολλά αιτήματα. Δοκιμάστε ξανά σε ένα λεπτό.', 'content-protect' ) : __( 'Η πρόσβαση δεν επιτρέπεται.', 'content-protect' ),
+						'message' => 429 === $verdict['code'] ? __( 'Too many requests. Please try again in a minute.', 'scrapelock' ) : __( 'Access denied.', 'scrapelock' ),
 					),
 				),
 			)
@@ -67,20 +67,20 @@ final class PNCP_Graphql {
 	}
 
 	/**
-	 * Αδειάζει το κείμενο για επισκέπτες.
+	 * Empties the text for visitors.
 	 *
-	 * @param mixed  $result         Η τιμή του πεδίου.
-	 * @param mixed  $source         Το αντικείμενο (Model\Post, Model\Product…).
-	 * @param mixed  $args           Ορίσματα.
+	 * @param mixed  $result         The field value.
+	 * @param mixed  $source         The object (Model\Post, Model\Product…).
+	 * @param mixed  $args           Arguments.
 	 * @param mixed  $context        Context.
 	 * @param mixed  $info           ResolveInfo.
-	 * @param string $type_name      Τύπος.
-	 * @param string $field_key      Πεδίο.
-	 * @param mixed  $field          Ορισμός πεδίου.
+	 * @param string $type_name      Type.
+	 * @param string $field_key      Field.
+	 * @param mixed  $field          Field definition.
 	 * @param mixed  $field_resolver Resolver.
 	 * @return mixed
 	 */
-	public static function resolve_field( $result, $source, $args, $context, $info, $type_name, $field_key, $field = null, $field_resolver = null ) { // phpcs:ignore Generic.CodeAnalysis.UnusedFunctionParameter -- Υπογραφή του φίλτρου.
+	public static function resolve_field( $result, $source, $args, $context, $info, $type_name, $field_key, $field = null, $field_resolver = null ) { // phpcs:ignore Generic.CodeAnalysis.UnusedFunctionParameter -- Filter signature.
 		if ( ! in_array( $field_key, self::$fields, true ) || ! is_string( $result ) || '' === $result ) {
 			return $result;
 		}
@@ -94,7 +94,7 @@ final class PNCP_Graphql {
 		if ( current_user_can( 'edit_posts' ) || PNCP_Options::user_is_exempt( $s ) ) {
 			return $result;
 		}
-		$id = isset( $source->databaseId ) ? (int) $source->databaseId : ( isset( $source->ID ) ? (int) $source->ID : 0 ); // phpcs:ignore WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase -- Πεδίο του WPGraphQL.
+		$id = isset( $source->databaseId ) ? (int) $source->databaseId : ( isset( $source->ID ) ? (int) $source->ID : 0 ); // phpcs:ignore WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase -- WPGraphQL field.
 		if ( $id && in_array( $id, PNCP_Options::excluded_ids( $s ), true ) ) {
 			return $result;
 		}
@@ -106,9 +106,9 @@ final class PNCP_Graphql {
 	}
 
 	/**
-	 * Είναι άρθρο / σελίδα / προϊόν; (όχι όροι, χρήστες, μενού)
+	 * Is it a post / page / product? (not terms, users, menus)
 	 *
-	 * @param object $source Αντικείμενο.
+	 * @param object $source Object.
 	 * @return bool
 	 */
 	private static function is_content_model( $source ) {

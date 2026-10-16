@@ -1,5 +1,5 @@
 #!/bin/sh
-# Content Protect — όλες οι δοκιμές. WP_DIR, BASE και WP_CLI: βλ. README.txt
+# ScrapeLock — όλες οι δοκιμές. WP_DIR, BASE και WP_CLI: βλ. README.txt
 cd "$(dirname "$0")" || exit 1
 : "${WP_DIR:?}" "${BASE:?}"
 PHP=${PHP:-php}

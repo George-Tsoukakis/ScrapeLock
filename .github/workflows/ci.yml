@@ -1,0 +1,98 @@
+# ScrapeLock: phpcs, the basic tests on a real WordPress (SQLite) and the plugin zip.
+# Full-stack tests (FULL=1: MariaDB, Nginx, Apache, WooCommerce) run locally (tests/README.txt).
+name: CI
+
+on:
+  # Push only on main: other branches are built once, from the pull request.
+  push:
+    branches:
+      - main
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    name: php -l + phpcs
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Syntax check (php -l)
+        run: find . -name '*.php' -not -path './tests/*' -print0 | xargs -0 -n1 php -l > /dev/null
+      - name: WordPress Coding Standards
+        run: |
+          mkdir -p "$RUNNER_TEMP/phpcs" && cd "$RUNNER_TEMP/phpcs"
+          echo '{}' > composer.json
+          composer --no-interaction --quiet config allow-plugins.dealerdirect/phpcodesniffer-composer-installer true
+          composer --no-interaction --quiet require --dev "wp-coding-standards/wpcs:^3" "phpcompatibility/phpcompatibility-wp:*"
+          echo "$RUNNER_TEMP/phpcs/vendor/bin" >> "$GITHUB_PATH"
+      - name: phpcs (phpcs.xml.dist)
+        # Only errors fail the build; the known warning (unused $request, filter signature) stays.
+        run: phpcs -q --warning-severity=0
+
+  tests:
+    name: Tests on WordPress (SQLite)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: PHP extensions
+        run: |
+          for ext in gd pdo_sqlite curl mbstring; do
+            php -r "exit(extension_loaded('$ext') ? 0 : 1);" || { echo "::error::PHP extension $ext missing"; exit 1; }
+          done
+      - name: WordPress, WP-CLI and the SQLite drop-in
+        run: |
+          echo "WP_DIR=$RUNNER_TEMP/wp/wp" >> "$GITHUB_ENV"
+          mkdir -p "$RUNNER_TEMP/wp" && cd "$RUNNER_TEMP/wp"
+          # No composer plugins: db.php is copied from vendor/, no installer needed.
+          composer --no-interaction --quiet --no-plugins create-project johnpbloch/wordpress-core wp
+          composer --no-interaction --quiet --no-plugins require wp-cli/wp-cli-bundle aaemnnosttv/wp-sqlite-db
+          cp vendor/aaemnnosttv/wp-sqlite-db/src/db.php wp/wp-content/db.php
+          WP="php vendor/wp-cli/wp-cli/php/boot-fs.php --path=wp --allow-root"
+          $WP config create --dbname=wp --dbuser=x --dbpass=x --skip-check
+          $WP config set WP_DEBUG true --raw
+          $WP core install --url=http://127.0.0.1:8099 --title=Test --admin_user=admin --admin_password=admin --admin_email=admin@example.com --skip-email
+          $WP rewrite structure '/%postname%/'
+          ln -s "$GITHUB_WORKSPACE" wp/wp-content/plugins/scrapelock
+          mkdir -p wp/wp-content/mu-plugins
+          ln -s "$GITHUB_WORKSPACE/tests/lib/mu-test-harness.php" wp/wp-content/mu-plugins/
+          $WP plugin activate scrapelock
+          $WP post create --post_status=publish --post_title=Test --post_content="Test content."
+          # Run the WordPress update checks here, not on the first admin page load, where a connection
+          # error to wordpress.org would show up as a PHP warning on the page and fail t_admin.
+          $WP eval 'wp_version_check(); wp_update_plugins(); wp_update_themes();'
+      - name: Basic tests (run-all.sh)
+        working-directory: tests
+        run: |
+          php -S 127.0.0.1:8099 -t "$WP_DIR" lib/router.php > "$RUNNER_TEMP/server.log" 2>&1 &
+          sleep 2
+          WP_DIR="$WP_DIR" BASE=http://127.0.0.1:8099 ./run-all.sh
+
+  package:
+    name: Plugin zip
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    needs: [lint, tests]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Build scrapelock.zip (only the plugin, as submitted to WordPress.org; see .gitattributes)
+        run: |
+          version=$(sed -n 's/^ \* Version: *//p' scrapelock.php)
+          git archive --format=zip --prefix=scrapelock/ -o "scrapelock-$version.zip" HEAD
+          if unzip -l "scrapelock-$version.zip" | grep -qE 'tests/|\.po$|\.mo$'; then echo "::error::tests or translations in the zip"; exit 1; fi
+          echo "ZIP=scrapelock-$version.zip" >> "$GITHUB_ENV"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: scrapelock-zip
+          path: ${{ env.ZIP }}
+          if-no-files-found: error
+          # Each build is kept 14 days, then deleted automatically (default: 90), so artifact storage does not fill up.
+          retention-days: 14

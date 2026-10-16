@@ -1,6 +1,6 @@
 <?php
 /**
- * Content Protect — συνεργασία με πραγματικό WP Super Cache (page cache της PHP).
+ * ScrapeLock — συνεργασία με πραγματικό WP Super Cache (page cache της PHP).
  *
  *   WP_DIR=/srv/wpt BASE=http://127.0.0.1:8080 php t_cache.php
  *

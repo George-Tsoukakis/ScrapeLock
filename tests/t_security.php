@@ -1,6 +1,6 @@
 <?php
 /**
- * Content Protect — αυτοματοποιημένες δοκιμές ασφαλείας (επιθέσεις από έξω και από χρήστες χωρίς δικαίωμα).
+ * ScrapeLock — αυτοματοποιημένες δοκιμές ασφαλείας (επιθέσεις από έξω και από χρήστες χωρίς δικαίωμα).
  *
  *   WP_DIR=/srv/wpt BASE=http://127.0.0.1:8080 php t_security.php
  *
@@ -103,7 +103,7 @@ list( $code ) = req( '/wp-admin/admin-ajax.php', 'POST', array( 'action' => 'pnc
 t( 'συνδρομητής: εργαλείο εικόνων (AJAX) → 403', 403 === $code, (string) $code );
 list( $code ) = req( '/wp-admin/admin-ajax.php', 'POST', array( 'action' => 'pncp_wm_batch', 'mode' => 'remove' ), $b );
 t( 'επισκέπτης: εργαλείο εικόνων (AJAX) → απορρίπτεται', in_array( $code, array( 400, 403 ), true ), (string) $code );
-list( $code, , $body ) = req( '/wp-admin/options-general.php?page=content-protect', 'GET', null, $b, $sub_cookie );
+list( $code, , $body ) = req( '/wp-admin/options-general.php?page=scrapelock', 'GET', null, $b, $sub_cookie );
 t( 'συνδρομητής: η σελίδα ρυθμίσεων δεν ανοίγει', 200 !== $code || false === strpos( $body, 'pncp-admin' ), (string) $code );
 wp_cache_flush(); PNCP_Log::reset_cache();
 t( 'δικαιώματα: τίποτα δεν άλλαξε', ! empty( PNCP_Options::stored()['enabled'] ) && 0 === PNCP_Options::emergency_until() && $token_before === PNCP_Private_Urls::token_data()['hash'] );
@@ -125,7 +125,7 @@ req( '/hello-world/', 'GET', null, array( 'X-Test-IP' => '198.51.100.41', 'User-
 global $wpdb;
 $row = $wpdb->get_row( $wpdb->prepare( "SELECT * FROM {$wpdb->prefix}pncp_log WHERE ip = %s", '198.51.100.41' ), ARRAY_A );
 t( 'SQL injection στο User-Agent: αποθηκεύεται ως κείμενο, ο πίνακας υπάρχει', $row && false !== strpos( $row['ua'], "OR '1'='1'" ) );
-list( , , $body ) = req( '/wp-admin/options-general.php?page=content-protect&tab=log', 'GET', null, $b, $admin_cookie );
+list( , , $body ) = req( '/wp-admin/options-general.php?page=scrapelock&tab=log', 'GET', null, $b, $admin_cookie );
 t( 'XSS: το αρχείο δείχνει το User-Agent escaped', false !== strpos( $body, 'GPTBot' ) && false === strpos( $body, '<script>alert(1)' ) && false === strpos( $body, '<img src=x onerror' ) && false === strpos( $body, '<script>alert(3)' ) );
 
 /* ---------- XSS / header injection μέσα από τις ρυθμίσεις ---------- */
@@ -158,11 +158,11 @@ list( , , $body ) = req( '/skroutz.xml', 'GET', null, $b + array( 'X-Test-IP' =>
 t( 'feed: πλαστό X-Forwarded-For / CF-Connecting-IP = 127.0.0.1 δεν δίνει πρόσβαση', false === strpos( $body, 'ΤΙΜΟΚΑΤΑΛΟΓΟΣ' ) );
 
 /* ---------- Άμεση πρόσβαση στα αρχεία του plugin ---------- */
-foreach ( array( 'includes/class-pncp-admin.php', 'includes/class-pncp-bots.php', 'uninstall.php', 'content-protect.php' ) as $f ) {
-	list( $code, , $body ) = req( '/wp-content/plugins/content-protect/' . $f, 'GET', null, $b );
+foreach ( array( 'includes/class-pncp-admin.php', 'includes/class-pncp-bots.php', 'uninstall.php', 'scrapelock.php' ) as $f ) {
+	list( $code, , $body ) = req( '/wp-content/plugins/scrapelock/' . $f, 'GET', null, $b );
 	t( "άμεσο άνοιγμα του $f: καμία έξοδος / σφάλμα", '' === trim( $body ) && 500 !== $code, $code . ' ' . substr( $body, 0, 80 ) );
 }
-list( $code, , $body ) = req( '/wp-content/plugins/content-protect/includes/', 'GET', null, $b );
+list( $code, , $body ) = req( '/wp-content/plugins/scrapelock/includes/', 'GET', null, $b );
 t( 'λίστα αρχείων του φακέλου includes: όχι', false === strpos( $body, 'class-pncp' ), (string) $code );
 
 /* ---------- Καθαρά πρωτότυπα: δεν βρίσκονται ---------- */
@@ -173,7 +173,7 @@ t( 'uploads: χωρίς λίστα αρχείων που θα αποκάλυπτ
 t( 'backup_path: δεν δέχεται διαδρομές εκτός uploads (..)', '' === PNCP_Watermark::backup_path( ABSPATH . 'wp-config.php' ) && '' === PNCP_Watermark::backup_path( wp_get_upload_dir()['basedir'] . '/../../wp-config.php' ) );
 
 /* ---------- Χρονική επίθεση στο token ---------- */
-$src = file_get_contents( WP_PLUGIN_DIR . '/content-protect/includes/class-pncp-private-urls.php' );
+$src = file_get_contents( WP_PLUGIN_DIR . '/scrapelock/includes/class-pncp-private-urls.php' );
 t( 'token: σύγκριση με hash_equals (σταθερός χρόνος)', 2 <= substr_count( $src, 'hash_equals(' ) );
 
 PNCP_Log::unban_all();

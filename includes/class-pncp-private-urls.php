@@ -1,56 +1,56 @@
 <?php
 /**
- * Προστατευμένα feeds: XML προϊόντων (Skroutz, BestPrice, Google Merchant κ.λπ.) και ό,τι άλλο δίνει όλο
- * το κείμενο σε ένα αρχείο. Πρόσβαση μόνο με μυστικό token ή από επιτρεπόμενες IP.
+ * Protected feeds: product XML (Skroutz, BestPrice, Google Merchant, etc.) and anything else that serves the full
+ * text in a single file. Access only with a secret token or from allowed IPs.
  *
- * Το token γίνεται δεκτό:
- * - στο header X-Content-Protect-Token ή Authorization: Bearer … (για ERP και δικά σας integrations)·
- * - στο URL, ?cp_token=… (για Skroutz, BestPrice, Google Merchant, που δέχονται μόνο URL).
+ * The token is accepted:
+ * - in the X-Content-Protect-Token or Authorization: Bearer … header (for ERPs and your own integrations);
+ * - in the URL, ?cp_token=… (for Skroutz, BestPrice, Google Merchant, which accept only a URL).
  *
- * Στη βάση αποθηκεύεται μόνο το SHA-256 του token. Το token φαίνεται μία φορά, όταν δημιουργείται.
- * Με την εναλλαγή, το παλιό token ισχύει για λίγες ημέρες ακόμη (περίοδος χάριτος).
+ * Only the token's SHA-256 is stored in the database. The token is shown once, when it is created.
+ * On rotation, the old token stays valid for a few more days (grace period).
  *
- * Ισχύει για URLs που σερβίρει η PHP. Στατικά αρχεία (π.χ. .xml μέσα στο uploads) τα σερβίρει
- * απευθείας ο web server· για αυτά δείτε τους κανόνες server.
+ * Applies to URLs served by PHP. Static files (e.g. .xml inside uploads) are served
+ * directly by the web server; for those see the server rules.
  *
- * @package Content_Protect
+ * @package ScrapeLock
  */
 
 defined( 'ABSPATH' ) || exit;
 
 /**
- * Έλεγχος πρόσβασης σε URLs της λίστας.
+ * Access control for URLs in the list.
  */
 final class PNCP_Private_Urls {
 
 	const QUERY_ARG = 'cp_token';
 
 	/**
-	 * Option με τα hashes των tokens (όχι autoload).
+	 * Option holding the token hashes (not autoloaded).
 	 */
 	const TOKEN_OPTION = 'pncp_feed_token';
 
 	/**
-	 * Option με τα στατιστικά ανά μοτίβο (όχι autoload).
+	 * Option holding the per-pattern statistics (not autoloaded).
 	 */
 	const STATS_OPTION = 'pncp_feed_stats';
 
 	/**
-	 * Αν το τρέχον αίτημα πέρασε τον έλεγχο (για να μην το μπλοκάρει μετά ο έλεγχος bots).
+	 * Whether the current request passed the check (so the bot check does not block it afterwards).
 	 *
 	 * @var bool
 	 */
 	private static $granted = false;
 
 	/**
-	 * Δένει τα hooks. Τρέχει νωρίς, πριν τα plugins των feeds βγάλουν το XML.
+	 * Attaches the hooks. Runs early, before the feed plugins output the XML.
 	 */
 	public static function init() {
 		add_action( 'plugins_loaded', array( __CLASS__, 'guard' ), 0 );
 	}
 
 	/**
-	 * Πέρασε το τρέχον αίτημα τον έλεγχο ιδιωτικού URL;
+	 * Did the current request pass the private URL check?
 	 *
 	 * @return bool
 	 */
@@ -59,7 +59,7 @@ final class PNCP_Private_Urls {
 	}
 
 	/**
-	 * Μπλοκάρει (403) όταν το URL είναι στη λίστα και δεν υπάρχει σωστό token ή επιτρεπόμενη IP.
+	 * Blocks (403) when the URL is in the list and there is no valid token or allowed IP.
 	 */
 	public static function guard() {
 		self::$granted = false;
@@ -74,12 +74,12 @@ final class PNCP_Private_Urls {
 			return;
 		}
 
-		// Ούτε η επιτυχής απάντηση μπαίνει σε κοινή cache: πολλά CDN αγνοούν το query string,
-		// οπότε το feed με το token θα σερβιριζόταν μετά και χωρίς token.
+		// Not even the successful response goes into a shared cache: many CDNs ignore the query string,
+		// so the feed with the token would afterwards be served without a token too.
 		PNCP_Bots::no_cache();
 		header( 'Cache-Control: private, no-store, max-age=0' );
 		header( 'X-Robots-Tag: noindex, nofollow' );
-		// Το token μπορεί να είναι στο URL: δεν διαρρέει μέσω Referer σε άλλα sites.
+		// The token may be in the URL: it must not leak via Referer to other sites.
 		header( 'Referrer-Policy: no-referrer' );
 		header( 'X-Content-Type-Options: nosniff' );
 
@@ -93,15 +93,15 @@ final class PNCP_Private_Urls {
 		PNCP_Log::add( 'feed_denied', 403, PNCP_Ip::client_ip() );
 		status_header( 403 );
 		header( 'Content-Type: text/plain; charset=utf-8' );
-		// Χωρίς μετάφραση: τρέχει πριν φορτωθούν οι μεταφράσεις (init).
+		// No translation: runs before translations are loaded (init).
 		echo 'Forbidden';
 		exit;
 	}
 
 	/**
-	 * Πώς επιτρέπεται η πρόσβαση: 'header', 'url', 'ip', 'admin' ή '' (δεν επιτρέπεται).
+	 * How access is granted: 'header', 'url', 'ip', 'admin' or '' (not allowed).
 	 *
-	 * @param array<string, mixed> $s Ρυθμίσεις.
+	 * @param array<string, mixed> $s Settings.
 	 * @return string
 	 */
 	public static function access_via( $s ) {
@@ -109,7 +109,7 @@ final class PNCP_Private_Urls {
 		if ( '' !== $header && self::token_valid( $header ) ) {
 			return 'header';
 		}
-		// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Token πρόσβασης, όχι φόρμα.
+		// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Access token, not a form.
 		$query = isset( $_GET[ self::QUERY_ARG ] ) ? sanitize_text_field( wp_unslash( $_GET[ self::QUERY_ARG ] ) ) : '';
 		if ( '' !== $query && self::token_valid( $query ) ) {
 			return 'url';
@@ -124,8 +124,8 @@ final class PNCP_Private_Urls {
 	}
 
 	/**
-	 * Το token από X-Content-Protect-Token ή Authorization: Bearer.
-	 * Ο Apache με PHP-FPM/CGI κρύβει το Authorization: δείτε τον κανόνα στο README.
+	 * The token from X-Content-Protect-Token or Authorization: Bearer.
+	 * Apache with PHP-FPM/CGI hides Authorization: see the rule in the README.
 	 *
 	 * @return string
 	 */
@@ -149,7 +149,7 @@ final class PNCP_Private_Urls {
 	/* ---------- Tokens ---------- */
 
 	/**
-	 * Τα αποθηκευμένα στοιχεία του token.
+	 * The stored token data.
 	 *
 	 * @return array{hash:string, hint:string, created:int, prev_hash:string, prev_hint:string, prev_until:int}
 	 */
@@ -167,7 +167,7 @@ final class PNCP_Private_Urls {
 	}
 
 	/**
-	 * Hash ενός token.
+	 * Hash of a token.
 	 *
 	 * @param string $token Token.
 	 * @return string
@@ -177,7 +177,7 @@ final class PNCP_Private_Urls {
 	}
 
 	/**
-	 * Ισχύει το token; (το τρέχον, ή το προηγούμενο μέσα στην περίοδο χάριτος)
+	 * Is the token valid? (the current one, or the previous one within the grace period)
 	 *
 	 * @param string $token Token.
 	 * @return bool
@@ -196,10 +196,10 @@ final class PNCP_Private_Urls {
 	}
 
 	/**
-	 * Νέο token. Το προηγούμενο ισχύει ακόμη για $grace_days ημέρες (0 = ακυρώνεται αμέσως).
+	 * New token. The previous one stays valid for $grace_days more days (0 = revoked immediately).
 	 *
-	 * @param int $grace_days Ημέρες χάριτος.
-	 * @return string Το νέο token (δεν αποθηκεύεται πουθενά σε καθαρή μορφή).
+	 * @param int $grace_days Grace days.
+	 * @return string The new token (not stored anywhere in plain form).
 	 */
 	public static function rotate( $grace_days ) {
 		$old        = self::token_data();
@@ -223,7 +223,7 @@ final class PNCP_Private_Urls {
 	}
 
 	/**
-	 * Αποθηκεύει ένα υπάρχον token (μετάβαση από την 1.4, όπου το token ήταν σε καθαρή μορφή).
+	 * Stores an existing token (migration from 1.4, where the token was in plain form).
 	 *
 	 * @param string $token Token.
 	 */
@@ -247,7 +247,7 @@ final class PNCP_Private_Urls {
 	}
 
 	/**
-	 * Ακυρώνει αμέσως το προηγούμενο token.
+	 * Revokes the previous token immediately.
 	 */
 	public static function revoke_previous() {
 		$data               = self::token_data();
@@ -257,13 +257,13 @@ final class PNCP_Private_Urls {
 		update_option( self::TOKEN_OPTION, $data, false );
 	}
 
-	/* ---------- Στατιστικά ---------- */
+	/* ---------- Statistics ---------- */
 
 	/**
-	 * Καταγράφει την πρόσβαση στο μοτίβο: μετρητές, τελευταία επιτυχής πρόσβαση και τρόπος.
+	 * Records access to the pattern: counters, last successful access and method.
 	 *
-	 * @param string $pattern Μοτίβο της λίστας.
-	 * @param string $via     Τρόπος πρόσβασης ('' = άρνηση).
+	 * @param string $pattern Pattern from the list.
+	 * @param string $via     Access method ('' = denied).
 	 */
 	private static function record( $pattern, $via ) {
 		$stats = self::stats();
@@ -277,7 +277,7 @@ final class PNCP_Private_Urls {
 			'last_deny' => 0,
 		);
 		if ( '' === $via ) {
-			// Οι αρνήσεις τις προκαλεί ο καθένας: εγγραφή στη βάση το πολύ μία φορά το λεπτό ανά διαδρομή.
+			// Denials can be caused by anyone: write to the database at most once a minute per path.
 			$throttle = 'pncp_fd_' . md5( $key );
 			if ( PNCP_Log::cache_get( $throttle ) ) {
 				return;
@@ -296,7 +296,7 @@ final class PNCP_Private_Urls {
 	}
 
 	/**
-	 * Τα στατιστικά: μοτίβο (πεζά) => στοιχεία.
+	 * The statistics: pattern (lowercase) => data.
 	 *
 	 * @return array<string, array<string, mixed>>
 	 */
@@ -305,17 +305,17 @@ final class PNCP_Private_Urls {
 		return is_array( $stats ) ? $stats : array();
 	}
 
-	/* ---------- Διαδρομές ---------- */
+	/* ---------- Paths ---------- */
 
 	/**
-	 * Η διαδρομή του αιτήματος, σχετική με τη ρίζα του site (π.χ. /skroutz.xml).
+	 * The request path, relative to the site root (e.g. /skroutz.xml).
 	 *
 	 * @return string
 	 */
 	private static function request_path() {
-		$uri  = isset( $_SERVER['REQUEST_URI'] ) ? wp_unslash( $_SERVER['REQUEST_URI'] ) : ''; // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- Μόνο σύγκριση με μοτίβα.
+		$uri  = isset( $_SERVER['REQUEST_URI'] ) ? wp_unslash( $_SERVER['REQUEST_URI'] ) : ''; // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- Only compared against patterns.
 		$path = self::relative_path( rawurldecode( (string) wp_parse_url( (string) $uri, PHP_URL_PATH ) ) );
-		// Το WordPress δέχεται και τη μορφή /index.php/διαδρομή.
+		// WordPress also accepts the /index.php/path form.
 		if ( 0 === stripos( $path, '/index.php/' ) ) {
 			$path = substr( $path, strlen( '/index.php' ) );
 		}
@@ -323,9 +323,9 @@ final class PNCP_Private_Urls {
 	}
 
 	/**
-	 * Αφαιρεί τον υποφάκελο της εγκατάστασης (π.χ. /blog) από μια διαδρομή.
+	 * Strips the installation subfolder (e.g. /blog) from a path.
 	 *
-	 * @param string $path Διαδρομή.
+	 * @param string $path Path.
 	 * @return string
 	 */
 	public static function relative_path( $path ) {
@@ -338,10 +338,10 @@ final class PNCP_Private_Urls {
 	}
 
 	/**
-	 * Το πρώτο μοτίβο που ταιριάζει με τη διαδρομή ('' = κανένα). Το * σημαίνει «οτιδήποτε».
+	 * The first pattern that matches the path ('' = none). * means "anything".
 	 *
-	 * @param string   $path     Διαδρομή.
-	 * @param string[] $patterns Μοτίβα (διαδρομές ή πλήρη URLs).
+	 * @param string   $path     Path.
+	 * @param string[] $patterns Patterns (paths or full URLs).
 	 * @return string
 	 */
 	public static function matching_pattern( $path, $patterns ) {
@@ -351,7 +351,7 @@ final class PNCP_Private_Urls {
 				continue;
 			}
 			$p = self::relative_path( $p );
-			// Με ή χωρίς / στο τέλος (το WordPress δέχεται και τα δύο για τις περισσότερες διαδρομές).
+			// With or without a trailing / (WordPress accepts both for most paths).
 			$regex = '#^' . str_replace( '\*', '.*', preg_quote( untrailingslashit( $p ), '#' ) ) . '/?$#i';
 			if ( preg_match( $regex, $path ) ) {
 				return $pattern;
@@ -361,10 +361,10 @@ final class PNCP_Private_Urls {
 	}
 
 	/**
-	 * Ταιριάζει η διαδρομή με κάποιο μοτίβο;
+	 * Does the path match any pattern?
 	 *
-	 * @param string   $path     Διαδρομή.
-	 * @param string[] $patterns Μοτίβα.
+	 * @param string   $path     Path.
+	 * @param string[] $patterns Patterns.
 	 * @return bool
 	 */
 	public static function path_matches( $path, $patterns ) {
@@ -372,10 +372,10 @@ final class PNCP_Private_Urls {
 	}
 
 	/**
-	 * Ανήκει η IP σε μια IP ή CIDR; (για συμβατότητα με την 1.4)
+	 * Does the IP belong to an IP or CIDR? (for compatibility with 1.4)
 	 *
 	 * @param string $ip    IP.
-	 * @param string $range IP ή CIDR.
+	 * @param string $range IP or CIDR.
 	 * @return bool
 	 */
 	public static function ip_in_range( $ip, $range ) {
@@ -383,16 +383,16 @@ final class PNCP_Private_Urls {
 	}
 
 	/**
-	 * Το URL ενός μοτίβου με το token, για τη σελίδα ρυθμίσεων.
+	 * The URL of a pattern with the token, for the settings page.
 	 *
-	 * @param string $pattern Μοτίβο.
+	 * @param string $pattern Pattern.
 	 * @param string $token   Token.
 	 * @return string
 	 */
 	public static function example_url( $pattern, $token ) {
 		$path = self::relative_path( (string) wp_parse_url( $pattern, PHP_URL_PATH ) );
 		if ( false !== strpos( $path, '*' ) ) {
-			$path = '/feed.xml'; // Μοτίβο με *: δείχνουμε ένα γενικό παράδειγμα.
+			$path = '/feed.xml'; // Pattern with *: we show a generic example.
 		}
 		return add_query_arg( self::QUERY_ARG, rawurlencode( $token ), home_url( $path ) );
 	}
