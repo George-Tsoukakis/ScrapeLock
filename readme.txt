@@ -1,10 +1,10 @@
 === Content Protect ===
 Contributors: the-greek
 Tags: content protection, copy protection, no right click
-Requires at least: 6.0
+Requires at least: 6.2
 Tested up to: 7.1
 Requires PHP: 7.4
-Stable tag: 1.4.0
+Stable tag: 2.2.1
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -14,6 +14,20 @@ License URI: https://www.gnu.org/licenses/gpl-2.0.html
 Δυσκολεύει την αντιγραφή κειμένων και εικόνων, προσθέτει την πηγή όταν κάποιος αντιγράφει ή εκτυπώνει, κρύβει το κείμενο από το REST API και τα feeds, μπλοκάρει scrapers και AI bots και βάζει προαιρετικά υδατογράφημα στις εικόνες. Φόρμες, καλάθι, ταμείο, συνδεδεμένοι συντάκτες και μηχανές αναζήτησης δεν επηρεάζονται.
 
 == Changelog ==
+Πλήρες ιστορικό: CHANGELOG.md.
+
+= 2.2.1 =
+* Το token των feeds δεν αποθηκεύεται ποτέ σε καθαρή μορφή, ούτε στη μετάβαση από την 1.x.
+* Νέα επιλογή: επιτρέπονται οι AI μηχανές αναζήτησης (OAI-SearchBot, Claude-SearchBot, PerplexityBot κ.ά.), ενώ οι crawlers εκπαίδευσης μένουν μπλοκαρισμένοι. Ανενεργή από προεπιλογή.
+
+= 2.2.0 =
+* Δοκιμές σε πραγματική στοίβα (WooCommerce, WPGraphQL, Nginx, Apache, Redis, page cache) και διορθώσεις: ατομικός μετρητής ορίων, πίνακας αποκλεισμών, bots μέσω wc-ajax, κανόνες server.
+
+= 2.1.1 =
+* Διορθώσεις ασφαλείας: προεπισκόπηση builders, συνδεδεμένοι πελάτες, wc-ajax, headers των feeds.
+
+= 2.1.0 =
+* Trusted Proxy, Emergency Mode, έτοιμα προφίλ, αρχείο ασφαλείας, κανόνες Nginx / Apache / Cloudflare, hash των tokens, προστασία WPGraphQL και WooCommerce Store API.
 = 1.4.0 =
 * Widget στον Πίνακα ελέγχου και κουμπί στη γραμμή διαχείρισης με την κατάσταση και ενεργοποίηση/απενεργοποίηση με ένα κλικ.
 

@@ -1,0 +1,11 @@
+{
+  "name": "pncp-browser-tests",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "PLAYWRIGHT_BROWSERS_PATH=${PLAYWRIGHT_BROWSERS_PATH:-/opt/pw-browsers} node protect.mjs"
+  },
+  "devDependencies": {
+    "playwright": "1.56.1"
+  }
+}
