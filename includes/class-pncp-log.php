@@ -407,7 +407,7 @@ final class PNCP_Log {
 	 */
 	public static function unban( $ip ) {
 		global $wpdb;
-		self::cache_delete( 'pncp_st_' . md5( $ip ) );
+		self::cache_delete( 'pncp_st_' . md5( PNCP_Ip::limit_key( $ip ) ) );
 		if ( wp_using_ext_object_cache() ) {
 			wp_cache_delete( 'pncp_ban_' . md5( $ip ), 'pncp' );
 		}
@@ -422,7 +422,7 @@ final class PNCP_Log {
 	public static function unban_all() {
 		global $wpdb;
 		foreach ( array_keys( self::active_bans( 0 ) ) as $ip ) {
-			self::cache_delete( 'pncp_st_' . md5( (string) $ip ) );
+			self::cache_delete( 'pncp_st_' . md5( PNCP_Ip::limit_key( (string) $ip ) ) );
 			if ( wp_using_ext_object_cache() ) {
 				wp_cache_delete( 'pncp_ban_' . md5( (string) $ip ), 'pncp' );
 			}
@@ -487,7 +487,7 @@ final class PNCP_Log {
 		if ( $strikes < 1 || '' === $ip ) {
 			return false;
 		}
-		$key   = 'pncp_st_' . md5( $ip );
+		$key   = 'pncp_st_' . md5( PNCP_Ip::limit_key( $ip ) ); // IPv6: per /64, like the limits.
 		$count = (int) self::cache_get( $key ) + 1;
 		self::cache_set( $key, $count, 10 * MINUTE_IN_SECONDS );
 		if ( $count >= $strikes ) {

@@ -91,7 +91,7 @@ list( $code ) = get( $nginx . '/static-feed.xml', $browser );
 t( 'Nginx: στατικό feed χωρίς token 403', 403 === $code, (string) $code );
 list( $code, $body ) = get( $nginx . '/static-feed.xml?cp_token=' . $token, $browser );
 t( 'Nginx: στατικό feed με token στο URL 200', 200 === $code && false !== strpos( $body, 'στατικό' ), (string) $code );
-list( $code ) = get( $nginx . '/static-feed.xml', $browser + array( 'X-Content-Protect-Token' => $token ) );
+list( $code ) = get( $nginx . '/static-feed.xml', $browser + array( 'X-ScrapeLock-Token' => $token ) );
 t( 'Nginx: στατικό feed με token στο header 200', 200 === $code, (string) $code );
 list( $code, $body ) = get( $nginx . '/skroutz.xml?cp_token=' . $token, $browser + array( 'X-Test-IP' => '203.0.113.89' ) );
 t( 'Nginx: feed της PHP με token στο URL → φτάνει στο WordPress και δίνει το XML (όχι 404 του Nginx)', 200 === $code && false !== strpos( $body, 'ΤΙΜΟΚΑΤΑΛΟΓΟΣ' ), (string) $code );

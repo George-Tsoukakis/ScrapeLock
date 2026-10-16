@@ -129,7 +129,7 @@ final class PNCP_Rules {
 		}
 		if ( self::private_regexes() ) {
 			// Token for the static feeds: in the URL (cp_token) or in the header. Put your own in place of YOUR_TOKEN.
-			$lines[] = 'map "$arg_cp_token:$http_x_content_protect_token" $pncp_token_ok {';
+			$lines[] = 'map "$arg_cp_token:$http_x_scrapelock_token" $pncp_token_ok {';
 			$lines[] = '    default 0;';
 			$lines[] = '    "~^YOUR_TOKEN:" 1;';
 			$lines[] = '    "~:YOUR_TOKEN$" 1;';
@@ -250,7 +250,7 @@ final class PNCP_Rules {
 			$lines[] = '# PHP feeds are checked by WordPress (token, Bearer, allowed IPs, administrator).';
 			$lines[] = 'RewriteCond %{REQUEST_FILENAME} -f';
 			$lines[] = 'RewriteCond %{QUERY_STRING} !(^|&)cp_token=YOUR_TOKEN(&|$)';
-			$lines[] = 'RewriteCond %{HTTP:X-Content-Protect-Token} !^YOUR_TOKEN$';
+			$lines[] = 'RewriteCond %{HTTP:X-ScrapeLock-Token} !^YOUR_TOKEN$';
 			$lines[] = 'RewriteRule ' . str_replace( '^/', '^', $regex ) . ' - [F,L]';
 		}
 		$lines[] = '# Authorization: Bearer reaches PHP with PHP-FPM / CGI too.';

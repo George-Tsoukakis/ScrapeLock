@@ -182,7 +182,7 @@ final class PNCP_Status {
 			printf(
 				'<div class="notice notice-%1$s is-dismissible"><p>%2$s</p></div>',
 				$on ? 'success' : 'warning',
-				esc_html( $on ? __( 'Content protection enabled.', 'scrapelock' ) : __( 'Content protection disabled. The site is not protected.', 'scrapelock' ) )
+				esc_html( $on ? __( 'ScrapeLock enabled.', 'scrapelock' ) : __( 'ScrapeLock disabled. The site is not protected.', 'scrapelock' ) )
 			);
 		}
 		if ( isset( $_GET['pncp_emergency'] ) ) {
