@@ -16,7 +16,7 @@
 - **Πακέτο:** ο ελληνικός οδηγός χρήσης μεταφέρθηκε στο `docs/user-guide-el.md` και δεν μπαίνει στο zip. Τα tests ήταν ήδη έξω από το πακέτο.
 - **Μόνο αγγλικά στο πακέτο:** η ελληνική μετάφραση (`.po` / `.mo`) και το `load_plugin_textdomain()` βγήκαν από το plugin. Το `.po` φυλάγεται στο `translations/scrapelock-el.po`, για υποβολή στο translate.wordpress.org.
 - **Παντού ScrapeLock:** τίτλος σελίδας ρυθμίσεων, μενού (Settings → ScrapeLock), widget, κείμενο πολιτικής απορρήτου, σχόλια των κανόνων Nginx / robots.txt και `@package`. Η σελίδα ρυθμίσεων είναι πλέον `options-general.php?page=scrapelock`. Οι δείκτες Apache έγιναν `# BEGIN ScrapeLock` / `# END ScrapeLock`: όποιος είχε επικολλήσει το παλιό μπλοκ «Content Protect» το αντικαθιστά με το νέο. Το αρχείο Nginx στο παράδειγμα λέγεται `scrapelock.conf`.
-- **Αποθετήριο:** το plugin μένει στη ρίζα· το κύριο αρχείο είναι το `scrapelock.php` (από `content-protect.php`). Νέοι φάκελοι εκτός πακέτου: `docs/`, `translations/`, `wporg-assets/`, και CI στο `.github/workflows/ci.yml` (zip ως artifact για 14 ημέρες).
+- **Αποθετήριο:** το plugin μένει στη ρίζα· το κύριο αρχείο είναι το `scrapelock.php` (από `content-protect.php`). Νέοι φάκελοι εκτός πακέτου: `docs/`, `translations/`, `wporg-assets/`, και CI στο `.github/workflows/ci.yml` (zip ως artifact για 3 ημέρες).
 - Μένουν ίδια για συμβατότητα: prefix `pncp_`, option `pncp_settings`, header `X-Content-Protect-Token` και παράμετρος `cp_token` (τα χρησιμοποιούν ERP και πλατφόρμες τιμών).
 
 ## 2.2.1 — 2026-10-16

@@ -36,7 +36,7 @@ phpcs                 # WordPress Coding Standards (phpcs.xml.dist)
 cd tests && WP_DIR=/path/to/wordpress BASE=http://127.0.0.1:8099 ./run-all.sh
 ```
 
-The same checks run on GitHub Actions for every pull request (`.github/workflows/ci.yml`). The plugin zip is kept as an artifact for 14 days, then deleted automatically.
+The same checks run on GitHub Actions for every pull request (`.github/workflows/ci.yml`). The plugin zip is kept as an artifact for 3 days, then deleted automatically.
 
 ## Upgrading from Content Protect
 
