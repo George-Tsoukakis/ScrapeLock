@@ -1041,7 +1041,7 @@ msgstr "Nginx"
 
 #: includes/class-pncp-admin.php:1007
 msgid "1) Inside http { }, e.g. in the file /etc/nginx/conf.d/scrapelock.conf:"
-msgstr "1) Μέσα στο http { }, π.χ. στο αρχείο /etc/nginx/conf.d/content-protect.conf:"
+msgstr "1) Μέσα στο http { }, π.χ. στο αρχείο /etc/nginx/conf.d/scrapelock.conf:"
 
 #: includes/class-pncp-admin.php:1009
 msgid "2) Inside the site's server { }, before the other location blocks. Then: nginx -t and reload."
