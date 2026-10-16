@@ -94,5 +94,5 @@ jobs:
           name: scrapelock-zip
           path: ${{ env.ZIP }}
           if-no-files-found: error
-          # Each build is kept 14 days, then deleted automatically (default: 90), so artifact storage does not fill up.
-          retention-days: 14
+          # Each build is kept 3 days, then deleted automatically (default: 90), so artifact storage does not fill up.
+          retention-days: 3
