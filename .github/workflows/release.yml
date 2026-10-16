@@ -1,0 +1,50 @@
+# ScrapeLock: on a version tag (e.g. v2.2.2) builds scrapelock.zip and publishes it as a GitHub Release,
+# free to download. The zip has the scrapelock/ folder, ready for Plugins → Add New → Upload Plugin.
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Build zip and publish the release
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Check that the tag matches the plugin version
+        run: |
+          version=$(sed -n 's/^ \* Version: *//p' scrapelock.php)
+          stable=$(sed -n 's/^Stable tag: *//p' readme.txt)
+          constant=$(sed -n "s/^define( 'PNCP_VERSION', '\(.*\)' );/\1/p" scrapelock.php)
+          if [ "v$version" != "$GITHUB_REF_NAME" ] || [ "$version" != "$stable" ] || [ "$version" != "$constant" ]; then
+            echo "::error::Tag $GITHUB_REF_NAME, Version $version, Stable tag $stable, PNCP_VERSION $constant: they must match"
+            exit 1
+          fi
+          echo "VERSION=$version" >> "$GITHUB_ENV"
+      - name: Syntax check (php -l)
+        run: find . -name '*.php' -not -path './tests/*' -print0 | xargs -0 -n1 php -l > /dev/null
+      - name: Build scrapelock.zip (only the plugin, see .gitattributes)
+        run: |
+          git archive --format=zip --prefix=scrapelock/ -o scrapelock.zip HEAD
+          if unzip -l scrapelock.zip | grep -qE 'tests/|\.po$|\.mo$'; then echo "::error::tests or translations in the zip"; exit 1; fi
+          cp scrapelock.zip "scrapelock-$VERSION.zip"
+      - name: Release notes from readme.txt
+        run: |
+          {
+            echo "ScrapeLock $VERSION – Content & AI Bot Protection for WordPress."
+            echo
+            echo "Install: download **scrapelock.zip** below, then in WordPress go to Plugins → Add New → Upload Plugin."
+            echo
+            echo "### Changes"
+            awk -v v="= $VERSION =" '$0 == v {on=1; next} /^= / && on {exit} on' readme.txt
+          } > notes.md
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" scrapelock.zip "scrapelock-$VERSION.zip" --title "ScrapeLock $VERSION" --notes-file notes.md --verify-tag

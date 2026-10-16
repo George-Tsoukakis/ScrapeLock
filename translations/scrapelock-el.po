@@ -1,6 +1,6 @@
 msgid ""
 msgstr ""
-"Project-Id-Version: ScrapeLock 2.2.1\n"
+"Project-Id-Version: ScrapeLock 2.2.2\n"
 "Report-Msgid-Bugs-To: https://wordpress.org/support/plugin/scrapelock\n"
 "MIME-Version: 1.0\n"
 "Content-Type: text/plain; charset=UTF-8\n"
@@ -40,12 +40,12 @@ msgid "Invalid request."
 msgstr "Άκυρο αίτημα."
 
 #: includes/class-pncp-status.php:185
-msgid "Content protection enabled."
-msgstr "Η προστασία περιεχομένου ενεργοποιήθηκε."
+msgid "ScrapeLock enabled."
+msgstr "Το ScrapeLock ενεργοποιήθηκε."
 
 #: includes/class-pncp-status.php:185
-msgid "Content protection disabled. The site is not protected."
-msgstr "Η προστασία περιεχομένου απενεργοποιήθηκε. Το site δεν προστατεύεται."
+msgid "ScrapeLock disabled. The site is not protected."
+msgstr "Το ScrapeLock απενεργοποιήθηκε. Το site δεν προστατεύεται."
 
 #: includes/class-pncp-status.php:193
 msgid "Emergency Mode started."
@@ -1041,7 +1041,7 @@ msgstr "Nginx"
 
 #: includes/class-pncp-admin.php:1007
 msgid "1) Inside http { }, e.g. in the file /etc/nginx/conf.d/scrapelock.conf:"
-msgstr "1) Μέσα στο http { }, π.χ. στο αρχείο /etc/nginx/conf.d/content-protect.conf:"
+msgstr "1) Μέσα στο http { }, π.χ. στο αρχείο /etc/nginx/conf.d/scrapelock.conf:"
 
 #: includes/class-pncp-admin.php:1009
 msgid "2) Inside the site's server { }, before the other location blocks. Then: nginx -t and reload."

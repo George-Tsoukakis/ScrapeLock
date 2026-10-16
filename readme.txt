@@ -4,7 +4,7 @@ Tags: anti-scraping, ai bots, bot protection, rate limit, content protection
 Requires at least: 6.2
 Tested up to: 7.1
 Requires PHP: 7.4
-Stable tag: 2.2.1
+Stable tag: 2.2.2
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -31,7 +31,7 @@ Nothing can stop a determined human: whatever a visitor sees has already reached
 * Block a list of scrapers and AI training crawlers, with a separate option to allow AI search assistants.
 * Detect fake Googlebot, Bingbot, Applebot and Yandex with the official IP lists and reverse DNS. Real search engines always pass.
 * Invisible bot trap link, disallowed in robots.txt.
-* Per-IP limits for pages, searches and REST / GraphQL, with temporary blocks after repeated violations.
+* Per-IP limits for pages, searches and REST / GraphQL (IPv6: per /64 network), with temporary blocks after repeated violations.
 * Trusted Proxy support for Cloudflare and reverse proxies, so the real IP cannot be spoofed.
 * Ready-made presets (Balanced, Strict, Maximum) and an Emergency Mode for attacks in progress.
 * Block log with a 24-hour summary, top IPs and User-Agents, and automatic deletion after 1, 7 or 30 days.
@@ -117,6 +117,12 @@ When a request is blocked, the IP address, User-Agent, page and time are logged.
 6. Dashboard widget with the protection status and the last 24 hours.
 
 == Changelog ==
+
+= 2.2.2 =
+* New name: ScrapeLock (formerly Content Protect). Folder and main file `scrapelock/scrapelock.php`, text domain `scrapelock`. Settings, tokens and log are kept.
+* Security: rate limits and violations are counted per /64 network for IPv6, so a scraper cannot bypass them by changing address. Filter `pncp_ipv6_prefix`.
+* Security: a real Applebot / YandexBot is no longer banned when its DNS check cannot finish (DNS budget used up or reverse DNS failed).
+* The feed token header is now `X-ScrapeLock-Token`. The old `X-Content-Protect-Token` header is still accepted.
 
 = 2.2.1 =
 * Security: the 1.x feed token is no longer kept in plain text during migration.
