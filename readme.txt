@@ -4,7 +4,7 @@ Tags: anti-scraping, ai bots, bot protection, rate limit, content protection
 Requires at least: 6.2
 Tested up to: 7.1
 Requires PHP: 7.4
-Stable tag: 2.2.1
+Stable tag: 2.2.2
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -117,6 +117,12 @@ When a request is blocked, the IP address, User-Agent, page and time are logged.
 6. Dashboard widget with the protection status and the last 24 hours.
 
 == Changelog ==
+
+= 2.2.2 =
+* New name: ScrapeLock (formerly Content Protect). Folder and main file `scrapelock/scrapelock.php`, text domain `scrapelock`. Settings, tokens and log are kept.
+* Security: rate limits and violations are counted per /64 network for IPv6, so a scraper cannot bypass them by changing address. Filter `pncp_ipv6_prefix`.
+* Security: a real Applebot / YandexBot is no longer banned when its DNS check cannot finish (DNS budget used up or reverse DNS failed).
+* The feed token header is now `X-ScrapeLock-Token`. The old `X-Content-Protect-Token` header is still accepted.
 
 = 2.2.1 =
 * Security: the 1.x feed token is no longer kept in plain text during migration.
