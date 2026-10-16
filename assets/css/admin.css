@@ -1,0 +1,157 @@
+/* Content Protect – σελίδα ρυθμίσεων */
+
+.pncp-admin .nav-tab-wrapper {
+	margin-bottom: 16px;
+}
+
+.pncp-cards {
+	display: grid;
+	grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+	gap: 16px;
+	margin: 16px 0;
+}
+
+.pncp-card {
+	padding: 16px 20px;
+	border: 1px solid #c3c4c7;
+	border-radius: 4px;
+	background: #fff;
+}
+
+.pncp-card--wide {
+	margin: 16px 0;
+}
+
+.pncp-card h2,
+.pncp-card h3 {
+	margin-top: 0;
+}
+
+.pncp-card--emergency {
+	border-left: 4px solid #9a4a00;
+}
+
+.pncp-profile {
+	display: flex;
+	align-items: flex-start;
+	gap: 12px;
+	margin: 0 0 12px;
+}
+
+.pncp-profile .button {
+	flex: 0 0 auto;
+	min-width: 120px;
+	justify-content: center;
+}
+
+.pncp-profile .description {
+	margin: 2px 0 0;
+}
+
+.pncp-profile.is-current .button {
+	box-shadow: 0 0 0 2px #fff, 0 0 0 4px #2271b1;
+}
+
+.pncp-emergency-on {
+	font-weight: 600;
+	color: #6b3500;
+}
+
+.pncp-admin .button.pncp-button-danger {
+	border-color: #9a4a00;
+	color: #6b3500;
+}
+
+.pncp-admin .button.pncp-button-danger:hover,
+.pncp-admin .button.pncp-button-danger:focus {
+	border-color: #6b3500;
+	background: #fcf3e6;
+	color: #6b3500;
+}
+
+.pncp-inline-warning {
+	padding: 8px 12px;
+	border-left: 4px solid #dba617;
+	background: #fcf9e8;
+	color: #1d2327;
+}
+
+.pncp-confirm {
+	padding-bottom: 4px;
+}
+
+.pncp-token {
+	display: inline-block;
+	padding: 4px 8px;
+	font-size: 14px;
+	word-break: break-all;
+}
+
+.pncp-fresh-token code {
+	word-break: break-all;
+}
+
+.pncp-table {
+	max-width: 1100px;
+	margin: 8px 0 16px;
+}
+
+.pncp-log-table .pncp-ua {
+	max-width: 360px;
+	word-break: break-word;
+	font-size: 12px;
+}
+
+.pncp-inline-form {
+	margin: 0;
+}
+
+.pncp-big-number {
+	margin: 4px 0 0;
+	font-size: 20px;
+	font-weight: 600;
+}
+
+.pncp-count-list {
+	margin: 0 0 0 20px;
+}
+
+.pncp-count-list li {
+	display: flex;
+	justify-content: space-between;
+	gap: 12px;
+	word-break: break-word;
+}
+
+.pncp-badge {
+	display: inline-block;
+	margin-left: 6px;
+	padding: 1px 8px;
+	border-radius: 10px;
+	background: #f0f0f1;
+	color: #3c434a;
+	font-size: 12px;
+	font-weight: 400;
+	vertical-align: middle;
+}
+
+.pncp-code textarea {
+	font-size: 12px;
+	white-space: pre;
+}
+
+.pncp-tool-buttons {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 8px;
+}
+
+.pncp-progress progress {
+	width: 100%;
+	max-width: 480px;
+	height: 18px;
+}
+
+.pncp-list-status {
+	margin-left: 0;
+}

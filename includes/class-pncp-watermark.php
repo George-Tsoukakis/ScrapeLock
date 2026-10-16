@@ -1,9 +1,14 @@
 <?php
 /**
- * Υδατογράφημα στα μεγέθη εικόνων που φτιάχνει το WordPress για νέα uploads.
+ * Υδατογράφημα εικόνων.
  *
- * Το πρωτότυπο αρχείο (και το "-scaled" του WordPress) δεν αγγίζεται ποτέ. Αν απενεργοποιήσετε
- * τη λειτουργία και ξαναφτιάξετε τα thumbnails, οι εικόνες βγαίνουν καθαρές.
+ * - Μπαίνει στα μεγέθη που φτιάχνει το WordPress (thumbnail, medium, large…) και, προαιρετικά, στην εικόνα
+ *   πλήρους μεγέθους. Πριν από αυτό, το καθαρό αρχείο πλήρους μεγέθους φυλάγεται σε κρυφό φάκελο, ώστε να
+ *   γίνεται πάντα επαναφορά.
+ * - Ποτέ διπλό υδατογράφημα: κάθε εικόνα κρατά (meta `_pncp_wm`) ποια αρχεία έχουν ήδη υδατογράφημα. Όταν
+ *   ξαναφτιάχνονται τα μεγέθη, φτιάχνονται πάντα από καθαρή πηγή.
+ * - Εξαιρούνται: το ίδιο το υδατογράφημα, το εικονίδιο site, το λογότυπο, η εικόνα placeholder του
+ *   WooCommerce και (από προεπιλογή) οι εικόνες προϊόντων, που τις απορρίπτουν Google Merchant, Skroutz κ.ά.
  *
  * @package Content_Protect
  */
@@ -16,10 +21,48 @@ defined( 'ABSPATH' ) || exit;
 final class PNCP_Watermark {
 
 	/**
+	 * Meta με την κατάσταση της εικόνας: ['full' => [σχετική διαδρομή => md5 του αρχείου με υδατογράφημα], 'sizes' => [αρχείο => 1|0]].
+	 */
+	const META = '_pncp_wm';
+
+	/**
+	 * Cron hook για αφαίρεση υδατογραφήματος σε μία εικόνα (π.χ. όταν γίνει λογότυπο ή εικόνα προϊόντος).
+	 */
+	const CRON_UNMARK = 'pncp_wm_unmark';
+
+	/**
+	 * Τύποι εικόνων που υποστηρίζονται.
+	 *
+	 * @var string[]
+	 */
+	private static $mimes = array( 'image/jpeg', 'image/png', 'image/webp' );
+
+	/**
+	 * Πόσα μεγέθη δεν ξαναφτιάχτηκαν στην τελευταία επεξεργασία.
+	 *
+	 * @var int
+	 */
+	private static $errors = 0;
+
+	/**
+	 * Cache του υδατογραφήματος για το αίτημα.
+	 *
+	 * @var resource|\GdImage|false|null
+	 */
+	private static $mark = null;
+
+	/**
 	 * Δένει τα hooks.
 	 */
 	public static function init() {
-		add_filter( 'wp_generate_attachment_metadata', array( __CLASS__, 'apply_to_sizes' ), 20, 2 );
+		add_filter( 'wp_generate_attachment_metadata', array( __CLASS__, 'on_generate' ), 20, 3 );
+		add_action( 'delete_attachment', array( __CLASS__, 'on_delete' ) );
+		add_action( self::CRON_UNMARK, array( __CLASS__, 'unmark' ) );
+		add_action( 'added_post_meta', array( __CLASS__, 'on_post_meta' ), 10, 4 );
+		add_action( 'updated_post_meta', array( __CLASS__, 'on_post_meta' ), 10, 4 );
+		add_action( 'updated_option', array( __CLASS__, 'on_option' ), 10, 3 );
+		add_action( 'added_option', array( __CLASS__, 'on_added_option' ), 10, 2 );
+		add_filter( 'load_image_to_edit_path', array( __CLASS__, 'edit_from_clean' ), 10, 2 );
 	}
 
 	/**
@@ -28,52 +71,629 @@ final class PNCP_Watermark {
 	 * @return bool
 	 */
 	public static function available() {
-		return function_exists( 'imagecreatetruecolor' ) && function_exists( 'imagecopyresampled' );
+		return function_exists( 'imagecreatetruecolor' ) && function_exists( 'imagecopyresampled' ) && function_exists( 'imagerotate' );
+	}
+
+	/* ---------- Ποιες εικόνες ---------- */
+
+	/**
+	 * Εικόνες του site που δεν παίρνουν ποτέ υδατογράφημα: εικονίδιο, λογότυπα, placeholder, υδατογράφημα.
+	 *
+	 * @return int[]
+	 */
+	public static function protected_ids() {
+		$ids = array(
+			(int) PNCP_Options::stored()['watermark_image_id'],
+			(int) get_option( 'site_icon' ),
+			(int) get_option( 'site_logo' ),
+			(int) get_theme_mod( 'custom_logo' ),
+			(int) get_option( 'woocommerce_placeholder_image' ),
+		);
+		return array_values( array_filter( $ids ) );
 	}
 
 	/**
-	 * Βάζει υδατογράφημα σε κάθε μέγεθος της νέας εικόνας.
+	 * Είναι εικόνα προϊόντος WooCommerce; (συνημμένη σε προϊόν, κύρια εικόνα ή εικόνα γκαλερί)
 	 *
-	 * @param array<string, mixed> $metadata      Τα metadata του συνημμένου.
-	 * @param int                  $attachment_id ID συνημμένου.
-	 * @return array<string, mixed>
+	 * @param int $attachment_id ID συνημμένου.
+	 * @return bool
 	 */
-	public static function apply_to_sizes( $metadata, $attachment_id ) {
-		$s = PNCP_Options::get();
+	public static function is_product_image( $attachment_id ) {
+		global $wpdb;
+		$attachment_id = (int) $attachment_id;
+		$parent        = (int) wp_get_post_parent_id( $attachment_id );
+		if ( $parent && in_array( get_post_type( $parent ), array( 'product', 'product_variation' ), true ) ) {
+			return true;
+		}
+		// phpcs:disable WordPress.DB.DirectDatabaseQuery -- Ένα ερώτημα ανά εικόνα, μόνο κατά την επεξεργασία της.
+		$thumb = $wpdb->get_var(
+			$wpdb->prepare(
+				"SELECT pm.post_id FROM {$wpdb->postmeta} pm INNER JOIN {$wpdb->posts} p ON p.ID = pm.post_id
+				WHERE pm.meta_key = '_thumbnail_id' AND pm.meta_value = %s AND p.post_type IN ('product','product_variation') LIMIT 1",
+				(string) $attachment_id
+			)
+		);
+		if ( $thumb ) {
+			return true;
+		}
+		$galleries = $wpdb->get_col(
+			$wpdb->prepare(
+				"SELECT meta_value FROM {$wpdb->postmeta} WHERE meta_key = '_product_image_gallery' AND meta_value LIKE %s",
+				'%' . $wpdb->esc_like( (string) $attachment_id ) . '%'
+			)
+		);
+		// phpcs:enable WordPress.DB.DirectDatabaseQuery
+		foreach ( (array) $galleries as $gallery ) {
+			if ( in_array( $attachment_id, array_map( 'intval', explode( ',', (string) $gallery ) ), true ) ) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	/**
+	 * Παίρνει αυτή η εικόνα υδατογράφημα με τις τρέχουσες ρυθμίσεις;
+	 *
+	 * @param int                  $attachment_id ID συνημμένου.
+	 * @param array<string, mixed> $s             Ρυθμίσεις.
+	 * @return bool
+	 */
+	public static function eligible( $attachment_id, $s ) {
+		$attachment_id = (int) $attachment_id;
 		if ( empty( $s['enabled'] ) || empty( $s['watermark_enabled'] ) || ! self::available() ) {
-			return $metadata;
+			return false;
 		}
-		if ( empty( $metadata['sizes'] ) || ! is_array( $metadata['sizes'] ) ) {
-			return $metadata;
+		if ( ! in_array( get_post_mime_type( $attachment_id ), self::$mimes, true ) ) {
+			return false;
 		}
-		if ( (int) $attachment_id === (int) $s['watermark_image_id'] ) {
-			return $metadata; // Το ίδιο το υδατογράφημα.
+		if ( in_array( $attachment_id, self::protected_ids(), true ) ) {
+			return false;
+		}
+		$context = (string) get_post_meta( $attachment_id, '_wp_attachment_context', true );
+		if ( in_array( $context, array( 'site-icon', 'custom-logo', 'site-logo' ), true ) ) {
+			return false;
+		}
+		if ( empty( $s['watermark_products'] ) && self::is_product_image( $attachment_id ) ) {
+			return false;
 		}
 
 		/**
-		 * Φίλτρο για να εξαιρέσετε εικόνες (π.χ. λογότυπα).
+		 * Φίλτρο για να εξαιρέσετε εικόνες.
 		 *
 		 * @param bool $apply         Αν θα μπει υδατογράφημα.
 		 * @param int  $attachment_id ID συνημμένου.
 		 */
-		if ( ! apply_filters( 'pncp_watermark_attachment', true, $attachment_id ) ) {
+		return (bool) apply_filters( 'pncp_watermark_attachment', true, $attachment_id );
+	}
+
+	/* ---------- Νέα uploads και αναδημιουργία μεγεθών ---------- */
+
+	/**
+	 * Τρέχει κάθε φορά που το WordPress φτιάχνει μεγέθη (νέο upload, «Regenerate Thumbnails», μεγέθη που έλειπαν).
+	 *
+	 * @param array<string, mixed> $metadata      Τα metadata.
+	 * @param int                  $attachment_id ID συνημμένου.
+	 * @param string               $context       create | update.
+	 * @return array<string, mixed>
+	 */
+	public static function on_generate( $metadata, $attachment_id, $context = 'create' ) {
+		if ( ! is_array( $metadata ) || empty( $metadata['file'] ) ) {
+			return $metadata;
+		}
+		$s     = PNCP_Options::get();
+		$state = self::state( $attachment_id );
+
+		// Αν το πλήρες μέγεθος έχει υδατογράφημα, τα μεγέθη που μόλις φτιάχτηκαν προέρχονται από αυτό:
+		// επαναφορά της καθαρής εικόνας και νέα μεγέθη από καθαρή πηγή, αλλιώς θα έβγαινε διπλό υδατογράφημα.
+		$regen = false;
+		if ( $state['full'] ) {
+			self::restore_full( $attachment_id, $state );
+			$state['full'] = array();
+			$regen         = true;
+		}
+		if ( 'create' === $context ) {
+			$state['sizes'] = array();
+		}
+
+		$apply = self::eligible( $attachment_id, $s );
+		if ( ! $apply && ! $regen ) {
+			self::save_state( $attachment_id, $state );
 			return $metadata;
 		}
 
-		$dir  = trailingslashit( dirname( (string) get_attached_file( $attachment_id ) ) );
-		$done = array();
-		foreach ( $metadata['sizes'] as $size ) {
-			// Δύο μεγέθη με τις ίδιες διαστάσεις μοιράζονται ένα αρχείο: υδατογράφημα μόνο μία φορά.
-			if ( empty( $size['file'] ) || isset( $done[ $size['file'] ] ) || (int) $size['width'] < (int) $s['watermark_min_width'] ) {
-				continue;
-			}
-			$done[ $size['file'] ] = true;
-			$mime = isset( $size['mime-type'] ) ? $size['mime-type'] : '';
-			self::apply_to_file( $dir . wp_basename( $size['file'] ), $mime, $s );
+		$metadata = self::process_sizes( $attachment_id, $metadata, $state, $s, $apply, $regen );
+		if ( $apply && ! empty( $s['watermark_full'] ) ) {
+			self::mark_full( $attachment_id, $state, $s );
+		} elseif ( ! $apply ) {
+			self::drop_backups( $attachment_id );
 		}
-
+		self::save_state( $attachment_id, $state );
 		return $metadata;
 	}
+
+	/**
+	 * Ξαναφτιάχνει μια εικόνα από καθαρή πηγή, με ή χωρίς υδατογράφημα (εργαλείο μαζικής εφαρμογής).
+	 * Ασφαλές να τρέξει ξανά όσες φορές χρειαστεί: κάθε φορά ξεκινά από το καθαρό πρωτότυπο. Έτσι
+	 * αφαιρεί και τα υδατογραφήματα της 1.x, που δεν άφηναν σημάδι.
+	 *
+	 * @param int  $attachment_id ID συνημμένου.
+	 * @param bool $apply         true = με υδατογράφημα (αν επιτρέπεται), false = καθαρή.
+	 * @return string done | skipped | error
+	 */
+	public static function rebuild( $attachment_id, $apply ) {
+		$attachment_id = (int) $attachment_id;
+		if ( ! in_array( get_post_mime_type( $attachment_id ), self::$mimes, true ) ) {
+			return 'skipped';
+		}
+		$metadata = wp_get_attachment_metadata( $attachment_id );
+		if ( ! is_array( $metadata ) || empty( $metadata['file'] ) ) {
+			return 'skipped';
+		}
+		if ( function_exists( 'wp_raise_memory_limit' ) ) {
+			wp_raise_memory_limit( 'image' );
+		}
+
+		$s     = PNCP_Options::get();
+		$state = self::state( $attachment_id );
+		self::restore_full( $attachment_id, $state );
+		$state = array(
+			'full'  => array(),
+			'sizes' => array(),
+		);
+
+		$apply        = $apply && self::eligible( $attachment_id, $s );
+		self::$errors = 0;
+		$metadata     = self::process_sizes( $attachment_id, $metadata, $state, $s, $apply, true );
+		if ( $apply && ! empty( $s['watermark_full'] ) ) {
+			self::mark_full( $attachment_id, $state, $s );
+		}
+		if ( ! $apply ) {
+			self::drop_backups( $attachment_id );
+		}
+		self::save_state( $attachment_id, $state );
+		wp_update_attachment_metadata( $attachment_id, $metadata );
+		return self::$errors ? 'error' : 'done';
+	}
+
+	/**
+	 * Αφαιρεί το υδατογράφημα από μία εικόνα (cron, όταν η εικόνα γίνει λογότυπο / εικόνα προϊόντος).
+	 *
+	 * @param int $attachment_id ID συνημμένου.
+	 */
+	public static function unmark( $attachment_id ) {
+		$state = self::state( $attachment_id );
+		if ( $state['full'] || in_array( 1, $state['sizes'], true ) ) {
+			self::rebuild( $attachment_id, false );
+		}
+	}
+
+	/**
+	 * Μεγέθη: (προαιρετικά) νέα από καθαρή πηγή και υδατογράφημα σε όσα δεν έχουν ήδη.
+	 *
+	 * @param int                  $attachment_id ID.
+	 * @param array<string, mixed> $metadata      Metadata.
+	 * @param array<string, mixed> $state         Κατάσταση (αλλάζει).
+	 * @param array<string, mixed> $s             Ρυθμίσεις.
+	 * @param bool                 $apply         Να μπει υδατογράφημα.
+	 * @param bool                 $regen         Να ξαναφτιαχτούν από καθαρή πηγή όσα δεν έχουν καταγραφεί.
+	 * @return array<string, mixed> Metadata (με ενημερωμένο filesize).
+	 */
+	private static function process_sizes( $attachment_id, $metadata, &$state, $s, $apply, $regen ) {
+		if ( empty( $metadata['sizes'] ) || ! is_array( $metadata['sizes'] ) ) {
+			return $metadata;
+		}
+		$dir = trailingslashit( dirname( (string) get_attached_file( $attachment_id, true ) ) );
+		// Τα αρχεία πλήρους μεγέθους έχουν ήδη επανέλθει (restore_full), άρα είναι καθαρά.
+		$source = $regen ? self::clean_source( $attachment_id ) : '';
+		$crops  = wp_get_registered_image_subsizes();
+
+		foreach ( $metadata['sizes'] as $name => $size ) {
+			if ( empty( $size['file'] ) ) {
+				continue;
+			}
+			$file = wp_basename( $size['file'] );
+			// Δύο μεγέθη με τις ίδιες διαστάσεις μοιράζονται ένα αρχείο: μία φορά.
+			if ( array_key_exists( $file, $state['sizes'] ) ) {
+				continue;
+			}
+			$path = $dir . $file;
+			$mime = isset( $size['mime-type'] ) ? (string) $size['mime-type'] : (string) wp_check_filetype( $file )['type'];
+
+			if ( $regen ) {
+				$crop = isset( $crops[ $name ]['crop'] ) ? $crops[ $name ]['crop'] : true;
+				if ( '' === $source || ! self::resize_from( $source, $path, (int) $size['width'], (int) $size['height'], $crop, $mime ) ) {
+					// Δεν ξαναφτιάχτηκε από καθαρή πηγή: ίσως έχει ήδη υδατογράφημα, οπότε δεν του βάζουμε δεύτερο.
+					++self::$errors;
+					continue;
+				}
+			}
+
+			$marked = false;
+			if ( $apply && (int) $size['width'] >= (int) $s['watermark_min_width'] ) {
+				$marked = self::apply_to_file( $path, $mime, $s );
+			}
+			$state['sizes'][ $file ] = $marked ? 1 : 0;
+
+			if ( is_file( $path ) ) {
+				clearstatcache( true, $path );
+				$metadata['sizes'][ $name ]['filesize'] = (int) filesize( $path );
+			}
+		}
+		return $metadata;
+	}
+
+	/**
+	 * Υδατογράφημα στο πλήρες μέγεθος (και στο αρχικό upload, αν το WordPress το μίκρυνε σε «-scaled»).
+	 * Πριν από κάθε αλλαγή φυλάγεται το καθαρό αρχείο.
+	 *
+	 * @param int                  $attachment_id ID.
+	 * @param array<string, mixed> $state         Κατάσταση (αλλάζει).
+	 * @param array<string, mixed> $s             Ρυθμίσεις.
+	 */
+	private static function mark_full( $attachment_id, &$state, $s ) {
+		$mime = (string) get_post_mime_type( $attachment_id );
+		foreach ( self::full_files( $attachment_id ) as $path ) {
+			$rel = self::relative( $path );
+			if ( isset( $state['full'][ $rel ] ) || ! self::ensure_backup( $path ) ) {
+				continue;
+			}
+			$type = wp_check_filetype( $path )['type'];
+			if ( self::apply_to_file( $path, $type ? $type : $mime, $s ) ) {
+				clearstatcache( true, $path );
+				// Το hash του αρχείου που γράψαμε: αν αλλάξει (π.χ. αντικατάσταση εικόνας), το αντίγραφο δεν ισχύει πια.
+				$state['full'][ $rel ] = (string) md5_file( $path );
+			}
+		}
+	}
+
+	/**
+	 * Τα αρχεία πλήρους μεγέθους: το συνημμένο (π.χ. -scaled) και το αρχικό upload.
+	 *
+	 * @param int $attachment_id ID.
+	 * @return string[]
+	 */
+	private static function full_files( $attachment_id ) {
+		$files    = array();
+		$attached = (string) get_attached_file( $attachment_id, true );
+		if ( '' !== $attached && is_file( $attached ) ) {
+			$files[] = $attached;
+		}
+		$original = function_exists( 'wp_get_original_image_path' ) ? (string) wp_get_original_image_path( $attachment_id, true ) : '';
+		if ( '' !== $original && $original !== $attached && is_file( $original ) ) {
+			$files[] = $original;
+		}
+		return $files;
+	}
+
+	/**
+	 * Επαναφέρει τα καθαρά αρχεία πλήρους μεγέθους από το αντίγραφο.
+	 *
+	 * Μόνο όταν το αρχείο στον δίσκο είναι ακόμη αυτό που γράψαμε εμείς (ίδιο hash). Αν άλλαξε (π.χ. το
+	 * «Enable Media Replace» ανέβασε νέα εικόνα στο ίδιο όνομα), το αρχείο στον δίσκο είναι το νέο καθαρό
+	 * πρωτότυπο και το παλιό αντίγραφο σβήνεται. Αντίγραφα χωρίς εγγραφή (ορφανά) σβήνονται επίσης.
+	 *
+	 * @param int                  $attachment_id ID.
+	 * @param array<string, mixed> $state         Κατάσταση.
+	 */
+	private static function restore_full( $attachment_id, $state ) {
+		$paths    = array();
+		$original = function_exists( 'wp_get_original_image_path' ) ? (string) wp_get_original_image_path( $attachment_id, true ) : '';
+		$attached = (string) get_attached_file( $attachment_id, true );
+		// Πρώτα το αρχικό upload: από αυτό το WordPress ξαναφτιάχνει το «-scaled».
+		foreach ( array( $original, $attached ) as $path ) {
+			if ( '' !== $path ) {
+				$paths[ self::relative( $path ) ] = $path;
+			}
+		}
+		foreach ( array_keys( (array) $state['full'] ) as $rel ) {
+			$paths[ (string) $rel ] = self::absolute( (string) $rel );
+		}
+		$derived_ok = false; // Το αρχικό upload είναι ακόμη δικό μας: το -scaled απλώς ξαναφτιάχτηκε από αυτό.
+		$orig_rel   = '' !== $original && $original !== $attached ? self::relative( $original ) : '';
+		foreach ( $paths as $rel => $path ) {
+			$backup = self::backup_path( $path );
+			if ( '' === $backup || ! is_file( $backup ) ) {
+				continue;
+			}
+			$hash = isset( $state['full'][ $rel ] ) ? (string) $state['full'][ $rel ] : '';
+			$ours = '' !== $hash && is_file( $path ) && md5_file( $path ) === $hash;
+			if ( $rel === $orig_rel ) {
+				$derived_ok = $ours;
+			} elseif ( '' !== $hash && $derived_ok && is_file( $path ) ) {
+				$ours = true;
+			}
+			if ( ! is_file( $path ) ) {
+				// Το αρχείο λείπει (π.χ. plugin offload): το αντίγραφο δεν σβήνεται ποτέ σε αυτή την περίπτωση.
+				if ( '' !== $hash ) {
+					copy( $backup, $path );
+				}
+			} elseif ( $ours ) {
+				copy( $backup, $path );
+			} else {
+				wp_delete_file( $backup ); // Νέο αρχείο στη θέση του παλιού: το αντίγραφο δεν ισχύει πια.
+			}
+		}
+	}
+
+	/**
+	 * Η πηγή για νέα μεγέθη: το αρχικό upload ή το πλήρες μέγεθος. Καλείται πάντα μετά το restore_full,
+	 * οπότε τα αρχεία στον δίσκο είναι καθαρά.
+	 *
+	 * @param int $attachment_id ID.
+	 * @return string
+	 */
+	private static function clean_source( $attachment_id ) {
+		$original = function_exists( 'wp_get_original_image_path' ) ? (string) wp_get_original_image_path( $attachment_id, true ) : '';
+		$attached = (string) get_attached_file( $attachment_id, true );
+		foreach ( array( $original, $attached ) as $path ) {
+			if ( '' !== $path && is_file( $path ) ) {
+				return $path;
+			}
+		}
+		return '';
+	}
+
+	/**
+	 * Ο επεξεργαστής εικόνων του WordPress (περικοπή, περιστροφή) ξεκινά από το καθαρό αντίγραφο,
+	 * ώστε η νέα εικόνα να μην κουβαλά το υδατογράφημα.
+	 *
+	 * @param string $path          Αρχείο προς επεξεργασία.
+	 * @param int    $attachment_id ID.
+	 * @return string
+	 */
+	public static function edit_from_clean( $path, $attachment_id ) {
+		$state = self::state( $attachment_id );
+		$rel   = self::relative( (string) $path );
+		if ( '' === $rel || empty( $state['full'][ $rel ] ) || ! is_file( (string) $path ) || md5_file( (string) $path ) !== $state['full'][ $rel ] ) {
+			return $path;
+		}
+		$backup = self::backup_path( (string) $path );
+		return '' !== $backup && is_file( $backup ) ? $backup : $path;
+	}
+
+	/**
+	 * Φτιάχνει ένα μέγεθος από την πηγή, στο ίδιο όνομα αρχείου που ήδη χρησιμοποιεί το WordPress.
+	 *
+	 * @param string     $source Πηγή.
+	 * @param string     $target Αρχείο προορισμού.
+	 * @param int        $width  Πλάτος.
+	 * @param int        $height Ύψος.
+	 * @param bool|array $crop   Περικοπή.
+	 * @param string     $mime   Τύπος αρχείου προορισμού.
+	 * @return bool
+	 */
+	private static function resize_from( $source, $target, $width, $height, $crop, $mime ) {
+		$editor = wp_get_image_editor( $source );
+		if ( is_wp_error( $editor ) ) {
+			return false;
+		}
+		if ( method_exists( $editor, 'maybe_exif_rotate' ) ) {
+			$editor->maybe_exif_rotate();
+		}
+		$current = $editor->get_size();
+		// Ίδιες διαστάσεις με την πηγή: το WordPress δεν κάνει resize, αποθηκεύεται όπως είναι.
+		if ( (int) $current['width'] !== $width || (int) $current['height'] !== $height ) {
+			$resized = $editor->resize( $width, $height, $crop );
+			if ( is_wp_error( $resized ) ) {
+				return false;
+			}
+		}
+		$saved = $editor->save( $target, $mime ? $mime : null );
+		if ( is_wp_error( $saved ) || empty( $saved['path'] ) ) {
+			return false;
+		}
+		// Αν ένα φίλτρο μορφής (image_editor_output_format) άλλαξε την κατάληξη, το αρχείο μένει στο όνομα που ξέρει το WordPress.
+		if ( $saved['path'] !== $target && is_file( $saved['path'] ) ) {
+			copy( $saved['path'], $target );
+			wp_delete_file( $saved['path'] );
+		}
+		return true;
+	}
+
+	/* ---------- Αντίγραφα των καθαρών αρχείων ---------- */
+
+	/**
+	 * Ο κρυφός φάκελος των αντιγράφων, μέσα στο uploads, με τυχαίο όνομα (δεν μαντεύεται).
+	 * Περιέχει .htaccess (Apache) και index.php· για Nginx δείτε τους κανόνες server.
+	 *
+	 * @return string Διαδρομή με / στο τέλος ('' αν δεν φτιάχτηκε).
+	 */
+	public static function backup_dir() {
+		$uploads = wp_get_upload_dir();
+		if ( ! empty( $uploads['error'] ) ) {
+			return '';
+		}
+		$name = (string) get_option( 'pncp_backup_dir' );
+		if ( ! preg_match( '/^pncp-originals-[a-z0-9]{12}$/', $name ) ) {
+			$name = 'pncp-originals-' . strtolower( wp_generate_password( 12, false, false ) );
+			update_option( 'pncp_backup_dir', $name, false );
+		}
+		$dir = trailingslashit( $uploads['basedir'] ) . $name . '/';
+		if ( ! is_dir( $dir ) && ! wp_mkdir_p( $dir ) ) {
+			return '';
+		}
+		if ( ! is_file( $dir . '.htaccess' ) ) {
+			// phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_file_put_contents -- Μικρό αρχείο ρυθμίσεων.
+			file_put_contents( $dir . '.htaccess', "Require all denied\n<IfModule !mod_authz_core.c>\nDeny from all\n</IfModule>\n" );
+			// phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_file_put_contents
+			file_put_contents( $dir . 'index.php', "<?php\n// Silence is golden.\n" );
+		}
+		return $dir;
+	}
+
+	/**
+	 * Η διαδρομή σχετικά με το uploads.
+	 *
+	 * @param string $path Απόλυτη διαδρομή.
+	 * @return string
+	 */
+	private static function relative( $path ) {
+		$base = trailingslashit( wp_get_upload_dir()['basedir'] );
+		return 0 === strpos( $path, $base ) ? substr( $path, strlen( $base ) ) : '';
+	}
+
+	/**
+	 * Απόλυτη διαδρομή από σχετική με το uploads.
+	 *
+	 * @param string $rel Σχετική διαδρομή.
+	 * @return string
+	 */
+	private static function absolute( $rel ) {
+		return trailingslashit( wp_get_upload_dir()['basedir'] ) . ltrim( $rel, '/' );
+	}
+
+	/**
+	 * Πού φυλάγεται το καθαρό αντίγραφο ενός αρχείου.
+	 *
+	 * @param string $path Αρχείο μέσα στο uploads.
+	 * @return string
+	 */
+	public static function backup_path( $path ) {
+		$rel = self::relative( (string) $path );
+		if ( '' === $rel || false !== strpos( $rel, '..' ) ) {
+			return '';
+		}
+		$dir = self::backup_dir();
+		return '' === $dir ? '' : $dir . $rel;
+	}
+
+	/**
+	 * Φυλάει το καθαρό αρχείο. Καλείται μετά το restore_full, άρα το αρχείο στον δίσκο είναι καθαρό
+	 * και το αντίγραφο ανανεώνεται πάντα από αυτό.
+	 *
+	 * @param string $path Αρχείο.
+	 * @return bool
+	 */
+	private static function ensure_backup( $path ) {
+		$backup = self::backup_path( $path );
+		if ( '' === $backup || ! wp_mkdir_p( dirname( $backup ) ) ) {
+			return false;
+		}
+		return copy( $path, $backup );
+	}
+
+	/**
+	 * Σβήνει τα αντίγραφα μιας εικόνας.
+	 *
+	 * @param int $attachment_id ID.
+	 */
+	private static function drop_backups( $attachment_id ) {
+		$paths = self::full_files( $attachment_id );
+		foreach ( array_keys( self::state( $attachment_id )['full'] ) as $rel ) {
+			$paths[] = self::absolute( (string) $rel );
+		}
+		foreach ( array_unique( $paths ) as $path ) {
+			$backup = self::backup_path( $path );
+			if ( '' !== $backup && is_file( $backup ) ) {
+				wp_delete_file( $backup );
+			}
+		}
+	}
+
+	/**
+	 * Διαγραφή εικόνας: φεύγουν και τα αντίγραφα.
+	 *
+	 * @param int $attachment_id ID.
+	 */
+	public static function on_delete( $attachment_id ) {
+		if ( get_post_meta( $attachment_id, self::META, true ) ) {
+			self::drop_backups( (int) $attachment_id );
+		}
+	}
+
+	/* ---------- Κατάσταση ---------- */
+
+	/**
+	 * Η κατάσταση μιας εικόνας.
+	 *
+	 * @param int $attachment_id ID.
+	 * @return array{full: array<string, string>, sizes: array<string, int>}
+	 */
+	public static function state( $attachment_id ) {
+		$state = get_post_meta( (int) $attachment_id, self::META, true );
+		$state = is_array( $state ) ? $state : array();
+		return array(
+			'full'  => isset( $state['full'] ) && is_array( $state['full'] ) ? array_map( 'strval', $state['full'] ) : array(),
+			'sizes' => isset( $state['sizes'] ) && is_array( $state['sizes'] ) ? array_map( 'intval', $state['sizes'] ) : array(),
+		);
+	}
+
+	/**
+	 * Αποθηκεύει την κατάσταση (σβήνει το meta αν η εικόνα είναι εντελώς καθαρή).
+	 *
+	 * @param int                  $attachment_id ID.
+	 * @param array<string, mixed> $state         Κατάσταση.
+	 */
+	private static function save_state( $attachment_id, $state ) {
+		if ( ! $state['full'] && ! in_array( 1, $state['sizes'], true ) ) {
+			delete_post_meta( (int) $attachment_id, self::META );
+			return;
+		}
+		update_post_meta( (int) $attachment_id, self::META, $state );
+	}
+
+	/* ---------- Αυτόματη αφαίρεση σε λογότυπα και εικόνες προϊόντων ---------- */
+
+	/**
+	 * Όταν μια εικόνα γίνεται εικόνα προϊόντος, χάνει το υδατογράφημα (αν δεν επιτρέπεται στα προϊόντα).
+	 *
+	 * @param int    $meta_id    ID meta.
+	 * @param int    $object_id  ID άρθρου.
+	 * @param string $meta_key   Κλειδί.
+	 * @param mixed  $meta_value Τιμή.
+	 */
+	public static function on_post_meta( $meta_id, $object_id, $meta_key, $meta_value ) {
+		if ( ! in_array( $meta_key, array( '_thumbnail_id', '_product_image_gallery' ), true ) ) {
+			return;
+		}
+		if ( ! empty( PNCP_Options::get()['watermark_products'] ) || ! in_array( get_post_type( $object_id ), array( 'product', 'product_variation' ), true ) ) {
+			return;
+		}
+		self::schedule_unmark( array_map( 'intval', explode( ',', (string) $meta_value ) ) );
+	}
+
+	/**
+	 * Όταν μια εικόνα γίνεται εικονίδιο site / λογότυπο / placeholder, χάνει το υδατογράφημα.
+	 *
+	 * @param string $option Option.
+	 * @param mixed  $old    Παλιά τιμή.
+	 * @param mixed  $value  Νέα τιμή.
+	 */
+	public static function on_option( $option, $old, $value ) {
+		if ( in_array( $option, array( 'site_icon', 'site_logo', 'woocommerce_placeholder_image' ), true ) ) {
+			self::schedule_unmark( array( (int) $value ) );
+		} elseif ( PNCP_OPTION === $option && is_array( $value ) && ! empty( $value['watermark_image_id'] ) ) {
+			// Η εικόνα που ορίστηκε ως υδατογράφημα δεν πρέπει να έχει η ίδια υδατογράφημα.
+			self::schedule_unmark( array( (int) $value['watermark_image_id'] ) );
+		} elseif ( 0 === strpos( $option, 'theme_mods_' ) && is_array( $value ) && ! empty( $value['custom_logo'] ) ) {
+			self::schedule_unmark( array( (int) $value['custom_logo'] ) );
+		}
+	}
+
+	/**
+	 * Το ίδιο για options που δημιουργούνται τώρα.
+	 *
+	 * @param string $option Option.
+	 * @param mixed  $value  Τιμή.
+	 */
+	public static function on_added_option( $option, $value ) {
+		self::on_option( $option, null, $value );
+	}
+
+	/**
+	 * Προγραμματίζει αφαίρεση για όσες εικόνες έχουν υδατογράφημα.
+	 *
+	 * @param int[] $ids IDs.
+	 */
+	private static function schedule_unmark( $ids ) {
+		foreach ( array_unique( array_filter( $ids ) ) as $id ) {
+			if ( get_post_meta( $id, self::META, true ) && ! wp_next_scheduled( self::CRON_UNMARK, array( $id ) ) ) {
+				wp_schedule_single_event( time() + 10, self::CRON_UNMARK, array( $id ) );
+			}
+		}
+	}
+
+	/* ---------- Σχεδίαση ---------- */
 
 	/**
 	 * Υδατογράφημα σε ένα αρχείο.
@@ -84,42 +704,105 @@ final class PNCP_Watermark {
 	 * @return bool
 	 */
 	public static function apply_to_file( $path, $mime, $s ) {
-		if ( ! is_file( $path ) || ! is_writable( $path ) ) {
+		if ( ! self::available() || ! is_file( $path ) || ! wp_is_writable( $path ) ) {
 			return false;
 		}
-
 		$image = self::load( $path, $mime );
 		if ( ! $image ) {
+			return false;
+		}
+		$mark = self::mark( (int) $s['watermark_image_id'] );
+		if ( ! $mark ) {
 			return false;
 		}
 
 		$width  = imagesx( $image );
 		$height = imagesy( $image );
-		$mark   = self::mark( (int) $s['watermark_image_id'] );
-		if ( ! $mark ) {
-			return false;
-		}
-
-		// Το υδατογράφημα πιάνει έως το 25% του πλάτους, κάτω δεξιά, με περιθώριο 2%.
 		$mark_w = imagesx( $mark );
 		$mark_h = imagesy( $mark );
-		$target = max( 1, (int) round( $width * 0.25 ) );
+		$target = max( 1, (int) round( $width * max( 5, min( 60, (int) $s['watermark_size'] ) ) / 100 ) );
 		$scale  = min( 1, $target / $mark_w );
 		$dst_w  = max( 1, (int) round( $mark_w * $scale ) );
 		$dst_h  = max( 1, (int) round( $mark_h * $scale ) );
-		$margin = (int) round( min( $width, $height ) * 0.02 );
 
-		$layer = imagecreatetruecolor( $dst_w, $dst_h );
-		imagealphablending( $layer, false );
-		imagesavealpha( $layer, true );
-		imagefill( $layer, 0, 0, imagecolorallocatealpha( $layer, 0, 0, 0, 127 ) );
+		$layer = self::transparent( $dst_w, $dst_h );
 		imagecopyresampled( $layer, $mark, 0, 0, 0, 0, $dst_w, $dst_h, $mark_w, $mark_h );
 		self::fade( $layer, (int) $s['watermark_opacity'] );
-
 		imagealphablending( $image, true );
-		imagecopy( $image, $layer, $width - $dst_w - $margin, $height - $dst_h - $margin, 0, 0, $dst_w, $dst_h );
+
+		$position = (string) $s['watermark_position'];
+		if ( 'tiled' === $position ) {
+			self::tile( $image, $layer );
+		} else {
+			$margin = (int) round( min( $width, $height ) * 0.02 );
+			switch ( $position ) {
+				case 'tl':
+					$x = $margin;
+					$y = $margin;
+					break;
+				case 'tr':
+					$x = $width - $dst_w - $margin;
+					$y = $margin;
+					break;
+				case 'bl':
+					$x = $margin;
+					$y = $height - $dst_h - $margin;
+					break;
+				case 'center':
+					$x = (int) round( ( $width - $dst_w ) / 2 );
+					$y = (int) round( ( $height - $dst_h ) / 2 );
+					break;
+				default:
+					$x = $width - $dst_w - $margin;
+					$y = $height - $dst_h - $margin;
+			}
+			imagecopy( $image, $layer, $x, $y, 0, 0, $dst_w, $dst_h );
+		}
 
 		return self::save( $image, $path, $mime );
+	}
+
+	/**
+	 * Επαναλαμβανόμενο υδατογράφημα σε διαγώνιο μοτίβο σε όλη την εικόνα.
+	 *
+	 * @param resource|\GdImage $image Εικόνα.
+	 * @param resource|\GdImage $layer Υδατογράφημα (ήδη με διαφάνεια).
+	 */
+	private static function tile( $image, $layer ) {
+		$rotated = imagerotate( $layer, 30, imagecolorallocatealpha( $layer, 0, 0, 0, 127 ) );
+		if ( ! $rotated ) {
+			return;
+		}
+		imagesavealpha( $rotated, true );
+		$w      = imagesx( $image );
+		$h      = imagesy( $image );
+		$tile_w = imagesx( $rotated );
+		$tile_h = imagesy( $rotated );
+		$step_x = max( 1, (int) round( $tile_w * 1.6 ) );
+		$step_y = max( 1, (int) round( $tile_h * 1.4 ) );
+		$row    = 0;
+		for ( $y = -$tile_h / 2; $y < $h; $y += $step_y ) {
+			$offset = ( $row % 2 ) ? (int) round( $step_x / 2 ) : 0;
+			for ( $x = -$tile_w / 2 + $offset; $x < $w; $x += $step_x ) {
+				imagecopy( $image, $rotated, (int) $x, (int) $y, 0, 0, $tile_w, $tile_h );
+			}
+			++$row;
+		}
+	}
+
+	/**
+	 * Νέα διάφανη εικόνα.
+	 *
+	 * @param int $w Πλάτος.
+	 * @param int $h Ύψος.
+	 * @return resource|\GdImage
+	 */
+	private static function transparent( $w, $h ) {
+		$img = imagecreatetruecolor( $w, $h );
+		imagealphablending( $img, false );
+		imagesavealpha( $img, true );
+		imagefill( $img, 0, 0, imagecolorallocatealpha( $img, 0, 0, 0, 127 ) );
+		return $img;
 	}
 
 	/**
@@ -164,6 +847,7 @@ final class PNCP_Watermark {
 	private static function save( $image, $path, $mime ) {
 		switch ( $mime ) {
 			case 'image/jpeg':
+				// phpcs:ignore WordPress.NamingConventions.PrefixAllGlobals.NonPrefixedHooknameFound -- Φίλτρο του WordPress.
 				return imagejpeg( $image, $path, (int) apply_filters( 'jpeg_quality', 82, 'pncp_watermark' ) );
 			case 'image/png':
 				return imagepng( $image, $path, 6 );
@@ -180,17 +864,38 @@ final class PNCP_Watermark {
 	 * @return resource|\GdImage|false
 	 */
 	private static function mark( $image_id ) {
+		if ( null !== self::$mark ) {
+			return self::$mark;
+		}
+		self::$mark = false;
 		if ( $image_id > 0 ) {
-			$file = get_attached_file( $image_id );
+			$file = (string) get_attached_file( $image_id );
+			// Αν η εικόνα πήρε κάποτε υδατογράφημα, χρησιμοποιείται το καθαρό αντίγραφό της.
+			$backup = '' === $file ? '' : self::backup_path( $file );
+			if ( '' !== $backup && is_file( $backup ) ) {
+				$file = $backup;
+			}
 			if ( $file && is_file( $file ) && 'image/png' === get_post_mime_type( $image_id ) ) {
 				$png = @imagecreatefrompng( $file ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged
 				if ( $png ) {
+					if ( ! imageistruecolor( $png ) ) {
+						imagepalettetotruecolor( $png );
+					}
 					imagesavealpha( $png, true );
-					return $png;
+					self::$mark = $png;
+					return self::$mark;
 				}
 			}
 		}
-		return self::text_mark( (string) wp_parse_url( home_url(), PHP_URL_HOST ) );
+		self::$mark = self::text_mark( (string) wp_parse_url( home_url(), PHP_URL_HOST ) );
+		return self::$mark;
+	}
+
+	/**
+	 * Ξεχνά το υδατογράφημα του αιτήματος (μετά από αλλαγή ρυθμίσεων ή σε tests).
+	 */
+	public static function reset() {
+		self::$mark = null;
 	}
 
 	/**
@@ -208,20 +913,13 @@ final class PNCP_Watermark {
 		$font  = 5;
 		$w     = imagefontwidth( $font ) * strlen( $text ) + 2;
 		$h     = imagefontheight( $font ) + 2;
-		$small = imagecreatetruecolor( $w, $h );
-		imagealphablending( $small, false );
-		imagesavealpha( $small, true );
-		imagefill( $small, 0, 0, imagecolorallocatealpha( $small, 0, 0, 0, 127 ) );
+		$small = self::transparent( $w, $h );
 		imagestring( $small, $font, 1, 1, $text, imagecolorallocatealpha( $small, 0, 0, 0, 40 ) );
 		imagestring( $small, $font, 0, 0, $text, imagecolorallocatealpha( $small, 255, 255, 255, 0 ) );
 
-		// Μεγέθυνση x4, ώστε η κλιμάκωση στο 25% της εικόνας να μη θολώνει πολύ.
-		$big = imagecreatetruecolor( $w * 4, $h * 4 );
-		imagealphablending( $big, false );
-		imagesavealpha( $big, true );
-		imagefill( $big, 0, 0, imagecolorallocatealpha( $big, 0, 0, 0, 127 ) );
+		// Μεγέθυνση x4, ώστε η κλιμάκωση να μη θολώνει πολύ.
+		$big = self::transparent( $w * 4, $h * 4 );
 		imagecopyresized( $big, $small, 0, 0, 0, 0, $w * 4, $h * 4, $w, $h );
-
 		return $big;
 	}
 

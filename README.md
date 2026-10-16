@@ -1,160 +1,102 @@
-# Content Protect
+# Content Protect 2.2.1
 
-WordPress plugin προστασίας περιεχομένου. Δυσκολεύει την αντιγραφή κειμένων και εικόνων από τους επισκέπτες και κλείνει τους εύκολους δρόμους μαζικής λήψης: REST API, RSS, scrapers και AI bots. Δεν ενοχλεί φόρμες, καλάθι, ταμείο, συντάκτες και μηχανές αναζήτησης.
+Προστασία περιεχομένου για WordPress / WooCommerce.
 
-- **Slug / φάκελος:** `content-protect`
-- **Prefix:** `pncp_` / `PNCP_`
-- **Option:** `pncp_settings` (ένα array)
-- **Ρυθμίσεις:** wp-admin → Ρυθμίσεις → Προστασία περιεχομένου
-- **Απαιτεί:** WordPress 6.0+, PHP 7.4+. Για το υδατογράφημα χρειάζεται η επέκταση GD της PHP.
+**Τι δεν κάνει κανένα plugin:** ό,τι βλέπει ο επισκέπτης έχει ήδη φτάσει στη συσκευή του. Μια φωτογραφία με κινητό ή το reader mode του browser δεν σταματιούνται. Το plugin κλείνει τους αυτόματους δρόμους και αφήνει ίχνη: υδατογράφημα, πηγή στην αντιγραφή, αρχείο αποκλεισμών και νομική δήλωση (TDM).
 
-## Λειτουργίες
+## Επίπεδα
 
-Κάθε λειτουργία έχει δική της ρύθμιση. Οι συνδεδεμένοι χρήστες με το δικαίωμα που ορίζεται στο «Ποιοι εξαιρούνται» δεν επηρεάζονται.
-
-| Λειτουργία | Προεπιλογή | Τι κάνει |
+| Επίπεδο | Πού | Ρύθμιση |
 |---|---|---|
-| Επιλογή, δεξί κλικ, συντομεύσεις, σύρσιμο εικόνων | ενεργά | JS/CSS μόνο στις σελίδες που προστατεύονται. Δεν πειράζει πεδία φόρμας, `contenteditable` και ό,τι έχει την κλάση `pncp-allow`. |
-| Συντομεύσεις DevTools | ενεργό | Κόβει F12, Ctrl+Shift+I/J/C/K, Cmd+Opt+I/J/C/U. Δεν ανιχνεύει τα DevTools, δεν βάζει `debugger` και δεν κάνει redirect. |
-| Αντιγραφή | με πηγή | Μπλοκάρισμα, κανονική αντιγραφή, ή αντιγραφή με «Πηγή: τίτλος – όνομα site + URL» (text/plain και text/html) από 200 χαρακτήρες και πάνω. |
-| Εκτύπωση | με πηγή | Κανονική, με το URL στο κάτω μέρος, ή απαγόρευση. |
-| REST API | ενεργό | Αδειάζει τα `content`/`excerpt` των δημόσιων post types (`/wp/v2/...`) και τα `description`/`short_description` του WooCommerce Store API (`/wc/store/v1/products`) για επισκέπτες. Το REST **δεν** κλείνει. Καλάθι και ταμείο του Store API δεν πειράζονται. |
-| RSS / Atom | περίληψη | Μόνο περίληψη και σύνδεσμος «Διαβάστε το πλήρες άρθρο στο …», πλήρες κείμενο, ή απενεργοποίηση (410). |
-| Scrapers / AI bots | ενεργό | 403 για τη λίστα User-Agents και για κενό User-Agent. |
-| robots.txt | ενεργό | `Disallow: /` για AI crawlers (GPTBot, CCBot, ClaudeBot, PerplexityBot, Google-Extended κ.ά.) στο εικονικό robots.txt. |
-| Όριο σελίδων ανά IP | ανενεργό (0) | 429 με `Retry-After: 60` πάνω από Ν σελίδες/λεπτό. Τιμή εκκίνησης: 60. |
-| Ιδιωτικά URLs | κενή λίστα | Διαδρομές (π.χ. `/skroutz.xml`, `/feeds/*.xml`) που απαντούν μόνο με `?cp_token=…` ή σε επιτρεπόμενες IP/CIDR. Αλλιώς 403. |
-| Πραγματική IP επισκέπτη | REMOTE_ADDR | Header με την πραγματική IP πίσω από CDN/proxy. Η σελίδα ρυθμίσεων δείχνει τι βλέπει ο server. |
-| Ένδειξη κατάστασης | πάντα | Widget στον Πίνακα ελέγχου και κουμπί «Προστασία: ON/OFF» στη γραμμή διαχείρισης, με ενεργοποίηση/απενεργοποίηση με ένα κλικ (μόνο διαχειριστές). |
-| Υδατογράφημα | ανενεργό | PNG από τη βιβλιοθήκη (ή το domain ως κείμενο) κάτω δεξιά, στα μεγέθη των **νέων** uploads. Το πρωτότυπο αρχείο δεν αλλάζει. Μεγέθη που ξαναφτιάχνονται από το «Επεξεργασία εικόνας» ή από επανάληψη αποτυχημένου upload μένουν χωρίς υδατογράφημα. |
+| Δεξί κλικ, επιλογή, αντιγραφή (ή αντιγραφή με πηγή), σύρσιμο, συντομεύσεις, εκτύπωση, θόλωμα σε screenshot | browser | Στη σελίδα |
+| Όχι μέσα σε iframe ξένου site (X-Frame-Options, CSP frame-ancestors) | header | Στη σελίδα |
+| Δήλωση εξαίρεσης από AI / TDM (Οδηγία ΕΕ 2019/790 άρθ. 4, ν. 4996/2022): header, meta, `/.well-known/tdmrep.json`, `noai` | header / HTML | Στη σελίδα |
+| Λίστα scrapers / AI bots, χωρίς User-Agent, «μόνο browsers» · χωριστή επιλογή για AI αναζήτηση (OAI-SearchBot, Claude-SearchBot, PerplexityBot κ.ά.) ενώ η εκπαίδευση (GPTBot, ClaudeBot, CCBot κ.ά.) μένει μπλοκαρισμένη | PHP | Bots και όρια |
+| Ψεύτικα Googlebot / Bingbot / Applebot / Yandex: επίσημες λίστες IP (κάθε μέρα) + reverse/forward DNS | PHP | Bots και όρια |
+| Παγίδα για bots (αόρατος σύνδεσμος, Disallow στο robots.txt) | PHP | Bots και όρια |
+| Όρια ανά IP: σελίδες, αναζήτηση, REST / GraphQL · προσωρινός αποκλεισμός μετά από N παραβάσεις σε 10 λεπτά | PHP | Bots και όρια |
+| Trusted Proxy: το `CF-Connecting-IP` / `X-Forwarded-For` διαβάζεται μόνο από αξιόπιστο proxy | PHP | Bots και όρια |
+| REST API και WPGraphQL χωρίς κείμενο για επισκέπτες · RSS μόνο περίληψη | PHP | Feeds και API |
+| Προστατευμένα XML feeds με token (header για ERP, URL για Skroutz/BestPrice/Merchant), μόνο hash στη βάση (ποτέ σε καθαρή μορφή, ούτε στη μετάβαση από την 1.x), εναλλαγή με περίοδο χάριτος, στατιστικά | PHP | Feeds και API |
+| Υδατογράφημα: γωνίες, κέντρο ή διαγώνια επανάληψη · προαιρετικά και στο πλήρες μέγεθος (το καθαρό φυλάγεται) · εργαλείο για τις υπάρχουσες εικόνες | εικόνες | Εικόνες |
+| Κανόνες Nginx / Apache / Cloudflare φτιαγμένοι για το site | server / CDN | Κανόνες server |
+| Αρχείο με διατήρηση 1/7/30 ημέρες, σύνοψη 24ώρου, άρση αποκλεισμών | — | Αρχείο |
 
-### Τι δεν αλλάζει για τις μηχανές αναζήτησης
-- Το HTML της σελίδας, τα structured data και τα meta των SEO plugins μένουν ίδια. Η προστασία είναι JS/CSS στον browser.
-- Το Googlebot, το Bingbot, το Applebot και το Yandex επαληθεύονται με reverse DNS και forward DNS. Δεν μπλοκάρονται ποτέ και δεν μετράνε στο όριο. Το αποτέλεσμα κρατιέται 24 ώρες ανά IP. Ένα ψεύτικο «Googlebot» αντιμετωπίζεται σαν κανονικός επισκέπτης.
-- Τα AI crawlers στο robots.txt δεν περιλαμβάνουν μηχανές αναζήτησης. Το `Google-Extended` αφορά μόνο την εκπαίδευση AI της Google, όχι την αναζήτηση.
+Έτοιμα προφίλ (Ισορροπημένο / Αυστηρό / Μέγιστο) και **Emergency Mode** (1 ώρα έως 3 ημέρες, χωρίς να αλλάζουν οι ρυθμίσεις σας).
 
-## Εγκατάσταση
-1. Πρόσθετα → Προσθήκη νέου → Μεταφόρτωση → `Content-Protect.zip` → Ενεργοποίηση.
-2. Αν υπάρχει άλλο plugin προστασίας περιεχομένου, απενεργοποιήστε το, γιατί τα δύο μαζί συγκρούονται.
-3. Ελέγξτε τις ρυθμίσεις. Στις ενημερώσεις, οι υπάρχουσες ρυθμίσεις μένουν και οι νέες λειτουργίες παίρνουν τις προεπιλογές του πίνακα.
+## Τι εξαιρείται πάντα
 
-Φτιάξιμο του zip από το repo (χωρίς tests και αρχεία τεκμηρίωσης):
-```bash
-git archive --format=zip --prefix=content-protect/ -o Content-Protect.zip HEAD
-```
+- Οι ρόλοι της ρύθμισης «Ποιοι εξαιρούνται» (από προεπιλογή συντάκτες και διαχειριστές), αιτήματα από τον ίδιο τον server, οι «Πάντα επιτρεπτές IP». Ένας απλός πελάτης με λογαριασμό ελέγχεται όπως κάθε επισκέπτης.
+- Επαληθευμένες μηχανές αναζήτησης (ποτέ όριο, ποτέ αποκλεισμός).
+- Τα όρια δεν μετρούν POST (φόρμες, καλάθι, ταμείο) και τα δηλωμένα `wc-ajax` του WooCommerce. Bots και αποκλεισμοί ελέγχονται και εκεί.
+- Previews συνδέσμων (Facebook, Viber, WhatsApp κ.ά.) από τη λίστα «Πάντα επιτρεπτά».
+- Υδατογράφημα: εικονίδιο site, λογότυπο, placeholder WooCommerce, η εικόνα του υδατογραφήματος και, από προεπιλογή, οι εικόνες προϊόντων. Το Google Merchant Center και οι πλατφόρμες σύγκρισης τιμών απορρίπτουν εικόνες προϊόντων με υδατογράφημα. Αν μια εικόνα με υδατογράφημα γίνει αργότερα λογότυπο ή εικόνα προϊόντος, το υδατογράφημα αφαιρείται αυτόματα.
 
-## Cache και server
+## Page cache και στατικά αρχεία
 
-**Page cache.** Ό,τι γίνεται στην PHP (μπλοκάρισμα bots, όριο σελίδων) ισχύει μόνο για αιτήματα που φτάνουν στην PHP. Σελίδες που σερβίρονται από Nginx FastCGI cache, Varnish ή CDN δεν περνούν από το plugin.
-- **WP Rocket:** οι User-Agents της λίστας προστίθενται αυτόματα στο «Never send cache pages for these user agents» (`rocket_cache_reject_ua`), οπότε φτάνουν στην PHP και παίρνουν 403. Το WP Rocket συγκρίνει με διάκριση πεζών/κεφαλαίων, γι' αυτό γράψτε τα ονόματα όπως τα στέλνουν τα bots (π.χ. `GPTBot`). Σε Apache, ο έλεγχος στο `.htaccess` του WP Rocket μπορεί να ταιριάζει μόνο στην αρχή του User-Agent· η PHP του plugin πιάνει τα υπόλοιπα όταν η σελίδα δεν σερβίρεται από cache.
-- **Αυτόματο άδειασμα cache:** η cache του WP Rocket και του Nginx Helper αδειάζει όταν αλλάζουν οι ρυθμίσεις, στην ενεργοποίηση και μετά από ενημέρωση.
-- **Nginx FastCGI cache:** για πλήρη κάλυψη, βάλτε κανόνες και στον Nginx:
+Ό,τι σερβίρεται από page cache (Nginx FastCGI cache, WP Rocket κ.λπ.) ή ως στατικό αρχείο δεν φτάνει στην PHP. Για πλήρη κάλυψη χρησιμοποιήστε τους κανόνες της καρτέλας **Κανόνες server**. Οι κανόνες βγαίνουν με το domain, τη λίστα bots, τα feeds και τον φάκελο αντιγράφων του δικού σας site. Τα βασικά για Nginx:
 
 ```nginx
-# http { ... }
+# http { }
 map $http_user_agent $pncp_bad_bot {
     default 0;
-    ~*(GPTBot|ChatGPT-User|CCBot|ClaudeBot|anthropic-ai|PerplexityBot|Bytespider|meta-externalagent|Diffbot|Scrapy|HTTrack|python-requests|Go-http-client) 1;
-    ""      1;
+    "~*(GPTBot|ClaudeBot|CCBot|Bytespider|HeadlessChrome|python-requests|curl/)" 1;
+    "" 1;
 }
 limit_req_zone $binary_remote_addr zone=pncp_pages:10m rate=60r/m;
 
-# server { ... }
+# server { }
 if ($pncp_bad_bot) { return 403; }
-location / {
-    limit_req zone=pncp_pages burst=30 nodelay;
-    limit_req_status 429;
-    try_files $uri $uri/ /index.php?$args;
-}
+location ^~ /wp-content/uploads/pncp-originals-XXXXXXXXXXXX/ { deny all; return 404; }
+# μέσα στο υπάρχον location / { }:
+#   limit_req zone=pncp_pages burst=20 nodelay;
 ```
-Προσαρμόστε το `location /` στο δικό σας config. Μην βάλετε `limit_req` σε `/wp-admin`, `/wp-json` και στατικά αρχεία.
 
-**Reverse proxy / CDN.** Πίσω από CDN (Cloudflare, BunnyCDN κ.ά.), το `REMOTE_ADDR` είναι η IP του CDN. Τότε όλοι οι επισκέπτες μετράνε ως λίγες IP: το όριο σελίδων θα μπλόκαρε πραγματικούς χρήστες και η επαλήθευση μηχανών αναζήτησης δεν δουλεύει. Λύσεις, από την καλύτερη:
-1. `real_ip` στον Nginx με τις IP του CDN (`set_real_ip_from …; real_ip_header X-Forwarded-For;`). Έτσι και το `REMOTE_ADDR` γίνεται σωστό.
-2. Η ρύθμιση «Πραγματική IP επισκέπτη» του plugin. Είναι ασφαλής μόνο αν ο server δέχεται αιτήματα αποκλειστικά από το CDN, γιατί αλλιώς το header πλαστογραφείται. Από το `X-Forwarded-For` κρατιέται η **τελευταία** τιμή, αυτή που πρόσθεσε το CDN, γιατί την αρχή της λίστας τη γράφει ο επισκέπτης. Αυτό προϋποθέτει ένα μόνο proxy/CDN μπροστά από τον server.
-3. Το φίλτρο `pncp_client_ip`.
+Η καρτέλα δίνει τους κανόνες σε δύο μέρη, `http { }` και `server { }`, φτιαγμένους για το site σας: domain, λίστα bots, feeds, φάκελος αντιγράφων. Τα παραπάνω είναι μόνο παράδειγμα.
 
-Η σελίδα ρυθμίσεων δείχνει το `REMOTE_ADDR` και τα σχετικά headers του δικού σας αιτήματος, για να δείτε ποιο έχει την IP σας.
+Πίσω από Cloudflare, ο Nginx πρέπει να βλέπει την πραγματική IP:
 
-**CDN που αγνοεί το query string.** Πολλά CDN (π.χ. BunnyCDN με «Ignore query string») δεν ξεχωρίζουν το `protect.js?ver=1.2.0` από το `?ver=1.1.0`. Μετά από κάθε ενημέρωση του plugin, κάντε purge στο CDN, ή ενεργοποιήστε «Vary cache by query string». Αλλιώς οι επισκέπτες παίρνουν το παλιό JavaScript μέχρι να λήξει η cache.
-
-**Χωρίς persistent object cache** (Redis/Memcached), το όριο σελίδων και η επαλήθευση μηχανών αναζήτησης γράφουν transients στη βάση. Με object cache μένουν στη μνήμη.
-
-**Wordfence και άλλα firewalls.** Δεν συγκρούονται, γιατί το plugin δεν πειράζει headers, cookies ή login. Αν χρησιμοποιείτε ήδη το Rate Limiting του Wordfence, αφήστε το όριο σελίδων εδώ στο 0, ώστε να μη μετράνε δύο συστήματα το ίδιο.
-
-**XML feeds προϊόντων (Skroutz, BestPrice, Google Merchant).** Είναι συνήθως ένα δημόσιο URL με όλες τις περιγραφές, και είναι το πρώτο που κοιτάει ένας ανταγωνιστής. Βάλτε τη διαδρομή στα «Ιδιωτικά URLs» και δώστε στην υπηρεσία το URL με το `?cp_token=…` που δείχνει η σελίδα ρυθμίσεων. Ισχύει για feeds που φτιάχνει η PHP. Αν το feed είναι στατικό αρχείο (π.χ. `/wp-content/uploads/feeds/skroutz.xml`), τον έλεγχο πρέπει να τον κάνει ο web server:
 ```nginx
-location ~* ^/wp-content/uploads/feeds/.*\.xml$ {
-    if ($arg_cp_token != "ΤΟ_TOKEN_ΣΑΣ") { return 403; }
-    add_header Cache-Control "private, no-store" always;
-}
+set_real_ip_from 173.245.48.0/20;   # … όλες οι διευθύνσεις του https://www.cloudflare.com/ips/
+real_ip_header CF-Connecting-IP;
 ```
-Σε CDN, εξαιρέστε τις διαδρομές των feeds από την cache.
 
-**Αρχεία τεκμηρίωσης.** Το zip δεν περιέχει `readme.txt`/`README.md`, ώστε να μην είναι δημόσια στο `/wp-content/plugins/content-protect/`.
+## Συμβατότητα (δοκιμασμένη)
+
+| Τι | Πώς δοκιμάστηκε |
+|---|---|
+| WooCommerce 11.2 | Πλήρης αγορά (καλάθι, Store API checkout, «Ευχαριστούμε») με όριο 3 σελίδες/λεπτό και σε Emergency Mode· bots στο `wc-ajax` και στο Store API → 403· webhooks πληρωμών ανεπηρέαστα |
+| WPGraphQL 2.6 | Κείμενο κρυφό για επισκέπτες, ορατό με application password· bots, όρια και αποκλεισμοί στο `/graphql` |
+| REST API | Χωρίς κείμενο για επισκέπτες, και μέσω `?rest_route=`, `_method=GET`, `X-HTTP-Method-Override`, HEAD |
+| WP Super Cache 3.1 | Τα 403 και τα feeds δεν μπαίνουν στην cache· η cache αδειάζει μετά από αλλαγή ρυθμίσεων· τα bots σε σελίδες από cache τα σταματούν οι κανόνες server |
+| Nginx 1.24 / Apache 2.4 | Οι κανόνες της καρτέλας περνούν το `nginx -t` και λειτουργούν (bots, hotlink, πρωτότυπα, feeds, Bearer) |
+| Redis object cache | Ατομικά όρια και αποκλεισμοί μέσω `wp_cache_incr` |
+| Elementor, Bricks, Divi, Beaver, Oxygen, SiteOrigin | Η προεπισκόπηση του builder κλείνει την προστασία μόνο για όποιον μπορεί να επεξεργαστεί τη σελίδα (τα builders δεν εγκαταστάθηκαν) |
+
+Φορτίο (Nginx + PHP-FPM 8 workers, MariaDB): η επιβάρυνση του plugin σε μια σελίδα είναι μέσα στον θόρυβο της μέτρησης. Το όριο είναι ακριβές με 200 ταυτόχρονα αιτήματα, 3000 αιτήματα από bot γράφουν μία γραμμή στο αρχείο, και 1500 ταυτόχρονοι αποκλεισμοί κρατιούνται όλοι.
+
+## Apache και `Authorization: Bearer`
+
+Με PHP-FPM/CGI ο Apache δεν περνά το `Authorization` στην PHP. Οι κανόνες Apache της καρτέλας περιέχουν τη γραμμή που το διορθώνει. Εναλλακτικά χρησιμοποιήστε το header `X-Content-Protect-Token`.
+
+## Αντίγραφα εικόνων
+
+Όταν το υδατογράφημα μπαίνει και στο πλήρες μέγεθος, το καθαρό αρχείο φυλάγεται στο `wp-content/uploads/pncp-originals-<τυχαίο>/`. Ο φάκελος έχει `.htaccess` για τον Apache· στον Nginx βάλτε τον κανόνα `deny`. Η **Διαγραφή** του plugin δεν σβήνει αυτόν τον φάκελο, γιατί εκεί είναι τα μόνα καθαρά αντίγραφα. Πριν από το εργαλείο «Εφαρμογή υδατογραφήματος», κρατήστε backup του `uploads`.
 
 ## Για προγραμματιστές
 
-| Φίλτρο | Χρήση |
+| Φίλτρο | Τι κάνει |
 |---|---|
-| `pncp_should_protect` | `bool` – αν η τρέχουσα σελίδα παίρνει JS/CSS προστασία. |
-| `pncp_rest_post_types` | `string[]` – post types όπου κρύβεται το κείμενο στο REST. |
-| `pncp_rest_hide_content` | `bool, WP_Post` – εξαίρεση για συγκεκριμένα άρθρα ή αιτήματα. |
-| `pncp_client_ip` | `string` – η IP του επισκέπτη (για proxy/CDN). |
-| `pncp_robots_ai_agents` | `string[]` – τα AI crawlers του robots.txt. |
-| `pncp_watermark_attachment` | `bool, int` – εξαίρεση εικόνων από το υδατογράφημα. |
+| `pncp_should_protect` | Αν προστατεύεται η τρέχουσα σελίδα |
+| `pncp_skip_guard` | Παράλειψη όλων των ελέγχων server για ένα αίτημα |
+| `pncp_client_ip` | Η IP του επισκέπτη |
+| `pncp_rest_hide_content` | Εξαιρέσεις από το κρύψιμο κειμένου (REST, GraphQL) |
+| `pncp_rest_post_types` | Post types που φιλτράρονται στο REST |
+| `pncp_watermark_attachment` | Αν μια εικόνα παίρνει υδατογράφημα |
+| `pncp_watermark_batch_size` | Εικόνες ανά παρτίδα στο εργαλείο (3) |
+| `pncp_robots_ai_agents` | AI crawlers στο robots.txt |
+| `pncp_ai_search_agents` | Οι AI μηχανές αναζήτησης / βοηθοί της επιλογής «Επιτρέπονται οι AI μηχανές αναζήτησης» |
+| `pncp_hotlink_allowed` | Domains που επιτρέπεται να φορτώνουν εικόνες |
+| `pncp_block_framing` | `false` για να επιτρέψετε iframe |
 
-```php
-// Να μην προστατεύεται μια συγκεκριμένη κατηγορία:
-add_filter( 'pncp_should_protect', function ( $protect ) {
-	return is_category( 'press' ) ? false : $protect;
-} );
-
-// Ένα δικό σας εργαλείο διαβάζει άρθρα μέσω REST με header X-My-Tool:
-add_filter( 'pncp_rest_hide_content', function ( $hide ) {
-	return isset( $_SERVER['HTTP_X_MY_TOOL'] ) ? false : $hide;
-} );
-
-// Πίσω από Cloudflare (μόνο αν ο server δέχεται αιτήματα αποκλειστικά από Cloudflare):
-add_filter( 'pncp_client_ip', function ( $ip ) {
-	return isset( $_SERVER['HTTP_CF_CONNECTING_IP'] ) ? sanitize_text_field( wp_unslash( $_SERVER['HTTP_CF_CONNECTING_IP'] ) ) : $ip;
-} );
-```
-
-Για ένα μόνο κομμάτι κειμένου που πρέπει να αντιγράφεται (τηλέφωνο, IBAN, κουπόνι), βάλτε του την CSS κλάση `pncp-allow`.
-
-## Δομή
-```
-content-protect.php                 κεντρικό αρχείο, activation, cache, WP Rocket
-includes/class-pncp-options.php     ρυθμίσεις, προεπιλογές, sanitize
-includes/class-pncp-frontend.php    πού εφαρμόζεται η JS/CSS προστασία
-includes/class-pncp-rest.php        κρύψιμο κειμένου στο REST API
-includes/class-pncp-feed.php        RSS/Atom
-includes/class-pncp-bots.php        bots, όριο σελίδων, robots.txt, επαλήθευση μηχανών αναζήτησης
-includes/class-pncp-watermark.php   υδατογράφημα νέων uploads
-includes/class-pncp-private-urls.php ιδιωτικά URLs (XML feeds) με token ή IP
-includes/class-pncp-status.php      widget κατάστασης και κουμπί ON/OFF
-includes/class-pncp-admin.php       σελίδα ρυθμίσεων (Settings API)
-assets/js/protect.js                η προστασία στον browser
-assets/css/protect.css              επιλογή κειμένου, μήνυμα, εκτύπωση
-uninstall.php                       σβήνει ρυθμίσεις και προσωρινά δεδομένα
-tests/protect.test.html             τεστ του protect.js στον browser
-```
-
-Τεστ JavaScript: από τον φάκελο του plugin τρέξτε `python3 -m http.server 8765` και ανοίξτε το `http://localhost:8765/tests/protect.test.html`.
-
-## Εντοπισμός και αφαίρεση αντιγράφων
-
-Η αντιγραφή βλάπτει κυρίως όταν το αντίγραφο εμφανίζεται στο Google. Αυτά δεν τα κάνει το plugin, αλλά είναι η προστασία που μετράει περισσότερο:
-- **Δείξτε στο Google ότι είστε η πηγή.** Υποβάλετε κάθε νέα σελίδα αμέσως, μέσω Search Console ή IndexNow. Αν έχετε Rank Math, ενεργοποιήστε το «Instant Indexing». Το Yoast έχει επίσης ενσωματωμένο IndexNow.
-- **Ψάξτε αντίγραφα.** Βάλτε μια χαρακτηριστική φράση σε εισαγωγικά στο Google, ή χρησιμοποιήστε το Copyscape.
-- **Κατεβάστε τα αντίγραφα.** Κάντε αίτημα αφαίρεσης στο Google (DMCA) και, αν χρειαστεί, στείλτε email στον hosting provider του αντιγραφέα.
-- **Βάλτε εσωτερικούς συνδέσμους μέσα στο κείμενο.** Τα scrapers τους αντιγράφουν μαζί, και το αντίγραφο οδηγεί πίσω σε εσάς.
-
-**Αόρατο αποτύπωμα στο κείμενο:** δεν το περιλαμβάνει το plugin, σκόπιμα. Αόρατοι χαρακτήρες μέσα στο HTML αλλάζουν αυτό που βλέπουν οι μηχανές αναζήτησης και οι αναγνώστες οθόνης, και μπορεί να «σπάσουν» την αναζήτηση μέσα στη σελίδα. Η απόδειξη ότι είστε η πηγή γίνεται πιο αξιόπιστα με την ημερομηνία ευρετηρίασης (IndexNow/Search Console).
-
-## Περιορισμοί
-Η προστασία στον browser σταματά την εύκολη αντιγραφή, όχι κάποιον αποφασισμένο. Όποιος απενεργοποιήσει τη JavaScript ή κατεβάσει το HTML παίρνει το κείμενο. Τα DevTools ανοίγουν πάντα από το μενού του browser· το plugin κόβει μόνο τις συντομεύσεις. Γι' αυτό υπάρχουν και τα μέτρα στον server (REST, RSS, bots, όριο σελίδων).
-
-## Άδεια
-GPL-2.0-or-later.
+Για ένα κομμάτι κειμένου που πρέπει να αντιγράφεται (τηλέφωνο, κουπόνι), βάλτε την κλάση `pncp-allow`.

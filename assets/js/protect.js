@@ -1,9 +1,12 @@
 /**
  * Content Protect – frontend.
  *
- * Χρησιμοποιεί addEventListener (δεν πατάει πάνω σε document.onkeydown κ.λπ.
- * άλλων scripts) και αφήνει πάντα ελεύθερα: πεδία φόρμας, contenteditable,
- * ό,τι έχει κλάση .pncp-allow, και την πλοήγηση με πληκτρολόγιο.
+ * Φορτώνεται στο <head>, πριν από τα scripts του θέματος και των άλλων plugins, και βάζει τους listeners
+ * στο window σε φάση capture: τρέχουν πρώτοι, οπότε κανένα άλλο script (ούτε επεκτάσεις τύπου «Allow
+ * copy» που δουλεύουν με listeners στη σελίδα) δεν μπορεί να τους παρακάμψει με stopPropagation.
+ *
+ * Αφήνει πάντα ελεύθερα: πεδία φόρμας, contenteditable, ό,τι έχει κλάση .pncp-allow, και την πλοήγηση
+ * με πληκτρολόγιο.
  */
 ( function () {
 	'use strict';
@@ -15,8 +18,16 @@
 
 	var FIELDS = 'input, textarea, select, option, [contenteditable=""], [contenteditable="true"]';
 	var EDITABLE = FIELDS + ', .pncp-allow';
+	var CAPTURE = { capture: true };
 	var toast = null;
 	var toastTimer = null;
+	var blurTimer = null;
+
+	/** Το πραγματικό στοιχείο του συμβάντος, και μέσα σε shadow DOM (web components). */
+	function targetOf( e ) {
+		var path = e.composedPath ? e.composedPath() : null;
+		return path && path.length ? path[ 0 ] : e.target;
+	}
 
 	function elementOf( node ) {
 		if ( ! node ) {
@@ -54,7 +65,7 @@
 	}
 
 	function showMessage() {
-		if ( ! cfg.showMessage || ! cfg.message ) {
+		if ( ! cfg.showMessage || ! cfg.message || ! document.body ) {
 			return;
 		}
 		if ( ! toast ) {
@@ -80,34 +91,70 @@
 			.replace( /"/g, '&quot;' );
 	}
 
-	/* ---------- Δεξί κλικ ---------- */
-	if ( cfg.contextMenu ) {
-		document.addEventListener( 'contextmenu', function ( e ) {
-			if ( isAllowed( e.target ) ) {
-				return;
-			}
-			e.preventDefault();
-			showMessage();
-		} );
+	/** Σταματά το συμβάν πριν φτάσει σε οποιονδήποτε άλλο listener. */
+	function stop( e ) {
+		e.preventDefault();
+		e.stopImmediatePropagation();
 	}
 
-	/* ---------- Σύρσιμο εικόνων ---------- */
-	if ( cfg.imageDrag ) {
-		document.addEventListener( 'dragstart', function ( e ) {
-			var el = elementOf( e.target );
-			if ( el && el.tagName === 'IMG' && ! isAllowed( el ) ) {
-				e.preventDefault();
+	/** Λατινικό γράμμα του πλήκτρου: e.key όπου υπάρχει (AZERTY/Dvorak), αλλιώς e.code (ελληνική διάταξη). */
+	function letterOf( e ) {
+		if ( /^[a-z]$/i.test( e.key || '' ) ) {
+			return e.key.toLowerCase();
+		}
+		var code = e.code || '';
+		if ( code.indexOf( 'Key' ) === 0 ) {
+			return code.slice( 3 ).toLowerCase();
+		}
+		if ( code.indexOf( 'Digit' ) === 0 ) {
+			return code.slice( 5 );
+		}
+		return '';
+	}
+
+	/* ---------- Δεξί κλικ ---------- */
+	if ( cfg.contextMenu ) {
+		window.addEventListener( 'contextmenu', function ( e ) {
+			if ( isAllowed( targetOf( e ) ) ) {
+				return;
 			}
-		} );
+			stop( e );
+			showMessage();
+		}, CAPTURE );
+	}
+
+	/* ---------- Σύρσιμο εικόνων και επιλεγμένου κειμένου ---------- */
+	if ( cfg.imageDrag || cfg.textDrag ) {
+		window.addEventListener( 'dragstart', function ( e ) {
+			var el = elementOf( targetOf( e ) );
+			if ( ! el || isAllowed( el ) ) {
+				return;
+			}
+			var tag = String( el.tagName ).toUpperCase();
+			var isImage = tag === 'IMG' || tag === 'PICTURE' || tag === 'SVG';
+			if ( isImage ) {
+				if ( cfg.imageDrag ) {
+					stop( e );
+				}
+				return;
+			}
+			// Κείμενο: μόνο όταν σέρνεται επιλεγμένο κείμενο. Widgets με draggable (ταξινόμηση, sliders)
+			// και σύνδεσμοι συνεχίζουν να δουλεύουν.
+			var sel = window.getSelection ? window.getSelection() : null;
+			var draggingText = el.nodeType === 3 || ( sel && ! sel.isCollapsed && sel.containsNode && sel.containsNode( el, true ) );
+			if ( cfg.textDrag && draggingText && ! ( el.closest && el.closest( '[draggable="true"]' ) ) ) {
+				stop( e );
+			}
+		}, CAPTURE );
 	}
 
 	/* ---------- Επιλογή κειμένου ---------- */
 	if ( cfg.selection ) {
-		document.addEventListener( 'selectstart', function ( e ) {
-			if ( ! isAllowed( e.target ) ) {
-				e.preventDefault();
+		window.addEventListener( 'selectstart', function ( e ) {
+			if ( ! isAllowed( targetOf( e ) ) ) {
+				stop( e );
 			}
-		} );
+		}, CAPTURE );
 	}
 
 	/* ---------- Συντομεύσεις ---------- */
@@ -125,42 +172,39 @@
 			} );
 		}
 
-		document.addEventListener( 'keydown', function ( e ) {
+		window.addEventListener( 'keydown', function ( e ) {
 			if ( ! ( e.ctrlKey || e.metaKey ) || e.altKey ) {
 				return;
 			}
-			// Λατινικό e.key όταν υπάρχει (σωστό σε AZERTY/Dvorak). Με ελληνική διάταξη το e.key
-			// είναι π.χ. 'ψ', οπότε πέφτουμε στο e.code ('KeyC').
-			var key = /^[a-z]$/i.test( e.key || '' ) ? e.key.toLowerCase() :
-				( e.code && e.code.indexOf( 'Key' ) === 0 ? e.code.slice( 3 ).toLowerCase() : '' );
-			if ( keys.indexOf( key ) === -1 || isAllowed( e.target ) ) {
+			var key = letterOf( e );
+			if ( keys.indexOf( key ) === -1 || isAllowed( targetOf( e ) ) ) {
 				return;
 			}
 			// Αντιγραφή κειμένου από .pncp-allow (τηλέφωνο, κουπόνι) με το πληκτρολόγιο.
 			if ( ( key === 'c' || key === 'x' ) && hasAllowedSelection() ) {
 				return;
 			}
-			e.preventDefault();
+			stop( e );
 			showMessage();
-		} );
+		}, CAPTURE );
 	}
 
 	/* ---------- Συντομεύσεις DevTools (κοσμητικό: δεν ανιχνεύουμε DevTools και δεν σπάμε τη σελίδα) ---------- */
 	if ( cfg.devtools ) {
-		document.addEventListener( 'keydown', function ( e ) {
+		window.addEventListener( 'keydown', function ( e ) {
 			var code = e.code || '';
 			var letter = code.indexOf( 'Key' ) === 0 ? code.slice( 3 ) : '';
 			var hit =
 				e.key === 'F12' || code === 'F12' ||
 				// Windows / Linux: Ctrl+Shift+I/J/C/K
-				( e.ctrlKey && e.shiftKey && ! e.altKey && 'IJCK'.indexOf( letter ) !== -1 && letter !== '' ) ||
+				( e.ctrlKey && e.shiftKey && ! e.altKey && letter !== '' && 'IJCK'.indexOf( letter ) !== -1 ) ||
 				// macOS: Cmd+Opt+I/J/C/U
-				( e.metaKey && e.altKey && 'IJCU'.indexOf( letter ) !== -1 && letter !== '' );
+				( e.metaKey && e.altKey && letter !== '' && 'IJCU'.indexOf( letter ) !== -1 );
 			if ( hit ) {
-				e.preventDefault();
+				stop( e );
 				showMessage();
 			}
-		} );
+		}, CAPTURE );
 	}
 
 	/* ---------- Αντιγραφή / αποκοπή ---------- */
@@ -171,11 +215,11 @@
 		var sel = window.getSelection ? window.getSelection() : null;
 		// Για .pncp-allow κρίνει η επιλογή, όχι το target: μια επιλογή που ξεκινά από εκεί
 		// και απλώνεται σε προστατευμένο κείμενο δεν περνά.
-		if ( isField( e.target ) || hasAllowedSelection() ) {
+		if ( isField( targetOf( e ) ) || hasAllowedSelection() ) {
 			return;
 		}
 		if ( cfg.copyMode === 'block' ) {
-			e.preventDefault();
+			stop( e );
 			showMessage();
 			return;
 		}
@@ -193,10 +237,58 @@
 
 		e.clipboardData.setData( 'text/plain', plain );
 		e.clipboardData.setData( 'text/html', html );
-		e.preventDefault();
+		stop( e );
 	}
-	document.addEventListener( 'copy', onCopy );
-	document.addEventListener( 'cut', onCopy );
+	window.addEventListener( 'copy', onCopy, CAPTURE );
+	window.addEventListener( 'cut', onCopy, CAPTURE );
+
+	/* ---------- Θόλωμα σε στιγμιότυπο οθόνης (προαιρετικό) ---------- */
+	if ( cfg.blur ) {
+		var blurOn = function ( ms ) {
+			document.documentElement.classList.add( 'pncp-blurred' );
+			clearTimeout( blurTimer );
+			if ( ms ) {
+				blurTimer = setTimeout( blurOff, ms );
+			}
+		};
+		var blurOff = function () {
+			document.documentElement.classList.remove( 'pncp-blurred' );
+		};
+		window.addEventListener( 'keydown', function ( e ) {
+			var key = letterOf( e );
+			var shot =
+				e.key === 'PrintScreen' || e.code === 'PrintScreen' ||
+				// Windows: Win+Shift+S
+				( e.metaKey && e.shiftKey && key === 's' ) ||
+				// macOS: Cmd+Shift+3/4/5/6
+				( e.metaKey && e.shiftKey && [ '3', '4', '5', '6' ].indexOf( key ) !== -1 );
+			if ( shot ) {
+				blurOn( 4000 );
+			}
+		}, CAPTURE );
+		// Το Print Screen στα Windows φτάνει συχνά μόνο ως keyup.
+		window.addEventListener( 'keyup', function ( e ) {
+			if ( e.key === 'PrintScreen' || e.code === 'PrintScreen' ) {
+				blurOn( 4000 );
+			}
+		}, CAPTURE );
+		// Το εργαλείο αποκοπής παίρνει το focus: θόλωμα όσο λείπει, καθαρό μόλις επιστρέψει ο επισκέπτης.
+		window.addEventListener( 'blur', function () {
+			// Κλικ μέσα σε iframe της σελίδας (π.χ. βίντεο) παίρνει κι αυτό το focus: εκεί όχι θόλωμα.
+			setTimeout( function () {
+				var active = document.activeElement;
+				if ( ! active || String( active.tagName ).toUpperCase() !== 'IFRAME' ) {
+					blurOn( 0 );
+				}
+			}, 0 );
+		} );
+		window.addEventListener( 'focus', blurOff );
+		document.addEventListener( 'visibilitychange', function () {
+			if ( document.visibilityState === 'visible' && document.hasFocus() ) {
+				blurOff();
+			}
+		} );
+	}
 
 	/* ---------- Εκτύπωση: τα κείμενα μπαίνουν ως data attributes, το CSS τα δείχνει ---------- */
 	function setPrintData() {
