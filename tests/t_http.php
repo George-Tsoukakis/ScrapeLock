@@ -1,6 +1,6 @@
 <?php
 /**
- * Content Protect 2.1 — δοκιμές HTTP σε πραγματικό WordPress.
+ * ScrapeLock — δοκιμές HTTP σε πραγματικό WordPress.
  *
  *   WP_DIR=/path/to/wordpress BASE=http://127.0.0.1:8099 php t_http.php
  *

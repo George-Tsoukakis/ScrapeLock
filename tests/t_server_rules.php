@@ -1,6 +1,6 @@
 <?php
 /**
- * Content Protect — οι κανόνες της καρτέλας «Κανόνες server» σε πραγματικό Nginx και Apache.
+ * ScrapeLock — οι κανόνες της καρτέλας «Κανόνες server» σε πραγματικό Nginx και Apache.
  *
  *   WP_DIR=/srv/wpt NGINX_URL=http://127.0.0.1:8080 APACHE_URL=http://127.0.0.1:8081 php t_server_rules.php
  *
@@ -60,8 +60,8 @@ $img_path    = wp_parse_url( $uploads['baseurl'], PHP_URL_PATH ) . '/hotlink-tes
 $backup_path = wp_parse_url( $uploads['baseurl'], PHP_URL_PATH ) . '/' . basename( $backup_dir ) . '/secret.txt';
 
 /* ---------- Nginx ---------- */
-file_put_contents( '/etc/nginx/conf.d/pncp-http.conf', str_replace( 'ΤΟ_TOKEN_ΣΑΣ', $token, PNCP_Rules::nginx_http() ) );
-file_put_contents( '/etc/nginx/pncp-rules.conf', str_replace( 'ΤΟ_TOKEN_ΣΑΣ', $token, PNCP_Rules::nginx_server() ) );
+file_put_contents( '/etc/nginx/conf.d/pncp-http.conf', str_replace( 'YOUR_TOKEN', $token, PNCP_Rules::nginx_http() ) );
+file_put_contents( '/etc/nginx/pncp-rules.conf', str_replace( 'YOUR_TOKEN', $token, PNCP_Rules::nginx_server() ) );
 exec( 'nginx -t 2>&1', $out, $rc );
 t( 'Nginx: nginx -t δέχεται τους κανόνες', 0 === $rc, implode( ' | ', $out ) );
 exec( 'nginx -s reload 2>&1' );
@@ -102,7 +102,7 @@ t( 'Nginx: feed της PHP χωρίς token → το ελέγχει το WordPre
 
 /* ---------- Apache (.htaccess) ---------- */
 $wp_block = file_get_contents( ABSPATH . '.htaccess.wp' );
-file_put_contents( ABSPATH . '.htaccess', str_replace( 'ΤΟ_TOKEN_ΣΑΣ', $token, PNCP_Rules::apache() ) . "\n" . $wp_block );
+file_put_contents( ABSPATH . '.htaccess', str_replace( 'YOUR_TOKEN', $token, PNCP_Rules::apache() ) . "\n" . $wp_block );
 list( $code ) = get( $apache . '/hello-world/', $browser );
 t( 'Apache: το .htaccess είναι έγκυρο (browser 200, όχι 500)', 200 === $code, (string) $code );
 list( $code, $body ) = get( $apache . '/hello-world/', array( 'User-Agent' => 'Mozilla/5.0 (compatible; GPTBot/1.2)' ) );

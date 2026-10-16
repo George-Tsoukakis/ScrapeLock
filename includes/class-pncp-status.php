@@ -1,26 +1,26 @@
 <?php
 /**
- * Ένδειξη κατάστασης: widget στον Πίνακα ελέγχου (με σύνοψη 24ώρου) και κουμπί στη γραμμή διαχείρισης.
- * Ενεργοποίηση με ένα κλικ, απενεργοποίηση μόνο μετά από επιβεβαίωση, Emergency Mode.
+ * Status indicator: Dashboard widget (with a 24-hour summary) and a button in the admin bar.
+ * One-click enable, disable only after confirmation, Emergency Mode.
  *
- * @package Content_Protect
+ * @package ScrapeLock
  */
 
 defined( 'ABSPATH' ) || exit;
 
 /**
- * Κατάσταση προστασίας, διακόπτης και Emergency Mode.
+ * Protection status, toggle and Emergency Mode.
  */
 final class PNCP_Status {
 
 	const ACTION    = 'pncp_toggle';
 	const EMERGENCY = 'pncp_emergency';
 
-	// Ίδιο με το PNCP_Admin::PAGE· η κλάση του admin δεν φορτώνεται στο δημόσιο site, όπου φαίνεται η μπάρα.
-	const SETTINGS_PAGE = 'content-protect';
+	// Same as PNCP_Admin::PAGE; the admin class is not loaded on the public site, where the bar is shown.
+	const SETTINGS_PAGE = 'scrapelock';
 
 	/**
-	 * Δένει τα hooks.
+	 * Registers the hooks.
 	 */
 	public static function init() {
 		add_action( 'wp_dashboard_setup', array( __CLASS__, 'add_widget' ) );
@@ -34,9 +34,9 @@ final class PNCP_Status {
 	}
 
 	/**
-	 * Το WordPress σβήνει τις παραμέτρους μας από τη γραμμή διευθύνσεων μετά το μήνυμα.
+	 * WordPress removes our query args from the address bar after the notice.
 	 *
-	 * @param string[] $args Παράμετροι.
+	 * @param string[] $args Query args.
 	 * @return string[]
 	 */
 	public static function removable_args( $args ) {
@@ -47,7 +47,7 @@ final class PNCP_Status {
 	}
 
 	/**
-	 * Είναι ενεργή η προστασία;
+	 * Is protection enabled?
 	 *
 	 * @return bool
 	 */
@@ -56,9 +56,9 @@ final class PNCP_Status {
 	}
 
 	/**
-	 * Η σελίδα ρυθμίσεων.
+	 * The settings page.
 	 *
-	 * @param array<string, string> $args Παράμετροι.
+	 * @param array<string, string> $args Query args.
 	 * @return string
 	 */
 	public static function settings_url( $args = array() ) {
@@ -66,7 +66,7 @@ final class PNCP_Status {
 	}
 
 	/**
-	 * URL ενεργοποίησης (με nonce), που επιστρέφει στην τρέχουσα σελίδα.
+	 * Enable URL (with nonce) that returns to the current page.
 	 *
 	 * @return string
 	 */
@@ -86,7 +86,7 @@ final class PNCP_Status {
 	}
 
 	/**
-	 * Η απενεργοποίηση πηγαίνει πάντα σε σελίδα επιβεβαίωσης (δεν αρκεί ένα κλικ στη μπάρα).
+	 * Disabling always goes to a confirmation page (one click in the bar is not enough).
 	 *
 	 * @return string
 	 */
@@ -95,7 +95,7 @@ final class PNCP_Status {
 	}
 
 	/**
-	 * Τερματισμός του Emergency Mode (με nonce).
+	 * Ends Emergency Mode (with nonce).
 	 *
 	 * @return string
 	 */
@@ -113,15 +113,15 @@ final class PNCP_Status {
 	}
 
 	/**
-	 * Ενεργοποίηση (GET με nonce) ή απενεργοποίηση (μόνο POST, από τη φόρμα επιβεβαίωσης). Μόνο διαχειριστές.
+	 * Enable (GET with nonce) or disable (POST only, from the confirmation form). Administrators only.
 	 */
 	public static function handle_toggle() {
 		if ( ! current_user_can( 'manage_options' ) ) {
-			wp_die( esc_html__( 'Δεν έχετε δικαίωμα να αλλάξετε αυτή τη ρύθμιση.', 'content-protect' ), '', array( 'response' => 403 ) );
+			wp_die( esc_html__( 'You are not allowed to change this setting.', 'scrapelock' ), '', array( 'response' => 403 ) );
 		}
 		check_admin_referer( self::ACTION );
 
-		// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Ελέγχθηκε παραπάνω.
+		// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Verified above.
 		$state  = isset( $_REQUEST['state'] ) ? sanitize_key( wp_unslash( $_REQUEST['state'] ) ) : '';
 		$method = isset( $_SERVER['REQUEST_METHOD'] ) ? strtoupper( sanitize_key( wp_unslash( $_SERVER['REQUEST_METHOD'] ) ) ) : 'GET';
 		if ( 'off' === $state && 'POST' !== $method ) {
@@ -129,21 +129,21 @@ final class PNCP_Status {
 			exit;
 		}
 		if ( ! in_array( $state, array( 'on', 'off' ), true ) ) {
-			wp_die( esc_html__( 'Άκυρο αίτημα.', 'content-protect' ), '', array( 'response' => 400 ) );
+			wp_die( esc_html__( 'Invalid request.', 'scrapelock' ), '', array( 'response' => 400 ) );
 		}
 
 		$settings            = PNCP_Options::stored();
 		$settings['enabled'] = 'on' === $state ? 1 : 0;
-		update_option( PNCP_OPTION, $settings ); // Αδειάζει και την cache (update_option_pncp_settings).
+		update_option( PNCP_OPTION, $settings ); // Also flushes the cache (update_option_pncp_settings).
 		PNCP_Options::flush();
 
-		// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Ελέγχθηκε παραπάνω. Όχι sanitize_text_field (σβήνει τα %XX των ελληνικών URLs).
+		// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Verified above. Not sanitize_text_field (it strips the %XX of Greek URLs).
 		$redirect = isset( $_REQUEST['redirect'] ) ? esc_url_raw( wp_unslash( $_REQUEST['redirect'] ) ) : '';
 		$redirect = wp_validate_redirect( $redirect, admin_url() );
 		if ( '' === $redirect || false !== strpos( $redirect, 'pncp_confirm=' ) ) {
 			$redirect = self::settings_url();
 		}
-		// Το μήνυμα φαίνεται μόνο στο wp-admin, οπότε μόνο εκεί προσθέτουμε την παράμετρο.
+		// The notice is shown only in wp-admin, so we add the query arg only there.
 		if ( false !== strpos( $redirect, '/wp-admin/' ) ) {
 			$redirect = add_query_arg( 'pncp_toggled', $settings['enabled'] ? 'on' : 'off', $redirect );
 		}
@@ -152,14 +152,14 @@ final class PNCP_Status {
 	}
 
 	/**
-	 * Έναρξη (POST, με διάρκεια) ή τέλος (GET/POST με nonce) του Emergency Mode.
+	 * Starts (POST, with a duration) or ends (GET/POST with nonce) Emergency Mode.
 	 */
 	public static function handle_emergency() {
 		if ( ! current_user_can( 'manage_options' ) ) {
-			wp_die( esc_html__( 'Δεν έχετε δικαίωμα να αλλάξετε αυτή τη ρύθμιση.', 'content-protect' ), '', array( 'response' => 403 ) );
+			wp_die( esc_html__( 'You are not allowed to change this setting.', 'scrapelock' ), '', array( 'response' => 403 ) );
 		}
 		check_admin_referer( self::EMERGENCY );
-		// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Ελέγχθηκε παραπάνω.
+		// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Verified above.
 		$hours = isset( $_REQUEST['hours'] ) ? absint( $_REQUEST['hours'] ) : 0;
 		if ( ! in_array( $hours, array( 0, 1, 6, 24, 72 ), true ) ) {
 			$hours = 24;
@@ -170,19 +170,19 @@ final class PNCP_Status {
 	}
 
 	/**
-	 * Μηνύματα μετά τις ενέργειες και προειδοποίηση όσο τρέχει το Emergency Mode.
+	 * Notices after actions, and a warning while Emergency Mode is running.
 	 */
 	public static function notice() {
 		if ( ! current_user_can( 'manage_options' ) ) {
 			return;
 		}
-		// phpcs:disable WordPress.Security.NonceVerification.Recommended -- Μόνο εμφάνιση μηνύματος.
+		// phpcs:disable WordPress.Security.NonceVerification.Recommended -- Only displays a notice.
 		if ( isset( $_GET['pncp_toggled'] ) ) {
 			$on = 'on' === sanitize_key( wp_unslash( $_GET['pncp_toggled'] ) );
 			printf(
 				'<div class="notice notice-%1$s is-dismissible"><p>%2$s</p></div>',
 				$on ? 'success' : 'warning',
-				esc_html( $on ? __( 'Η προστασία περιεχομένου ενεργοποιήθηκε.', 'content-protect' ) : __( 'Η προστασία περιεχομένου απενεργοποιήθηκε. Το site δεν προστατεύεται.', 'content-protect' ) )
+				esc_html( $on ? __( 'Content protection enabled.', 'scrapelock' ) : __( 'Content protection disabled. The site is not protected.', 'scrapelock' ) )
 			);
 		}
 		if ( isset( $_GET['pncp_emergency'] ) ) {
@@ -190,7 +190,7 @@ final class PNCP_Status {
 			printf(
 				'<div class="notice notice-%1$s is-dismissible"><p>%2$s</p></div>',
 				$on ? 'warning' : 'success',
-				esc_html( $on ? __( 'Το Emergency Mode ξεκίνησε.', 'content-protect' ) : __( 'Το Emergency Mode σταμάτησε. Ισχύουν ξανά οι κανονικές ρυθμίσεις.', 'content-protect' ) )
+				esc_html( $on ? __( 'Emergency Mode started.', 'scrapelock' ) : __( 'Emergency Mode stopped. Your normal settings apply again.', 'scrapelock' ) )
 			);
 		}
 		// phpcs:enable WordPress.Security.NonceVerification.Recommended
@@ -198,53 +198,53 @@ final class PNCP_Status {
 		if ( $until && self::is_enabled() ) {
 			printf(
 				'<div class="notice notice-warning"><p><strong>%1$s</strong> %2$s <a href="%3$s">%4$s</a></p></div>',
-				esc_html__( 'Emergency Mode σε λειτουργία.', 'content-protect' ),
+				esc_html__( 'Emergency Mode is on.', 'scrapelock' ),
 				esc_html(
 					sprintf(
-						/* translators: %s: ημερομηνία και ώρα */
-						__( 'Ισχύουν αυστηρότερα όρια μέχρι %s.', 'content-protect' ),
+						/* translators: %s: date and time */
+						__( 'Stricter limits apply until %s.', 'scrapelock' ),
 						wp_date( get_option( 'date_format' ) . ' ' . get_option( 'time_format' ), $until )
 					)
 				),
 				esc_url( self::emergency_stop_url() ),
-				esc_html__( 'Τέλος τώρα', 'content-protect' )
+				esc_html__( 'End now', 'scrapelock' )
 			);
 		}
 	}
 
 	/**
-	 * Widget στον Πίνακα ελέγχου.
+	 * Dashboard widget.
 	 */
 	public static function add_widget() {
 		if ( current_user_can( 'manage_options' ) ) {
-			wp_add_dashboard_widget( 'pncp_status', __( 'Προστασία περιεχομένου', 'content-protect' ), array( __CLASS__, 'render_widget' ) );
+			wp_add_dashboard_widget( 'pncp_status', __( 'ScrapeLock', 'scrapelock' ), array( __CLASS__, 'render_widget' ) );
 		}
 	}
 
 	/**
-	 * Τα ενεργά επίπεδα προστασίας, για το widget.
+	 * The active protection layers, for the widget.
 	 *
-	 * @param array<string, mixed> $s Ρυθμίσεις.
+	 * @param array<string, mixed> $s Settings.
 	 * @return array<string, bool>
 	 */
 	private static function layers( $s ) {
 		return array(
-			__( 'Αντιγραφή / δεξί κλικ στη σελίδα', 'content-protect' ) => ! empty( $s['block_selection'] ) || ! empty( $s['block_context_menu'] ) || 'block' === $s['copy_mode'],
-			__( 'REST API / GraphQL χωρίς κείμενο', 'content-protect' ) => ! empty( $s['rest_hide_content'] ),
-			__( 'RSS μόνο περίληψη ή κλειστό', 'content-protect' ) => 'full' !== $s['feed_mode'],
-			__( 'Μπλοκάρισμα scrapers / AI bots', 'content-protect' ) => ! empty( $s['block_bots'] ),
-			__( 'Ψεύτικα Googlebot / Bingbot', 'content-protect' ) => ! empty( $s['block_fake_crawlers'] ),
-			__( 'Παγίδα για bots', 'content-protect' )     => ! empty( $s['trap_enabled'] ),
-			__( 'Όριο σελίδων ανά IP', 'content-protect' ) => (int) $s['rate_limit'] > 0,
-			__( 'Προστατευμένα feeds', 'content-protect' ) => '' !== trim( (string) $s['private_paths'] ),
-			__( 'Όχι μέσα σε iframe ξένου site', 'content-protect' ) => ! empty( $s['block_framing'] ),
-			__( 'Δήλωση εξαίρεσης από AI (TDM)', 'content-protect' ) => ! empty( $s['tdm_reservation'] ),
-			__( 'Υδατογράφημα εικόνων', 'content-protect' ) => ! empty( $s['watermark_enabled'] ),
+			__( 'Copy / right click on the page', 'scrapelock' ) => ! empty( $s['block_selection'] ) || ! empty( $s['block_context_menu'] ) || 'block' === $s['copy_mode'],
+			__( 'REST API / GraphQL without content', 'scrapelock' ) => ! empty( $s['rest_hide_content'] ),
+			__( 'RSS excerpt only or disabled', 'scrapelock' ) => 'full' !== $s['feed_mode'],
+			__( 'Blocking scrapers / AI bots', 'scrapelock' ) => ! empty( $s['block_bots'] ),
+			__( 'Fake Googlebot / Bingbot', 'scrapelock' ) => ! empty( $s['block_fake_crawlers'] ),
+			__( 'Bot trap', 'scrapelock' )                 => ! empty( $s['trap_enabled'] ),
+			__( 'Page limit per IP', 'scrapelock' )        => (int) $s['rate_limit'] > 0,
+			__( 'Protected feeds', 'scrapelock' )          => '' !== trim( (string) $s['private_paths'] ),
+			__( 'No framing by other sites', 'scrapelock' ) => ! empty( $s['block_framing'] ),
+			__( 'AI opt-out declaration (TDM)', 'scrapelock' ) => ! empty( $s['tdm_reservation'] ),
+			__( 'Image watermark', 'scrapelock' )          => ! empty( $s['watermark_enabled'] ),
 		);
 	}
 
 	/**
-	 * Περιεχόμενο του widget.
+	 * Widget content.
 	 */
 	public static function render_widget() {
 		$s       = PNCP_Options::get();
@@ -258,11 +258,11 @@ final class PNCP_Status {
 				<strong>
 				<?php
 				if ( ! $on ) {
-					esc_html_e( 'Η προστασία είναι απενεργοποιημένη', 'content-protect' );
+					esc_html_e( 'Protection is disabled', 'scrapelock' );
 				} elseif ( $until ) {
-					esc_html_e( 'Emergency Mode σε λειτουργία', 'content-protect' );
+					esc_html_e( 'Emergency Mode is active', 'scrapelock' );
 				} else {
-					esc_html_e( 'Το site προστατεύεται', 'content-protect' );
+					esc_html_e( 'The site is protected', 'scrapelock' );
 				}
 				?>
 				</strong>
@@ -272,8 +272,8 @@ final class PNCP_Status {
 					<?php
 					echo esc_html(
 						sprintf(
-							/* translators: 1: αιτήματα, 2: ενεργοί αποκλεισμοί */
-							__( 'Τελευταίες 24 ώρες: %1$s μπλοκαρισμένα αιτήματα · %2$s αποκλεισμένες IP τώρα', 'content-protect' ),
+							/* translators: 1: requests, 2: active bans */
+							__( 'Last 24 hours: %1$s blocked requests · %2$s IPs blocked now', 'scrapelock' ),
 							number_format_i18n( $summary['total'] ),
 							number_format_i18n( PNCP_Log::count_bans() )
 						)
@@ -285,28 +285,28 @@ final class PNCP_Status {
 						<li>
 							<span class="dashicons <?php echo $active ? 'dashicons-yes' : 'dashicons-minus'; ?>" aria-hidden="true"></span>
 							<?php echo esc_html( $label ); ?>
-							<span class="screen-reader-text"><?php echo esc_html( $active ? __( '(ενεργό)', 'content-protect' ) : __( '(ανενεργό)', 'content-protect' ) ); ?></span>
+							<span class="screen-reader-text"><?php echo esc_html( $active ? __( '(on)', 'scrapelock' ) : __( '(off)', 'scrapelock' ) ); ?></span>
 						</li>
 					<?php endforeach; ?>
 				</ul>
 			<?php endif; ?>
 			<p class="pncp-actions">
 				<?php if ( $on ) : ?>
-					<a class="button" href="<?php echo esc_url( self::disable_url() ); ?>"><?php esc_html_e( 'Απενεργοποίηση…', 'content-protect' ); ?></a>
+					<a class="button" href="<?php echo esc_url( self::disable_url() ); ?>"><?php esc_html_e( 'Disable…', 'scrapelock' ); ?></a>
 				<?php else : ?>
-					<a class="button button-primary" href="<?php echo esc_url( self::enable_url() ); ?>"><?php esc_html_e( 'Ενεργοποίηση', 'content-protect' ); ?></a>
+					<a class="button button-primary" href="<?php echo esc_url( self::enable_url() ); ?>"><?php esc_html_e( 'Enable', 'scrapelock' ); ?></a>
 				<?php endif; ?>
-				<a href="<?php echo esc_url( self::settings_url() ); ?>"><?php esc_html_e( 'Ρυθμίσεις', 'content-protect' ); ?></a>
-				<a href="<?php echo esc_url( self::settings_url( array( 'tab' => 'log' ) ) ); ?>"><?php esc_html_e( 'Αρχείο', 'content-protect' ); ?></a>
+				<a href="<?php echo esc_url( self::settings_url() ); ?>"><?php esc_html_e( 'Settings', 'scrapelock' ); ?></a>
+				<a href="<?php echo esc_url( self::settings_url( array( 'tab' => 'log' ) ) ); ?>"><?php esc_html_e( 'Log', 'scrapelock' ); ?></a>
 			</p>
 		</div>
 		<?php
 	}
 
 	/**
-	 * Κουμπί στη γραμμή διαχείρισης (πάνω μπάρα), σε admin και site.
+	 * Button in the admin bar (top bar), in both admin and the front end.
 	 *
-	 * @param WP_Admin_Bar $bar Η μπάρα.
+	 * @param WP_Admin_Bar $bar The admin bar.
 	 */
 	public static function admin_bar( $bar ) {
 		if ( ! current_user_can( 'manage_options' ) ) {
@@ -315,9 +315,9 @@ final class PNCP_Status {
 		$on        = self::is_enabled();
 		$emergency = $on && PNCP_Options::emergency_until();
 		if ( $emergency ) {
-			$label = __( 'Προστασία: EMERGENCY', 'content-protect' );
+			$label = __( 'Protection: EMERGENCY', 'scrapelock' );
 		} else {
-			$label = $on ? __( 'Προστασία: ON', 'content-protect' ) : __( 'Προστασία: OFF', 'content-protect' );
+			$label = $on ? __( 'Protection: ON', 'scrapelock' ) : __( 'Protection: OFF', 'scrapelock' );
 		}
 
 		$bar->add_node(
@@ -327,7 +327,7 @@ final class PNCP_Status {
 				'href'  => self::settings_url(),
 				'meta'  => array(
 					'class' => $emergency ? 'pncp-emergency' : ( $on ? 'pncp-on' : 'pncp-off' ),
-					'title' => $on ? __( 'Το site προστατεύεται', 'content-protect' ) : __( 'Η προστασία είναι απενεργοποιημένη', 'content-protect' ),
+					'title' => $on ? __( 'The site is protected', 'scrapelock' ) : __( 'Protection is disabled', 'scrapelock' ),
 				),
 			)
 		);
@@ -335,7 +335,7 @@ final class PNCP_Status {
 			array(
 				'parent' => 'pncp-status',
 				'id'     => 'pncp-toggle',
-				'title'  => esc_html( $on ? __( 'Απενεργοποίηση…', 'content-protect' ) : __( 'Ενεργοποίηση', 'content-protect' ) ),
+				'title'  => esc_html( $on ? __( 'Disable…', 'scrapelock' ) : __( 'Enable', 'scrapelock' ) ),
 				'href'   => $on ? self::disable_url() : self::enable_url(),
 			)
 		);
@@ -344,7 +344,7 @@ final class PNCP_Status {
 				array(
 					'parent' => 'pncp-status',
 					'id'     => 'pncp-emergency-stop',
-					'title'  => esc_html__( 'Τέλος Emergency Mode', 'content-protect' ),
+					'title'  => esc_html__( 'End Emergency Mode', 'scrapelock' ),
 					'href'   => self::emergency_stop_url(),
 				)
 			);
@@ -353,14 +353,14 @@ final class PNCP_Status {
 			array(
 				'parent' => 'pncp-status',
 				'id'     => 'pncp-settings',
-				'title'  => esc_html__( 'Ρυθμίσεις', 'content-protect' ),
+				'title'  => esc_html__( 'Settings', 'scrapelock' ),
 				'href'   => self::settings_url(),
 			)
 		);
 	}
 
 	/**
-	 * Χρώματα για το κουμπί και το widget (πράσινο = ON, κόκκινο = OFF, πορτοκαλί = Emergency).
+	 * Colors for the button and the widget (green = ON, red = OFF, orange = Emergency).
 	 */
 	public static function admin_bar_css() {
 		if ( ! is_admin_bar_showing() || ! current_user_can( 'manage_options' ) ) {

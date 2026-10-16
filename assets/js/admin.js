@@ -1,5 +1,5 @@
 /**
- * Content Protect – σελίδα ρυθμίσεων: κουμπιά αντιγραφής και εργαλείο υδατογραφήματος σε παρτίδες.
+ * ScrapeLock – settings page: copy buttons and batch watermark tool.
  */
 ( function () {
 	'use strict';
@@ -13,7 +13,7 @@
 		return String( text ).replace( '%1$s', a ).replace( '%2$s', b );
 	}
 
-	/* ---------- Αντιγραφή ---------- */
+	/* ---------- Copy ---------- */
 	document.addEventListener( 'click', function ( e ) {
 		var button = e.target.closest ? e.target.closest( '.pncp-copy' ) : null;
 		if ( ! button ) {
@@ -40,7 +40,7 @@
 		}
 	} );
 
-	/* ---------- Εργαλείο υδατογραφήματος ---------- */
+	/* ---------- Watermark tool ---------- */
 	var buttons = document.querySelectorAll( '.pncp-wm-run' );
 	var box = document.querySelector( '.pncp-progress' );
 	if ( ! buttons.length || ! box ) {

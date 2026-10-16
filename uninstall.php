@@ -1,17 +1,17 @@
 <?php
 /**
- * Διαγραφή plugin: σβήνει ρυθμίσεις, πίνακα αρχείου, cron και προσωρινά δεδομένα.
+ * Plugin uninstall: removes settings, the log table, cron events and transient data.
  *
- * ΔΕΝ σβήνει τον φάκελο με τα καθαρά πρωτότυπα των εικόνων (uploads/pncp-originals-…): αν κάποιες
- * εικόνες έχουν υδατογράφημα στο πλήρες μέγεθος, εκεί είναι τα μόνα καθαρά αντίγραφά τους.
+ * Does NOT delete the folder with the clean image originals (uploads/pncp-originals-…): if some
+ * images are watermarked at full size, those are their only clean copies.
  *
- * @package Content_Protect
+ * @package ScrapeLock
  */
 
 defined( 'WP_UNINSTALL_PLUGIN' ) || exit;
 
 /**
- * Καθαρίζει ένα site.
+ * Cleans up a single site.
  */
 function pncp_uninstall_site() {
 	global $wpdb;
@@ -23,7 +23,7 @@ function pncp_uninstall_site() {
 	wp_clear_scheduled_hook( 'pncp_log_cleanup' );
 	wp_clear_scheduled_hook( 'pncp_wm_unmark' );
 
-	// phpcs:disable WordPress.DB.DirectDatabaseQuery, WordPress.DB.DirectDatabaseQuery.SchemaChange -- Μία φορά, στη διαγραφή.
+	// phpcs:disable WordPress.DB.DirectDatabaseQuery, WordPress.DB.DirectDatabaseQuery.SchemaChange -- Runs once, on uninstall.
 	$wpdb->query( $wpdb->prepare( 'DROP TABLE IF EXISTS %i', $wpdb->prefix . 'pncp_log' ) );
 	$wpdb->query( $wpdb->prepare( 'DROP TABLE IF EXISTS %i', $wpdb->prefix . 'pncp_bans' ) );
 	$wpdb->query(

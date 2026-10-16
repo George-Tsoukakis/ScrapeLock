@@ -1,7 +1,11 @@
+# GitHub "Download ZIP" and git archive give only the plugin, as it is installed in WordPress.
 /tests export-ignore
+/docs export-ignore
+/translations export-ignore
+/wporg-assets export-ignore
+/.github export-ignore
 /.gitattributes export-ignore
 /.gitignore export-ignore
 /README.md export-ignore
 /CHANGELOG.md export-ignore
-/readme.txt export-ignore
 /phpcs.xml.dist export-ignore
