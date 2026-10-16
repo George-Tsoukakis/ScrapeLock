@@ -745,7 +745,7 @@ final class PNCP_Admin {
 				<div class="notice notice-success inline pncp-fresh-token">
 					<p><strong><?php esc_html_e( 'New token. Copy it now: it will not be shown again.', 'scrapelock' ); ?></strong></p>
 					<p><code id="pncp-token-value" class="pncp-token"><?php echo esc_html( $fresh ); ?></code> <button type="button" class="button pncp-copy" data-target="pncp-token-value"><?php esc_html_e( 'Copy', 'scrapelock' ); ?></button></p>
-					<p><?php esc_html_e( 'Header for ERP / API:', 'scrapelock' ); ?> <code>X-Content-Protect-Token: <?php echo esc_html( $fresh ); ?></code> <?php esc_html_e( 'or', 'scrapelock' ); ?> <code>Authorization: Bearer <?php echo esc_html( $fresh ); ?></code></p>
+					<p><?php esc_html_e( 'Header for ERP / API:', 'scrapelock' ); ?> <code>X-ScrapeLock-Token: <?php echo esc_html( $fresh ); ?></code> <?php esc_html_e( 'or', 'scrapelock' ); ?> <code>Authorization: Bearer <?php echo esc_html( $fresh ); ?></code></p>
 					<?php if ( $paths ) : ?>
 						<p><?php esc_html_e( 'URL for Skroutz, BestPrice, Google Merchant (they accept only URLs):', 'scrapelock' ); ?></p>
 						<ul>

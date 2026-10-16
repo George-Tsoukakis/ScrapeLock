@@ -357,8 +357,10 @@ $java = array( 'X-Test-IP' => '203.0.113.41', 'User-Agent' => 'Java/1.8.0_401' )
 list( $code ) = req( '/skroutz.xml?cp_token=Legacy1234567890Token', $java );
 t( 'feed με το token της 1.4 στο URL, ακόμη και με User-Agent «Java/» της λίστας: όχι 403', 403 !== $code, (string) $code );
 $new = PNCP_Private_Urls::rotate( 7 );
+list( $code ) = req( '/skroutz.xml', array_merge( $java, array( 'X-ScrapeLock-Token' => $new ) ) );
+t( 'νέο token στο header X-ScrapeLock-Token', 403 !== $code, (string) $code );
 list( $code ) = req( '/skroutz.xml', array_merge( $java, array( 'X-Content-Protect-Token' => $new ) ) );
-t( 'νέο token στο header X-Content-Protect-Token', 403 !== $code, (string) $code );
+t( 'header με το παλιό όνομα X-Content-Protect-Token: ισχύει ακόμη', 403 !== $code, (string) $code );
 list( $code ) = req( '/skroutz.xml', array_merge( $java, array( 'Authorization' => 'Bearer ' . $new ) ) );
 t( 'νέο token στο Authorization: Bearer', 403 !== $code, (string) $code );
 list( $code ) = req( '/skroutz.xml?cp_token=Legacy1234567890Token', $java );
