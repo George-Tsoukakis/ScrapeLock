@@ -1,64 +1,64 @@
 <?php
 /**
- * Διευθύνσεις IP: πραγματική IP επισκέπτη πίσω από CDN/proxy (Trusted Proxy), CIDR και οι επίσημες
- * λίστες IP του Cloudflare, της Google και της Bing (ανανέωση κάθε μέρα με WP-Cron).
+ * IP addresses: real visitor IP behind a CDN/proxy (Trusted Proxy), CIDR and the official
+ * IP lists of Cloudflare, Google and Bing (refreshed daily via WP-Cron).
  *
- * @package Content_Protect
+ * @package ScrapeLock
  */
 
 defined( 'ABSPATH' ) || exit;
 
 /**
- * Βοηθητικά για IP.
+ * IP helpers.
  */
 final class PNCP_Ip {
 
 	/**
-	 * Option με τις λίστες που κατεβαίνουν (όχι autoload).
+	 * Option holding the downloaded lists (not autoloaded).
 	 */
 	const LISTS_OPTION = 'pncp_ip_lists';
 
 	/**
-	 * Cron hook της ανανέωσης.
+	 * Cron hook for the refresh.
 	 */
 	const CRON = 'pncp_refresh_ip_lists';
 
 	/**
-	 * Cache της IP για το αίτημα.
+	 * Per-request cache of the IP.
 	 *
 	 * @var string|null
 	 */
 	private static $client_ip = null;
 
 	/**
-	 * Αν η IP του αιτήματος δεν μπορεί να πλαστογραφηθεί.
+	 * Whether the request IP cannot be spoofed.
 	 *
 	 * @var bool
 	 */
 	private static $reliable = true;
 
 	/**
-	 * Cache των λιστών για το αίτημα.
+	 * Per-request cache of the lists.
 	 *
 	 * @var array<string, string[]>
 	 */
 	private static $lists = array();
 
 	/**
-	 * Δένει τα hooks.
+	 * Attaches the hooks.
 	 */
 	public static function init() {
 		add_action( self::CRON, array( __CLASS__, 'refresh_lists' ) );
 	}
 
 	/**
-	 * Οι πηγές των λιστών: όνομα => URLs.
+	 * The list sources: name => URLs.
 	 *
 	 * @return array<string, string[]>
 	 */
 	public static function sources() {
 		return array(
-			'cloudflare' => array( 'https://www.cloudflare.com/ips-v4', 'https://www.cloudflare.com/ips-v6' ),
+			'cloudflare' => array( 'https://api.cloudflare.com/client/v4/ips' ),
 			'google'     => array(
 				'https://developers.google.com/static/search/apis/ipranges/googlebot.json',
 				'https://developers.google.com/static/search/apis/ipranges/special-crawlers.json',
@@ -69,7 +69,7 @@ final class PNCP_Ip {
 	}
 
 	/**
-	 * Οι διευθύνσεις του Cloudflare (https://www.cloudflare.com/ips/), για την περίπτωση που η λήψη αποτύχει.
+	 * Cloudflare's addresses (https://www.cloudflare.com/ips/), in case the download fails.
 	 *
 	 * @return string[]
 	 */
@@ -101,15 +101,15 @@ final class PNCP_Ip {
 	}
 
 	/**
-	 * Μια λίστα CIDR. Για το Cloudflare, αν δεν έχει κατέβει, η ενσωματωμένη.
+	 * A CIDR list. For Cloudflare, the built-in one if it has not been downloaded.
 	 *
 	 * @param string $name cloudflare | google | bing.
 	 * @return string[]
 	 */
 	public static function list_of( $name ) {
 		if ( ! isset( self::$lists[ $name ] ) ) {
-			// Ένα option ανά λίστα: η μικρή λίστα του Cloudflare είναι autoload (χρειάζεται σε κάθε αίτημα πίσω
-			// από Cloudflare), οι μεγάλες της Google / Bing διαβάζονται μόνο όταν κάποιος δηλώνει crawler.
+			// One option per list: Cloudflare's small list is autoloaded (needed on every request behind
+			// Cloudflare); the large Google / Bing lists are read only when someone claims to be a crawler.
 			$list                 = get_option( self::LISTS_OPTION . '_' . $name, array() );
 			self::$lists[ $name ] = is_array( $list ) ? $list : array();
 		}
@@ -121,9 +121,9 @@ final class PNCP_Ip {
 	}
 
 	/**
-	 * Αποθηκεύει μια λίστα (και σε tests).
+	 * Stores a list (also in tests).
 	 *
-	 * @param string   $name   Όνομα.
+	 * @param string   $name   Name.
 	 * @param string[] $ranges CIDR.
 	 */
 	public static function store_list( $name, $ranges ) {
@@ -136,7 +136,7 @@ final class PNCP_Ip {
 	}
 
 	/**
-	 * Πότε ανανεώθηκαν οι λίστες: όνομα => timestamp.
+	 * When the lists were refreshed: name => timestamp.
 	 *
 	 * @return array<string, int>
 	 */
@@ -146,14 +146,37 @@ final class PNCP_Ip {
 	}
 
 	/**
-	 * Κατεβάζει τις λίστες. Αν μια πηγή αποτύχει, κρατά την προηγούμενη τιμή της.
+	 * The lists the current settings use. Only these are downloaded: the Google and Bing lists while
+	 * protection is on, the Cloudflare list only when a Cloudflare proxy is trusted for the real IP.
 	 *
-	 * @return array<string, int> Πλήθος διευθύνσεων ανά λίστα (0 = απέτυχε).
+	 * @return string[]
+	 */
+	public static function needed_lists() {
+		$s      = PNCP_Options::get();
+		$needed = array();
+		if ( ! empty( $s['enabled'] ) ) {
+			$needed[] = 'google';
+			$needed[] = 'bing';
+		}
+		if ( ! empty( $s['trust_cloudflare'] ) && in_array( $s['ip_header'], array( 'cf_connecting_ip', 'x_forwarded_for' ), true ) ) {
+			$needed[] = 'cloudflare';
+		}
+		return $needed;
+	}
+
+	/**
+	 * Downloads the lists. If a source fails, its previous value is kept.
+	 *
+	 * @return array<string, int> Number of addresses per list (0 = failed).
 	 */
 	public static function refresh_lists() {
 		$result = array();
+		$needed = self::needed_lists();
 
 		foreach ( self::sources() as $name => $urls ) {
+			if ( ! in_array( $name, $needed, true ) ) {
+				continue;
+			}
 			$ranges = array();
 			$ok     = true;
 			foreach ( $urls as $url ) {
@@ -162,7 +185,7 @@ final class PNCP_Ip {
 					array(
 						'timeout'     => 10,
 						'redirection' => 2,
-						'user-agent'  => 'Content-Protect/' . PNCP_VERSION . '; ' . home_url( '/' ),
+						'user-agent'  => 'ScrapeLock/' . PNCP_VERSION,
 					)
 				);
 				if ( is_wp_error( $response ) || 200 !== (int) wp_remote_retrieve_response_code( $response ) ) {
@@ -188,14 +211,26 @@ final class PNCP_Ip {
 	}
 
 	/**
-	 * Βρίσκει CIDR σε JSON της Google/Bing ({"prefixes":[{"ipv4Prefix":…}]}) ή σε απλό κείμενο (Cloudflare).
+	 * Finds CIDRs in Google/Bing JSON ({"prefixes":[{"ipv4Prefix":…}]}) or in plain text (Cloudflare).
 	 *
-	 * @param string $body Περιεχόμενο.
+	 * @param string $body Content.
 	 * @return string[]
 	 */
 	public static function parse_ranges( $body ) {
 		$out  = array();
 		$json = json_decode( $body, true );
+		if ( is_array( $json ) && isset( $json['result'] ) && is_array( $json['result'] ) ) {
+			foreach ( array( 'ipv4_cidrs', 'ipv6_cidrs' ) as $key ) {
+				if ( isset( $json['result'][ $key ] ) && is_array( $json['result'][ $key ] ) ) {
+					foreach ( $json['result'][ $key ] as $range ) {
+						if ( self::valid_range( (string) $range ) ) {
+							$out[] = (string) $range;
+						}
+					}
+				}
+			}
+			return $out;
+		}
 		if ( is_array( $json ) && isset( $json['prefixes'] ) && is_array( $json['prefixes'] ) ) {
 			foreach ( $json['prefixes'] as $prefix ) {
 				foreach ( array( 'ipv4Prefix', 'ipv6Prefix' ) as $key ) {
@@ -215,7 +250,7 @@ final class PNCP_Ip {
 	}
 
 	/**
-	 * Τα headers που μπορεί να φέρουν την πραγματική IP: ρύθμιση => κλειδί $_SERVER.
+	 * The headers that may carry the real IP: setting => $_SERVER key.
 	 *
 	 * @return array<string, string>
 	 */
@@ -229,7 +264,7 @@ final class PNCP_Ip {
 	}
 
 	/**
-	 * Το REMOTE_ADDR.
+	 * The REMOTE_ADDR.
 	 *
 	 * @return string
 	 */
@@ -239,15 +274,15 @@ final class PNCP_Ip {
 	}
 
 	/**
-	 * Είναι το REMOTE_ADDR ένας proxy που εμπιστευόμαστε για αυτό το header;
+	 * Is REMOTE_ADDR a proxy we trust for this header?
 	 *
-	 * - CF-Connecting-IP: μόνο το Cloudflare (το γράφει πάντα το ίδιο) και οι «Αξιόπιστοι proxies».
-	 * - True-Client-IP: μόνο οι «Αξιόπιστοι proxies» (το Cloudflare το περνά όπως το έστειλε ο επισκέπτης).
-	 * - X-Real-IP: ο ίδιος ο server / ιδιωτικό δίκτυο (Nginx μπροστά) και οι «Αξιόπιστοι proxies».
-	 * - X-Forwarded-For: όλα τα παραπάνω· η αλυσίδα διαβάζεται από το τέλος.
+	 * - CF-Connecting-IP: only Cloudflare (it always sets it itself) and the "Trusted proxies".
+	 * - True-Client-IP: only the "Trusted proxies" (Cloudflare passes it on as the visitor sent it).
+	 * - X-Real-IP: the server itself / private network (Nginx in front) and the "Trusted proxies".
+	 * - X-Forwarded-For: all of the above; the chain is read from the end.
 	 *
 	 * @param string               $ip      IP.
-	 * @param array<string, mixed> $s       Ρυθμίσεις.
+	 * @param array<string, mixed> $s       Settings.
 	 * @param string               $setting Header (ip_header).
 	 * @return bool
 	 */
@@ -272,14 +307,14 @@ final class PNCP_Ip {
 	}
 
 	/**
-	 * Η IP του επισκέπτη.
+	 * The visitor's IP.
 	 *
-	 * Από προεπιλογή το REMOTE_ADDR. Αν έχει επιλεγεί header (π.χ. CF-Connecting-IP), διαβάζεται ΜΟΝΟ όταν
-	 * το αίτημα έρχεται από αξιόπιστο proxy, αλλιώς ο καθένας θα έγραφε ό,τι IP ήθελε. Στο X-Forwarded-For
-	 * η αλυσίδα διαβάζεται από το τέλος και παραλείπονται οι αξιόπιστοι proxies. Φίλτρο: `pncp_client_ip`.
+	 * REMOTE_ADDR by default. If a header is selected (e.g. CF-Connecting-IP), it is read ONLY when
+	 * the request comes from a trusted proxy, otherwise anyone could write any IP they wanted. In X-Forwarded-For
+	 * the chain is read from the end and trusted proxies are skipped. Filter: `pncp_client_ip`.
 	 *
-	 * Με την «εμπιστοσύνη σε κάθε proxy» (συμπεριφορά της 1.4) η IP χρησιμοποιείται για όρια, αλλά θεωρείται
-	 * αναξιόπιστη: δεν ανοίγει επιτρεπόμενες IP και feeds και δεν οδηγεί σε αποκλεισμό από την παγίδα.
+	 * With "trust every proxy" (1.4 behaviour) the IP is used for limits, but is considered
+	 * untrusted: it does not unlock allowed IPs and feeds, and does not lead to a ban from the trap.
 	 *
 	 * @return string
 	 */
@@ -299,7 +334,7 @@ final class PNCP_Ip {
 			$trusted = $legacy || self::is_trusted_proxy( $remote, $s, $setting );
 			if ( $trusted ) {
 				$chain = array_map( 'trim', explode( ',', sanitize_text_field( wp_unslash( $_SERVER[ $headers[ $setting ] ] ) ) ) );
-				// Από το τέλος: η τελευταία τιμή είναι αυτή που έγραψε ο δικός μας proxy.
+				// From the end: the last value is the one written by our own proxy.
 				for ( $i = count( $chain ) - 1; $i >= 0; $i-- ) {
 					$candidate = $chain[ $i ];
 					if ( ! filter_var( $candidate, FILTER_VALIDATE_IP ) ) {
@@ -322,7 +357,7 @@ final class PNCP_Ip {
 	}
 
 	/**
-	 * Μπορεί να πλαστογραφηθεί η IP του αιτήματος; (false μόνο με την «εμπιστοσύνη σε κάθε proxy»)
+	 * Can the request IP be spoofed? (false only with "trust every proxy")
 	 *
 	 * @return bool
 	 */
@@ -332,7 +367,7 @@ final class PNCP_Ip {
 	}
 
 	/**
-	 * Ξεχνά την IP του αιτήματος (για tests και μετά από αλλαγή ρυθμίσεων).
+	 * Forgets the request IP (for tests and after a settings change).
 	 */
 	public static function reset() {
 		self::$client_ip = null;
@@ -341,7 +376,7 @@ final class PNCP_Ip {
 	}
 
 	/**
-	 * Ιδιωτική, loopback ή reserved IP;
+	 * Private, loopback or reserved IP?
 	 *
 	 * @param string $ip IP.
 	 * @return bool
@@ -351,7 +386,7 @@ final class PNCP_Ip {
 	}
 
 	/**
-	 * Είναι η IP του ίδιου του server (cron, cache preload, loopback);
+	 * Is it the server's own IP (cron, cache preload, loopback)?
 	 *
 	 * @param string $ip IP.
 	 * @return bool
@@ -365,9 +400,9 @@ final class PNCP_Ip {
 	}
 
 	/**
-	 * Έγκυρη IP ή CIDR;
+	 * Valid IP or CIDR?
 	 *
-	 * @param string $range Τιμή.
+	 * @param string $range Value.
 	 * @return bool
 	 */
 	public static function valid_range( $range ) {
@@ -383,10 +418,10 @@ final class PNCP_Ip {
 	}
 
 	/**
-	 * Ανήκει η IP σε κάποια από τις διευθύνσεις/CIDR;
+	 * Does the IP belong to any of the addresses/CIDRs?
 	 *
 	 * @param string   $ip     IP.
-	 * @param string[] $ranges Λίστα.
+	 * @param string[] $ranges List.
 	 * @return bool
 	 */
 	public static function in_any( $ip, $ranges ) {
@@ -399,15 +434,15 @@ final class PNCP_Ip {
 	}
 
 	/**
-	 * Ανήκει η IP σε μια IP ή CIDR (IPv4/IPv6);
+	 * Does the IP belong to an IP or CIDR (IPv4/IPv6)?
 	 *
 	 * @param string $ip    IP.
-	 * @param string $range IP ή CIDR, π.χ. 203.0.113.0/24.
+	 * @param string $range IP or CIDR, e.g. 203.0.113.0/24.
 	 * @return bool
 	 */
 	public static function in_range( $ip, $range ) {
 		$parts  = explode( '/', trim( (string) $range ), 2 );
-		$subnet = @inet_pton( $parts[0] ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged -- Λάθος τιμή = false.
+		$subnet = @inet_pton( $parts[0] ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged -- Invalid value = false.
 		$addr   = @inet_pton( (string) $ip ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged
 		if ( false === $subnet || false === $addr || strlen( $subnet ) !== strlen( $addr ) ) {
 			return false;
@@ -415,7 +450,7 @@ final class PNCP_Ip {
 		$max = strlen( $addr ) * 8;
 		if ( isset( $parts[1] ) ) {
 			if ( ! ctype_digit( $parts[1] ) || (int) $parts[1] > $max ) {
-				return false; // Λάθος CIDR: ποτέ «όλες οι IP».
+				return false; // Invalid CIDR: never "all IPs".
 			}
 			$bits = (int) $parts[1];
 		} else {

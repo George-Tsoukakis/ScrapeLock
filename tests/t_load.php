@@ -1,6 +1,6 @@
 <?php
 /**
- * Content Protect — δοκιμή φόρτου: επιβάρυνση ανά αίτημα, ακρίβεια ορίου υπό ταυτόχρονα αιτήματα,
+ * ScrapeLock — δοκιμή φόρτου: επιβάρυνση ανά αίτημα, ακρίβεια ορίου υπό ταυτόχρονα αιτήματα,
  * πλημμύρα από bots, «καταιγίδα» αποκλεισμών, με και χωρίς Redis object cache.
  *
  *   WP_DIR=/srv/wpt BASE=http://127.0.0.1:8080 [REDIS_DROPIN=/path/object-cache.php] php t_load.php

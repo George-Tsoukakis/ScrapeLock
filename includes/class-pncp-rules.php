@@ -1,35 +1,35 @@
 <?php
 /**
- * Γεννήτρια κανόνων για τον web server και το Cloudflare, φτιαγμένων για το συγκεκριμένο site.
+ * Generator of web server and Cloudflare rules, tailored to this specific site.
  *
- * Το plugin προστατεύει μόνο ό,τι φτάνει στην PHP. Σελίδες από page cache, στατικά αρχεία (εικόνες, .xml)
- * και ο φάκελος με τα καθαρά πρωτότυπα θέλουν κανόνες στον server ή στο CDN. Το plugin δεν κρατά API token
- * του Cloudflare: βγάζει τους κανόνες και τους περνάτε εσείς.
+ * The plugin protects only what reaches PHP. Pages from page cache, static files (images, .xml)
+ * and the folder with the clean originals need rules on the server or the CDN. The plugin keeps no Cloudflare
+ * API token: it outputs the rules and you apply them yourself.
  *
- * @package Content_Protect
+ * @package ScrapeLock
  */
 
 defined( 'ABSPATH' ) || exit;
 
 /**
- * Κανόνες Nginx, Apache και Cloudflare.
+ * Nginx, Apache and Cloudflare rules.
  */
 final class PNCP_Rules {
 
 	/**
-	 * Πλατφόρμες που φορτώνουν εικόνες από το site σας (hotlink επιτρέπεται).
+	 * Platforms that load images from your site (hotlinking allowed).
 	 *
 	 * @return string[]
 	 */
 	public static function hotlink_allowed() {
 		return (array) apply_filters(
 			'pncp_hotlink_allowed',
-			array( 'google.', 'googleusercontent.com', 'bing.com', 'skroutz.gr', 'bestprice.gr', 'facebook.com', 'instagram.com', 'pinterest.' )
+			array( 'google.', 'googleusercontent.', 'bing.com', 'skroutz.gr', 'bestprice.gr', 'facebook.com', 'instagram.com', 'pinterest.' )
 		);
 	}
 
 	/**
-	 * Το domain του site.
+	 * The site domain.
 	 *
 	 * @return string
 	 */
@@ -38,7 +38,7 @@ final class PNCP_Rules {
 	}
 
 	/**
-	 * Η διαδρομή του uploads μέσα στο site (π.χ. /wp-content/uploads).
+	 * The uploads path within the site (e.g. /wp-content/uploads).
 	 *
 	 * @return string
 	 */
@@ -48,7 +48,7 @@ final class PNCP_Rules {
 	}
 
 	/**
-	 * Τα User-Agents της λίστας bots.
+	 * The User-Agents of the bot list.
 	 *
 	 * @return string[]
 	 */
@@ -57,7 +57,7 @@ final class PNCP_Rules {
 	}
 
 	/**
-	 * Τα πάντα επιτρεπτά User-Agents.
+	 * The always-allowed User-Agents.
 	 *
 	 * @return string[]
 	 */
@@ -66,7 +66,7 @@ final class PNCP_Rules {
 	}
 
 	/**
-	 * Οι ιδιωτικές διαδρομές σε μορφή regex (για Nginx / Apache).
+	 * The private paths as regex (for Nginx / Apache).
 	 *
 	 * @return string[]
 	 */
@@ -84,9 +84,9 @@ final class PNCP_Rules {
 	}
 
 	/**
-	 * Regex για Nginx/Apache από λίστα λέξεων.
+	 * Regex for Nginx/Apache from a word list.
 	 *
-	 * @param string[] $words Λέξεις.
+	 * @param string[] $words Words.
 	 * @return string
 	 */
 	private static function alternation( $words ) {
@@ -98,17 +98,17 @@ final class PNCP_Rules {
 	}
 
 	/**
-	 * Κανόνες Nginx: και τα δύο μέρη μαζί (για αντιγραφή σε ένα αρχείο σημειώσεων).
+	 * Nginx rules: both parts together (for copying into a notes file).
 	 *
 	 * @return string
 	 */
 	public static function nginx() {
-		return '# Content Protect ' . PNCP_VERSION . ' — ' . self::host() . "\n# 1) Στο http { } (π.χ. /etc/nginx/conf.d/content-protect.conf):\n"
-			. self::nginx_http() . "\n# 2) Στο server { } του " . self::host() . ":\n" . self::nginx_server();
+		return '# ScrapeLock ' . PNCP_VERSION . ' — ' . self::host() . "\n# 1) In http { } (e.g. /etc/nginx/conf.d/scrapelock.conf):\n"
+			. self::nginx_http() . "\n# 2) In the server { } of " . self::host() . ":\n" . self::nginx_server();
 	}
 
 	/**
-	 * Nginx, μέρος 1: μέσα στο http { } (map για τα bots, ζώνη ορίου).
+	 * Nginx, part 1: inside http { } (map for the bots, limit zone).
 	 *
 	 * @return string
 	 */
@@ -119,7 +119,7 @@ final class PNCP_Rules {
 			$lines[] = 'map $http_user_agent $pncp_bad_bot {';
 			$lines[] = '    default 0;';
 			if ( self::allowed() ) {
-				$lines[] = '    "~*' . self::alternation( self::allowed() ) . '" 0;'; // Πρώτο: ταιριάζει πρώτο.
+				$lines[] = '    "~*' . self::alternation( self::allowed() ) . '" 0;'; // First: it matches first.
 			}
 			$lines[] = '    "~*' . self::alternation( self::bots() ) . '" 1;';
 			if ( $s['block_empty_ua'] ) {
@@ -128,11 +128,11 @@ final class PNCP_Rules {
 			$lines[] = '}';
 		}
 		if ( self::private_regexes() ) {
-			// Token για τα στατικά feeds: στο URL (cp_token) ή στο header. Βάλτε το δικό σας στη θέση του ΤΟ_TOKEN_ΣΑΣ.
+			// Token for the static feeds: in the URL (cp_token) or in the header. Put your own in place of YOUR_TOKEN.
 			$lines[] = 'map "$arg_cp_token:$http_x_content_protect_token" $pncp_token_ok {';
 			$lines[] = '    default 0;';
-			$lines[] = '    "~^ΤΟ_TOKEN_ΣΑΣ:" 1;';
-			$lines[] = '    "~:ΤΟ_TOKEN_ΣΑΣ$" 1;';
+			$lines[] = '    "~^YOUR_TOKEN:" 1;';
+			$lines[] = '    "~:YOUR_TOKEN$" 1;';
 			$lines[] = '}';
 		}
 		$rate    = (int) $s['rate_limit'] > 0 ? (int) $s['rate_limit'] : 60;
@@ -142,7 +142,7 @@ final class PNCP_Rules {
 	}
 
 	/**
-	 * Nginx, μέρος 2: μέσα στο server { } του site.
+	 * Nginx, part 2: inside the site's server { }.
 	 *
 	 * @return string
 	 */
@@ -153,33 +153,33 @@ final class PNCP_Rules {
 		$backup  = (string) get_option( 'pncp_backup_dir' );
 		$lines   = array();
 		if ( $s['block_bots'] && self::bots() ) {
-			$lines[] = '# Μπλοκάρει τα bots ΠΡΙΝ από την page cache (FastCGI cache, WP Rocket, WP Super Cache).';
+			$lines[] = '# Blocks bots BEFORE the page cache (FastCGI cache, WP Rocket, WP Super Cache).';
 			$lines[] = 'if ($pncp_bad_bot) { return 403; }';
 			$lines[] = '';
 		}
-		$lines[] = '# Όριο σελίδων ανά IP (και για σελίδες από cache): η γραμμή μπαίνει ΜΟΝΟ στο location που σερβίρει σελίδες';
-		$lines[] = '# (PHP / page cache), ΟΧΙ εκεί που σερβίρονται CSS, JS, εικόνες και fonts: μια σελίδα φορτώνει δεκάδες τέτοια.';
-		$lines[] = '# Πίσω από Cloudflare: πρώτα real_ip_header CF-Connecting-IP (βλ. README).';
+		$lines[] = '# Page limit per IP (also for cached pages): put this line ONLY in the location that serves pages';
+		$lines[] = '# (PHP / page cache), NOT where CSS, JS, images and fonts are served: one page loads dozens of them.';
+		$lines[] = '# Behind Cloudflare: set real_ip_header CF-Connecting-IP first (see the plugin FAQ).';
 		$lines[] = '#   limit_req zone=pncp_pages burst=20 nodelay;';
 		$lines[] = '';
 		if ( '' !== $backup ) {
-			$lines[] = '# Τα καθαρά πρωτότυπα των εικόνων με υδατογράφημα: ποτέ δημόσια.';
+			$lines[] = '# Clean originals of watermarked images: never public.';
 			$lines[] = 'location ^~ ' . $uploads . '/' . $backup . '/ { deny all; return 404; }';
 			$lines[] = '';
 		}
-		$lines[] = '# Hotlink: οι εικόνες φορτώνουν μόνο από το site σας και από μηχανές αναζήτησης / πλατφόρμες τιμών.';
-		$lines[] = '# (Αν υπάρχει ήδη location για εικόνες, π.χ. για expires, βάλτε τις δύο γραμμές μέσα σε εκείνο.)';
+		$lines[] = '# Hotlink: images load only from your site and from search engines / price comparison platforms.';
+		$lines[] = '# (If a location for images already exists, e.g. for expires, put the two lines inside it.)';
 		$lines[] = 'location ~* ^' . preg_quote( $uploads, '#' ) . '/.*\.(jpe?g|png|webp|gif|avif)$ {';
-		// Το domain ως regex: ως απλό όνομα θα συγκρουόταν με το server_names («conflicting parameter» στο nginx -t).
+		// The domain as regex: as a plain name it would clash with server_names ("conflicting parameter" in nginx -t).
 		$lines[] = '    valid_referers none blocked server_names ~^([^/]*\\.)?' . self::nginx_referer( $host ) . '(:|/|$) ~' . implode( ' ~', array_map( array( __CLASS__, 'nginx_referer' ), self::hotlink_allowed() ) ) . ';';
 		$lines[] = '    if ($invalid_referer) { return 403; }';
 		$lines[] = '}';
 		$regexes = self::private_regexes();
 		if ( $regexes ) {
 			$lines[] = '';
-			$lines[] = '# Feeds: τα στατικά αρχεία μόνο με το token (map $pncp_token_ok στο http { }). Τα feeds που φτιάχνει η PHP';
-			$lines[] = '# περνούν στο WordPress, που ελέγχει token, Bearer, επιτρεπόμενες IP και διαχειριστή.';
-			$lines[] = '# (Μέσα στα if μόνο return: το «if is evil» του Nginx θα έχανε αλλιώς το try_files.)';
+			$lines[] = '# Feeds: static files only with the token (map $pncp_token_ok in http { }). Feeds generated by PHP';
+			$lines[] = '# go to WordPress, which checks the token, Bearer, allowed IPs and administrator.';
+			$lines[] = '# (Only return inside the ifs: otherwise the Nginx "if is evil" problem would lose try_files.)';
 			foreach ( $regexes as $regex ) {
 				$lines[] = 'location ~* ' . $regex . ' {';
 				$lines[] = '    error_page 418 = @pncp_static_feed;';
@@ -198,7 +198,7 @@ final class PNCP_Rules {
 	}
 
 	/**
-	 * Regex referer για Nginx.
+	 * Referer regex for Nginx.
 	 *
 	 * @param string $domain Domain.
 	 * @return string
@@ -208,7 +208,7 @@ final class PNCP_Rules {
 	}
 
 	/**
-	 * Κανόνες Apache (.htaccess, πάνω από τους κανόνες του WordPress).
+	 * Apache rules (.htaccess, above the WordPress rules).
 	 *
 	 * @return string
 	 */
@@ -219,11 +219,11 @@ final class PNCP_Rules {
 		$backup  = (string) get_option( 'pncp_backup_dir' );
 		$lines   = array();
 
-		$lines[] = '# BEGIN Content Protect ' . PNCP_VERSION;
+		$lines[] = '# BEGIN ScrapeLock ' . PNCP_VERSION;
 		$lines[] = '<IfModule mod_rewrite.c>';
 		$lines[] = 'RewriteEngine On';
 		if ( $s['block_bots'] && self::bots() ) {
-			$lines[] = '# Bots της λίστας: 403 πριν από την page cache.';
+			$lines[] = '# Bots in the list: 403 before the page cache.';
 			if ( self::allowed() ) {
 				$lines[] = 'RewriteCond %{HTTP_USER_AGENT} !' . self::alternation( self::allowed() ) . ' [NC]';
 			}
@@ -235,10 +235,10 @@ final class PNCP_Rules {
 			}
 		}
 		if ( '' !== $backup ) {
-			$lines[] = '# Τα καθαρά πρωτότυπα: ποτέ δημόσια (υπάρχει και .htaccess μέσα στον φάκελο).';
+			$lines[] = '# Clean originals: never public (there is also an .htaccess inside the folder).';
 			$lines[] = 'RewriteRule ^' . preg_quote( $uploads . '/' . $backup, '#' ) . '/ - [F,L]';
 		}
-		$lines[] = '# Hotlink εικόνων.';
+		$lines[] = '# Image hotlinking.';
 		$lines[] = 'RewriteCond %{HTTP_REFERER} !^$';
 		$lines[] = 'RewriteCond %{HTTP_REFERER} !^https?://([^/]+\.)?' . preg_quote( $host, '#' ) . '/ [NC]';
 		foreach ( self::hotlink_allowed() as $domain ) {
@@ -246,22 +246,22 @@ final class PNCP_Rules {
 		}
 		$lines[] = 'RewriteRule ^' . preg_quote( $uploads, '#' ) . '/.*\.(jpe?g|png|webp|gif|avif)$ - [F,NC,L]';
 		foreach ( self::private_regexes() as $regex ) {
-			$lines[] = '# Feed που είναι στατικό αρχείο: μόνο με το token (βάλτε το δικό σας στη θέση του ΤΟ_TOKEN_ΣΑΣ).';
-			$lines[] = '# Τα feeds της PHP τα ελέγχει το WordPress (token, Bearer, επιτρεπόμενες IP, διαχειριστής).';
+			$lines[] = '# Feed that is a static file: only with the token (put yours in place of YOUR_TOKEN).';
+			$lines[] = '# PHP feeds are checked by WordPress (token, Bearer, allowed IPs, administrator).';
 			$lines[] = 'RewriteCond %{REQUEST_FILENAME} -f';
-			$lines[] = 'RewriteCond %{QUERY_STRING} !(^|&)cp_token=ΤΟ_TOKEN_ΣΑΣ(&|$)';
-			$lines[] = 'RewriteCond %{HTTP:X-Content-Protect-Token} !^ΤΟ_TOKEN_ΣΑΣ$';
+			$lines[] = 'RewriteCond %{QUERY_STRING} !(^|&)cp_token=YOUR_TOKEN(&|$)';
+			$lines[] = 'RewriteCond %{HTTP:X-Content-Protect-Token} !^YOUR_TOKEN$';
 			$lines[] = 'RewriteRule ' . str_replace( '^/', '^', $regex ) . ' - [F,L]';
 		}
-		$lines[] = '# Το Authorization: Bearer φτάνει στην PHP και με PHP-FPM / CGI.';
+		$lines[] = '# Authorization: Bearer reaches PHP with PHP-FPM / CGI too.';
 		$lines[] = 'RewriteRule .* - [E=HTTP_AUTHORIZATION:%{HTTP:Authorization}]';
 		$lines[] = '</IfModule>';
-		$lines[] = '# END Content Protect';
+		$lines[] = '# END ScrapeLock';
 		return implode( "\n", $lines ) . "\n";
 	}
 
 	/**
-	 * Εξαίρεση των πάντα επιτρεπτών User-Agents στην έκφραση του Cloudflare.
+	 * Exclusion of the always-allowed User-Agents in the Cloudflare expression.
 	 *
 	 * @return string
 	 */
@@ -274,7 +274,7 @@ final class PNCP_Rules {
 	}
 
 	/**
-	 * Εκφράσεις για το Cloudflare (Security → WAF → Custom rules / Rate limiting rules).
+	 * Expressions for Cloudflare (Security → WAF → Custom rules / Rate limiting rules).
 	 *
 	 * @return array<string, array{title:string, action:string, expression:string}>
 	 */
@@ -294,14 +294,14 @@ final class PNCP_Rules {
 				$parts[] = 'http.user_agent eq ""';
 			}
 			$rules['bots'] = array(
-				'title'      => __( 'Scrapers και AI bots', 'content-protect' ),
+				'title'      => __( 'Scrapers and AI bots', 'scrapelock' ),
 				'action'     => 'Block',
 				'expression' => '(http.host eq "' . $host . '") and not cf.client.bot and (' . implode( ' or ', $parts ) . ')' . self::cf_allowed(),
 			);
 		}
 
 		$rules['fake'] = array(
-			'title'      => __( 'Ψεύτικα Googlebot / Bingbot (όχι από επαληθευμένο bot του Cloudflare)', 'content-protect' ),
+			'title'      => __( 'Fake Googlebot / Bingbot (not a verified Cloudflare bot)', 'scrapelock' ),
 			'action'     => 'Block',
 			'expression' => '(http.host eq "' . $host . '") and not cf.client.bot and (lower(http.user_agent) contains "googlebot" or lower(http.user_agent) contains "bingbot" or lower(http.user_agent) contains "applebot")',
 		);
@@ -311,7 +311,7 @@ final class PNCP_Rules {
 			$referers[] = 'http.referer contains "' . $domain . '"';
 		}
 		$rules['hotlink'] = array(
-			'title'      => __( 'Hotlink εικόνων', 'content-protect' ),
+			'title'      => __( 'Image hotlinking', 'scrapelock' ),
 			'action'     => 'Block',
 			'expression' => '(http.host eq "' . $host . '") and starts_with(http.request.uri.path, "' . $uploads . '/") and http.request.uri.path.extension in {"jpg" "jpeg" "png" "webp" "gif" "avif"} and not (' . implode( ' or ', $referers ) . ')',
 		);
@@ -319,7 +319,7 @@ final class PNCP_Rules {
 		$backup = (string) get_option( 'pncp_backup_dir' );
 		if ( '' !== $backup ) {
 			$rules['originals'] = array(
-				'title'      => __( 'Φάκελος καθαρών πρωτοτύπων', 'content-protect' ),
+				'title'      => __( 'Clean originals folder', 'scrapelock' ),
 				'action'     => 'Block',
 				'expression' => '(http.host eq "' . $host . '") and starts_with(http.request.uri.path, "' . $uploads . '/' . $backup . '/")',
 			);
@@ -328,17 +328,17 @@ final class PNCP_Rules {
 		$rate          = (int) $s['rate_limit'] > 0 ? (int) $s['rate_limit'] : 60;
 		$rules['rate'] = array(
 			'title'      => sprintf(
-				/* translators: %d: σελίδες ανά λεπτό */
-				__( 'Rate limiting: %d αιτήματα ανά λεπτό ανά IP (Rate limiting rules, χαρακτηριστικό: IP)', 'content-protect' ),
+				/* translators: %d: pages per minute */
+				__( 'Rate limiting: %d requests per minute per IP (Rate limiting rules, characteristic: IP)', 'scrapelock' ),
 				$rate
 			),
-			'action'     => __( 'Block · περίοδος 1 λεπτό (στο δωρεάν πλάνο: 10 δευτ., με όριο / 6)', 'content-protect' ),
-			// Μόνο σελίδες: όχι αρχεία (CSS, JS, εικόνες, fonts), όχι wp-admin / wp-includes / wp-content,
-			// όχι AJAX καλαθιού (wc-ajax, Store API) και όχι συνδεδεμένοι χρήστες.
+			'action'     => __( 'Block · period 1 minute (on the free plan: 10 sec, with limit / 6)', 'scrapelock' ),
+			// Pages only: not files (CSS, JS, images, fonts), not wp-admin / wp-includes / wp-content,
+			// not cart AJAX (wc-ajax, Store API) and not logged-in users.
 			'expression' => '(http.host eq "' . $host . '") and not cf.client.bot and http.request.uri.path.extension in {"" "php" "html" "xml"} and not starts_with(http.request.uri.path, "/wp-admin") and not starts_with(http.request.uri.path, "/wp-includes/") and not starts_with(http.request.uri.path, "/wp-content/") and not starts_with(http.request.uri.path, "/wp-json/wc/store") and not http.request.uri.query contains "wc-ajax=" and not http.cookie contains "wordpress_logged_in_"',
 		);
 		$rules['ai']   = array(
-			'title'      => __( 'AI crawlers που δηλώνει το Cloudflare (κατηγορία «AI Crawler»)', 'content-protect' ),
+			'title'      => __( 'AI crawlers declared by Cloudflare (category “AI Crawler”)', 'scrapelock' ),
 			'action'     => 'Block',
 			'expression' => '(http.host eq "' . $host . '") and cf.verified_bot_category in {"AI Crawler" "AI Assistant" "AI Search"}',
 		);

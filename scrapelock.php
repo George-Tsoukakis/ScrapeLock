@@ -1,20 +1,20 @@
 <?php
 /**
- * Plugin Name:       Content Protect
- * Description:       Προστασία περιεχομένου: δυσκολεύει την αντιγραφή κειμένου και εικόνων, κλείνει το κείμενο στο REST API, στο GraphQL και στο RSS, μπλοκάρει scrapers, AI bots και ψεύτικα Googlebot, αποκλείει προσωρινά IP που επιμένουν, προστατεύει τα XML feeds με token και βάζει προαιρετικά υδατογράφημα. Δεν επηρεάζει φόρμες, καλάθι, ταμείο και μηχανές αναζήτησης.
+ * Plugin Name:       ScrapeLock – Content & AI Bot Protection
+ * Description:       Protects your content: makes copying text and images harder, hides the text in the REST API, GraphQL and RSS, blocks scrapers, AI bots and fake Googlebots, temporarily blocks persistent IPs, protects XML feeds with a token and adds an optional watermark. Forms, cart, checkout and search engines are not affected.
  * Version:           2.2.1
  * Requires at least: 6.2
  * Requires PHP:      7.4
- * Author:            The-Greek
+ * Author:            CodeBunny
  * License:           GPL-2.0-or-later
  * License URI:       https://www.gnu.org/licenses/gpl-2.0.html
- * Text Domain:       content-protect
+ * Text Domain:       scrapelock
  * Domain Path:       /languages
  */
 
 defined( 'ABSPATH' ) || exit;
 
-// Αν φορτώθηκε ήδη άλλο αντίγραφο (π.χ. η παλιά έκδοση σε άλλο φάκελο), δεν ξαναφορτώνουμε.
+// If another copy is already loaded (e.g. the old version in another folder), do not load again.
 if ( defined( 'PNCP_VERSION' ) ) {
 	return;
 }
@@ -55,17 +55,9 @@ PNCP_Private_Urls::init();
 PNCP_Status::init();
 
 /**
- * Φορτώνει τις μεταφράσεις.
- */
-function pncp_load_textdomain() {
-	load_plugin_textdomain( 'content-protect', false, dirname( plugin_basename( PNCP_FILE ) ) . '/languages' );
-}
-add_action( 'init', 'pncp_load_textdomain' );
-
-/**
- * Ενεργοποίηση: προεπιλογές (χωρίς να πειράζει υπάρχουσες ρυθμίσεις), πίνακας αρχείου, cron.
+ * Activation: defaults (without touching existing settings), log table, cron.
  *
- * @param bool $network_wide Ενεργοποίηση σε όλο το δίκτυο (multisite).
+ * @param bool $network_wide Activation across the whole network (multisite).
  */
 function pncp_activate( $network_wide = false ) {
 	if ( is_multisite() && $network_wide ) {
@@ -87,8 +79,8 @@ register_activation_hook( PNCP_FILE, 'pncp_activate' );
 register_deactivation_hook( PNCP_FILE, 'pncp_deactivate' );
 
 /**
- * Απενεργοποίηση: σταματούν τα cron, φεύγει η λίστα bots από το WP Rocket και αδειάζει η cache.
- * Ρυθμίσεις, αρχείο και καθαρά πρωτότυπα μένουν (σβήνονται μόνο στη Διαγραφή του plugin).
+ * Deactivation: cron jobs stop, the bot list is removed from WP Rocket and the cache is cleared.
+ * Settings, log and clean originals remain (they are removed only when the plugin is deleted).
  */
 function pncp_deactivate() {
 	wp_clear_scheduled_hook( PNCP_Ip::CRON );
@@ -98,8 +90,8 @@ function pncp_deactivate() {
 }
 
 /**
- * Εγκατάσταση και αναβάθμιση. Τρέχει στην ενεργοποίηση και μία φορά μετά από κάθε νέο zip
- * (το activation hook δεν τρέχει όταν αντικαθίσταται το plugin).
+ * Installation and upgrade. Runs on activation and once after every new zip
+ * (the activation hook does not run when the plugin is replaced).
  */
 function pncp_upgrade() {
 	$from   = (string) get_option( 'pncp_version', '' );
@@ -111,19 +103,19 @@ function pncp_upgrade() {
 		update_option( PNCP_OPTION, pncp_migrate_from_1x( $stored ), true );
 	}
 
-	// Έως την 2.2.0 το token της 1.x κρατιόταν σε καθαρή μορφή μέχρι να το δει ο διαχειριστής: σβήνεται.
+	// Up to 2.2.0 the 1.x token was kept in plain form until the admin saw it: it is deleted.
 	if ( false !== get_option( 'pncp_legacy_token_notice', false ) ) {
 		delete_option( 'pncp_legacy_token_notice' );
 		update_option( 'pncp_legacy_token_migrated', 1, false );
 	}
 
 	PNCP_Log::install();
-	// Autoload: διαβάζεται σε κάθε αίτημα, χωρίς ξεχωριστό ερώτημα.
+	// Autoload: read on every request, without a separate query.
 	add_option( PNCP_Options::EMERGENCY_OPTION, 0, '', true );
 	if ( ! wp_next_scheduled( PNCP_Ip::CRON ) ) {
 		wp_schedule_event( time() + 60, 'daily', PNCP_Ip::CRON );
 	}
-	// Κάθε ώρα (από την 2.2): σβήνει αρχείο, αποκλεισμούς και μετρητές που έληξαν.
+	// Hourly (since 2.2): deletes expired log entries, blocks and counters.
 	$event = function_exists( 'wp_get_scheduled_event' ) ? wp_get_scheduled_event( PNCP_Log::CRON ) : false;
 	if ( $event && 'hourly' !== $event->schedule ) {
 		wp_clear_scheduled_hook( PNCP_Log::CRON );
@@ -133,7 +125,7 @@ function pncp_upgrade() {
 	}
 	update_option( 'pncp_version', PNCP_VERSION, false );
 	PNCP_Options::flush();
-	// Τα plugins cache (π.χ. LiteSpeed) δηλώνουν τα hooks τους αργότερα: καθάρισμα στο init.
+	// Cache plugins (e.g. LiteSpeed) register their hooks later: purge on init.
 	if ( did_action( 'init' ) ) {
 		pncp_purge_page_cache();
 	} else {
@@ -142,17 +134,17 @@ function pncp_upgrade() {
 }
 
 /**
- * Ρυθμίσεις της 1.x προς 2.x.
+ * Settings from 1.x to 2.x.
  *
- * - Τα νέα πεδία παίρνουν την προεπιλογή τους (οι νέες προστασίες ενεργοποιούνται).
- * - Η λίστα bots: αν ήταν η προεπιλεγμένη της 1.4, γίνεται η νέα· αν την είχατε αλλάξει, κρατά τις
- *   αλλαγές σας και προστίθενται μόνο τα νέα bots.
- * - Το token των feeds αποθηκευόταν σε καθαρή μορφή: γίνεται hash και συνεχίζει να ισχύει, αλλά δεν
- *   αποθηκεύεται ούτε εμφανίζεται ξανά. Ο διαχειριστής ενημερώνεται να φτιάξει νέο αν δεν το έχει κρατήσει.
- * - Header πραγματικής IP χωρίς Cloudflare: κρατά τη συμπεριφορά της 1.4 (εμπιστοσύνη σε κάθε proxy)
- *   μέχρι να οριστούν οι proxies, ώστε να μη σπάσει το όριο σελίδων. Με προειδοποίηση.
+ * - New fields get their defaults (the new protections are enabled).
+ * - The bot list: if it was the 1.4 default, it becomes the new one; if you had changed it, your
+ *   changes are kept and only the new bots are added.
+ * - The feeds token was stored in plain form: it is hashed and stays valid, but it is not
+ *   stored or shown again. The admin is told to create a new one if they have not kept it.
+ * - Real-IP header without Cloudflare: keeps the 1.4 behaviour (trust every proxy)
+ *   until the proxies are set, so the page limit does not break. With a warning.
  *
- * @param array<string, mixed> $old Ρυθμίσεις της 1.x.
+ * @param array<string, mixed> $old Settings of 1.x.
  * @return array<string, mixed>
  */
 function pncp_migrate_from_1x( $old ) {
@@ -164,7 +156,7 @@ function pncp_migrate_from_1x( $old ) {
 	sort( $legacy );
 	sort( $lower );
 	if ( isset( $old['bot_list'] ) && ! $list ) {
-		$new['bot_list'] = ''; // Την είχατε αδειάσει σκόπιμα: μένει άδεια.
+		$new['bot_list'] = ''; // You had emptied it on purpose: it stays empty.
 	} elseif ( ! $list || $lower === $legacy ) {
 		$new['bot_list'] = PNCP_Options::default_bot_list();
 	} else {
@@ -178,7 +170,7 @@ function pncp_migrate_from_1x( $old ) {
 
 	if ( ! empty( $old['private_token'] ) ) {
 		PNCP_Private_Urls::import_plain( (string) $old['private_token'] );
-		// Μόνο σημαία, ποτέ το ίδιο το token: δεν μένει αντίγραφο σε καθαρή μορφή ούτε προσωρινά.
+		// Only a flag, never the token itself: no plain copy is kept, not even temporarily.
 		if ( '' !== trim( (string) ( isset( $old['private_paths'] ) ? $old['private_paths'] : '' ) ) ) {
 			update_option( 'pncp_legacy_token_migrated', 1, false );
 		}
@@ -194,14 +186,14 @@ function pncp_migrate_from_1x( $old ) {
 }
 
 /**
- * Μετά από ενημέρωση του plugin (νέο zip ή αυτόματη ενημέρωση) τρέχει η αναβάθμιση μία φορά, στο πρώτο
- * αίτημα, πριν από κάθε έλεγχο: όχι στην πρώτη επίσκεψη διαχειριστή, γιατί μέχρι τότε θα ίσχυαν μισές ρυθμίσεις.
+ * After a plugin update (new zip or auto-update) the upgrade runs once, on the first
+ * request, before any check: not on the first admin visit, because until then half the settings would apply.
  */
 function pncp_maybe_upgrade() {
 	if ( get_option( 'pncp_version' ) === PNCP_VERSION ) {
 		return;
 	}
-	// Ένα αίτημα κάνει την αναβάθμιση· τα ταυτόχρονα δεν την ξανατρέχουν (κλείδωμα 60 δευτ., add_option είναι ατομικό).
+	// One request runs the upgrade; concurrent ones do not rerun it (60 s lock, add_option is atomic).
 	$lock = (int) get_option( 'pncp_upgrade_lock', 0 );
 	if ( $lock > time() - MINUTE_IN_SECONDS ) {
 		return;
@@ -218,12 +210,12 @@ function pncp_maybe_upgrade() {
 add_action( 'plugins_loaded', 'pncp_maybe_upgrade', -100 );
 
 /**
- * Αδειάζει την cache σελίδων, ώστε οι επισκέπτες να δουν αμέσως τις νέες ρυθμίσεις.
- * Καλύπτει WP Rocket, WP Super Cache, W3 Total Cache, LiteSpeed Cache, WP Fastest Cache, SiteGround Optimizer
- * και Nginx Helper (FastCGI cache), όσα υπάρχουν.
+ * Clears the page cache so visitors see the new settings immediately.
+ * Covers WP Rocket, WP Super Cache, W3 Total Cache, LiteSpeed Cache, WP Fastest Cache, SiteGround Optimizer
+ * and Nginx Helper (FastCGI cache), whichever are present.
  */
 function pncp_purge_page_cache() {
-	// Το WP Rocket ξαναγράφει το config του, ώστε να ισχύσει η λίστα bots (rocket_cache_reject_ua).
+	// WP Rocket rewrites its config so the bot list takes effect (rocket_cache_reject_ua).
 	if ( function_exists( 'rocket_generate_config_file' ) ) {
 		rocket_generate_config_file();
 	}
@@ -233,12 +225,12 @@ function pncp_purge_page_cache() {
 	if ( function_exists( 'rocket_clean_domain' ) ) {
 		rocket_clean_domain();
 	}
-	// phpcs:disable WordPress.NamingConventions.PrefixAllGlobals.NonPrefixedHooknameFound -- Hooks άλλων plugins.
+	// phpcs:disable WordPress.NamingConventions.PrefixAllGlobals.NonPrefixedHooknameFound -- Hooks of other plugins.
 	do_action( 'rt_nginx_helper_purge_all' ); // Nginx Helper (FastCGI cache).
 	do_action( 'litespeed_purge_all' ); // LiteSpeed Cache.
 	// phpcs:enable
 	if ( function_exists( 'wp_cache_clear_cache' ) ) {
-		wp_cache_clear_cache( is_multisite() ? get_current_blog_id() : 0 ); // WP Super Cache (σε multisite μόνο αυτό το site).
+		wp_cache_clear_cache( is_multisite() ? get_current_blog_id() : 0 ); // WP Super Cache (on multisite, only this site).
 	}
 	if ( function_exists( 'w3tc_flush_all' ) ) {
 		w3tc_flush_all(); // W3 Total Cache.
@@ -253,30 +245,30 @@ function pncp_purge_page_cache() {
 add_action( 'update_option_' . PNCP_OPTION, 'pncp_purge_page_cache' );
 
 /**
- * Μετά από αλλαγή ρυθμίσεων ξεχνιούνται οι cache του αιτήματος.
+ * After a settings change the per-request caches are forgotten.
  */
 function pncp_settings_changed() {
 	PNCP_Options::flush();
 	PNCP_Ip::reset();
 	PNCP_Watermark::reset();
-	// Νέες ρυθμίσεις υδατογραφήματος: το εργαλείο εικόνων ξεκινά από την αρχή.
+	// New watermark settings: the image tool starts over.
 	delete_option( 'pncp_wm_cursor_apply' );
 	delete_option( 'pncp_wm_cursor_remove' );
 }
 add_action( 'update_option_' . PNCP_OPTION, 'pncp_settings_changed', 0 );
-// Οι ρυθμίσεις διαβάζονται πρώτη φορά πριν φορτωθούν οι μεταφράσεις: ξαναδιαβάζονται μετά.
+// Settings are first read before the translations load: they are read again afterwards.
 add_action( 'after_setup_theme', array( 'PNCP_Options', 'flush' ), 0 );
 
 /**
- * Το WP Rocket (Delay JS / Defer JS) δεν πρέπει να καθυστερεί την προστασία μέχρι την πρώτη
- * κίνηση του επισκέπτη, αλλιώς το πρώτο δεξί κλικ περνάει.
+ * WP Rocket (Delay JS / Defer JS) must not delay the protection until the visitor's first
+ * interaction, otherwise the first right-click gets through.
  *
- * @param string[] $exclusions Μοτίβα που εξαιρούνται.
+ * @param string[] $exclusions Patterns to exclude.
  * @return string[]
  */
 function pncp_rocket_delay_exclusions( $exclusions ) {
 	$exclusions   = (array) $exclusions;
-	$exclusions[] = 'content-protect/assets/js/protect.js';
+	$exclusions[] = dirname( plugin_basename( PNCP_FILE ) ) . '/assets/js/protect.js';
 	$exclusions[] = 'pncpConfig';
 	return $exclusions;
 }

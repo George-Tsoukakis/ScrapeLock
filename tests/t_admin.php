@@ -1,6 +1,6 @@
 <?php
 /**
- * Content Protect 2.1 — σελίδα ρυθμίσεων, διακόπτης, προφίλ, token, αρχείο, εργαλείο εικόνων, κανόνες,
+ * ScrapeLock — σελίδα ρυθμίσεων, διακόπτης, προφίλ, token, αρχείο, εργαλείο εικόνων, κανόνες,
  * GraphQL και διαγραφή, σε πραγματικό WordPress μέσα από HTTP (με cookie διαχειριστή).
  *
  *   WP_DIR=/path/to/wordpress BASE=http://127.0.0.1:8099 php t_admin.php
@@ -75,7 +75,7 @@ settings( array( 'enabled' => 1, 'private_paths' => '/skroutz.xml' ) );
 update_option( 'pncp_emergency_until', 0 );
 
 /* ---------- Όλες οι καρτέλες ---------- */
-$page = '/wp-admin/options-general.php?page=content-protect';
+$page = '/wp-admin/options-general.php?page=scrapelock';
 foreach ( array( 'general', 'bots', 'content', 'images', 'rules', 'log' ) as $tab ) {
 	list( $code, $body ) = http( $page . '&tab=' . $tab );
 	t( "καρτέλα $tab: 200 χωρίς PHP warnings", 200 === $code && ! php_errors( $body ) && false !== strpos( $body, 'nav-tab-active' ), (string) $code );
@@ -85,7 +85,7 @@ t( 'προφίλ: τρία κουμπιά', 3 === substr_count( $body, 'name="pr
 t( 'Emergency Mode: φόρμα έναρξης', false !== strpos( $body, 'value="pncp_emergency"' ) );
 list( , $body ) = http( '/wp-admin/index.php' );
 t( 'Πίνακας ελέγχου: widget με σύνοψη 24ώρου', false !== strpos( $body, 'pncp-summary' ) && ! php_errors( $body ) );
-t( 'Πίνακας ελέγχου: μήνυμα Trusted Proxy όταν ισχύει η συμπεριφορά της 1.4', ! empty( PNCP_Options::stored()['trust_any_proxy'] ) === ( false !== strpos( $body, 'Ρύθμιση Trusted Proxy' ) ) );
+t( 'Πίνακας ελέγχου: μήνυμα Trusted Proxy όταν ισχύει η συμπεριφορά της 1.4', ! empty( PNCP_Options::stored()['trust_any_proxy'] ) === ( false !== strpos( $body, 'Trusted Proxy settings' ) ) );
 
 /* ---------- Απενεργοποίηση: πάντα με επιβεβαίωση ---------- */
 $toggle = html_entity_decode( wp_nonce_url( admin_url( 'admin-post.php?action=pncp_toggle&state=off' ), 'pncp_toggle' ) );
@@ -94,7 +94,7 @@ PNCP_Options::flush();
 wp_cache_delete( 'alloptions', 'options' );
 t( 'GET απενεργοποίησης (π.χ. κλικ στη μπάρα): πάει σε επιβεβαίωση, η προστασία μένει', 302 === $code && false !== strpos( $loc, 'pncp_confirm=disable' ) && ! empty( PNCP_Options::stored()['enabled'] ), "$code $loc" );
 list( , $body ) = http( $page . '&pncp_confirm=disable' );
-t( 'σελίδα επιβεβαίωσης με κουμπί POST', false !== strpos( $body, 'Ναι, απενεργοποίηση' ) && false !== strpos( $body, 'name="state" value="off"' ) );
+t( 'σελίδα επιβεβαίωσης με κουμπί POST', false !== strpos( $body, 'Yes, disable' ) && false !== strpos( $body, 'name="state" value="off"' ) );
 list( $code ) = http(
 	'/wp-admin/admin-post.php',
 	array(
@@ -189,7 +189,7 @@ t( 'περίοδος χάριτος: ειδοποίηση για το προηγ
 /* ---------- Αρχείο, αποκλεισμοί, λίστες IP ---------- */
 PNCP_Log::ban( '198.51.100.77', 30, 'trap' );
 list( , $body ) = http( $page . '&tab=log' );
-t( 'αρχείο: φαίνεται ο αποκλεισμός', false !== strpos( $body, '198.51.100.77' ) && false !== strpos( $body, 'Παγίδα για bots' ) );
+t( 'αρχείο: φαίνεται ο αποκλεισμός', false !== strpos( $body, '198.51.100.77' ) && false !== strpos( $body, 'Bot trap' ) );
 http( '/wp-admin/admin-post.php', array( 'action' => 'pncp_log', 'op' => 'unban', 'ip' => '198.51.100.77', '_wpnonce' => wp_create_nonce( 'pncp_log' ) ) );
 wp_cache_flush(); PNCP_Log::reset_cache(); // Το CLI κρατά στη μνήμη ό,τι διάβασε πριν το αίτημα.
 t( 'αρχείο: άρση ενός αποκλεισμού', ! PNCP_Log::is_banned( '198.51.100.77' ) && ! isset( PNCP_Log::active_bans()['198.51.100.77'] ) );
@@ -206,11 +206,8 @@ PNCP_Ip::store_list( 'google', array( '66.249.64.0/27' ) );
 add_filter(
 	'pre_http_request',
 	static function ( $pre, $args, $url ) {
-		if ( false !== strpos( $url, 'cloudflare.com/ips-v4' ) ) {
-			return array( 'response' => array( 'code' => 200 ), 'body' => "173.245.48.0/20\n103.21.244.0/22\n" );
-		}
-		if ( false !== strpos( $url, 'cloudflare.com/ips-v6' ) ) {
-			return array( 'response' => array( 'code' => 200 ), 'body' => "2400:cb00::/32\n" );
+		if ( false !== strpos( $url, 'api.cloudflare.com/client/v4/ips' ) ) {
+			return array( 'response' => array( 'code' => 200 ), 'body' => '{"result":{"ipv4_cidrs":["173.245.48.0/20","103.21.244.0/22"],"ipv6_cidrs":["2400:cb00::/32"]},"success":true}' );
 		}
 		if ( false !== strpos( $url, 'bingbot.json' ) ) {
 			return array( 'response' => array( 'code' => 200 ), 'body' => '{"prefixes":[{"ipv4Prefix":"157.55.39.0/24"},{"ipv6Prefix":"2a01:111::/32"}]}' );
@@ -220,8 +217,13 @@ add_filter(
 	1,
 	3
 );
+$prev_ip = PNCP_Options::get();
+settings( array( 'ip_header' => 'remote_addr' ) );
+t( 'λίστες IP: χωρίς Cloudflare proxy δεν κατεβαίνει η λίστα του Cloudflare', ! in_array( 'cloudflare', PNCP_Ip::needed_lists(), true ) );
+settings( array( 'ip_header' => 'cf_connecting_ip', 'trust_cloudflare' => 1 ) );
 $res = PNCP_Ip::refresh_lists();
 PNCP_Ip::reset();
+settings( array( 'ip_header' => $prev_ip['ip_header'], 'trust_cloudflare' => $prev_ip['trust_cloudflare'] ) );
 t( 'λίστες IP: Cloudflare και Bing κατέβηκαν', 3 === $res['cloudflare'] && 2 === $res['bing'], wp_json_encode( $res ) );
 t( 'λίστες IP: η Google απέτυχε και κράτησε την προηγούμενη', 0 === $res['google'] && array( '66.249.64.0/27' ) === PNCP_Ip::list_of( 'google' ) );
 t( 'Bingbot από τη λίστα: επαληθευμένο', PNCP_Bots::is_verified_crawler( 'bing', '157.55.39.12' ) );
@@ -307,8 +309,8 @@ $er = error_reporting( error_reporting() & ~E_DEPRECATED );
 pncp_upgrade();
 error_reporting( $er );
 t( 'Αναβάθμιση από 2.2.0: σβήνει το token που είχε μείνει σε καθαρή μορφή', false === get_option( 'pncp_legacy_token_notice' ) && '1' === (string) get_option( 'pncp_legacy_token_migrated' ) );
-list( , $body ) = http( '/wp-admin/options-general.php?page=content-protect' );
-t( 'Μήνυμα: «δεν μπορεί πλέον να εμφανιστεί», χωρίς το token', false !== strpos( $body, 'δεν μπορεί πλέον να εμφανιστεί' ) && false === strpos( $body, 'Old1xPlainToken0987654321' ) );
+list( , $body ) = http( '/wp-admin/options-general.php?page=scrapelock' );
+t( 'Μήνυμα: «δεν μπορεί πλέον να εμφανιστεί», χωρίς το token', false !== strpos( $body, 'can no longer be shown' ) && false === strpos( $body, 'Old1xPlainToken0987654321' ) );
 t( 'Μήνυμα: εμφανίζεται μία φορά', null === $wpdb->get_var( "SELECT option_value FROM {$wpdb->options} WHERE option_name = 'pncp_legacy_token_migrated'" ) );
 update_option( PNCP_Private_Urls::TOKEN_OPTION, $hash_before, false );
 

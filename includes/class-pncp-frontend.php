@@ -1,31 +1,31 @@
 <?php
 /**
- * Frontend: αποφασίζει αν η τρέχουσα σελίδα προστατεύεται, φορτώνει JS/CSS πριν από κάθε άλλο script,
- * στέλνει τα headers κατά του iframe και τη δήλωση εξαίρεσης από εκπαίδευση AI (TDM).
+ * Frontend: decides whether the current page is protected, loads JS/CSS before any other script,
+ * sends the anti-iframe headers and the AI-training opt-out declaration (TDM).
  *
- * @package Content_Protect
+ * @package ScrapeLock
  */
 
 defined( 'ABSPATH' ) || exit;
 
 /**
- * Η προστασία στο δημόσιο site.
+ * Protection on the public site.
  */
 final class PNCP_Frontend {
 
 	/**
-	 * Cache της απόφασης για το τρέχον request.
+	 * Cache of the decision for the current request.
 	 *
 	 * @var bool|null
 	 */
 	private static $protect = null;
 
 	/**
-	 * Δένει τα hooks.
+	 * Registers the hooks.
 	 */
 	public static function init() {
 		add_action( 'wp_enqueue_scripts', array( __CLASS__, 'register' ), 0 );
-		// Αμέσως μετά το wp_enqueue_scripts (priority 1) και πριν τυπωθούν τα υπόλοιπα scripts (priority 9).
+		// Right after wp_enqueue_scripts (priority 1) and before the other scripts are printed (priority 9).
 		add_action( 'wp_head', array( __CLASS__, 'print_early' ), 2 );
 		add_action( 'wp_head', array( __CLASS__, 'tdm_meta' ), 1 );
 		add_filter( 'body_class', array( __CLASS__, 'body_class' ) );
@@ -37,7 +37,7 @@ final class PNCP_Frontend {
 	}
 
 	/**
-	 * Προστατεύεται η τρέχουσα σελίδα;
+	 * Is the current page protected?
 	 *
 	 * @return bool
 	 */
@@ -51,14 +51,14 @@ final class PNCP_Frontend {
 	}
 
 	/**
-	 * Ξεχνά την απόφαση (για tests).
+	 * Forgets the decision (for tests).
 	 */
 	public static function reset() {
 		self::$protect = null;
 	}
 
 	/**
-	 * Η λογική της απόφασης, χωρίς το filter.
+	 * The decision logic, without the filter.
 	 *
 	 * @return bool
 	 */
@@ -73,8 +73,8 @@ final class PNCP_Frontend {
 			return false;
 		}
 
-		// Page builders σε λειτουργία επεξεργασίας. Μόνο για χρήστη που μπορεί πράγματι να επεξεργαστεί: αλλιώς
-		// ένα ?elementor-preview=1 στο URL θα έκλεινε την προστασία για οποιονδήποτε επισκέπτη.
+		// Page builders in edit mode. Only for a user who can actually edit: otherwise
+		// an ?elementor-preview=1 in the URL would turn protection off for any visitor.
 		if ( self::is_builder_request() ) {
 			return false;
 		}
@@ -85,14 +85,14 @@ final class PNCP_Frontend {
 
 		$queried = get_queried_object_id();
 		if ( ! $queried && function_exists( 'is_shop' ) && is_shop() ) {
-			// Η σελίδα Καταστήματος είναι archive, οπότε το queried object δεν έχει ID σελίδας.
+			// The Shop page is an archive, so the queried object has no page ID.
 			$queried = wc_get_page_id( 'shop' );
 		}
 		if ( $queried && in_array( (int) $queried, PNCP_Options::excluded_ids( $s ), true ) ) {
 			return false;
 		}
 
-		// Καλάθι, ταμείο και λογαριασμός: ο πελάτης πρέπει να αντιγράφει αριθμούς παραγγελίας, κωδικούς κουπονιών κ.λπ.
+		// Cart, checkout and account: the customer must be able to copy order numbers, coupon codes etc.
 		if ( ! empty( $s['skip_woo_pages'] ) && function_exists( 'is_woocommerce' ) ) {
 			if ( is_cart() || is_checkout() || is_account_page() ) {
 				return false;
@@ -115,7 +115,7 @@ final class PNCP_Frontend {
 			return ! empty( $s['scope_home'] );
 		}
 
-		// Άλλα singular (custom post types): ακολουθούν τη ρύθμιση των άρθρων.
+		// Other singulars (custom post types): follow the posts setting.
 		if ( is_singular() ) {
 			return ! empty( $s['scope_posts'] );
 		}
@@ -124,14 +124,14 @@ final class PNCP_Frontend {
 	}
 
 	/**
-	 * Αίτημα page builder (Elementor, Beaver, Divi, SiteOrigin, Bricks, Oxygen) ή προεπισκόπησης, από
-	 * συνδεδεμένο χρήστη που μπορεί να επεξεργαστεί τη σελίδα.
+	 * Page builder (Elementor, Beaver, Divi, SiteOrigin, Bricks, Oxygen) or preview request, from a
+	 * logged-in user who can edit the page.
 	 *
 	 * @return bool
 	 */
 	public static function is_builder_request() {
 		$found = false;
-		// phpcs:disable WordPress.Security.NonceVerification.Recommended -- Μόνο έλεγχος ύπαρξης· η άδεια ελέγχεται παρακάτω.
+		// phpcs:disable WordPress.Security.NonceVerification.Recommended -- Existence check only; the capability is checked below.
 		foreach ( array( 'elementor-preview', 'fl_builder', 'et_fb', 'siteorigin_panels_live_editor', 'preview_id', 'bricks', 'ct_builder' ) as $flag ) {
 			if ( isset( $_GET[ $flag ] ) ) {
 				$found = true;
@@ -147,7 +147,7 @@ final class PNCP_Frontend {
 	}
 
 	/**
-	 * Καταχωρεί τα αρχεία και τις ρυθμίσεις του script.
+	 * Registers the files and the script settings.
 	 */
 	public static function register() {
 		if ( ! self::should_protect() ) {
@@ -178,8 +178,8 @@ final class PNCP_Frontend {
 			'sourceUrl'   => esc_url_raw( self::current_url() ),
 			'siteName'    => wp_strip_all_tags( get_bloginfo( 'name' ) ),
 			'i18n'        => array(
-				'source'     => __( 'Πηγή', 'content-protect' ),
-				'printBlock' => __( 'Η εκτύπωση αυτής της σελίδας δεν επιτρέπεται.', 'content-protect' ),
+				'source'     => __( 'Source', 'scrapelock' ),
+				'printBlock' => __( 'Printing this page is not allowed.', 'scrapelock' ),
 			),
 		);
 
@@ -187,8 +187,8 @@ final class PNCP_Frontend {
 	}
 
 	/**
-	 * Τυπώνει το script στο <head>, πριν από τα scripts του θέματος και των άλλων plugins. Οι listeners του
-	 * μπαίνουν πρώτοι στο window (capture), οπότε κανένα άλλο script δεν μπορεί να τους παρακάμψει.
+	 * Prints the script in <head>, before the scripts of the theme and other plugins. Its listeners
+	 * are added first on window (capture), so no other script can bypass them.
 	 */
 	public static function print_early() {
 		if ( wp_script_is( 'pncp-protect', 'registered' ) && ! wp_script_is( 'pncp-protect', 'done' ) ) {
@@ -197,8 +197,8 @@ final class PNCP_Frontend {
 	}
 
 	/**
-	 * Τα εργαλεία βελτιστοποίησης (Cloudflare Rocket Loader, LiteSpeed, Autoptimize, WP Rocket) δεν πρέπει να
-	 * καθυστερούν ή να ενώνουν το script της προστασίας.
+	 * Optimization tools (Cloudflare Rocket Loader, LiteSpeed, Autoptimize, WP Rocket) must not
+	 * delay or combine the protection script.
 	 *
 	 * @param array<string, string> $attributes Attributes.
 	 * @return array<string, string>
@@ -215,24 +215,24 @@ final class PNCP_Frontend {
 	}
 
 	/**
-	 * Headers: η σελίδα δεν ανοίγει μέσα σε iframe άλλου site, και δήλωση TDM.
+	 * Headers: the page does not open inside another site's iframe, plus the TDM declaration.
 	 */
 	public static function send_headers() {
 		$s = PNCP_Options::get();
 		if ( empty( $s['enabled'] ) || headers_sent() || is_admin() ) {
 			return;
 		}
-		// Εξαιρούνται: οι σελίδες embed (oEmbed), που υπάρχουν για να μπαίνουν σε iframe, και το ταμείο / η
-		// σελίδα παραγγελίας, που κάποιες τράπεζες ανοίγουν μέσα στο δικό τους iframe.
+		// Excluded: embed pages (oEmbed), which exist to be placed in iframes, and the checkout / order
+		// page, which some banks open inside their own iframe.
 		$checkout = function_exists( 'is_checkout' ) && ( is_checkout() || ( function_exists( 'is_wc_endpoint_url' ) && is_wc_endpoint_url( 'order-received' ) ) );
 		if ( ! empty( $s['block_framing'] ) && ! is_embed() && ! $checkout && apply_filters( 'pncp_block_framing', true ) ) {
 			$sent = strtolower( implode( "\n", headers_list() ) );
-			// Δεν αντικαθιστούμε headers ασφαλείας άλλου plugin ή του server (π.χ. X-Frame-Options: DENY).
+			// We do not replace security headers set by another plugin or the server (e.g. X-Frame-Options: DENY).
 			if ( false === strpos( $sent, 'x-frame-options:' ) ) {
 				header( 'X-Frame-Options: SAMEORIGIN' );
 			}
 			if ( false === strpos( $sent, 'frame-ancestors' ) ) {
-				// Δεύτερο header CSP (replace = false): οι browsers εφαρμόζουν και τα δύο, το υπάρχον μένει.
+				// Second CSP header (replace = false): browsers apply both, the existing one stays.
 				header( "Content-Security-Policy: frame-ancestors 'self'", false );
 			}
 		}
@@ -245,7 +245,7 @@ final class PNCP_Frontend {
 	}
 
 	/**
-	 * Meta tags TDM (Text and Data Mining, Οδηγία ΕΕ 2019/790 άρθρο 4 και πρότυπο TDMRep του W3C).
+	 * TDM meta tags (Text and Data Mining, EU Directive 2019/790 Article 4 and the W3C TDMRep standard).
 	 */
 	public static function tdm_meta() {
 		$s = PNCP_Options::get();
@@ -259,9 +259,9 @@ final class PNCP_Frontend {
 	}
 
 	/**
-	 * Οδηγίες noai / noimageai στο robots meta (τις διαβάζουν αρκετά AI εργαλεία· οι μηχανές αναζήτησης τις αγνοούν).
+	 * noai / noimageai directives in the robots meta (read by several AI tools; search engines ignore them).
 	 *
-	 * @param array<string, bool|string> $robots Οδηγίες.
+	 * @param array<string, bool|string> $robots Directives.
 	 * @return array<string, bool|string>
 	 */
 	public static function robots_meta( $robots ) {
@@ -274,8 +274,8 @@ final class PNCP_Frontend {
 	}
 
 	/**
-	 * /.well-known/tdmrep.json (TDMRep). Λειτουργεί όταν ο web server περνά το αίτημα στο WordPress
-	 * (δεν υπάρχει φυσικό αρχείο με αυτό το όνομα).
+	 * /.well-known/tdmrep.json (TDMRep). Works when the web server passes the request to WordPress
+	 * (there is no physical file with that name).
 	 */
 	public static function tdmrep_json() {
 		$s = PNCP_Options::get();
@@ -302,7 +302,7 @@ final class PNCP_Frontend {
 	}
 
 	/**
-	 * Το URL της σελίδας, χωρίς query string (για καθαρή αναφορά πηγής).
+	 * The page URL, without query string (for a clean source reference).
 	 *
 	 * @return string
 	 */
@@ -315,9 +315,9 @@ final class PNCP_Frontend {
 	}
 
 	/**
-	 * Κλάσεις στο body, που ενεργοποιούν το CSS.
+	 * Body classes that enable the CSS.
 	 *
-	 * @param string[] $classes Κλάσεις.
+	 * @param string[] $classes Classes.
 	 * @return string[]
 	 */
 	public static function body_class( $classes ) {

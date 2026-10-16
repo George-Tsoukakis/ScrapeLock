@@ -1,12 +1,12 @@
 /**
- * Content Protect – frontend.
+ * ScrapeLock – frontend.
  *
- * Φορτώνεται στο <head>, πριν από τα scripts του θέματος και των άλλων plugins, και βάζει τους listeners
- * στο window σε φάση capture: τρέχουν πρώτοι, οπότε κανένα άλλο script (ούτε επεκτάσεις τύπου «Allow
- * copy» που δουλεύουν με listeners στη σελίδα) δεν μπορεί να τους παρακάμψει με stopPropagation.
+ * Loaded in <head>, before the scripts of the theme and other plugins, and adds its listeners
+ * on window in the capture phase: they run first, so no other script (not even "Allow
+ * copy"-style extensions that work with listeners on the page) can bypass them with stopPropagation.
  *
- * Αφήνει πάντα ελεύθερα: πεδία φόρμας, contenteditable, ό,τι έχει κλάση .pncp-allow, και την πλοήγηση
- * με πληκτρολόγιο.
+ * Always leaves free: form fields, contenteditable, anything with the .pncp-allow class, and keyboard
+ * navigation.
  */
 ( function () {
 	'use strict';
@@ -23,7 +23,7 @@
 	var toastTimer = null;
 	var blurTimer = null;
 
-	/** Το πραγματικό στοιχείο του συμβάντος, και μέσα σε shadow DOM (web components). */
+	/** The actual element of the event, also inside shadow DOM (web components). */
 	function targetOf( e ) {
 		var path = e.composedPath ? e.composedPath() : null;
 		return path && path.length ? path[ 0 ] : e.target;
@@ -44,7 +44,7 @@
 		return !! el.closest( EDITABLE ) || el.isContentEditable === true;
 	}
 
-	/** Επιτρέπεται η τρέχουσα επιλογή; (π.χ. ολόκληρη μέσα σε .pncp-allow) */
+	/** Is the current selection allowed? (e.g. entirely inside .pncp-allow) */
 	function selectionAllowed( sel ) {
 		if ( ! sel || sel.rangeCount === 0 ) {
 			return true;
@@ -52,13 +52,13 @@
 		return isAllowed( sel.anchorNode ) && isAllowed( sel.focusNode );
 	}
 
-	/** Πεδίο φόρμας ή contenteditable (όχι .pncp-allow, που κρίνεται από την επιλογή). */
+	/** Form field or contenteditable (not .pncp-allow, which is judged by the selection). */
 	function isField( node ) {
 		var el = elementOf( node );
 		return !! ( el && el.closest && ( el.closest( FIELDS ) || el.isContentEditable === true ) );
 	}
 
-	/** Υπάρχει επιλογή και βρίσκεται ολόκληρη σε επιτρεπτό σημείο; */
+	/** Is there a selection, and is it entirely in an allowed area? */
 	function hasAllowedSelection() {
 		var sel = window.getSelection ? window.getSelection() : null;
 		return !! ( sel && sel.rangeCount > 0 && ! sel.isCollapsed && selectionAllowed( sel ) );
@@ -91,13 +91,13 @@
 			.replace( /"/g, '&quot;' );
 	}
 
-	/** Σταματά το συμβάν πριν φτάσει σε οποιονδήποτε άλλο listener. */
+	/** Stops the event before it reaches any other listener. */
 	function stop( e ) {
 		e.preventDefault();
 		e.stopImmediatePropagation();
 	}
 
-	/** Λατινικό γράμμα του πλήκτρου: e.key όπου υπάρχει (AZERTY/Dvorak), αλλιώς e.code (ελληνική διάταξη). */
+	/** Latin letter of the key: e.key where available (AZERTY/Dvorak), otherwise e.code (Greek layout). */
 	function letterOf( e ) {
 		if ( /^[a-z]$/i.test( e.key || '' ) ) {
 			return e.key.toLowerCase();
@@ -112,7 +112,7 @@
 		return '';
 	}
 
-	/* ---------- Δεξί κλικ ---------- */
+	/* ---------- Right-click ---------- */
 	if ( cfg.contextMenu ) {
 		window.addEventListener( 'contextmenu', function ( e ) {
 			if ( isAllowed( targetOf( e ) ) ) {
@@ -123,7 +123,7 @@
 		}, CAPTURE );
 	}
 
-	/* ---------- Σύρσιμο εικόνων και επιλεγμένου κειμένου ---------- */
+	/* ---------- Dragging images and selected text ---------- */
 	if ( cfg.imageDrag || cfg.textDrag ) {
 		window.addEventListener( 'dragstart', function ( e ) {
 			var el = elementOf( targetOf( e ) );
@@ -138,8 +138,8 @@
 				}
 				return;
 			}
-			// Κείμενο: μόνο όταν σέρνεται επιλεγμένο κείμενο. Widgets με draggable (ταξινόμηση, sliders)
-			// και σύνδεσμοι συνεχίζουν να δουλεύουν.
+			// Text: only when selected text is dragged. Widgets with draggable (sorting, sliders)
+			// and links keep working.
 			var sel = window.getSelection ? window.getSelection() : null;
 			var draggingText = el.nodeType === 3 || ( sel && ! sel.isCollapsed && sel.containsNode && sel.containsNode( el, true ) );
 			if ( cfg.textDrag && draggingText && ! ( el.closest && el.closest( '[draggable="true"]' ) ) ) {
@@ -148,7 +148,7 @@
 		}, CAPTURE );
 	}
 
-	/* ---------- Επιλογή κειμένου ---------- */
+	/* ---------- Text selection ---------- */
 	if ( cfg.selection ) {
 		window.addEventListener( 'selectstart', function ( e ) {
 			if ( ! isAllowed( targetOf( e ) ) ) {
@@ -157,16 +157,16 @@
 		}, CAPTURE );
 	}
 
-	/* ---------- Συντομεύσεις ---------- */
+	/* ---------- Shortcuts ---------- */
 	if ( cfg.shortcuts ) {
-		// a: επιλογή όλων, c/x: αντιγραφή/αποκοπή, s: αποθήκευση, u: πηγαίος κώδικας.
-		// Το p (εκτύπωση) μπλοκάρεται μόνο αν έχει απαγορευτεί η εκτύπωση.
+		// a: select all, c/x: copy/cut, s: save, u: view source.
+		// p (print) is blocked only if printing is disabled.
 		var keys = [ 'a', 'c', 'x', 's', 'u' ];
 		if ( cfg.printMode === 'block' ) {
 			keys.push( 'p' );
 		}
 		if ( cfg.copyMode === 'attribution' || cfg.copyMode === 'allow' ) {
-			// Η αντιγραφή επιτρέπεται (με ή χωρίς πηγή), οπότε δεν κόβουμε Ctrl+C.
+			// Copying is allowed (with or without source), so we do not block Ctrl+C.
 			keys = keys.filter( function ( k ) {
 				return k !== 'c';
 			} );
@@ -180,7 +180,7 @@
 			if ( keys.indexOf( key ) === -1 || isAllowed( targetOf( e ) ) ) {
 				return;
 			}
-			// Αντιγραφή κειμένου από .pncp-allow (τηλέφωνο, κουπόνι) με το πληκτρολόγιο.
+			// Copying text from .pncp-allow (phone, coupon) with the keyboard.
 			if ( ( key === 'c' || key === 'x' ) && hasAllowedSelection() ) {
 				return;
 			}
@@ -189,7 +189,7 @@
 		}, CAPTURE );
 	}
 
-	/* ---------- Συντομεύσεις DevTools (κοσμητικό: δεν ανιχνεύουμε DevTools και δεν σπάμε τη σελίδα) ---------- */
+	/* ---------- DevTools shortcuts (cosmetic: we do not detect DevTools and do not break the page) ---------- */
 	if ( cfg.devtools ) {
 		window.addEventListener( 'keydown', function ( e ) {
 			var code = e.code || '';
@@ -207,14 +207,14 @@
 		}, CAPTURE );
 	}
 
-	/* ---------- Αντιγραφή / αποκοπή ---------- */
+	/* ---------- Copy / cut ---------- */
 	function onCopy( e ) {
 		if ( cfg.copyMode === 'allow' ) {
 			return;
 		}
 		var sel = window.getSelection ? window.getSelection() : null;
-		// Για .pncp-allow κρίνει η επιλογή, όχι το target: μια επιλογή που ξεκινά από εκεί
-		// και απλώνεται σε προστατευμένο κείμενο δεν περνά.
+		// For .pncp-allow the selection decides, not the target: a selection that starts there
+		// and extends into protected text does not pass.
 		if ( isField( targetOf( e ) ) || hasAllowedSelection() ) {
 			return;
 		}
@@ -224,9 +224,9 @@
 			return;
 		}
 
-		// attribution: αντιγράφεται το κείμενο μαζί με την πηγή.
+		// attribution: the text is copied together with the source.
 		var text = sel ? sel.toString() : '';
-		// Μικρά αποσπάσματα (π.χ. μια λέξη) αντιγράφονται κανονικά, χωρίς πηγή.
+		// Short snippets (e.g. a single word) are copied normally, without source.
 		if ( ! text || ! e.clipboardData || text.length < ( cfg.minChars || 0 ) ) {
 			return;
 		}
@@ -242,7 +242,7 @@
 	window.addEventListener( 'copy', onCopy, CAPTURE );
 	window.addEventListener( 'cut', onCopy, CAPTURE );
 
-	/* ---------- Θόλωμα σε στιγμιότυπο οθόνης (προαιρετικό) ---------- */
+	/* ---------- Blur on screenshot (optional) ---------- */
 	if ( cfg.blur ) {
 		var blurOn = function ( ms ) {
 			document.documentElement.classList.add( 'pncp-blurred' );
@@ -266,15 +266,15 @@
 				blurOn( 4000 );
 			}
 		}, CAPTURE );
-		// Το Print Screen στα Windows φτάνει συχνά μόνο ως keyup.
+		// On Windows, Print Screen often arrives only as keyup.
 		window.addEventListener( 'keyup', function ( e ) {
 			if ( e.key === 'PrintScreen' || e.code === 'PrintScreen' ) {
 				blurOn( 4000 );
 			}
 		}, CAPTURE );
-		// Το εργαλείο αποκοπής παίρνει το focus: θόλωμα όσο λείπει, καθαρό μόλις επιστρέψει ο επισκέπτης.
+		// The snipping tool takes focus: blur while it is away, clear as soon as the visitor returns.
 		window.addEventListener( 'blur', function () {
-			// Κλικ μέσα σε iframe της σελίδας (π.χ. βίντεο) παίρνει κι αυτό το focus: εκεί όχι θόλωμα.
+			// A click inside an iframe on the page (e.g. video) also takes focus: no blur there.
 			setTimeout( function () {
 				var active = document.activeElement;
 				if ( ! active || String( active.tagName ).toUpperCase() !== 'IFRAME' ) {
@@ -290,7 +290,7 @@
 		} );
 	}
 
-	/* ---------- Εκτύπωση: τα κείμενα μπαίνουν ως data attributes, το CSS τα δείχνει ---------- */
+	/* ---------- Print: the texts go in as data attributes, the CSS shows them ---------- */
 	function setPrintData() {
 		document.body.setAttribute( 'data-pncp-print-block', cfg.i18n.printBlock );
 		document.body.setAttribute( 'data-pncp-source', cfg.i18n.source + ': ' + cfg.sourceUrl );

@@ -1,58 +1,58 @@
 <?php
 /**
- * Υδατογράφημα εικόνων.
+ * Image watermarking.
  *
- * - Μπαίνει στα μεγέθη που φτιάχνει το WordPress (thumbnail, medium, large…) και, προαιρετικά, στην εικόνα
- *   πλήρους μεγέθους. Πριν από αυτό, το καθαρό αρχείο πλήρους μεγέθους φυλάγεται σε κρυφό φάκελο, ώστε να
- *   γίνεται πάντα επαναφορά.
- * - Ποτέ διπλό υδατογράφημα: κάθε εικόνα κρατά (meta `_pncp_wm`) ποια αρχεία έχουν ήδη υδατογράφημα. Όταν
- *   ξαναφτιάχνονται τα μεγέθη, φτιάχνονται πάντα από καθαρή πηγή.
- * - Εξαιρούνται: το ίδιο το υδατογράφημα, το εικονίδιο site, το λογότυπο, η εικόνα placeholder του
- *   WooCommerce και (από προεπιλογή) οι εικόνες προϊόντων, που τις απορρίπτουν Google Merchant, Skroutz κ.ά.
+ * - Applied to the sizes WordPress generates (thumbnail, medium, large…) and, optionally, to the
+ *   full-size image. Before that, the clean full-size file is saved in a hidden folder, so it can
+ *   always be restored.
+ * - Never a double watermark: each image records (meta `_pncp_wm`) which files are already watermarked. When
+ *   sizes are regenerated, they are always generated from a clean source.
+ * - Excluded: the watermark itself, the site icon, the logo, the WooCommerce placeholder image
+ *   and (by default) product images, which Google Merchant, Skroutz etc. reject.
  *
- * @package Content_Protect
+ * @package ScrapeLock
  */
 
 defined( 'ABSPATH' ) || exit;
 
 /**
- * Υδατογράφημα με GD: εικόνα PNG από τη βιβλιοθήκη πολυμέσων ή, αν δεν οριστεί, το domain του site.
+ * GD watermark: a PNG image from the media library or, if none is set, the site's domain.
  */
 final class PNCP_Watermark {
 
 	/**
-	 * Meta με την κατάσταση της εικόνας: ['full' => [σχετική διαδρομή => md5 του αρχείου με υδατογράφημα], 'sizes' => [αρχείο => 1|0]].
+	 * Meta holding the image state: ['full' => [relative path => md5 of the watermarked file], 'sizes' => [file => 1|0]].
 	 */
 	const META = '_pncp_wm';
 
 	/**
-	 * Cron hook για αφαίρεση υδατογραφήματος σε μία εικόνα (π.χ. όταν γίνει λογότυπο ή εικόνα προϊόντος).
+	 * Cron hook that removes the watermark from one image (e.g. when it becomes a logo or a product image).
 	 */
 	const CRON_UNMARK = 'pncp_wm_unmark';
 
 	/**
-	 * Τύποι εικόνων που υποστηρίζονται.
+	 * Supported image types.
 	 *
 	 * @var string[]
 	 */
 	private static $mimes = array( 'image/jpeg', 'image/png', 'image/webp' );
 
 	/**
-	 * Πόσα μεγέθη δεν ξαναφτιάχτηκαν στην τελευταία επεξεργασία.
+	 * How many sizes failed to regenerate during the last run.
 	 *
 	 * @var int
 	 */
 	private static $errors = 0;
 
 	/**
-	 * Cache του υδατογραφήματος για το αίτημα.
+	 * Per-request watermark cache.
 	 *
 	 * @var resource|\GdImage|false|null
 	 */
 	private static $mark = null;
 
 	/**
-	 * Δένει τα hooks.
+	 * Registers the hooks.
 	 */
 	public static function init() {
 		add_filter( 'wp_generate_attachment_metadata', array( __CLASS__, 'on_generate' ), 20, 3 );
@@ -66,7 +66,7 @@ final class PNCP_Watermark {
 	}
 
 	/**
-	 * Είναι διαθέσιμη η βιβλιοθήκη GD;
+	 * Is the GD library available?
 	 *
 	 * @return bool
 	 */
@@ -74,10 +74,10 @@ final class PNCP_Watermark {
 		return function_exists( 'imagecreatetruecolor' ) && function_exists( 'imagecopyresampled' ) && function_exists( 'imagerotate' );
 	}
 
-	/* ---------- Ποιες εικόνες ---------- */
+	/* ---------- Which images ---------- */
 
 	/**
-	 * Εικόνες του site που δεν παίρνουν ποτέ υδατογράφημα: εικονίδιο, λογότυπα, placeholder, υδατογράφημα.
+	 * Site images that never get a watermark: icon, logos, placeholder, watermark.
 	 *
 	 * @return int[]
 	 */
@@ -93,9 +93,9 @@ final class PNCP_Watermark {
 	}
 
 	/**
-	 * Είναι εικόνα προϊόντος WooCommerce; (συνημμένη σε προϊόν, κύρια εικόνα ή εικόνα γκαλερί)
+	 * Is this a WooCommerce product image? (attached to a product, featured image or gallery image)
 	 *
-	 * @param int $attachment_id ID συνημμένου.
+	 * @param int $attachment_id Attachment ID.
 	 * @return bool
 	 */
 	public static function is_product_image( $attachment_id ) {
@@ -105,7 +105,7 @@ final class PNCP_Watermark {
 		if ( $parent && in_array( get_post_type( $parent ), array( 'product', 'product_variation' ), true ) ) {
 			return true;
 		}
-		// phpcs:disable WordPress.DB.DirectDatabaseQuery -- Ένα ερώτημα ανά εικόνα, μόνο κατά την επεξεργασία της.
+		// phpcs:disable WordPress.DB.DirectDatabaseQuery -- One query per image, only while it is being processed.
 		$thumb = $wpdb->get_var(
 			$wpdb->prepare(
 				"SELECT pm.post_id FROM {$wpdb->postmeta} pm INNER JOIN {$wpdb->posts} p ON p.ID = pm.post_id
@@ -132,10 +132,10 @@ final class PNCP_Watermark {
 	}
 
 	/**
-	 * Παίρνει αυτή η εικόνα υδατογράφημα με τις τρέχουσες ρυθμίσεις;
+	 * Does this image get a watermark with the current settings?
 	 *
-	 * @param int                  $attachment_id ID συνημμένου.
-	 * @param array<string, mixed> $s             Ρυθμίσεις.
+	 * @param int                  $attachment_id Attachment ID.
+	 * @param array<string, mixed> $s             Settings.
 	 * @return bool
 	 */
 	public static function eligible( $attachment_id, $s ) {
@@ -158,21 +158,21 @@ final class PNCP_Watermark {
 		}
 
 		/**
-		 * Φίλτρο για να εξαιρέσετε εικόνες.
+		 * Filter to exclude images.
 		 *
-		 * @param bool $apply         Αν θα μπει υδατογράφημα.
-		 * @param int  $attachment_id ID συνημμένου.
+		 * @param bool $apply         Whether to apply the watermark.
+		 * @param int  $attachment_id Attachment ID.
 		 */
 		return (bool) apply_filters( 'pncp_watermark_attachment', true, $attachment_id );
 	}
 
-	/* ---------- Νέα uploads και αναδημιουργία μεγεθών ---------- */
+	/* ---------- New uploads and size regeneration ---------- */
 
 	/**
-	 * Τρέχει κάθε φορά που το WordPress φτιάχνει μεγέθη (νέο upload, «Regenerate Thumbnails», μεγέθη που έλειπαν).
+	 * Runs every time WordPress generates sizes (new upload, «Regenerate Thumbnails», missing sizes).
 	 *
-	 * @param array<string, mixed> $metadata      Τα metadata.
-	 * @param int                  $attachment_id ID συνημμένου.
+	 * @param array<string, mixed> $metadata      The metadata.
+	 * @param int                  $attachment_id Attachment ID.
 	 * @param string               $context       create | update.
 	 * @return array<string, mixed>
 	 */
@@ -183,8 +183,8 @@ final class PNCP_Watermark {
 		$s     = PNCP_Options::get();
 		$state = self::state( $attachment_id );
 
-		// Αν το πλήρες μέγεθος έχει υδατογράφημα, τα μεγέθη που μόλις φτιάχτηκαν προέρχονται από αυτό:
-		// επαναφορά της καθαρής εικόνας και νέα μεγέθη από καθαρή πηγή, αλλιώς θα έβγαινε διπλό υδατογράφημα.
+		// If the full size is watermarked, the sizes just generated come from it:
+		// restore the clean image and regenerate sizes from a clean source, otherwise they would get a double watermark.
 		$regen = false;
 		if ( $state['full'] ) {
 			self::restore_full( $attachment_id, $state );
@@ -212,12 +212,12 @@ final class PNCP_Watermark {
 	}
 
 	/**
-	 * Ξαναφτιάχνει μια εικόνα από καθαρή πηγή, με ή χωρίς υδατογράφημα (εργαλείο μαζικής εφαρμογής).
-	 * Ασφαλές να τρέξει ξανά όσες φορές χρειαστεί: κάθε φορά ξεκινά από το καθαρό πρωτότυπο. Έτσι
-	 * αφαιρεί και τα υδατογραφήματα της 1.x, που δεν άφηναν σημάδι.
+	 * Rebuilds an image from a clean source, with or without a watermark (bulk apply tool).
+	 * Safe to run again as many times as needed: it always starts from the clean original. This way
+	 * it also removes the 1.x watermarks, which left no marker.
 	 *
-	 * @param int  $attachment_id ID συνημμένου.
-	 * @param bool $apply         true = με υδατογράφημα (αν επιτρέπεται), false = καθαρή.
+	 * @param int  $attachment_id Attachment ID.
+	 * @param bool $apply         true = watermarked (if allowed), false = clean.
 	 * @return string done | skipped | error
 	 */
 	public static function rebuild( $attachment_id, $apply ) {
@@ -256,9 +256,9 @@ final class PNCP_Watermark {
 	}
 
 	/**
-	 * Αφαιρεί το υδατογράφημα από μία εικόνα (cron, όταν η εικόνα γίνει λογότυπο / εικόνα προϊόντος).
+	 * Removes the watermark from one image (cron, when the image becomes a logo / product image).
 	 *
-	 * @param int $attachment_id ID συνημμένου.
+	 * @param int $attachment_id Attachment ID.
 	 */
 	public static function unmark( $attachment_id ) {
 		$state = self::state( $attachment_id );
@@ -268,22 +268,22 @@ final class PNCP_Watermark {
 	}
 
 	/**
-	 * Μεγέθη: (προαιρετικά) νέα από καθαρή πηγή και υδατογράφημα σε όσα δεν έχουν ήδη.
+	 * Sizes: (optionally) regenerate from a clean source, then watermark those that are not watermarked yet.
 	 *
 	 * @param int                  $attachment_id ID.
 	 * @param array<string, mixed> $metadata      Metadata.
-	 * @param array<string, mixed> $state         Κατάσταση (αλλάζει).
-	 * @param array<string, mixed> $s             Ρυθμίσεις.
-	 * @param bool                 $apply         Να μπει υδατογράφημα.
-	 * @param bool                 $regen         Να ξαναφτιαχτούν από καθαρή πηγή όσα δεν έχουν καταγραφεί.
-	 * @return array<string, mixed> Metadata (με ενημερωμένο filesize).
+	 * @param array<string, mixed> $state         State (modified).
+	 * @param array<string, mixed> $s             Settings.
+	 * @param bool                 $apply         Whether to apply the watermark.
+	 * @param bool                 $regen         Regenerate from a clean source the ones not yet recorded.
+	 * @return array<string, mixed> Metadata (with updated filesize).
 	 */
 	private static function process_sizes( $attachment_id, $metadata, &$state, $s, $apply, $regen ) {
 		if ( empty( $metadata['sizes'] ) || ! is_array( $metadata['sizes'] ) ) {
 			return $metadata;
 		}
 		$dir = trailingslashit( dirname( (string) get_attached_file( $attachment_id, true ) ) );
-		// Τα αρχεία πλήρους μεγέθους έχουν ήδη επανέλθει (restore_full), άρα είναι καθαρά.
+		// The full-size files have already been restored (restore_full), so they are clean.
 		$source = $regen ? self::clean_source( $attachment_id ) : '';
 		$crops  = wp_get_registered_image_subsizes();
 
@@ -292,7 +292,7 @@ final class PNCP_Watermark {
 				continue;
 			}
 			$file = wp_basename( $size['file'] );
-			// Δύο μεγέθη με τις ίδιες διαστάσεις μοιράζονται ένα αρχείο: μία φορά.
+			// Two sizes with the same dimensions share one file: process it once.
 			if ( array_key_exists( $file, $state['sizes'] ) ) {
 				continue;
 			}
@@ -302,7 +302,7 @@ final class PNCP_Watermark {
 			if ( $regen ) {
 				$crop = isset( $crops[ $name ]['crop'] ) ? $crops[ $name ]['crop'] : true;
 				if ( '' === $source || ! self::resize_from( $source, $path, (int) $size['width'], (int) $size['height'], $crop, $mime ) ) {
-					// Δεν ξαναφτιάχτηκε από καθαρή πηγή: ίσως έχει ήδη υδατογράφημα, οπότε δεν του βάζουμε δεύτερο.
+					// Not regenerated from a clean source: it may already be watermarked, so we do not add a second one.
 					++self::$errors;
 					continue;
 				}
@@ -323,12 +323,12 @@ final class PNCP_Watermark {
 	}
 
 	/**
-	 * Υδατογράφημα στο πλήρες μέγεθος (και στο αρχικό upload, αν το WordPress το μίκρυνε σε «-scaled»).
-	 * Πριν από κάθε αλλαγή φυλάγεται το καθαρό αρχείο.
+	 * Watermark the full size (and the original upload, if WordPress downscaled it to «-scaled»).
+	 * The clean file is saved before every change.
 	 *
 	 * @param int                  $attachment_id ID.
-	 * @param array<string, mixed> $state         Κατάσταση (αλλάζει).
-	 * @param array<string, mixed> $s             Ρυθμίσεις.
+	 * @param array<string, mixed> $state         State (modified).
+	 * @param array<string, mixed> $s             Settings.
 	 */
 	private static function mark_full( $attachment_id, &$state, $s ) {
 		$mime = (string) get_post_mime_type( $attachment_id );
@@ -340,14 +340,14 @@ final class PNCP_Watermark {
 			$type = wp_check_filetype( $path )['type'];
 			if ( self::apply_to_file( $path, $type ? $type : $mime, $s ) ) {
 				clearstatcache( true, $path );
-				// Το hash του αρχείου που γράψαμε: αν αλλάξει (π.χ. αντικατάσταση εικόνας), το αντίγραφο δεν ισχύει πια.
+				// Hash of the file we wrote: if it changes (e.g. image replacement), the backup is no longer valid.
 				$state['full'][ $rel ] = (string) md5_file( $path );
 			}
 		}
 	}
 
 	/**
-	 * Τα αρχεία πλήρους μεγέθους: το συνημμένο (π.χ. -scaled) και το αρχικό upload.
+	 * The full-size files: the attached file (e.g. -scaled) and the original upload.
 	 *
 	 * @param int $attachment_id ID.
 	 * @return string[]
@@ -366,20 +366,20 @@ final class PNCP_Watermark {
 	}
 
 	/**
-	 * Επαναφέρει τα καθαρά αρχεία πλήρους μεγέθους από το αντίγραφο.
+	 * Restores the clean full-size files from the backup.
 	 *
-	 * Μόνο όταν το αρχείο στον δίσκο είναι ακόμη αυτό που γράψαμε εμείς (ίδιο hash). Αν άλλαξε (π.χ. το
-	 * «Enable Media Replace» ανέβασε νέα εικόνα στο ίδιο όνομα), το αρχείο στον δίσκο είναι το νέο καθαρό
-	 * πρωτότυπο και το παλιό αντίγραφο σβήνεται. Αντίγραφα χωρίς εγγραφή (ορφανά) σβήνονται επίσης.
+	 * Only when the file on disk is still the one we wrote (same hash). If it changed (e.g.
+	 * «Enable Media Replace» uploaded a new image under the same name), the file on disk is the new clean
+	 * original and the old backup is deleted. Backups without a record (orphans) are deleted too.
 	 *
 	 * @param int                  $attachment_id ID.
-	 * @param array<string, mixed> $state         Κατάσταση.
+	 * @param array<string, mixed> $state         State.
 	 */
 	private static function restore_full( $attachment_id, $state ) {
 		$paths    = array();
 		$original = function_exists( 'wp_get_original_image_path' ) ? (string) wp_get_original_image_path( $attachment_id, true ) : '';
 		$attached = (string) get_attached_file( $attachment_id, true );
-		// Πρώτα το αρχικό upload: από αυτό το WordPress ξαναφτιάχνει το «-scaled».
+		// Original upload first: WordPress regenerates the «-scaled» from it.
 		foreach ( array( $original, $attached ) as $path ) {
 			if ( '' !== $path ) {
 				$paths[ self::relative( $path ) ] = $path;
@@ -388,7 +388,7 @@ final class PNCP_Watermark {
 		foreach ( array_keys( (array) $state['full'] ) as $rel ) {
 			$paths[ (string) $rel ] = self::absolute( (string) $rel );
 		}
-		$derived_ok = false; // Το αρχικό upload είναι ακόμη δικό μας: το -scaled απλώς ξαναφτιάχτηκε από αυτό.
+		$derived_ok = false; // The original upload is still ours: the -scaled was simply regenerated from it.
 		$orig_rel   = '' !== $original && $original !== $attached ? self::relative( $original ) : '';
 		foreach ( $paths as $rel => $path ) {
 			$backup = self::backup_path( $path );
@@ -403,21 +403,21 @@ final class PNCP_Watermark {
 				$ours = true;
 			}
 			if ( ! is_file( $path ) ) {
-				// Το αρχείο λείπει (π.χ. plugin offload): το αντίγραφο δεν σβήνεται ποτέ σε αυτή την περίπτωση.
+				// The file is missing (e.g. offload plugin): the backup is never deleted in this case.
 				if ( '' !== $hash ) {
 					copy( $backup, $path );
 				}
 			} elseif ( $ours ) {
 				copy( $backup, $path );
 			} else {
-				wp_delete_file( $backup ); // Νέο αρχείο στη θέση του παλιού: το αντίγραφο δεν ισχύει πια.
+				wp_delete_file( $backup ); // A new file replaced the old one: the backup is no longer valid.
 			}
 		}
 	}
 
 	/**
-	 * Η πηγή για νέα μεγέθη: το αρχικό upload ή το πλήρες μέγεθος. Καλείται πάντα μετά το restore_full,
-	 * οπότε τα αρχεία στον δίσκο είναι καθαρά.
+	 * The source for new sizes: the original upload or the full size. Always called after restore_full,
+	 * so the files on disk are clean.
 	 *
 	 * @param int $attachment_id ID.
 	 * @return string
@@ -434,10 +434,10 @@ final class PNCP_Watermark {
 	}
 
 	/**
-	 * Ο επεξεργαστής εικόνων του WordPress (περικοπή, περιστροφή) ξεκινά από το καθαρό αντίγραφο,
-	 * ώστε η νέα εικόνα να μην κουβαλά το υδατογράφημα.
+	 * The WordPress image editor (crop, rotate) starts from the clean backup,
+	 * so the new image does not carry the watermark.
 	 *
-	 * @param string $path          Αρχείο προς επεξεργασία.
+	 * @param string $path          File to edit.
 	 * @param int    $attachment_id ID.
 	 * @return string
 	 */
@@ -452,14 +452,14 @@ final class PNCP_Watermark {
 	}
 
 	/**
-	 * Φτιάχνει ένα μέγεθος από την πηγή, στο ίδιο όνομα αρχείου που ήδη χρησιμοποιεί το WordPress.
+	 * Generates a size from the source, under the same file name WordPress already uses.
 	 *
-	 * @param string     $source Πηγή.
-	 * @param string     $target Αρχείο προορισμού.
-	 * @param int        $width  Πλάτος.
-	 * @param int        $height Ύψος.
-	 * @param bool|array $crop   Περικοπή.
-	 * @param string     $mime   Τύπος αρχείου προορισμού.
+	 * @param string     $source Source.
+	 * @param string     $target Target file.
+	 * @param int        $width  Width.
+	 * @param int        $height Height.
+	 * @param bool|array $crop   Crop.
+	 * @param string     $mime   Target file type.
 	 * @return bool
 	 */
 	private static function resize_from( $source, $target, $width, $height, $crop, $mime ) {
@@ -471,7 +471,7 @@ final class PNCP_Watermark {
 			$editor->maybe_exif_rotate();
 		}
 		$current = $editor->get_size();
-		// Ίδιες διαστάσεις με την πηγή: το WordPress δεν κάνει resize, αποθηκεύεται όπως είναι.
+		// Same dimensions as the source: WordPress does not resize, it is saved as is.
 		if ( (int) $current['width'] !== $width || (int) $current['height'] !== $height ) {
 			$resized = $editor->resize( $width, $height, $crop );
 			if ( is_wp_error( $resized ) ) {
@@ -482,7 +482,7 @@ final class PNCP_Watermark {
 		if ( is_wp_error( $saved ) || empty( $saved['path'] ) ) {
 			return false;
 		}
-		// Αν ένα φίλτρο μορφής (image_editor_output_format) άλλαξε την κατάληξη, το αρχείο μένει στο όνομα που ξέρει το WordPress.
+		// If a format filter (image_editor_output_format) changed the extension, the file keeps the name WordPress knows.
 		if ( $saved['path'] !== $target && is_file( $saved['path'] ) ) {
 			copy( $saved['path'], $target );
 			wp_delete_file( $saved['path'] );
@@ -490,13 +490,13 @@ final class PNCP_Watermark {
 		return true;
 	}
 
-	/* ---------- Αντίγραφα των καθαρών αρχείων ---------- */
+	/* ---------- Backups of the clean files ---------- */
 
 	/**
-	 * Ο κρυφός φάκελος των αντιγράφων, μέσα στο uploads, με τυχαίο όνομα (δεν μαντεύεται).
-	 * Περιέχει .htaccess (Apache) και index.php· για Nginx δείτε τους κανόνες server.
+	 * The hidden backup folder, inside uploads, with a random name (not guessable).
+	 * Contains .htaccess (Apache) and index.php; for Nginx see the server rules.
 	 *
-	 * @return string Διαδρομή με / στο τέλος ('' αν δεν φτιάχτηκε).
+	 * @return string Path with a trailing / ('' if it could not be created).
 	 */
 	public static function backup_dir() {
 		$uploads = wp_get_upload_dir();
@@ -513,7 +513,7 @@ final class PNCP_Watermark {
 			return '';
 		}
 		if ( ! is_file( $dir . '.htaccess' ) ) {
-			// phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_file_put_contents -- Μικρό αρχείο ρυθμίσεων.
+			// phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_file_put_contents -- Small configuration file.
 			file_put_contents( $dir . '.htaccess', "Require all denied\n<IfModule !mod_authz_core.c>\nDeny from all\n</IfModule>\n" );
 			// phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_file_put_contents
 			file_put_contents( $dir . 'index.php', "<?php\n// Silence is golden.\n" );
@@ -522,9 +522,9 @@ final class PNCP_Watermark {
 	}
 
 	/**
-	 * Η διαδρομή σχετικά με το uploads.
+	 * The path relative to uploads.
 	 *
-	 * @param string $path Απόλυτη διαδρομή.
+	 * @param string $path Absolute path.
 	 * @return string
 	 */
 	private static function relative( $path ) {
@@ -533,9 +533,9 @@ final class PNCP_Watermark {
 	}
 
 	/**
-	 * Απόλυτη διαδρομή από σχετική με το uploads.
+	 * Absolute path from a path relative to uploads.
 	 *
-	 * @param string $rel Σχετική διαδρομή.
+	 * @param string $rel Relative path.
 	 * @return string
 	 */
 	private static function absolute( $rel ) {
@@ -543,9 +543,9 @@ final class PNCP_Watermark {
 	}
 
 	/**
-	 * Πού φυλάγεται το καθαρό αντίγραφο ενός αρχείου.
+	 * Where the clean backup of a file is stored.
 	 *
-	 * @param string $path Αρχείο μέσα στο uploads.
+	 * @param string $path File inside uploads.
 	 * @return string
 	 */
 	public static function backup_path( $path ) {
@@ -558,10 +558,10 @@ final class PNCP_Watermark {
 	}
 
 	/**
-	 * Φυλάει το καθαρό αρχείο. Καλείται μετά το restore_full, άρα το αρχείο στον δίσκο είναι καθαρό
-	 * και το αντίγραφο ανανεώνεται πάντα από αυτό.
+	 * Saves the clean file. Called after restore_full, so the file on disk is clean
+	 * and the backup is always refreshed from it.
 	 *
-	 * @param string $path Αρχείο.
+	 * @param string $path File.
 	 * @return bool
 	 */
 	private static function ensure_backup( $path ) {
@@ -573,7 +573,7 @@ final class PNCP_Watermark {
 	}
 
 	/**
-	 * Σβήνει τα αντίγραφα μιας εικόνας.
+	 * Deletes the backups of an image.
 	 *
 	 * @param int $attachment_id ID.
 	 */
@@ -591,7 +591,7 @@ final class PNCP_Watermark {
 	}
 
 	/**
-	 * Διαγραφή εικόνας: φεύγουν και τα αντίγραφα.
+	 * Image deletion: the backups are removed too.
 	 *
 	 * @param int $attachment_id ID.
 	 */
@@ -601,10 +601,10 @@ final class PNCP_Watermark {
 		}
 	}
 
-	/* ---------- Κατάσταση ---------- */
+	/* ---------- State ---------- */
 
 	/**
-	 * Η κατάσταση μιας εικόνας.
+	 * The state of an image.
 	 *
 	 * @param int $attachment_id ID.
 	 * @return array{full: array<string, string>, sizes: array<string, int>}
@@ -619,10 +619,10 @@ final class PNCP_Watermark {
 	}
 
 	/**
-	 * Αποθηκεύει την κατάσταση (σβήνει το meta αν η εικόνα είναι εντελώς καθαρή).
+	 * Saves the state (deletes the meta if the image is completely clean).
 	 *
 	 * @param int                  $attachment_id ID.
-	 * @param array<string, mixed> $state         Κατάσταση.
+	 * @param array<string, mixed> $state         State.
 	 */
 	private static function save_state( $attachment_id, $state ) {
 		if ( ! $state['full'] && ! in_array( 1, $state['sizes'], true ) ) {
@@ -632,15 +632,15 @@ final class PNCP_Watermark {
 		update_post_meta( (int) $attachment_id, self::META, $state );
 	}
 
-	/* ---------- Αυτόματη αφαίρεση σε λογότυπα και εικόνες προϊόντων ---------- */
+	/* ---------- Automatic removal on logos and product images ---------- */
 
 	/**
-	 * Όταν μια εικόνα γίνεται εικόνα προϊόντος, χάνει το υδατογράφημα (αν δεν επιτρέπεται στα προϊόντα).
+	 * When an image becomes a product image, it loses the watermark (unless allowed on products).
 	 *
 	 * @param int    $meta_id    ID meta.
-	 * @param int    $object_id  ID άρθρου.
-	 * @param string $meta_key   Κλειδί.
-	 * @param mixed  $meta_value Τιμή.
+	 * @param int    $object_id  Post ID.
+	 * @param string $meta_key   Key.
+	 * @param mixed  $meta_value Value.
 	 */
 	public static function on_post_meta( $meta_id, $object_id, $meta_key, $meta_value ) {
 		if ( ! in_array( $meta_key, array( '_thumbnail_id', '_product_image_gallery' ), true ) ) {
@@ -653,17 +653,17 @@ final class PNCP_Watermark {
 	}
 
 	/**
-	 * Όταν μια εικόνα γίνεται εικονίδιο site / λογότυπο / placeholder, χάνει το υδατογράφημα.
+	 * When an image becomes the site icon / logo / placeholder, it loses the watermark.
 	 *
 	 * @param string $option Option.
-	 * @param mixed  $old    Παλιά τιμή.
-	 * @param mixed  $value  Νέα τιμή.
+	 * @param mixed  $old    Old value.
+	 * @param mixed  $value  New value.
 	 */
 	public static function on_option( $option, $old, $value ) {
 		if ( in_array( $option, array( 'site_icon', 'site_logo', 'woocommerce_placeholder_image' ), true ) ) {
 			self::schedule_unmark( array( (int) $value ) );
 		} elseif ( PNCP_OPTION === $option && is_array( $value ) && ! empty( $value['watermark_image_id'] ) ) {
-			// Η εικόνα που ορίστηκε ως υδατογράφημα δεν πρέπει να έχει η ίδια υδατογράφημα.
+			// The image set as the watermark must not itself be watermarked.
 			self::schedule_unmark( array( (int) $value['watermark_image_id'] ) );
 		} elseif ( 0 === strpos( $option, 'theme_mods_' ) && is_array( $value ) && ! empty( $value['custom_logo'] ) ) {
 			self::schedule_unmark( array( (int) $value['custom_logo'] ) );
@@ -671,17 +671,17 @@ final class PNCP_Watermark {
 	}
 
 	/**
-	 * Το ίδιο για options που δημιουργούνται τώρα.
+	 * The same for options being created now.
 	 *
 	 * @param string $option Option.
-	 * @param mixed  $value  Τιμή.
+	 * @param mixed  $value  Value.
 	 */
 	public static function on_added_option( $option, $value ) {
 		self::on_option( $option, null, $value );
 	}
 
 	/**
-	 * Προγραμματίζει αφαίρεση για όσες εικόνες έχουν υδατογράφημα.
+	 * Schedules removal for the images that are watermarked.
 	 *
 	 * @param int[] $ids IDs.
 	 */
@@ -693,14 +693,14 @@ final class PNCP_Watermark {
 		}
 	}
 
-	/* ---------- Σχεδίαση ---------- */
+	/* ---------- Drawing ---------- */
 
 	/**
-	 * Υδατογράφημα σε ένα αρχείο.
+	 * Watermark a single file.
 	 *
-	 * @param string               $path Διαδρομή.
-	 * @param string               $mime Τύπος.
-	 * @param array<string, mixed> $s    Ρυθμίσεις.
+	 * @param string               $path Path.
+	 * @param string               $mime Type.
+	 * @param array<string, mixed> $s    Settings.
 	 * @return bool
 	 */
 	public static function apply_to_file( $path, $mime, $s ) {
@@ -763,10 +763,10 @@ final class PNCP_Watermark {
 	}
 
 	/**
-	 * Επαναλαμβανόμενο υδατογράφημα σε διαγώνιο μοτίβο σε όλη την εικόνα.
+	 * Repeated watermark in a diagonal pattern across the whole image.
 	 *
-	 * @param resource|\GdImage $image Εικόνα.
-	 * @param resource|\GdImage $layer Υδατογράφημα (ήδη με διαφάνεια).
+	 * @param resource|\GdImage $image Image.
+	 * @param resource|\GdImage $layer Watermark (already with transparency).
 	 */
 	private static function tile( $image, $layer ) {
 		$rotated = imagerotate( $layer, 30, imagecolorallocatealpha( $layer, 0, 0, 0, 127 ) );
@@ -791,10 +791,10 @@ final class PNCP_Watermark {
 	}
 
 	/**
-	 * Νέα διάφανη εικόνα.
+	 * New transparent image.
 	 *
-	 * @param int $w Πλάτος.
-	 * @param int $h Ύψος.
+	 * @param int $w Width.
+	 * @param int $h Height.
 	 * @return resource|\GdImage
 	 */
 	private static function transparent( $w, $h ) {
@@ -806,10 +806,10 @@ final class PNCP_Watermark {
 	}
 
 	/**
-	 * Ανοίγει εικόνα JPEG, PNG ή WebP.
+	 * Opens a JPEG, PNG or WebP image.
 	 *
-	 * @param string $path Διαδρομή.
-	 * @param string $mime Τύπος.
+	 * @param string $path Path.
+	 * @param string $mime Type.
 	 * @return resource|\GdImage|false
 	 */
 	private static function load( $path, $mime ) {
@@ -819,7 +819,7 @@ final class PNCP_Watermark {
 			case 'image/png':
 				$img = function_exists( 'imagecreatefrompng' ) ? @imagecreatefrompng( $path ) : false; // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged
 				if ( $img ) {
-					// PNG με παλέτα: σε truecolor, αλλιώς το διάφανο υδατογράφημα χαλάει.
+					// Palette PNG: convert to truecolor, otherwise the transparent watermark breaks.
 					if ( ! imageistruecolor( $img ) ) {
 						imagepalettetotruecolor( $img );
 					}
@@ -837,17 +837,17 @@ final class PNCP_Watermark {
 	}
 
 	/**
-	 * Αποθηκεύει στην ίδια μορφή.
+	 * Saves in the same format.
 	 *
-	 * @param resource|\GdImage $image Εικόνα.
-	 * @param string            $path  Διαδρομή.
-	 * @param string            $mime  Τύπος.
+	 * @param resource|\GdImage $image Image.
+	 * @param string            $path  Path.
+	 * @param string            $mime  Type.
 	 * @return bool
 	 */
 	private static function save( $image, $path, $mime ) {
 		switch ( $mime ) {
 			case 'image/jpeg':
-				// phpcs:ignore WordPress.NamingConventions.PrefixAllGlobals.NonPrefixedHooknameFound -- Φίλτρο του WordPress.
+				// phpcs:ignore WordPress.NamingConventions.PrefixAllGlobals.NonPrefixedHooknameFound -- WordPress core filter.
 				return imagejpeg( $image, $path, (int) apply_filters( 'jpeg_quality', 82, 'pncp_watermark' ) );
 			case 'image/png':
 				return imagepng( $image, $path, 6 );
@@ -858,9 +858,9 @@ final class PNCP_Watermark {
 	}
 
 	/**
-	 * Η εικόνα του υδατογραφήματος: το PNG της βιβλιοθήκης ή το domain του site ως κείμενο.
+	 * The watermark image: the library PNG or the site's domain as text.
 	 *
-	 * @param int $image_id ID εικόνας PNG (0 = κείμενο).
+	 * @param int $image_id PNG image ID (0 = text).
 	 * @return resource|\GdImage|false
 	 */
 	private static function mark( $image_id ) {
@@ -870,7 +870,7 @@ final class PNCP_Watermark {
 		self::$mark = false;
 		if ( $image_id > 0 ) {
 			$file = (string) get_attached_file( $image_id );
-			// Αν η εικόνα πήρε κάποτε υδατογράφημα, χρησιμοποιείται το καθαρό αντίγραφό της.
+			// If the image was ever watermarked, its clean backup is used.
 			$backup = '' === $file ? '' : self::backup_path( $file );
 			if ( '' !== $backup && is_file( $backup ) ) {
 				$file = $backup;
@@ -892,17 +892,17 @@ final class PNCP_Watermark {
 	}
 
 	/**
-	 * Ξεχνά το υδατογράφημα του αιτήματος (μετά από αλλαγή ρυθμίσεων ή σε tests).
+	 * Forgets the per-request watermark (after a settings change or in tests).
 	 */
 	public static function reset() {
 		self::$mark = null;
 	}
 
 	/**
-	 * Κείμενο λευκό με σκιά. Η ενσωματωμένη γραμματοσειρά της GD έχει μόνο λατινικούς χαρακτήρες,
-	 * γι' αυτό χρησιμοποιείται το domain. Για λογότυπο ή ελληνικά, ορίστε εικόνα PNG.
+	 * White text with a shadow. GD's built-in font has Latin characters only,
+	 * which is why the domain is used. For a logo or Greek text, set a PNG image.
 	 *
-	 * @param string $text Κείμενο.
+	 * @param string $text Text.
 	 * @return resource|\GdImage|false
 	 */
 	private static function text_mark( $text ) {
@@ -917,16 +917,16 @@ final class PNCP_Watermark {
 		imagestring( $small, $font, 1, 1, $text, imagecolorallocatealpha( $small, 0, 0, 0, 40 ) );
 		imagestring( $small, $font, 0, 0, $text, imagecolorallocatealpha( $small, 255, 255, 255, 0 ) );
 
-		// Μεγέθυνση x4, ώστε η κλιμάκωση να μη θολώνει πολύ.
+		// Scale up x4, so that scaling does not blur too much.
 		$big = self::transparent( $w * 4, $h * 4 );
 		imagecopyresized( $big, $small, 0, 0, 0, 0, $w * 4, $h * 4, $w, $h );
 		return $big;
 	}
 
 	/**
-	 * Μειώνει τη διαφάνεια κάθε pixel στο ποσοστό που ορίστηκε.
+	 * Reduces each pixel's opacity to the configured percentage.
 	 *
-	 * @param resource|\GdImage $layer   Επίπεδο.
+	 * @param resource|\GdImage $layer   Layer.
 	 * @param int               $opacity 10–100.
 	 */
 	private static function fade( $layer, $opacity ) {

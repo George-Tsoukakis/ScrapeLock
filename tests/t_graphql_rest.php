@@ -1,6 +1,6 @@
 <?php
 /**
- * Content Protect — πραγματικό WPGraphQL και REST API (κείμενο, bots, όρια, method override, πιστοποίηση).
+ * ScrapeLock — πραγματικό WPGraphQL και REST API (κείμενο, bots, όρια, method override, πιστοποίηση).
  *
  *   WP_DIR=/srv/wpt BASE=http://127.0.0.1:8080 php t_graphql_rest.php
  */
@@ -107,7 +107,7 @@ t( 'REST oEmbed για επισκέπτη: δουλεύει (200)', 200 === $cod
 /* ---------- Feeds RSS ---------- */
 settings( array( 'feed_mode' => 'excerpt' ) );
 list( $code, $raw ) = req( '/feed/', 'GET', null, browser( '203.0.113.213' ) );
-t( 'RSS: χωρίς το πλήρες κείμενο, με σύνδεσμο στο άρθρο', 200 === $code && false === strpos( $raw, 'ΜΥΣΤΙΚΟ_ΚΕΙΜΕΝΟ' ) && false !== strpos( $raw, 'Διαβάστε το πλήρες άρθρο' ), (string) $code );
+t( 'RSS: χωρίς το πλήρες κείμενο, με σύνδεσμο στο άρθρο', 200 === $code && false === strpos( $raw, 'ΜΥΣΤΙΚΟ_ΚΕΙΜΕΝΟ' ) && false !== strpos( $raw, 'Read the full article' ), (string) $code );
 list( $code, $raw ) = req( '/feed/atom/', 'GET', null, browser( '203.0.113.214' ) );
 t( 'Atom: χωρίς το πλήρες κείμενο', 200 === $code && false === strpos( $raw, 'ΜΥΣΤΙΚΟ_ΚΕΙΜΕΝΟ' ), (string) $code );
 
