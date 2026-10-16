@@ -376,6 +376,37 @@ final class PNCP_Ip {
 	}
 
 	/**
+	 * The key under which an IP is counted for limits and violations.
+	 *
+	 * IPv4: the address itself. IPv6: its network (/64 by default), because a single
+	 * connection usually gets a whole /64 and could change address on every request.
+	 * An IPv4-mapped IPv6 address (::ffff:203.0.113.5) counts as the IPv4 address.
+	 * Filter `pncp_ipv6_prefix` (48–128, 128 = per address).
+	 *
+	 * @param string $ip IP.
+	 * @return string e.g. 203.0.113.5 or 2001:db8:1:2::/64
+	 */
+	public static function limit_key( $ip ) {
+		$bin = @inet_pton( (string) $ip ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged -- Invalid value = false.
+		if ( false === $bin || 16 !== strlen( $bin ) ) {
+			return (string) $ip;
+		}
+		if ( 0 === strpos( $bin, str_repeat( "\0", 10 ) . "\xff\xff" ) ) {
+			return (string) inet_ntop( substr( $bin, 12 ) );
+		}
+		$prefix = max( 48, min( 128, (int) apply_filters( 'pncp_ipv6_prefix', 64 ) ) );
+		if ( 128 === $prefix ) {
+			return (string) inet_ntop( $bin );
+		}
+		$bytes = intdiv( $prefix, 8 );
+		$net   = substr( $bin, 0, $bytes );
+		if ( $prefix % 8 ) {
+			$net .= chr( ord( $bin[ $bytes ] ) & ( 0xFF << ( 8 - $prefix % 8 ) & 0xFF ) );
+		}
+		return inet_ntop( str_pad( $net, 16, "\0" ) ) . '/' . $prefix;
+	}
+
+	/**
 	 * Private, loopback or reserved IP?
 	 *
 	 * @param string $ip IP.

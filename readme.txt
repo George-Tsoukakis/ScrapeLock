@@ -31,7 +31,7 @@ Nothing can stop a determined human: whatever a visitor sees has already reached
 * Block a list of scrapers and AI training crawlers, with a separate option to allow AI search assistants.
 * Detect fake Googlebot, Bingbot, Applebot and Yandex with the official IP lists and reverse DNS. Real search engines always pass.
 * Invisible bot trap link, disallowed in robots.txt.
-* Per-IP limits for pages, searches and REST / GraphQL, with temporary blocks after repeated violations.
+* Per-IP limits for pages, searches and REST / GraphQL (IPv6: per /64 network), with temporary blocks after repeated violations.
 * Trusted Proxy support for Cloudflare and reverse proxies, so the real IP cannot be spoofed.
 * Ready-made presets (Balanced, Strict, Maximum) and an Emergency Mode for attacks in progress.
 * Block log with a 24-hour summary, top IPs and User-Agents, and automatic deletion after 1, 7 or 30 days.
