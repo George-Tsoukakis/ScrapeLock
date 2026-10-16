@@ -1,0 +1,36 @@
+<?xml version="1.0"?>
+<ruleset name="Content Protect">
+	<description>WordPress Coding Standards για το plugin Content Protect.</description>
+
+	<file>.</file>
+
+	<exclude-pattern>*/assets/*</exclude-pattern>
+	<exclude-pattern>*/tests/*</exclude-pattern>
+
+	<arg name="extensions" value="php"/>
+	<arg name="colors"/>
+	<arg value="sp"/>
+
+	<config name="minimum_wp_version" value="6.2"/>
+	<config name="testVersion" value="7.4-"/>
+
+	<rule ref="WordPress-Extra"/>
+	<rule ref="PHPCompatibilityWP"/>
+
+	<rule ref="WordPress.WP.I18n">
+		<properties>
+			<property name="text_domain" type="array">
+				<element value="content-protect"/>
+			</property>
+		</properties>
+	</rule>
+
+	<rule ref="WordPress.NamingConventions.PrefixAllGlobals">
+		<properties>
+			<property name="prefixes" type="array">
+				<element value="pncp"/>
+				<element value="PNCP"/>
+			</property>
+		</properties>
+	</rule>
+</ruleset>

@@ -4,3 +4,4 @@
 /README.md export-ignore
 /CHANGELOG.md export-ignore
 /readme.txt export-ignore
+/phpcs.xml.dist export-ignore

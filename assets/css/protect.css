@@ -23,6 +23,22 @@ body.pncp-protected img {
 	-webkit-user-drag: none;
 }
 
+/* Κινητό: όχι μενού «Αποθήκευση εικόνας» με παρατεταμένο πάτημα (iOS Safari) */
+body.pncp-no-img-save img {
+	-webkit-touch-callout: none;
+}
+
+/* Θόλωμα όσο ανοίγει εργαλείο στιγμιότυπου οθόνης (προαιρετικό) */
+html.pncp-blurred body {
+	filter: blur(14px);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+	html body.pncp-protected {
+		transition: filter 0.08s linear;
+	}
+}
+
 /* Μήνυμα: role="status", ευανάγνωστο (αντίθεση > 7:1), όχι στη μέση της οθόνης */
 .pncp-toast {
 	position: fixed;
