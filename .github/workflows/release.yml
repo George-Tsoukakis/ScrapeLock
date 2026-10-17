@@ -1,11 +1,14 @@
-# ScrapeLock: on a version tag (e.g. v2.2.2) builds scrapelock.zip and publishes it as a GitHub Release,
-# free to download. The zip has the scrapelock/ folder, ready for Plugins → Add New → Upload Plugin.
+# ScrapeLock: builds scrapelock.zip and publishes it as a GitHub Release, free to download. The zip has
+# the scrapelock/ folder, ready for Plugins → Add New → Upload Plugin.
+# Two ways to start it: push a version tag (e.g. v2.2.2), or Actions → Release → Run workflow on main,
+# which creates the tag v<Version> itself.
 name: Release
 
 on:
   push:
     tags:
       - 'v*'
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -18,15 +21,25 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Check that the tag matches the plugin version
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           version=$(sed -n 's/^ \* Version: *//p' scrapelock.php)
           stable=$(sed -n 's/^Stable tag: *//p' readme.txt)
           constant=$(sed -n "s/^define( 'PNCP_VERSION', '\(.*\)' );/\1/p" scrapelock.php)
-          if [ "v$version" != "$GITHUB_REF_NAME" ] || [ "$version" != "$stable" ] || [ "$version" != "$constant" ]; then
-            echo "::error::Tag $GITHUB_REF_NAME, Version $version, Stable tag $stable, PNCP_VERSION $constant: they must match"
+          if [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ]; then
+            if [ "$GITHUB_REF" != "refs/heads/main" ]; then echo "::error::Run the release from main"; exit 1; fi
+            tag="v$version"
+            if gh release view "$tag" > /dev/null 2>&1; then echo "::error::Release $tag already exists"; exit 1; fi
+          else
+            tag="$GITHUB_REF_NAME"
+          fi
+          if [ "v$version" != "$tag" ] || [ "$version" != "$stable" ] || [ "$version" != "$constant" ]; then
+            echo "::error::Tag $tag, Version $version, Stable tag $stable, PNCP_VERSION $constant: they must match"
             exit 1
           fi
           echo "VERSION=$version" >> "$GITHUB_ENV"
+          echo "TAG=$tag" >> "$GITHUB_ENV"
       - name: Syntax check (php -l)
         run: find . -name '*.php' -not -path './tests/*' -print0 | xargs -0 -n1 php -l > /dev/null
       - name: Build scrapelock.zip (only the plugin, see .gitattributes)
@@ -47,4 +60,6 @@ jobs:
       - name: Publish the release
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "$GITHUB_REF_NAME" scrapelock.zip "scrapelock-$VERSION.zip" --title "ScrapeLock $VERSION" --notes-file notes.md --verify-tag
+        run: |
+          # From a tag push the tag exists; from Run workflow the release creates it on this commit.
+          gh release create "$TAG" scrapelock.zip "scrapelock-$VERSION.zip" --title "ScrapeLock $VERSION" --notes-file notes.md --target "$GITHUB_SHA" --latest
