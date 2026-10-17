@@ -1,5 +1,10 @@
 # Αλλαγές
 
+## Χωρίς έκδοση ακόμη
+
+### Κατάλογος WordPress.org
+- **readme.txt:** `Contributors: codebunnyhub`, το πραγματικό username στο WordPress.org (ήταν `codebunnyhube`).
+
 ## 2.2.3 — 2026-10-17
 
 ### Κατάλογος WordPress.org
@@ -27,7 +32,7 @@
 - **Text domain:** `scrapelock` αντί για `content-protect`.
 - **Κείμενα στα αγγλικά:** όλα τα κείμενα του plugin, η περιγραφή και τα σχόλια των κανόνων Nginx / Apache είναι πλέον στα αγγλικά. Τα ελληνικά έρχονται από `languages/scrapelock-el.po` / `.mo` (314 κείμενα), μαζί με `scrapelock.pot` για άλλες γλώσσες. Στους κανόνες server το `ΤΟ_TOKEN_ΣΑΣ` έγινε `YOUR_TOKEN`. Η καρτέλα «Αρχείο» λέγεται στα αγγλικά «Log».
 - **WP Rocket:** η εξαίρεση του `protect.js` βγαίνει από τον πραγματικό φάκελο του plugin και όχι από σταθερό `content-protect/`.
-- **readme.txt** για τον κατάλογο του WordPress.org (Contributors: codebunnyhube), με την ενότητα «External services» για τις λίστες IP της Google, της Bing και του Cloudflare.
+- **readme.txt** για τον κατάλογο του WordPress.org (Contributors: codebunnyhub), με την ενότητα «External services» για τις λίστες IP της Google, της Bing και του Cloudflare.
 - **Plugin Check (κανόνες του WordPress.org):** 0 errors. Οι λίστες IP του Cloudflare έρχονται πλέον από το `api.cloudflare.com/client/v4/ips` (JSON), γιατί οι διευθύνσεις `www.cloudflare.com` έμοιαζαν με CDN. Στη λίστα hotlink το `googleusercontent.com` έγινε `googleusercontent.` (ίδιο ταίριασμα).
 - **Εξωτερικές κλήσεις (οδηγία 7):** οι λίστες Google / Bing κατεβαίνουν μόνο όταν η προστασία είναι ενεργή. Η λίστα του Cloudflare κατεβαίνει μόνο όταν η πραγματική IP διαβάζεται από `CF-Connecting-IP` ή `X-Forwarded-For` με εμπιστοσύνη στο Cloudflare. Το User-Agent των αιτημάτων δεν περιέχει πλέον τη διεύθυνση του site. Όλα περιγράφονται στο «External services» του `readme.txt`.
 - **Σχόλια κώδικα στα αγγλικά**, και των μεταφραστών (`translators:`). Ο κώδικας δεν άλλαξε.
