@@ -59,6 +59,7 @@ final class PNCP_Bots {
 		add_action( 'init', array( __CLASS__, 'trap_guard' ), 0 );
 		add_action( 'template_redirect', array( __CLASS__, 'page_guard' ), 0 );
 		add_filter( 'rest_pre_dispatch', array( __CLASS__, 'rest_guard' ), 0, 3 );
+		add_action( 'wp_enqueue_scripts', array( __CLASS__, 'trap_style' ) );
 		add_action( 'wp_footer', array( __CLASS__, 'trap_link' ), 99 );
 		add_filter( 'wp_speculation_rules_href_exclude_paths', array( __CLASS__, 'speculation_exclude' ) );
 		add_filter( 'robots_txt', array( __CLASS__, 'robots_txt' ), 99, 2 );
@@ -566,16 +567,37 @@ final class PNCP_Bots {
 	}
 
 	/**
-	 * Invisible link at the end of every page: humans do not see it, screen readers
+	 * Whether the trap link is printed on this page.
+	 *
+	 * @return bool
+	 */
+	private static function trap_shown() {
+		$s = PNCP_Options::get();
+		return ! empty( $s['enabled'] ) && ! empty( $s['trap_enabled'] ) && ! PNCP_Options::user_is_exempt( $s );
+	}
+
+	/**
+	 * Hides the trap link with CSS through wp_add_inline_style() (no extra file, no inline style attribute).
+	 */
+	public static function trap_style() {
+		if ( ! self::trap_shown() ) {
+			return;
+		}
+		wp_register_style( 'pncp-trap', false, array(), PNCP_VERSION );
+		wp_enqueue_style( 'pncp-trap' );
+		wp_add_inline_style( 'pncp-trap', '.pncp-hp{position:absolute!important;left:-10000px!important;top:auto!important;width:1px!important;height:1px!important;overflow:hidden!important}' );
+	}
+
+	/**
+	 * Invisible link at the end of every page: humans do not see it (CSS of trap_style()), screen readers
 	 * ignore it (aria-hidden, tabindex=-1), search engines ignore it (robots.txt, nofollow).
 	 */
 	public static function trap_link() {
-		$s = PNCP_Options::get();
-		if ( empty( $s['enabled'] ) || empty( $s['trap_enabled'] ) || PNCP_Options::user_is_exempt( $s ) ) {
+		if ( ! self::trap_shown() ) {
 			return;
 		}
 		printf(
-			'<a href="%s" rel="nofollow noindex" tabindex="-1" aria-hidden="true" class="pncp-hp" style="position:absolute!important;left:-10000px!important;top:auto!important;width:1px!important;height:1px!important;overflow:hidden!important">%s</a>',
+			'<a href="%s" rel="nofollow noindex" tabindex="-1" aria-hidden="true" class="pncp-hp">%s</a>',
 			esc_url( home_url( self::trap_path() ) ),
 			esc_html__( 'Archive', 'scrapelock' )
 		);
