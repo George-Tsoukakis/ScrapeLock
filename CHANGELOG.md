@@ -1,6 +1,6 @@
 # Αλλαγές
 
-## Χωρίς έκδοση ακόμη
+## 2.2.4 — 2026-10-17
 
 ### Κατάλογος WordPress.org
 - **readme.txt:** `Contributors: codebunnyhub`, το πραγματικό username στο WordPress.org (ήταν `codebunnyhube`).
