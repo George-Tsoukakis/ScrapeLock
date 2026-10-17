@@ -31,7 +31,7 @@ Free, GPL-2.0-or-later. Get **`scrapelock.zip`** from the latest [release](../..
 
 GitHub's **Download ZIP** also contains only the plugin (`.gitattributes` leaves the rest out), but its folder must be renamed to `scrapelock` before installing.
 
-A new release is published automatically when a version tag (e.g. `v2.2.2`) is pushed: `.github/workflows/release.yml` checks that the tag matches `Version`, `PNCP_VERSION` and `Stable tag`, builds the zip and attaches it.
+To publish a release: Actions → Release → Run workflow (on `main`), or push a version tag such as `v2.2.2`. `.github/workflows/release.yml` checks that the tag matches `Version`, `PNCP_VERSION` and `Stable tag`, builds the zip and attaches it.
 
 ## Build and checks
 
