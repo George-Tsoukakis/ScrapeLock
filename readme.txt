@@ -1,5 +1,5 @@
 === ScrapeLock – Content & AI Bot Protection ===
-Contributors: codebunnyhube
+Contributors: codebunnyhub
 Tags: anti-scraping, ai bots, bot protection, rate limit, content protection
 Requires at least: 6.2
 Tested up to: 7.1
