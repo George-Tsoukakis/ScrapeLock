@@ -66,6 +66,21 @@ function settings( $changes ) {
 	$s = array_merge( PNCP_Options::stored(), $changes );
 	update_option( PNCP_OPTION, $s );
 	PNCP_Options::flush();
+	// The limit counters reset every minute: a limit test must not straddle a minute boundary.
+	foreach ( array( 'rate_limit', 'rate_limit_search', 'rate_limit_rest' ) as $key ) {
+		if ( ! empty( $changes[ $key ] ) ) {
+			same_minute();
+			break;
+		}
+	}
+}
+
+/** Waits for the next minute if fewer than 15 seconds are left in the current one. */
+function same_minute() {
+	$left = 60 - time() % 60;
+	if ( $left < 15 ) {
+		sleep( $left + 1 );
+	}
 }
 
 function fresh() {
