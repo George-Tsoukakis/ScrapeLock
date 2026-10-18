@@ -53,6 +53,13 @@ final class PNCP_Bots {
 	private static $verify_inconclusive = false;
 
 	/**
+	 * Whether this response must not be cached anywhere (set by no_cache()).
+	 *
+	 * @var bool
+	 */
+	private static $uncacheable = false;
+
+	/**
 	 * Registers the hooks.
 	 */
 	public static function init() {
@@ -65,6 +72,21 @@ final class PNCP_Bots {
 		add_filter( 'robots_txt', array( __CLASS__, 'robots_txt' ), 99, 2 );
 		// Blocked User-Agents do not get pages from WP Rocket's cache, so that they reach this point.
 		add_filter( 'rocket_cache_reject_ua', array( __CLASS__, 'rocket_reject_ua' ) );
+		// Cloudflare plugin (APO): never cache at the edge what must not be cached.
+		add_filter( 'cloudflare_use_cache', array( __CLASS__, 'cloudflare_use_cache' ), 99 );
+		// Usernames are not given to visitors (?author=N, REST /wp/v2/users, users sitemap).
+		add_filter( 'wp_sitemaps_add_provider', array( __CLASS__, 'sitemaps_provider' ), 10, 2 );
+	}
+
+	/**
+	 * Tells the Cloudflare plugin not to cache this response at the edge (APO), when no_cache() was called:
+	 * 403 / 429, the trap and the private feeds. The plugin asks on init, after the feeds check.
+	 *
+	 * @param bool $use_cache Whether the Cloudflare plugin would cache the response.
+	 * @return bool
+	 */
+	public static function cloudflare_use_cache( $use_cache ) {
+		return self::$uncacheable ? false : $use_cache;
 	}
 
 	/**
@@ -92,6 +114,9 @@ final class PNCP_Bots {
 		if ( is_robots() || is_favicon() ) {
 			return;
 		}
+		if ( self::is_author_scan() ) {
+			self::not_found(); // Then checked like every page, also toward the "page not found" limit.
+		}
 		$verdict = self::check( is_search() ? 'search' : 'page' );
 		if ( $verdict ) {
 			self::die_html( $verdict['code'] );
@@ -109,6 +134,9 @@ final class PNCP_Bots {
 	public static function rest_guard( $result, $server, $request ) {
 		if ( null !== $result || ! $request instanceof WP_REST_Request ) {
 			return $result;
+		}
+		if ( self::blocks_user_enum() && preg_match( '#^/wp/v2/users(?:/|$)#i', (string) $request->get_route() ) ) {
+			return new WP_Error( 'rest_user_cannot_view', __( 'Sorry, you are not allowed to list users.', 'scrapelock' ), array( 'status' => rest_authorization_required_code() ) );
 		}
 		// Read-only: cart, checkout, forms and payment webhooks (POST) are not checked.
 		if ( ! in_array( strtoupper( (string) $request->get_method() ), array( 'GET', 'HEAD' ), true ) ) {
@@ -192,6 +220,14 @@ final class PNCP_Bots {
 			return null;
 		}
 
+		// The administrator's lists: always blocked, before everything else.
+		if ( PNCP_Ip::in_any( $ip, PNCP_Options::parse_list( $s['block_ips'] ) ) ) {
+			return self::verdict( 403, 'blocked_ip', $ip );
+		}
+		if ( self::referrer_blocked( $s ) ) {
+			return self::verdict( 403, 'blocked_ref', $ip );
+		}
+
 		// Verification first: a real search engine gets through even if someone managed to
 		// get its IP blocked.
 		$family = self::claimed_crawler( $ua );
@@ -235,6 +271,18 @@ final class PNCP_Bots {
 			'rest'    => array( 'rate_limit_rest', 'rate_rest' ),
 			'graphql' => array( 'rate_limit_rest', 'rate_rest' ),
 		);
+		// Separate limit for "page not found": guessing URLs (?p=1, 2, 3…, old product slugs) to find content.
+		// Missing images, CSS and the like do not count; neither do favicon, apple-touch-icon and /.well-known/.
+		if ( $count && 'page' === $context && (int) $s['rate_limit_404'] > 0 && is_404() && ! self::is_exempt_404() ) {
+			$limit   = (int) $s['rate_limit_404'];
+			$current = self::hit( $ip, 'rate_404' );
+			if ( $current > $limit ) {
+				if ( $current === $limit + 1 ) {
+					PNCP_Log::strike( $ip, 'rate_404' );
+				}
+				return self::verdict( 429, 'rate_404', $ip );
+			}
+		}
 		if ( $count && isset( $limits[ $context ] ) ) {
 			$limit = (int) $s[ $limits[ $context ][0] ];
 			if ( $limit > 0 ) {
@@ -250,6 +298,105 @@ final class PNCP_Bots {
 		}
 
 		return null;
+	}
+
+	/**
+	 * A 404 that does not count toward the "page not found" limit: static files (a missing image or
+	 * script is the site's problem, not the visitor's) and paths browsers ask for by themselves.
+	 * Filter `pncp_404_exempt`.
+	 *
+	 * @return bool
+	 */
+	public static function is_exempt_404() {
+		$uri  = isset( $_SERVER['REQUEST_URI'] ) ? sanitize_text_field( wp_unslash( $_SERVER['REQUEST_URI'] ) ) : '';
+		$path = strtolower( (string) wp_parse_url( $uri, PHP_URL_PATH ) );
+		$home = strtolower( rtrim( (string) wp_parse_url( home_url( '/' ), PHP_URL_PATH ), '/' ) );
+		if ( '' !== $home && 0 === strpos( $path, $home . '/' ) ) {
+			$path = substr( $path, strlen( $home ) );
+		}
+		$exempt = (bool) preg_match( '#\.(?:css|js|mjs|map|json|png|jpe?g|gif|webp|avif|svg|ico|bmp|tiff?|woff2?|ttf|otf|eot|mp4|webm|ogg|mp3|wav|pdf|zip|gz|txt|xml)$#', $path )
+			|| (bool) preg_match( '#^/(?:favicon|apple-touch-icon|android-chrome|mstile|browserconfig|site\.webmanifest|manifest\.json|ads\.txt|app-ads\.txt|\.well-known/)#', $path );
+		return (bool) apply_filters( 'pncp_404_exempt', $exempt, $path );
+	}
+
+	/**
+	 * Does the Referer belong to a domain in the "always blocked" list? An entry also covers its subdomains
+	 * (example.com: also www.example.com). Hotlinking scraper sites and their proxies send their own domain.
+	 *
+	 * @param array<string, mixed> $s Settings.
+	 * @return bool
+	 */
+	public static function referrer_blocked( $s ) {
+		$list = PNCP_Options::parse_list( $s['block_referrers'] );
+		if ( ! $list || empty( $_SERVER['HTTP_REFERER'] ) ) {
+			return false;
+		}
+		$host = strtolower( (string) wp_parse_url( sanitize_text_field( wp_unslash( $_SERVER['HTTP_REFERER'] ) ), PHP_URL_HOST ) );
+		if ( '' === $host ) {
+			return false;
+		}
+		foreach ( $list as $entry ) {
+			$entry = strtolower( trim( $entry ) );
+			if ( false !== strpos( $entry, '/' ) ) {
+				$entry = (string) wp_parse_url( false === strpos( $entry, '://' ) ? 'http://' . $entry : $entry, PHP_URL_HOST );
+			}
+			$entry = ltrim( $entry, '*.' );
+			if ( '' !== $entry && ( $host === $entry || substr( $host, -strlen( $entry ) - 1 ) === '.' . $entry ) ) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	/* ---------- Usernames ---------- */
+
+	/**
+	 * Is "Hide usernames" on for this request? Not for logged-in users, so the editor and wp-admin work.
+	 *
+	 * @return bool
+	 */
+	public static function blocks_user_enum() {
+		$s = PNCP_Options::get();
+		return ! empty( $s['enabled'] ) && ! empty( $s['block_user_enum'] ) && ! is_user_logged_in();
+	}
+
+	/**
+	 * ?author=1, 2, 3… redirects to /author/username/: the usual way to collect the site's usernames.
+	 *
+	 * @return bool
+	 */
+	public static function is_author_scan() {
+		// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only check of a public parameter.
+		$author = isset( $_GET['author'] ) ? sanitize_text_field( wp_unslash( $_GET['author'] ) ) : '';
+		return '' !== $author && ! is_admin() && preg_match( '/^-?\d/', $author ) && self::blocks_user_enum();
+	}
+
+	/**
+	 * Turns the request into a normal 404 page of the theme, without the redirect to /author/username/.
+	 */
+	private static function not_found() {
+		global $wp_query;
+		remove_action( 'template_redirect', 'redirect_canonical' );
+		if ( $wp_query instanceof WP_Query ) {
+			$wp_query->set_404();
+		}
+		status_header( 404 );
+		nocache_headers();
+	}
+
+	/**
+	 * Removes the users sitemap (wp-sitemap-users-1.xml) when usernames are hidden.
+	 *
+	 * @param WP_Sitemaps_Provider|false $provider Provider.
+	 * @param string                     $name     Provider name.
+	 * @return WP_Sitemaps_Provider|false
+	 */
+	public static function sitemaps_provider( $provider, $name ) {
+		if ( 'users' !== $name ) {
+			return $provider;
+		}
+		$s = PNCP_Options::get();
+		return ! empty( $s['enabled'] ) && ! empty( $s['block_user_enum'] ) ? false : $provider;
 	}
 
 	/**
@@ -550,14 +697,17 @@ final class PNCP_Bots {
 	 * The response is not stored in any cache: headers for browsers / CDN, DONOTCACHEPAGE for PHP
 	 * cache plugins (WP Super Cache, W3TC, WP Rocket, etc.) and X-LiteSpeed-Cache-Control for LiteSpeed.
 	 * Otherwise a 403 for a bot would later be served to visitors, or a token feed to everyone.
+	 * Cloudflare APO: cf-edge-cache: no-cache, which replaces the "cache" the Cloudflare plugin may have sent.
 	 */
 	public static function no_cache() {
+		self::$uncacheable = true;
 		if ( ! defined( 'DONOTCACHEPAGE' ) ) {
 			define( 'DONOTCACHEPAGE', true ); // phpcs:ignore WordPress.NamingConventions.PrefixAllGlobals.NonPrefixedConstantFound -- Cache plugins constant.
 		}
 		if ( ! headers_sent() ) {
 			nocache_headers();
 			header( 'X-LiteSpeed-Cache-Control: no-cache' );
+			header( 'cf-edge-cache: no-cache' );
 		}
 	}
 
@@ -775,6 +925,11 @@ final class PNCP_Bots {
 				$block .= 'User-agent: ' . $agent . "\n";
 			}
 			$block .= "Disallow: /\n";
+		}
+		if ( ! empty( $s['content_signal'] ) ) {
+			// contentsignals.org: what the content may be used for, after it is fetched. Does not block anything.
+			$block .= "\n# ScrapeLock: Content Signals (contentsignals.org). search = search index and links,\n# ai-input = use in AI answers, ai-train = training or fine-tuning AI models.\n";
+			$block .= "User-agent: *\nContent-Signal: search=yes, ai-input=" . ( empty( $s['allow_ai_search'] ) ? 'no' : 'yes' ) . ", ai-train=no\nAllow: /\n";
 		}
 		return '' === $block ? $output : rtrim( $output ) . "\n" . $block;
 	}

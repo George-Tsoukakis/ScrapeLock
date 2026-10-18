@@ -27,6 +27,7 @@ final class PNCP_Admin {
 		add_action( 'admin_post_pncp_profile', array( __CLASS__, 'handle_profile' ) );
 		add_action( 'admin_post_pncp_token', array( __CLASS__, 'handle_token' ) );
 		add_action( 'admin_post_pncp_log', array( __CLASS__, 'handle_log' ) );
+		add_action( 'admin_post_pncp_cf_ip', array( __CLASS__, 'handle_cf_ip' ) );
 		add_action( 'wp_ajax_pncp_wm_batch', array( __CLASS__, 'ajax_wm_batch' ) );
 		add_action( 'admin_notices', array( __CLASS__, 'upgrade_notices' ) );
 	}
@@ -531,6 +532,7 @@ final class PNCP_Admin {
 	 * @param array<string, mixed> $s Settings.
 	 */
 	private static function tab_bots( $s ) {
+		self::render_cloudflare_hint( $s );
 		self::form_open( 'bots' );
 		?>
 		<tr>
@@ -547,6 +549,17 @@ final class PNCP_Admin {
 				self::textarea( $s, 'allow_list', __( 'Always allowed User-Agents (link previews, price comparison platforms, monitoring):', 'scrapelock' ), __( 'They override the bot list and “Browsers only”. The page limit applies to them too, because the User-Agent is easy to spoof. To accept an entry only from specific IPs, add @ and the addresses, e.g. Skroutz@203.0.113.0/24.', 'scrapelock' ), 5 );
 				self::textarea( $s, 'allow_ips', __( 'Always allowed IPs / CIDR (office, ERP, monitoring), one per line:', 'scrapelock' ), __( 'They are never checked, never count towards limits and are never blocked.', 'scrapelock' ), 3 );
 				self::checkbox( $s, 'robots_ai_block', __( 'Declare AI crawlers in robots.txt (Disallow)', 'scrapelock' ), __( 'Applies to the virtual robots.txt of WordPress. If a physical robots.txt file exists, it takes precedence.', 'scrapelock' ) );
+				self::checkbox( $s, 'content_signal', __( 'Content Signals in robots.txt: search yes, AI training no', 'scrapelock' ), __( 'A line that says what the content may be used for (contentsignals.org): search=yes, ai-train=no, and ai-input according to “Allow AI search engines”. It does not block anything; it is a statement of your terms that well-behaved companies read.', 'scrapelock' ) );
+				?>
+			</td>
+		</tr>
+		<tr>
+			<th scope="row"><?php esc_html_e( 'Always blocked', 'scrapelock' ); ?></th>
+			<td>
+				<?php
+				self::textarea( $s, 'block_ips', __( 'IPs / CIDR that are always blocked (403), one per line:', 'scrapelock' ), __( 'For example a scraper\'s server or a hosting network you see in the log. The “Always allowed IPs” take precedence.', 'scrapelock' ), 3 );
+				self::textarea( $s, 'block_referrers', __( 'Referrer domains that are always blocked (403), one per line, e.g. copy-site.example:', 'scrapelock' ), __( 'Requests that come from links or embeds on these sites. Each entry also covers its subdomains.', 'scrapelock' ), 3 );
+				self::checkbox( $s, 'block_user_enum', __( 'Hide usernames from visitors', 'scrapelock' ), __( '?author=1, 2, 3… returns “page not found” instead of the redirect to /author/username/, the REST API does not list users, and the users sitemap is removed. Logged-in users see everything as before. Author archives with a link stay.', 'scrapelock' ) );
 				?>
 			</td>
 		</tr>
@@ -557,6 +570,7 @@ final class PNCP_Admin {
 				self::number( $s, 'rate_limit', __( 'Pages per minute (0 = off):', 'scrapelock' ), __( 'Starting value: 60. Above the limit it returns 429. Be careful with networks that share an IP (companies, mobile carriers) and with CDNs: set the “Real visitor IP” correctly first.', 'scrapelock' ) );
 				self::number( $s, 'rate_limit_search', __( 'Searches (?s=) per minute (0 = off):', 'scrapelock' ), __( 'Search is heavy for the server and a favourite of scrapers. Starting value: 20.', 'scrapelock' ) );
 				self::number( $s, 'rate_limit_rest', __( 'REST API (/wp-json/) and GraphQL requests per minute (0 = off):', 'scrapelock' ), __( 'Only read requests from visitors. Cart, checkout and forms (POST) do not count. Starting value: 60.', 'scrapelock' ) );
+				self::number( $s, 'rate_limit_404', __( '“Page not found” (404) per minute (0 = off):', 'scrapelock' ), __( 'Scrapers guess addresses (?p=1, 2, 3…, old product URLs) to find content. Missing images, CSS, scripts and the favicon do not count. Starting value: 30.', 'scrapelock' ) );
 				?>
 			</td>
 		</tr>
@@ -566,6 +580,10 @@ final class PNCP_Admin {
 				<?php
 				self::number( $s, 'ban_strikes', __( 'Block after this many violations within 10 minutes (0 = never):', 'scrapelock' ), __( 'Violation: every minute in which the IP exceeded a limit, and every fake Googlebot. The trap blocks immediately.', 'scrapelock' ) );
 				self::number( $s, 'ban_minutes', __( 'Block duration (minutes):', 'scrapelock' ) );
+				self::checkbox( $s, 'early_mode', __( 'Early check: block known bots before the theme and the other plugins load', 'scrapelock' ), __( 'Adds the small file wp-content/mu-plugins/scrapelock-early.php, which stops blocked IPs and referrers, temporarily blocked IPs and User-Agents in the bot list with less server load. Search engines, logged-in users, forms and feeds are left to the normal check. It is removed when you turn this off or deactivate the plugin.', 'scrapelock' ) );
+				if ( ! empty( $s['early_mode'] ) && ! PNCP_Early::installed() ) {
+					echo '<p class="pncp-inline-warning">' . esc_html__( 'The file could not be created (the server does not allow direct file writes to wp-content/mu-plugins). The normal check works as before.', 'scrapelock' ) . '</p>';
+				}
 				?>
 				<p><label for="pncp-log_retention"><?php esc_html_e( 'Keep the block log for:', 'scrapelock' ); ?></label>
 				<?php
@@ -628,6 +646,31 @@ final class PNCP_Admin {
 		<?php
 		self::form_close();
 		self::render_ip_lists();
+	}
+
+	/**
+	 * Cloudflare detected: if every visitor appears with a Cloudflare address, a warning with a one-click
+	 * fix (CF-Connecting-IP, trusted only from Cloudflare). Outside the settings form, which cannot hold a second form.
+	 *
+	 * @param array<string, mixed> $s Settings.
+	 */
+	private static function render_cloudflare_hint( $s ) {
+		$ip = PNCP_Ip::client_ip();
+		if ( PNCP_Ip::remote_is_cloudflare() && '' !== $ip && PNCP_Ip::in_any( $ip, PNCP_Ip::list_of( 'cloudflare' ) ) ) {
+			?>
+			<div class="notice notice-warning inline">
+				<p><strong><?php esc_html_e( 'The site is behind Cloudflare, but all visitors appear with a Cloudflare address.', 'scrapelock' ); ?></strong>
+				<?php esc_html_e( 'Then limits and blocks hit Cloudflare itself, i.e. many visitors at once. Use the CF-Connecting-IP header, trusted only when the request comes from Cloudflare.', 'scrapelock' ); ?></p>
+				<?php self::action_form_open( 'pncp_cf_ip', 'pncp_cf_ip' ); ?>
+					<p><?php submit_button( __( 'Use CF-Connecting-IP (recommended)', 'scrapelock' ), 'primary', 'submit', false ); ?></p>
+				</form>
+			</div>
+			<?php
+			return;
+		}
+		if ( 'remote_addr' === $s['ip_header'] && PNCP_Ip::behind_cloudflare() && ! PNCP_Ip::remote_is_cloudflare() ) {
+			echo '<div class="notice notice-info inline"><p>' . esc_html__( 'Cloudflare detected. REMOTE_ADDR already holds the visitor\'s IP (the Cloudflare plugin or the server replaced it), so “REMOTE_ADDR” is the right choice.', 'scrapelock' ) . '</p></div>';
+		}
 	}
 
 	/**
@@ -717,6 +760,7 @@ final class PNCP_Admin {
 						'disabled' => __( 'Disabled', 'scrapelock' ),
 					)
 				);
+				self::checkbox( $s, 'feed_source_link', __( 'Full text: add “The post … first appeared on …” at the end', 'scrapelock' ), __( 'Sites that republish the feed automatically then link back to the original article, so search engines see where it first appeared.', 'scrapelock' ) );
 				?>
 			</td>
 		</tr>
@@ -997,6 +1041,9 @@ final class PNCP_Admin {
 		<p class="description"><?php esc_html_e( 'The plugin does not keep a Cloudflare API token in the database: you add the rules yourself, where you already have access.', 'scrapelock' ); ?></p>
 
 		<h2><?php esc_html_e( 'Cloudflare', 'scrapelock' ); ?></h2>
+		<?php if ( PNCP_Ip::cloudflare_plugin_active() || PNCP_Ip::behind_cloudflare() ) : ?>
+			<div class="notice notice-info inline"><p><?php esc_html_e( 'APO and “Cache Everything”: pages served from the Cloudflare cache never reach the plugin, so the bot list, limits and the trap do not apply to them. The WAF rules below apply before the cache. ScrapeLock tells the Cloudflare plugin not to cache blocks and private feeds, and purges its cache when you save the settings.', 'scrapelock' ); ?></p></div>
+		<?php endif; ?>
 		<p class="description"><?php esc_html_e( 'Security → WAF → Custom rules → Create rule → Edit expression. Paste the expression and choose the action shown.', 'scrapelock' ); ?></p>
 		<?php foreach ( PNCP_Rules::cloudflare() as $key => $rule ) : ?>
 			<h3><?php echo esc_html( $rule['title'] ); ?> <span class="pncp-badge"><?php echo esc_html( $rule['action'] ); ?></span></h3>
@@ -1267,6 +1314,21 @@ final class PNCP_Admin {
 	}
 
 	/**
+	 * One click: real visitor IP from CF-Connecting-IP, trusted only from Cloudflare addresses.
+	 */
+	public static function handle_cf_ip() {
+		self::verify( 'pncp_cf_ip' );
+		$fix = array(
+			'ip_header'        => 'cf_connecting_ip',
+			'trust_cloudflare' => 1,
+		);
+		update_option( PNCP_OPTION, array_merge( PNCP_Options::stored(), $fix ) );
+		PNCP_Options::flush();
+		PNCP_Ip::reset();
+		self::back( 'bots', 'cf_ip' );
+	}
+
+	/**
 	 * Notices after actions, and upgrade notices from 1.4.
 	 */
 	public static function upgrade_notices() {
@@ -1285,6 +1347,7 @@ final class PNCP_Admin {
 			'unbanned'      => array( 'success', __( 'Block lifted.', 'scrapelock' ) ),
 			'cleared'       => array( 'success', __( 'Log deleted.', 'scrapelock' ) ),
 			'lists'         => array( 'success', __( 'IP lists refreshed.', 'scrapelock' ) ),
+			'cf_ip'         => array( 'success', __( 'The real visitor IP is now read from CF-Connecting-IP, only for requests from Cloudflare.', 'scrapelock' ) ),
 			'lists_partial' => array( 'warning', __( 'Some IP lists could not be downloaded; their previous version was kept. It will try again tomorrow.', 'scrapelock' ) ),
 			'error'         => array( 'error', __( 'The action was not completed.', 'scrapelock' ) ),
 		);

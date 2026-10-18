@@ -1283,3 +1283,113 @@ msgstr "Τα feeds αυτού του site είναι απενεργοποιημ�
 #: includes/class-pncp-feed.php:125
 msgid "Unavailable"
 msgstr "Μη διαθέσιμο"
+
+#: includes/class-pncp-admin.php:552
+msgid "Content Signals in robots.txt: search yes, AI training no"
+msgstr "Content Signals στο robots.txt: αναζήτηση ναι, εκπαίδευση AI όχι"
+
+#: includes/class-pncp-admin.php:552
+msgid "A line that says what the content may be used for (contentsignals.org): search=yes, ai-train=no, and ai-input according to “Allow AI search engines”. It does not block anything; it is a statement of your terms that well-behaved companies read."
+msgstr "Μια γραμμή που λέει για τι επιτρέπεται να χρησιμοποιηθεί το περιεχόμενο (contentsignals.org): search=yes, ai-train=no, και ai-input ανάλογα με το «Να επιτρέπονται οι μηχανές αναζήτησης AI». Δεν μπλοκάρει τίποτα· είναι δήλωση των όρων σας, που τη διαβάζουν οι εταιρείες που σέβονται τους κανόνες."
+
+#: includes/class-pncp-admin.php:557
+msgid "Always blocked"
+msgstr "Πάντα αποκλεισμένα"
+
+#: includes/class-pncp-admin.php:560
+msgid "IPs / CIDR that are always blocked (403), one per line:"
+msgstr "IP / CIDR που αποκλείονται πάντα (403), μία ανά γραμμή:"
+
+#: includes/class-pncp-admin.php:560
+msgid "For example a scraper's server or a hosting network you see in the log. The “Always allowed IPs” take precedence."
+msgstr "Για παράδειγμα ο server ενός scraper ή ένα δίκτυο hosting που βλέπετε στο αρχείο. Οι «Πάντα επιτρεπτές IP» έχουν προτεραιότητα."
+
+#: includes/class-pncp-admin.php:561
+msgid "Referrer domains that are always blocked (403), one per line, e.g. copy-site.example:"
+msgstr "Domains παραπομπής (Referer) που αποκλείονται πάντα (403), ένα ανά γραμμή, π.χ. copy-site.example:"
+
+#: includes/class-pncp-admin.php:561
+msgid "Requests that come from links or embeds on these sites. Each entry also covers its subdomains."
+msgstr "Αιτήματα που έρχονται από συνδέσμους ή ενσωματώσεις σε αυτά τα sites. Κάθε γραμμή καλύπτει και τα subdomains της."
+
+#: includes/class-pncp-admin.php:562
+msgid "Hide usernames from visitors"
+msgstr "Απόκρυψη των ονομάτων χρηστών από τους επισκέπτες"
+
+#: includes/class-pncp-admin.php:562
+msgid "?author=1, 2, 3… returns “page not found” instead of the redirect to /author/username/, the REST API does not list users, and the users sitemap is removed. Logged-in users see everything as before. Author archives with a link stay."
+msgstr "Το ?author=1, 2, 3… δίνει «η σελίδα δεν βρέθηκε» αντί για ανακατεύθυνση στο /author/όνομα-χρήστη/, το REST API δεν δίνει λίστα χρηστών και ο χάρτης χρηστών του sitemap αφαιρείται. Οι συνδεδεμένοι χρήστες βλέπουν τα πάντα όπως πριν. Οι σελίδες συγγραφέων με σύνδεσμο μένουν."
+
+#: includes/class-pncp-admin.php:573
+msgid "“Page not found” (404) per minute (0 = off):"
+msgstr "«Η σελίδα δεν βρέθηκε» (404) ανά λεπτό (0 = ανενεργό):"
+
+#: includes/class-pncp-admin.php:573
+msgid "Scrapers guess addresses (?p=1, 2, 3…, old product URLs) to find content. Missing images, CSS, scripts and the favicon do not count. Starting value: 30."
+msgstr "Οι scrapers μαντεύουν διευθύνσεις (?p=1, 2, 3…, παλιά URL προϊόντων) για να βρουν περιεχόμενο. Εικόνες, CSS, scripts και favicon που λείπουν δεν μετρούν. Αρχική τιμή: 30."
+
+#: includes/class-pncp-admin.php:583
+msgid "Early check: block known bots before the theme and the other plugins load"
+msgstr "Πρώιμος έλεγχος: μπλοκάρισμα γνωστών bots πριν φορτώσουν το θέμα και τα άλλα plugins"
+
+#: includes/class-pncp-admin.php:583
+msgid "Adds the small file wp-content/mu-plugins/scrapelock-early.php, which stops blocked IPs and referrers, temporarily blocked IPs and User-Agents in the bot list with less server load. Search engines, logged-in users, forms and feeds are left to the normal check. It is removed when you turn this off or deactivate the plugin."
+msgstr "Προσθέτει το μικρό αρχείο wp-content/mu-plugins/scrapelock-early.php, που σταματά αποκλεισμένες IP και referrers, προσωρινά αποκλεισμένες IP και User-Agents της λίστας bots με λιγότερο φόρτο για τον server. Μηχανές αναζήτησης, συνδεδεμένοι χρήστες, φόρμες και feeds μένουν στον κανονικό έλεγχο. Αφαιρείται όταν το απενεργοποιήσετε ή απενεργοποιήσετε το plugin."
+
+#: includes/class-pncp-admin.php:585
+msgid "The file could not be created (the server does not allow direct file writes to wp-content/mu-plugins). The normal check works as before."
+msgstr "Το αρχείο δεν δημιουργήθηκε (ο server δεν επιτρέπει απευθείας εγγραφή στο wp-content/mu-plugins). Ο κανονικός έλεγχος λειτουργεί όπως πριν."
+
+#: includes/class-pncp-admin.php:662
+msgid "The site is behind Cloudflare, but all visitors appear with a Cloudflare address."
+msgstr "Το site είναι πίσω από Cloudflare, αλλά όλοι οι επισκέπτες εμφανίζονται με διεύθυνση της Cloudflare."
+
+#: includes/class-pncp-admin.php:663
+msgid "Then limits and blocks hit Cloudflare itself, i.e. many visitors at once. Use the CF-Connecting-IP header, trusted only when the request comes from Cloudflare."
+msgstr "Τότε τα όρια και οι αποκλεισμοί πέφτουν στην ίδια την Cloudflare, δηλαδή σε πολλούς επισκέπτες μαζί. Χρησιμοποιήστε το header CF-Connecting-IP, με εμπιστοσύνη μόνο όταν το αίτημα έρχεται από την Cloudflare."
+
+#: includes/class-pncp-admin.php:665
+msgid "Use CF-Connecting-IP (recommended)"
+msgstr "Χρήση CF-Connecting-IP (προτείνεται)"
+
+#: includes/class-pncp-admin.php:672
+msgid "Cloudflare detected. REMOTE_ADDR already holds the visitor's IP (the Cloudflare plugin or the server replaced it), so “REMOTE_ADDR” is the right choice."
+msgstr "Εντοπίστηκε Cloudflare. Το REMOTE_ADDR έχει ήδη την IP του επισκέπτη (την αντικατέστησε το plugin της Cloudflare ή ο server), οπότε το «REMOTE_ADDR» είναι η σωστή επιλογή."
+
+#: includes/class-pncp-admin.php:763
+msgid "Full text: add “The post … first appeared on …” at the end"
+msgstr "Πλήρες κείμενο: προσθήκη «Το άρθρο … δημοσιεύτηκε πρώτα στο …» στο τέλος"
+
+#: includes/class-pncp-admin.php:763
+msgid "Sites that republish the feed automatically then link back to the original article, so search engines see where it first appeared."
+msgstr "Τα sites που αναδημοσιεύουν αυτόματα το feed δίνουν τότε σύνδεσμο προς το πρωτότυπο άρθρο, οπότε οι μηχανές αναζήτησης βλέπουν πού δημοσιεύτηκε πρώτα."
+
+#: includes/class-pncp-admin.php:1045
+msgid "APO and “Cache Everything”: pages served from the Cloudflare cache never reach the plugin, so the bot list, limits and the trap do not apply to them. The WAF rules below apply before the cache. ScrapeLock tells the Cloudflare plugin not to cache blocks and private feeds, and purges its cache when you save the settings."
+msgstr "APO και «Cache Everything»: οι σελίδες που σερβίρονται από την cache της Cloudflare δεν φτάνουν ποτέ στο plugin, οπότε δεν ισχύουν γι' αυτές η λίστα bots, τα όρια και η παγίδα. Οι κανόνες WAF παρακάτω ισχύουν πριν από την cache. Το ScrapeLock λέει στο plugin της Cloudflare να μην κρατά στην cache αποκλεισμούς και ιδιωτικά feeds, και καθαρίζει την cache του όταν αποθηκεύετε τις ρυθμίσεις."
+
+#: includes/class-pncp-admin.php:1350
+msgid "The real visitor IP is now read from CF-Connecting-IP, only for requests from Cloudflare."
+msgstr "Η πραγματική IP του επισκέπτη διαβάζεται τώρα από το CF-Connecting-IP, μόνο για αιτήματα από την Cloudflare."
+
+#: includes/class-pncp-bots.php:139
+msgid "Sorry, you are not allowed to list users."
+msgstr "Δεν επιτρέπεται η προβολή της λίστας χρηστών."
+
+#. translators: 1: article link, 2: site link
+#: includes/class-pncp-feed.php:106
+#, php-format
+msgid "The post %1$s first appeared on %2$s."
+msgstr "Το άρθρο %1$s δημοσιεύτηκε πρώτα στο %2$s."
+
+#: includes/class-pncp-log.php:143
+msgid "“Page not found” limit"
+msgstr "Όριο «η σελίδα δεν βρέθηκε»"
+
+#: includes/class-pncp-log.php:144
+msgid "IP in the always-blocked list"
+msgstr "IP στη λίστα «πάντα αποκλεισμένες»"
+
+#: includes/class-pncp-log.php:145
+msgid "Referrer in the always-blocked list"
+msgstr "Referrer στη λίστα «πάντα αποκλεισμένοι»"
