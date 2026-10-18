@@ -552,10 +552,6 @@ msgstr "Αόρατος σύνδεσμος σε κάθε σελίδα, απαγο
 msgid "User-Agents to block (one per line, matches anywhere in the User-Agent, case-insensitive):"
 msgstr "Λίστα User-Agents που μπλοκάρονται (ένα ανά γραμμή, ταιριάζει οπουδήποτε στο User-Agent, χωρίς διάκριση πεζών/κεφαλαίων):"
 
-#: includes/class-pncp-admin.php:545
-msgid "It contains two AI categories: training crawlers (GPTBot, ClaudeBot, CCBot, Google-Extended etc.) and AI search / assistants (OAI-SearchBot, ChatGPT-User, Claude-SearchBot, PerplexityBot etc.). You can allow the second one with the option below."
-msgstr "Περιέχει δύο κατηγορίες AI: crawlers εκπαίδευσης (GPTBot, ClaudeBot, CCBot, Google-Extended κ.ά.) και AI αναζήτηση / βοηθούς (OAI-SearchBot, ChatGPT-User, Claude-SearchBot, PerplexityBot κ.ά.). Τη δεύτερη μπορείτε να την επιτρέψετε με την επιλογή από κάτω."
-
 #: includes/class-pncp-admin.php:546
 msgid "Allow AI search engines and assistants (not training crawlers)"
 msgstr "Επιτρέπονται οι AI μηχανές αναζήτησης και βοηθοί (όχι οι crawlers εκπαίδευσης)"
@@ -1416,10 +1412,6 @@ msgstr "Ψεύτικο AI bot αναζήτησης"
 msgid "Block headless and fake browsers"
 msgstr "Μπλοκάρισμα headless και ψεύτικων browsers"
 
-#: includes/class-pncp-admin.php:546
-msgid "Chrome without a window (Puppeteer, Playwright, Selenium) gives itself away in the headers it sends, even with a normal User-Agent. On HTTPS, scripts that only copy the User-Agent of Chrome, Edge or Firefox do not send the Sec-Fetch headers every modern browser sends. In-app browsers (Android WebView) are not checked."
-msgstr "Ο Chrome χωρίς παράθυρο (Puppeteer, Playwright, Selenium) προδίδεται από τα headers που στέλνει, ακόμη και με κανονικό User-Agent. Σε HTTPS, τα scripts που αντιγράφουν μόνο το User-Agent του Chrome, του Edge ή του Firefox δεν στέλνουν τα headers Sec-Fetch που στέλνει κάθε σύγχρονος browser. Οι browsers μέσα σε εφαρμογές (Android WebView) δεν ελέγχονται."
-
 #: includes/class-pncp-admin.php:708
 msgid "not used with the current “Real visitor IP” setting (the built-in list is enough to detect Cloudflare)"
 msgstr "δεν χρησιμοποιείται με την τρέχουσα ρύθμιση «Πραγματική IP επισκέπτη» (η ενσωματωμένη λίστα αρκεί για τον εντοπισμό της Cloudflare)"
@@ -1431,3 +1423,228 @@ msgstr "Headless browser"
 #: includes/class-pncp-log.php:142
 msgid "Fake browser"
 msgstr "Ψεύτικος browser"
+
+#. translators: %s: number of entries
+#: includes/class-pncp-admin.php:253
+#, php-format
+msgid "%s entry"
+msgid_plural "%s entries"
+msgstr[0] "%s γραμμή"
+msgstr[1] "%s γραμμές"
+
+#: includes/class-pncp-admin.php:295
+msgid "Sections of this tab"
+msgstr "Ενότητες αυτής της καρτέλας"
+
+#: includes/class-pncp-admin.php:310
+msgid "Protection"
+msgstr "Προστασία"
+
+#: includes/class-pncp-admin.php:311
+msgid "Early check"
+msgstr "Πρώιμος έλεγχος"
+
+#: includes/class-pncp-admin.php:312
+#: includes/class-pncp-admin.php:653
+#: includes/class-pncp-admin.php:703
+msgid "Human check"
+msgstr "Επαλήθευση ανθρώπου"
+
+#: includes/class-pncp-admin.php:313
+msgid "AI bots verified"
+msgstr "Επαλήθευση AI bots"
+
+#: includes/class-pncp-admin.php:314
+msgid "Headless browsers"
+msgstr "Headless browsers"
+
+#: includes/class-pncp-admin.php:315
+#: includes/class-pncp-admin.php:654
+#: includes/class-pncp-admin.php:709
+msgid "Countries"
+msgstr "Χώρες"
+
+#: includes/class-pncp-admin.php:317
+msgid "Protection status"
+msgstr "Κατάσταση προστασίας"
+
+#: includes/class-pncp-admin.php:325
+msgid "On:"
+msgstr "Ενεργό:"
+
+#: includes/class-pncp-admin.php:325
+msgid "Off:"
+msgstr "Ανενεργό:"
+
+#: includes/class-pncp-admin.php:341
+msgid "Country of this request:"
+msgstr "Χώρα αυτού του αιτήματος:"
+
+#. translators: 1: number of IPv4 ranges, 2: number of IPv6 ranges, 3: month of the data, 4: date
+#: includes/class-pncp-admin.php:346
+#, php-format
+msgid "Country database: %1$s IPv4 and %2$s IPv6 ranges, data of %3$s, downloaded %4$s."
+msgstr "Βάση χωρών: %1$s διαστήματα IPv4 και %2$s IPv6, δεδομένα %3$s, λήψη %4$s."
+
+#: includes/class-pncp-admin.php:354
+msgid "Country database: not downloaded yet. Use “Download now” at the bottom of this tab, or wait for the daily task."
+msgstr "Βάση χωρών: δεν έχει κατέβει ακόμη. Πατήστε «Λήψη τώρα» στο κάτω μέρος της καρτέλας ή περιμένετε την ημερήσια εργασία."
+
+#: includes/class-pncp-admin.php:356
+msgid "Country database: off. Without Cloudflare or the database the country is unknown and the country lists do nothing."
+msgstr "Βάση χωρών: ανενεργή. Χωρίς Cloudflare ή τη βάση η χώρα είναι άγνωστη και οι λίστες χωρών δεν κάνουν τίποτα."
+
+#. translators: %s: link to DB-IP
+#: includes/class-pncp-admin.php:361
+#, php-format
+msgid "IP geolocation by %s (CC BY 4.0)."
+msgstr "IP geolocation από την %s (CC BY 4.0)."
+
+#: includes/class-pncp-admin.php:648
+msgid "Bots"
+msgstr "Bots"
+
+#: includes/class-pncp-admin.php:649
+msgid "AI"
+msgstr "AI"
+
+#: includes/class-pncp-admin.php:650
+#: includes/class-pncp-admin.php:681
+msgid "Always allowed"
+msgstr "Πάντα επιτρεπτά"
+
+#: includes/class-pncp-admin.php:652
+msgid "Limits"
+msgstr "Όρια"
+
+#: includes/class-pncp-admin.php:657
+msgid "IP lists"
+msgstr "Λίστες IP"
+
+#: includes/class-pncp-admin.php:662
+msgid "Scrapers and bots"
+msgstr "Scrapers και bots"
+
+#: includes/class-pncp-admin.php:668
+msgid "Blocks Chrome running without a window when it says so in its headers (“HeadlessChrome”), and, on HTTPS, scripts that copy the User-Agent of Chrome, Edge or Firefox without the Sec-Fetch headers every modern browser sends. It catches common tools and cheap scrapers, not every automated browser: one that is carefully disguised (e.g. Puppeteer with “stealth”, or Selenium with a visible Chrome) sends the same headers as a person. The page limits, the human check and the bot trap still apply to those. In-app browsers (Android WebView) are not checked."
+msgstr "Μπλοκάρει τον Chrome που τρέχει χωρίς παράθυρο όταν το δηλώνει στα headers του («HeadlessChrome»), και, σε HTTPS, τα scripts που αντιγράφουν το User-Agent του Chrome, του Edge ή του Firefox χωρίς τα headers Sec-Fetch που στέλνει κάθε σύγχρονος browser. Πιάνει συνηθισμένα εργαλεία και φτηνούς scrapers, όχι κάθε αυτοματοποιημένο browser: ένας προσεκτικά κρυμμένος (π.χ. Puppeteer με «stealth» ή Selenium με ορατό Chrome) στέλνει τα ίδια headers με έναν άνθρωπο. Σε αυτούς ισχύουν τα όρια σελίδων, η επαλήθευση ανθρώπου και η παγίδα. Οι browsers μέσα σε εφαρμογές (Android WebView) δεν ελέγχονται."
+
+#: includes/class-pncp-admin.php:670
+msgid "It contains two AI categories: training crawlers (GPTBot, ClaudeBot, CCBot, Google-Extended etc.) and AI search / assistants (OAI-SearchBot, ChatGPT-User, Claude-SearchBot, PerplexityBot etc.). You can allow the second one in the next section."
+msgstr "Περιέχει δύο κατηγορίες AI: crawlers εκπαίδευσης (GPTBot, ClaudeBot, CCBot, Google-Extended κ.ά.) και AI αναζήτηση / βοηθούς (OAI-SearchBot, ChatGPT-User, Claude-SearchBot, PerplexityBot κ.ά.). Τη δεύτερη μπορείτε να την επιτρέψετε στην επόμενη ενότητα."
+
+#: includes/class-pncp-admin.php:673
+msgid "AI search and training"
+msgstr "AI αναζήτηση και εκπαίδευση"
+
+#: includes/class-pncp-admin.php:700
+msgid "Sitemaps per minute (0 = off):"
+msgstr "Sitemap ανά λεπτό (0 = ανενεργό):"
+
+#: includes/class-pncp-admin.php:700
+msgid "Scrapers read the sitemap first to find every page. Covers the sitemaps of WordPress, Rank Math, Yoast and similar plugins. Google, Bing and the other verified search engines are never limited. Starting value: 5."
+msgstr "Οι scrapers διαβάζουν πρώτα το sitemap για να βρουν όλες τις σελίδες. Καλύπτει τα sitemap του WordPress, του Rank Math, του Yoast και παρόμοιων plugins. Το Google, το Bing και οι άλλες επαληθευμένες μηχανές αναζήτησης δεν περιορίζονται ποτέ. Αρχική τιμή: 5."
+
+#: includes/class-pncp-admin.php:705
+msgid "Stricter page limit for visitors who have not shown they are people"
+msgstr "Αυστηρότερο όριο σελίδων για επισκέπτες που δεν έχουν δείξει ότι είναι άνθρωποι"
+
+#: includes/class-pncp-admin.php:705
+msgid "A small script waits for the visitor's first real interaction (scroll, tap, key or mouse movement), solves a light challenge in the background and receives a cookie for 7 days. Nobody sees a captcha or a window. Visitors without the cookie (scripts, and people with JavaScript turned off) get the limit below instead of the normal page limit. Search engines and verified AI search bots are not affected. It works with page caches such as WP Rocket. A determined scraper can repeat the steps, but each of its IPs has to do the work."
+msgstr "Ένα μικρό script περιμένει την πρώτη πραγματική αλληλεπίδραση του επισκέπτη (scroll, άγγιγμα, πλήκτρο ή κίνηση ποντικιού), λύνει στο παρασκήνιο ένα ελαφρύ «πρόβλημα» και παίρνει cookie για 7 ημέρες. Κανείς δεν βλέπει captcha ή παράθυρο. Όσοι δεν έχουν το cookie (scripts, και άνθρωποι με απενεργοποιημένη JavaScript) παίρνουν το παρακάτω όριο αντί για το κανονικό όριο σελίδων. Οι μηχανές αναζήτησης και τα επαληθευμένα AI bots αναζήτησης δεν επηρεάζονται. Δουλεύει με page cache όπως το WP Rocket. Ένας αποφασισμένος scraper μπορεί να επαναλάβει τα βήματα, αλλά κάθε IP του πρέπει να κάνει τη δουλειά."
+
+#: includes/class-pncp-admin.php:706
+msgid "Pages per minute without the cookie (0 = off):"
+msgstr "Σελίδες ανά λεπτό χωρίς το cookie (0 = ανενεργό):"
+
+#: includes/class-pncp-admin.php:706
+msgid "Starting value: 20. A person reads far fewer pages per minute, and gets the cookie with the first scroll or tap."
+msgstr "Αρχική τιμή: 20. Ένας άνθρωπος διαβάζει πολύ λιγότερες σελίδες το λεπτό, και παίρνει το cookie με το πρώτο scroll ή άγγιγμα."
+
+#: includes/class-pncp-admin.php:711
+msgid "Download the free country database (DB-IP Lite, once a month)"
+msgstr "Λήψη της δωρεάν βάσης χωρών (DB-IP Lite, μία φορά τον μήνα)"
+
+#: includes/class-pncp-admin.php:711
+msgid "Needed when the site is not behind Cloudflare. About 5 MB to download, stored as two small files in uploads/scrapelock-geo. Behind Cloudflare the country that Cloudflare sends is used, and the database is not needed."
+msgstr "Χρειάζεται όταν το site δεν είναι πίσω από Cloudflare. Περίπου 5 MB λήψη, αποθηκεύεται ως δύο μικρά αρχεία στο uploads/scrapelock-geo. Πίσω από Cloudflare χρησιμοποιείται η χώρα που στέλνει η Cloudflare και η βάση δεν χρειάζεται."
+
+#: includes/class-pncp-admin.php:712
+msgid "Blocked countries (403), two-letter codes separated by commas, e.g. CN, RU:"
+msgstr "Αποκλεισμένες χώρες (403), κωδικοί δύο γραμμάτων χωρισμένοι με κόμμα, π.χ. CN, RU:"
+
+#: includes/class-pncp-admin.php:712
+msgid "Search engines, verified AI search bots and the “Always allowed” list are never blocked by country. People who travel or use a VPN appear with the country of their connection."
+msgstr "Οι μηχανές αναζήτησης, τα επαληθευμένα AI bots αναζήτησης και η λίστα «Πάντα επιτρεπτά» δεν μπλοκάρονται ποτέ λόγω χώρας. Όσοι ταξιδεύουν ή χρησιμοποιούν VPN εμφανίζονται με τη χώρα της σύνδεσής τους."
+
+#: includes/class-pncp-admin.php:713
+msgid "Countries with a stricter page limit, e.g. those your customers do not come from:"
+msgstr "Χώρες με αυστηρότερο όριο σελίδων, π.χ. αυτές από όπου δεν έρχονται οι πελάτες σας:"
+
+#: includes/class-pncp-admin.php:714
+msgid "Pages per minute for these countries (0 = off):"
+msgstr "Σελίδες ανά λεπτό για αυτές τις χώρες (0 = ανενεργό):"
+
+#: includes/class-pncp-admin.php:714
+msgid "Starting value: 10."
+msgstr "Αρχική τιμή: 10."
+
+#: includes/class-pncp-admin.php:874
+msgid "Country database"
+msgstr "Βάση χωρών"
+
+#: includes/class-pncp-admin.php:877
+msgid "Downloads DB-IP Lite now (about 5 MB, it may take up to a minute). It is also refreshed automatically once a month."
+msgstr "Κατεβάζει τώρα τη DB-IP Lite (περίπου 5 MB, μπορεί να πάρει έως ένα λεπτό). Ανανεώνεται και αυτόματα μία φορά τον μήνα."
+
+#: includes/class-pncp-admin.php:878
+msgid "Download now"
+msgstr "Λήψη τώρα"
+
+#: includes/class-pncp-admin.php:1278
+msgid "What they try to copy"
+msgstr "Τι προσπαθούν να αντιγράψουν"
+
+#: includes/class-pncp-admin.php:1279
+msgid "The blocked requests grouped by page. “Pages” are your content: what scrapers were after. “Files” are scanners looking for passwords, backups or admin areas: no content leaks there, it only shows they tried."
+msgstr "Τα αιτήματα που μπλοκαρίστηκαν, ανά σελίδα. Οι «Σελίδες» είναι το περιεχόμενό σας: αυτό που ήθελαν οι scrapers. Τα «Αρχεία» είναι scanners που ψάχνουν κωδικούς, backups ή περιοχές διαχείρισης: εκεί δεν διαρρέει περιεχόμενο, απλώς φαίνεται ότι προσπάθησαν."
+
+#: includes/class-pncp-admin.php:1283
+msgid "Last 7 days"
+msgstr "Τελευταίες 7 ημέρες"
+
+#: includes/class-pncp-admin.php:1295
+msgid "Files and admin paths"
+msgstr "Αρχεία και διαδρομές διαχείρισης"
+
+#: includes/class-pncp-admin.php:1301
+msgid "The log is kept for 1 day, so the 7-day view shows only the last day. Change “Keep the block log for” in the “Bots and limits” tab to see more."
+msgstr "Το αρχείο κρατιέται 1 ημέρα, οπότε η προβολή 7 ημερών δείχνει μόνο την τελευταία ημέρα. Αλλάξτε το «Διατήρηση αρχείου αποκλεισμών» στην καρτέλα «Bots και όρια» για να βλέπετε περισσότερα."
+
+#: includes/class-pncp-admin.php:1401
+msgid "IPs"
+msgstr "IP"
+
+#: includes/class-pncp-admin.php:1573
+msgid "Country database downloaded."
+msgstr "Η βάση χωρών κατέβηκε."
+
+#: includes/class-pncp-admin.php:1574
+msgid "The country database could not be downloaded or read; the previous one (if any) was kept. It will try again tomorrow."
+msgstr "Η βάση χωρών δεν κατέβηκε ή δεν διαβάστηκε· κρατήθηκε η προηγούμενη (αν υπάρχει). Θα ξαναδοκιμάσει αύριο."
+
+#: includes/class-pncp-log.php:146
+msgid "Sitemap limit"
+msgstr "Όριο sitemap"
+
+#: includes/class-pncp-log.php:147
+msgid "Page limit for unverified visitors"
+msgstr "Όριο σελίδων για μη επαληθευμένους επισκέπτες"
+
+#: includes/class-pncp-log.php:148
+msgid "Blocked country"
+msgstr "Αποκλεισμένη χώρα"
+
+#: includes/class-pncp-log.php:149
+msgid "Page limit for the stricter countries"
+msgstr "Όριο σελίδων για τις χώρες με αυστηρότερο όριο"

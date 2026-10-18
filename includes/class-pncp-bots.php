@@ -60,10 +60,18 @@ final class PNCP_Bots {
 	private static $uncacheable = false;
 
 	/**
+	 * Whether this request is a sitemap that sitemap_guard() already checked.
+	 *
+	 * @var bool
+	 */
+	private static $sitemap = false;
+
+	/**
 	 * Registers the hooks.
 	 */
 	public static function init() {
 		add_action( 'init', array( __CLASS__, 'trap_guard' ), 0 );
+		add_action( 'init', array( __CLASS__, 'sitemap_guard' ), 1 );
 		add_action( 'template_redirect', array( __CLASS__, 'page_guard' ), 0 );
 		add_filter( 'rest_pre_dispatch', array( __CLASS__, 'rest_guard' ), 0, 3 );
 		add_action( 'wp_enqueue_scripts', array( __CLASS__, 'trap_style' ) );
@@ -111,7 +119,7 @@ final class PNCP_Bots {
 	 * Page views and search.
 	 */
 	public static function page_guard() {
-		if ( is_robots() || is_favicon() ) {
+		if ( is_robots() || is_favicon() || self::$sitemap ) {
 			return;
 		}
 		if ( self::is_author_scan() ) {
@@ -121,6 +129,39 @@ final class PNCP_Bots {
 		if ( $verdict ) {
 			self::die_html( $verdict['code'] );
 		}
+	}
+
+	/**
+	 * Sitemaps (WordPress, Rank Math, Yoast, SEOPress…): scrapers read them first to find every page.
+	 * Checked on init, because some SEO plugins print the sitemap before template_redirect. Only with a sitemap
+	 * limit: with 0 (off) sitemaps are checked as before (the WordPress ones as pages, on template_redirect).
+	 */
+	public static function sitemap_guard() {
+		$s = PNCP_Options::get();
+		if ( empty( $s['enabled'] ) || (int) $s['rate_limit_sitemap'] <= 0 || ! self::is_sitemap_request() ) {
+			return;
+		}
+		self::$sitemap = true;
+		$verdict       = self::check( 'sitemap' );
+		if ( $verdict ) {
+			self::die_html( $verdict['code'] );
+		}
+	}
+
+	/**
+	 * Is this a sitemap request? wp-sitemap*.xml, sitemap.xml, sitemap_index.xml, *-sitemap.xml, *-sitemap2.xml,
+	 * or ?sitemap= (WordPress without pretty permalinks). The .xsl stylesheets do not count.
+	 *
+	 * @return bool
+	 */
+	public static function is_sitemap_request() {
+		// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Only checks that the parameter exists.
+		if ( isset( $_GET['sitemap'] ) ) {
+			return true;
+		}
+		$uri  = isset( $_SERVER['REQUEST_URI'] ) ? sanitize_text_field( wp_unslash( $_SERVER['REQUEST_URI'] ) ) : '';
+		$path = PNCP_Private_Urls::relative_path( rawurldecode( (string) wp_parse_url( $uri, PHP_URL_PATH ) ) );
+		return (bool) preg_match( '#^/(?:wp-sitemap[a-z0-9_-]*|sitemap(?:_index)?|[a-z0-9_-]+-sitemap[0-9]*)\.xml$#i', $path );
 	}
 
 	/**
@@ -167,7 +208,7 @@ final class PNCP_Bots {
 	 * Bots, fake search engines and blocks apply to every method (a page can also be served via
 	 * POST). Limits count only views (GET/HEAD, not prefetch), so that forms and checkout do not count.
 	 *
-	 * @param string $context page | search | rest | graphql.
+	 * @param string $context page | search | rest | graphql | sitemap.
 	 * @param bool   $count   Whether to count toward the limit.
 	 * @return array{code:int, reason:string}|null Null if the request passes.
 	 */
@@ -268,6 +309,16 @@ final class PNCP_Bots {
 			}
 		}
 
+		// Blocked countries. Link previews and AI search in the allowed lists are not affected (they come from
+		// abroad by nature); verified search engines never get here.
+		$country = '';
+		if ( ! $allowed_ua && ( '' !== $s['countries_block'] || '' !== $s['countries_strict'] ) ) {
+			$country = PNCP_Geo::country( $ip );
+			if ( '' !== $country && in_array( $country, PNCP_Options::parse_countries( $s['countries_block'] ), true ) ) {
+				return self::verdict( 403, 'country', $ip );
+			}
+		}
+
 		// Every browser sends Accept-Language and "Mozilla/" in the User-Agent; most scripts do not.
 		// Not on wc-ajax: some payment gateways / extensions call them server-side, without Accept-Language.
 		if ( ! empty( $s['require_browser_headers'] ) && ! $allowed_ua && in_array( $context, array( 'page', 'search' ), true ) && ! self::is_wc_ajax() && ! self::looks_like_browser( $ua ) ) {
@@ -288,7 +339,28 @@ final class PNCP_Bots {
 			'search'  => array( 'rate_limit_search', 'rate_search' ),
 			'rest'    => array( 'rate_limit_rest', 'rate_rest' ),
 			'graphql' => array( 'rate_limit_rest', 'rate_rest' ),
+			'sitemap' => array( 'rate_limit_sitemap', 'rate_sitemap' ),
 		);
+		// Stricter page limits: visitors without the human-check cookie, and countries in the "stricter" list.
+		if ( $count && 'page' === $context ) {
+			$stricter = array();
+			if ( ! empty( $s['human_check'] ) && (int) $s['rate_limit_unverified'] > 0 && ! PNCP_Human::verified( $ip ) ) {
+				$stricter['rate_unverified'] = (int) $s['rate_limit_unverified'];
+				PNCP_Human::forget_invalid();
+			}
+			if ( '' !== $country && (int) $s['rate_limit_country'] > 0 && in_array( $country, PNCP_Options::parse_countries( $s['countries_strict'] ), true ) ) {
+				$stricter['rate_country'] = (int) $s['rate_limit_country'];
+			}
+			foreach ( $stricter as $bucket => $limit ) {
+				$current = self::hit( $ip, $bucket );
+				if ( $current > $limit ) {
+					if ( $current === $limit + 1 ) {
+						PNCP_Log::strike( $ip, $bucket );
+					}
+					return self::verdict( 429, $bucket, $ip );
+				}
+			}
+		}
 		// Separate limit for "page not found": guessing URLs (?p=1, 2, 3…, old product slugs) to find content.
 		// Missing images, CSS and the like do not count; neither do favicon, apple-touch-icon and /.well-known/.
 		if ( $count && 'page' === $context && (int) $s['rate_limit_404'] > 0 && is_404() && ! self::is_exempt_404() ) {

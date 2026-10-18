@@ -551,10 +551,6 @@ msgstr ""
 msgid "User-Agents to block (one per line, matches anywhere in the User-Agent, case-insensitive):"
 msgstr ""
 
-#: includes/class-pncp-admin.php:545
-msgid "It contains two AI categories: training crawlers (GPTBot, ClaudeBot, CCBot, Google-Extended etc.) and AI search / assistants (OAI-SearchBot, ChatGPT-User, Claude-SearchBot, PerplexityBot etc.). You can allow the second one with the option below."
-msgstr ""
-
 #: includes/class-pncp-admin.php:546
 msgid "Allow AI search engines and assistants (not training crawlers)"
 msgstr ""
@@ -1415,10 +1411,6 @@ msgstr ""
 msgid "Block headless and fake browsers"
 msgstr ""
 
-#: includes/class-pncp-admin.php:546
-msgid "Chrome without a window (Puppeteer, Playwright, Selenium) gives itself away in the headers it sends, even with a normal User-Agent. On HTTPS, scripts that only copy the User-Agent of Chrome, Edge or Firefox do not send the Sec-Fetch headers every modern browser sends. In-app browsers (Android WebView) are not checked."
-msgstr ""
-
 #: includes/class-pncp-admin.php:708
 msgid "not used with the current “Real visitor IP” setting (the built-in list is enough to detect Cloudflare)"
 msgstr ""
@@ -1429,4 +1421,229 @@ msgstr ""
 
 #: includes/class-pncp-log.php:142
 msgid "Fake browser"
+msgstr ""
+
+#. translators: %s: number of entries
+#: includes/class-pncp-admin.php:253
+#, php-format
+msgid "%s entry"
+msgid_plural "%s entries"
+msgstr[0] ""
+msgstr[1] ""
+
+#: includes/class-pncp-admin.php:295
+msgid "Sections of this tab"
+msgstr ""
+
+#: includes/class-pncp-admin.php:310
+msgid "Protection"
+msgstr ""
+
+#: includes/class-pncp-admin.php:311
+msgid "Early check"
+msgstr ""
+
+#: includes/class-pncp-admin.php:312
+#: includes/class-pncp-admin.php:653
+#: includes/class-pncp-admin.php:703
+msgid "Human check"
+msgstr ""
+
+#: includes/class-pncp-admin.php:313
+msgid "AI bots verified"
+msgstr ""
+
+#: includes/class-pncp-admin.php:314
+msgid "Headless browsers"
+msgstr ""
+
+#: includes/class-pncp-admin.php:315
+#: includes/class-pncp-admin.php:654
+#: includes/class-pncp-admin.php:709
+msgid "Countries"
+msgstr ""
+
+#: includes/class-pncp-admin.php:317
+msgid "Protection status"
+msgstr ""
+
+#: includes/class-pncp-admin.php:325
+msgid "On:"
+msgstr ""
+
+#: includes/class-pncp-admin.php:325
+msgid "Off:"
+msgstr ""
+
+#: includes/class-pncp-admin.php:341
+msgid "Country of this request:"
+msgstr ""
+
+#. translators: 1: number of IPv4 ranges, 2: number of IPv6 ranges, 3: month of the data, 4: date
+#: includes/class-pncp-admin.php:346
+#, php-format
+msgid "Country database: %1$s IPv4 and %2$s IPv6 ranges, data of %3$s, downloaded %4$s."
+msgstr ""
+
+#: includes/class-pncp-admin.php:354
+msgid "Country database: not downloaded yet. Use “Download now” at the bottom of this tab, or wait for the daily task."
+msgstr ""
+
+#: includes/class-pncp-admin.php:356
+msgid "Country database: off. Without Cloudflare or the database the country is unknown and the country lists do nothing."
+msgstr ""
+
+#. translators: %s: link to DB-IP
+#: includes/class-pncp-admin.php:361
+#, php-format
+msgid "IP geolocation by %s (CC BY 4.0)."
+msgstr ""
+
+#: includes/class-pncp-admin.php:648
+msgid "Bots"
+msgstr ""
+
+#: includes/class-pncp-admin.php:649
+msgid "AI"
+msgstr ""
+
+#: includes/class-pncp-admin.php:650
+#: includes/class-pncp-admin.php:681
+msgid "Always allowed"
+msgstr ""
+
+#: includes/class-pncp-admin.php:652
+msgid "Limits"
+msgstr ""
+
+#: includes/class-pncp-admin.php:657
+msgid "IP lists"
+msgstr ""
+
+#: includes/class-pncp-admin.php:662
+msgid "Scrapers and bots"
+msgstr ""
+
+#: includes/class-pncp-admin.php:668
+msgid "Blocks Chrome running without a window when it says so in its headers (“HeadlessChrome”), and, on HTTPS, scripts that copy the User-Agent of Chrome, Edge or Firefox without the Sec-Fetch headers every modern browser sends. It catches common tools and cheap scrapers, not every automated browser: one that is carefully disguised (e.g. Puppeteer with “stealth”, or Selenium with a visible Chrome) sends the same headers as a person. The page limits, the human check and the bot trap still apply to those. In-app browsers (Android WebView) are not checked."
+msgstr ""
+
+#: includes/class-pncp-admin.php:670
+msgid "It contains two AI categories: training crawlers (GPTBot, ClaudeBot, CCBot, Google-Extended etc.) and AI search / assistants (OAI-SearchBot, ChatGPT-User, Claude-SearchBot, PerplexityBot etc.). You can allow the second one in the next section."
+msgstr ""
+
+#: includes/class-pncp-admin.php:673
+msgid "AI search and training"
+msgstr ""
+
+#: includes/class-pncp-admin.php:700
+msgid "Sitemaps per minute (0 = off):"
+msgstr ""
+
+#: includes/class-pncp-admin.php:700
+msgid "Scrapers read the sitemap first to find every page. Covers the sitemaps of WordPress, Rank Math, Yoast and similar plugins. Google, Bing and the other verified search engines are never limited. Starting value: 5."
+msgstr ""
+
+#: includes/class-pncp-admin.php:705
+msgid "Stricter page limit for visitors who have not shown they are people"
+msgstr ""
+
+#: includes/class-pncp-admin.php:705
+msgid "A small script waits for the visitor's first real interaction (scroll, tap, key or mouse movement), solves a light challenge in the background and receives a cookie for 7 days. Nobody sees a captcha or a window. Visitors without the cookie (scripts, and people with JavaScript turned off) get the limit below instead of the normal page limit. Search engines and verified AI search bots are not affected. It works with page caches such as WP Rocket. A determined scraper can repeat the steps, but each of its IPs has to do the work."
+msgstr ""
+
+#: includes/class-pncp-admin.php:706
+msgid "Pages per minute without the cookie (0 = off):"
+msgstr ""
+
+#: includes/class-pncp-admin.php:706
+msgid "Starting value: 20. A person reads far fewer pages per minute, and gets the cookie with the first scroll or tap."
+msgstr ""
+
+#: includes/class-pncp-admin.php:711
+msgid "Download the free country database (DB-IP Lite, once a month)"
+msgstr ""
+
+#: includes/class-pncp-admin.php:711
+msgid "Needed when the site is not behind Cloudflare. About 5 MB to download, stored as two small files in uploads/scrapelock-geo. Behind Cloudflare the country that Cloudflare sends is used, and the database is not needed."
+msgstr ""
+
+#: includes/class-pncp-admin.php:712
+msgid "Blocked countries (403), two-letter codes separated by commas, e.g. CN, RU:"
+msgstr ""
+
+#: includes/class-pncp-admin.php:712
+msgid "Search engines, verified AI search bots and the “Always allowed” list are never blocked by country. People who travel or use a VPN appear with the country of their connection."
+msgstr ""
+
+#: includes/class-pncp-admin.php:713
+msgid "Countries with a stricter page limit, e.g. those your customers do not come from:"
+msgstr ""
+
+#: includes/class-pncp-admin.php:714
+msgid "Pages per minute for these countries (0 = off):"
+msgstr ""
+
+#: includes/class-pncp-admin.php:714
+msgid "Starting value: 10."
+msgstr ""
+
+#: includes/class-pncp-admin.php:874
+msgid "Country database"
+msgstr ""
+
+#: includes/class-pncp-admin.php:877
+msgid "Downloads DB-IP Lite now (about 5 MB, it may take up to a minute). It is also refreshed automatically once a month."
+msgstr ""
+
+#: includes/class-pncp-admin.php:878
+msgid "Download now"
+msgstr ""
+
+#: includes/class-pncp-admin.php:1278
+msgid "What they try to copy"
+msgstr ""
+
+#: includes/class-pncp-admin.php:1279
+msgid "The blocked requests grouped by page. “Pages” are your content: what scrapers were after. “Files” are scanners looking for passwords, backups or admin areas: no content leaks there, it only shows they tried."
+msgstr ""
+
+#: includes/class-pncp-admin.php:1283
+msgid "Last 7 days"
+msgstr ""
+
+#: includes/class-pncp-admin.php:1295
+msgid "Files and admin paths"
+msgstr ""
+
+#: includes/class-pncp-admin.php:1301
+msgid "The log is kept for 1 day, so the 7-day view shows only the last day. Change “Keep the block log for” in the “Bots and limits” tab to see more."
+msgstr ""
+
+#: includes/class-pncp-admin.php:1401
+msgid "IPs"
+msgstr ""
+
+#: includes/class-pncp-admin.php:1573
+msgid "Country database downloaded."
+msgstr ""
+
+#: includes/class-pncp-admin.php:1574
+msgid "The country database could not be downloaded or read; the previous one (if any) was kept. It will try again tomorrow."
+msgstr ""
+
+#: includes/class-pncp-log.php:146
+msgid "Sitemap limit"
+msgstr ""
+
+#: includes/class-pncp-log.php:147
+msgid "Page limit for unverified visitors"
+msgstr ""
+
+#: includes/class-pncp-log.php:148
+msgid "Blocked country"
+msgstr ""
+
+#: includes/class-pncp-log.php:149
+msgid "Page limit for the stricter countries"
 msgstr ""

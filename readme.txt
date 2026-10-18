@@ -32,9 +32,12 @@ Nothing can stop a determined human: whatever a visitor sees has already reached
 * Verify allowed AI search bots (OpenAI OAI-SearchBot and ChatGPT-User, PerplexityBot, Perplexity-User) with their official IP lists: real ones are never limited, fakes that only use their name are blocked.
 * Detect fake Googlebot, Bingbot, Applebot and Yandex with the official IP lists and reverse DNS. Real search engines always pass.
 * Invisible bot trap link, disallowed in robots.txt.
-* Optional detection of headless browsers (Puppeteer, Playwright, Selenium) and of scripts that copy a browser's User-Agent but not the headers a real browser sends.
+* Optional blocking of headless browsers that reveal themselves in their headers, and of scripts that copy a browser's User-Agent but not the headers a real browser sends. A carefully disguised automated browser is not detected this way; the page limits, the human check and the bot trap still apply to it.
 * Per-IP limits for pages, searches and REST / GraphQL (IPv6: per /64 network), with temporary blocks after repeated violations.
 * A separate limit for "page not found" (404) requests, for scrapers that guess URLs. Missing images, CSS and scripts do not count.
+* Optional human check: visitors who have not interacted with the page (scroll, tap, key) get a stricter page limit. No captcha, nothing to click; it works with page caches.
+* Optional sitemap limit (WordPress, Rank Math, Yoast and similar sitemaps), never for verified search engines.
+* Optional country rules: blocked countries, or a stricter page limit for countries your visitors do not come from. Uses Cloudflare's country header, or the free DB-IP Lite database.
 * Always-blocked lists of IPs / CIDR and referrer domains.
 * Hide usernames from visitors: no `?author=N` redirect, no REST user list, no users sitemap.
 * Optional early check: a small must-use plugin that stops known bots and blocked IPs before the theme and the other plugins load.
@@ -42,7 +45,7 @@ Nothing can stop a determined human: whatever a visitor sees has already reached
 * Trusted Proxy support for Cloudflare and reverse proxies, so the real IP cannot be spoofed. Cloudflare is detected, with a one-click fix when every visitor appears with a Cloudflare address.
 * Works with the Cloudflare plugin (APO): blocks and private feeds are never cached at the edge, and the Cloudflare cache is purged when you save the settings.
 * Ready-made presets (Balanced, Strict, Maximum) and an Emergency Mode for attacks in progress.
-* Block log with a 24-hour summary, top IPs and User-Agents, and automatic deletion after 1, 7 or 30 days.
+* Block log with a 24-hour summary, top IPs and User-Agents, the pages scrapers target most, and automatic deletion after 1, 7 or 30 days.
 
 = Feeds and API =
 
@@ -80,6 +83,8 @@ ScrapeLock downloads public IP lists once a day, only for the features that use 
 
 * OpenAI bot IP ranges (OAI-SearchBot, ChatGPT-User), from openai.com. Downloaded only when AI search is allowed and "Verify AI search bots" is on, to tell the real bots from fakes. [Terms](https://openai.com/policies/terms-of-use/), [Privacy](https://openai.com/policies/privacy-policy/).
 * Perplexity bot IP ranges (PerplexityBot, Perplexity-User), from www.perplexity.com. Downloaded only when AI search is allowed and "Verify AI search bots" is on, for the same reason. [Terms](https://www.perplexity.ai/hub/legal/terms-of-service), [Privacy](https://www.perplexity.ai/hub/legal/privacy-policy).
+
+* DB-IP Lite country database, from download.db-ip.com. Downloaded once a month only when "Download the free country database" is on, to apply the country rules. It is a plain file download: no data about your site or your visitors is sent, and lookups happen on your server. Licensed under CC BY 4.0 ("IP Geolocation by DB-IP"). [Database, license and terms](https://db-ip.com/db/lite.php), [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/).
 
 If a list has not been downloaded, ScrapeLock verifies search engine bots with reverse DNS, and uses a built-in copy of the Cloudflare ranges. AI search bots are not verified until their list has been downloaded.
 
@@ -123,6 +128,12 @@ No. The TDM declaration is a machine-readable reservation of rights; it does not
 = What personal data does it store? =
 
 When a request is blocked, the IP address, User-Agent, page and time are logged. The log is deleted automatically after 1, 7 or 30 days.
+
+With the human check on, visitors who interact with the page get a security cookie, `pncp_hv`, for 7 days. It contains only an expiry time and a signature tied to their IP network and browser; it is not used for tracking or statistics. The country database is a local file: no visitor data is sent to DB-IP.
+
+= Does the human check show a captcha? =
+
+No. A small script waits for the first real interaction (scroll, tap, key or mouse movement), solves a light challenge in the background and receives the cookie. Visitors without it are not blocked: they get the stricter page limit you set (20 pages per minute by default). A determined scraper can repeat these steps, but every IP it uses has to do the work, and plain scripts never do.
 
 == Screenshots ==
 
