@@ -15,8 +15,13 @@
 | Ψεύτικα Googlebot / Bingbot / Applebot / Yandex: επίσημες λίστες IP (κάθε μέρα) + reverse/forward DNS | PHP | Bots και όρια |
 | Παγίδα για bots (αόρατος σύνδεσμος, Disallow στο robots.txt) | PHP | Bots και όρια |
 | Όρια ανά IP: σελίδες, αναζήτηση, REST / GraphQL · προσωρινός αποκλεισμός μετά από N παραβάσεις σε 10 λεπτά | PHP | Bots και όρια |
-| Trusted Proxy: το `CF-Connecting-IP` / `X-Forwarded-For` διαβάζεται μόνο από αξιόπιστο proxy | PHP | Bots και όρια |
-| REST API και WPGraphQL χωρίς κείμενο για επισκέπτες · RSS μόνο περίληψη | PHP | Feeds και API |
+| Όριο «η σελίδα δεν βρέθηκε» (404) ανά IP, για scrapers που μαντεύουν διευθύνσεις · εικόνες, CSS, scripts και favicon που λείπουν δεν μετρούν | PHP | Bots και όρια |
+| Πάντα αποκλεισμένες IP / CIDR και domains παραπομπής (Referer, μαζί με τα subdomains τους) | PHP | Bots και όρια |
+| Απόκρυψη ονομάτων χρηστών: `?author=N` → 404, REST `/wp/v2/users` → 401, χωρίς χάρτη χρηστών στο sitemap (οι συνδεδεμένοι βλέπουν τα πάντα) | PHP | Bots και όρια |
+| Πρώιμος έλεγχος (προαιρετικός): το `wp-content/mu-plugins/scrapelock-early.php` σταματά bots της λίστας, αποκλεισμένες IP και referrers πριν φορτώσουν θέμα και plugins | PHP (mu-plugin) | Bots και όρια |
+| Content Signals στο robots.txt: `search=yes, ai-train=no`, και `ai-input` ανάλογα με την AI αναζήτηση | robots.txt | Bots και όρια |
+| Trusted Proxy: το `CF-Connecting-IP` / `X-Forwarded-For` διαβάζεται μόνο από αξιόπιστο proxy · αν όλοι οι επισκέπτες φαίνονται με διεύθυνση Cloudflare, κουμπί που το διορθώνει με ένα κλικ | PHP | Bots και όρια |
+| REST API και WPGraphQL χωρίς κείμενο για επισκέπτες · RSS μόνο περίληψη, ή πλήρες με «Το άρθρο … δημοσιεύτηκε πρώτα στο …» στο τέλος | PHP | Feeds και API |
 | Προστατευμένα XML feeds με token (header για ERP, URL για Skroutz/BestPrice/Merchant), μόνο hash στη βάση (ποτέ σε καθαρή μορφή, ούτε στη μετάβαση από την 1.x), εναλλαγή με περίοδο χάριτος, στατιστικά | PHP | Feeds και API |
 | Υδατογράφημα: γωνίες, κέντρο ή διαγώνια επανάληψη · προαιρετικά και στο πλήρες μέγεθος (το καθαρό φυλάγεται) · εργαλείο για τις υπάρχουσες εικόνες | εικόνες | Εικόνες |
 | Κανόνες Nginx / Apache / Cloudflare φτιαγμένοι για το site | server / CDN | Κανόνες server |
@@ -54,6 +59,8 @@ location ^~ /wp-content/uploads/pncp-originals-XXXXXXXXXXXX/ { deny all; return 
 
 Η καρτέλα δίνει τους κανόνες σε δύο μέρη, `http { }` και `server { }`, φτιαγμένους για το site σας: domain, λίστα bots, feeds, φάκελος αντιγράφων. Τα παραπάνω είναι μόνο παράδειγμα.
 
+**Plugin της Cloudflare (APO):** οι σελίδες από την cache της Cloudflare δεν φτάνουν στην PHP, όπως κάθε page cache. Το ScrapeLock λέει στο plugin της Cloudflare να μην κρατά στην cache τα 403 / 429, την παγίδα και τα feeds με token (`cf-edge-cache: no-cache` και φίλτρο `cloudflare_use_cache`), και του ζητά να αδειάσει την cache όταν αποθηκεύετε ρυθμίσεις. Για τις σελίδες από cache, οι κανόνες WAF της καρτέλας ισχύουν πριν από την cache.
+
 Πίσω από Cloudflare, ο Nginx πρέπει να βλέπει την πραγματική IP:
 
 ```nginx
@@ -88,8 +95,9 @@ real_ip_header CF-Connecting-IP;
 | Φίλτρο | Τι κάνει |
 |---|---|
 | `pncp_should_protect` | Αν προστατεύεται η τρέχουσα σελίδα |
-| `pncp_skip_guard` | Παράλειψη όλων των ελέγχων server για ένα αίτημα |
-| `pncp_client_ip` | Η IP του επισκέπτη |
+| `pncp_skip_guard` | Παράλειψη όλων των ελέγχων server για ένα αίτημα (στον πρώιμο έλεγχο με context `early`· εκεί φτάνουν μόνο φίλτρα από mu-plugins) |
+| `pncp_404_exempt` | Αν ένα 404 εξαιρείται από το όριο «η σελίδα δεν βρέθηκε» |
+| `pncp_client_ip` | Η IP του επισκέπτη (για τον πρώιμο έλεγχο, το φίλτρο πρέπει να είναι σε mu-plugin) |
 | `pncp_rest_hide_content` | Εξαιρέσεις από το κρύψιμο κειμένου (REST, GraphQL) |
 | `pncp_rest_post_types` | Post types που φιλτράρονται στο REST |
 | `pncp_watermark_attachment` | Αν μια εικόνα παίρνει υδατογράφημα |
