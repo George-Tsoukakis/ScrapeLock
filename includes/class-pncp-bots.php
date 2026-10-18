@@ -274,6 +274,15 @@ final class PNCP_Bots {
 			return self::verdict( 403, 'no_browser', $ip );
 		}
 
+		// Headless and fake browsers: what the browser itself sends does not match the User-Agent.
+		// Not for anyone claiming to be a search engine: those are verified (or blocked as fake) above.
+		if ( ! empty( $s['block_headless'] ) && ! $allowed_ua && '' === $family && in_array( $context, array( 'page', 'search' ), true ) && ! self::is_wc_ajax() ) {
+			$fake = self::fake_browser( $ua );
+			if ( '' !== $fake ) {
+				return self::verdict( 403, $fake, $ip );
+			}
+		}
+
 		$limits = array(
 			'page'    => array( 'rate_limit', 'rate_page' ),
 			'search'  => array( 'rate_limit_search', 'rate_search' ),
@@ -519,6 +528,34 @@ final class PNCP_Bots {
 	private static function looks_like_browser( $ua ) {
 		$lang = isset( $_SERVER['HTTP_ACCEPT_LANGUAGE'] ) ? sanitize_text_field( wp_unslash( $_SERVER['HTTP_ACCEPT_LANGUAGE'] ) ) : '';
 		return '' !== trim( $lang ) && 0 === strpos( $ua, 'Mozilla/' );
+	}
+
+	/**
+	 * A headless or fake browser? Only signals a real browser never gives:
+	 * - headless: Chrome without a window says so in its client hints (Sec-CH-UA: "HeadlessChrome"), even
+	 *   when the script changed the User-Agent.
+	 * - fake_browser: on HTTPS, Chrome / Edge / Opera from version 90 always send Sec-Fetch-Mode and Sec-CH-UA, and
+	 *   Firefox from version 90 Sec-Fetch-Mode. A script that only copies their User-Agent sends neither.
+	 *   Android WebView (in-app browsers) and plain HTTP are not checked, because there the headers may be missing.
+	 *
+	 * @param string $ua User-Agent.
+	 * @return string headless | fake_browser | '' (nothing found).
+	 */
+	public static function fake_browser( $ua ) {
+		$hints = isset( $_SERVER['HTTP_SEC_CH_UA'] ) ? sanitize_text_field( wp_unslash( $_SERVER['HTTP_SEC_CH_UA'] ) ) : '';
+		if ( false !== stripos( $hints, 'HeadlessChrome' ) ) {
+			return 'headless';
+		}
+		if ( ! is_ssl() || false !== strpos( $ua, '; wv)' ) || ! empty( $_SERVER['HTTP_SEC_FETCH_MODE'] ) ) {
+			return '';
+		}
+		if ( preg_match( '#\b(?:Chrome|Chromium)/(\d+)#', $ua, $m ) ) {
+			return (int) $m[1] >= 90 && '' === $hints ? 'fake_browser' : '';
+		}
+		if ( preg_match( '#\bFirefox/(\d+)#', $ua, $m ) ) {
+			return (int) $m[1] >= 90 ? 'fake_browser' : '';
+		}
+		return '';
 	}
 
 	/**

@@ -138,6 +138,8 @@ final class PNCP_Log {
 			'fake_crawler' => __( 'Fake search engine', 'scrapelock' ),
 			'fake_ai_bot'  => __( 'Fake AI search bot', 'scrapelock' ),
 			'no_browser'   => __( 'No browser headers', 'scrapelock' ),
+			'headless'     => __( 'Headless browser', 'scrapelock' ),
+			'fake_browser' => __( 'Fake browser', 'scrapelock' ),
 			'rate_page'    => __( 'Page limit', 'scrapelock' ),
 			'rate_search'  => __( 'Search limit', 'scrapelock' ),
 			'rate_rest'    => __( 'REST / GraphQL limit', 'scrapelock' ),

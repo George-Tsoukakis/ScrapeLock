@@ -1410,3 +1410,23 @@ msgstr ""
 #: includes/class-pncp-log.php:139
 msgid "Fake AI search bot"
 msgstr ""
+
+#: includes/class-pncp-admin.php:546
+msgid "Block headless and fake browsers"
+msgstr ""
+
+#: includes/class-pncp-admin.php:546
+msgid "Chrome without a window (Puppeteer, Playwright, Selenium) gives itself away in the headers it sends, even with a normal User-Agent. On HTTPS, scripts that only copy the User-Agent of Chrome, Edge or Firefox do not send the Sec-Fetch headers every modern browser sends. In-app browsers (Android WebView) are not checked."
+msgstr ""
+
+#: includes/class-pncp-admin.php:708
+msgid "not used with the current “Real visitor IP” setting (the built-in list is enough to detect Cloudflare)"
+msgstr ""
+
+#: includes/class-pncp-log.php:141
+msgid "Headless browser"
+msgstr ""
+
+#: includes/class-pncp-log.php:142
+msgid "Fake browser"
+msgstr ""

@@ -15,6 +15,7 @@
 | Ψεύτικα Googlebot / Bingbot / Applebot / Yandex: επίσημες λίστες IP (κάθε μέρα) + reverse/forward DNS | PHP | Bots και όρια |
 | Επαλήθευση AI bots αναζήτησης (OAI-SearchBot, ChatGPT-User, PerplexityBot, Perplexity-User) με τις επίσημες λίστες IP τους, όταν επιτρέπεται η AI αναζήτηση: τα πραγματικά χωρίς όριο, τα ψεύτικα 403 | PHP | Bots και όρια |
 | Παγίδα για bots (αόρατος σύνδεσμος, Disallow στο robots.txt) | PHP | Bots και όρια |
+| Headless browsers (`HeadlessChrome` στο `Sec-CH-UA`) και scripts που αντιγράφουν μόνο το User-Agent ενός browser (σε HTTPS χωρίς `Sec-Fetch-*` / `Sec-CH-UA`): 403 · προαιρετικό | PHP | Bots και όρια |
 | Όρια ανά IP: σελίδες, αναζήτηση, REST / GraphQL · προσωρινός αποκλεισμός μετά από N παραβάσεις σε 10 λεπτά | PHP | Bots και όρια |
 | Όριο «η σελίδα δεν βρέθηκε» (404) ανά IP, για scrapers που μαντεύουν διευθύνσεις · εικόνες, CSS, scripts και favicon που λείπουν δεν μετρούν | PHP | Bots και όρια |
 | Πάντα αποκλεισμένες IP / CIDR και domains παραπομπής (Referer, μαζί με τα subdomains τους) | PHP | Bots και όρια |

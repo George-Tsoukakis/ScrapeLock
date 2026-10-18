@@ -318,7 +318,7 @@ update_option( PNCP_Private_Urls::TOKEN_OPTION, $hash_before, false );
 $keep = PNCP_Options::stored();
 list( , $body ) = http( $page . '&tab=bots' );
 $missing = array();
-foreach ( array( 'block_ips', 'block_referrers', 'block_user_enum', 'rate_limit_404', 'early_mode', 'content_signal', 'verify_ai_bots' ) as $key ) {
+foreach ( array( 'block_ips', 'block_referrers', 'block_user_enum', 'rate_limit_404', 'early_mode', 'content_signal', 'verify_ai_bots', 'block_headless' ) as $key ) {
 	if ( false === strpos( $body, 'name="pncp_settings[' . $key . ']"' ) ) {
 		$missing[] = $key;
 	}
