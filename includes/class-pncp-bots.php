@@ -234,9 +234,18 @@ final class PNCP_Bots {
 		if ( '' !== $family && self::is_verified_crawler( $family, $ip ) ) {
 			return null; // Verified search engines: never blocked, never limited.
 		}
+		$ai = self::ai_verdict( $ua, $ip, $s );
+		if ( 'verified' === $ai ) {
+			return null; // Verified AI search bots, as above.
+		}
 
 		if ( PNCP_Log::is_banned( $ip ) ) {
 			return self::verdict( 403, 'banned', $ip );
+		}
+
+		if ( 'fake' === $ai ) {
+			PNCP_Log::strike( $ip, 'fake_ai_bot' );
+			return self::verdict( 403, 'fake_ai_bot', $ip );
 		}
 
 		if ( '' !== $family && ! empty( $s['block_fake_crawlers'] ) ) {
@@ -263,6 +272,15 @@ final class PNCP_Bots {
 		// Not on wc-ajax: some payment gateways / extensions call them server-side, without Accept-Language.
 		if ( ! empty( $s['require_browser_headers'] ) && ! $allowed_ua && in_array( $context, array( 'page', 'search' ), true ) && ! self::is_wc_ajax() && ! self::looks_like_browser( $ua ) ) {
 			return self::verdict( 403, 'no_browser', $ip );
+		}
+
+		// Headless and fake browsers: what the browser itself sends does not match the User-Agent.
+		// Not for anyone claiming to be a search engine: those are verified (or blocked as fake) above.
+		if ( ! empty( $s['block_headless'] ) && ! $allowed_ua && '' === $family && in_array( $context, array( 'page', 'search' ), true ) && ! self::is_wc_ajax() ) {
+			$fake = self::fake_browser( $ua );
+			if ( '' !== $fake ) {
+				return self::verdict( 403, $fake, $ip );
+			}
 		}
 
 		$limits = array(
@@ -298,6 +316,50 @@ final class PNCP_Bots {
 		}
 
 		return null;
+	}
+
+	/**
+	 * AI search bots and assistants that publish their IPs: User-Agent => list (PNCP_Ip::sources()).
+	 *
+	 * @return array<string, string>
+	 */
+	public static function ai_bot_lists() {
+		return array(
+			'OAI-SearchBot'   => 'openai_search',
+			'ChatGPT-User'    => 'openai_user',
+			'PerplexityBot'   => 'perplexity_bot',
+			'Perplexity-User' => 'perplexity_user',
+		);
+	}
+
+	/**
+	 * Is a request that says it is an AI search bot real? Only for the bots the site allows ("Allow AI search")
+	 * with "Verify AI search bots" on, and only once their official list has been downloaded: otherwise
+	 * nothing changes and the bot list decides, as before.
+	 *
+	 * @param string               $ua User-Agent.
+	 * @param string               $ip IP.
+	 * @param array<string, mixed> $s  Settings.
+	 * @return string verified | fake | '' (not checked).
+	 */
+	public static function ai_verdict( $ua, $ip, $s ) {
+		if ( empty( $s['verify_ai_bots'] ) || '' === $ua || '' === $ip ) {
+			return '';
+		}
+		foreach ( self::ai_bot_lists() as $agent => $list ) {
+			if ( false === stripos( $ua, $agent ) ) {
+				continue;
+			}
+			if ( ! self::ua_in_list( $ua, PNCP_Options::allowed_ai_search() ) ) {
+				return '';
+			}
+			$ranges = PNCP_Ip::list_of( $list );
+			if ( ! $ranges ) {
+				return '';
+			}
+			return PNCP_Ip::in_any( $ip, $ranges ) ? 'verified' : 'fake';
+		}
+		return '';
 	}
 
 	/**
@@ -466,6 +528,34 @@ final class PNCP_Bots {
 	private static function looks_like_browser( $ua ) {
 		$lang = isset( $_SERVER['HTTP_ACCEPT_LANGUAGE'] ) ? sanitize_text_field( wp_unslash( $_SERVER['HTTP_ACCEPT_LANGUAGE'] ) ) : '';
 		return '' !== trim( $lang ) && 0 === strpos( $ua, 'Mozilla/' );
+	}
+
+	/**
+	 * A headless or fake browser? Only signals a real browser never gives:
+	 * - headless: Chrome without a window says so in its client hints (Sec-CH-UA: "HeadlessChrome"), even
+	 *   when the script changed the User-Agent.
+	 * - fake_browser: on HTTPS, Chrome / Edge / Opera from version 90 always send Sec-Fetch-Mode and Sec-CH-UA, and
+	 *   Firefox from version 90 Sec-Fetch-Mode. A script that only copies their User-Agent sends neither.
+	 *   Android WebView (in-app browsers) and plain HTTP are not checked, because there the headers may be missing.
+	 *
+	 * @param string $ua User-Agent.
+	 * @return string headless | fake_browser | '' (nothing found).
+	 */
+	public static function fake_browser( $ua ) {
+		$hints = isset( $_SERVER['HTTP_SEC_CH_UA'] ) ? sanitize_text_field( wp_unslash( $_SERVER['HTTP_SEC_CH_UA'] ) ) : '';
+		if ( false !== stripos( $hints, 'HeadlessChrome' ) ) {
+			return 'headless';
+		}
+		if ( ! is_ssl() || false !== strpos( $ua, '; wv)' ) || ! empty( $_SERVER['HTTP_SEC_FETCH_MODE'] ) ) {
+			return '';
+		}
+		if ( preg_match( '#\b(?:Chrome|Chromium)/(\d+)#', $ua, $m ) ) {
+			return (int) $m[1] >= 90 && '' === $hints ? 'fake_browser' : '';
+		}
+		if ( preg_match( '#\bFirefox/(\d+)#', $ua, $m ) ) {
+			return (int) $m[1] >= 90 ? 'fake_browser' : '';
+		}
+		return '';
 	}
 
 	/**
@@ -854,6 +944,9 @@ final class PNCP_Bots {
 		}
 		$ua     = self::user_agent();
 		$family = self::claimed_crawler( $ua );
+		if ( 'verified' === self::ai_verdict( $ua, $ip, $s ) ) {
+			return false; // A verified AI search bot is treated like a search engine.
+		}
 		if ( ( '' !== $family && ( self::is_verified_crawler( $family, $ip ) || self::$verify_inconclusive ) ) || self::ua_in_list( $ua, self::trap_exempt_agents() ) ) {
 			return false; // Verified, or not verifiable right now: a real search engine is never banned.
 		}

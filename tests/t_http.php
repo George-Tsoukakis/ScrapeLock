@@ -616,17 +616,113 @@ t( 'πρώιμος έλεγχος: ξένο αρχείο δεν σβήνεται
 unlink( PNCP_Early::path() );
 PNCP_Log::unban_all();
 
-/* ---------- 2.4.1: αναβάθμιση στο πρώτο αίτημα με WP Rocket (Fatal error στην 2.4.0) ---------- */
+/* ---------- 2.5: επαλήθευση AI bots με τις επίσημες λίστες IP ---------- */
+$oai = 'Mozilla/5.0 (compatible; OAI-SearchBot/1.3; +https://openai.com/searchbot)';
+$cgu = 'Mozilla/5.0 AppleWebKit/537.36 (KHTML, like Gecko); compatible; ChatGPT-User/1.0; +https://openai.com/bot';
+$pxb = 'Mozilla/5.0 AppleWebKit/537.36 (KHTML, like Gecko; compatible; PerplexityBot/1.0; +https://perplexity.ai/perplexitybot)';
+PNCP_Ip::store_list( 'openai_search', array( '198.51.100.200/29' ) );
+PNCP_Ip::store_list( 'openai_user', array( '2001:db8:a1::/48' ) );
+delete_option( PNCP_Ip::LISTS_OPTION . '_perplexity_bot' );
+$pncp_bot_list = PNCP_Options::default_bot_list(); // Restored at the end of the section.
+settings( array( 'block_bots' => 1, 'bot_list' => "GPTBot\nOAI-SearchBot\nChatGPT-User\nPerplexityBot", 'allow_ai_search' => 1, 'verify_ai_bots' => 1, 'rate_limit' => 1, 'ban_strikes' => 2, 'require_browser_headers' => 0 ) );
+PNCP_Ip::reset();
+t( 'λίστες AI: κατεβαίνουν μόνο με AI αναζήτηση + επαλήθευση', array() === array_diff( array( 'openai_search', 'openai_user', 'perplexity_bot', 'perplexity_user' ), PNCP_Ip::needed_lists() ) );
+fresh();
+$codes = array();
+for ( $i = 0; $i < 3; $i++ ) {
+	list( $codes[] ) = req( $url, array( 'X-Test-IP' => '198.51.100.201', 'User-Agent' => $oai ) );
+}
+t( 'πραγματικό OAI-SearchBot: ποτέ όριο (3 σελίδες με όριο 1)', array( 200, 200, 200 ) === $codes, implode( ',', $codes ) );
+list( $code ) = req( $url, array( 'X-Test-IP' => '2001:db8:a1:5::9', 'User-Agent' => $cgu ) );
+t( 'πραγματικό ChatGPT-User (IPv6 από τη λίστα του): 200', 200 === $code, (string) $code );
+list( $code ) = req( $url, array( 'X-Test-IP' => '203.0.113.77', 'User-Agent' => $oai ) );
+t( 'ψεύτικο OAI-SearchBot: 403', 403 === $code, (string) $code );
+t( 'αρχείο: fake_ai_bot', in_array( 'fake_ai_bot', log_reasons(), true ), implode( ',', log_reasons() ) );
+list( $code ) = req( $url, array( 'X-Test-IP' => '198.51.100.201', 'User-Agent' => $cgu ) );
+t( 'ChatGPT-User από IP του OAI-SearchBot (όχι της δικής του λίστας): 403', 403 === $code, (string) $code );
+req( $url, array( 'X-Test-IP' => '203.0.113.77', 'User-Agent' => $oai ) );
+wp_cache_flush(); PNCP_Log::reset_cache();
+t( 'ψεύτικο AI bot: μετρά ως παράβαση (αποκλεισμός μετά από 2)', PNCP_Log::is_banned( '203.0.113.77' ) );
+PNCP_Log::ban( '198.51.100.202', 10, 'trap' );
+list( $code ) = req( $url, array( 'X-Test-IP' => '198.51.100.202', 'User-Agent' => $oai ) );
+t( 'πραγματικό OAI-SearchBot περνά και από αποκλεισμένη IP (όπως το Googlebot)', 200 === $code, (string) $code );
+fresh();
+$trap = wp_parse_url( home_url( PNCP_Bots::trap_path() ), PHP_URL_PATH );
+req( $trap, array( 'X-Test-IP' => '198.51.100.203', 'User-Agent' => $oai ) );
+wp_cache_flush(); PNCP_Log::reset_cache();
+t( 'πραγματικό OAI-SearchBot στην παγίδα: χωρίς αποκλεισμό', ! PNCP_Log::is_banned( '198.51.100.203' ) );
+list( $code ) = req( $url, array( 'X-Test-IP' => '203.0.113.78', 'User-Agent' => $pxb ) );
+t( 'PerplexityBot χωρίς κατεβασμένη λίστα: όπως πριν (επιτρεπτό)', 200 === $code, (string) $code );
+settings( array( 'verify_ai_bots' => 0 ) );
+fresh();
+list( $code ) = req( $url, array( 'X-Test-IP' => '203.0.113.79', 'User-Agent' => $oai ) );
+t( 'επαλήθευση ανενεργή: OAI-SearchBot από οποιαδήποτε IP, όπως πριν', 200 === $code, (string) $code );
+PNCP_Ip::reset();
+t( 'επαλήθευση ανενεργή: οι λίστες AI δεν κατεβαίνουν', ! in_array( 'openai_search', PNCP_Ip::needed_lists(), true ) );
+settings( array( 'verify_ai_bots' => 1, 'allow_ai_search' => 0 ) );
+fresh();
+list( $code ) = req( $url, array( 'X-Test-IP' => '198.51.100.201', 'User-Agent' => $oai ) );
+t( 'AI αναζήτηση ανενεργή: και το πραγματικό OAI-SearchBot μπλοκάρεται από τη λίστα bots', 403 === $code && in_array( 'bot_ua', log_reasons(), true ), (string) $code );
+list( $code ) = req( $url, array( 'X-Test-IP' => '198.51.100.201', 'User-Agent' => 'Mozilla/5.0 (compatible; GPTBot/1.2; +https://openai.com/gptbot)' ) );
+t( 'GPTBot (εκπαίδευση): πάντα 403', 403 === $code, (string) $code );
+PNCP_Ip::reset();
+t( 'AI αναζήτηση ανενεργή: οι λίστες AI δεν κατεβαίνουν', ! in_array( 'openai_search', PNCP_Ip::needed_lists(), true ) );
+foreach ( array_values( PNCP_Bots::ai_bot_lists() ) as $pncp_list ) {
+	delete_option( PNCP_Ip::LISTS_OPTION . '_' . $pncp_list );
+}
+settings( array( 'rate_limit' => 0, 'ban_strikes' => 3, 'allow_ai_search' => 0, 'bot_list' => $pncp_bot_list ) );
+PNCP_Log::unban_all();
+PNCP_Ip::reset();
+
+/* ---------- 2.5: headless και ψεύτικοι browsers ---------- */
+$chrome  = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36';
+$hints   = '"Google Chrome";v="141", "Chromium";v="141", "Not.A/Brand";v="24"';
+$real    = array( 'Sec-Fetch-Mode' => 'navigate', 'Sec-Fetch-Dest' => 'document', 'Sec-Fetch-Site' => 'none', 'Sec-CH-UA' => $hints );
+$hb      = static function ( $ip, $ua, $extra = array() ) {
+	return array_merge( array( 'X-Test-IP' => $ip, 'User-Agent' => $ua, 'Accept-Language' => 'el-GR,el;q=0.9' ), $extra );
+};
+settings( array( 'block_headless' => 1, 'require_browser_headers' => 0, 'rate_limit' => 0, 'block_bots' => 1 ) );
+fresh();
+list( $code ) = req( $url, $hb( '198.51.100.110', $chrome, array( 'Sec-Fetch-Mode' => 'navigate', 'Sec-CH-UA' => '"HeadlessChrome";v="141", "Chromium";v="141"' ) ) );
+t( 'headless Chrome με κανονικό User-Agent (Sec-CH-UA: HeadlessChrome): 403', 403 === $code, (string) $code );
+t( 'αρχείο: headless', in_array( 'headless', log_reasons(), true ), implode( ',', log_reasons() ) );
+list( $code ) = req( $url, $hb( '198.51.100.111', $chrome, array( 'X-Test-HTTPS' => '1' ) ) );
+t( 'HTTPS: «Chrome» χωρίς Sec-Fetch και Sec-CH-UA (script): 403', 403 === $code, (string) $code );
+t( 'αρχείο: fake_browser', in_array( 'fake_browser', log_reasons(), true ), implode( ',', log_reasons() ) );
+list( $code ) = req( $url, $hb( '198.51.100.112', $chrome, array_merge( $real, array( 'X-Test-HTTPS' => '1' ) ) ) );
+t( 'HTTPS: πραγματικός Chrome (Sec-Fetch + Sec-CH-UA): 200', 200 === $code, (string) $code );
+list( $code ) = req( $url, $hb( '198.51.100.113', $chrome ) );
+t( 'HTTP: «Chrome» χωρίς τα headers: 200 (σε HTTP οι browsers δεν τα στέλνουν πάντα)', 200 === $code, (string) $code );
+list( $code ) = req( $url, $hb( '198.51.100.114', 'Mozilla/5.0 (Linux; Android 14; Pixel 8; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/141.0.0.0 Mobile Safari/537.36 [FBAN/EMA]', array( 'X-Test-HTTPS' => '1' ) ) );
+t( 'HTTPS: in-app browser (Android WebView) χωρίς headers: 200', 200 === $code, (string) $code );
+list( $code ) = req( $url, $hb( '198.51.100.115', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:143.0) Gecko/20100101 Firefox/143.0', array( 'X-Test-HTTPS' => '1' ) ) );
+t( 'HTTPS: «Firefox» χωρίς Sec-Fetch: 403', 403 === $code, (string) $code );
+list( $code ) = req( $url, $hb( '198.51.100.116', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:143.0) Gecko/20100101 Firefox/143.0', array( 'X-Test-HTTPS' => '1', 'Sec-Fetch-Mode' => 'navigate' ) ) );
+t( 'HTTPS: πραγματικός Firefox (Sec-Fetch, χωρίς client hints): 200', 200 === $code, (string) $code );
+list( $code ) = req( $url, $hb( '198.51.100.117', 'Mozilla/5.0 (iPhone; CPU iPhone OS 15_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/15.0 Mobile/15E148 Safari/604.1', array( 'X-Test-HTTPS' => '1' ) ) );
+t( 'HTTPS: παλιό Safari χωρίς Sec-Fetch: 200 (δεν ελέγχεται)', 200 === $code, (string) $code );
+list( $code ) = req( $url, $hb( '198.51.100.118', 'Mozilla/5.0 (Windows NT 10.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/80.0.3987.0 Safari/537.36', array( 'X-Test-HTTPS' => '1' ) ) );
+t( 'HTTPS: Chrome 80 (πριν τα client hints): 200', 200 === $code, (string) $code );
+list( $code ) = req( $url, $hb( '198.51.100.119', 'facebookexternalhit/1.1 Chrome/141.0.0.0', array( 'X-Test-HTTPS' => '1' ) ) );
+t( 'HTTPS: preview της λίστας «Πάντα επιτρεπτά»: 200', 200 === $code, (string) $code );
+list( $code ) = req( $url, $hb( '66.249.66.1', 'Mozilla/5.0 (Linux; Android 6.0.1; Nexus 5X Build/MMB29P) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Mobile Safari/537.36 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)', array( 'X-Test-HTTPS' => '1', 'X-Test-RDNS' => 'crawl-66-249-66-1.googlebot.com', 'X-Test-FDNS' => '66.249.66.1' ) ) );
+t( 'HTTPS: πραγματικό Googlebot smartphone χωρίς Sec-Fetch: 200', 200 === $code, (string) $code );
+settings( array( 'block_headless' => 0 ) );
+fresh();
+list( $code ) = req( $url, $hb( '198.51.100.120', $chrome, array( 'X-Test-HTTPS' => '1', 'Sec-CH-UA' => '"HeadlessChrome";v="141"' ) ) );
+t( 'ρύθμιση ανενεργή: όπως πριν', 200 === $code, (string) $code );
+
+/* ---------- 2.5: αναβάθμιση στο πρώτο αίτημα με WP Rocket (Fatal error στο beta.2) ---------- */
 $pncp_saved = get_option( PNCP_OPTION );
 $pncp_ver   = get_option( 'pncp_version' );
-update_option( PNCP_OPTION, array_diff_key( $pncp_saved, array( 'rate_limit_404' => 1 ) ) );
-update_option( 'pncp_version', '2.3.0' );
+update_option( PNCP_OPTION, array_diff_key( $pncp_saved, array( 'block_headless' => 1 ) ) );
+update_option( 'pncp_version', '2.5.0-beta.1' );
 delete_option( 'pncp_upgrade_lock' );
 delete_option( 'pncp_test_rocket_config' );
 list( $code, $hdr, $body ) = req( $url, browser( '198.51.100.130', array( 'X-Test-Rocket' => '1' ) ) );
 wp_cache_flush();
 t( 'αναβάθμιση με WP Rocket: η σελίδα ανοίγει (όχι critical error)', 200 === $code && false === stripos( $body, 'critical error' ), (string) $code );
-t( 'αναβάθμιση με WP Rocket: ολοκληρώθηκε', PNCP_VERSION === get_option( 'pncp_version' ) && array_key_exists( 'rate_limit_404', (array) get_option( PNCP_OPTION ) ) );
+t( 'αναβάθμιση με WP Rocket: ολοκληρώθηκε', PNCP_VERSION === get_option( 'pncp_version' ) && array_key_exists( 'block_headless', (array) get_option( PNCP_OPTION ) ) );
 t( 'αναβάθμιση με WP Rocket: η cache του καθαρίστηκε, αφού φόρτωσε (στο init)', (bool) get_option( 'pncp_test_rocket_config' ) );
 update_option( PNCP_OPTION, $pncp_saved );
 update_option( 'pncp_version', $pncp_ver );
@@ -653,9 +749,20 @@ update_option( PNCP_OPTION, array_merge( $after, array( 'block_user_enum' => 1 )
 update_option( 'pncp_version', '2.3.0' );
 $pncp_upgrade();
 t( 'αναβάθμιση: μια τιμή που υπάρχει ήδη δεν αλλάζει', 1 === (int) get_option( PNCP_OPTION )['block_user_enum'] );
+update_option( PNCP_OPTION, array_diff_key( $keep, array( 'verify_ai_bots' => 1, 'block_headless' => 1 ) ) );
+update_option( 'pncp_version', '2.4.0' );
+$pncp_upgrade();
+$after = get_option( PNCP_OPTION );
+t( 'αναβάθμιση από 2.4.0: τα νέα της 2.5 μένουν ανενεργά, τα υπόλοιπα ίδια', 0 === $after['verify_ai_bots'] && 0 === $after['block_headless'] && array_diff_key( $after, array( 'verify_ai_bots' => 1, 'block_headless' => 1 ) ) == array_diff_key( $keep, array( 'verify_ai_bots' => 1, 'block_headless' => 1 ) ) );
+update_option( PNCP_OPTION, array_diff_key( $keep, array_flip( $new_240 ), array( 'verify_ai_bots' => 1 ) ) );
+update_option( 'pncp_version', '2.3.0' );
+$pncp_upgrade();
+$after = get_option( PNCP_OPTION );
+t( 'αναβάθμιση από 2.3.0 κατευθείαν: ανενεργά και τα νέα της 2.4 και της 2.5', 0 === $after['verify_ai_bots'] && 0 === $after['rate_limit_404'] && 0 === $after['block_user_enum'] );
 delete_option( PNCP_OPTION );
 $pncp_upgrade();
 $fresh = PNCP_Options::stored();
+t( 'νέα εγκατάσταση: επαλήθευση AI bots ενεργή', 1 === $fresh['verify_ai_bots'] );
 t( 'νέα εγκατάσταση: όριο 404 30, ονόματα χρηστών κρυφά, πηγή RSS, Content-Signal, πρώιμος έλεγχος ανενεργός', 30 === $fresh['rate_limit_404'] && 1 === $fresh['block_user_enum'] && 1 === $fresh['feed_source_link'] && 1 === $fresh['content_signal'] && 0 === $fresh['early_mode'] );
 update_option( PNCP_OPTION, $keep );
 update_option( 'pncp_version', $keep_v );

@@ -1,6 +1,6 @@
 msgid ""
 msgstr ""
-"Project-Id-Version: ScrapeLock 2.4.1\n"
+"Project-Id-Version: ScrapeLock 2.5.0\n"
 "Report-Msgid-Bugs-To: https://wordpress.org/support/plugin/scrapelock\n"
 "MIME-Version: 1.0\n"
 "Content-Type: text/plain; charset=UTF-8\n"
@@ -1391,4 +1391,42 @@ msgstr ""
 
 #: includes/class-pncp-log.php:145
 msgid "Referrer in the always-blocked list"
+msgstr ""
+
+#. translators: %s: list of User-Agents
+#: includes/class-pncp-admin.php:549
+msgid "Verify AI search bots with their official IP lists (OpenAI, Perplexity)"
+msgstr ""
+
+#. translators: %s: list of User-Agents
+#: includes/class-pncp-admin.php:549
+msgid "With AI search allowed: the real OAI-SearchBot, ChatGPT-User, PerplexityBot and Perplexity-User are never limited or blocked, and requests that only use their name get a 403 (“Fake AI search bot”). The lists are downloaded once a day; until then nothing changes."
+msgstr ""
+
+#: includes/class-pncp-admin.php:709
+msgid "not downloaded yet, no verification until then"
+msgstr ""
+
+#: includes/class-pncp-log.php:139
+msgid "Fake AI search bot"
+msgstr ""
+
+#: includes/class-pncp-admin.php:546
+msgid "Block headless and fake browsers"
+msgstr ""
+
+#: includes/class-pncp-admin.php:546
+msgid "Chrome without a window (Puppeteer, Playwright, Selenium) gives itself away in the headers it sends, even with a normal User-Agent. On HTTPS, scripts that only copy the User-Agent of Chrome, Edge or Firefox do not send the Sec-Fetch headers every modern browser sends. In-app browsers (Android WebView) are not checked."
+msgstr ""
+
+#: includes/class-pncp-admin.php:708
+msgid "not used with the current “Real visitor IP” setting (the built-in list is enough to detect Cloudflare)"
+msgstr ""
+
+#: includes/class-pncp-log.php:141
+msgid "Headless browser"
+msgstr ""
+
+#: includes/class-pncp-log.php:142
+msgid "Fake browser"
 msgstr ""
