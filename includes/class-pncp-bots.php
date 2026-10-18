@@ -234,9 +234,18 @@ final class PNCP_Bots {
 		if ( '' !== $family && self::is_verified_crawler( $family, $ip ) ) {
 			return null; // Verified search engines: never blocked, never limited.
 		}
+		$ai = self::ai_verdict( $ua, $ip, $s );
+		if ( 'verified' === $ai ) {
+			return null; // Verified AI search bots, as above.
+		}
 
 		if ( PNCP_Log::is_banned( $ip ) ) {
 			return self::verdict( 403, 'banned', $ip );
+		}
+
+		if ( 'fake' === $ai ) {
+			PNCP_Log::strike( $ip, 'fake_ai_bot' );
+			return self::verdict( 403, 'fake_ai_bot', $ip );
 		}
 
 		if ( '' !== $family && ! empty( $s['block_fake_crawlers'] ) ) {
@@ -298,6 +307,50 @@ final class PNCP_Bots {
 		}
 
 		return null;
+	}
+
+	/**
+	 * AI search bots and assistants that publish their IPs: User-Agent => list (PNCP_Ip::sources()).
+	 *
+	 * @return array<string, string>
+	 */
+	public static function ai_bot_lists() {
+		return array(
+			'OAI-SearchBot'   => 'openai_search',
+			'ChatGPT-User'    => 'openai_user',
+			'PerplexityBot'   => 'perplexity_bot',
+			'Perplexity-User' => 'perplexity_user',
+		);
+	}
+
+	/**
+	 * Is a request that says it is an AI search bot real? Only for the bots the site allows ("Allow AI search")
+	 * with "Verify AI search bots" on, and only once their official list has been downloaded: otherwise
+	 * nothing changes and the bot list decides, as before.
+	 *
+	 * @param string               $ua User-Agent.
+	 * @param string               $ip IP.
+	 * @param array<string, mixed> $s  Settings.
+	 * @return string verified | fake | '' (not checked).
+	 */
+	public static function ai_verdict( $ua, $ip, $s ) {
+		if ( empty( $s['verify_ai_bots'] ) || '' === $ua || '' === $ip ) {
+			return '';
+		}
+		foreach ( self::ai_bot_lists() as $agent => $list ) {
+			if ( false === stripos( $ua, $agent ) ) {
+				continue;
+			}
+			if ( ! self::ua_in_list( $ua, PNCP_Options::allowed_ai_search() ) ) {
+				return '';
+			}
+			$ranges = PNCP_Ip::list_of( $list );
+			if ( ! $ranges ) {
+				return '';
+			}
+			return PNCP_Ip::in_any( $ip, $ranges ) ? 'verified' : 'fake';
+		}
+		return '';
 	}
 
 	/**
@@ -854,6 +907,9 @@ final class PNCP_Bots {
 		}
 		$ua     = self::user_agent();
 		$family = self::claimed_crawler( $ua );
+		if ( 'verified' === self::ai_verdict( $ua, $ip, $s ) ) {
+			return false; // A verified AI search bot is treated like a search engine.
+		}
 		if ( ( '' !== $family && ( self::is_verified_crawler( $family, $ip ) || self::$verify_inconclusive ) ) || self::ua_in_list( $ua, self::trap_exempt_agents() ) ) {
 			return false; // Verified, or not verifiable right now: a real search engine is never banned.
 		}

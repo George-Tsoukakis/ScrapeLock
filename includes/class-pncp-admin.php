@@ -546,6 +546,7 @@ final class PNCP_Admin {
 				self::checkbox( $s, 'trap_enabled', __( 'Bot trap', 'scrapelock' ), __( 'Invisible link on every page, disallowed in robots.txt. Whoever opens it is blocked temporarily, even if it pretends to be a browser. Visitors do not see it, and another site cannot trap them.', 'scrapelock' ) );
 				self::textarea( $s, 'bot_list', __( 'User-Agents to block (one per line, matches anywhere in the User-Agent, case-insensitive):', 'scrapelock' ), __( 'It contains two AI categories: training crawlers (GPTBot, ClaudeBot, CCBot, Google-Extended etc.) and AI search / assistants (OAI-SearchBot, ChatGPT-User, Claude-SearchBot, PerplexityBot etc.). You can allow the second one with the option below.', 'scrapelock' ), 10 );
 				self::checkbox( $s, 'allow_ai_search', __( 'Allow AI search engines and assistants (not training crawlers)', 'scrapelock' ), sprintf( /* translators: %s: list of User-Agents */ __( 'So the site appears in AI search answers with a link, without being given for model training. Allowed: %s. They are also removed from the robots.txt Disallow and from the server rules. The page limit still applies, because the User-Agent can be spoofed.', 'scrapelock' ), implode( ', ', PNCP_Options::ai_search_agents() ) ) );
+				self::checkbox( $s, 'verify_ai_bots', __( 'Verify AI search bots with their official IP lists (OpenAI, Perplexity)', 'scrapelock' ), __( 'With AI search allowed: the real OAI-SearchBot, ChatGPT-User, PerplexityBot and Perplexity-User are never limited or blocked, and requests that only use their name get a 403 (“Fake AI search bot”). The lists are downloaded once a day; until then nothing changes.', 'scrapelock' ) );
 				self::textarea( $s, 'allow_list', __( 'Always allowed User-Agents (link previews, price comparison platforms, monitoring):', 'scrapelock' ), __( 'They override the bot list and “Browsers only”. The page limit applies to them too, because the User-Agent is easy to spoof. To accept an entry only from specific IPs, add @ and the addresses, e.g. Skroutz@203.0.113.0/24.', 'scrapelock' ), 5 );
 				self::textarea( $s, 'allow_ips', __( 'Always allowed IPs / CIDR (office, ERP, monitoring), one per line:', 'scrapelock' ), __( 'They are never checked, never count towards limits and are never blocked.', 'scrapelock' ), 3 );
 				self::checkbox( $s, 'robots_ai_block', __( 'Declare AI crawlers in robots.txt (Disallow)', 'scrapelock' ), __( 'Applies to the virtual robots.txt of WordPress. If a physical robots.txt file exists, it takes precedence.', 'scrapelock' ) );
@@ -679,10 +680,21 @@ final class PNCP_Admin {
 	private static function render_ip_lists() {
 		$updated = PNCP_Ip::lists_updated();
 		$names   = array(
-			'google'     => 'Google',
-			'bing'       => 'Bing',
-			'cloudflare' => 'Cloudflare',
+			'google'          => 'Google',
+			'bing'            => 'Bing',
+			'cloudflare'      => 'Cloudflare',
+			'openai_search'   => 'OpenAI OAI-SearchBot',
+			'openai_user'     => 'OpenAI ChatGPT-User',
+			'perplexity_bot'  => 'PerplexityBot',
+			'perplexity_user' => 'Perplexity-User',
 		);
+		$needed  = PNCP_Ip::needed_lists();
+		// The AI search lists are shown only when they are used or have been downloaded.
+		foreach ( PNCP_Bots::ai_bot_lists() as $list ) {
+			if ( empty( $updated[ $list ] ) && ! in_array( $list, $needed, true ) ) {
+				unset( $names[ $list ] );
+			}
+		}
 		?>
 		<h2><?php esc_html_e( 'Official IP lists', 'scrapelock' ); ?></h2>
 		<ul class="pncp-list-status">
@@ -691,7 +703,13 @@ final class PNCP_Admin {
 					<strong><?php echo esc_html( $label ); ?>:</strong>
 					<?php
 					if ( empty( $updated[ $key ] ) ) {
-						echo esc_html( 'cloudflare' === $key ? __( 'built-in list (not downloaded yet)', 'scrapelock' ) : __( 'not downloaded yet, only DNS is used', 'scrapelock' ) );
+						if ( 'cloudflare' === $key ) {
+							echo esc_html__( 'built-in list (not downloaded yet)', 'scrapelock' );
+						} elseif ( in_array( $key, PNCP_Bots::ai_bot_lists(), true ) ) {
+							echo esc_html__( 'not downloaded yet, no verification until then', 'scrapelock' );
+						} else {
+							echo esc_html__( 'not downloaded yet, only DNS is used', 'scrapelock' );
+						}
 					} else {
 						echo esc_html(
 							sprintf(

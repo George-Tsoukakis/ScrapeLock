@@ -136,6 +136,7 @@ final class PNCP_Log {
 			'bot_ua'       => __( 'User-Agent in the bot list', 'scrapelock' ),
 			'empty_ua'     => __( 'No User-Agent', 'scrapelock' ),
 			'fake_crawler' => __( 'Fake search engine', 'scrapelock' ),
+			'fake_ai_bot'  => __( 'Fake AI search bot', 'scrapelock' ),
 			'no_browser'   => __( 'No browser headers', 'scrapelock' ),
 			'rate_page'    => __( 'Page limit', 'scrapelock' ),
 			'rate_search'  => __( 'Search limit', 'scrapelock' ),

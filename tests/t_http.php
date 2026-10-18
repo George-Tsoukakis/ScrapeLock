@@ -616,6 +616,64 @@ t( 'πρώιμος έλεγχος: ξένο αρχείο δεν σβήνεται
 unlink( PNCP_Early::path() );
 PNCP_Log::unban_all();
 
+/* ---------- 2.5: επαλήθευση AI bots με τις επίσημες λίστες IP ---------- */
+$oai = 'Mozilla/5.0 (compatible; OAI-SearchBot/1.3; +https://openai.com/searchbot)';
+$cgu = 'Mozilla/5.0 AppleWebKit/537.36 (KHTML, like Gecko); compatible; ChatGPT-User/1.0; +https://openai.com/bot';
+$pxb = 'Mozilla/5.0 AppleWebKit/537.36 (KHTML, like Gecko; compatible; PerplexityBot/1.0; +https://perplexity.ai/perplexitybot)';
+PNCP_Ip::store_list( 'openai_search', array( '198.51.100.200/29' ) );
+PNCP_Ip::store_list( 'openai_user', array( '2001:db8:a1::/48' ) );
+delete_option( PNCP_Ip::LISTS_OPTION . '_perplexity_bot' );
+$pncp_bot_list = PNCP_Options::default_bot_list(); // Restored at the end of the section.
+settings( array( 'block_bots' => 1, 'bot_list' => "GPTBot\nOAI-SearchBot\nChatGPT-User\nPerplexityBot", 'allow_ai_search' => 1, 'verify_ai_bots' => 1, 'rate_limit' => 1, 'ban_strikes' => 2, 'require_browser_headers' => 0 ) );
+PNCP_Ip::reset();
+t( 'λίστες AI: κατεβαίνουν μόνο με AI αναζήτηση + επαλήθευση', array() === array_diff( array( 'openai_search', 'openai_user', 'perplexity_bot', 'perplexity_user' ), PNCP_Ip::needed_lists() ) );
+fresh();
+$codes = array();
+for ( $i = 0; $i < 3; $i++ ) {
+	list( $codes[] ) = req( $url, array( 'X-Test-IP' => '198.51.100.201', 'User-Agent' => $oai ) );
+}
+t( 'πραγματικό OAI-SearchBot: ποτέ όριο (3 σελίδες με όριο 1)', array( 200, 200, 200 ) === $codes, implode( ',', $codes ) );
+list( $code ) = req( $url, array( 'X-Test-IP' => '2001:db8:a1:5::9', 'User-Agent' => $cgu ) );
+t( 'πραγματικό ChatGPT-User (IPv6 από τη λίστα του): 200', 200 === $code, (string) $code );
+list( $code ) = req( $url, array( 'X-Test-IP' => '203.0.113.77', 'User-Agent' => $oai ) );
+t( 'ψεύτικο OAI-SearchBot: 403', 403 === $code, (string) $code );
+t( 'αρχείο: fake_ai_bot', in_array( 'fake_ai_bot', log_reasons(), true ), implode( ',', log_reasons() ) );
+list( $code ) = req( $url, array( 'X-Test-IP' => '198.51.100.201', 'User-Agent' => $cgu ) );
+t( 'ChatGPT-User από IP του OAI-SearchBot (όχι της δικής του λίστας): 403', 403 === $code, (string) $code );
+req( $url, array( 'X-Test-IP' => '203.0.113.77', 'User-Agent' => $oai ) );
+wp_cache_flush(); PNCP_Log::reset_cache();
+t( 'ψεύτικο AI bot: μετρά ως παράβαση (αποκλεισμός μετά από 2)', PNCP_Log::is_banned( '203.0.113.77' ) );
+PNCP_Log::ban( '198.51.100.202', 10, 'trap' );
+list( $code ) = req( $url, array( 'X-Test-IP' => '198.51.100.202', 'User-Agent' => $oai ) );
+t( 'πραγματικό OAI-SearchBot περνά και από αποκλεισμένη IP (όπως το Googlebot)', 200 === $code, (string) $code );
+fresh();
+$trap = wp_parse_url( home_url( PNCP_Bots::trap_path() ), PHP_URL_PATH );
+req( $trap, array( 'X-Test-IP' => '198.51.100.203', 'User-Agent' => $oai ) );
+wp_cache_flush(); PNCP_Log::reset_cache();
+t( 'πραγματικό OAI-SearchBot στην παγίδα: χωρίς αποκλεισμό', ! PNCP_Log::is_banned( '198.51.100.203' ) );
+list( $code ) = req( $url, array( 'X-Test-IP' => '203.0.113.78', 'User-Agent' => $pxb ) );
+t( 'PerplexityBot χωρίς κατεβασμένη λίστα: όπως πριν (επιτρεπτό)', 200 === $code, (string) $code );
+settings( array( 'verify_ai_bots' => 0 ) );
+fresh();
+list( $code ) = req( $url, array( 'X-Test-IP' => '203.0.113.79', 'User-Agent' => $oai ) );
+t( 'επαλήθευση ανενεργή: OAI-SearchBot από οποιαδήποτε IP, όπως πριν', 200 === $code, (string) $code );
+PNCP_Ip::reset();
+t( 'επαλήθευση ανενεργή: οι λίστες AI δεν κατεβαίνουν', ! in_array( 'openai_search', PNCP_Ip::needed_lists(), true ) );
+settings( array( 'verify_ai_bots' => 1, 'allow_ai_search' => 0 ) );
+fresh();
+list( $code ) = req( $url, array( 'X-Test-IP' => '198.51.100.201', 'User-Agent' => $oai ) );
+t( 'AI αναζήτηση ανενεργή: και το πραγματικό OAI-SearchBot μπλοκάρεται από τη λίστα bots', 403 === $code && in_array( 'bot_ua', log_reasons(), true ), (string) $code );
+list( $code ) = req( $url, array( 'X-Test-IP' => '198.51.100.201', 'User-Agent' => 'Mozilla/5.0 (compatible; GPTBot/1.2; +https://openai.com/gptbot)' ) );
+t( 'GPTBot (εκπαίδευση): πάντα 403', 403 === $code, (string) $code );
+PNCP_Ip::reset();
+t( 'AI αναζήτηση ανενεργή: οι λίστες AI δεν κατεβαίνουν', ! in_array( 'openai_search', PNCP_Ip::needed_lists(), true ) );
+foreach ( array_values( PNCP_Bots::ai_bot_lists() ) as $pncp_list ) {
+	delete_option( PNCP_Ip::LISTS_OPTION . '_' . $pncp_list );
+}
+settings( array( 'rate_limit' => 0, 'ban_strikes' => 3, 'allow_ai_search' => 0, 'bot_list' => $pncp_bot_list ) );
+PNCP_Log::unban_all();
+PNCP_Ip::reset();
+
 /* ---------- 2.4: αναβάθμιση και νέα εγκατάσταση ---------- */
 // Το dbDelta του PNCP_Log::install() βγάζει Deprecated μέσα στο SQLite drop-in (wp-sqlite-db), όχι στο plugin.
 $pncp_upgrade = static function () {
@@ -636,9 +694,20 @@ update_option( PNCP_OPTION, array_merge( $after, array( 'block_user_enum' => 1 )
 update_option( 'pncp_version', '2.3.0' );
 $pncp_upgrade();
 t( 'αναβάθμιση: μια τιμή που υπάρχει ήδη δεν αλλάζει', 1 === (int) get_option( PNCP_OPTION )['block_user_enum'] );
+update_option( PNCP_OPTION, array_diff_key( $keep, array( 'verify_ai_bots' => 1 ) ) );
+update_option( 'pncp_version', '2.4.0' );
+$pncp_upgrade();
+$after = get_option( PNCP_OPTION );
+t( 'αναβάθμιση από 2.4.0: η επαλήθευση AI bots μένει ανενεργή, τα υπόλοιπα ίδια', 0 === $after['verify_ai_bots'] && array_diff_key( $after, array( 'verify_ai_bots' => 1 ) ) == array_diff_key( $keep, array( 'verify_ai_bots' => 1 ) ) );
+update_option( PNCP_OPTION, array_diff_key( $keep, array_flip( $new_240 ), array( 'verify_ai_bots' => 1 ) ) );
+update_option( 'pncp_version', '2.3.0' );
+$pncp_upgrade();
+$after = get_option( PNCP_OPTION );
+t( 'αναβάθμιση από 2.3.0 κατευθείαν: ανενεργά και τα νέα της 2.4 και της 2.5', 0 === $after['verify_ai_bots'] && 0 === $after['rate_limit_404'] && 0 === $after['block_user_enum'] );
 delete_option( PNCP_OPTION );
 $pncp_upgrade();
 $fresh = PNCP_Options::stored();
+t( 'νέα εγκατάσταση: επαλήθευση AI bots ενεργή', 1 === $fresh['verify_ai_bots'] );
 t( 'νέα εγκατάσταση: όριο 404 30, ονόματα χρηστών κρυφά, πηγή RSS, Content-Signal, πρώιμος έλεγχος ανενεργός', 30 === $fresh['rate_limit_404'] && 1 === $fresh['block_user_enum'] && 1 === $fresh['feed_source_link'] && 1 === $fresh['content_signal'] && 0 === $fresh['early_mode'] );
 update_option( PNCP_OPTION, $keep );
 update_option( 'pncp_version', $keep_v );
