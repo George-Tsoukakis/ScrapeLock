@@ -24,7 +24,14 @@ final class PNCP_Feed {
 	 */
 	public static function setup() {
 		$s = PNCP_Options::get();
-		if ( empty( $s['enabled'] ) || 'full' === $s['feed_mode'] ) {
+		if ( empty( $s['enabled'] ) ) {
+			return;
+		}
+		if ( 'full' === $s['feed_mode'] ) {
+			// Full text: a source line at the end, so that a site that republishes the feed links back to the original.
+			if ( ! empty( $s['feed_source_link'] ) && ! is_admin() ) {
+				add_filter( 'the_content_feed', array( __CLASS__, 'append_source' ), 99 );
+			}
 			return;
 		}
 
@@ -79,6 +86,28 @@ final class PNCP_Feed {
 			get_permalink()
 		);
 		return trim( $excerpt ) . ' ' . $text;
+	}
+
+	/**
+	 * "The post … first appeared on …" at the end of the full text in feeds.
+	 *
+	 * @param string $content The content.
+	 * @return string
+	 */
+	public static function append_source( $content ) {
+		if ( ! get_post() ) {
+			return $content;
+		}
+		$plain = static function ( $text ) {
+			return esc_html( wp_strip_all_tags( html_entity_decode( (string) $text, ENT_QUOTES, 'UTF-8' ) ) );
+		};
+		$line  = sprintf(
+			/* translators: 1: article link, 2: site link */
+			__( 'The post %1$s first appeared on %2$s.', 'scrapelock' ),
+			sprintf( '<a href="%1$s">%2$s</a>', esc_url( get_permalink() ), $plain( get_the_title() ) ),
+			sprintf( '<a href="%1$s">%2$s</a>', esc_url( home_url( '/' ) ), $plain( get_bloginfo( 'name' ) ) )
+		);
+		return $content . "\n<p>" . $line . '</p>';
 	}
 
 	/**

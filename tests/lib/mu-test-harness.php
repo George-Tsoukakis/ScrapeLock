@@ -77,3 +77,19 @@ add_action(
 	},
 	5
 );
+
+// Ο πρώιμος έλεγχος (scrapelock-early.php) σταματά το αίτημα πριν από το muplugins_loaded: χωρίς αυτό το header
+// ξέρουμε ότι το 403 ήρθε από εκεί και όχι από τον κανονικό έλεγχο.
+add_action(
+	'muplugins_loaded',
+	static function () {
+		if ( ! headers_sent() ) {
+			header( 'X-Test-Muplugins-Loaded: 1' );
+		}
+	}
+);
+
+// X-Test-Remote-Addr: το REMOTE_ADDR του αιτήματος (π.χ. διεύθυνση της Cloudflare), για τη σελίδα ρυθμίσεων.
+if ( isset( $_SERVER['HTTP_X_TEST_REMOTE_ADDR'] ) ) {
+	$_SERVER['REMOTE_ADDR'] = $_SERVER['HTTP_X_TEST_REMOTE_ADDR'];
+}

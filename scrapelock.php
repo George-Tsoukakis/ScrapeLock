@@ -23,7 +23,7 @@ define( 'PNCP_VERSION', '2.3.0' );
 define( 'PNCP_FILE', __FILE__ );
 define( 'PNCP_DIR', plugin_dir_path( __FILE__ ) );
 define( 'PNCP_URL', plugin_dir_url( __FILE__ ) );
-define( 'PNCP_OPTION', 'pncp_settings' );
+defined( 'PNCP_OPTION' ) || define( 'PNCP_OPTION', 'pncp_settings' ); // Also defined by the early check (mu-plugin).
 
 require_once PNCP_DIR . 'includes/class-pncp-options.php';
 require_once PNCP_DIR . 'includes/class-pncp-ip.php';
@@ -37,6 +37,7 @@ require_once PNCP_DIR . 'includes/class-pncp-watermark.php';
 require_once PNCP_DIR . 'includes/class-pncp-private-urls.php';
 require_once PNCP_DIR . 'includes/class-pncp-rules.php';
 require_once PNCP_DIR . 'includes/class-pncp-status.php';
+require_once PNCP_DIR . 'includes/class-pncp-early.php';
 
 if ( is_admin() ) {
 	require_once PNCP_DIR . 'includes/class-pncp-admin.php';
@@ -86,6 +87,11 @@ function pncp_deactivate() {
 	wp_clear_scheduled_hook( PNCP_Ip::CRON );
 	wp_clear_scheduled_hook( PNCP_Log::CRON );
 	remove_filter( 'rocket_cache_reject_ua', array( 'PNCP_Bots', 'rocket_reject_ua' ) );
+	// The early check goes away with the plugin. On multisite the file is shared: it stays, and does nothing
+	// on sites where ScrapeLock is not active.
+	if ( ! is_multisite() ) {
+		PNCP_Early::remove();
+	}
 	pncp_purge_page_cache();
 }
 
@@ -101,6 +107,9 @@ function pncp_upgrade() {
 		add_option( PNCP_OPTION, PNCP_Options::defaults() );
 	} elseif ( '' === $from || version_compare( $from, '2.0.0', '<' ) ) {
 		update_option( PNCP_OPTION, pncp_migrate_from_1x( $stored ), true );
+	} elseif ( version_compare( $from, '2.4.0', '<' ) ) {
+		// 2.4: the new protections stay off on existing sites (the defaults are for new installs).
+		update_option( PNCP_OPTION, array_merge( $stored, array_diff_key( PNCP_Options::new_in_240(), $stored ) ), true );
 	}
 
 	// Up to 2.2.0 the 1.x token was kept in plain form until the admin saw it: it is deleted.
@@ -125,6 +134,8 @@ function pncp_upgrade() {
 	}
 	update_option( 'pncp_version', PNCP_VERSION, false );
 	PNCP_Options::flush();
+	// The early check (mu-plugin): written again if the plugin folder changed, removed if it is off.
+	PNCP_Early::sync();
 	// Cache plugins (e.g. LiteSpeed) register their hooks later: purge on init.
 	if ( did_action( 'init' ) ) {
 		pncp_purge_page_cache();
@@ -148,7 +159,8 @@ function pncp_upgrade() {
  * @return array<string, mixed>
  */
 function pncp_migrate_from_1x( $old ) {
-	$new = array_merge( PNCP_Options::defaults(), $old );
+	// The 2.4 additions stay off, as on every existing site.
+	$new = array_merge( PNCP_Options::defaults(), PNCP_Options::new_in_240(), $old );
 
 	$list   = isset( $old['bot_list'] ) ? PNCP_Options::parse_list( (string) $old['bot_list'] ) : array();
 	$legacy = array_map( 'strtolower', PNCP_Options::legacy_bot_list() );
@@ -211,8 +223,8 @@ add_action( 'plugins_loaded', 'pncp_maybe_upgrade', -100 );
 
 /**
  * Clears the page cache so visitors see the new settings immediately.
- * Covers WP Rocket, WP Super Cache, W3 Total Cache, LiteSpeed Cache, WP Fastest Cache, SiteGround Optimizer
- * and Nginx Helper (FastCGI cache), whichever are present.
+ * Covers WP Rocket, WP Super Cache, W3 Total Cache, LiteSpeed Cache, WP Fastest Cache, SiteGround Optimizer,
+ * Nginx Helper (FastCGI cache) and the Cloudflare plugin, whichever are present.
  */
 function pncp_purge_page_cache() {
 	// WP Rocket rewrites its config so the bot list takes effect (rocket_cache_reject_ua).
@@ -241,6 +253,14 @@ function pncp_purge_page_cache() {
 	if ( function_exists( 'sg_cachepress_purge_cache' ) ) {
 		sg_cachepress_purge_cache(); // SiteGround Optimizer.
 	}
+	// Cloudflare plugin: purges the edge cache when its APO or HTML caching is on (otherwise it does nothing).
+	if ( isset( $GLOBALS['cloudflareHooks'] ) && is_object( $GLOBALS['cloudflareHooks'] ) && method_exists( $GLOBALS['cloudflareHooks'], 'purgeCacheEverything' ) ) {
+		try {
+			$GLOBALS['cloudflareHooks']->purgeCacheEverything();
+		} catch ( Throwable $e ) {
+			unset( $e ); // A Cloudflare API error must not break saving the settings.
+		}
+	}
 }
 add_action( 'update_option_' . PNCP_OPTION, 'pncp_purge_page_cache' );
 
@@ -256,6 +276,7 @@ function pncp_settings_changed() {
 	delete_option( 'pncp_wm_cursor_remove' );
 }
 add_action( 'update_option_' . PNCP_OPTION, 'pncp_settings_changed', 0 );
+add_action( 'update_option_' . PNCP_OPTION, array( 'PNCP_Early', 'sync' ) );
 // Settings are first read before the translations load: they are read again afterwards.
 add_action( 'after_setup_theme', array( 'PNCP_Options', 'flush' ), 0 );
 

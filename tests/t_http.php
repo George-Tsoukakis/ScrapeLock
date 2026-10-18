@@ -67,7 +67,7 @@ function settings( $changes ) {
 	update_option( PNCP_OPTION, $s );
 	PNCP_Options::flush();
 	// The limit counters reset every minute: a limit test must not straddle a minute boundary.
-	foreach ( array( 'rate_limit', 'rate_limit_search', 'rate_limit_rest' ) as $key ) {
+	foreach ( array( 'rate_limit', 'rate_limit_search', 'rate_limit_rest', 'rate_limit_404' ) as $key ) {
 		if ( ! empty( $changes[ $key ] ) ) {
 			same_minute();
 			break;
@@ -473,6 +473,182 @@ settings( array( 'trust_any_proxy' => 0, 'ip_header' => 'remote_addr', 'trusted_
 $_SERVER['REMOTE_ADDR'] = '127.0.0.1';
 unset( $_SERVER['HTTP_CF_CONNECTING_IP'], $_SERVER['HTTP_X_FORWARDED_FOR'] );
 PNCP_Ip::reset();
+
+/* ---------- 2.4: όριο 404, ονόματα χρηστών, πάντα αποκλεισμένα ---------- */
+settings( array( 'rate_limit' => 0, 'rate_limit_404' => 3, 'ban_strikes' => 0, 'require_browser_headers' => 0, 'block_bots' => 1 ) );
+fresh();
+$codes = array();
+for ( $i = 1; $i <= 4; $i++ ) {
+	list( $codes[] ) = req( '/den-yparxei-' . $i . '/', browser( '198.51.100.81' ) );
+}
+t( 'όριο 404 = 3: 404,404,404,429', array( 404, 404, 404, 429 ) === $codes, implode( ',', $codes ) );
+t( 'όριο 404: αιτία rate_404 στο αρχείο', in_array( 'rate_404', log_reasons(), true ), implode( ',', log_reasons() ) );
+$codes = array();
+foreach ( array( '/x1.png', '/wp-content/missing.css', '/favicon.ico', '/apple-touch-icon.png', '/.well-known/x', '/x2.jpg' ) as $p ) {
+	list( $codes[] ) = req( $p, browser( '198.51.100.82' ) );
+}
+t( 'όριο 404: εικόνες, CSS, favicon, apple-touch-icon, .well-known δεν μετρούν', ! in_array( 429, $codes, true ), implode( ',', $codes ) );
+list( $code ) = req( $url, browser( '198.51.100.81' ) );
+t( 'όριο 404: οι υπάρχουσες σελίδες περνούν κανονικά', 200 === $code, (string) $code );
+settings( array( 'rate_limit_404' => 0 ) );
+fresh();
+$codes = array();
+for ( $i = 1; $i <= 5; $i++ ) {
+	list( $codes[] ) = req( '/den-yparxei-b' . $i . '/', browser( '198.51.100.81' ) );
+}
+t( 'όριο 404 = 0: ανενεργό', array( 404, 404, 404, 404, 404 ) === $codes, implode( ',', $codes ) );
+
+settings( array( 'block_user_enum' => 0 ) );
+list( $code, $hdr ) = req( '/?author=1', browser( '198.51.100.83' ) );
+t( '?author=1 χωρίς προστασία: ανακατεύθυνση στο /author/…', in_array( $code, array( 301, 302 ), true ) && false !== strpos( $hdr, '/author/' ), (string) $code );
+list( $code ) = req( '/wp-json/wp/v2/users', browser( '198.51.100.83' ) );
+t( 'REST users χωρίς προστασία: 200', 200 === $code, (string) $code );
+settings( array( 'block_user_enum' => 1 ) );
+list( $code, $hdr ) = req( '/?author=1', browser( '198.51.100.83' ) );
+t( '?author=1 με προστασία: 404, χωρίς ανακατεύθυνση', 404 === $code && false === strpos( $hdr, 'location:' ), (string) $code );
+list( $code ) = req( '/?author=1abc', browser( '198.51.100.83' ) );
+t( '?author=1abc: επίσης 404', 404 === $code, (string) $code );
+list( $code ) = req( '/wp-json/wp/v2/users', browser( '198.51.100.83' ) );
+t( 'REST /wp/v2/users με προστασία: 401', 401 === $code, (string) $code );
+list( $code ) = req( '/wp-json/wp/v2/users/1', browser( '198.51.100.83' ) );
+t( 'REST /wp/v2/users/1 με προστασία: 401', 401 === $code, (string) $code );
+list( $code ) = req( '/?rest_route=/wp/v2/users', browser( '198.51.100.83' ) );
+t( '?rest_route=/wp/v2/users με προστασία: 401', 401 === $code, (string) $code );
+list( $code ) = req( '/wp-json/wp/v2/posts', browser( '198.51.100.83' ) );
+t( 'REST posts: ανεπηρέαστο', 200 === $code, (string) $code );
+list( $code, $hdr, $body ) = req( '/wp-sitemap.xml', browser( '198.51.100.83' ) );
+t( 'sitemap: χωρίς τον χάρτη χρηστών', 200 === $code && false === strpos( $body, 'wp-sitemap-users' ), (string) $code );
+list( $code ) = req( '/wp-json/wp/v2/users', browser( '198.51.100.83', array( 'Cookie' => 'wordpress_logged_in_x=1' ) ) );
+t( 'ψεύτικο cookie σύνδεσης: δεν ξεκλειδώνει τη λίστα χρηστών', 401 === $code, (string) $code );
+
+settings( array( 'block_ips' => "198.51.100.0/28\n2001:db8:dead::/48", 'allow_ips' => '198.51.100.9' ) );
+fresh();
+list( $code ) = req( $url, browser( '198.51.100.7' ) );
+t( 'πάντα αποκλεισμένη IP (CIDR): 403', 403 === $code, (string) $code );
+list( $code ) = req( $url, browser( '2001:db8:dead:1::5' ) );
+t( 'πάντα αποκλεισμένη IPv6 (CIDR): 403', 403 === $code, (string) $code );
+list( $code ) = req( $url, browser( '198.51.100.9' ) );
+t( 'πάντα επιτρεπτή IP μέσα στο ίδιο CIDR: 200 (προηγείται)', 200 === $code, (string) $code );
+list( $code ) = req( $url, browser( '198.51.100.20' ) );
+t( 'IP εκτός CIDR: 200', 200 === $code, (string) $code );
+t( 'αρχείο: blocked_ip', in_array( 'blocked_ip', log_reasons(), true ), implode( ',', log_reasons() ) );
+settings( array( 'block_ips' => '', 'allow_ips' => '', 'block_referrers' => "copy-site.example\nhttps://other.example/path" ) );
+fresh();
+list( $code ) = req( $url, browser( '198.51.100.30', array( 'Referer' => 'https://www.copy-site.example/a' ) ) );
+t( 'αποκλεισμένος referrer (υποτομέας): 403', 403 === $code, (string) $code );
+list( $code ) = req( $url, browser( '198.51.100.30', array( 'Referer' => 'https://other.example/' ) ) );
+t( 'αποκλεισμένος referrer γραμμένος ως URL: 403', 403 === $code, (string) $code );
+list( $code ) = req( $url, browser( '198.51.100.30', array( 'Referer' => 'https://notcopy-site.example/' ) ) );
+t( 'referrer που απλώς τελειώνει με το ίδιο κείμενο: 200', 200 === $code, (string) $code );
+list( $code ) = req( $url, browser( '198.51.100.30', array( 'Referer' => 'https://copy-site.example.evil.test/' ) ) );
+t( 'referrer με το όνομα στη μέση: 200', 200 === $code, (string) $code );
+t( 'αρχείο: blocked_ref', in_array( 'blocked_ref', log_reasons(), true ), implode( ',', log_reasons() ) );
+settings( array( 'block_referrers' => '' ) );
+
+/* ---------- 2.4: Content Signals, πηγή στο RSS, Cloudflare ---------- */
+settings( array( 'content_signal' => 1, 'allow_ai_search' => 0 ) );
+list( $code, $hdr, $body ) = req( '/robots.txt', browser( '198.51.100.40' ) );
+t( 'robots.txt: Content-Signal ai-input=no', false !== strpos( $body, 'Content-Signal: search=yes, ai-input=no, ai-train=no' ), $body );
+settings( array( 'allow_ai_search' => 1 ) );
+list( $code, $hdr, $body ) = req( '/robots.txt', browser( '198.51.100.40' ) );
+t( 'robots.txt: με AI search ai-input=yes', false !== strpos( $body, 'Content-Signal: search=yes, ai-input=yes, ai-train=no' ), $body );
+settings( array( 'content_signal' => 0, 'allow_ai_search' => 0 ) );
+list( $code, $hdr, $body ) = req( '/robots.txt', browser( '198.51.100.40' ) );
+t( 'robots.txt: χωρίς Content-Signal όταν είναι ανενεργό', false === strpos( $body, 'Content-Signal' ) );
+
+settings( array( 'feed_mode' => 'full', 'feed_source_link' => 1 ) );
+list( $code, $hdr, $body ) = req( '/feed/', browser( '198.51.100.41' ) );
+t( 'RSS πλήρες: γραμμή πηγής με σύνδεσμο', 200 === $code && false !== strpos( $body, 'first appeared on' ) && false !== strpos( $body, htmlspecialchars( home_url( '/' ) ) ), (string) $code );
+settings( array( 'feed_source_link' => 0 ) );
+list( $code, $hdr, $body ) = req( '/feed/', browser( '198.51.100.41' ) );
+t( 'RSS πλήρες χωρίς τη ρύθμιση: χωρίς γραμμή πηγής', 200 === $code && false === strpos( $body, 'first appeared on' ), (string) $code );
+settings( array( 'feed_mode' => 'excerpt', 'feed_source_link' => 1 ) );
+list( $code, $hdr, $body ) = req( '/feed/', browser( '198.51.100.41' ) );
+t( 'RSS περίληψη: μόνο ο σύνδεσμος «Read the full article», όχι διπλή γραμμή', 200 === $code && false === strpos( $body, 'first appeared on' ), (string) $code );
+
+fresh();
+list( $code, $hdr ) = req( $url, array( 'X-Test-IP' => '198.51.100.42', 'User-Agent' => 'GPTBot' ) );
+t( '403: cf-edge-cache: no-cache (Cloudflare APO)', 403 === $code && false !== strpos( $hdr, 'cf-edge-cache: no-cache' ), $hdr );
+list( $code, $hdr ) = req( $url, browser( '198.51.100.43' ) );
+t( '200: χωρίς cf-edge-cache από το ScrapeLock', 200 === $code && false === strpos( $hdr, 'cf-edge-cache' ) );
+t( 'cloudflare_use_cache: ανεπηρέαστο σε κανονική σελίδα', true === apply_filters( 'cloudflare_use_cache', true ) );
+
+/* ---------- 2.4: πρώιμος έλεγχος (mu-plugin) ---------- */
+settings( array( 'early_mode' => 1, 'block_bots' => 1, 'block_empty_ua' => 1 ) );
+t( 'πρώιμος έλεγχος: το αρχείο γράφτηκε', PNCP_Early::installed() && PNCP_Early::ours( PNCP_Early::path() ), PNCP_Early::path() );
+fresh();
+list( $code, $hdr ) = req( $url, array( 'X-Test-IP' => '198.51.100.50', 'User-Agent' => 'GPTBot' ) );
+t( 'πρώιμος έλεγχος: GPTBot 403 πριν φορτώσουν τα plugins', 403 === $code && false === strpos( $hdr, 'x-test-muplugins-loaded' ), $code . ' ' . $hdr );
+t( 'πρώιμος έλεγχος: γράφεται στο αρχείο (bot_ua)', in_array( 'bot_ua', log_reasons(), true ), implode( ',', log_reasons() ) );
+list( $code, $hdr ) = req( $url, browser( '198.51.100.51' ) );
+t( 'πρώιμος έλεγχος: browser 200', 200 === $code && false !== strpos( $hdr, 'x-test-muplugins-loaded' ), (string) $code );
+list( $code, $hdr ) = req( $url, array( 'X-Test-IP' => '66.249.66.1', 'User-Agent' => 'Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)', 'X-Test-RDNS' => 'crawl-66-249-66-1.googlebot.com', 'X-Test-FDNS' => '66.249.66.1' ) );
+t( 'πρώιμος έλεγχος: το Googlebot περνά στον κανονικό έλεγχο', 200 === $code && false !== strpos( $hdr, 'x-test-muplugins-loaded' ), (string) $code );
+list( $code, $hdr ) = req( $url, array( 'X-Test-IP' => '198.51.100.52', 'User-Agent' => 'GPTBot' ), 'POST' );
+t( 'πρώιμος έλεγχος: POST αφήνεται στον κανονικό (που μπλοκάρει)', 403 === $code && false !== strpos( $hdr, 'x-test-muplugins-loaded' ), $code . ' ' . $hdr );
+PNCP_Log::ban( '198.51.100.53', 10, 'trap' );
+list( $code, $hdr ) = req( $url, browser( '198.51.100.53' ) );
+t( 'πρώιμος έλεγχος: προσωρινά αποκλεισμένη IP 403', 403 === $code && false === strpos( $hdr, 'x-test-muplugins-loaded' ), (string) $code );
+list( $code, $hdr ) = req( $url, browser( '198.51.100.53', array( 'Cookie' => 'wordpress_logged_in_abc=x' ) ) );
+t( 'πρώιμος έλεγχος: με cookie σύνδεσης αφήνεται στον κανονικό', false !== strpos( $hdr, 'x-test-muplugins-loaded' ), (string) $code );
+list( $code, $hdr ) = req( '/skroutz.xml?token=wrong', array( 'X-Test-IP' => '198.51.100.54', 'User-Agent' => 'GPTBot' ) );
+t( 'πρώιμος έλεγχος: τα ιδιωτικά feeds αφήνονται στον κανονικό', false !== strpos( $hdr, 'x-test-muplugins-loaded' ), (string) $code );
+list( $code, $hdr ) = req( '/wp-login.php', array( 'X-Test-IP' => '198.51.100.55', 'User-Agent' => 'GPTBot' ) );
+t( 'πρώιμος έλεγχος: wp-login.php αφήνεται', false !== strpos( $hdr, 'x-test-muplugins-loaded' ), (string) $code );
+settings( array( 'block_ips' => '173.245.48.10' ) );
+$_SERVER['REMOTE_ADDR'] = '173.245.48.10';
+$_SERVER['REQUEST_METHOD'] = 'GET';
+$_SERVER['REQUEST_URI'] = '/';
+$_SERVER['HTTP_USER_AGENT'] = 'Mozilla/5.0 Chrome';
+putenv( 'PNCP_TEST_IP' );
+PNCP_Ip::reset();
+t( 'πρώιμος έλεγχος: IP της Cloudflare (λάθος ρύθμιση IP): όχι απόφαση με βάση την IP', null === PNCP_Early::check(), wp_json_encode( PNCP_Early::check() ) );
+$_SERVER['REMOTE_ADDR'] = '127.0.0.1';
+unset( $_SERVER['HTTP_USER_AGENT'] );
+PNCP_Ip::reset();
+settings( array( 'block_ips' => '', 'early_mode' => 0 ) );
+t( 'πρώιμος έλεγχος ανενεργός: το αρχείο αφαιρέθηκε', ! file_exists( PNCP_Early::path() ) );
+file_put_contents( PNCP_Early::path(), "<?php\n// someone else's file\n" );
+settings( array( 'early_mode' => 1 ) );
+t( 'πρώιμος έλεγχος: ξένο αρχείο με το ίδιο όνομα δεν αντικαθίσταται', ! PNCP_Early::installed() && false !== strpos( (string) file_get_contents( PNCP_Early::path() ), 'someone else' ) );
+settings( array( 'early_mode' => 0 ) );
+t( 'πρώιμος έλεγχος: ξένο αρχείο δεν σβήνεται', file_exists( PNCP_Early::path() ) );
+unlink( PNCP_Early::path() );
+PNCP_Log::unban_all();
+
+/* ---------- 2.4: αναβάθμιση και νέα εγκατάσταση ---------- */
+// Το dbDelta του PNCP_Log::install() βγάζει Deprecated μέσα στο SQLite drop-in (wp-sqlite-db), όχι στο plugin.
+$pncp_upgrade = static function () {
+	$level = error_reporting( E_ALL & ~E_DEPRECATED );
+	pncp_upgrade();
+	error_reporting( $level );
+};
+$keep    = get_option( PNCP_OPTION );
+$keep_v  = get_option( 'pncp_version' );
+$new_240 = array_keys( PNCP_Options::new_in_240() );
+update_option( PNCP_OPTION, array_diff_key( $keep, array_flip( $new_240 ) ) );
+update_option( 'pncp_version', '2.3.0' );
+$pncp_upgrade();
+$after = get_option( PNCP_OPTION );
+t( 'αναβάθμιση από 2.3.0: τα νέα μένουν ανενεργά', 0 === $after['rate_limit_404'] && 0 === $after['block_user_enum'] && 0 === $after['feed_source_link'] && 0 === $after['content_signal'] && 0 === $after['early_mode'], wp_json_encode( array_intersect_key( $after, array_flip( $new_240 ) ) ) );
+t( 'αναβάθμιση από 2.3.0: οι υπόλοιπες ρυθμίσεις δεν άλλαξαν', array_diff_key( $after, array_flip( $new_240 ) ) == array_diff_key( $keep, array_flip( $new_240 ) ) );
+update_option( PNCP_OPTION, array_merge( $after, array( 'block_user_enum' => 1 ) ) );
+update_option( 'pncp_version', '2.3.0' );
+$pncp_upgrade();
+t( 'αναβάθμιση: μια τιμή που υπάρχει ήδη δεν αλλάζει', 1 === (int) get_option( PNCP_OPTION )['block_user_enum'] );
+delete_option( PNCP_OPTION );
+$pncp_upgrade();
+$fresh = PNCP_Options::stored();
+t( 'νέα εγκατάσταση: όριο 404 30, ονόματα χρηστών κρυφά, πηγή RSS, Content-Signal, πρώιμος έλεγχος ανενεργός', 30 === $fresh['rate_limit_404'] && 1 === $fresh['block_user_enum'] && 1 === $fresh['feed_source_link'] && 1 === $fresh['content_signal'] && 0 === $fresh['early_mode'] );
+update_option( PNCP_OPTION, $keep );
+update_option( 'pncp_version', $keep_v );
+PNCP_Options::flush();
+PNCP_Options::set_emergency( 1 );
+t( 'emergency: κρύβει τα ονόματα χρηστών και όριο 404 το πολύ 10', 1 === PNCP_Options::get()['block_user_enum'] && PNCP_Options::get()['rate_limit_404'] <= 10 && PNCP_Options::get()['rate_limit_404'] > 0 );
+PNCP_Options::set_emergency( 0 );
+PNCP_Options::flush();
+PNCP_Bots::no_cache();
+t( 'cloudflare_use_cache: false μετά από no_cache()', false === apply_filters( 'cloudflare_use_cache', true ) );
 
 /* ---------- Απενεργοποίηση: ποτέ με ένα κλικ ---------- */
 settings( array( 'enabled' => 1 ) );

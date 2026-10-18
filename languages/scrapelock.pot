@@ -1282,3 +1282,113 @@ msgstr ""
 #: includes/class-pncp-feed.php:125
 msgid "Unavailable"
 msgstr ""
+
+#: includes/class-pncp-admin.php:552
+msgid "Content Signals in robots.txt: search yes, AI training no"
+msgstr ""
+
+#: includes/class-pncp-admin.php:552
+msgid "A line that says what the content may be used for (contentsignals.org): search=yes, ai-train=no, and ai-input according to “Allow AI search engines”. It does not block anything; it is a statement of your terms that well-behaved companies read."
+msgstr ""
+
+#: includes/class-pncp-admin.php:557
+msgid "Always blocked"
+msgstr ""
+
+#: includes/class-pncp-admin.php:560
+msgid "IPs / CIDR that are always blocked (403), one per line:"
+msgstr ""
+
+#: includes/class-pncp-admin.php:560
+msgid "For example a scraper's server or a hosting network you see in the log. The “Always allowed IPs” take precedence."
+msgstr ""
+
+#: includes/class-pncp-admin.php:561
+msgid "Referrer domains that are always blocked (403), one per line, e.g. copy-site.example:"
+msgstr ""
+
+#: includes/class-pncp-admin.php:561
+msgid "Requests that come from links or embeds on these sites. Each entry also covers its subdomains."
+msgstr ""
+
+#: includes/class-pncp-admin.php:562
+msgid "Hide usernames from visitors"
+msgstr ""
+
+#: includes/class-pncp-admin.php:562
+msgid "?author=1, 2, 3… returns “page not found” instead of the redirect to /author/username/, the REST API does not list users, and the users sitemap is removed. Logged-in users see everything as before. Author archives with a link stay."
+msgstr ""
+
+#: includes/class-pncp-admin.php:573
+msgid "“Page not found” (404) per minute (0 = off):"
+msgstr ""
+
+#: includes/class-pncp-admin.php:573
+msgid "Scrapers guess addresses (?p=1, 2, 3…, old product URLs) to find content. Missing images, CSS, scripts and the favicon do not count. Starting value: 30."
+msgstr ""
+
+#: includes/class-pncp-admin.php:583
+msgid "Early check: block known bots before the theme and the other plugins load"
+msgstr ""
+
+#: includes/class-pncp-admin.php:583
+msgid "Adds the small file wp-content/mu-plugins/scrapelock-early.php, which stops blocked IPs and referrers, temporarily blocked IPs and User-Agents in the bot list with less server load. Search engines, logged-in users, forms and feeds are left to the normal check. It is removed when you turn this off or deactivate the plugin."
+msgstr ""
+
+#: includes/class-pncp-admin.php:585
+msgid "The file could not be created (the server does not allow direct file writes to wp-content/mu-plugins). The normal check works as before."
+msgstr ""
+
+#: includes/class-pncp-admin.php:662
+msgid "The site is behind Cloudflare, but all visitors appear with a Cloudflare address."
+msgstr ""
+
+#: includes/class-pncp-admin.php:663
+msgid "Then limits and blocks hit Cloudflare itself, i.e. many visitors at once. Use the CF-Connecting-IP header, trusted only when the request comes from Cloudflare."
+msgstr ""
+
+#: includes/class-pncp-admin.php:665
+msgid "Use CF-Connecting-IP (recommended)"
+msgstr ""
+
+#: includes/class-pncp-admin.php:672
+msgid "Cloudflare detected. REMOTE_ADDR already holds the visitor's IP (the Cloudflare plugin or the server replaced it), so “REMOTE_ADDR” is the right choice."
+msgstr ""
+
+#: includes/class-pncp-admin.php:763
+msgid "Full text: add “The post … first appeared on …” at the end"
+msgstr ""
+
+#: includes/class-pncp-admin.php:763
+msgid "Sites that republish the feed automatically then link back to the original article, so search engines see where it first appeared."
+msgstr ""
+
+#: includes/class-pncp-admin.php:1045
+msgid "APO and “Cache Everything”: pages served from the Cloudflare cache never reach the plugin, so the bot list, limits and the trap do not apply to them. The WAF rules below apply before the cache. ScrapeLock tells the Cloudflare plugin not to cache blocks and private feeds, and purges its cache when you save the settings."
+msgstr ""
+
+#: includes/class-pncp-admin.php:1350
+msgid "The real visitor IP is now read from CF-Connecting-IP, only for requests from Cloudflare."
+msgstr ""
+
+#: includes/class-pncp-bots.php:139
+msgid "Sorry, you are not allowed to list users."
+msgstr ""
+
+#. translators: 1: article link, 2: site link
+#: includes/class-pncp-feed.php:106
+#, php-format
+msgid "The post %1$s first appeared on %2$s."
+msgstr ""
+
+#: includes/class-pncp-log.php:143
+msgid "“Page not found” limit"
+msgstr ""
+
+#: includes/class-pncp-log.php:144
+msgid "IP in the always-blocked list"
+msgstr ""
+
+#: includes/class-pncp-log.php:145
+msgid "Referrer in the always-blocked list"
+msgstr ""

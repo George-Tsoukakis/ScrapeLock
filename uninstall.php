@@ -36,6 +36,13 @@ function pncp_uninstall_site() {
 	// phpcs:enable
 }
 
+// The early check (mu-plugin, shared by all sites of a network): removed only if ScrapeLock wrote it.
+$pncp_early = trailingslashit( WPMU_PLUGIN_DIR ) . 'scrapelock-early.php';
+if ( is_readable( $pncp_early ) && false !== strpos( (string) file_get_contents( $pncp_early, false, null, 0, 200 ), 'Plugin Name: ScrapeLock early check' ) ) { // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Local file.
+	wp_delete_file( $pncp_early );
+}
+unset( $pncp_early );
+
 if ( is_multisite() ) {
 	foreach ( get_sites(
 		array(
