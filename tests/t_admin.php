@@ -318,7 +318,7 @@ update_option( PNCP_Private_Urls::TOKEN_OPTION, $hash_before, false );
 $keep = PNCP_Options::stored();
 list( , $body ) = http( $page . '&tab=bots' );
 $missing = array();
-foreach ( array( 'block_ips', 'block_referrers', 'block_user_enum', 'rate_limit_404', 'early_mode', 'content_signal', 'verify_ai_bots', 'block_headless' ) as $key ) {
+foreach ( array( 'block_ips', 'block_referrers', 'block_user_enum', 'rate_limit_404', 'early_mode', 'content_signal', 'verify_ai_bots', 'block_headless', 'human_check', 'rate_limit_unverified', 'rate_limit_sitemap', 'geo_db', 'countries_block', 'countries_strict', 'rate_limit_country' ) as $key ) {
 	if ( false === strpos( $body, 'name="pncp_settings[' . $key . ']"' ) ) {
 		$missing[] = $key;
 	}
@@ -372,6 +372,34 @@ list( , $body ) = http( $page . '&tab=rules' );
 t( 'καρτέλα κανόνων χωρίς Cloudflare: χωρίς σημείωση APO', false === strpos( $body, 'APO and' ) );
 update_option( PNCP_OPTION, $keep );
 PNCP_Options::flush();
+
+/* ---------- 2.6: νέα σελίδα ρυθμίσεων ---------- */
+list( , $body ) = http( $page . '&tab=bots' );
+t( 'bots: γρήγοροι σύνδεσμοι στις ενότητες', false !== strpos( $body, 'pncp-section-nav' ) && false !== strpos( $body, 'href="#pncp-sec-human"' ) && false !== strpos( $body, 'id="pncp-sec-human"' ) && false !== strpos( $body, 'id="pncp-sec-countries"' ) && false !== strpos( $body, 'id="pncp-sec-lists"' ) );
+t( 'bots: διακόπτες (toggle) αντί για απλά κουτάκια', false !== strpos( $body, 'class="pncp-toggle" id="pncp-block_bots"' ) );
+t( 'bots: η λίστα bots διπλωμένη, με αριθμό γραμμών', 1 === preg_match( '#<details class="pncp-fold"><summary>[^<]*<span class="pncp-badge">\d+ (entry|entries)#', $body ) );
+t( 'bots: κατάσταση χωρών και αναφορά στη DB-IP', false !== strpos( $body, 'Country of this request' ) && false !== strpos( $body, 'https://db-ip.com' ) );
+t( 'κάθε καρτέλα: κατάσταση προστασίας πάνω', false !== strpos( $body, 'pncp-status-bar' ) && false !== strpos( $body, 'pncp-pill' ) );
+t( 'bots: το κουμπί αποθήκευσης μέσα στη φόρμα ρυθμίσεων', false !== strpos( $body, 'class="pncp-settings-form"' ) );
+settings( array( 'geo_db' => 0 ) );
+list( , $body ) = http( $page . '&tab=bots' );
+t( 'βάση χωρών ανενεργή: χωρίς κουμπί λήψης', false === strpos( $body, 'value="refresh_geo"' ) );
+settings( array( 'geo_db' => 1 ) );
+list( , $body ) = http( $page . '&tab=bots' );
+t( 'βάση χωρών ενεργή: κουμπί «Download now»', false !== strpos( $body, 'value="refresh_geo"' ) );
+settings( array( 'geo_db' => 0 ) );
+list( $code ) = http( '/wp-admin/options.php', array( 'option_page' => 'pncp_settings_group', 'action' => 'update', '_wpnonce' => wp_create_nonce( 'pncp_settings_group-options' ), 'pncp_settings' => array( '_sections' => array( 'bots' ), 'countries_block' => 'cn, ru;xx1 GR gr', 'human_check' => '1', 'rate_limit_unverified' => '15', 'ip_header' => 'remote_addr' ) ) );
+wp_cache_delete( 'alloptions', 'options' );
+$s = PNCP_Options::stored();
+t( 'φόρμα bots: χώρες καθαρές, επαλήθευση ανθρώπου', 302 === $code && "CN\nRU\nGR" === $s['countries_block'] && 1 === (int) $s['human_check'] && 15 === (int) $s['rate_limit_unverified'], wp_json_encode( array( $code, $s['countries_block'], $s['human_check'] ) ) );
+update_option( PNCP_OPTION, $keep );
+PNCP_Options::flush();
+list( , $body ) = http( $page . '&tab=log' );
+t( 'Log: αναφορά «τι προσπαθούν να αντιγράψουν» για 24 ώρες και 7 ημέρες', false !== strpos( $body, 'What they try to copy' ) && false !== strpos( $body, 'Last 7 days' ) && ! php_errors( $body ) );
+foreach ( array( 'general', 'content', 'images', 'rules' ) as $tab ) {
+	list( $code, $body ) = http( $page . '&tab=' . $tab );
+	t( "καρτέλα $tab: νέα εμφάνιση χωρίς PHP warnings", 200 === $code && ! php_errors( $body ) && false !== strpos( $body, 'pncp-status-bar' ), (string) $code );
+}
 
 /* ---------- GraphQL (χωρίς το plugin: με ψεύτικο μοντέλο) ---------- */
 eval( 'namespace WPGraphQL\\Model; class Post { public $databaseId; public function __construct( $id ) { $this->databaseId = $id; } }' );

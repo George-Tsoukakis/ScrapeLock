@@ -38,6 +38,8 @@ require_once PNCP_DIR . 'includes/class-pncp-private-urls.php';
 require_once PNCP_DIR . 'includes/class-pncp-rules.php';
 require_once PNCP_DIR . 'includes/class-pncp-status.php';
 require_once PNCP_DIR . 'includes/class-pncp-early.php';
+require_once PNCP_DIR . 'includes/class-pncp-human.php';
+require_once PNCP_DIR . 'includes/class-pncp-geo.php';
 
 if ( is_admin() ) {
 	require_once PNCP_DIR . 'includes/class-pncp-admin.php';
@@ -54,6 +56,8 @@ PNCP_Bots::init();
 PNCP_Watermark::init();
 PNCP_Private_Urls::init();
 PNCP_Status::init();
+PNCP_Human::init();
+PNCP_Geo::init();
 
 /**
  * Activation: defaults (without touching existing settings), log table, cron.
@@ -116,6 +120,9 @@ function pncp_upgrade() {
 		if ( version_compare( $from, '2.5.0', '<' ) ) {
 			$added += PNCP_Options::new_in_250();
 		}
+		if ( version_compare( $from, '2.6.0', '<' ) ) {
+			$added += PNCP_Options::new_in_260();
+		}
 		$added = array_diff_key( $added, $stored );
 		if ( $added ) {
 			update_option( PNCP_OPTION, array_merge( $stored, $added ), true );
@@ -165,8 +172,8 @@ function pncp_upgrade() {
  * @return array<string, mixed>
  */
 function pncp_migrate_from_1x( $old ) {
-	// The 2.4 and 2.5 additions stay off, as on every existing site.
-	$new = array_merge( PNCP_Options::defaults(), PNCP_Options::new_in_240(), PNCP_Options::new_in_250(), $old );
+	// The 2.4, 2.5 and 2.6 additions stay off, as on every existing site.
+	$new = array_merge( PNCP_Options::defaults(), PNCP_Options::new_in_240(), PNCP_Options::new_in_250(), PNCP_Options::new_in_260(), $old );
 
 	$list   = isset( $old['bot_list'] ) ? PNCP_Options::parse_list( (string) $old['bot_list'] ) : array();
 	$legacy = array_map( 'strtolower', PNCP_Options::legacy_bot_list() );

@@ -22,6 +22,10 @@
 | Απόκρυψη ονομάτων χρηστών: `?author=N` → 404, REST `/wp/v2/users` → 401, χωρίς χάρτη χρηστών στο sitemap (οι συνδεδεμένοι βλέπουν τα πάντα) | PHP | Bots και όρια |
 | Πρώιμος έλεγχος (προαιρετικός): το `wp-content/mu-plugins/scrapelock-early.php` σταματά bots της λίστας, αποκλεισμένες IP και referrers πριν φορτώσουν θέμα και plugins | PHP (mu-plugin) | Bots και όρια |
 | Content Signals στο robots.txt: `search=yes, ai-train=no`, και `ai-input` ανάλογα με την AI αναζήτηση | robots.txt | Bots και όρια |
+| Επαλήθευση ανθρώπου (προαιρετική): μετά την πρώτη πραγματική αλληλεπίδραση (scroll, άγγιγμα, πλήκτρο, κίνηση ποντικιού) ο browser λύνει στο παρασκήνιο ένα ελαφρύ «πρόβλημα» και παίρνει cookie `pncp_hv` για 7 ημέρες· όσοι δεν το έχουν παίρνουν αυστηρότερο όριο σελίδων. Χωρίς captcha, δουλεύει με page cache | PHP + JS | Bots και όρια |
+| Όριο sitemap ανά IP (WordPress, Rank Math, Yoast κ.ά.)· ποτέ για επαληθευμένες μηχανές αναζήτησης | PHP | Bots και όρια |
+| Χώρες: αποκλεισμός ή αυστηρότερο όριο. Χώρα από το `CF-IPCountry` (μόνο από Cloudflare) ή από τη δωρεάν βάση DB-IP Lite (μία φορά τον μήνα, στο `uploads/scrapelock-geo`) | PHP | Bots και όρια |
+| Αναφορά «τι προσπαθούν να αντιγράψουν»: οι σελίδες και τα αρχεία που μπλοκαρίστηκαν περισσότερο (24 ώρες / 7 ημέρες) | — | Αρχείο |
 | Trusted Proxy: το `CF-Connecting-IP` / `X-Forwarded-For` διαβάζεται μόνο από αξιόπιστο proxy · αν όλοι οι επισκέπτες φαίνονται με διεύθυνση Cloudflare, κουμπί που το διορθώνει με ένα κλικ | PHP | Bots και όρια |
 | REST API και WPGraphQL χωρίς κείμενο για επισκέπτες · RSS μόνο περίληψη, ή πλήρες με «Το άρθρο … δημοσιεύτηκε πρώτα στο …» στο τέλος | PHP | Feeds και API |
 | Προστατευμένα XML feeds με token (header για ERP, URL για Skroutz/BestPrice/Merchant), μόνο hash στη βάση (ποτέ σε καθαρή μορφή, ούτε στη μετάβαση από την 1.x), εναλλαγή με περίοδο χάριτος, στατιστικά | PHP | Feeds και API |
@@ -99,6 +103,9 @@ real_ip_header CF-Connecting-IP;
 | `pncp_should_protect` | Αν προστατεύεται η τρέχουσα σελίδα |
 | `pncp_skip_guard` | Παράλειψη όλων των ελέγχων server για ένα αίτημα (στον πρώιμο έλεγχο με context `early`· εκεί φτάνουν μόνο φίλτρα από mu-plugins) |
 | `pncp_404_exempt` | Αν ένα 404 εξαιρείται από το όριο «η σελίδα δεν βρέθηκε» |
+| `pncp_human_difficulty` | Δυσκολία του «προβλήματος» της επαλήθευσης ανθρώπου (1–5, προεπιλογή 3) |
+| `pncp_visitor_country` | Η χώρα του επισκέπτη (π.χ. από δική σας πηγή) |
+| `pncp_geo_source_url` | Η διεύθυνση λήψης της βάσης χωρών |
 | `pncp_client_ip` | Η IP του επισκέπτη (για τον πρώιμο έλεγχο, το φίλτρο πρέπει να είναι σε mu-plugin) |
 | `pncp_rest_hide_content` | Εξαιρέσεις από το κρύψιμο κειμένου (REST, GraphQL) |
 | `pncp_rest_post_types` | Post types που φιλτράρονται στο REST |
