@@ -146,12 +146,8 @@ function pncp_upgrade() {
 	PNCP_Options::flush();
 	// The early check (mu-plugin): written again if the plugin folder changed, removed if it is off.
 	PNCP_Early::sync();
-	// Cache plugins (e.g. LiteSpeed) register their hooks later: purge on init.
-	if ( did_action( 'init' ) ) {
-		pncp_purge_page_cache();
-	} else {
-		add_action( 'init', 'pncp_purge_page_cache', 99 );
-	}
+	// Cache plugins (e.g. LiteSpeed, WP Rocket) finish loading later: before init the purge waits for init.
+	pncp_purge_page_cache();
 }
 
 /**
@@ -237,6 +233,14 @@ add_action( 'plugins_loaded', 'pncp_maybe_upgrade', -100 );
  * Nginx Helper (FastCGI cache) and the Cloudflare plugin, whichever are present.
  */
 function pncp_purge_page_cache() {
+	// Before init (the upgrade runs on plugins_loaded) the cache plugins have not finished loading: WP Rocket
+	// crashed when asked to rebuild its config that early. The purge then runs once, on init.
+	if ( ! did_action( 'init' ) ) {
+		if ( ! has_action( 'init', 'pncp_purge_page_cache' ) ) {
+			add_action( 'init', 'pncp_purge_page_cache', 99 );
+		}
+		return;
+	}
 	// WP Rocket rewrites its config so the bot list takes effect (rocket_cache_reject_ua).
 	if ( function_exists( 'rocket_generate_config_file' ) ) {
 		rocket_generate_config_file();

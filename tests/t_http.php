@@ -712,6 +712,23 @@ fresh();
 list( $code ) = req( $url, $hb( '198.51.100.120', $chrome, array( 'X-Test-HTTPS' => '1', 'Sec-CH-UA' => '"HeadlessChrome";v="141"' ) ) );
 t( 'ρύθμιση ανενεργή: όπως πριν', 200 === $code, (string) $code );
 
+/* ---------- 2.5: αναβάθμιση στο πρώτο αίτημα με WP Rocket (Fatal error στο beta.2) ---------- */
+$pncp_saved = get_option( PNCP_OPTION );
+$pncp_ver   = get_option( 'pncp_version' );
+update_option( PNCP_OPTION, array_diff_key( $pncp_saved, array( 'block_headless' => 1 ) ) );
+update_option( 'pncp_version', '2.5.0-beta.1' );
+delete_option( 'pncp_upgrade_lock' );
+delete_option( 'pncp_test_rocket_config' );
+list( $code, $hdr, $body ) = req( $url, browser( '198.51.100.130', array( 'X-Test-Rocket' => '1' ) ) );
+wp_cache_flush();
+t( 'αναβάθμιση με WP Rocket: η σελίδα ανοίγει (όχι critical error)', 200 === $code && false === stripos( $body, 'critical error' ), (string) $code );
+t( 'αναβάθμιση με WP Rocket: ολοκληρώθηκε', PNCP_VERSION === get_option( 'pncp_version' ) && array_key_exists( 'block_headless', (array) get_option( PNCP_OPTION ) ) );
+t( 'αναβάθμιση με WP Rocket: η cache του καθαρίστηκε, αφού φόρτωσε (στο init)', (bool) get_option( 'pncp_test_rocket_config' ) );
+update_option( PNCP_OPTION, $pncp_saved );
+update_option( 'pncp_version', $pncp_ver );
+delete_option( 'pncp_test_rocket_config' );
+PNCP_Options::flush();
+
 /* ---------- 2.4: αναβάθμιση και νέα εγκατάσταση ---------- */
 // Το dbDelta του PNCP_Log::install() βγάζει Deprecated μέσα στο SQLite drop-in (wp-sqlite-db), όχι στο plugin.
 $pncp_upgrade = static function () {

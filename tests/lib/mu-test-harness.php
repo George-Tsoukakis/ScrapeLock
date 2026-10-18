@@ -98,3 +98,22 @@ if ( isset( $_SERVER['HTTP_X_TEST_REMOTE_ADDR'] ) ) {
 if ( isset( $_SERVER['HTTP_X_TEST_HTTPS'] ) ) {
 	$_SERVER['HTTPS'] = 'on';
 }
+
+// X-Test-Rocket: προσομοίωση του WP Rocket. Το rocket_generate_config_file() υπάρχει από την αρχή, αλλά καλεί
+// συνάρτηση που ορίζεται στο plugins_loaded (όπως στο πραγματικό): αν κληθεί νωρίτερα, Fatal error.
+if ( isset( $_SERVER['HTTP_X_TEST_ROCKET'] ) && ! function_exists( 'rocket_generate_config_file' ) ) {
+	function rocket_generate_config_file() {
+		get_rocket_cache_reject_uri();
+		update_option( 'pncp_test_rocket_config', time(), false );
+	}
+	add_action(
+		'plugins_loaded',
+		static function () {
+			if ( ! function_exists( 'get_rocket_cache_reject_uri' ) ) {
+				function get_rocket_cache_reject_uri() {
+					return '';
+				}
+			}
+		}
+	);
+}
