@@ -274,6 +274,40 @@ final class PNCP_Ip {
 	}
 
 	/**
+	 * Does REMOTE_ADDR belong to Cloudflare? Then, without the right "Real visitor IP" setting, every
+	 * visitor would appear with a Cloudflare address.
+	 *
+	 * @return bool
+	 */
+	public static function remote_is_cloudflare() {
+		$remote = self::remote_addr();
+		return '' !== $remote && self::in_any( $remote, self::list_of( 'cloudflare' ) );
+	}
+
+	/**
+	 * Is the site behind Cloudflare? The request carries CF-Connecting-IP and comes from Cloudflare, or
+	 * REMOTE_ADDR was already replaced with the visitor's IP (as the Cloudflare plugin does).
+	 *
+	 * @return bool
+	 */
+	public static function behind_cloudflare() {
+		$header = isset( $_SERVER['HTTP_CF_CONNECTING_IP'] ) ? sanitize_text_field( wp_unslash( $_SERVER['HTTP_CF_CONNECTING_IP'] ) ) : '';
+		if ( '' === $header || ! filter_var( $header, FILTER_VALIDATE_IP ) ) {
+			return false;
+		}
+		return self::remote_is_cloudflare() || self::remote_addr() === $header;
+	}
+
+	/**
+	 * Is the Cloudflare plugin active?
+	 *
+	 * @return bool
+	 */
+	public static function cloudflare_plugin_active() {
+		return defined( 'CLOUDFLARE_PLUGIN_DIR' ) || class_exists( '\\Cloudflare\\APO\\WordPress\\Hooks', false );
+	}
+
+	/**
 	 * Is REMOTE_ADDR a proxy we trust for this header?
 	 *
 	 * - CF-Connecting-IP: only Cloudflare (it always sets it itself) and the "Trusted proxies".

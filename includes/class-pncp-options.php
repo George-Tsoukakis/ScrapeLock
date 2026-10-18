@@ -81,6 +81,10 @@ final class PNCP_Options {
 			'watermark_enabled',
 			'watermark_full',
 			'watermark_products',
+			'block_user_enum',
+			'early_mode',
+			'feed_source_link',
+			'content_signal',
 		);
 	}
 
@@ -95,6 +99,7 @@ final class PNCP_Options {
 			'rate_limit'            => array( 0, 10000 ),
 			'rate_limit_search'     => array( 0, 10000 ),
 			'rate_limit_rest'       => array( 0, 10000 ),
+			'rate_limit_404'        => array( 0, 10000 ),
 			'ban_strikes'           => array( 0, 20 ),
 			'ban_minutes'           => array( 1, 10080 ),
 			'watermark_image_id'    => array( 0, PHP_INT_MAX ),
@@ -110,7 +115,7 @@ final class PNCP_Options {
 	 * @return string[]
 	 */
 	public static function list_keys() {
-		return array( 'bot_list', 'allow_list', 'private_paths' );
+		return array( 'bot_list', 'allow_list', 'private_paths', 'block_referrers' );
 	}
 
 	/**
@@ -119,7 +124,7 @@ final class PNCP_Options {
 	 * @return string[]
 	 */
 	public static function ip_list_keys() {
-		return array( 'private_ips', 'allow_ips', 'trusted_proxies' );
+		return array( 'private_ips', 'allow_ips', 'trusted_proxies', 'block_ips' );
 	}
 
 	/**
@@ -131,8 +136,8 @@ final class PNCP_Options {
 	public static function sections() {
 		return array(
 			'general' => array( 'enabled', 'scope_posts', 'scope_pages', 'scope_home', 'scope_products', 'skip_woo_pages', 'excluded_ids', 'block_selection', 'block_context_menu', 'block_shortcuts', 'block_devtools', 'block_image_drag', 'block_text_drag', 'blur_on_capture', 'copy_mode', 'attribution_min_chars', 'print_mode', 'exempt_cap', 'show_message', 'message', 'block_framing', 'tdm_reservation', 'tdm_policy_url' ),
-			'bots'    => array( 'block_bots', 'block_empty_ua', 'block_fake_crawlers', 'require_browser_headers', 'trap_enabled', 'bot_list', 'allow_list', 'allow_ips', 'allow_ai_search', 'robots_ai_block', 'rate_limit', 'rate_limit_search', 'rate_limit_rest', 'ban_strikes', 'ban_minutes', 'log_retention', 'ip_header', 'trust_cloudflare', 'trust_any_proxy', 'trusted_proxies' ),
-			'content' => array( 'rest_hide_content', 'graphql_hide_content', 'feed_mode', 'private_paths', 'private_ips' ),
+			'bots'    => array( 'block_bots', 'block_empty_ua', 'block_fake_crawlers', 'require_browser_headers', 'trap_enabled', 'bot_list', 'allow_list', 'allow_ips', 'allow_ai_search', 'robots_ai_block', 'content_signal', 'block_ips', 'block_referrers', 'block_user_enum', 'rate_limit', 'rate_limit_search', 'rate_limit_rest', 'rate_limit_404', 'ban_strikes', 'ban_minutes', 'early_mode', 'log_retention', 'ip_header', 'trust_cloudflare', 'trust_any_proxy', 'trusted_proxies' ),
+			'content' => array( 'rest_hide_content', 'graphql_hide_content', 'feed_mode', 'feed_source_link', 'private_paths', 'private_ips' ),
 			'images'  => array( 'watermark_enabled', 'watermark_full', 'watermark_products', 'watermark_image_id', 'watermark_opacity', 'watermark_size', 'watermark_position', 'watermark_min_width' ),
 		);
 	}
@@ -345,6 +350,32 @@ final class PNCP_Options {
 			'watermark_size'          => 25,
 			'watermark_position'      => 'br',
 			'watermark_min_width'     => 300,
+			// Since 2.4. New installs get them on; existing sites get the values of new_in_240() on upgrade.
+			'rate_limit_404'          => 30,
+			'block_user_enum'         => 1,
+			'block_ips'               => '',
+			'block_referrers'         => '',
+			'early_mode'              => 0,
+			'feed_source_link'        => 1,
+			'content_signal'          => 1,
+		);
+	}
+
+	/**
+	 * The settings added in 2.4, with the values existing sites get on upgrade: everything off,
+	 * so that nothing changes on a site until its administrator turns it on.
+	 *
+	 * @return array<string, int|string>
+	 */
+	public static function new_in_240() {
+		return array(
+			'rate_limit_404'   => 0,
+			'block_user_enum'  => 0,
+			'block_ips'        => '',
+			'block_referrers'  => '',
+			'early_mode'       => 0,
+			'feed_source_link' => 0,
+			'content_signal'   => 0,
 		);
 	}
 
@@ -469,6 +500,8 @@ final class PNCP_Options {
 			'rate_limit'              => $min( $s['rate_limit'], 20 ),
 			'rate_limit_search'       => $min( $s['rate_limit_search'], 5 ),
 			'rate_limit_rest'         => $min( $s['rate_limit_rest'], 10 ),
+			'rate_limit_404'          => $min( $s['rate_limit_404'], 10 ),
+			'block_user_enum'         => 1,
 			'ban_strikes'             => 2,
 			'ban_minutes'             => max( (int) $s['ban_minutes'], 360 ),
 		);

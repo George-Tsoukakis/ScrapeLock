@@ -38,7 +38,7 @@ $cookies = array(
 $_COOKIE[ LOGGED_IN_COOKIE ] = $cookies[ LOGGED_IN_COOKIE ];
 wp_set_current_user( $admin->ID );
 
-function http( $path, $post = null, $follow = false ) {
+function http( $path, $post = null, $follow = false, $headers = null ) {
 	global $base, $cookies;
 	$ch   = curl_init( $base . $path );
 	$jar  = array();
@@ -49,7 +49,7 @@ function http( $path, $post = null, $follow = false ) {
 		CURLOPT_RETURNTRANSFER => true,
 		CURLOPT_HEADER         => true,
 		CURLOPT_COOKIE         => implode( '; ', $jar ),
-		CURLOPT_HTTPHEADER     => array( 'X-Test-IP: 192.0.2.200', 'User-Agent: Mozilla/5.0 Chrome/141', 'Accept-Language: el' ),
+		CURLOPT_HTTPHEADER     => null !== $headers ? $headers : array( 'X-Test-IP: 192.0.2.200', 'User-Agent: Mozilla/5.0 Chrome/141', 'Accept-Language: el' ),
 		CURLOPT_FOLLOWLOCATION => $follow,
 		CURLOPT_TIMEOUT        => 60,
 	);
@@ -313,6 +313,65 @@ list( , $body ) = http( '/wp-admin/options-general.php?page=scrapelock' );
 t( 'Μήνυμα: «δεν μπορεί πλέον να εμφανιστεί», χωρίς το token', false !== strpos( $body, 'can no longer be shown' ) && false === strpos( $body, 'Old1xPlainToken0987654321' ) );
 t( 'Μήνυμα: εμφανίζεται μία φορά', null === $wpdb->get_var( "SELECT option_value FROM {$wpdb->options} WHERE option_name = 'pncp_legacy_token_migrated'" ) );
 update_option( PNCP_Private_Urls::TOKEN_OPTION, $hash_before, false );
+
+/* ---------- 2.4: νέα πεδία, Cloudflare ---------- */
+$keep = PNCP_Options::stored();
+list( , $body ) = http( $page . '&tab=bots' );
+$missing = array();
+foreach ( array( 'block_ips', 'block_referrers', 'block_user_enum', 'rate_limit_404', 'early_mode', 'content_signal' ) as $key ) {
+	if ( false === strpos( $body, 'name="pncp_settings[' . $key . ']"' ) ) {
+		$missing[] = $key;
+	}
+}
+t( 'καρτέλα bots: τα νέα πεδία της 2.4', ! $missing, implode( ',', $missing ) );
+list( , $body ) = http( $page . '&tab=content' );
+t( 'καρτέλα feeds: «first appeared on»', false !== strpos( $body, 'name="pncp_settings[feed_source_link]"' ) );
+settings( array( 'feed_source_link' => 1 ) );
+list( $code ) = http(
+	'/wp-admin/options.php',
+	array(
+		'option_page'   => 'pncp_settings_group',
+		'action'        => 'update',
+		'_wpnonce'      => wp_create_nonce( 'pncp_settings_group' . '-options' ),
+		'pncp_settings' => array(
+			'_sections'       => array( 'bots' ),
+			'block_bots'      => '1',
+			'block_ips'       => "203.0.113.0/24\nόχι-IP",
+			'block_referrers' => "Copy-Site.example\ncopy-site.example",
+			'block_user_enum' => '1',
+			'rate_limit_404'  => '99999',
+			'ip_header'       => 'remote_addr',
+		),
+	)
+);
+wp_cache_delete( 'alloptions', 'options' );
+$s = PNCP_Options::stored();
+t( 'φόρμα bots: αποθηκεύει τα νέα πεδία (έγκυρες IP, χωρίς διπλά, όριο στο μέγιστο)', 302 === $code && '203.0.113.0/24' === $s['block_ips'] && 'copy-site.example' === strtolower( $s['block_referrers'] ) && 1 === (int) $s['block_user_enum'] && 10000 === (int) $s['rate_limit_404'], wp_json_encode( array( $code, $s['block_ips'], $s['block_referrers'], $s['rate_limit_404'] ) ) );
+t( 'φόρμα bots: δεν αγγίζει τη γραμμή πηγής RSS (καρτέλα feeds)', 1 === (int) $s['feed_source_link'] );
+update_option( PNCP_OPTION, $keep );
+PNCP_Options::flush();
+
+settings( array( 'ip_header' => 'remote_addr', 'trust_cloudflare' => 0 ) );
+$cf_headers = array( 'X-Test-Remote-Addr: 173.245.48.10', 'User-Agent: Mozilla/5.0 Chrome/141', 'Accept-Language: el' );
+list( , $body ) = http( $page . '&tab=bots', null, false, $cf_headers );
+t( 'Cloudflare χωρίς σωστή ρύθμιση IP: προειδοποίηση με κουμπί', false !== strpos( $body, 'value="pncp_cf_ip"' ) && ! php_errors( $body ) );
+list( , $body ) = http( $page . '&tab=bots' );
+t( 'χωρίς Cloudflare: καμία προειδοποίηση', false === strpos( $body, 'value="pncp_cf_ip"' ) );
+list( $code ) = http( '/wp-admin/admin-post.php', array( 'action' => 'pncp_cf_ip', '_wpnonce' => 'wrong' ), false, $cf_headers );
+wp_cache_delete( 'alloptions', 'options' );
+t( 'ένα κλικ Cloudflare: λάθος nonce, τίποτα δεν αλλάζει', 'remote_addr' === PNCP_Options::stored()['ip_header'], (string) $code );
+list( $code, , $loc ) = http( '/wp-admin/admin-post.php', array( 'action' => 'pncp_cf_ip', '_wpnonce' => wp_create_nonce( 'pncp_cf_ip' ) ), false, $cf_headers );
+wp_cache_delete( 'alloptions', 'options' );
+$s = PNCP_Options::stored();
+t( 'ένα κλικ Cloudflare: CF-Connecting-IP και εμπιστοσύνη μόνο στην Cloudflare', 302 === $code && 'cf_connecting_ip' === $s['ip_header'] && 1 === (int) $s['trust_cloudflare'] && false !== strpos( $loc, 'pncp_message=cf_ip' ), "$code $loc" );
+list( , $body ) = http( $page . '&tab=bots&pncp_message=cf_ip', null, false, array_merge( $cf_headers, array( 'CF-Connecting-IP: 198.51.100.99' ) ) );
+t( 'ένα κλικ Cloudflare: μήνυμα επιτυχίας, η προειδοποίηση φεύγει, φαίνεται η IP του επισκέπτη', false !== strpos( $body, 'only for requests from Cloudflare' ) && false === strpos( $body, 'value="pncp_cf_ip"' ) && false !== strpos( $body, '<code>198.51.100.99</code>' ) );
+list( , $body ) = http( $page . '&tab=rules', null, false, array_merge( $cf_headers, array( 'CF-Connecting-IP: 198.51.100.99' ) ) );
+t( 'καρτέλα κανόνων πίσω από Cloudflare: σημείωση για APO', false !== strpos( $body, 'APO' ) );
+list( , $body ) = http( $page . '&tab=rules' );
+t( 'καρτέλα κανόνων χωρίς Cloudflare: χωρίς σημείωση APO', false === strpos( $body, 'APO and' ) );
+update_option( PNCP_OPTION, $keep );
+PNCP_Options::flush();
 
 /* ---------- GraphQL (χωρίς το plugin: με ψεύτικο μοντέλο) ---------- */
 eval( 'namespace WPGraphQL\\Model; class Post { public $databaseId; public function __construct( $id ) { $this->databaseId = $id; } }' );

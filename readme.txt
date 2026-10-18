@@ -4,7 +4,7 @@ Tags: anti-scraping, ai bots, bot protection, rate limit, content protection
 Requires at least: 6.2
 Tested up to: 7.1
 Requires PHP: 7.4
-Stable tag: 2.3.0
+Stable tag: 2.4.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -32,14 +32,20 @@ Nothing can stop a determined human: whatever a visitor sees has already reached
 * Detect fake Googlebot, Bingbot, Applebot and Yandex with the official IP lists and reverse DNS. Real search engines always pass.
 * Invisible bot trap link, disallowed in robots.txt.
 * Per-IP limits for pages, searches and REST / GraphQL (IPv6: per /64 network), with temporary blocks after repeated violations.
-* Trusted Proxy support for Cloudflare and reverse proxies, so the real IP cannot be spoofed.
+* A separate limit for "page not found" (404) requests, for scrapers that guess URLs. Missing images, CSS and scripts do not count.
+* Always-blocked lists of IPs / CIDR and referrer domains.
+* Hide usernames from visitors: no `?author=N` redirect, no REST user list, no users sitemap.
+* Optional early check: a small must-use plugin that stops known bots and blocked IPs before the theme and the other plugins load.
+* Content Signals in robots.txt (search yes, AI training no).
+* Trusted Proxy support for Cloudflare and reverse proxies, so the real IP cannot be spoofed. Cloudflare is detected, with a one-click fix when every visitor appears with a Cloudflare address.
+* Works with the Cloudflare plugin (APO): blocks and private feeds are never cached at the edge, and the Cloudflare cache is purged when you save the settings.
 * Ready-made presets (Balanced, Strict, Maximum) and an Emergency Mode for attacks in progress.
 * Block log with a 24-hour summary, top IPs and User-Agents, and automatic deletion after 1, 7 or 30 days.
 
 = Feeds and API =
 
 * Hide post, page and product text from the REST API and WPGraphQL for visitors.
-* RSS with a short excerpt only, or disabled.
+* RSS with a short excerpt only, or disabled. With full text, an optional "The post … first appeared on …" line links republished copies back to the original.
 * Private XML feeds (Skroutz, BestPrice, Google Merchant, ERP) protected with a token in a header or URL. Only the token hash is stored. Token rotation with a grace period and per-feed statistics.
 
 = Server rules =
@@ -72,6 +78,8 @@ ScrapeLock downloads public IP lists once a day, only for the features that use 
 
 If a list has not been downloaded, ScrapeLock verifies search engine bots with reverse DNS, and uses a built-in copy of the Cloudflare ranges.
 
+If the official Cloudflare plugin is active, ScrapeLock asks it to purge its cache when you save the ScrapeLock settings. The request is made by the Cloudflare plugin, with the account you connected there; ScrapeLock itself does not contact Cloudflare for this and stores no Cloudflare credentials.
+
 == Installation ==
 
 1. Upload the `scrapelock` folder to `/wp-content/plugins/`, or install the plugin from the Plugins screen.
@@ -97,7 +105,11 @@ Yes. Enable "Allow AI search engines and assistants" in the "Bots and limits" ta
 
 = My site is behind Cloudflare. What should I set? =
 
-In "Bots and limits", set "Real visitor IP" to CF-Connecting-IP and keep "Trust Cloudflare addresses" on. With Nginx, also set `real_ip_header CF-Connecting-IP;` and the Cloudflare ranges with `set_real_ip_from`, so the server rules see the real visitor IP.
+In "Bots and limits", set "Real visitor IP" to CF-Connecting-IP and keep "Trust Cloudflare addresses" on. If ScrapeLock sees that every visitor arrives from a Cloudflare address, it shows a button that does this for you. With Nginx, also set `real_ip_header CF-Connecting-IP;` and the Cloudflare ranges with `set_real_ip_from`, so the server rules see the real visitor IP.
+
+= What is the early check? =
+
+An optional setting in "Bots and limits". ScrapeLock writes the small file `wp-content/mu-plugins/scrapelock-early.php`, which runs before the theme and the other plugins and stops blocked IPs and referrers, temporarily blocked IPs and User-Agents from the bot list, with less server load. Search engines, logged-in users, forms and private feeds are left to the normal check. The file is removed when you turn the setting off, deactivate or delete the plugin. If the server does not allow direct file writes, the setting shows a notice and everything else works as before.
 
 = Does it guarantee legal protection of my content? =
 
@@ -117,6 +129,11 @@ When a request is blocked, the IP address, User-Agent, page and time are logged.
 6. Dashboard widget with the protection status and the last 24 hours.
 
 == Changelog ==
+
+= 2.4.0 =
+* New, all off on existing sites until you turn them on: a "page not found" (404) limit per IP, always-blocked IP / CIDR and referrer lists, hiding usernames from visitors (`?author=N`, REST user list, users sitemap), Content Signals in robots.txt and a "first appeared on" source line in full-text feeds.
+* Optional early check: a small must-use plugin that stops listed bots and blocked IPs before the theme and other plugins load. Always off until you enable it; removed when turned off, deactivated or deleted.
+* Cloudflare: blocks, the bot trap and private feeds are never cached at the edge (APO), the Cloudflare plugin cache is purged when you save the settings, and a one-click fix appears when every visitor shows a Cloudflare address.
 
 = 2.3.0 =
 * Safer defaults for new installs: page, search and REST / GraphQL limits are on from the start (60 / 20 / 60 per minute). Existing sites keep their settings.
