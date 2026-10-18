@@ -32,6 +32,7 @@ Nothing can stop a determined human: whatever a visitor sees has already reached
 * Verify allowed AI search bots (OpenAI OAI-SearchBot and ChatGPT-User, PerplexityBot, Perplexity-User) with their official IP lists: real ones are never limited, fakes that only use their name are blocked.
 * Detect fake Googlebot, Bingbot, Applebot and Yandex with the official IP lists and reverse DNS. Real search engines always pass.
 * Invisible bot trap link, disallowed in robots.txt.
+* Optional detection of headless browsers (Puppeteer, Playwright, Selenium) and of scripts that copy a browser's User-Agent but not the headers a real browser sends.
 * Per-IP limits for pages, searches and REST / GraphQL (IPv6: per /64 network), with temporary blocks after repeated violations.
 * A separate limit for "page not found" (404) requests, for scrapers that guess URLs. Missing images, CSS and scripts do not count.
 * Always-blocked lists of IPs / CIDR and referrer domains.

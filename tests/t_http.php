@@ -674,6 +674,44 @@ settings( array( 'rate_limit' => 0, 'ban_strikes' => 3, 'allow_ai_search' => 0, 
 PNCP_Log::unban_all();
 PNCP_Ip::reset();
 
+/* ---------- 2.5: headless και ψεύτικοι browsers ---------- */
+$chrome  = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36';
+$hints   = '"Google Chrome";v="141", "Chromium";v="141", "Not.A/Brand";v="24"';
+$real    = array( 'Sec-Fetch-Mode' => 'navigate', 'Sec-Fetch-Dest' => 'document', 'Sec-Fetch-Site' => 'none', 'Sec-CH-UA' => $hints );
+$hb      = static function ( $ip, $ua, $extra = array() ) {
+	return array_merge( array( 'X-Test-IP' => $ip, 'User-Agent' => $ua, 'Accept-Language' => 'el-GR,el;q=0.9' ), $extra );
+};
+settings( array( 'block_headless' => 1, 'require_browser_headers' => 0, 'rate_limit' => 0, 'block_bots' => 1 ) );
+fresh();
+list( $code ) = req( $url, $hb( '198.51.100.110', $chrome, array( 'Sec-Fetch-Mode' => 'navigate', 'Sec-CH-UA' => '"HeadlessChrome";v="141", "Chromium";v="141"' ) ) );
+t( 'headless Chrome με κανονικό User-Agent (Sec-CH-UA: HeadlessChrome): 403', 403 === $code, (string) $code );
+t( 'αρχείο: headless', in_array( 'headless', log_reasons(), true ), implode( ',', log_reasons() ) );
+list( $code ) = req( $url, $hb( '198.51.100.111', $chrome, array( 'X-Test-HTTPS' => '1' ) ) );
+t( 'HTTPS: «Chrome» χωρίς Sec-Fetch και Sec-CH-UA (script): 403', 403 === $code, (string) $code );
+t( 'αρχείο: fake_browser', in_array( 'fake_browser', log_reasons(), true ), implode( ',', log_reasons() ) );
+list( $code ) = req( $url, $hb( '198.51.100.112', $chrome, array_merge( $real, array( 'X-Test-HTTPS' => '1' ) ) ) );
+t( 'HTTPS: πραγματικός Chrome (Sec-Fetch + Sec-CH-UA): 200', 200 === $code, (string) $code );
+list( $code ) = req( $url, $hb( '198.51.100.113', $chrome ) );
+t( 'HTTP: «Chrome» χωρίς τα headers: 200 (σε HTTP οι browsers δεν τα στέλνουν πάντα)', 200 === $code, (string) $code );
+list( $code ) = req( $url, $hb( '198.51.100.114', 'Mozilla/5.0 (Linux; Android 14; Pixel 8; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/141.0.0.0 Mobile Safari/537.36 [FBAN/EMA]', array( 'X-Test-HTTPS' => '1' ) ) );
+t( 'HTTPS: in-app browser (Android WebView) χωρίς headers: 200', 200 === $code, (string) $code );
+list( $code ) = req( $url, $hb( '198.51.100.115', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:143.0) Gecko/20100101 Firefox/143.0', array( 'X-Test-HTTPS' => '1' ) ) );
+t( 'HTTPS: «Firefox» χωρίς Sec-Fetch: 403', 403 === $code, (string) $code );
+list( $code ) = req( $url, $hb( '198.51.100.116', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:143.0) Gecko/20100101 Firefox/143.0', array( 'X-Test-HTTPS' => '1', 'Sec-Fetch-Mode' => 'navigate' ) ) );
+t( 'HTTPS: πραγματικός Firefox (Sec-Fetch, χωρίς client hints): 200', 200 === $code, (string) $code );
+list( $code ) = req( $url, $hb( '198.51.100.117', 'Mozilla/5.0 (iPhone; CPU iPhone OS 15_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/15.0 Mobile/15E148 Safari/604.1', array( 'X-Test-HTTPS' => '1' ) ) );
+t( 'HTTPS: παλιό Safari χωρίς Sec-Fetch: 200 (δεν ελέγχεται)', 200 === $code, (string) $code );
+list( $code ) = req( $url, $hb( '198.51.100.118', 'Mozilla/5.0 (Windows NT 10.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/80.0.3987.0 Safari/537.36', array( 'X-Test-HTTPS' => '1' ) ) );
+t( 'HTTPS: Chrome 80 (πριν τα client hints): 200', 200 === $code, (string) $code );
+list( $code ) = req( $url, $hb( '198.51.100.119', 'facebookexternalhit/1.1 Chrome/141.0.0.0', array( 'X-Test-HTTPS' => '1' ) ) );
+t( 'HTTPS: preview της λίστας «Πάντα επιτρεπτά»: 200', 200 === $code, (string) $code );
+list( $code ) = req( $url, $hb( '66.249.66.1', 'Mozilla/5.0 (Linux; Android 6.0.1; Nexus 5X Build/MMB29P) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Mobile Safari/537.36 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)', array( 'X-Test-HTTPS' => '1', 'X-Test-RDNS' => 'crawl-66-249-66-1.googlebot.com', 'X-Test-FDNS' => '66.249.66.1' ) ) );
+t( 'HTTPS: πραγματικό Googlebot smartphone χωρίς Sec-Fetch: 200', 200 === $code, (string) $code );
+settings( array( 'block_headless' => 0 ) );
+fresh();
+list( $code ) = req( $url, $hb( '198.51.100.120', $chrome, array( 'X-Test-HTTPS' => '1', 'Sec-CH-UA' => '"HeadlessChrome";v="141"' ) ) );
+t( 'ρύθμιση ανενεργή: όπως πριν', 200 === $code, (string) $code );
+
 /* ---------- 2.4: αναβάθμιση και νέα εγκατάσταση ---------- */
 // Το dbDelta του PNCP_Log::install() βγάζει Deprecated μέσα στο SQLite drop-in (wp-sqlite-db), όχι στο plugin.
 $pncp_upgrade = static function () {
@@ -694,11 +732,11 @@ update_option( PNCP_OPTION, array_merge( $after, array( 'block_user_enum' => 1 )
 update_option( 'pncp_version', '2.3.0' );
 $pncp_upgrade();
 t( 'αναβάθμιση: μια τιμή που υπάρχει ήδη δεν αλλάζει', 1 === (int) get_option( PNCP_OPTION )['block_user_enum'] );
-update_option( PNCP_OPTION, array_diff_key( $keep, array( 'verify_ai_bots' => 1 ) ) );
+update_option( PNCP_OPTION, array_diff_key( $keep, array( 'verify_ai_bots' => 1, 'block_headless' => 1 ) ) );
 update_option( 'pncp_version', '2.4.0' );
 $pncp_upgrade();
 $after = get_option( PNCP_OPTION );
-t( 'αναβάθμιση από 2.4.0: η επαλήθευση AI bots μένει ανενεργή, τα υπόλοιπα ίδια', 0 === $after['verify_ai_bots'] && array_diff_key( $after, array( 'verify_ai_bots' => 1 ) ) == array_diff_key( $keep, array( 'verify_ai_bots' => 1 ) ) );
+t( 'αναβάθμιση από 2.4.0: τα νέα της 2.5 μένουν ανενεργά, τα υπόλοιπα ίδια', 0 === $after['verify_ai_bots'] && 0 === $after['block_headless'] && array_diff_key( $after, array( 'verify_ai_bots' => 1, 'block_headless' => 1 ) ) == array_diff_key( $keep, array( 'verify_ai_bots' => 1, 'block_headless' => 1 ) ) );
 update_option( PNCP_OPTION, array_diff_key( $keep, array_flip( $new_240 ), array( 'verify_ai_bots' => 1 ) ) );
 update_option( 'pncp_version', '2.3.0' );
 $pncp_upgrade();
