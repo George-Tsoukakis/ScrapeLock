@@ -13,6 +13,7 @@
 | Δήλωση εξαίρεσης από AI / TDM (Οδηγία ΕΕ 2019/790 άρθ. 4, ν. 4996/2022): header, meta, `/.well-known/tdmrep.json`, `noai` | header / HTML | Στη σελίδα |
 | Λίστα scrapers / AI bots, χωρίς User-Agent, «μόνο browsers» · χωριστή επιλογή για AI αναζήτηση (OAI-SearchBot, Claude-SearchBot, PerplexityBot κ.ά.) ενώ η εκπαίδευση (GPTBot, ClaudeBot, CCBot κ.ά.) μένει μπλοκαρισμένη | PHP | Bots και όρια |
 | Ψεύτικα Googlebot / Bingbot / Applebot / Yandex: επίσημες λίστες IP (κάθε μέρα) + reverse/forward DNS | PHP | Bots και όρια |
+| Επαλήθευση AI bots αναζήτησης (OAI-SearchBot, ChatGPT-User, PerplexityBot, Perplexity-User) με τις επίσημες λίστες IP τους, όταν επιτρέπεται η AI αναζήτηση: τα πραγματικά χωρίς όριο, τα ψεύτικα 403 | PHP | Bots και όρια |
 | Παγίδα για bots (αόρατος σύνδεσμος, Disallow στο robots.txt) | PHP | Bots και όρια |
 | Όρια ανά IP: σελίδες, αναζήτηση, REST / GraphQL · προσωρινός αποκλεισμός μετά από N παραβάσεις σε 10 λεπτά | PHP | Bots και όρια |
 | Όριο «η σελίδα δεν βρέθηκε» (404) ανά IP, για scrapers που μαντεύουν διευθύνσεις · εικόνες, CSS, scripts και favicon που λείπουν δεν μετρούν | PHP | Bots και όρια |

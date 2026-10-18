@@ -85,6 +85,7 @@ final class PNCP_Options {
 			'early_mode',
 			'feed_source_link',
 			'content_signal',
+			'verify_ai_bots',
 		);
 	}
 
@@ -136,7 +137,7 @@ final class PNCP_Options {
 	public static function sections() {
 		return array(
 			'general' => array( 'enabled', 'scope_posts', 'scope_pages', 'scope_home', 'scope_products', 'skip_woo_pages', 'excluded_ids', 'block_selection', 'block_context_menu', 'block_shortcuts', 'block_devtools', 'block_image_drag', 'block_text_drag', 'blur_on_capture', 'copy_mode', 'attribution_min_chars', 'print_mode', 'exempt_cap', 'show_message', 'message', 'block_framing', 'tdm_reservation', 'tdm_policy_url' ),
-			'bots'    => array( 'block_bots', 'block_empty_ua', 'block_fake_crawlers', 'require_browser_headers', 'trap_enabled', 'bot_list', 'allow_list', 'allow_ips', 'allow_ai_search', 'robots_ai_block', 'content_signal', 'block_ips', 'block_referrers', 'block_user_enum', 'rate_limit', 'rate_limit_search', 'rate_limit_rest', 'rate_limit_404', 'ban_strikes', 'ban_minutes', 'early_mode', 'log_retention', 'ip_header', 'trust_cloudflare', 'trust_any_proxy', 'trusted_proxies' ),
+			'bots'    => array( 'block_bots', 'block_empty_ua', 'block_fake_crawlers', 'require_browser_headers', 'trap_enabled', 'bot_list', 'allow_list', 'allow_ips', 'allow_ai_search', 'verify_ai_bots', 'robots_ai_block', 'content_signal', 'block_ips', 'block_referrers', 'block_user_enum', 'rate_limit', 'rate_limit_search', 'rate_limit_rest', 'rate_limit_404', 'ban_strikes', 'ban_minutes', 'early_mode', 'log_retention', 'ip_header', 'trust_cloudflare', 'trust_any_proxy', 'trusted_proxies' ),
 			'content' => array( 'rest_hide_content', 'graphql_hide_content', 'feed_mode', 'feed_source_link', 'private_paths', 'private_ips' ),
 			'images'  => array( 'watermark_enabled', 'watermark_full', 'watermark_products', 'watermark_image_id', 'watermark_opacity', 'watermark_size', 'watermark_position', 'watermark_min_width' ),
 		);
@@ -358,6 +359,19 @@ final class PNCP_Options {
 			'early_mode'              => 0,
 			'feed_source_link'        => 1,
 			'content_signal'          => 1,
+			// Since 2.5. Existing sites get the values of new_in_250() on upgrade.
+			'verify_ai_bots'          => 1,
+		);
+	}
+
+	/**
+	 * The settings added in 2.5, with the values existing sites get on upgrade: off.
+	 *
+	 * @return array<string, int>
+	 */
+	public static function new_in_250() {
+		return array(
+			'verify_ai_bots' => 0,
 		);
 	}
 

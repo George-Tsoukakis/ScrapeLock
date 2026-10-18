@@ -1392,3 +1392,21 @@ msgstr ""
 #: includes/class-pncp-log.php:145
 msgid "Referrer in the always-blocked list"
 msgstr ""
+
+#. translators: %s: list of User-Agents
+#: includes/class-pncp-admin.php:549
+msgid "Verify AI search bots with their official IP lists (OpenAI, Perplexity)"
+msgstr ""
+
+#. translators: %s: list of User-Agents
+#: includes/class-pncp-admin.php:549
+msgid "With AI search allowed: the real OAI-SearchBot, ChatGPT-User, PerplexityBot and Perplexity-User are never limited or blocked, and requests that only use their name get a 403 (“Fake AI search bot”). The lists are downloaded once a day; until then nothing changes."
+msgstr ""
+
+#: includes/class-pncp-admin.php:709
+msgid "not downloaded yet, no verification until then"
+msgstr ""
+
+#: includes/class-pncp-log.php:139
+msgid "Fake AI search bot"
+msgstr ""

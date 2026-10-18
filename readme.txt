@@ -29,6 +29,7 @@ Nothing can stop a determined human: whatever a visitor sees has already reached
 = Bots and limits =
 
 * Block a list of scrapers and AI training crawlers, with a separate option to allow AI search assistants.
+* Verify allowed AI search bots (OpenAI OAI-SearchBot and ChatGPT-User, PerplexityBot, Perplexity-User) with their official IP lists: real ones are never limited, fakes that only use their name are blocked.
 * Detect fake Googlebot, Bingbot, Applebot and Yandex with the official IP lists and reverse DNS. Real search engines always pass.
 * Invisible bot trap link, disallowed in robots.txt.
 * Per-IP limits for pages, searches and REST / GraphQL (IPv6: per /64 network), with temporary blocks after repeated violations.
@@ -76,7 +77,10 @@ ScrapeLock downloads public IP lists once a day, only for the features that use 
 * Bing crawler IP ranges, from www.bing.com. Downloaded while protection is enabled, to tell real Bingbot from fakes. [Terms](https://www.microsoft.com/servicesagreement), [Privacy](https://privacy.microsoft.com/privacystatement).
 * Cloudflare IP ranges, from the Cloudflare API (api.cloudflare.com/client/v4/ips). Downloaded only when "Real visitor IP" reads the CF-Connecting-IP or X-Forwarded-For header and Cloudflare addresses are trusted. [Terms](https://www.cloudflare.com/website-terms/), [Privacy](https://www.cloudflare.com/privacypolicy/).
 
-If a list has not been downloaded, ScrapeLock verifies search engine bots with reverse DNS, and uses a built-in copy of the Cloudflare ranges.
+* OpenAI bot IP ranges (OAI-SearchBot, ChatGPT-User), from openai.com. Downloaded only when AI search is allowed and "Verify AI search bots" is on, to tell the real bots from fakes. [Terms](https://openai.com/policies/terms-of-use/), [Privacy](https://openai.com/policies/privacy-policy/).
+* Perplexity bot IP ranges (PerplexityBot, Perplexity-User), from www.perplexity.com. Downloaded only when AI search is allowed and "Verify AI search bots" is on, for the same reason. [Terms](https://www.perplexity.ai/hub/legal/terms-of-service), [Privacy](https://www.perplexity.ai/hub/legal/privacy-policy).
+
+If a list has not been downloaded, ScrapeLock verifies search engine bots with reverse DNS, and uses a built-in copy of the Cloudflare ranges. AI search bots are not verified until their list has been downloaded.
 
 If the official Cloudflare plugin is active, ScrapeLock asks it to purge its cache when you save the ScrapeLock settings. The request is made by the Cloudflare plugin, with the account you connected there; ScrapeLock itself does not contact Cloudflare for this and stores no Cloudflare credentials.
 
@@ -101,7 +105,7 @@ Pages served from page cache never reach PHP. Use the rules in the "Server rules
 
 = Can I allow ChatGPT or Perplexity search but block training? =
 
-Yes. Enable "Allow AI search engines and assistants" in the "Bots and limits" tab. Training crawlers stay blocked.
+Yes. Enable "Allow AI search engines and assistants" in the "Bots and limits" tab. Training crawlers stay blocked. With "Verify AI search bots" on, only requests from the official OpenAI and Perplexity addresses count as their bots; scanners that only copy the name get a 403.
 
 = My site is behind Cloudflare. What should I set? =
 

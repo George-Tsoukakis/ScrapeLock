@@ -58,13 +58,18 @@ final class PNCP_Ip {
 	 */
 	public static function sources() {
 		return array(
-			'cloudflare' => array( 'https://api.cloudflare.com/client/v4/ips' ),
-			'google'     => array(
+			'cloudflare'      => array( 'https://api.cloudflare.com/client/v4/ips' ),
+			'google'          => array(
 				'https://developers.google.com/static/search/apis/ipranges/googlebot.json',
 				'https://developers.google.com/static/search/apis/ipranges/special-crawlers.json',
 				'https://developers.google.com/static/search/apis/ipranges/user-triggered-fetchers-google.json',
 			),
-			'bing'       => array( 'https://www.bing.com/toolbox/bingbot.json' ),
+			'bing'            => array( 'https://www.bing.com/toolbox/bingbot.json' ),
+			// AI search bots and assistants (since 2.5), one list per User-Agent.
+			'openai_search'   => array( 'https://openai.com/searchbot.json' ),
+			'openai_user'     => array( 'https://openai.com/chatgpt-user.json' ),
+			'perplexity_bot'  => array( 'https://www.perplexity.com/perplexitybot.json' ),
+			'perplexity_user' => array( 'https://www.perplexity.com/perplexity-user.json' ),
 		);
 	}
 
@@ -147,7 +152,8 @@ final class PNCP_Ip {
 
 	/**
 	 * The lists the current settings use. Only these are downloaded: the Google and Bing lists while
-	 * protection is on, the Cloudflare list only when a Cloudflare proxy is trusted for the real IP.
+	 * protection is on, the Cloudflare list only when a Cloudflare proxy is trusted for the real IP, and
+	 * the AI search lists only when AI search is allowed and "Verify AI search bots" is on.
 	 *
 	 * @return string[]
 	 */
@@ -160,6 +166,9 @@ final class PNCP_Ip {
 		}
 		if ( ! empty( $s['trust_cloudflare'] ) && in_array( $s['ip_header'], array( 'cf_connecting_ip', 'x_forwarded_for' ), true ) ) {
 			$needed[] = 'cloudflare';
+		}
+		if ( ! empty( $s['enabled'] ) && ! empty( $s['allow_ai_search'] ) && ! empty( $s['verify_ai_bots'] ) ) {
+			$needed = array_merge( $needed, array_values( PNCP_Bots::ai_bot_lists() ) );
 		}
 		return $needed;
 	}
