@@ -2,7 +2,7 @@
 /**
  * Plugin Name:       ScrapeLock – Content & AI Bot Protection
  * Description:       Protects your content: makes copying text and images harder, hides the text in the REST API, GraphQL and RSS, blocks scrapers, AI bots and fake Googlebots, temporarily blocks persistent IPs, protects XML feeds with a token and adds an optional watermark. Forms, cart, checkout and search engines are not affected.
- * Version:           2.4.0
+ * Version:           2.4.1
  * Requires at least: 6.2
  * Requires PHP:      7.4
  * Author:            CodeBunny
@@ -19,7 +19,7 @@ if ( defined( 'PNCP_VERSION' ) ) {
 	return;
 }
 
-define( 'PNCP_VERSION', '2.4.0' );
+define( 'PNCP_VERSION', '2.4.1' );
 define( 'PNCP_FILE', __FILE__ );
 define( 'PNCP_DIR', plugin_dir_path( __FILE__ ) );
 define( 'PNCP_URL', plugin_dir_url( __FILE__ ) );
@@ -136,12 +136,8 @@ function pncp_upgrade() {
 	PNCP_Options::flush();
 	// The early check (mu-plugin): written again if the plugin folder changed, removed if it is off.
 	PNCP_Early::sync();
-	// Cache plugins (e.g. LiteSpeed) register their hooks later: purge on init.
-	if ( did_action( 'init' ) ) {
-		pncp_purge_page_cache();
-	} else {
-		add_action( 'init', 'pncp_purge_page_cache', 99 );
-	}
+	// Cache plugins (e.g. LiteSpeed, WP Rocket) finish loading later: before init the purge waits for init.
+	pncp_purge_page_cache();
 }
 
 /**
@@ -227,6 +223,14 @@ add_action( 'plugins_loaded', 'pncp_maybe_upgrade', -100 );
  * Nginx Helper (FastCGI cache) and the Cloudflare plugin, whichever are present.
  */
 function pncp_purge_page_cache() {
+	// Before init (the upgrade runs on plugins_loaded) the cache plugins have not finished loading: WP Rocket
+	// crashed when asked to rebuild its config that early. The purge then runs once, on init.
+	if ( ! did_action( 'init' ) ) {
+		if ( ! has_action( 'init', 'pncp_purge_page_cache' ) ) {
+			add_action( 'init', 'pncp_purge_page_cache', 99 );
+		}
+		return;
+	}
 	// WP Rocket rewrites its config so the bot list takes effect (rocket_cache_reject_ua).
 	if ( function_exists( 'rocket_generate_config_file' ) ) {
 		rocket_generate_config_file();
