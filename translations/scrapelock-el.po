@@ -1,6 +1,6 @@
 msgid ""
 msgstr ""
-"Project-Id-Version: ScrapeLock 2.4.1\n"
+"Project-Id-Version: ScrapeLock 2.5.0\n"
 "Report-Msgid-Bugs-To: https://wordpress.org/support/plugin/scrapelock\n"
 "MIME-Version: 1.0\n"
 "Content-Type: text/plain; charset=UTF-8\n"
@@ -1393,3 +1393,41 @@ msgstr "IP στη λίστα «πάντα αποκλεισμένες»"
 #: includes/class-pncp-log.php:145
 msgid "Referrer in the always-blocked list"
 msgstr "Referrer στη λίστα «πάντα αποκλεισμένοι»"
+
+#. translators: %s: list of User-Agents
+#: includes/class-pncp-admin.php:549
+msgid "Verify AI search bots with their official IP lists (OpenAI, Perplexity)"
+msgstr "Επαλήθευση των AI bots αναζήτησης με τις επίσημες λίστες IP τους (OpenAI, Perplexity)"
+
+#. translators: %s: list of User-Agents
+#: includes/class-pncp-admin.php:549
+msgid "With AI search allowed: the real OAI-SearchBot, ChatGPT-User, PerplexityBot and Perplexity-User are never limited or blocked, and requests that only use their name get a 403 (“Fake AI search bot”). The lists are downloaded once a day; until then nothing changes."
+msgstr "Όταν επιτρέπεται η AI αναζήτηση: τα πραγματικά OAI-SearchBot, ChatGPT-User, PerplexityBot και Perplexity-User δεν παίρνουν ποτέ όριο ή αποκλεισμό, και τα αιτήματα που απλώς χρησιμοποιούν το όνομά τους παίρνουν 403 («Ψεύτικο AI bot αναζήτησης»). Οι λίστες κατεβαίνουν μία φορά τη μέρα· μέχρι τότε δεν αλλάζει τίποτα."
+
+#: includes/class-pncp-admin.php:709
+msgid "not downloaded yet, no verification until then"
+msgstr "δεν έχει κατέβει ακόμη, χωρίς επαλήθευση μέχρι τότε"
+
+#: includes/class-pncp-log.php:139
+msgid "Fake AI search bot"
+msgstr "Ψεύτικο AI bot αναζήτησης"
+
+#: includes/class-pncp-admin.php:546
+msgid "Block headless and fake browsers"
+msgstr "Μπλοκάρισμα headless και ψεύτικων browsers"
+
+#: includes/class-pncp-admin.php:546
+msgid "Chrome without a window (Puppeteer, Playwright, Selenium) gives itself away in the headers it sends, even with a normal User-Agent. On HTTPS, scripts that only copy the User-Agent of Chrome, Edge or Firefox do not send the Sec-Fetch headers every modern browser sends. In-app browsers (Android WebView) are not checked."
+msgstr "Ο Chrome χωρίς παράθυρο (Puppeteer, Playwright, Selenium) προδίδεται από τα headers που στέλνει, ακόμη και με κανονικό User-Agent. Σε HTTPS, τα scripts που αντιγράφουν μόνο το User-Agent του Chrome, του Edge ή του Firefox δεν στέλνουν τα headers Sec-Fetch που στέλνει κάθε σύγχρονος browser. Οι browsers μέσα σε εφαρμογές (Android WebView) δεν ελέγχονται."
+
+#: includes/class-pncp-admin.php:708
+msgid "not used with the current “Real visitor IP” setting (the built-in list is enough to detect Cloudflare)"
+msgstr "δεν χρησιμοποιείται με την τρέχουσα ρύθμιση «Πραγματική IP επισκέπτη» (η ενσωματωμένη λίστα αρκεί για τον εντοπισμό της Cloudflare)"
+
+#: includes/class-pncp-log.php:141
+msgid "Headless browser"
+msgstr "Headless browser"
+
+#: includes/class-pncp-log.php:142
+msgid "Fake browser"
+msgstr "Ψεύτικος browser"

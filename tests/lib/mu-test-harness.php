@@ -94,6 +94,11 @@ if ( isset( $_SERVER['HTTP_X_TEST_REMOTE_ADDR'] ) ) {
 	$_SERVER['REMOTE_ADDR'] = $_SERVER['HTTP_X_TEST_REMOTE_ADDR'];
 }
 
+// X-Test-HTTPS: το αίτημα θεωρείται HTTPS (ο built-in server του PHP σερβίρει μόνο HTTP).
+if ( isset( $_SERVER['HTTP_X_TEST_HTTPS'] ) ) {
+	$_SERVER['HTTPS'] = 'on';
+}
+
 // X-Test-Rocket: προσομοίωση του WP Rocket. Το rocket_generate_config_file() υπάρχει από την αρχή, αλλά καλεί
 // συνάρτηση που ορίζεται στο plugins_loaded (όπως στο πραγματικό): αν κληθεί νωρίτερα, Fatal error.
 if ( isset( $_SERVER['HTTP_X_TEST_ROCKET'] ) && ! function_exists( 'rocket_generate_config_file' ) ) {

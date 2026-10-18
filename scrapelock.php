@@ -2,7 +2,7 @@
 /**
  * Plugin Name:       ScrapeLock – Content & AI Bot Protection
  * Description:       Protects your content: makes copying text and images harder, hides the text in the REST API, GraphQL and RSS, blocks scrapers, AI bots and fake Googlebots, temporarily blocks persistent IPs, protects XML feeds with a token and adds an optional watermark. Forms, cart, checkout and search engines are not affected.
- * Version:           2.4.1
+ * Version:           2.5.0
  * Requires at least: 6.2
  * Requires PHP:      7.4
  * Author:            CodeBunny
@@ -19,7 +19,7 @@ if ( defined( 'PNCP_VERSION' ) ) {
 	return;
 }
 
-define( 'PNCP_VERSION', '2.4.1' );
+define( 'PNCP_VERSION', '2.5.0' );
 define( 'PNCP_FILE', __FILE__ );
 define( 'PNCP_DIR', plugin_dir_path( __FILE__ ) );
 define( 'PNCP_URL', plugin_dir_url( __FILE__ ) );
@@ -107,9 +107,19 @@ function pncp_upgrade() {
 		add_option( PNCP_OPTION, PNCP_Options::defaults() );
 	} elseif ( '' === $from || version_compare( $from, '2.0.0', '<' ) ) {
 		update_option( PNCP_OPTION, pncp_migrate_from_1x( $stored ), true );
-	} elseif ( version_compare( $from, '2.4.0', '<' ) ) {
-		// 2.4: the new protections stay off on existing sites (the defaults are for new installs).
-		update_option( PNCP_OPTION, array_merge( $stored, array_diff_key( PNCP_Options::new_in_240(), $stored ) ), true );
+	} else {
+		// 2.4 and later: the new protections stay off on existing sites (the defaults are for new installs).
+		$added = array();
+		if ( version_compare( $from, '2.4.0', '<' ) ) {
+			$added += PNCP_Options::new_in_240();
+		}
+		if ( version_compare( $from, '2.5.0', '<' ) ) {
+			$added += PNCP_Options::new_in_250();
+		}
+		$added = array_diff_key( $added, $stored );
+		if ( $added ) {
+			update_option( PNCP_OPTION, array_merge( $stored, $added ), true );
+		}
 	}
 
 	// Up to 2.2.0 the 1.x token was kept in plain form until the admin saw it: it is deleted.
@@ -155,8 +165,8 @@ function pncp_upgrade() {
  * @return array<string, mixed>
  */
 function pncp_migrate_from_1x( $old ) {
-	// The 2.4 additions stay off, as on every existing site.
-	$new = array_merge( PNCP_Options::defaults(), PNCP_Options::new_in_240(), $old );
+	// The 2.4 and 2.5 additions stay off, as on every existing site.
+	$new = array_merge( PNCP_Options::defaults(), PNCP_Options::new_in_240(), PNCP_Options::new_in_250(), $old );
 
 	$list   = isset( $old['bot_list'] ) ? PNCP_Options::parse_list( (string) $old['bot_list'] ) : array();
 	$legacy = array_map( 'strtolower', PNCP_Options::legacy_bot_list() );
