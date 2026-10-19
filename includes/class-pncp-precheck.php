@@ -1,7 +1,7 @@
 <?php
 /**
  * Pre-cache check: the setting, the generated loader, the line in wp-config.php and the import of its
- * events into the log. The check itself is in includes/precheck-runtime.php.
+ * events into the log. The check itself is in includes/class-pncp-precheck-runtime.php.
  *
  * Page caches such as WP Rocket serve stored pages before any plugin loads, so the normal check never sees
  * those requests: a bot that looks like a browser could read cached pages without a limit. With this setting
@@ -244,14 +244,14 @@ final class PNCP_Precheck {
 	 * @return string
 	 */
 	public static function loader_code() {
-		$runtime = var_export( trailingslashit( PNCP_DIR ) . 'includes/precheck-runtime.php', true ); // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_var_export -- Writes the path as PHP code.
+		$runtime = var_export( trailingslashit( PNCP_DIR ) . 'includes/class-pncp-precheck-runtime.php', true ); // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_var_export -- Writes the path as PHP code.
 		$config  = var_export( self::config(), true ); // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_var_export -- Writes the configuration as PHP code.
 		return "<?php\n"
 			. "// ScrapeLock pre-cache check: written by the plugin, do not edit. Removed when the setting is turned off.\n"
 			. "if ( isset( \$_SERVER['SCRIPT_FILENAME'] ) && realpath( (string) \$_SERVER['SCRIPT_FILENAME'] ) === __FILE__ ) {\n\texit;\n}\n"
-			. 'if ( ! function_exists( \'pncp_precheck_run\' ) && is_file( ' . $runtime . " ) ) {\n"
+			. 'if ( ! class_exists( \'PNCP_Precheck_Runtime\', false ) && is_file( ' . $runtime . " ) ) {\n"
 			. "\trequire_once " . $runtime . ";\n"
-			. "\tpncp_precheck_run( " . $config . " );\n"
+			. "\tPNCP_Precheck_Runtime::run( " . $config . " );\n"
 			. "}\n";
 	}
 
