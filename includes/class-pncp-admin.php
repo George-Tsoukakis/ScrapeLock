@@ -28,6 +28,7 @@ final class PNCP_Admin {
 		add_action( 'admin_post_pncp_token', array( __CLASS__, 'handle_token' ) );
 		add_action( 'admin_post_pncp_log', array( __CLASS__, 'handle_log' ) );
 		add_action( 'admin_post_pncp_cf_ip', array( __CLASS__, 'handle_cf_ip' ) );
+		add_action( 'admin_post_pncp_bunny_ip', array( __CLASS__, 'handle_bunny_ip' ) );
 		add_action( 'wp_ajax_pncp_wm_batch', array( __CLASS__, 'ajax_wm_batch' ) );
 		add_action( 'admin_notices', array( __CLASS__, 'upgrade_notices' ) );
 	}
@@ -309,6 +310,7 @@ final class PNCP_Admin {
 		$items     = array(
 			array( ! empty( $s['enabled'] ), __( 'Protection', 'scrapelock' ) ),
 			array( ! empty( $s['early_mode'] ) && PNCP_Early::installed(), __( 'Early check', 'scrapelock' ) ),
+			array( ! empty( $s['precheck'] ) && PNCP_Precheck::active(), __( 'Pre-cache check', 'scrapelock' ) ),
 			array( ! empty( $s['human_check'] ), __( 'Human check', 'scrapelock' ) ),
 			array( ! empty( $s['allow_ai_search'] ) && ! empty( $s['verify_ai_bots'] ), __( 'AI bots verified', 'scrapelock' ) ),
 			array( ! empty( $s['block_headless'] ), __( 'Headless browsers', 'scrapelock' ) ),
@@ -353,7 +355,7 @@ final class PNCP_Admin {
 		} elseif ( ! empty( $s['geo_db'] ) ) {
 			esc_html_e( 'Country database: not downloaded yet. Use “Download now” at the bottom of this tab, or wait for the daily task.', 'scrapelock' );
 		} else {
-			esc_html_e( 'Country database: off. Without Cloudflare or the database the country is unknown and the country lists do nothing.', 'scrapelock' );
+			esc_html_e( 'Country database: off. Without Cloudflare, Bunny CDN or the database the country is unknown and the country lists do nothing.', 'scrapelock' );
 		}
 		echo '<br>';
 		printf(
@@ -708,7 +710,7 @@ final class PNCP_Admin {
 		<?php self::row_close(); ?>
 		<?php self::row_open( 'countries', __( 'Countries', 'scrapelock' ) ); ?>
 				<?php
-				self::checkbox( $s, 'geo_db', __( 'Download the free country database (DB-IP Lite, once a month)', 'scrapelock' ), __( 'Needed when the site is not behind Cloudflare. About 5 MB to download, stored as two small files in uploads/scrapelock-geo. Behind Cloudflare the country that Cloudflare sends is used, and the database is not needed.', 'scrapelock' ) );
+				self::checkbox( $s, 'geo_db', __( 'Download the free country database (DB-IP Lite, once a month)', 'scrapelock' ), __( 'Needed when the site is not behind Cloudflare or Bunny CDN. About 5 MB to download, stored as two small files in uploads/scrapelock-geo. Behind Cloudflare the country that Cloudflare sends is used, behind Bunny the one Bunny sends (when it reaches the site directly from Bunny), and the database is not needed.', 'scrapelock' ) );
 				self::textarea( $s, 'countries_block', __( 'Blocked countries (403), two-letter codes separated by commas, e.g. CN, RU:', 'scrapelock' ), __( 'Search engines, verified AI search bots and the “Always allowed” list are never blocked by country. People who travel or use a VPN appear with the country of their connection.', 'scrapelock' ), 2 );
 				self::textarea( $s, 'countries_strict', __( 'Countries with a stricter page limit, e.g. those your customers do not come from:', 'scrapelock' ), '', 2 );
 				self::number( $s, 'rate_limit_country', __( 'Pages per minute for these countries (0 = off):', 'scrapelock' ), __( 'Starting value: 10.', 'scrapelock' ) );
@@ -724,6 +726,10 @@ final class PNCP_Admin {
 				self::checkbox( $s, 'early_mode', __( 'Early check: block known bots before the theme and the other plugins load', 'scrapelock' ), __( 'Adds the small file wp-content/mu-plugins/scrapelock-early.php, which stops blocked IPs and referrers, temporarily blocked IPs and User-Agents in the bot list with less server load. Search engines, logged-in users, forms and feeds are left to the normal check. It is removed when you turn this off or deactivate the plugin.', 'scrapelock' ) );
 				if ( ! empty( $s['early_mode'] ) && ! PNCP_Early::installed() ) {
 					echo '<p class="pncp-inline-warning">' . esc_html__( 'The file could not be created (the server does not allow direct file writes to wp-content/mu-plugins). The normal check works as before.', 'scrapelock' ) . '</p>';
+				}
+				if ( ! is_multisite() ) {
+					self::checkbox( $s, 'precheck', __( 'Pre-cache check: apply the page limit and blocks also to pages served from the page cache', 'scrapelock' ), __( 'Page caches such as WP Rocket serve stored pages before any plugin loads, so a bot that looks like a browser could read them without a limit. This adds one line at the top of wp-config.php that loads a small check before the cache: always-blocked IPs, temporarily blocked IPs and the “Pages per minute” limit. Counters are kept in APCu or in wp-content/scrapelock-precheck. Search engines, logged-in users, forms, wp-admin and the REST API are left to the normal check. The line and the files are removed when you turn this off or deactivate the plugin.', 'scrapelock' ) );
+					self::render_precheck_status( $s );
 				}
 				?>
 				<p><label for="pncp-log_retention"><?php esc_html_e( 'Keep the block log for:', 'scrapelock' ); ?></label>
@@ -759,9 +765,10 @@ final class PNCP_Admin {
 					__( 'Behind a CDN or reverse proxy all visitors appear with the CDN\'s IP. Choose the header with the real IP.', 'scrapelock' )
 				);
 				?>
-				<p><strong><?php esc_html_e( 'Trusted Proxy:', 'scrapelock' ); ?></strong> <?php esc_html_e( 'the header is read only when the request comes from a proxy you trust. Otherwise anyone could write any IP they want and bypass limits and blocks. CF-Connecting-IP: only from Cloudflare. X-Real-IP / X-Forwarded-For: also from the server itself or a private network (Nginx in front of Apache). True-Client-IP: only from the proxies in the list.', 'scrapelock' ); ?></p>
+				<p><strong><?php esc_html_e( 'Trusted Proxy:', 'scrapelock' ); ?></strong> <?php esc_html_e( 'the header is read only when the request comes from a proxy you trust. Otherwise anyone could write any IP they want and bypass limits and blocks. CF-Connecting-IP: only from Cloudflare. X-Real-IP / X-Forwarded-For: from Bunny CDN, the server itself or a private network (Nginx in front of Apache). True-Client-IP: only from the proxies in the list.', 'scrapelock' ); ?></p>
 				<?php
 				self::checkbox( $s, 'trust_cloudflare', __( 'Trust Cloudflare addresses', 'scrapelock' ), __( 'The official Cloudflare list is refreshed every day.', 'scrapelock' ) );
+				self::checkbox( $s, 'trust_bunny', __( 'Trust Bunny CDN addresses', 'scrapelock' ), __( 'For X-Real-IP / X-Forwarded-For and Bunny\'s country header. The official list of Bunny edge servers is refreshed every day.', 'scrapelock' ) );
 				if ( ! empty( $s['trust_any_proxy'] ) ) {
 					echo '<div class="pncp-inline-warning">';
 					self::checkbox( $s, 'trust_any_proxy', __( 'Trust every request (1.4 behaviour, insecure)', 'scrapelock' ), __( 'On because this is how version 1.4 worked. Fill in your proxies below and uncheck it. Once turned off, it cannot be turned on again.', 'scrapelock' ) );
@@ -811,7 +818,71 @@ final class PNCP_Admin {
 		}
 		if ( 'remote_addr' === $s['ip_header'] && PNCP_Ip::behind_cloudflare() && ! PNCP_Ip::remote_is_cloudflare() ) {
 			echo '<div class="notice notice-info inline"><p>' . esc_html__( 'Cloudflare detected. REMOTE_ADDR already holds the visitor\'s IP (the Cloudflare plugin or the server replaced it), so “REMOTE_ADDR” is the right choice.', 'scrapelock' ) . '</p></div>';
+			return;
 		}
+		self::render_bunny_hint( $s );
+	}
+
+	/**
+	 * State of the pre-cache check under its setting: running, or why not (with the line to add by hand).
+	 *
+	 * @param array<string, mixed> $s Settings.
+	 */
+	private static function render_precheck_status( $s ) {
+		if ( empty( $s['precheck'] ) || empty( $s['enabled'] ) ) {
+			return;
+		}
+		if ( PNCP_Precheck::active() ) {
+			echo '<p class="description pncp-precheck-status">' . esc_html__( 'Running: wp-config.php loads the check before the page cache.', 'scrapelock' ) . ' ';
+			echo esc_html( function_exists( 'apcu_enabled' ) && apcu_enabled() ? __( 'Counters: APCu.', 'scrapelock' ) : __( 'Counters: files in wp-content/scrapelock-precheck.', 'scrapelock' ) );
+			echo '</p>';
+			return;
+		}
+		$status = (string) get_option( PNCP_Precheck::STATUS, '' );
+		echo '<div class="pncp-inline-warning pncp-precheck-status"><p>';
+		if ( 'no_files' === $status ) {
+			esc_html_e( 'Not running: the folder wp-content/scrapelock-precheck could not be created (the server does not allow direct file writes). The normal check works as before.', 'scrapelock' );
+		} else {
+			esc_html_e( 'Not running yet: wp-config.php could not be changed (not writable, or it does not start with “<?php” on its own line). Add these lines right after the first line (<?php) of wp-config.php, then reload this page:', 'scrapelock' );
+			echo '</p>';
+			self::code_block( 'pncp-precheck-lines', PNCP_Precheck::block(), 3 );
+			echo '<p>';
+			esc_html_e( 'If you remove the setting later, remove the lines too: without the plugin they do nothing.', 'scrapelock' );
+		}
+		echo '</p></div>';
+	}
+
+	/**
+	 * Bunny CDN detected (CDN-ServerId / Via: BunnyCDN): either REMOTE_ADDR already holds the visitor's IP
+	 * (the server replaced it, e.g. Nginx real_ip), or every visitor appears with a Bunny address and a
+	 * one-click fix is offered (X-Real-IP, trusted only from Bunny edge servers).
+	 *
+	 * @param array<string, mixed> $s Settings.
+	 */
+	private static function render_bunny_hint( $s ) {
+		if ( ! PNCP_Ip::behind_bunny() ) {
+			return;
+		}
+		$real   = isset( $_SERVER['HTTP_X_REAL_IP'] ) ? sanitize_text_field( wp_unslash( $_SERVER['HTTP_X_REAL_IP'] ) ) : '';
+		$remote = PNCP_Ip::remote_addr();
+		if ( '' !== $real && $real === $remote ) {
+			if ( 'remote_addr' === $s['ip_header'] ) {
+				echo '<div class="notice notice-info inline"><p>' . esc_html__( 'Bunny CDN detected. REMOTE_ADDR already holds the visitor\'s IP (the server replaced it), so “REMOTE_ADDR” is the right choice.', 'scrapelock' ) . '</p></div>';
+			}
+			return;
+		}
+		if ( '' === $real || ! filter_var( $real, FILTER_VALIDATE_IP ) || PNCP_Ip::client_ip() === $real ) {
+			return;
+		}
+		?>
+		<div class="notice notice-warning inline">
+			<p><strong><?php esc_html_e( 'The site is behind Bunny CDN, but all visitors appear with a Bunny address.', 'scrapelock' ); ?></strong>
+			<?php esc_html_e( 'Then limits and blocks hit Bunny itself, i.e. many visitors at once. Use the X-Real-IP header, trusted only when the request comes from a Bunny edge server (the official list is downloaded now).', 'scrapelock' ); ?></p>
+			<?php self::action_form_open( 'pncp_bunny_ip', 'pncp_bunny_ip' ); ?>
+				<p><?php submit_button( __( 'Use X-Real-IP from Bunny (recommended)', 'scrapelock' ), 'primary', 'submit', false ); ?></p>
+			</form>
+		</div>
+		<?php
 	}
 
 	/**
@@ -823,6 +894,7 @@ final class PNCP_Admin {
 			'google'          => 'Google',
 			'bing'            => 'Bing',
 			'cloudflare'      => 'Cloudflare',
+			'bunny'           => 'Bunny CDN',
 			'openai_search'   => 'OpenAI OAI-SearchBot',
 			'openai_user'     => 'OpenAI ChatGPT-User',
 			'perplexity_bot'  => 'PerplexityBot',
@@ -847,6 +919,8 @@ final class PNCP_Admin {
 							echo esc_html__( 'not used with the current “Real visitor IP” setting (the built-in list is enough to detect Cloudflare)', 'scrapelock' );
 						} elseif ( 'cloudflare' === $key ) {
 							echo esc_html__( 'built-in list (not downloaded yet)', 'scrapelock' );
+						} elseif ( 'bunny' === $key && ! in_array( 'bunny', $needed, true ) ) {
+							echo esc_html__( 'not used with the current settings', 'scrapelock' );
 						} elseif ( in_array( $key, PNCP_Bots::ai_bot_lists(), true ) ) {
 							echo esc_html__( 'not downloaded yet, no verification until then', 'scrapelock' );
 						} else {
@@ -1253,6 +1327,7 @@ final class PNCP_Admin {
 	 * @param array<string, mixed> $s Settings.
 	 */
 	private static function tab_log( $s ) {
+		PNCP_Precheck::import_events(); // Blocks of the pre-cache check since the last hourly import.
 		$summary = PNCP_Log::summary( 24 );
 		$reasons = PNCP_Log::reasons();
 		$bans    = PNCP_Log::active_bans();
@@ -1552,6 +1627,23 @@ final class PNCP_Admin {
 	}
 
 	/**
+	 * One click: real visitor IP from X-Real-IP, trusted only from Bunny CDN edge servers. The list is
+	 * downloaded right away; without it no address is trusted and REMOTE_ADDR stays in use.
+	 */
+	public static function handle_bunny_ip() {
+		self::verify( 'pncp_bunny_ip' );
+		$fix = array(
+			'ip_header'   => 'x_real_ip',
+			'trust_bunny' => 1,
+		);
+		update_option( PNCP_OPTION, array_merge( PNCP_Options::stored(), $fix ) );
+		PNCP_Options::flush();
+		PNCP_Ip::reset();
+		$result = PNCP_Ip::refresh_lists();
+		self::back( 'bots', empty( $result['bunny'] ) ? 'bunny_ip_failed' : 'bunny_ip' );
+	}
+
+	/**
 	 * Notices after actions, and upgrade notices from 1.4.
 	 */
 	public static function upgrade_notices() {
@@ -1564,17 +1656,19 @@ final class PNCP_Admin {
 		// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Only displays a notice.
 		$message = $ours && isset( $_GET['pncp_message'] ) ? sanitize_key( wp_unslash( $_GET['pncp_message'] ) ) : '';
 		$texts   = array(
-			'profile'       => array( 'success', __( 'Preset applied.', 'scrapelock' ) ),
-			'token'         => array( 'success', __( 'New token created.', 'scrapelock' ) ),
-			'revoked'       => array( 'success', __( 'Previous token revoked.', 'scrapelock' ) ),
-			'unbanned'      => array( 'success', __( 'Block lifted.', 'scrapelock' ) ),
-			'cleared'       => array( 'success', __( 'Log deleted.', 'scrapelock' ) ),
-			'lists'         => array( 'success', __( 'IP lists refreshed.', 'scrapelock' ) ),
-			'geo'           => array( 'success', __( 'Country database downloaded.', 'scrapelock' ) ),
-			'geo_failed'    => array( 'error', __( 'The country database could not be downloaded or read; the previous one (if any) was kept. It will try again tomorrow.', 'scrapelock' ) ),
-			'cf_ip'         => array( 'success', __( 'The real visitor IP is now read from CF-Connecting-IP, only for requests from Cloudflare.', 'scrapelock' ) ),
-			'lists_partial' => array( 'warning', __( 'Some IP lists could not be downloaded; their previous version was kept. It will try again tomorrow.', 'scrapelock' ) ),
-			'error'         => array( 'error', __( 'The action was not completed.', 'scrapelock' ) ),
+			'profile'         => array( 'success', __( 'Preset applied.', 'scrapelock' ) ),
+			'token'           => array( 'success', __( 'New token created.', 'scrapelock' ) ),
+			'revoked'         => array( 'success', __( 'Previous token revoked.', 'scrapelock' ) ),
+			'unbanned'        => array( 'success', __( 'Block lifted.', 'scrapelock' ) ),
+			'cleared'         => array( 'success', __( 'Log deleted.', 'scrapelock' ) ),
+			'lists'           => array( 'success', __( 'IP lists refreshed.', 'scrapelock' ) ),
+			'geo'             => array( 'success', __( 'Country database downloaded.', 'scrapelock' ) ),
+			'geo_failed'      => array( 'error', __( 'The country database could not be downloaded or read; the previous one (if any) was kept. It will try again tomorrow.', 'scrapelock' ) ),
+			'cf_ip'           => array( 'success', __( 'The real visitor IP is now read from CF-Connecting-IP, only for requests from Cloudflare.', 'scrapelock' ) ),
+			'bunny_ip'        => array( 'success', __( 'The real visitor IP is now read from X-Real-IP, only for requests from Bunny CDN.', 'scrapelock' ) ),
+			'bunny_ip_failed' => array( 'warning', __( 'X-Real-IP is selected for Bunny CDN, but the list of Bunny addresses could not be downloaded. Until it is, the header is not trusted. It will try again tomorrow, or use “Refresh now” under “Official IP lists”.', 'scrapelock' ) ),
+			'lists_partial'   => array( 'warning', __( 'Some IP lists could not be downloaded; their previous version was kept. It will try again tomorrow.', 'scrapelock' ) ),
+			'error'           => array( 'error', __( 'The action was not completed.', 'scrapelock' ) ),
 		);
 		if ( isset( $texts[ $message ] ) ) {
 			printf( '<div class="notice notice-%1$s is-dismissible"><p>%2$s</p></div>', esc_attr( $texts[ $message ][0] ), esc_html( $texts[ $message ][1] ) );

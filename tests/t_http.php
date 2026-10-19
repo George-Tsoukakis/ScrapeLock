@@ -474,6 +474,68 @@ $_SERVER['REMOTE_ADDR'] = '127.0.0.1';
 unset( $_SERVER['HTTP_CF_CONNECTING_IP'], $_SERVER['HTTP_X_FORWARDED_FOR'] );
 PNCP_Ip::reset();
 
+/* ---------- 2.6: Bunny CDN (λίστα edge servers, X-Real-IP, χώρα) ---------- */
+t( 'Bunny: λίστα σε JSON (πίνακας διευθύνσεων)', array( '89.187.162.1', '2400:52e0:1a00::1' ) === PNCP_Ip::parse_ranges( '["89.187.162.1","2400:52e0:1a00::1","όχι-ip"]' ) );
+t( 'Bunny: λίστα σε XML', array( '89.187.162.1', '89.187.162.2' ) === PNCP_Ip::parse_ranges( '<ArrayOfstring xmlns="x"><string>89.187.162.1</string><string>89.187.162.2</string></ArrayOfstring>' ) );
+t( 'Bunny: άδεια απάντηση = αποτυχία (κρατιέται η παλιά λίστα)', array() === PNCP_Ip::parse_ranges( '[]' ) );
+$pncp_bunny_old = get_option( PNCP_Ip::LISTS_OPTION . '_bunny', null );
+PNCP_Ip::store_list( 'bunny', array( '89.187.162.1', '2400:52e0:1a00::1', '185.111.111.0/24' ) );
+t( 'Bunny: η λίστα φορτώνεται αυτόματα (autoload)', 'yes' === $wpdb->get_var( $wpdb->prepare( "SELECT autoload FROM {$wpdb->options} WHERE option_name = %s", PNCP_Ip::LISTS_OPTION . '_bunny' ) ) || 'on' === $wpdb->get_var( $wpdb->prepare( "SELECT autoload FROM {$wpdb->options} WHERE option_name = %s", PNCP_Ip::LISTS_OPTION . '_bunny' ) ) );
+t( 'Bunny: διεύθυνση της λίστας', PNCP_Ip::is_bunny( '89.187.162.1' ) && PNCP_Ip::is_bunny( '2400:52e0:1a00:0::1' ) && PNCP_Ip::is_bunny( '185.111.111.9' ) );
+t( 'Bunny: ξένη διεύθυνση', ! PNCP_Ip::is_bunny( '89.187.162.2' ) && ! PNCP_Ip::is_bunny( '' ) && ! PNCP_Ip::is_bunny( 'σκουπίδι' ) );
+$_SERVER['REMOTE_ADDR']    = '89.187.162.1';
+$_SERVER['HTTP_X_REAL_IP'] = '1.2.3.4';
+settings( array( 'ip_header' => 'x_real_ip', 'trust_bunny' => 1 ) );
+PNCP_Ip::reset();
+t( 'X-Real-IP από edge server του Bunny: γίνεται δεκτό', '1.2.3.4' === PNCP_Ip::client_ip(), PNCP_Ip::client_ip() );
+t( 'Bunny: η λίστα χρειάζεται με X-Real-IP', in_array( 'bunny', PNCP_Ip::needed_lists(), true ) );
+settings( array( 'trust_bunny' => 0 ) );
+PNCP_Ip::reset();
+t( 'Bunny όχι αξιόπιστο: αγνοείται', '89.187.162.1' === PNCP_Ip::client_ip(), PNCP_Ip::client_ip() );
+t( 'Bunny όχι αξιόπιστο: η λίστα δεν κατεβαίνει', ! in_array( 'bunny', PNCP_Ip::needed_lists(), true ) );
+settings( array( 'trust_bunny' => 1 ) );
+$_SERVER['REMOTE_ADDR'] = '89.187.162.2';
+PNCP_Ip::reset();
+t( 'X-Real-IP από ξένη IP που δεν είναι του Bunny: αγνοείται', '89.187.162.2' === PNCP_Ip::client_ip(), PNCP_Ip::client_ip() );
+settings( array( 'ip_header' => 'x_forwarded_for' ) );
+unset( $_SERVER['HTTP_X_REAL_IP'] );
+$_SERVER['REMOTE_ADDR']          = '89.187.162.1';
+$_SERVER['HTTP_X_FORWARDED_FOR'] = '6.6.6.6, 1.2.3.4';
+PNCP_Ip::reset();
+t( 'X-Forwarded-For μέσω Bunny: η τελευταία τιμή', '1.2.3.4' === PNCP_Ip::client_ip(), PNCP_Ip::client_ip() );
+settings( array( 'ip_header' => 'cf_connecting_ip' ) );
+$_SERVER['HTTP_CF_CONNECTING_IP'] = '1.2.3.4';
+PNCP_Ip::reset();
+t( 'CF-Connecting-IP από το Bunny: αγνοείται (μόνο από Cloudflare)', '89.187.162.1' === PNCP_Ip::client_ip(), PNCP_Ip::client_ip() );
+// Χώρα από το CDN-RequestCountryCode: μόνο από edge server του Bunny και με «Trust Bunny».
+settings( array( 'ip_header' => 'remote_addr' ) );
+$_SERVER['HTTP_CDN_REQUESTCOUNTRYCODE'] = 'gr';
+PNCP_Geo::reset();
+t( 'Bunny: χώρα από το CDN-RequestCountryCode', 'GR' === PNCP_Geo::country( '1.2.3.4' ), PNCP_Geo::country( '1.2.3.4' ) );
+$_SERVER['REMOTE_ADDR'] = '5.5.5.5';
+PNCP_Ip::reset();
+PNCP_Geo::reset();
+t( 'Bunny: CDN-RequestCountryCode από ξένη IP: αγνοείται', '' === PNCP_Geo::country( '1.2.3.5' ), PNCP_Geo::country( '1.2.3.5' ) );
+settings( array( 'trust_bunny' => 0 ) );
+$_SERVER['REMOTE_ADDR'] = '89.187.162.1';
+PNCP_Ip::reset();
+PNCP_Geo::reset();
+t( 'Bunny όχι αξιόπιστο: η χώρα του αγνοείται', '' === PNCP_Geo::country( '1.2.3.6' ), PNCP_Geo::country( '1.2.3.6' ) );
+$_SERVER['HTTP_VIA'] = '1.1 BunnyCDN-DE1-1330';
+t( 'Bunny: αναγνώριση από το Via', PNCP_Ip::behind_bunny() );
+unset( $_SERVER['HTTP_VIA'] );
+t( 'Bunny: χωρίς κεφαλίδες δεν αναγνωρίζεται', ! PNCP_Ip::behind_bunny() );
+if ( null === $pncp_bunny_old ) {
+	delete_option( PNCP_Ip::LISTS_OPTION . '_bunny' );
+} else {
+	update_option( PNCP_Ip::LISTS_OPTION . '_bunny', $pncp_bunny_old );
+}
+settings( array( 'ip_header' => 'remote_addr', 'trust_bunny' => 1 ) );
+$_SERVER['REMOTE_ADDR'] = '127.0.0.1';
+unset( $_SERVER['HTTP_CF_CONNECTING_IP'], $_SERVER['HTTP_X_FORWARDED_FOR'], $_SERVER['HTTP_CDN_REQUESTCOUNTRYCODE'] );
+PNCP_Ip::reset();
+PNCP_Geo::reset();
+
 /* ---------- 2.4: όριο 404, ονόματα χρηστών, πάντα αποκλεισμένα ---------- */
 settings( array( 'rate_limit' => 0, 'rate_limit_404' => 3, 'ban_strikes' => 0, 'require_browser_headers' => 0, 'block_bots' => 1 ) );
 fresh();

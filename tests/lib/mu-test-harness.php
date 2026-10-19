@@ -4,6 +4,7 @@
  *
  * - X-Test-IP: η IP του «επισκέπτη» (ο built-in server του PHP δίνει πάντα 127.0.0.1, που εξαιρείται).
  * - X-Test-RDNS: απάντηση reverse DNS (χωρίς δίκτυο στο περιβάλλον των tests).
+ * - X-Test-Bunny-List: η λίστα edge servers του Bunny (JSON) αντί για το δίκτυο.
  * - Κανένα αίτημα HTTP προς wordpress.org (update checks).
  * - Post type «product» όπως του WooCommerce, για τα tests εικόνων προϊόντων.
  */
@@ -35,6 +36,11 @@ add_filter(
 	static function ( $pre, $args, $url ) {
 		if ( false !== strpos( $url, 'wordpress.org' ) ) {
 			return new WP_Error( 'test', 'no network in tests' );
+		}
+		// X-Test-Bunny-List: η «επίσημη» λίστα του Bunny (JSON), χωρίς δίκτυο.
+		if ( false !== strpos( $url, 'bunnycdn.com' ) && isset( $_SERVER['HTTP_X_TEST_BUNNY_LIST'] ) ) {
+			$body = false !== stripos( $url, 'ipv6' ) ? '["2400:52e0:1a00::1"]' : wp_unslash( $_SERVER['HTTP_X_TEST_BUNNY_LIST'] );
+			return array( 'headers' => array(), 'body' => $body, 'response' => array( 'code' => 200, 'message' => 'OK' ), 'cookies' => array(), 'filename' => null );
 		}
 		return $pre;
 	},

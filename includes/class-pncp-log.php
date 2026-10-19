@@ -203,6 +203,32 @@ final class PNCP_Log {
 	}
 
 	/**
+	 * Stores an event that happened elsewhere (the pre-cache check), with its own time, path and User-Agent.
+	 *
+	 * @param array{time:int, code:int, reason:string, ip:string, path:string, ua:string, hits:int} $row Event.
+	 */
+	public static function insert( $row ) {
+		global $wpdb;
+		if ( get_option( 'pncp_db_version' ) !== self::DB_VERSION ) {
+			return;
+		}
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery -- Plugin table.
+		$wpdb->insert(
+			self::table(),
+			array(
+				'created' => gmdate( 'Y-m-d H:i:s', (int) $row['time'] ),
+				'ip'      => substr( (string) $row['ip'], 0, 45 ),
+				'reason'  => substr( (string) $row['reason'], 0, 20 ),
+				'code'    => (int) $row['code'],
+				'hits'    => max( 1, (int) $row['hits'] ),
+				'path'    => mb_substr( (string) $row['path'], 0, 255 ),
+				'ua'      => mb_substr( (string) $row['ua'], 0, 255 ),
+			),
+			array( '%s', '%s', '%s', '%d', '%d', '%s', '%s' )
+		);
+	}
+
+	/**
 	 * Deletes everything older than the retention period and the expired bans.
 	 */
 	public static function cleanup() {
@@ -454,6 +480,23 @@ final class PNCP_Log {
 		if ( wp_using_ext_object_cache() ) {
 			wp_cache_set( 'pncp_ban_' . md5( $ip ), $until, 'pncp', max( 1, $until - time() ) );
 		}
+		PNCP_Precheck::mirror_ban( $ip, $until );
+	}
+
+	/**
+	 * A ban decided by the pre-cache check: stored like the others, so that it shows under "Blocked IPs"
+	 * and can be lifted there. Expired ones are skipped.
+	 *
+	 * @param string $ip     IP.
+	 * @param int    $until  Expiry.
+	 * @param string $reason Reason.
+	 * @param int    $since  Since when.
+	 */
+	public static function import_ban( $ip, $until, $reason, $since ) {
+		if ( '' === $ip || ! filter_var( $ip, FILTER_VALIDATE_IP ) || $until <= time() || PNCP_Bots::is_official_crawler_ip( $ip ) ) {
+			return;
+		}
+		self::store_ban( $ip, (int) $until, $reason, (int) $since );
 	}
 
 	/**
@@ -468,6 +511,7 @@ final class PNCP_Log {
 			wp_cache_delete( 'pncp_ban_' . md5( $ip ), 'pncp' );
 		}
 		unset( self::$banned[ $ip ] );
+		PNCP_Precheck::forget_ban( $ip );
 		// phpcs:ignore WordPress.DB.DirectDatabaseQuery -- Plugin table.
 		$wpdb->delete( self::bans_table(), array( 'ip' => $ip ), array( '%s' ) );
 	}
@@ -484,6 +528,7 @@ final class PNCP_Log {
 			}
 		}
 		self::$banned = array();
+		PNCP_Precheck::forget_all_bans();
 		// phpcs:ignore WordPress.DB.DirectDatabaseQuery -- Plugin table.
 		$wpdb->query( $wpdb->prepare( 'DELETE FROM %i', self::bans_table() ) );
 	}

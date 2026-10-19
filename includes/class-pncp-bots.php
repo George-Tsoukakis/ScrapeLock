@@ -669,6 +669,15 @@ final class PNCP_Bots {
 	}
 
 	/**
+	 * The search engines: family => User-Agents, DNS domains and official IP list ('' = none).
+	 *
+	 * @return array<string, array{ua:string[], dns:string[], list:string}>
+	 */
+	public static function crawler_families() {
+		return self::$crawlers;
+	}
+
+	/**
 	 * Which search engine the User-Agent claims to be ('' = none).
 	 *
 	 * @param string $ua User-Agent.
@@ -1107,10 +1116,24 @@ final class PNCP_Bots {
 	 */
 	public static function rocket_reject_ua( $uas ) {
 		$s = PNCP_Options::get();
-		if ( empty( $s['enabled'] ) || empty( $s['block_bots'] ) ) {
+		if ( empty( $s['enabled'] ) ) {
 			return $uas;
 		}
-		$uas    = (array) $uas;
+		$uas = (array) $uas;
+		// With the pre-cache check, search engines without an official IP list (Applebot, YandexBot) get no
+		// cached pages: the check lets them through, so the normal check must verify them with DNS.
+		if ( ! empty( $s['precheck'] ) ) {
+			foreach ( self::$crawlers as $def ) {
+				if ( '' === $def['list'] ) {
+					foreach ( $def['ua'] as $needle ) {
+						$uas[] = preg_quote( $needle, '#' );
+					}
+				}
+			}
+		}
+		if ( empty( $s['block_bots'] ) ) {
+			return $uas;
+		}
 		$search = array_map( 'strtolower', PNCP_Options::allowed_ai_search() );
 		foreach ( PNCP_Options::parse_list( $s['bot_list'] ) as $needle ) {
 			if ( in_array( strtolower( $needle ), $search, true ) ) {

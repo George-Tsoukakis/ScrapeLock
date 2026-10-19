@@ -1,7 +1,7 @@
 <?php
 /**
  * IP addresses: real visitor IP behind a CDN/proxy (Trusted Proxy), CIDR and the official
- * IP lists of Cloudflare, Google and Bing (refreshed daily via WP-Cron).
+ * IP lists of Cloudflare, Bunny CDN, Google and Bing (refreshed daily via WP-Cron).
  *
  * @package ScrapeLock
  */
@@ -45,6 +45,13 @@ final class PNCP_Ip {
 	private static $lists = array();
 
 	/**
+	 * The Bunny list as a lookup table (address => true) plus its CIDRs, built once per request.
+	 *
+	 * @var array{0:array<string, bool>, 1:string[]}|null
+	 */
+	private static $bunny = null;
+
+	/**
 	 * Attaches the hooks.
 	 */
 	public static function init() {
@@ -59,6 +66,11 @@ final class PNCP_Ip {
 	public static function sources() {
 		return array(
 			'cloudflare'      => array( 'https://api.cloudflare.com/client/v4/ips' ),
+			// Bunny CDN edge servers (since 2.6): one address per server, IPv4 and IPv6.
+			'bunny'           => array(
+				'https://bunnycdn.com/api/system/edgeserverlist',
+				'https://bunnycdn.com/api/system/edgeserverlist/IPv6',
+			),
 			'google'          => array(
 				'https://developers.google.com/static/search/apis/ipranges/googlebot.json',
 				'https://developers.google.com/static/search/apis/ipranges/special-crawlers.json',
@@ -113,8 +125,8 @@ final class PNCP_Ip {
 	 */
 	public static function list_of( $name ) {
 		if ( ! isset( self::$lists[ $name ] ) ) {
-			// One option per list: Cloudflare's small list is autoloaded (needed on every request behind
-			// Cloudflare); the large Google / Bing lists are read only when someone claims to be a crawler.
+			// One option per list: the CDN lists are autoloaded (needed on every request behind the CDN); the
+			// large Google / Bing lists are read only when someone claims to be a crawler.
 			$list                 = get_option( self::LISTS_OPTION . '_' . $name, array() );
 			self::$lists[ $name ] = is_array( $list ) ? $list : array();
 		}
@@ -132,12 +144,13 @@ final class PNCP_Ip {
 	 * @param string[] $ranges CIDR.
 	 */
 	public static function store_list( $name, $ranges ) {
-		update_option( self::LISTS_OPTION . '_' . $name, array_values( $ranges ), 'cloudflare' === $name );
+		update_option( self::LISTS_OPTION . '_' . $name, array_values( $ranges ), in_array( $name, array( 'cloudflare', 'bunny' ), true ) );
 		$updated          = get_option( self::LISTS_OPTION . '_updated', array() );
 		$updated          = is_array( $updated ) ? $updated : array();
 		$updated[ $name ] = time();
 		update_option( self::LISTS_OPTION . '_updated', $updated, false );
 		unset( self::$lists[ $name ] );
+		self::$bunny = null;
 	}
 
 	/**
@@ -152,8 +165,9 @@ final class PNCP_Ip {
 
 	/**
 	 * The lists the current settings use. Only these are downloaded: the Google and Bing lists while
-	 * protection is on, the Cloudflare list only when a Cloudflare proxy is trusted for the real IP, and
-	 * the AI search lists only when AI search is allowed and "Verify AI search bots" is on.
+	 * protection is on, the Cloudflare / Bunny list only when that CDN is trusted for the real IP (Bunny also
+	 * for its country header), and the AI search lists only when AI search is allowed and "Verify AI search
+	 * bots" is on.
 	 *
 	 * @return string[]
 	 */
@@ -166,6 +180,9 @@ final class PNCP_Ip {
 		}
 		if ( ! empty( $s['trust_cloudflare'] ) && in_array( $s['ip_header'], array( 'cf_connecting_ip', 'x_forwarded_for' ), true ) ) {
 			$needed[] = 'cloudflare';
+		}
+		if ( ! empty( $s['trust_bunny'] ) && ( in_array( $s['ip_header'], array( 'x_real_ip', 'x_forwarded_for' ), true ) || ( ! empty( $s['enabled'] ) && ( '' !== $s['countries_block'] || '' !== $s['countries_strict'] ) ) ) ) {
+			$needed[] = 'bunny';
 		}
 		if ( ! empty( $s['enabled'] ) && ! empty( $s['allow_ai_search'] ) && ! empty( $s['verify_ai_bots'] ) ) {
 			$needed = array_merge( $needed, array_values( PNCP_Bots::ai_bot_lists() ) );
@@ -195,6 +212,8 @@ final class PNCP_Ip {
 						'timeout'     => 10,
 						'redirection' => 2,
 						'user-agent'  => 'ScrapeLock/' . PNCP_VERSION,
+						// Bunny answers in XML unless JSON is asked for; the others always send JSON.
+						'headers'     => array( 'Accept' => 'application/json' ),
 					)
 				);
 				if ( is_wp_error( $response ) || 200 !== (int) wp_remote_retrieve_response_code( $response ) ) {
@@ -216,11 +235,13 @@ final class PNCP_Ip {
 				$result[ $name ] = 0;
 			}
 		}
+		PNCP_Precheck::refresh(); // The pre-cache check keeps its own copy of the lists.
 		return $result;
 	}
 
 	/**
-	 * Finds CIDRs in Google/Bing JSON ({"prefixes":[{"ipv4Prefix":…}]}) or in plain text (Cloudflare).
+	 * Finds CIDRs in Google/Bing JSON ({"prefixes":[{"ipv4Prefix":…}]}), Cloudflare JSON, a JSON array of
+	 * addresses (Bunny), XML (<string>address</string>) or plain text.
 	 *
 	 * @param string $body Content.
 	 * @return string[]
@@ -250,7 +271,16 @@ final class PNCP_Ip {
 			}
 			return $out;
 		}
-		foreach ( preg_split( '/\s+/', trim( $body ) ) as $line ) {
+		if ( is_array( $json ) && array_values( $json ) === $json ) {
+			foreach ( $json as $range ) {
+				if ( is_string( $range ) && self::valid_range( $range ) ) {
+					$out[] = $range;
+				}
+			}
+			return $out;
+		}
+		// Plain text, one per line, or the values of an XML list.
+		foreach ( preg_split( '/[\s<>]+/', trim( $body ) ) as $line ) {
 			if ( self::valid_range( $line ) ) {
 				$out[] = $line;
 			}
@@ -308,6 +338,56 @@ final class PNCP_Ip {
 	}
 
 	/**
+	 * Does an address belong to a Bunny CDN edge server? The list has one address per server (about a
+	 * thousand), so it is looked up in a table instead of being compared one by one.
+	 *
+	 * @param string $ip IP.
+	 * @return bool
+	 */
+	public static function is_bunny( $ip ) {
+		if ( '' === $ip ) {
+			return false;
+		}
+		if ( null === self::$bunny ) {
+			$exact = array();
+			$cidrs = array();
+			foreach ( self::list_of( 'bunny' ) as $range ) {
+				if ( false === strpos( $range, '/' ) ) {
+					$exact[ (string) inet_ntop( (string) inet_pton( $range ) ) ] = true;
+				} else {
+					$cidrs[] = $range;
+				}
+			}
+			self::$bunny = array( $exact, $cidrs );
+		}
+		$packed = @inet_pton( $ip ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged -- Invalid value = false.
+		if ( false !== $packed && isset( self::$bunny[0][ (string) inet_ntop( $packed ) ] ) ) {
+			return true;
+		}
+		return self::in_any( $ip, self::$bunny[1] );
+	}
+
+	/**
+	 * Does REMOTE_ADDR belong to Bunny CDN (from the downloaded list)?
+	 *
+	 * @return bool
+	 */
+	public static function remote_is_bunny() {
+		return self::is_bunny( self::remote_addr() );
+	}
+
+	/**
+	 * Is the request coming through Bunny CDN? Bunny adds CDN-ServerId and "Via: BunnyCDN" to the
+	 * requests it sends to the site. Only for notices on the settings page: anyone can send these headers.
+	 *
+	 * @return bool
+	 */
+	public static function behind_bunny() {
+		$via = isset( $_SERVER['HTTP_VIA'] ) ? sanitize_text_field( wp_unslash( $_SERVER['HTTP_VIA'] ) ) : '';
+		return ! empty( $_SERVER['HTTP_CDN_SERVERID'] ) || false !== stripos( $via, 'BunnyCDN' );
+	}
+
+	/**
 	 * Is the Cloudflare plugin active?
 	 *
 	 * @return bool
@@ -321,7 +401,7 @@ final class PNCP_Ip {
 	 *
 	 * - CF-Connecting-IP: only Cloudflare (it always sets it itself) and the "Trusted proxies".
 	 * - True-Client-IP: only the "Trusted proxies" (Cloudflare passes it on as the visitor sent it).
-	 * - X-Real-IP: the server itself / private network (Nginx in front) and the "Trusted proxies".
+	 * - X-Real-IP: Bunny CDN, the server itself / private network (Nginx in front) and the "Trusted proxies".
 	 * - X-Forwarded-For: all of the above; the chain is read from the end.
 	 *
 	 * @param string               $ip      IP.
@@ -343,9 +423,9 @@ final class PNCP_Ip {
 			case 'true_client_ip':
 				return false;
 			case 'x_real_ip':
-				return self::is_private( $ip );
+				return self::is_private( $ip ) || ( ! empty( $s['trust_bunny'] ) && self::is_bunny( $ip ) );
 			default:
-				return $cloudflare || self::is_private( $ip );
+				return $cloudflare || self::is_private( $ip ) || ( ! empty( $s['trust_bunny'] ) && self::is_bunny( $ip ) );
 		}
 	}
 
@@ -416,6 +496,7 @@ final class PNCP_Ip {
 		self::$client_ip = null;
 		self::$reliable  = true;
 		self::$lists     = array();
+		self::$bunny     = null;
 	}
 
 	/**
