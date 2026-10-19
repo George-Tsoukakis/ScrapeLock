@@ -426,6 +426,22 @@ foreach ( array( 'general', 'content', 'images', 'rules' ) as $tab ) {
 	t( "καρτέλα $tab: νέα εμφάνιση χωρίς PHP warnings", 200 === $code && ! php_errors( $body ) && false !== strpos( $body, 'pncp-status-bar' ), (string) $code );
 }
 
+/* ---------- Κανόνας 11 του WordPress.org: μόνιμες ειδοποιήσεις μόνο στον Πίνακα ελέγχου και στη σελίδα του plugin ---------- */
+$keep_notice = PNCP_Options::stored();
+PNCP_Options::set_emergency( 1 );
+settings( array( 'trust_any_proxy' => 1 ) );
+list( , $body ) = http( '/wp-admin/index.php' );
+t( 'ειδοποιήσεις: στον Πίνακα ελέγχου εμφανίζονται', false !== strpos( $body, 'Emergency Mode is on.' ) && false !== strpos( $body, 'without checking the proxy' ) );
+list( , $body ) = http( $page . '&tab=general' );
+t( 'ειδοποιήσεις: στη σελίδα του ScrapeLock εμφανίζονται', false !== strpos( $body, 'Emergency Mode is on.' ) && false !== strpos( $body, 'without checking the proxy' ) );
+list( , $body ) = http( '/wp-admin/edit.php' );
+t( 'ειδοποιήσεις: στα Άρθρα δεν εμφανίζονται', false === strpos( $body, 'Emergency Mode is on.' ) && false === strpos( $body, 'without checking the proxy' ) && ! php_errors( $body ) );
+list( , $body ) = http( '/wp-admin/plugins.php' );
+t( 'ειδοποιήσεις: στα Πρόσθετα δεν εμφανίζονται', false === strpos( $body, 'Emergency Mode is on.' ) && false === strpos( $body, 'without checking the proxy' ) );
+PNCP_Options::set_emergency( 0 );
+update_option( PNCP_OPTION, $keep_notice );
+PNCP_Options::flush();
+
 /* ---------- GraphQL (χωρίς το plugin: με ψεύτικο μοντέλο) ---------- */
 eval( 'namespace WPGraphQL\\Model; class Post { public $databaseId; public function __construct( $id ) { $this->databaseId = $id; } }' );
 wp_set_current_user( 0 );
