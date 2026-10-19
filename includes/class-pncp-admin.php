@@ -1684,7 +1684,7 @@ final class PNCP_Admin {
 				esc_html__( 'Feeds and token', 'scrapelock' )
 			);
 		}
-		if ( ! empty( PNCP_Options::stored()['trust_any_proxy'] ) ) {
+		if ( ! empty( PNCP_Options::stored()['trust_any_proxy'] ) && PNCP_Status::notice_screen() ) {
 			printf(
 				'<div class="notice notice-warning"><p>%1$s <a href="%2$s">%3$s</a></p></div>',
 				esc_html__( 'ScrapeLock: the real IP is read from a header without checking the proxy (as in 1.4). This allows IP spoofing.', 'scrapelock' ),
