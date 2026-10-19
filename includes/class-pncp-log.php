@@ -89,6 +89,7 @@ final class PNCP_Log {
 			hits int(10) unsigned NOT NULL DEFAULT 1,
 			path varchar(255) NOT NULL DEFAULT '',
 			ua varchar(255) NOT NULL DEFAULT '',
+			uas smallint(5) unsigned NOT NULL DEFAULT 1,
 			PRIMARY KEY  (id),
 			KEY created (created),
 			KEY ip (ip)
@@ -113,6 +114,14 @@ final class PNCP_Log {
 			}
 		}
 		update_option( 'pncp_db_version', self::DB_VERSION, false );
+		// Since 2.6.2: the number of different User-Agents of a grouped event. Only used when the column exists
+		// (a database that could not add it keeps logging as before).
+		// A plain SELECT works on every database (SHOW COLUMNS does not, e.g. on SQLite).
+		$suppress = $wpdb->suppress_errors( true );
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery -- Schema check on install.
+		$has_uas = false !== $wpdb->query( $wpdb->prepare( 'SELECT uas FROM %i LIMIT 1', $table ) );
+		$wpdb->suppress_errors( $suppress );
+		update_option( 'pncp_log_uas', $has_uas ? 1 : 0, true );
 
 		// 2.1 bans (option) → table.
 		$old = get_option( self::BANS_OPTION );
@@ -140,14 +149,15 @@ final class PNCP_Log {
 			'no_browser'      => __( 'No browser headers', 'scrapelock' ),
 			'headless'        => __( 'Headless browser', 'scrapelock' ),
 			'fake_browser'    => __( 'Fake browser', 'scrapelock' ),
-			'rate_page'       => __( 'Page limit', 'scrapelock' ),
-			'rate_search'     => __( 'Search limit', 'scrapelock' ),
-			'rate_rest'       => __( 'REST / GraphQL limit', 'scrapelock' ),
-			'rate_sitemap'    => __( 'Sitemap limit', 'scrapelock' ),
-			'rate_unverified' => __( 'Page limit for unverified visitors', 'scrapelock' ),
+			// The limits are named after their settings ("Pages per minute", "Searches per minute"…).
+			'rate_page'       => __( 'Pages per minute', 'scrapelock' ),
+			'rate_search'     => __( 'Searches per minute', 'scrapelock' ),
+			'rate_rest'       => __( 'REST / GraphQL requests per minute', 'scrapelock' ),
+			'rate_sitemap'    => __( 'Sitemaps per minute', 'scrapelock' ),
+			'rate_unverified' => __( 'Pages per minute without the human check', 'scrapelock' ),
 			'country'         => __( 'Blocked country', 'scrapelock' ),
-			'rate_country'    => __( 'Page limit for the stricter countries', 'scrapelock' ),
-			'rate_404'        => __( '“Page not found” limit', 'scrapelock' ),
+			'rate_country'    => __( 'Pages per minute for the stricter countries', 'scrapelock' ),
+			'rate_404'        => __( '“Page not found” (404) per minute', 'scrapelock' ),
 			'blocked_ip'      => __( 'IP in the always-blocked list', 'scrapelock' ),
 			'blocked_ref'     => __( 'Referrer in the always-blocked list', 'scrapelock' ),
 			'trap'            => __( 'Bot trap', 'scrapelock' ),
@@ -173,14 +183,23 @@ final class PNCP_Log {
 
 		$key = 'pncp_lg_' . md5( $ip . '|' . $reason . '|' . (int) floor( time() / MINUTE_IN_SECONDS ) );
 		$id  = (int) self::cache_get( $key );
+		$ua  = isset( $_SERVER['HTTP_USER_AGENT'] ) ? sanitize_text_field( wp_unslash( $_SERVER['HTTP_USER_AGENT'] ) ) : '';
 		if ( $id > 0 ) {
+			// The row keeps the first User-Agent and counts how many different ones there were (bots that rotate it).
+			$seen = self::uas_column() ? self::cache_get( $key . '_u' ) : false;
+			if ( is_array( $seen ) && count( $seen ) < 50 && ! in_array( md5( $ua ), $seen, true ) ) {
+				$seen[] = md5( $ua );
+				self::cache_set( $key . '_u', $seen, 2 * MINUTE_IN_SECONDS );
+				// phpcs:ignore WordPress.DB.DirectDatabaseQuery -- Counter, no cache.
+				$wpdb->query( $wpdb->prepare( 'UPDATE %i SET hits = hits + 1, uas = uas + 1 WHERE id = %d', self::table(), $id ) );
+				return;
+			}
 			// phpcs:ignore WordPress.DB.DirectDatabaseQuery -- Counter, no cache.
 			$wpdb->query( $wpdb->prepare( 'UPDATE %i SET hits = hits + 1 WHERE id = %d', self::table(), $id ) );
 			return;
 		}
 
 		$uri  = isset( $_SERVER['REQUEST_URI'] ) ? sanitize_text_field( wp_unslash( $_SERVER['REQUEST_URI'] ) ) : '';
-		$ua   = isset( $_SERVER['HTTP_USER_AGENT'] ) ? sanitize_text_field( wp_unslash( $_SERVER['HTTP_USER_AGENT'] ) ) : '';
 		$path = (string) wp_parse_url( $uri, PHP_URL_PATH );
 
 		// phpcs:ignore WordPress.DB.DirectDatabaseQuery -- Plugin table.
@@ -199,33 +218,47 @@ final class PNCP_Log {
 		);
 		if ( $wpdb->insert_id ) {
 			self::cache_set( $key, (int) $wpdb->insert_id, 2 * MINUTE_IN_SECONDS );
+			if ( self::uas_column() ) {
+				self::cache_set( $key . '_u', array( md5( $ua ) ), 2 * MINUTE_IN_SECONDS );
+			}
 		}
+	}
+
+	/**
+	 * Does the log table have the "uas" column (different User-Agents of a grouped event)?
+	 *
+	 * @return bool
+	 */
+	public static function uas_column() {
+		return 1 === (int) get_option( 'pncp_log_uas', 0 );
 	}
 
 	/**
 	 * Stores an event that happened elsewhere (the pre-cache check), with its own time, path and User-Agent.
 	 *
-	 * @param array{time:int, code:int, reason:string, ip:string, path:string, ua:string, hits:int} $row Event.
+	 * @param array{time:int, code:int, reason:string, ip:string, path:string, ua:string, hits:int, uas?:int} $row Event.
 	 */
 	public static function insert( $row ) {
 		global $wpdb;
 		if ( get_option( 'pncp_db_version' ) !== self::DB_VERSION ) {
 			return;
 		}
-		// phpcs:ignore WordPress.DB.DirectDatabaseQuery -- Plugin table.
-		$wpdb->insert(
-			self::table(),
-			array(
-				'created' => gmdate( 'Y-m-d H:i:s', (int) $row['time'] ),
-				'ip'      => substr( (string) $row['ip'], 0, 45 ),
-				'reason'  => substr( (string) $row['reason'], 0, 20 ),
-				'code'    => (int) $row['code'],
-				'hits'    => max( 1, (int) $row['hits'] ),
-				'path'    => mb_substr( (string) $row['path'], 0, 255 ),
-				'ua'      => mb_substr( (string) $row['ua'], 0, 255 ),
-			),
-			array( '%s', '%s', '%s', '%d', '%d', '%s', '%s' )
+		$data    = array(
+			'created' => gmdate( 'Y-m-d H:i:s', (int) $row['time'] ),
+			'ip'      => substr( (string) $row['ip'], 0, 45 ),
+			'reason'  => substr( (string) $row['reason'], 0, 20 ),
+			'code'    => (int) $row['code'],
+			'hits'    => max( 1, (int) $row['hits'] ),
+			'path'    => mb_substr( (string) $row['path'], 0, 255 ),
+			'ua'      => mb_substr( (string) $row['ua'], 0, 255 ),
 		);
+		$formats = array( '%s', '%s', '%s', '%d', '%d', '%s', '%s' );
+		if ( self::uas_column() ) {
+			$data['uas'] = max( 1, min( 65535, isset( $row['uas'] ) ? (int) $row['uas'] : 1 ) );
+			$formats[]   = '%d';
+		}
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery -- Plugin table.
+		$wpdb->insert( self::table(), $data, $formats );
 	}
 
 	/**
@@ -307,10 +340,11 @@ final class PNCP_Log {
 	public static function summary( $hours = 24 ) {
 		global $wpdb;
 		$empty = array(
-			'total'   => 0,
-			'reasons' => array(),
-			'ips'     => array(),
-			'uas'     => array(),
+			'total'      => 0,
+			'reasons'    => array(),
+			'ips'        => array(),
+			'uas'        => array(),
+			'ua_reasons' => array(),
 		);
 		if ( get_option( 'pncp_db_version' ) !== self::DB_VERSION ) {
 			return $empty;
@@ -334,6 +368,15 @@ final class PNCP_Log {
 		}
 		foreach ( (array) $uas as $row ) {
 			$out['uas'][ $row['ua'] ] = (int) $row['n'];
+		}
+		// Why each of the top User-Agents was blocked (e.g. a "Googlebot" that was a fake one).
+		if ( $out['uas'] ) {
+			$list = implode( ', ', array_fill( 0, count( $out['uas'] ), '%s' ) );
+			// phpcs:ignore WordPress.DB.DirectDatabaseQuery, WordPress.DB.PreparedSQLPlaceholders.UnfinishedPrepare, WordPress.DB.PreparedSQLPlaceholders.ReplacementsWrongNumber, WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- Admin screen; $list holds only %s placeholders, one per value.
+			$rows = $wpdb->get_results( $wpdb->prepare( "SELECT ua, reason, SUM(hits) AS n FROM %i WHERE created >= %s AND ua IN ($list) GROUP BY ua, reason ORDER BY n DESC", array_merge( array( $table, $since ), array_keys( $out['uas'] ) ) ), ARRAY_A );
+			foreach ( (array) $rows as $row ) {
+				$out['ua_reasons'][ $row['ua'] ][ $row['reason'] ] = (int) $row['n'];
+			}
 		}
 		return $out;
 	}
@@ -371,6 +414,34 @@ final class PNCP_Log {
 	}
 
 	/**
+	 * IPs that were temporarily blocked again and again: candidates for the always-blocked list.
+	 *
+	 * @param int $hours Period in hours.
+	 * @param int $min   Minimum number of temporary blocks.
+	 * @param int $limit Rows.
+	 * @return array<int, array{ip:string, bans:int, total:int, last:string}>
+	 */
+	public static function repeat_offenders( $hours = 168, $min = 2, $limit = 20 ) {
+		global $wpdb;
+		if ( get_option( 'pncp_db_version' ) !== self::DB_VERSION ) {
+			return array();
+		}
+		$since = gmdate( 'Y-m-d H:i:s', time() - (int) $hours * HOUR_IN_SECONDS );
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery -- Admin screen.
+		$rows = $wpdb->get_results( $wpdb->prepare( "SELECT ip, SUM(CASE WHEN reason = 'ban' THEN hits ELSE 0 END) AS bans, SUM(hits) AS total, MAX(created) AS last FROM %i WHERE created >= %s GROUP BY ip HAVING SUM(CASE WHEN reason = 'ban' THEN hits ELSE 0 END) >= %d ORDER BY bans DESC, total DESC LIMIT %d", self::table(), $since, max( 1, (int) $min ), max( 1, (int) $limit ) ), ARRAY_A );
+		$out  = array();
+		foreach ( (array) $rows as $row ) {
+			$out[] = array(
+				'ip'    => (string) $row['ip'],
+				'bans'  => (int) $row['bans'],
+				'total' => (int) $row['total'],
+				'last'  => (string) $row['last'],
+			);
+		}
+		return $out;
+	}
+
+	/**
 	 * A path that looks for files or admin areas (scanners), not for content.
 	 *
 	 * @param string $path Path.
@@ -381,7 +452,34 @@ final class PNCP_Log {
 		if ( preg_match( '#(?:^|/)(?:wp-sitemap[a-z0-9_-]*|sitemap(?:_index)?|[a-z0-9_-]+-sitemap[0-9]*)\.xml$#', $path ) || 0 === strpos( $path, '/wp-json/' ) ) {
 			return false; // Sitemaps and the REST API lead to content.
 		}
+		// The site's own GraphQL endpoint (WPGraphQL) is content; any other GraphQL path is a scanner.
+		if ( preg_match( '#(?:^|/)graphql(?:/|$)#', $path ) ) {
+			return ! ( class_exists( 'WPGraphQL', false ) && '/graphql' === untrailingslashit( $path ) );
+		}
+		// Private keys, credentials and common admin / login panels of other software, unless the site has a
+		// page at that address (e.g. its own /login/ page).
+		if ( preg_match( '#(?:^|/)(?:id_(?:rsa|dsa|ecdsa|ed25519)(?:\.pub)?|authorized_keys|known_hosts|credentials|secrets?|passwd|shadow|htpasswd|login|signin|sign-in|admin|administrator|user/login|phpmyadmin|pma|adminer|manager/html|actuator|server-status|server-info|solr|jenkins|owa|ecp|autodiscover|boaform|hnap1|telescope|_profiler|debug|console|api/v[0-9]+|v[0-9]+/api)(?:/|$)#', $path ) ) {
+			return ! self::is_site_page( $path );
+		}
 		return (bool) preg_match( '#\.(?:php\d?|env|ini|conf|cfg|config|json|ya?ml|xml|sql|bak|old|orig|swp|zip|tar|gz|rar|7z|log|txt|tfvars|map|mjs|js|asp|aspx|jsp|cgi|sh|py|rb|pl)$|/\.|/@|\.\.|^/(?:wp-admin|wp-includes|wp-content/(?:plugins|themes|uploads)|cgi-bin|vendor|node_modules|cp-[0-9a-f]{10})(?:/|$)#', $path );
+	}
+
+	/**
+	 * Is there a post or page of the site at this path? (Only for paths that look like probes, on the admin screen.)
+	 *
+	 * @param string $path Path.
+	 * @return bool
+	 */
+	private static function is_site_page( $path ) {
+		if ( ! function_exists( 'url_to_postid' ) ) {
+			return false;
+		}
+		// The logged path is the full request path (with the folder of a site in a subfolder): it goes after
+		// the scheme, host and port of the site address.
+		$home   = untrailingslashit( home_url( '/' ) );
+		$folder = untrailingslashit( (string) wp_parse_url( $home . '/', PHP_URL_PATH ) );
+		$origin = '' !== $folder ? substr( $home, 0, -strlen( $folder ) ) : $home;
+		return url_to_postid( $origin . $path ) > 0;
 	}
 
 	/* ---------- Bans ---------- */
