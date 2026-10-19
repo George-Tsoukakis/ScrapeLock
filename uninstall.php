@@ -16,7 +16,7 @@ defined( 'WP_UNINSTALL_PLUGIN' ) || exit;
 function pncp_uninstall_site() {
 	global $wpdb;
 
-	foreach ( array( 'pncp_settings', 'pncp_version', 'pncp_db_version', 'pncp_emergency_until', 'pncp_ip_lists', 'pncp_ip_lists_cloudflare', 'pncp_ip_lists_google', 'pncp_ip_lists_bing', 'pncp_ip_lists_openai_search', 'pncp_ip_lists_openai_user', 'pncp_ip_lists_perplexity_bot', 'pncp_ip_lists_perplexity_user', 'pncp_ip_lists_updated', 'pncp_bans', 'pncp_feed_token', 'pncp_feed_stats', 'pncp_legacy_token_notice', 'pncp_legacy_token_migrated', 'pncp_wm_cursor_apply', 'pncp_wm_cursor_remove', 'pncp_upgrade_lock', 'pncp_geo' ) as $pncp_option ) {
+	foreach ( array( 'pncp_settings', 'pncp_version', 'pncp_db_version', 'pncp_emergency_until', 'pncp_ip_lists', 'pncp_ip_lists_cloudflare', 'pncp_ip_lists_bunny', 'pncp_ip_lists_google', 'pncp_ip_lists_bing', 'pncp_ip_lists_openai_search', 'pncp_ip_lists_openai_user', 'pncp_ip_lists_perplexity_bot', 'pncp_ip_lists_perplexity_user', 'pncp_ip_lists_updated', 'pncp_bans', 'pncp_feed_token', 'pncp_feed_stats', 'pncp_legacy_token_notice', 'pncp_legacy_token_migrated', 'pncp_wm_cursor_apply', 'pncp_wm_cursor_remove', 'pncp_upgrade_lock', 'pncp_geo', 'pncp_precheck_status' ) as $pncp_option ) {
 		delete_option( $pncp_option );
 	}
 	wp_clear_scheduled_hook( 'pncp_refresh_ip_lists' );
@@ -44,6 +44,12 @@ foreach ( array( 'v4.bin', 'v6.bin', 'index.php', '.htaccess' ) as $pncp_file ) 
 	}
 }
 unset( $pncp_geo, $pncp_file );
+
+// The pre-cache check (normally already removed on deactivation): its line in wp-config.php and its files.
+if ( ! is_multisite() ) {
+	require_once __DIR__ . '/includes/class-pncp-precheck.php';
+	PNCP_Precheck::remove( false );
+}
 
 // The early check (mu-plugin, shared by all sites of a network): removed only if ScrapeLock wrote it.
 $pncp_early = trailingslashit( WPMU_PLUGIN_DIR ) . 'scrapelock-early.php';

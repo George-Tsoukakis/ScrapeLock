@@ -40,6 +40,7 @@ require_once PNCP_DIR . 'includes/class-pncp-status.php';
 require_once PNCP_DIR . 'includes/class-pncp-early.php';
 require_once PNCP_DIR . 'includes/class-pncp-human.php';
 require_once PNCP_DIR . 'includes/class-pncp-geo.php';
+require_once PNCP_DIR . 'includes/class-pncp-precheck.php';
 
 if ( is_admin() ) {
 	require_once PNCP_DIR . 'includes/class-pncp-admin.php';
@@ -58,6 +59,7 @@ PNCP_Private_Urls::init();
 PNCP_Status::init();
 PNCP_Human::init();
 PNCP_Geo::init();
+PNCP_Precheck::init();
 
 /**
  * Activation: defaults (without touching existing settings), log table, cron.
@@ -96,6 +98,8 @@ function pncp_deactivate() {
 	if ( ! is_multisite() ) {
 		PNCP_Early::remove();
 	}
+	// The pre-cache check: its line in wp-config.php and its files go away with the plugin.
+	PNCP_Precheck::remove();
 	pncp_purge_page_cache();
 }
 
@@ -153,6 +157,8 @@ function pncp_upgrade() {
 	PNCP_Options::flush();
 	// The early check (mu-plugin): written again if the plugin folder changed, removed if it is off.
 	PNCP_Early::sync();
+	// The pre-cache check: the loader is written again (new version, new plugin folder) or removed.
+	PNCP_Precheck::sync();
 	// Cache plugins (e.g. LiteSpeed, WP Rocket) finish loading later: before init the purge waits for init.
 	pncp_purge_page_cache();
 }
@@ -298,6 +304,7 @@ function pncp_settings_changed() {
 }
 add_action( 'update_option_' . PNCP_OPTION, 'pncp_settings_changed', 0 );
 add_action( 'update_option_' . PNCP_OPTION, array( 'PNCP_Early', 'sync' ) );
+add_action( 'update_option_' . PNCP_OPTION, array( 'PNCP_Precheck', 'sync' ) );
 // Settings are first read before the translations load: they are read again afterwards.
 add_action( 'after_setup_theme', array( 'PNCP_Options', 'flush' ), 0 );
 

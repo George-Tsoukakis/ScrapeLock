@@ -21,12 +21,13 @@
 | Πάντα αποκλεισμένες IP / CIDR και domains παραπομπής (Referer, μαζί με τα subdomains τους) | PHP | Bots και όρια |
 | Απόκρυψη ονομάτων χρηστών: `?author=N` → 404, REST `/wp/v2/users` → 401, χωρίς χάρτη χρηστών στο sitemap (οι συνδεδεμένοι βλέπουν τα πάντα) | PHP | Bots και όρια |
 | Πρώιμος έλεγχος (προαιρετικός): το `wp-content/mu-plugins/scrapelock-early.php` σταματά bots της λίστας, αποκλεισμένες IP και referrers πριν φορτώσουν θέμα και plugins | PHP (mu-plugin) | Bots και όρια |
+| Έλεγχος πριν από το cache (προαιρετικός): μία γραμμή στην κορυφή του `wp-config.php` εφαρμόζει το όριο σελίδων, τους αποκλεισμούς και τις πάντα αποκλεισμένες IP και στις σελίδες που σερβίρει το cache (WP Rocket κ.ά.) | PHP (wp-config.php) | Bots και όρια |
 | Content Signals στο robots.txt: `search=yes, ai-train=no`, και `ai-input` ανάλογα με την AI αναζήτηση | robots.txt | Bots και όρια |
 | Επαλήθευση ανθρώπου (προαιρετική): μετά την πρώτη πραγματική αλληλεπίδραση (scroll, άγγιγμα, πλήκτρο, κίνηση ποντικιού) ο browser λύνει στο παρασκήνιο ένα ελαφρύ «πρόβλημα» και παίρνει cookie `pncp_hv` για 7 ημέρες· όσοι δεν το έχουν παίρνουν αυστηρότερο όριο σελίδων. Χωρίς captcha, δουλεύει με page cache | PHP + JS | Bots και όρια |
 | Όριο sitemap ανά IP (WordPress, Rank Math, Yoast κ.ά.)· ποτέ για επαληθευμένες μηχανές αναζήτησης | PHP | Bots και όρια |
-| Χώρες: αποκλεισμός ή αυστηρότερο όριο. Χώρα από το `CF-IPCountry` (μόνο από Cloudflare) ή από τη δωρεάν βάση DB-IP Lite (μία φορά τον μήνα, στο `uploads/scrapelock-geo`) | PHP | Bots και όρια |
+| Χώρες: αποκλεισμός ή αυστηρότερο όριο. Χώρα από το `CF-IPCountry` (μόνο από Cloudflare), το `CDN-RequestCountryCode` (μόνο από Bunny CDN) ή από τη δωρεάν βάση DB-IP Lite (μία φορά τον μήνα, στο `uploads/scrapelock-geo`) | PHP | Bots και όρια |
 | Αναφορά «τι προσπαθούν να αντιγράψουν»: οι σελίδες και τα αρχεία που μπλοκαρίστηκαν περισσότερο (24 ώρες / 7 ημέρες) | — | Αρχείο |
-| Trusted Proxy: το `CF-Connecting-IP` / `X-Forwarded-For` διαβάζεται μόνο από αξιόπιστο proxy · αν όλοι οι επισκέπτες φαίνονται με διεύθυνση Cloudflare, κουμπί που το διορθώνει με ένα κλικ | PHP | Bots και όρια |
+| Trusted Proxy: το `CF-Connecting-IP` / `X-Real-IP` / `X-Forwarded-For` διαβάζεται μόνο από αξιόπιστο proxy (Cloudflare, Bunny CDN με την επίσημη λίστα του, ιδιωτικό δίκτυο, δική σας λίστα) · αν όλοι οι επισκέπτες φαίνονται με διεύθυνση Cloudflare ή Bunny, κουμπί που το διορθώνει με ένα κλικ | PHP | Bots και όρια |
 | REST API και WPGraphQL χωρίς κείμενο για επισκέπτες · RSS μόνο περίληψη, ή πλήρες με «Το άρθρο … δημοσιεύτηκε πρώτα στο …» στο τέλος | PHP | Feeds και API |
 | Προστατευμένα XML feeds με token (header για ERP, URL για Skroutz/BestPrice/Merchant), μόνο hash στη βάση (ποτέ σε καθαρή μορφή, ούτε στη μετάβαση από την 1.x), εναλλαγή με περίοδο χάριτος, στατιστικά | PHP | Feeds και API |
 | Υδατογράφημα: γωνίες, κέντρο ή διαγώνια επανάληψη · προαιρετικά και στο πλήρες μέγεθος (το καθαρό φυλάγεται) · εργαλείο για τις υπάρχουσες εικόνες | εικόνες | Εικόνες |
@@ -45,7 +46,24 @@
 
 ## Page cache και στατικά αρχεία
 
-Ό,τι σερβίρεται από page cache (Nginx FastCGI cache, WP Rocket κ.λπ.) ή ως στατικό αρχείο δεν φτάνει στην PHP. Για πλήρη κάλυψη χρησιμοποιήστε τους κανόνες της καρτέλας **Κανόνες server**. Οι κανόνες βγαίνουν με το domain, τη λίστα bots, τα feeds και τον φάκελο αντιγράφων του δικού σας site. Τα βασικά για Nginx:
+Ό,τι σερβίρεται από page cache (Nginx FastCGI cache, WP Rocket κ.λπ.) ή ως στατικό αρχείο δεν φτάνει στο plugin. Τα bots της λίστας δεν παίρνουν ποτέ σελίδες από το cache του WP Rocket, οπότε ελέγχονται κανονικά. Για όλους τους άλλους υπάρχουν δύο λύσεις.
+
+**Έλεγχος πριν από το cache** (Bots και όρια → Temporary block, «Pre-cache check»). Για cache που τρέχουν μέσα στην PHP (WP Rocket, WP Super Cache, W3 Total Cache κ.ά.). Το ScrapeLock προσθέτει αμέσως μετά το `<?php` του `wp-config.php`:
+
+```php
+// BEGIN ScrapeLock pre-cache check (added and removed by the plugin's "Pre-cache check" setting)
+if ( is_file( '/…/wp-content/scrapelock-precheck/run.php' ) ) { include_once '/…/wp-content/scrapelock-precheck/run.php'; }
+// END ScrapeLock pre-cache check
+```
+
+- Τρέχει πριν από το cache και το WordPress, χωρίς βάση δεδομένων. Σταματά μόνο τις πάντα αποκλεισμένες IP, τους προσωρινούς αποκλεισμούς και όσους ξεπερνούν το «Pages per minute».
+- Οι παραβάσεις φέρνουν αποκλεισμό όπως στον κανονικό έλεγχο. Οι αποκλεισμοί και η άρση τους ισχύουν και στις δύο πλευρές. Τα συμβάντα εμφανίζονται στο Αρχείο.
+- Μετρητές στο APCu ή σε αρχεία στο `wp-content/scrapelock-precheck`.
+- Δεν μετρά: συνδεδεμένους χρήστες, φόρμες, prefetch, wp-admin, wp-login, REST, cron, τον ίδιο τον server, τις πάντα επιτρεπτές IP, το Google και το Bing από τις επίσημες διευθύνσεις τους. Το Applebot και το YandexBot αφήνονται στον κανονικό έλεγχο, και το WP Rocket δεν τους δίνει σελίδες από το cache.
+- Δεν εφαρμόζει τα αυστηρότερα όρια (επαλήθευση ανθρώπου, χώρες) και το Emergency Mode: αυτά ισχύουν για τις σελίδες εκτός cache.
+- Αν το `wp-config.php` δεν γράφεται, η ρύθμιση δείχνει τις γραμμές για να τις βάλετε με το χέρι. Όλα αφαιρούνται όταν κλείνει η ρύθμιση ή απενεργοποιείται το plugin. Όχι σε multisite.
+
+**Κανόνες server.** Για cache του Nginx (FastCGI cache) ή του CDN, που δεν περνούν καθόλου από την PHP, και για τα στατικά αρχεία: οι κανόνες της καρτέλας **Κανόνες server**. Οι κανόνες βγαίνουν με το domain, τη λίστα bots, τα feeds και τον φάκελο αντιγράφων του δικού σας site. Τα βασικά για Nginx:
 
 ```nginx
 # http { }
@@ -73,6 +91,12 @@ location ^~ /wp-content/uploads/pncp-originals-XXXXXXXXXXXX/ { deny all; return 
 set_real_ip_from 173.245.48.0/20;   # … όλες οι διευθύνσεις του https://www.cloudflare.com/ips/
 real_ip_header CF-Connecting-IP;
 ```
+
+**Bunny CDN.** Δύο σωστοί τρόποι:
+- Ο Nginx αντικαθιστά ήδη την IP (`real_ip_header X-Real-IP;` και ένα `set_real_ip_from` για κάθε edge server του Bunny, από το `https://bunnycdn.com/api/system/edgeserverlist`). Τότε η «Real visitor IP» μένει **REMOTE_ADDR**, και η σελίδα ρυθμίσεων γράφει ότι είναι σωστό.
+- Αλλιώς: «Real visitor IP» = **X-Real-IP** και «Trust Bunny CDN addresses» ενεργό. Το ScrapeLock κατεβάζει κάθε μέρα την επίσημη λίστα και διαβάζει την κεφαλίδα μόνο από αυτούς τους servers. Αν όλοι οι επισκέπτες φαίνονται με διεύθυνση του Bunny, το κουμπί της προειδοποίησης το κάνει με ένα κλικ.
+
+Η χώρα έρχεται από το `CDN-RequestCountryCode` του Bunny μόνο στον δεύτερο τρόπο, όπου το αίτημα φτάνει απευθείας από edge server του Bunny. Στον πρώτο χρησιμοποιείται η βάση DB-IP.
 
 ## Συμβατότητα (δοκιμασμένη)
 

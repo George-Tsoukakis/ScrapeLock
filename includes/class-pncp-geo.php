@@ -1,6 +1,7 @@
 <?php
 /**
- * Country of a visitor: Cloudflare's CF-IPCountry header, or the free DB-IP Lite database.
+ * Country of a visitor: Cloudflare's CF-IPCountry header, Bunny CDN's CDN-RequestCountryCode header, or the
+ * free DB-IP Lite database.
  *
  * @package ScrapeLock
  */
@@ -11,7 +12,8 @@ defined( 'ABSPATH' ) || exit;
  * Country lookup for the "blocked countries" and "stricter limit" lists.
  *
  * Behind Cloudflare the CF-IPCountry header is used, only when the request really comes from a Cloudflare
- * address. Otherwise, with "Download the country database" on, the DB-IP Lite country file (CC BY 4.0) is
+ * address; behind Bunny CDN its CDN-RequestCountryCode header, only from a Bunny edge server ("Trust Bunny CDN
+ * addresses" on). Otherwise, with "Download the country database" on, the DB-IP Lite country file (CC BY 4.0) is
  * downloaded once a month and turned into two small sorted binary files in uploads/scrapelock-geo/:
  * IPv4 records of 10 bytes (start, end, country) and IPv6 records of 18 bytes (the first 64 bits of start and
  * end, country). A lookup is a binary search of about 20 reads. No database, no tables, no data sent anywhere.
@@ -96,6 +98,9 @@ final class PNCP_Geo {
 			return self::$cache[ $ip ];
 		}
 		$country = self::from_cloudflare();
+		if ( '' === $country ) {
+			$country = self::from_bunny();
+		}
 		if ( '' === $country && self::status()['updated'] ) {
 			$country = self::lookup( $ip );
 		}
@@ -123,6 +128,20 @@ final class PNCP_Geo {
 		$code = strtoupper( sanitize_text_field( wp_unslash( $_SERVER['HTTP_CF_IPCOUNTRY'] ) ) );
 		// XX = unknown, T1 = Tor.
 		return preg_match( '/^[A-Z]{2}$/', $code ) && 'XX' !== $code && 'T1' !== $code ? $code : '';
+	}
+
+	/**
+	 * CDN-RequestCountryCode, only if the request comes from a Bunny edge server and Bunny is trusted.
+	 *
+	 * @return string
+	 */
+	private static function from_bunny() {
+		$s = PNCP_Options::get();
+		if ( empty( $_SERVER['HTTP_CDN_REQUESTCOUNTRYCODE'] ) || empty( $s['trust_bunny'] ) || ! PNCP_Ip::remote_is_bunny() ) {
+			return '';
+		}
+		$code = strtoupper( sanitize_text_field( wp_unslash( $_SERVER['HTTP_CDN_REQUESTCOUNTRYCODE'] ) ) );
+		return preg_match( '/^[A-Z]{2}$/', $code ) && 'XX' !== $code ? $code : '';
 	}
 
 	/**

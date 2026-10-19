@@ -168,6 +168,7 @@ final class PNCP_Rules {
 		$lines[] = '# Page limit per IP (also for cached pages): put this line ONLY in the location that serves pages';
 		$lines[] = '# (PHP / page cache), NOT where CSS, JS, images and fonts are served: one page loads dozens of them.';
 		$lines[] = '# Behind Cloudflare: set real_ip_header CF-Connecting-IP first (see the plugin FAQ).';
+		$lines[] = '# Behind Bunny CDN: real_ip_header X-Real-IP, with set_real_ip_from for each Bunny edge server.';
 		$lines[] = '#   limit_req zone=pncp_pages burst=20 nodelay;';
 		$lines[] = '';
 		if ( '' !== $backup ) {

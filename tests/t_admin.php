@@ -373,6 +373,31 @@ t( 'καρτέλα κανόνων χωρίς Cloudflare: χωρίς σημείω
 update_option( PNCP_OPTION, $keep );
 PNCP_Options::flush();
 
+// 2.6: Bunny CDN. Οι κεφαλίδες CDN-ServerId / Via δείχνουν ότι το αίτημα ήρθε μέσω Bunny.
+settings( array( 'ip_header' => 'remote_addr', 'trust_bunny' => 0 ) );
+delete_option( PNCP_Ip::LISTS_OPTION . '_bunny' );
+$bunny_headers = array( 'X-Test-Remote-Addr: 89.187.162.1', 'CDN-ServerId: 1330', 'Via: 1.1 BunnyCDN-DE1-1330', 'X-Real-IP: 198.51.100.77', 'User-Agent: Mozilla/5.0 Chrome/141', 'Accept-Language: el', 'X-Test-Bunny-List: ["89.187.162.1","89.187.162.2"]' );
+list( , $body ) = http( $page . '&tab=bots', null, false, $bunny_headers );
+t( 'Bunny χωρίς σωστή ρύθμιση IP: προειδοποίηση με κουμπί', false !== strpos( $body, 'value="pncp_bunny_ip"' ) && ! php_errors( $body ) );
+t( 'Bunny: η επιλογή «Trust Bunny CDN addresses» υπάρχει', false !== strpos( $body, 'name="pncp_settings[trust_bunny]"' ) );
+list( , $body ) = http( $page . '&tab=bots' );
+t( 'χωρίς Bunny: καμία προειδοποίηση', false === strpos( $body, 'value="pncp_bunny_ip"' ) );
+list( , $body ) = http( $page . '&tab=bots', null, false, array( 'X-Test-Remote-Addr: 198.51.100.77', 'CDN-ServerId: 1330', 'X-Real-IP: 198.51.100.77' ) );
+t( 'Bunny με real_ip στο nginx: σημείωση ότι το REMOTE_ADDR είναι σωστό, χωρίς κουμπί', false !== strpos( $body, 'Bunny CDN detected' ) && false === strpos( $body, 'value="pncp_bunny_ip"' ) );
+list( $code ) = http( '/wp-admin/admin-post.php', array( 'action' => 'pncp_bunny_ip', '_wpnonce' => 'wrong' ), false, $bunny_headers );
+wp_cache_delete( 'alloptions', 'options' );
+t( 'ένα κλικ Bunny: λάθος nonce, τίποτα δεν αλλάζει', 'remote_addr' === PNCP_Options::stored()['ip_header'], (string) $code );
+list( $code, , $loc ) = http( '/wp-admin/admin-post.php', array( 'action' => 'pncp_bunny_ip', '_wpnonce' => wp_create_nonce( 'pncp_bunny_ip' ) ), false, $bunny_headers );
+wp_cache_delete( 'alloptions', 'options' );
+$s = PNCP_Options::stored();
+t( 'ένα κλικ Bunny: X-Real-IP, εμπιστοσύνη στο Bunny και λίστα που κατέβηκε', 302 === $code && 'x_real_ip' === $s['ip_header'] && 1 === (int) $s['trust_bunny'] && false !== strpos( $loc, 'pncp_message=bunny_ip' ) && false === strpos( $loc, 'bunny_ip_failed' ) && array( '89.187.162.1', '89.187.162.2', '2400:52e0:1a00::1' ) === get_option( PNCP_Ip::LISTS_OPTION . '_bunny' ), "$code $loc" );
+list( , $body ) = http( $page . '&tab=bots&pncp_message=bunny_ip', null, false, $bunny_headers );
+t( 'ένα κλικ Bunny: μήνυμα επιτυχίας, η προειδοποίηση φεύγει, φαίνεται η IP του επισκέπτη', false !== strpos( $body, 'only for requests from Bunny CDN' ) && false === strpos( $body, 'value="pncp_bunny_ip"' ) && false !== strpos( $body, '<code>198.51.100.77</code>' ) );
+t( 'Bunny: η λίστα φαίνεται στις επίσημες λίστες', false !== strpos( $body, 'Bunny CDN:</strong>' ) );
+delete_option( PNCP_Ip::LISTS_OPTION . '_bunny' );
+update_option( PNCP_OPTION, $keep );
+PNCP_Options::flush();
+
 /* ---------- 2.6: νέα σελίδα ρυθμίσεων ---------- */
 list( , $body ) = http( $page . '&tab=bots' );
 t( 'bots: γρήγοροι σύνδεσμοι στις ενότητες', false !== strpos( $body, 'pncp-section-nav' ) && false !== strpos( $body, 'href="#pncp-sec-human"' ) && false !== strpos( $body, 'id="pncp-sec-human"' ) && false !== strpos( $body, 'id="pncp-sec-countries"' ) && false !== strpos( $body, 'id="pncp-sec-lists"' ) );
