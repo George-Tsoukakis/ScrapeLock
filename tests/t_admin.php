@@ -318,7 +318,7 @@ update_option( PNCP_Private_Urls::TOKEN_OPTION, $hash_before, false );
 $keep = PNCP_Options::stored();
 list( , $body ) = http( $page . '&tab=bots' );
 $missing = array();
-foreach ( array( 'block_ips', 'block_referrers', 'block_user_enum', 'rate_limit_404', 'early_mode', 'content_signal', 'verify_ai_bots', 'block_headless' ) as $key ) {
+foreach ( array( 'block_ips', 'block_referrers', 'block_user_enum', 'rate_limit_404', 'early_mode', 'content_signal', 'verify_ai_bots', 'block_headless', 'human_check', 'rate_limit_unverified', 'rate_limit_sitemap', 'geo_db', 'countries_block', 'countries_strict', 'rate_limit_country' ) as $key ) {
 	if ( false === strpos( $body, 'name="pncp_settings[' . $key . ']"' ) ) {
 		$missing[] = $key;
 	}
@@ -372,6 +372,59 @@ list( , $body ) = http( $page . '&tab=rules' );
 t( 'καρτέλα κανόνων χωρίς Cloudflare: χωρίς σημείωση APO', false === strpos( $body, 'APO and' ) );
 update_option( PNCP_OPTION, $keep );
 PNCP_Options::flush();
+
+// 2.6: Bunny CDN. Οι κεφαλίδες CDN-ServerId / Via δείχνουν ότι το αίτημα ήρθε μέσω Bunny.
+settings( array( 'ip_header' => 'remote_addr', 'trust_bunny' => 0 ) );
+delete_option( PNCP_Ip::LISTS_OPTION . '_bunny' );
+$bunny_headers = array( 'X-Test-Remote-Addr: 89.187.162.1', 'CDN-ServerId: 1330', 'Via: 1.1 BunnyCDN-DE1-1330', 'X-Real-IP: 198.51.100.77', 'User-Agent: Mozilla/5.0 Chrome/141', 'Accept-Language: el', 'X-Test-Bunny-List: ["89.187.162.1","89.187.162.2"]' );
+list( , $body ) = http( $page . '&tab=bots', null, false, $bunny_headers );
+t( 'Bunny χωρίς σωστή ρύθμιση IP: προειδοποίηση με κουμπί', false !== strpos( $body, 'value="pncp_bunny_ip"' ) && ! php_errors( $body ) );
+t( 'Bunny: η επιλογή «Trust Bunny CDN addresses» υπάρχει', false !== strpos( $body, 'name="pncp_settings[trust_bunny]"' ) );
+list( , $body ) = http( $page . '&tab=bots' );
+t( 'χωρίς Bunny: καμία προειδοποίηση', false === strpos( $body, 'value="pncp_bunny_ip"' ) );
+list( , $body ) = http( $page . '&tab=bots', null, false, array( 'X-Test-Remote-Addr: 198.51.100.77', 'CDN-ServerId: 1330', 'X-Real-IP: 198.51.100.77' ) );
+t( 'Bunny με real_ip στο nginx: σημείωση ότι το REMOTE_ADDR είναι σωστό, χωρίς κουμπί', false !== strpos( $body, 'Bunny CDN detected' ) && false === strpos( $body, 'value="pncp_bunny_ip"' ) );
+list( $code ) = http( '/wp-admin/admin-post.php', array( 'action' => 'pncp_bunny_ip', '_wpnonce' => 'wrong' ), false, $bunny_headers );
+wp_cache_delete( 'alloptions', 'options' );
+t( 'ένα κλικ Bunny: λάθος nonce, τίποτα δεν αλλάζει', 'remote_addr' === PNCP_Options::stored()['ip_header'], (string) $code );
+list( $code, , $loc ) = http( '/wp-admin/admin-post.php', array( 'action' => 'pncp_bunny_ip', '_wpnonce' => wp_create_nonce( 'pncp_bunny_ip' ) ), false, $bunny_headers );
+wp_cache_delete( 'alloptions', 'options' );
+$s = PNCP_Options::stored();
+t( 'ένα κλικ Bunny: X-Real-IP, εμπιστοσύνη στο Bunny και λίστα που κατέβηκε', 302 === $code && 'x_real_ip' === $s['ip_header'] && 1 === (int) $s['trust_bunny'] && false !== strpos( $loc, 'pncp_message=bunny_ip' ) && false === strpos( $loc, 'bunny_ip_failed' ) && array( '89.187.162.1', '89.187.162.2', '2400:52e0:1a00::1' ) === get_option( PNCP_Ip::LISTS_OPTION . '_bunny' ), "$code $loc" );
+list( , $body ) = http( $page . '&tab=bots&pncp_message=bunny_ip', null, false, $bunny_headers );
+t( 'ένα κλικ Bunny: μήνυμα επιτυχίας, η προειδοποίηση φεύγει, φαίνεται η IP του επισκέπτη', false !== strpos( $body, 'only for requests from Bunny CDN' ) && false === strpos( $body, 'value="pncp_bunny_ip"' ) && false !== strpos( $body, '<code>198.51.100.77</code>' ) );
+t( 'Bunny: η λίστα φαίνεται στις επίσημες λίστες', false !== strpos( $body, 'Bunny CDN:</strong>' ) );
+delete_option( PNCP_Ip::LISTS_OPTION . '_bunny' );
+update_option( PNCP_OPTION, $keep );
+PNCP_Options::flush();
+
+/* ---------- 2.6: νέα σελίδα ρυθμίσεων ---------- */
+list( , $body ) = http( $page . '&tab=bots' );
+t( 'bots: γρήγοροι σύνδεσμοι στις ενότητες', false !== strpos( $body, 'pncp-section-nav' ) && false !== strpos( $body, 'href="#pncp-sec-human"' ) && false !== strpos( $body, 'id="pncp-sec-human"' ) && false !== strpos( $body, 'id="pncp-sec-countries"' ) && false !== strpos( $body, 'id="pncp-sec-lists"' ) );
+t( 'bots: διακόπτες (toggle) αντί για απλά κουτάκια', false !== strpos( $body, 'class="pncp-toggle" id="pncp-block_bots"' ) );
+t( 'bots: η λίστα bots διπλωμένη, με αριθμό γραμμών', 1 === preg_match( '#<details class="pncp-fold"><summary>[^<]*<span class="pncp-badge">\d+ (entry|entries)#', $body ) );
+t( 'bots: κατάσταση χωρών και αναφορά στη DB-IP', false !== strpos( $body, 'Country of this request' ) && false !== strpos( $body, 'https://db-ip.com' ) );
+t( 'κάθε καρτέλα: κατάσταση προστασίας πάνω', false !== strpos( $body, 'pncp-status-bar' ) && false !== strpos( $body, 'pncp-pill' ) );
+t( 'bots: το κουμπί αποθήκευσης μέσα στη φόρμα ρυθμίσεων', false !== strpos( $body, 'class="pncp-settings-form"' ) );
+settings( array( 'geo_db' => 0 ) );
+list( , $body ) = http( $page . '&tab=bots' );
+t( 'βάση χωρών ανενεργή: χωρίς κουμπί λήψης', false === strpos( $body, 'value="refresh_geo"' ) );
+settings( array( 'geo_db' => 1 ) );
+list( , $body ) = http( $page . '&tab=bots' );
+t( 'βάση χωρών ενεργή: κουμπί «Download now»', false !== strpos( $body, 'value="refresh_geo"' ) );
+settings( array( 'geo_db' => 0 ) );
+list( $code ) = http( '/wp-admin/options.php', array( 'option_page' => 'pncp_settings_group', 'action' => 'update', '_wpnonce' => wp_create_nonce( 'pncp_settings_group-options' ), 'pncp_settings' => array( '_sections' => array( 'bots' ), 'countries_block' => 'cn, ru;xx1 GR gr', 'human_check' => '1', 'rate_limit_unverified' => '15', 'ip_header' => 'remote_addr' ) ) );
+wp_cache_delete( 'alloptions', 'options' );
+$s = PNCP_Options::stored();
+t( 'φόρμα bots: χώρες καθαρές, επαλήθευση ανθρώπου', 302 === $code && "CN\nRU\nGR" === $s['countries_block'] && 1 === (int) $s['human_check'] && 15 === (int) $s['rate_limit_unverified'], wp_json_encode( array( $code, $s['countries_block'], $s['human_check'] ) ) );
+update_option( PNCP_OPTION, $keep );
+PNCP_Options::flush();
+list( , $body ) = http( $page . '&tab=log' );
+t( 'Log: αναφορά «τι προσπαθούν να αντιγράψουν» για 24 ώρες και 7 ημέρες', false !== strpos( $body, 'What they try to copy' ) && false !== strpos( $body, 'Last 7 days' ) && ! php_errors( $body ) );
+foreach ( array( 'general', 'content', 'images', 'rules' ) as $tab ) {
+	list( $code, $body ) = http( $page . '&tab=' . $tab );
+	t( "καρτέλα $tab: νέα εμφάνιση χωρίς PHP warnings", 200 === $code && ! php_errors( $body ) && false !== strpos( $body, 'pncp-status-bar' ), (string) $code );
+}
 
 /* ---------- GraphQL (χωρίς το plugin: με ψεύτικο μοντέλο) ---------- */
 eval( 'namespace WPGraphQL\\Model; class Post { public $databaseId; public function __construct( $id ) { $this->databaseId = $id; } }' );

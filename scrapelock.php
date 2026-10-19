@@ -2,7 +2,7 @@
 /**
  * Plugin Name:       ScrapeLock – Content & AI Bot Protection
  * Description:       Protects your content: makes copying text and images harder, hides the text in the REST API, GraphQL and RSS, blocks scrapers, AI bots and fake Googlebots, temporarily blocks persistent IPs, protects XML feeds with a token and adds an optional watermark. Forms, cart, checkout and search engines are not affected.
- * Version:           2.5.0
+ * Version:           2.6.0
  * Requires at least: 6.2
  * Requires PHP:      7.4
  * Author:            CodeBunny
@@ -19,7 +19,7 @@ if ( defined( 'PNCP_VERSION' ) ) {
 	return;
 }
 
-define( 'PNCP_VERSION', '2.5.0' );
+define( 'PNCP_VERSION', '2.6.0' );
 define( 'PNCP_FILE', __FILE__ );
 define( 'PNCP_DIR', plugin_dir_path( __FILE__ ) );
 define( 'PNCP_URL', plugin_dir_url( __FILE__ ) );
@@ -38,6 +38,9 @@ require_once PNCP_DIR . 'includes/class-pncp-private-urls.php';
 require_once PNCP_DIR . 'includes/class-pncp-rules.php';
 require_once PNCP_DIR . 'includes/class-pncp-status.php';
 require_once PNCP_DIR . 'includes/class-pncp-early.php';
+require_once PNCP_DIR . 'includes/class-pncp-human.php';
+require_once PNCP_DIR . 'includes/class-pncp-geo.php';
+require_once PNCP_DIR . 'includes/class-pncp-precheck.php';
 
 if ( is_admin() ) {
 	require_once PNCP_DIR . 'includes/class-pncp-admin.php';
@@ -54,6 +57,9 @@ PNCP_Bots::init();
 PNCP_Watermark::init();
 PNCP_Private_Urls::init();
 PNCP_Status::init();
+PNCP_Human::init();
+PNCP_Geo::init();
+PNCP_Precheck::init();
 
 /**
  * Activation: defaults (without touching existing settings), log table, cron.
@@ -92,6 +98,8 @@ function pncp_deactivate() {
 	if ( ! is_multisite() ) {
 		PNCP_Early::remove();
 	}
+	// The pre-cache check: its line in wp-config.php and its files go away with the plugin.
+	PNCP_Precheck::remove();
 	pncp_purge_page_cache();
 }
 
@@ -115,6 +123,9 @@ function pncp_upgrade() {
 		}
 		if ( version_compare( $from, '2.5.0', '<' ) ) {
 			$added += PNCP_Options::new_in_250();
+		}
+		if ( version_compare( $from, '2.6.0', '<' ) ) {
+			$added += PNCP_Options::new_in_260();
 		}
 		$added = array_diff_key( $added, $stored );
 		if ( $added ) {
@@ -146,6 +157,8 @@ function pncp_upgrade() {
 	PNCP_Options::flush();
 	// The early check (mu-plugin): written again if the plugin folder changed, removed if it is off.
 	PNCP_Early::sync();
+	// The pre-cache check: the loader is written again (new version, new plugin folder) or removed.
+	PNCP_Precheck::sync();
 	// Cache plugins (e.g. LiteSpeed, WP Rocket) finish loading later: before init the purge waits for init.
 	pncp_purge_page_cache();
 }
@@ -165,8 +178,8 @@ function pncp_upgrade() {
  * @return array<string, mixed>
  */
 function pncp_migrate_from_1x( $old ) {
-	// The 2.4 and 2.5 additions stay off, as on every existing site.
-	$new = array_merge( PNCP_Options::defaults(), PNCP_Options::new_in_240(), PNCP_Options::new_in_250(), $old );
+	// The 2.4, 2.5 and 2.6 additions stay off, as on every existing site.
+	$new = array_merge( PNCP_Options::defaults(), PNCP_Options::new_in_240(), PNCP_Options::new_in_250(), PNCP_Options::new_in_260(), $old );
 
 	$list   = isset( $old['bot_list'] ) ? PNCP_Options::parse_list( (string) $old['bot_list'] ) : array();
 	$legacy = array_map( 'strtolower', PNCP_Options::legacy_bot_list() );
@@ -291,6 +304,7 @@ function pncp_settings_changed() {
 }
 add_action( 'update_option_' . PNCP_OPTION, 'pncp_settings_changed', 0 );
 add_action( 'update_option_' . PNCP_OPTION, array( 'PNCP_Early', 'sync' ) );
+add_action( 'update_option_' . PNCP_OPTION, array( 'PNCP_Precheck', 'sync' ) );
 // Settings are first read before the translations load: they are read again afterwards.
 add_action( 'after_setup_theme', array( 'PNCP_Options', 'flush' ), 0 );
 

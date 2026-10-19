@@ -155,3 +155,356 @@
 .pncp-list-status {
 	margin-left: 0;
 }
+
+/* ---------- 2.6: layout ---------- */
+
+.pncp-admin {
+	--pncp-accent: #2271b1;
+	--pncp-accent-soft: #e8f1fa;
+	--pncp-on: #00733f;
+	--pncp-on-soft: #e6f4ec;
+	--pncp-border: #dcdcde;
+	--pncp-muted: #50575e;
+	max-width: 1100px;
+}
+
+.pncp-title {
+	display: flex;
+	align-items: center;
+	gap: 10px;
+}
+
+.pncp-version {
+	padding: 2px 8px;
+	border-radius: 10px;
+	background: #f0f0f1;
+	color: var(--pncp-muted);
+	font-size: 12px;
+	font-weight: 400;
+	line-height: 1.6;
+}
+
+/* Status pills */
+.pncp-status-bar {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 8px;
+	margin: 8px 0 16px;
+	padding: 0;
+	list-style: none;
+}
+
+.pncp-pill {
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+	margin: 0;
+	padding: 4px 12px;
+	border: 1px solid var(--pncp-border);
+	border-radius: 999px;
+	background: #fff;
+	color: var(--pncp-muted);
+	font-size: 13px;
+}
+
+.pncp-pill::before {
+	content: "";
+	width: 8px;
+	height: 8px;
+	border-radius: 50%;
+	background: #a7aaad;
+}
+
+.pncp-pill--on {
+	border-color: #b8dfc8;
+	background: var(--pncp-on-soft);
+	color: #1d2327;
+}
+
+.pncp-pill--on::before {
+	background: var(--pncp-on);
+}
+
+.pncp-pill--alert {
+	border-color: #f0c8a0;
+	background: #fcf3e6;
+	color: #6b3500;
+	font-weight: 600;
+}
+
+.pncp-pill--alert::before {
+	background: #b35c00;
+}
+
+/* Tabs */
+.pncp-admin .nav-tab-wrapper {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 4px;
+	padding: 0;
+	border-bottom: 1px solid var(--pncp-border);
+}
+
+.pncp-admin .nav-tab {
+	margin: 0;
+	padding: 8px 14px;
+	border: 1px solid transparent;
+	border-bottom: 0;
+	border-radius: 6px 6px 0 0;
+	background: transparent;
+	color: var(--pncp-muted);
+	font-weight: 500;
+}
+
+.pncp-admin .nav-tab:hover {
+	background: #f6f7f7;
+	color: #1d2327;
+}
+
+.pncp-admin .nav-tab-active,
+.pncp-admin .nav-tab-active:hover {
+	border-color: var(--pncp-border);
+	background: #fff;
+	color: var(--pncp-accent);
+	box-shadow: inset 0 3px 0 var(--pncp-accent);
+}
+
+/* Quick links of a long tab */
+.pncp-section-nav ul {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 6px;
+	margin: 0 0 12px;
+	padding: 0;
+	list-style: none;
+}
+
+.pncp-section-nav li {
+	margin: 0;
+}
+
+.pncp-section-nav a {
+	display: inline-block;
+	padding: 3px 10px;
+	border: 1px solid var(--pncp-border);
+	border-radius: 999px;
+	background: #fff;
+	color: var(--pncp-accent);
+	font-size: 12px;
+	text-decoration: none;
+}
+
+.pncp-section-nav a:hover,
+.pncp-section-nav a:focus {
+	border-color: var(--pncp-accent);
+	background: var(--pncp-accent-soft);
+}
+
+/* Settings as cards: every row of the form table is a card */
+.pncp-admin .form-table,
+.pncp-admin .form-table tbody,
+.pncp-admin .form-table tr,
+.pncp-admin .form-table th,
+.pncp-admin .form-table td {
+	display: block;
+	width: auto;
+}
+
+.pncp-admin .form-table {
+	margin-top: 0;
+}
+
+.pncp-admin .form-table tr {
+	margin: 0 0 16px;
+	padding: 4px 20px 12px;
+	border: 1px solid var(--pncp-border);
+	border-radius: 8px;
+	background: #fff;
+	box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+	scroll-margin-top: 48px;
+}
+
+.pncp-admin .form-table th {
+	margin: 0 -20px 8px;
+	padding: 12px 20px;
+	border-bottom: 1px solid #f0f0f1;
+	font-size: 15px;
+	font-weight: 600;
+}
+
+.pncp-admin .form-table td {
+	padding: 4px 0;
+}
+
+.pncp-field {
+	margin: 0 0 14px;
+}
+
+.pncp-field:last-child {
+	margin-bottom: 4px;
+}
+
+.pncp-field .description,
+.pncp-admin .form-table td > .description {
+	max-width: 760px;
+	margin-top: 4px;
+	color: var(--pncp-muted);
+}
+
+.pncp-field--toggle .description {
+	margin-left: 46px;
+}
+
+.pncp-field--toggle label {
+	display: inline-flex;
+	align-items: flex-start;
+	gap: 10px;
+	font-weight: 500;
+}
+
+.pncp-field--number p,
+.pncp-field--text p {
+	margin: 0 0 4px;
+}
+
+.pncp-field--number input[type="number"] {
+	width: 90px;
+	margin-left: 6px;
+}
+
+/* Toggle switches (still real checkboxes: keyboard, screen readers and forms work as before) */
+.pncp-admin input.pncp-toggle {
+	-webkit-appearance: none;
+	appearance: none;
+	position: relative;
+	flex: 0 0 auto;
+	width: 36px;
+	height: 20px;
+	margin: 1px 0 0;
+	border: 0;
+	border-radius: 999px;
+	background: #a7aaad;
+	box-shadow: none;
+	cursor: pointer;
+	transition: background-color 0.15s ease;
+}
+
+.pncp-admin input.pncp-toggle::before {
+	content: "";
+	position: absolute;
+	top: 3px;
+	left: 3px;
+	width: 14px;
+	height: 14px;
+	margin: 0;
+	border-radius: 50%;
+	background: #fff;
+	transition: transform 0.15s ease;
+}
+
+.pncp-admin input.pncp-toggle:checked {
+	background: var(--pncp-accent);
+}
+
+.pncp-admin input.pncp-toggle:checked::before {
+	content: "";
+	transform: translateX(16px);
+}
+
+.pncp-admin input.pncp-toggle:focus-visible {
+	outline: 2px solid var(--pncp-accent);
+	outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.pncp-admin input.pncp-toggle,
+	.pncp-admin input.pncp-toggle::before {
+		transition: none;
+	}
+}
+
+/* Long lists, folded */
+.pncp-fold {
+	border: 1px solid #f0f0f1;
+	border-radius: 6px;
+	background: #fbfbfc;
+}
+
+.pncp-fold summary {
+	padding: 8px 12px;
+	cursor: pointer;
+	font-weight: 500;
+}
+
+.pncp-fold[open] {
+	padding-bottom: 8px;
+}
+
+.pncp-fold[open] summary {
+	border-bottom: 1px solid #f0f0f1;
+}
+
+.pncp-fold textarea,
+.pncp-fold .description {
+	margin-right: 12px;
+	margin-left: 12px;
+	width: calc(100% - 24px);
+}
+
+/* Save bar stays visible while scrolling a long tab */
+.pncp-admin .pncp-settings-form p.submit {
+	position: sticky;
+	bottom: 0;
+	z-index: 10;
+	margin: 0;
+	padding: 12px 0;
+	border-top: 1px solid var(--pncp-border);
+	background: #f0f0f1;
+}
+
+.pncp-geo-status code {
+	font-size: 12px;
+}
+
+@media screen and (max-width: 782px) {
+	.pncp-admin .form-table tr {
+		padding: 4px 14px 10px;
+	}
+
+	.pncp-admin .form-table th {
+		margin: 0 -14px 8px;
+		padding: 10px 14px;
+	}
+
+	.pncp-field--toggle .description {
+		margin-left: 0;
+	}
+
+	.pncp-admin input.pncp-toggle {
+		width: 44px;
+		height: 24px;
+	}
+
+	.pncp-admin input.pncp-toggle::before {
+		width: 18px;
+		height: 18px;
+	}
+
+	.pncp-admin input.pncp-toggle:checked::before {
+		transform: translateX(20px);
+	}
+}
+
+.pncp-path-table code {
+	font-size: 12px;
+	word-break: break-all;
+}
+
+.pncp-path-table .num {
+	width: 72px;
+	text-align: right;
+}
+
+.pncp-card h4 {
+	margin: 0 0 8px;
+}

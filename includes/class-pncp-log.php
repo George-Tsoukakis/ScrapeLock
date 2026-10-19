@@ -133,23 +133,27 @@ final class PNCP_Log {
 	 */
 	public static function reasons() {
 		return array(
-			'bot_ua'       => __( 'User-Agent in the bot list', 'scrapelock' ),
-			'empty_ua'     => __( 'No User-Agent', 'scrapelock' ),
-			'fake_crawler' => __( 'Fake search engine', 'scrapelock' ),
-			'fake_ai_bot'  => __( 'Fake AI search bot', 'scrapelock' ),
-			'no_browser'   => __( 'No browser headers', 'scrapelock' ),
-			'headless'     => __( 'Headless browser', 'scrapelock' ),
-			'fake_browser' => __( 'Fake browser', 'scrapelock' ),
-			'rate_page'    => __( 'Page limit', 'scrapelock' ),
-			'rate_search'  => __( 'Search limit', 'scrapelock' ),
-			'rate_rest'    => __( 'REST / GraphQL limit', 'scrapelock' ),
-			'rate_404'     => __( '“Page not found” limit', 'scrapelock' ),
-			'blocked_ip'   => __( 'IP in the always-blocked list', 'scrapelock' ),
-			'blocked_ref'  => __( 'Referrer in the always-blocked list', 'scrapelock' ),
-			'trap'         => __( 'Bot trap', 'scrapelock' ),
-			'ban'          => __( 'New temporary block', 'scrapelock' ),
-			'banned'       => __( 'Request from a blocked IP', 'scrapelock' ),
-			'feed_denied'  => __( 'Private URL without token', 'scrapelock' ),
+			'bot_ua'          => __( 'User-Agent in the bot list', 'scrapelock' ),
+			'empty_ua'        => __( 'No User-Agent', 'scrapelock' ),
+			'fake_crawler'    => __( 'Fake search engine', 'scrapelock' ),
+			'fake_ai_bot'     => __( 'Fake AI search bot', 'scrapelock' ),
+			'no_browser'      => __( 'No browser headers', 'scrapelock' ),
+			'headless'        => __( 'Headless browser', 'scrapelock' ),
+			'fake_browser'    => __( 'Fake browser', 'scrapelock' ),
+			'rate_page'       => __( 'Page limit', 'scrapelock' ),
+			'rate_search'     => __( 'Search limit', 'scrapelock' ),
+			'rate_rest'       => __( 'REST / GraphQL limit', 'scrapelock' ),
+			'rate_sitemap'    => __( 'Sitemap limit', 'scrapelock' ),
+			'rate_unverified' => __( 'Page limit for unverified visitors', 'scrapelock' ),
+			'country'         => __( 'Blocked country', 'scrapelock' ),
+			'rate_country'    => __( 'Page limit for the stricter countries', 'scrapelock' ),
+			'rate_404'        => __( '“Page not found” limit', 'scrapelock' ),
+			'blocked_ip'      => __( 'IP in the always-blocked list', 'scrapelock' ),
+			'blocked_ref'     => __( 'Referrer in the always-blocked list', 'scrapelock' ),
+			'trap'            => __( 'Bot trap', 'scrapelock' ),
+			'ban'             => __( 'New temporary block', 'scrapelock' ),
+			'banned'          => __( 'Request from a blocked IP', 'scrapelock' ),
+			'feed_denied'     => __( 'Private URL without token', 'scrapelock' ),
 		);
 	}
 
@@ -196,6 +200,32 @@ final class PNCP_Log {
 		if ( $wpdb->insert_id ) {
 			self::cache_set( $key, (int) $wpdb->insert_id, 2 * MINUTE_IN_SECONDS );
 		}
+	}
+
+	/**
+	 * Stores an event that happened elsewhere (the pre-cache check), with its own time, path and User-Agent.
+	 *
+	 * @param array{time:int, code:int, reason:string, ip:string, path:string, ua:string, hits:int} $row Event.
+	 */
+	public static function insert( $row ) {
+		global $wpdb;
+		if ( get_option( 'pncp_db_version' ) !== self::DB_VERSION ) {
+			return;
+		}
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery -- Plugin table.
+		$wpdb->insert(
+			self::table(),
+			array(
+				'created' => gmdate( 'Y-m-d H:i:s', (int) $row['time'] ),
+				'ip'      => substr( (string) $row['ip'], 0, 45 ),
+				'reason'  => substr( (string) $row['reason'], 0, 20 ),
+				'code'    => (int) $row['code'],
+				'hits'    => max( 1, (int) $row['hits'] ),
+				'path'    => mb_substr( (string) $row['path'], 0, 255 ),
+				'ua'      => mb_substr( (string) $row['ua'], 0, 255 ),
+			),
+			array( '%s', '%s', '%s', '%d', '%d', '%s', '%s' )
+		);
 	}
 
 	/**
@@ -308,6 +338,52 @@ final class PNCP_Log {
 		return $out;
 	}
 
+	/**
+	 * The paths blocked most often: what scrapers try to copy (content) and what scanners look for (files).
+	 *
+	 * @param int $hours Period in hours.
+	 * @param int $limit Rows per group.
+	 * @return array{content: array<int, array{path:string, hits:int, ips:int}>, probes: array<int, array{path:string, hits:int, ips:int}>}
+	 */
+	public static function top_paths( $hours = 24, $limit = 10 ) {
+		global $wpdb;
+		$out = array(
+			'content' => array(),
+			'probes'  => array(),
+		);
+		if ( get_option( 'pncp_db_version' ) !== self::DB_VERSION ) {
+			return $out;
+		}
+		$since = gmdate( 'Y-m-d H:i:s', time() - (int) $hours * HOUR_IN_SECONDS );
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery -- Admin screen.
+		$rows = $wpdb->get_results( $wpdb->prepare( "SELECT path, SUM(hits) AS n, COUNT(DISTINCT ip) AS ips FROM %i WHERE created >= %s AND path <> '' GROUP BY path ORDER BY n DESC LIMIT 300", self::table(), $since ), ARRAY_A );
+		foreach ( (array) $rows as $row ) {
+			$group = self::is_probe_path( (string) $row['path'] ) ? 'probes' : 'content';
+			if ( count( $out[ $group ] ) < $limit ) {
+				$out[ $group ][] = array(
+					'path' => (string) $row['path'],
+					'hits' => (int) $row['n'],
+					'ips'  => (int) $row['ips'],
+				);
+			}
+		}
+		return $out;
+	}
+
+	/**
+	 * A path that looks for files or admin areas (scanners), not for content.
+	 *
+	 * @param string $path Path.
+	 * @return bool
+	 */
+	public static function is_probe_path( $path ) {
+		$path = strtolower( $path );
+		if ( preg_match( '#(?:^|/)(?:wp-sitemap[a-z0-9_-]*|sitemap(?:_index)?|[a-z0-9_-]+-sitemap[0-9]*)\.xml$#', $path ) || 0 === strpos( $path, '/wp-json/' ) ) {
+			return false; // Sitemaps and the REST API lead to content.
+		}
+		return (bool) preg_match( '#\.(?:php\d?|env|ini|conf|cfg|config|json|ya?ml|xml|sql|bak|old|orig|swp|zip|tar|gz|rar|7z|log|txt|tfvars|map|mjs|js|asp|aspx|jsp|cgi|sh|py|rb|pl)$|/\.|/@|\.\.|^/(?:wp-admin|wp-includes|wp-content/(?:plugins|themes|uploads)|cgi-bin|vendor|node_modules|cp-[0-9a-f]{10})(?:/|$)#', $path );
+	}
+
 	/* ---------- Bans ---------- */
 
 	/**
@@ -404,6 +480,23 @@ final class PNCP_Log {
 		if ( wp_using_ext_object_cache() ) {
 			wp_cache_set( 'pncp_ban_' . md5( $ip ), $until, 'pncp', max( 1, $until - time() ) );
 		}
+		PNCP_Precheck::mirror_ban( $ip, $until );
+	}
+
+	/**
+	 * A ban decided by the pre-cache check: stored like the others, so that it shows under "Blocked IPs"
+	 * and can be lifted there. Expired ones are skipped.
+	 *
+	 * @param string $ip     IP.
+	 * @param int    $until  Expiry.
+	 * @param string $reason Reason.
+	 * @param int    $since  Since when.
+	 */
+	public static function import_ban( $ip, $until, $reason, $since ) {
+		if ( '' === $ip || ! filter_var( $ip, FILTER_VALIDATE_IP ) || $until <= time() || PNCP_Bots::is_official_crawler_ip( $ip ) ) {
+			return;
+		}
+		self::store_ban( $ip, (int) $until, $reason, (int) $since );
 	}
 
 	/**
@@ -418,6 +511,7 @@ final class PNCP_Log {
 			wp_cache_delete( 'pncp_ban_' . md5( $ip ), 'pncp' );
 		}
 		unset( self::$banned[ $ip ] );
+		PNCP_Precheck::forget_ban( $ip );
 		// phpcs:ignore WordPress.DB.DirectDatabaseQuery -- Plugin table.
 		$wpdb->delete( self::bans_table(), array( 'ip' => $ip ), array( '%s' ) );
 	}
@@ -434,6 +528,7 @@ final class PNCP_Log {
 			}
 		}
 		self::$banned = array();
+		PNCP_Precheck::forget_all_bans();
 		// phpcs:ignore WordPress.DB.DirectDatabaseQuery -- Plugin table.
 		$wpdb->query( $wpdb->prepare( 'DELETE FROM %i', self::bans_table() ) );
 	}
