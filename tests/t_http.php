@@ -474,6 +474,68 @@ $_SERVER['REMOTE_ADDR'] = '127.0.0.1';
 unset( $_SERVER['HTTP_CF_CONNECTING_IP'], $_SERVER['HTTP_X_FORWARDED_FOR'] );
 PNCP_Ip::reset();
 
+/* ---------- 2.6: Bunny CDN (λίστα edge servers, X-Real-IP, χώρα) ---------- */
+t( 'Bunny: λίστα σε JSON (πίνακας διευθύνσεων)', array( '89.187.162.1', '2400:52e0:1a00::1' ) === PNCP_Ip::parse_ranges( '["89.187.162.1","2400:52e0:1a00::1","όχι-ip"]' ) );
+t( 'Bunny: λίστα σε XML', array( '89.187.162.1', '89.187.162.2' ) === PNCP_Ip::parse_ranges( '<ArrayOfstring xmlns="x"><string>89.187.162.1</string><string>89.187.162.2</string></ArrayOfstring>' ) );
+t( 'Bunny: άδεια απάντηση = αποτυχία (κρατιέται η παλιά λίστα)', array() === PNCP_Ip::parse_ranges( '[]' ) );
+$pncp_bunny_old = get_option( PNCP_Ip::LISTS_OPTION . '_bunny', null );
+PNCP_Ip::store_list( 'bunny', array( '89.187.162.1', '2400:52e0:1a00::1', '185.111.111.0/24' ) );
+t( 'Bunny: η λίστα φορτώνεται αυτόματα (autoload)', 'yes' === $wpdb->get_var( $wpdb->prepare( "SELECT autoload FROM {$wpdb->options} WHERE option_name = %s", PNCP_Ip::LISTS_OPTION . '_bunny' ) ) || 'on' === $wpdb->get_var( $wpdb->prepare( "SELECT autoload FROM {$wpdb->options} WHERE option_name = %s", PNCP_Ip::LISTS_OPTION . '_bunny' ) ) );
+t( 'Bunny: διεύθυνση της λίστας', PNCP_Ip::is_bunny( '89.187.162.1' ) && PNCP_Ip::is_bunny( '2400:52e0:1a00:0::1' ) && PNCP_Ip::is_bunny( '185.111.111.9' ) );
+t( 'Bunny: ξένη διεύθυνση', ! PNCP_Ip::is_bunny( '89.187.162.2' ) && ! PNCP_Ip::is_bunny( '' ) && ! PNCP_Ip::is_bunny( 'σκουπίδι' ) );
+$_SERVER['REMOTE_ADDR']    = '89.187.162.1';
+$_SERVER['HTTP_X_REAL_IP'] = '1.2.3.4';
+settings( array( 'ip_header' => 'x_real_ip', 'trust_bunny' => 1 ) );
+PNCP_Ip::reset();
+t( 'X-Real-IP από edge server του Bunny: γίνεται δεκτό', '1.2.3.4' === PNCP_Ip::client_ip(), PNCP_Ip::client_ip() );
+t( 'Bunny: η λίστα χρειάζεται με X-Real-IP', in_array( 'bunny', PNCP_Ip::needed_lists(), true ) );
+settings( array( 'trust_bunny' => 0 ) );
+PNCP_Ip::reset();
+t( 'Bunny όχι αξιόπιστο: αγνοείται', '89.187.162.1' === PNCP_Ip::client_ip(), PNCP_Ip::client_ip() );
+t( 'Bunny όχι αξιόπιστο: η λίστα δεν κατεβαίνει', ! in_array( 'bunny', PNCP_Ip::needed_lists(), true ) );
+settings( array( 'trust_bunny' => 1 ) );
+$_SERVER['REMOTE_ADDR'] = '89.187.162.2';
+PNCP_Ip::reset();
+t( 'X-Real-IP από ξένη IP που δεν είναι του Bunny: αγνοείται', '89.187.162.2' === PNCP_Ip::client_ip(), PNCP_Ip::client_ip() );
+settings( array( 'ip_header' => 'x_forwarded_for' ) );
+unset( $_SERVER['HTTP_X_REAL_IP'] );
+$_SERVER['REMOTE_ADDR']          = '89.187.162.1';
+$_SERVER['HTTP_X_FORWARDED_FOR'] = '6.6.6.6, 1.2.3.4';
+PNCP_Ip::reset();
+t( 'X-Forwarded-For μέσω Bunny: η τελευταία τιμή', '1.2.3.4' === PNCP_Ip::client_ip(), PNCP_Ip::client_ip() );
+settings( array( 'ip_header' => 'cf_connecting_ip' ) );
+$_SERVER['HTTP_CF_CONNECTING_IP'] = '1.2.3.4';
+PNCP_Ip::reset();
+t( 'CF-Connecting-IP από το Bunny: αγνοείται (μόνο από Cloudflare)', '89.187.162.1' === PNCP_Ip::client_ip(), PNCP_Ip::client_ip() );
+// Χώρα από το CDN-RequestCountryCode: μόνο από edge server του Bunny και με «Trust Bunny».
+settings( array( 'ip_header' => 'remote_addr' ) );
+$_SERVER['HTTP_CDN_REQUESTCOUNTRYCODE'] = 'gr';
+PNCP_Geo::reset();
+t( 'Bunny: χώρα από το CDN-RequestCountryCode', 'GR' === PNCP_Geo::country( '1.2.3.4' ), PNCP_Geo::country( '1.2.3.4' ) );
+$_SERVER['REMOTE_ADDR'] = '5.5.5.5';
+PNCP_Ip::reset();
+PNCP_Geo::reset();
+t( 'Bunny: CDN-RequestCountryCode από ξένη IP: αγνοείται', '' === PNCP_Geo::country( '1.2.3.5' ), PNCP_Geo::country( '1.2.3.5' ) );
+settings( array( 'trust_bunny' => 0 ) );
+$_SERVER['REMOTE_ADDR'] = '89.187.162.1';
+PNCP_Ip::reset();
+PNCP_Geo::reset();
+t( 'Bunny όχι αξιόπιστο: η χώρα του αγνοείται', '' === PNCP_Geo::country( '1.2.3.6' ), PNCP_Geo::country( '1.2.3.6' ) );
+$_SERVER['HTTP_VIA'] = '1.1 BunnyCDN-DE1-1330';
+t( 'Bunny: αναγνώριση από το Via', PNCP_Ip::behind_bunny() );
+unset( $_SERVER['HTTP_VIA'] );
+t( 'Bunny: χωρίς κεφαλίδες δεν αναγνωρίζεται', ! PNCP_Ip::behind_bunny() );
+if ( null === $pncp_bunny_old ) {
+	delete_option( PNCP_Ip::LISTS_OPTION . '_bunny' );
+} else {
+	update_option( PNCP_Ip::LISTS_OPTION . '_bunny', $pncp_bunny_old );
+}
+settings( array( 'ip_header' => 'remote_addr', 'trust_bunny' => 1 ) );
+$_SERVER['REMOTE_ADDR'] = '127.0.0.1';
+unset( $_SERVER['HTTP_CF_CONNECTING_IP'], $_SERVER['HTTP_X_FORWARDED_FOR'], $_SERVER['HTTP_CDN_REQUESTCOUNTRYCODE'] );
+PNCP_Ip::reset();
+PNCP_Geo::reset();
+
 /* ---------- 2.4: όριο 404, ονόματα χρηστών, πάντα αποκλεισμένα ---------- */
 settings( array( 'rate_limit' => 0, 'rate_limit_404' => 3, 'ban_strikes' => 0, 'require_browser_headers' => 0, 'block_bots' => 1 ) );
 fresh();
@@ -729,6 +791,175 @@ update_option( 'pncp_version', $pncp_ver );
 delete_option( 'pncp_test_rocket_config' );
 PNCP_Options::flush();
 
+/* ---------- 2.6: όριο sitemap ---------- */
+settings( array( 'rate_limit' => 0, 'rate_limit_sitemap' => 2, 'ban_strikes' => 0, 'block_bots' => 1, 'require_browser_headers' => 0 ) );
+fresh();
+$codes = array();
+for ( $i = 0; $i < 3; $i++ ) {
+	list( $codes[] ) = req( '/wp-sitemap.xml', browser( '198.51.100.140' ) );
+}
+t( 'όριο sitemap = 2: 200,200,429', array( 200, 200, 429 ) === $codes, implode( ',', $codes ) );
+t( 'αρχείο: rate_sitemap', in_array( 'rate_sitemap', log_reasons(), true ), implode( ',', log_reasons() ) );
+$codes = array();
+foreach ( array( '/sitemap_index.xml', '/post-sitemap.xml', '/page-sitemap2.xml' ) as $p ) {
+	list( $codes[] ) = req( $p, browser( '198.51.100.141' ) );
+}
+t( 'όριο sitemap: μετρούν και τα sitemap του Rank Math / Yoast', 429 === end( $codes ), implode( ',', $codes ) );
+list( $code ) = req( $url, browser( '198.51.100.140' ) );
+t( 'όριο sitemap: οι σελίδες δεν επηρεάζονται', 200 === $code, (string) $code );
+$codes = array();
+for ( $i = 0; $i < 4; $i++ ) {
+	list( $codes[] ) = req( '/wp-sitemap.xml', array( 'X-Test-IP' => '66.249.66.1', 'User-Agent' => 'Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)', 'X-Test-RDNS' => 'crawl-66-249-66-1.googlebot.com', 'X-Test-FDNS' => '66.249.66.1' ) );
+}
+t( 'όριο sitemap: το πραγματικό Googlebot ποτέ', ! in_array( 429, $codes, true ), implode( ',', $codes ) );
+settings( array( 'rate_limit' => 1, 'rate_limit_sitemap' => 0 ) );
+fresh();
+$codes = array();
+for ( $i = 0; $i < 2; $i++ ) {
+	list( $codes[] ) = req( '/wp-sitemap.xml', browser( '198.51.100.142' ) );
+}
+t( 'όριο sitemap = 0: τα sitemap του WordPress μετρούν στο όριο σελίδων, όπως πριν', array( 200, 429 ) === $codes, implode( ',', $codes ) );
+settings( array( 'rate_limit' => 0, 'rate_limit_sitemap' => 5 ) );
+
+/* ---------- 2.6: επαλήθευση ανθρώπου ---------- */
+settings( array( 'human_check' => 1, 'rate_limit_unverified' => 2, 'rate_limit' => 0, 'ban_strikes' => 0 ) );
+fresh();
+list( $code, $hdr, $body ) = req( $url, browser( '198.51.100.150' ) );
+t( 'επαλήθευση ανθρώπου: το script φορτώνει στη σελίδα', false !== strpos( $body, 'assets/js/human.js' ) && false !== strpos( $body, 'pncpHuman' ) );
+list( $code2 ) = req( $url, browser( '198.51.100.150' ) );
+list( $code3 ) = req( $url, browser( '198.51.100.150' ) );
+t( 'χωρίς cookie: 200,200,429 (όριο 2)', array( 200, 200, 429 ) === array( $code, $code2, $code3 ), "$code,$code2,$code3" );
+t( 'αρχείο: rate_unverified', in_array( 'rate_unverified', log_reasons(), true ), implode( ',', log_reasons() ) );
+$ajax = '/wp-admin/admin-ajax.php?action=pncp_hv';
+list( $code, $hdr, $body ) = req( $ajax, browser( '198.51.100.151' ) );
+$json = json_decode( $body, true );
+t( 'challenge: GET δίνει c και d', 200 === $code && ! empty( $json['data']['c'] ) && 3 === (int) $json['data']['d'], $body );
+$c = (string) $json['data']['c'];
+$n = 0;
+while ( 0 !== strpos( hash( 'sha256', $c . $n ), '000' ) && $n < 2000000 ) {
+	++$n;
+}
+/** POST με curl: επιστρέφει [code, headers, body]. */
+function post( $path, $fields, $headers ) {
+	global $base;
+	$ch = curl_init( $base . $path );
+	$h  = array();
+	foreach ( $headers as $k => $v ) {
+		$h[] = $k . ': ' . $v;
+	}
+	curl_setopt_array( $ch, array( CURLOPT_RETURNTRANSFER => true, CURLOPT_HEADER => true, CURLOPT_HTTPHEADER => $h, CURLOPT_POST => true, CURLOPT_POSTFIELDS => http_build_query( $fields ), CURLOPT_TIMEOUT => 30 ) );
+	$out  = (string) curl_exec( $ch );
+	$code = (int) curl_getinfo( $ch, CURLINFO_HTTP_CODE );
+	$hs   = (int) curl_getinfo( $ch, CURLINFO_HEADER_SIZE );
+	curl_close( $ch );
+	return array( $code, substr( $out, 0, $hs ), substr( $out, $hs ) );
+}
+list( $code, $hdr ) = post( '/wp-admin/admin-ajax.php', array( 'action' => 'pncp_hv', 'c' => $c, 'n' => $n + 1 + ( 0 === strpos( hash( 'sha256', $c . ( $n + 1 ) ), '000' ) ? 1 : 0 ) ), browser( '198.51.100.151' ) );
+t( 'λάθος απάντηση: 403, χωρίς cookie', 403 === $code && false === stripos( $hdr, 'pncp_hv=' ), (string) $code );
+list( $code, $hdr ) = post( '/wp-admin/admin-ajax.php', array( 'action' => 'pncp_hv', 'c' => $c, 'n' => $n ), browser( '198.51.100.152' ) );
+t( 'σωστή απάντηση από άλλη IP: 403', 403 === $code, (string) $code );
+list( $code, $hdr ) = post( '/wp-admin/admin-ajax.php', array( 'action' => 'pncp_hv', 'c' => $c, 'n' => $n ), browser( '198.51.100.151' ) );
+$cookie = preg_match( '/set-cookie:\s*pncp_hv=([^;\s]+)/i', $hdr, $m ) ? $m[1] : '';
+t( 'σωστή απάντηση: cookie pncp_hv', 200 === $code && '' !== $cookie, $code . ' ' . $hdr );
+t( 'cookie: SameSite=Lax, path', false !== stripos( $hdr, 'samesite=lax' ) && false !== stripos( $hdr, 'path=/' ) );
+$codes = array();
+for ( $i = 0; $i < 4; $i++ ) {
+	list( $codes[] ) = req( $url, browser( '198.51.100.151', array( 'Cookie' => 'pncp_hv=' . $cookie ) ) );
+}
+t( 'με cookie: χωρίς το αυστηρό όριο (4 σελίδες με όριο 2)', array( 200, 200, 200, 200 ) === $codes, implode( ',', $codes ) );
+$codes = array();
+for ( $i = 0; $i < 3; $i++ ) {
+	list( $codes[] ) = req( $url, browser( '198.51.100.153', array( 'Cookie' => 'pncp_hv=' . $cookie ) ) );
+}
+t( 'cookie από άλλη IP: δεν ισχύει', 429 === end( $codes ), implode( ',', $codes ) );
+list( $code, $hdr ) = req( $url, browser( '198.51.100.156', array( 'Cookie' => 'pncp_hv=' . $cookie ) ) );
+t( 'άκυρο cookie (άλλαξε η IP): σβήνεται, ώστε το script να ξαναεπαληθεύσει', 1 === preg_match( '/set-cookie:\s*pncp_hv=(?:deleted)?;[^\n]*expires=/i', $hdr ), $hdr );
+$codes = array();
+for ( $i = 0; $i < 3; $i++ ) {
+	list( $codes[] ) = req( $url, array( 'X-Test-IP' => '198.51.100.151', 'User-Agent' => 'Mozilla/5.0 (X11; Linux x86_64) Firefox/143.0', 'Accept-Language' => 'el', 'Cookie' => 'pncp_hv=' . $cookie ) );
+}
+t( 'cookie με άλλον browser: δεν ισχύει', 429 === end( $codes ), implode( ',', $codes ) );
+list( $code ) = post( '/wp-admin/admin-ajax.php', array( 'action' => 'pncp_hv', 'c' => ( time() - 600 ) . '.abc.def', 'n' => '1' ), browser( '198.51.100.151' ) );
+t( 'παλιό / πλαστό challenge: 403', 403 === $code, (string) $code );
+$codes = array();
+for ( $i = 0; $i < 4; $i++ ) {
+	list( $codes[] ) = req( $url, array( 'X-Test-IP' => '66.249.66.1', 'User-Agent' => 'Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)', 'X-Test-RDNS' => 'crawl-66-249-66-1.googlebot.com', 'X-Test-FDNS' => '66.249.66.1' ) );
+}
+t( 'πραγματικό Googlebot χωρίς cookie: ποτέ όριο', array( 200, 200, 200, 200 ) === $codes, implode( ',', $codes ) );
+settings( array( 'human_check' => 0 ) );
+fresh();
+list( $code, $hdr, $body ) = req( $url, browser( '198.51.100.154' ) );
+t( 'ανενεργό: χωρίς script', false === strpos( $body, 'assets/js/human.js' ) );
+list( $code ) = req( $ajax, browser( '198.51.100.154' ) );
+t( 'ανενεργό: το endpoint δεν δίνει challenge', 404 === $code, (string) $code );
+$codes = array();
+for ( $i = 0; $i < 3; $i++ ) {
+	list( $codes[] ) = req( $url, browser( '198.51.100.155' ) );
+}
+t( 'ανενεργό: όπως πριν', array( 200, 200, 200 ) === $codes, implode( ',', $codes ) );
+settings( array( 'rate_limit_unverified' => 20 ) );
+
+/* ---------- 2.6: χώρες ---------- */
+$pncp_geo_csv = sys_get_temp_dir() . '/pncp-geo-test.csv';
+file_put_contents( $pncp_geo_csv, "198.51.100.0,198.51.100.255,CN\n198.51.101.0,198.51.101.255,CN\n203.0.113.0,203.0.113.255,GR\n2001:db8:c::,2001:db8:c:ffff:ffff:ffff:ffff:ffff,RU\n" );
+t( 'βάση χωρών: χαλασμένη / μικρή λήψη δεν αντικαθιστά τίποτα', false === PNCP_Geo::import( $pncp_geo_csv, '2026-10' ) && 0 === PNCP_Geo::status()['updated'] );
+add_filter( 'pncp_geo_min_ranges', '__return_zero' );
+t( 'βάση χωρών: εισαγωγή CSV', true === PNCP_Geo::import( $pncp_geo_csv, '2026-10' ) );
+remove_filter( 'pncp_geo_min_ranges', '__return_zero' );
+$st = PNCP_Geo::status();
+t( 'βάση χωρών: γειτονικά διαστήματα της ίδιας χώρας ενώνονται (3 → 2 IPv4)', 2 === $st['v4'] && 1 === $st['v6'] && '2026-10' === $st['month'], wp_json_encode( $st ) );
+t( 'αναζήτηση: IPv4', 'CN' === PNCP_Geo::lookup( '198.51.101.200' ) && 'GR' === PNCP_Geo::lookup( '203.0.113.9' ) && '' === PNCP_Geo::lookup( '8.8.8.8' ) );
+t( 'αναζήτηση: IPv6 και IPv4 σε μορφή IPv6', 'RU' === PNCP_Geo::lookup( '2001:db8:c:5::1' ) && 'CN' === PNCP_Geo::lookup( '::ffff:198.51.100.7' ) && '' === PNCP_Geo::lookup( '2001:db8:d::1' ) );
+settings( array( 'countries_block' => 'cn', 'countries_strict' => '', 'rate_limit' => 0 ) );
+fresh();
+list( $code ) = req( $url, browser( '198.51.100.7' ) );
+t( 'αποκλεισμένη χώρα: 403', 403 === $code, (string) $code );
+t( 'αρχείο: country', in_array( 'country', log_reasons(), true ), implode( ',', log_reasons() ) );
+list( $code ) = req( $url, browser( '203.0.113.9' ) );
+t( 'άλλη χώρα: 200', 200 === $code, (string) $code );
+list( $code ) = req( $url, array( 'X-Test-IP' => '198.51.100.8', 'User-Agent' => 'facebookexternalhit/1.1' ) );
+t( 'preview της λίστας «Πάντα επιτρεπτά» από αποκλεισμένη χώρα: 200', 200 === $code, (string) $code );
+settings( array( 'countries_block' => 'KP' ) );
+list( $code ) = req( $url, browser( '203.0.113.20', array( 'CF-IPCountry' => 'KP' ) ) );
+t( 'CF-IPCountry χωρίς Cloudflare (πλαστό): αγνοείται', 200 === $code, (string) $code );
+list( $code ) = req( $url, browser( '203.0.113.21', array( 'CF-IPCountry' => 'KP', 'X-Test-Remote-Addr' => '173.245.48.10' ) ) );
+t( 'CF-IPCountry από Cloudflare: ισχύει', 403 === $code, (string) $code );
+settings( array( 'countries_block' => '', 'countries_strict' => "gr\nxx1", 'rate_limit_country' => 2 ) );
+fresh();
+$codes = array();
+for ( $i = 0; $i < 3; $i++ ) {
+	list( $codes[] ) = req( $url, browser( '203.0.113.30' ) );
+}
+t( 'χώρα με αυστηρότερο όριο (2): 200,200,429', array( 200, 200, 429 ) === $codes, implode( ',', $codes ) );
+t( 'αρχείο: rate_country', in_array( 'rate_country', log_reasons(), true ), implode( ',', log_reasons() ) );
+$codes = array();
+for ( $i = 0; $i < 3; $i++ ) {
+	list( $codes[] ) = req( $url, browser( '198.51.100.30' ) );
+}
+t( 'άλλη χώρα: χωρίς το αυστηρότερο όριο', array( 200, 200, 200 ) === $codes, implode( ',', $codes ) );
+t( 'sanitize: κωδικοί χωρών', "CN\nRU\nGR" === implode( "\n", PNCP_Options::parse_countries( 'cn, ru;xx1 GR gr' ) ) );
+PNCP_Geo::remove_files();
+delete_option( PNCP_Geo::OPTION );
+PNCP_Geo::reset();
+wp_delete_file( $pncp_geo_csv );
+settings( array( 'countries_strict' => '', 'countries_block' => '', 'rate_limit_country' => 10 ) );
+t( 'βάση χωρών: χωρίς αρχεία, καμία χώρα (τίποτα δεν μπλοκάρεται)', '' === PNCP_Geo::lookup( '198.51.100.7' ) );
+
+/* ---------- 2.6: αναφορά «τι προσπαθούν να αντιγράψουν» ---------- */
+fresh();
+foreach ( array( array( '/some-post/', '198.51.100.160' ), array( '/some-post/', '198.51.100.161' ), array( '/hub/space/eopyy/home', '198.51.100.162' ), array( '/.env', '198.51.100.163' ), array( '/rclone.conf', '198.51.100.164' ) ) as $row ) {
+	$_SERVER['REQUEST_URI'] = $row[0];
+	PNCP_Log::add( 'bot_ua', 403, $row[1] );
+}
+$top = PNCP_Log::top_paths( 24 );
+$content = wp_list_pluck( $top['content'], 'ips', 'path' );
+$probes  = wp_list_pluck( $top['probes'], 'hits', 'path' );
+t( 'αναφορά: σελίδες με διαφορετικές IP', isset( $content['/some-post/'] ) && 2 === $content['/some-post/'] && isset( $content['/hub/space/eopyy/home'] ), wp_json_encode( $top ) );
+t( 'αναφορά: αρχεία χωριστά', isset( $probes['/.env'], $probes['/rclone.conf'] ) && ! isset( $content['/.env'] ) );
+t( 'αναφορά: ταξινόμηση διαδρομών', ! PNCP_Log::is_probe_path( '/wp-sitemap.xml' ) && ! PNCP_Log::is_probe_path( '/wp-json/wp/v2/posts' ) && PNCP_Log::is_probe_path( '/@fs/proc/self/cmdline' ) && PNCP_Log::is_probe_path( '/terraform.tfvars' ) && PNCP_Log::is_probe_path( '/wp-admin/includes/rk2.php' ) && ! PNCP_Log::is_probe_path( '/' ) );
+$_SERVER['REQUEST_URI'] = '/';
+fresh();
+
 /* ---------- 2.4: αναβάθμιση και νέα εγκατάσταση ---------- */
 // Το dbDelta του PNCP_Log::install() βγάζει Deprecated μέσα στο SQLite drop-in (wp-sqlite-db), όχι στο plugin.
 $pncp_upgrade = static function () {
@@ -759,15 +990,24 @@ update_option( 'pncp_version', '2.3.0' );
 $pncp_upgrade();
 $after = get_option( PNCP_OPTION );
 t( 'αναβάθμιση από 2.3.0 κατευθείαν: ανενεργά και τα νέα της 2.4 και της 2.5', 0 === $after['verify_ai_bots'] && 0 === $after['rate_limit_404'] && 0 === $after['block_user_enum'] );
+$new_260 = array_keys( PNCP_Options::new_in_260() );
+update_option( PNCP_OPTION, array_diff_key( $keep, array_flip( $new_260 ) ) );
+update_option( 'pncp_version', '2.5.0' );
+$pncp_upgrade();
+$after = get_option( PNCP_OPTION );
+t( 'αναβάθμιση από 2.5.0: τα νέα της 2.6 ανενεργά (επαλήθευση ανθρώπου, sitemap 0, βάση χωρών, χωρίς χώρες)', 0 === $after['human_check'] && 0 === $after['rate_limit_sitemap'] && 0 === $after['geo_db'] && '' === $after['countries_block'] && '' === $after['countries_strict'] );
+t( 'αναβάθμιση από 2.5.0: οι υπόλοιπες ρυθμίσεις ίδιες', array_diff_key( $after, array_flip( $new_260 ) ) == array_diff_key( $keep, array_flip( $new_260 ) ) );
 delete_option( PNCP_OPTION );
 $pncp_upgrade();
 $fresh = PNCP_Options::stored();
 t( 'νέα εγκατάσταση: επαλήθευση AI bots ενεργή', 1 === $fresh['verify_ai_bots'] );
+t( 'νέα εγκατάσταση: όριο sitemap 5, επαλήθευση ανθρώπου και βάση χωρών ανενεργές', 5 === $fresh['rate_limit_sitemap'] && 0 === $fresh['human_check'] && 0 === $fresh['geo_db'] );
 t( 'νέα εγκατάσταση: όριο 404 30, ονόματα χρηστών κρυφά, πηγή RSS, Content-Signal, πρώιμος έλεγχος ανενεργός', 30 === $fresh['rate_limit_404'] && 1 === $fresh['block_user_enum'] && 1 === $fresh['feed_source_link'] && 1 === $fresh['content_signal'] && 0 === $fresh['early_mode'] );
 update_option( PNCP_OPTION, $keep );
 update_option( 'pncp_version', $keep_v );
 PNCP_Options::flush();
 PNCP_Options::set_emergency( 1 );
+t( 'emergency: επαλήθευση ανθρώπου ενεργή, όριο χωρίς cookie το πολύ 10, sitemap το πολύ 5', 1 === PNCP_Options::get()['human_check'] && PNCP_Options::get()['rate_limit_unverified'] <= 10 && PNCP_Options::get()['rate_limit_sitemap'] <= 5 && PNCP_Options::get()['rate_limit_sitemap'] > 0 );
 t( 'emergency: κρύβει τα ονόματα χρηστών και όριο 404 το πολύ 10', 1 === PNCP_Options::get()['block_user_enum'] && PNCP_Options::get()['rate_limit_404'] <= 10 && PNCP_Options::get()['rate_limit_404'] > 0 );
 PNCP_Options::set_emergency( 0 );
 PNCP_Options::flush();

@@ -1,6 +1,6 @@
 msgid ""
 msgstr ""
-"Project-Id-Version: ScrapeLock 2.5.0\n"
+"Project-Id-Version: ScrapeLock 2.6.0\n"
 "Report-Msgid-Bugs-To: https://wordpress.org/support/plugin/scrapelock\n"
 "MIME-Version: 1.0\n"
 "Content-Type: text/plain; charset=UTF-8\n"
@@ -10,30 +10,1656 @@ msgstr ""
 "X-Domain: scrapelock\n"
 
 #. Plugin Name of the plugin
-#: scrapelock.php
+#: scrapelock.php:3
 msgid "ScrapeLock – Content & AI Bot Protection"
 msgstr "ScrapeLock – Προστασία περιεχομένου και AI bots"
 
 #. Description of the plugin
-#: scrapelock.php
+#: scrapelock.php:4
 msgid "Protects your content: makes copying text and images harder, hides the text in the REST API, GraphQL and RSS, blocks scrapers, AI bots and fake Googlebots, temporarily blocks persistent IPs, protects XML feeds with a token and adds an optional watermark. Forms, cart, checkout and search engines are not affected."
 msgstr "Προστασία περιεχομένου: δυσκολεύει την αντιγραφή κειμένου και εικόνων, κλείνει το κείμενο στο REST API, στο GraphQL και στο RSS, μπλοκάρει scrapers, AI bots και ψεύτικα Googlebot, αποκλείει προσωρινά IP που επιμένουν, προστατεύει τα XML feeds με token και βάζει προαιρετικά υδατογράφημα. Δεν επηρεάζει φόρμες, καλάθι, ταμείο και μηχανές αναζήτησης."
 
-#: includes/class-pncp-bots.php:122 includes/class-pncp-bots.php:528 includes/class-pncp-graphql.php:61
+#. Author of the plugin
+#: scrapelock.php:8
+msgid "CodeBunny"
+msgstr ""
+
+#: includes/class-pncp-admin.php:41
+#: includes/class-pncp-admin.php:42
+#: includes/class-pncp-admin.php:415
+#: includes/class-pncp-log.php:650
+#: includes/class-pncp-status.php:220
+msgid "ScrapeLock"
+msgstr "ScrapeLock"
+
+#: includes/class-pncp-admin.php:83
+msgid "All images in the library will be regenerated with a watermark. Do you have a backup of the uploads folder? Continue?"
+msgstr "Θα ξαναφτιαχτούν όλες οι εικόνες της βιβλιοθήκης με υδατογράφημα. Έχετε backup του φακέλου uploads; Συνέχεια;"
+
+#: includes/class-pncp-admin.php:84
+msgid "The watermark will be removed from all images. Continue?"
+msgstr "Θα αφαιρεθεί το υδατογράφημα από όλες τις εικόνες. Συνέχεια;"
+
+#. translators: 1: images done, 2: total
+#: includes/class-pncp-admin.php:86
+#, php-format
+msgid "Processed %1$s of %2$s images…"
+msgstr "Επεξεργάστηκαν %1$s από %2$s εικόνες…"
+
+#. translators: 1: total images, 2: errors
+#: includes/class-pncp-admin.php:88
+#, php-format
+msgid "Done: %1$s images. Errors: %2$s."
+msgstr "Ολοκληρώθηκε: %1$s εικόνες. Σφάλματα: %2$s."
+
+#: includes/class-pncp-admin.php:89
+msgid "Stopped because of an error. Click the button again to resume where it stopped."
+msgstr "Διακοπή λόγω σφάλματος. Πατήστε ξανά το κουμπί για να συνεχίσει από εκεί που σταμάτησε."
+
+#: includes/class-pncp-admin.php:90
+msgid "Copied"
+msgstr "Αντιγράφηκε"
+
+#: includes/class-pncp-admin.php:103
+#: includes/class-pncp-status.php:299
+#: includes/class-pncp-status.php:356
+msgid "Settings"
+msgstr "Ρυθμίσεις"
+
+#: includes/class-pncp-admin.php:114
+msgid "On the page"
+msgstr "Στη σελίδα"
+
+#: includes/class-pncp-admin.php:115
+msgid "Bots and limits"
+msgstr "Bots και όρια"
+
+#: includes/class-pncp-admin.php:116
+msgid "Feeds and API"
+msgstr "Feeds και API"
+
+#: includes/class-pncp-admin.php:117
+msgid "Images"
+msgstr "Εικόνες"
+
+#: includes/class-pncp-admin.php:118
+msgid "Server rules"
+msgstr "Κανόνες server"
+
+#: includes/class-pncp-admin.php:119
+#: includes/class-pncp-status.php:300
+msgid "Log"
+msgstr "Αρχείο"
+
+#. translators: %s: number of entries
+#: includes/class-pncp-admin.php:254
+#, php-format
+msgid "%s entry"
+msgid_plural "%s entries"
+msgstr[0] "%s γραμμή"
+msgstr[1] "%s γραμμές"
+
+#: includes/class-pncp-admin.php:296
+msgid "Sections of this tab"
+msgstr "Ενότητες αυτής της καρτέλας"
+
+#: includes/class-pncp-admin.php:311
+msgid "Protection"
+msgstr "Προστασία"
+
+#: includes/class-pncp-admin.php:312
+msgid "Early check"
+msgstr "Πρώιμος έλεγχος"
+
+#: includes/class-pncp-admin.php:313
+msgid "Pre-cache check"
+msgstr "Έλεγχος πριν από το cache"
+
+#: includes/class-pncp-admin.php:314
+#: includes/class-pncp-admin.php:655
+#: includes/class-pncp-admin.php:705
+msgid "Human check"
+msgstr "Επαλήθευση ανθρώπου"
+
+#: includes/class-pncp-admin.php:315
+msgid "AI bots verified"
+msgstr "Επαλήθευση AI bots"
+
+#: includes/class-pncp-admin.php:316
+msgid "Headless browsers"
+msgstr "Headless browsers"
+
+#: includes/class-pncp-admin.php:317
+#: includes/class-pncp-admin.php:656
+#: includes/class-pncp-admin.php:711
+msgid "Countries"
+msgstr "Χώρες"
+
+#: includes/class-pncp-admin.php:319
+msgid "Protection status"
+msgstr "Κατάσταση προστασίας"
+
+#: includes/class-pncp-admin.php:321
+#: includes/class-pncp-admin.php:607
+msgid "Emergency Mode"
+msgstr "Emergency Mode"
+
+#: includes/class-pncp-admin.php:327
+msgid "On:"
+msgstr "Ενεργό:"
+
+#: includes/class-pncp-admin.php:327
+msgid "Off:"
+msgstr "Ανενεργό:"
+
+#: includes/class-pncp-admin.php:343
+msgid "Country of this request:"
+msgstr "Χώρα αυτού του αιτήματος:"
+
+#. translators: 1: number of IPv4 ranges, 2: number of IPv6 ranges, 3: month of the data, 4: date
+#: includes/class-pncp-admin.php:348
+#, php-format
+msgid "Country database: %1$s IPv4 and %2$s IPv6 ranges, data of %3$s, downloaded %4$s."
+msgstr "Βάση χωρών: %1$s διαστήματα IPv4 και %2$s IPv6, δεδομένα %3$s, λήψη %4$s."
+
+#: includes/class-pncp-admin.php:356
+msgid "Country database: not downloaded yet. Use “Download now” at the bottom of this tab, or wait for the daily task."
+msgstr "Βάση χωρών: δεν έχει κατέβει ακόμη. Πατήστε «Λήψη τώρα» στο κάτω μέρος της καρτέλας ή περιμένετε την ημερήσια εργασία."
+
+#: includes/class-pncp-admin.php:358
+msgid "Country database: off. Without Cloudflare, Bunny CDN or the database the country is unknown and the country lists do nothing."
+msgstr "Βάση χωρών: ανενεργή. Χωρίς Cloudflare, Bunny CDN ή τη βάση η χώρα είναι άγνωστη και οι λίστες χωρών δεν κάνουν τίποτα."
+
+#. translators: %s: link to DB-IP
+#: includes/class-pncp-admin.php:363
+#, php-format
+msgid "IP geolocation by %s (CC BY 4.0)."
+msgstr "IP geolocation από την %s (CC BY 4.0)."
+
+#: includes/class-pncp-admin.php:386
+msgid "Save changes"
+msgstr "Αποθήκευση αλλαγών"
+
+#: includes/class-pncp-admin.php:423
+msgid "Settings sections"
+msgstr "Ενότητες ρυθμίσεων"
+
+#: includes/class-pncp-admin.php:442
+msgid "Disable protection on the whole site?"
+msgstr "Να απενεργοποιηθεί η προστασία σε όλο το site;"
+
+#: includes/class-pncp-admin.php:443
+msgid "Until you enable it again, bots and visitors will be able to copy texts, images and feeds freely."
+msgstr "Μέχρι να την ενεργοποιήσετε ξανά, bots και επισκέπτες θα μπορούν να αντιγράφουν ελεύθερα κείμενα, εικόνες και feeds."
+
+#: includes/class-pncp-admin.php:447
+msgid "Yes, disable"
+msgstr "Ναι, απενεργοποίηση"
+
+#: includes/class-pncp-admin.php:448
+msgid "Cancel"
+msgstr "Ακύρωση"
+
+#: includes/class-pncp-admin.php:465
+msgid "Status"
+msgstr "Κατάσταση"
+
+#: includes/class-pncp-admin.php:466
+msgid "Protection is active"
+msgstr "Η προστασία είναι ενεργή"
+
+#: includes/class-pncp-admin.php:469
+msgid "Where it applies"
+msgstr "Πού εφαρμόζεται"
+
+#: includes/class-pncp-admin.php:472
+msgid "Posts"
+msgstr "Άρθρα"
+
+#: includes/class-pncp-admin.php:473
+#: includes/class-pncp-admin.php:1366
+msgid "Pages"
+msgstr "Σελίδες"
+
+#: includes/class-pncp-admin.php:474
+msgid "Home, categories, search and archives"
+msgstr "Αρχική, κατηγορίες, αναζήτηση και αρχεία"
+
+#: includes/class-pncp-admin.php:475
+msgid "WooCommerce products"
+msgstr "Προϊόντα WooCommerce"
+
+#: includes/class-pncp-admin.php:476
+msgid "Do not apply on cart, checkout and “My account”"
+msgstr "Να μην εφαρμόζεται σε καλάθι, ταμείο και «Ο λογαριασμός μου»"
+
+#: includes/class-pncp-admin.php:476
+msgid "Recommended: customers must be able to copy order numbers and coupon codes."
+msgstr "Συνιστάται: οι πελάτες πρέπει να μπορούν να αντιγράφουν αριθμό παραγγελίας και κωδικούς κουπονιών."
+
+#: includes/class-pncp-admin.php:481
+msgid "Exceptions"
+msgstr "Εξαιρέσεις"
+
+#: includes/class-pncp-admin.php:484
+msgid "Comma-separated page or post IDs, e.g. 12, 45. For a single piece of text (phone, email, code), give it the CSS class pncp-allow."
+msgstr "IDs σελίδων ή άρθρων χωρισμένα με κόμμα, π.χ. 12, 45. Για ένα μόνο κομμάτι κειμένου (τηλέφωνο, email, κωδικό), βάλτε του την CSS κλάση pncp-allow."
+
+#: includes/class-pncp-admin.php:488
+msgid "What is blocked"
+msgstr "Τι μπλοκάρεται"
+
+#: includes/class-pncp-admin.php:491
+msgid "Text selection with the mouse or finger"
+msgstr "Επιλογή κειμένου με το ποντίκι ή το δάχτυλο"
+
+#: includes/class-pncp-admin.php:492
+msgid "Right click"
+msgstr "Δεξί κλικ"
+
+#: includes/class-pncp-admin.php:493
+msgid "Shortcuts Ctrl/Cmd + A, C, X, S, U"
+msgstr "Συντομεύσεις Ctrl/Cmd + A, C, X, S, U"
+
+#: includes/class-pncp-admin.php:493
+msgid "Keyboard navigation (Tab, arrows, Enter) is never affected."
+msgstr "Η πλοήγηση με πληκτρολόγιο (Tab, βελάκια, Enter) δεν επηρεάζεται ποτέ."
+
+#: includes/class-pncp-admin.php:494
+msgid "Developer tools shortcuts (F12, Ctrl+Shift+I/J/C/K, Cmd+Opt+I/J/C/U)"
+msgstr "Συντομεύσεις εργαλείων προγραμματιστή (F12, Ctrl+Shift+I/J/C/K, Cmd+Opt+I/J/C/U)"
+
+#: includes/class-pncp-admin.php:494
+msgid "Cosmetic: it only blocks the shortcuts. It does not detect DevTools and does not “break” the page."
+msgstr "Κοσμητικό: κόβει μόνο τις συντομεύσεις. Δεν ανιχνεύει τα DevTools και δεν «σπάει» τη σελίδα."
+
+#: includes/class-pncp-admin.php:495
+msgid "Dragging images and “Save image” with a long press on mobile"
+msgstr "Σύρσιμο εικόνων και «Αποθήκευση εικόνας» με παρατεταμένο πάτημα στο κινητό"
+
+#: includes/class-pncp-admin.php:496
+msgid "Dragging selected text to another window"
+msgstr "Σύρσιμο επιλεγμένου κειμένου σε άλλο παράθυρο"
+
+#: includes/class-pncp-admin.php:497
+msgid "Blur the page when Print Screen or a screenshot shortcut is pressed"
+msgstr "Θόλωμα της σελίδας όταν πατηθεί Print Screen ή συντόμευση στιγμιότυπου οθόνης"
+
+#: includes/class-pncp-admin.php:497
+msgid "Optional. It only catches the shortcuts the browser sees (Print Screen, Win+Shift+S, Cmd+Shift+3/4/5). It does not stop tools outside the browser or a photo taken with a phone."
+msgstr "Προαιρετικό. Πιάνει μόνο τις συντομεύσεις που βλέπει ο browser (Print Screen, Win+Shift+S, Cmd+Shift+3/4/5). Δεν σταματά εργαλεία εκτός browser ή φωτογραφία με κινητό."
+
+#: includes/class-pncp-admin.php:502
+#: includes/class-pncp-admin.php:508
+msgid "When someone copies"
+msgstr "Όταν κάποιος αντιγράφει"
+
+#: includes/class-pncp-admin.php:510
+msgid "Block copying"
+msgstr "Να μπλοκάρεται η αντιγραφή"
+
+#: includes/class-pncp-admin.php:511
+msgid "Allow, with the source and link appended at the end"
+msgstr "Να επιτρέπεται, με την πηγή και τον σύνδεσμο προσαρτημένα στο τέλος"
+
+#: includes/class-pncp-admin.php:512
+msgid "Allow normally"
+msgstr "Να επιτρέπεται κανονικά"
+
+#: includes/class-pncp-admin.php:515
+msgid "Append the source from this many characters and up:"
+msgstr "Η πηγή προσαρτάται από τόσους χαρακτήρες και πάνω:"
+
+#: includes/class-pncp-admin.php:515
+msgid "Shorter snippets (e.g. a word or a phone number) are copied without the source. 0 = always."
+msgstr "Μικρότερα αποσπάσματα (π.χ. μια λέξη ή ένα τηλέφωνο) αντιγράφονται χωρίς πηγή. 0 = πάντα."
+
+#: includes/class-pncp-admin.php:517
+msgid "The source option makes sense when text selection is allowed."
+msgstr "Η επιλογή με την πηγή έχει νόημα όταν η επιλογή κειμένου είναι ανοιχτή."
+
+#: includes/class-pncp-admin.php:521
+#: includes/class-pncp-admin.php:527
+msgid "Printing"
+msgstr "Εκτύπωση"
+
+#: includes/class-pncp-admin.php:529
+msgid "Allowed, with the page link at the bottom (recommended)"
+msgstr "Επιτρέπεται, με τον σύνδεσμο της σελίδας στο κάτω μέρος (συνιστάται)"
+
+#: includes/class-pncp-admin.php:530
+msgid "Allowed normally"
+msgstr "Επιτρέπεται κανονικά"
+
+#: includes/class-pncp-admin.php:531
+msgid "Not allowed"
+msgstr "Δεν επιτρέπεται"
+
+#: includes/class-pncp-admin.php:538
+msgid "Who is excluded"
+msgstr "Ποιοι εξαιρούνται"
+
+#: includes/class-pncp-admin.php:545
+msgid "Logged-in authors and administrators"
+msgstr "Συνδεδεμένοι συντάκτες και διαχειριστές"
+
+#: includes/class-pncp-admin.php:546
+msgid "Logged-in editors and administrators"
+msgstr "Συνδεδεμένοι αρχισυντάκτες και διαχειριστές"
+
+#: includes/class-pncp-admin.php:547
+msgid "Administrators only"
+msgstr "Μόνο οι διαχειριστές"
+
+#: includes/class-pncp-admin.php:548
+msgid "Nobody (for testing the protection)"
+msgstr "Κανείς (για δοκιμή της προστασίας)"
+
+#: includes/class-pncp-admin.php:550
+msgid "Applies to the on-page protection and to the server checks (bots, limits, blocks). Customers with an account are not excluded."
+msgstr "Ισχύει για την προστασία στη σελίδα και για τους ελέγχους στον server (bots, όρια, αποκλεισμοί). Πελάτες με λογαριασμό δεν εξαιρούνται."
+
+#: includes/class-pncp-admin.php:556
+msgid "Message to the visitor"
+msgstr "Μήνυμα στον επισκέπτη"
+
+#: includes/class-pncp-admin.php:558
+msgid "Show a message when something is blocked"
+msgstr "Να εμφανίζεται μήνυμα όταν μπλοκάρεται κάτι"
+
+#: includes/class-pncp-admin.php:559
+msgid "Message text"
+msgstr "Κείμενο μηνύματος"
+
+#: includes/class-pncp-admin.php:564
+msgid "Iframe and AI"
+msgstr "Iframe και AI"
+
+#: includes/class-pncp-admin.php:567
+msgid "Pages do not open inside another site's iframe"
+msgstr "Οι σελίδες δεν ανοίγουν μέσα σε iframe άλλου site"
+
+#: includes/class-pncp-admin.php:567
+msgid "X-Frame-Options and CSP frame-ancestors headers. WordPress embeds (oEmbed) keep working."
+msgstr "Headers X-Frame-Options και CSP frame-ancestors. Τα embeds του WordPress (oEmbed) συνεχίζουν να λειτουργούν."
+
+#: includes/class-pncp-admin.php:568
+msgid "Opt-out declaration from AI training and text and data mining (TDM)"
+msgstr "Δήλωση εξαίρεσης από εκπαίδευση AI και εξόρυξη κειμένου (TDM)"
+
+#: includes/class-pncp-admin.php:568
+msgid "tdm-reservation header and meta, /.well-known/tdmrep.json and noai/noimageai. Legal basis: Directive (EU) 2019/790, Article 4(3): reservation of rights in a machine-readable format."
+msgstr "Header και meta tdm-reservation, /.well-known/tdmrep.json και noai/noimageai. Νομική βάση: Οδηγία (ΕΕ) 2019/790, άρθρο 4 παρ. 3 (ν. 4996/2022): η επιφύλαξη δικαιωμάτων σε μηχαναγνώσιμη μορφή."
+
+#: includes/class-pncp-admin.php:570
+msgid "Page with the licensing terms (optional):"
+msgstr "Σελίδα με τους όρους αδειοδότησης (προαιρετικό):"
+
+#: includes/class-pncp-admin.php:586
+msgid "Balanced"
+msgstr "Ισορροπημένο"
+
+#: includes/class-pncp-admin.php:586
+msgid "Copy with source, limit 60 pages/minute, block after 3 violations. For most sites."
+msgstr "Αντιγραφή με πηγή, όριο 60 σελίδες/λεπτό, αποκλεισμός μετά από 3 παραβάσεις. Για τα περισσότερα sites."
+
+#: includes/class-pncp-admin.php:587
+msgid "Strict"
+msgstr "Αυστηρό"
+
+#: includes/class-pncp-admin.php:587
+msgid "No text selection or copying, limit 40 pages/minute, 3-hour block after 2 violations."
+msgstr "Χωρίς επιλογή και αντιγραφή κειμένου, όριο 40 σελίδες/λεπτό, αποκλεισμός 3 ωρών μετά από 2 παραβάσεις."
+
+#: includes/class-pncp-admin.php:588
+msgid "Maximum"
+msgstr "Μέγιστο"
+
+#: includes/class-pncp-admin.php:588
+msgid "Also no printing and no RSS, browsers only, blur on screenshot, limit 30/minute, 12-hour block after 2 violations. May annoy some visitors."
+msgstr "Και χωρίς εκτύπωση και RSS, μόνο browsers, θόλωμα σε screenshot, όριο 30/λεπτό, αποκλεισμός 12 ωρών μετά από 2 παραβάσεις. Μπορεί να ενοχλήσει κάποιους επισκέπτες."
+
+#: includes/class-pncp-admin.php:594
+msgid "Presets"
+msgstr "Έτοιμα προφίλ"
+
+#: includes/class-pncp-admin.php:595
+msgid "One click changes the protection and limit settings. Lists, feeds, IPs and watermark do not change. You can adjust anything afterwards."
+msgstr "Ένα κλικ αλλάζει τις ρυθμίσεις προστασίας και ορίων. Λίστες, feeds, IP και υδατογράφημα δεν αλλάζουν. Μετά μπορείτε να προσαρμόσετε ό,τι θέλετε."
+
+#: includes/class-pncp-admin.php:596
+msgid "Current:"
+msgstr "Τώρα:"
+
+#: includes/class-pncp-admin.php:596
+msgid "Custom"
+msgstr "Προσαρμοσμένο"
+
+#: includes/class-pncp-admin.php:608
+msgid "For a scraping attack in progress: browsers only, limit 20 pages/minute, 6-hour block after 2 violations, REST/GraphQL without content. Your settings do not change: when it ends, they apply again as they were."
+msgstr "Για επίθεση scraping σε εξέλιξη: μόνο browsers, όριο 20 σελίδες/λεπτό, αποκλεισμός 6 ωρών μετά από 2 παραβάσεις, REST/GraphQL χωρίς κείμενο. Οι ρυθμίσεις σας δεν αλλάζουν: στη λήξη ισχύουν ξανά όπως ήταν."
+
+#. translators: %s: date and time
+#: includes/class-pncp-admin.php:615
+#, php-format
+msgid "Active until %s."
+msgstr "Σε λειτουργία μέχρι %s."
+
+#: includes/class-pncp-admin.php:621
+#: includes/class-pncp-status.php:210
+msgid "End now"
+msgstr "Τέλος τώρα"
+
+#: includes/class-pncp-admin.php:625
+msgid "Duration:"
+msgstr "Διάρκεια:"
+
+#: includes/class-pncp-admin.php:627
+msgid "1 hour"
+msgstr "1 ώρα"
+
+#: includes/class-pncp-admin.php:628
+msgid "6 hours"
+msgstr "6 ώρες"
+
+#: includes/class-pncp-admin.php:629
+msgid "24 hours"
+msgstr "24 ώρες"
+
+#: includes/class-pncp-admin.php:630
+msgid "3 days"
+msgstr "3 ημέρες"
+
+#: includes/class-pncp-admin.php:632
+msgid "Start Emergency Mode"
+msgstr "Έναρξη Emergency Mode"
+
+#: includes/class-pncp-admin.php:650
+msgid "Bots"
+msgstr "Bots"
+
+#: includes/class-pncp-admin.php:651
+msgid "AI"
+msgstr "AI"
+
+#: includes/class-pncp-admin.php:652
+#: includes/class-pncp-admin.php:683
+msgid "Always allowed"
+msgstr "Πάντα επιτρεπτά"
+
+#: includes/class-pncp-admin.php:653
+#: includes/class-pncp-admin.php:689
+msgid "Always blocked"
+msgstr "Πάντα αποκλεισμένα"
+
+#: includes/class-pncp-admin.php:654
+msgid "Limits"
+msgstr "Όρια"
+
+#: includes/class-pncp-admin.php:657
+#: includes/class-pncp-admin.php:721
+msgid "Temporary block"
+msgstr "Προσωρινός αποκλεισμός"
+
+#: includes/class-pncp-admin.php:658
+#: includes/class-pncp-admin.php:752
+msgid "Real visitor IP"
+msgstr "Πραγματική IP επισκέπτη"
+
+#: includes/class-pncp-admin.php:659
+msgid "IP lists"
+msgstr "Λίστες IP"
+
+#: includes/class-pncp-admin.php:664
+msgid "Scrapers and bots"
+msgstr "Scrapers και bots"
+
+#: includes/class-pncp-admin.php:666
+msgid "Block (403) the User-Agents in the list"
+msgstr "Μπλοκάρισμα (403) των User-Agents της λίστας"
+
+#: includes/class-pncp-admin.php:667
+msgid "Block requests without a User-Agent"
+msgstr "Μπλοκάρισμα αιτημάτων χωρίς User-Agent"
+
+#: includes/class-pncp-admin.php:668
+msgid "Block fake Googlebot, Bingbot, Applebot and Yandex"
+msgstr "Μπλοκάρισμα ψεύτικων Googlebot, Bingbot, Applebot και Yandex"
+
+#: includes/class-pncp-admin.php:668
+msgid "The IP is checked against the official Google and Bing lists and with reverse DNS. Real search engines always pass, without limits."
+msgstr "Η IP ελέγχεται με τις επίσημες λίστες της Google και της Bing και με reverse DNS. Οι πραγματικές μηχανές αναζήτησης περνούν πάντα, χωρίς όριο."
+
+#: includes/class-pncp-admin.php:669
+msgid "Browsers only: 403 for pages without Accept-Language or without “Mozilla/” in the User-Agent"
+msgstr "Μόνο browsers: 403 σε σελίδες χωρίς Accept-Language ή χωρίς «Mozilla/» στο User-Agent"
+
+#: includes/class-pncp-admin.php:669
+msgid "Stops most scripts. Link previews (Facebook, Viber, WhatsApp etc.) in the “Always allowed” list pass."
+msgstr "Κόβει τα περισσότερα scripts. Τα previews συνδέσμων (Facebook, Viber, WhatsApp κ.ά.) της λίστας «Πάντα επιτρεπτά» περνούν."
+
+#: includes/class-pncp-admin.php:670
+msgid "Block headless and fake browsers"
+msgstr "Μπλοκάρισμα headless και ψεύτικων browsers"
+
+#: includes/class-pncp-admin.php:670
+msgid "Blocks Chrome running without a window when it says so in its headers (“HeadlessChrome”), and, on HTTPS, scripts that copy the User-Agent of Chrome, Edge or Firefox without the Sec-Fetch headers every modern browser sends. It catches common tools and cheap scrapers, not every automated browser: one that is carefully disguised (e.g. Puppeteer with “stealth”, or Selenium with a visible Chrome) sends the same headers as a person. The page limits, the human check and the bot trap still apply to those. In-app browsers (Android WebView) are not checked."
+msgstr "Μπλοκάρει τον Chrome που τρέχει χωρίς παράθυρο όταν το δηλώνει στα headers του («HeadlessChrome»), και, σε HTTPS, τα scripts που αντιγράφουν το User-Agent του Chrome, του Edge ή του Firefox χωρίς τα headers Sec-Fetch που στέλνει κάθε σύγχρονος browser. Πιάνει συνηθισμένα εργαλεία και φτηνούς scrapers, όχι κάθε αυτοματοποιημένο browser: ένας προσεκτικά κρυμμένος (π.χ. Puppeteer με «stealth» ή Selenium με ορατό Chrome) στέλνει τα ίδια headers με έναν άνθρωπο. Σε αυτούς ισχύουν τα όρια σελίδων, η επαλήθευση ανθρώπου και η παγίδα. Οι browsers μέσα σε εφαρμογές (Android WebView) δεν ελέγχονται."
+
+#: includes/class-pncp-admin.php:671
+#: includes/class-pncp-log.php:153
+#: includes/class-pncp-status.php:237
+msgid "Bot trap"
+msgstr "Παγίδα για bots"
+
+#: includes/class-pncp-admin.php:671
+msgid "Invisible link on every page, disallowed in robots.txt. Whoever opens it is blocked temporarily, even if it pretends to be a browser. Visitors do not see it, and another site cannot trap them."
+msgstr "Αόρατος σύνδεσμος σε κάθε σελίδα, απαγορευμένος στο robots.txt. Όποιος τον ανοίγει αποκλείεται προσωρινά, ακόμη κι αν παριστάνει browser. Οι επισκέπτες δεν τον βλέπουν και ένα ξένο site δεν μπορεί να τους παγιδεύσει."
+
+#: includes/class-pncp-admin.php:672
+msgid "User-Agents to block (one per line, matches anywhere in the User-Agent, case-insensitive):"
+msgstr "Λίστα User-Agents που μπλοκάρονται (ένα ανά γραμμή, ταιριάζει οπουδήποτε στο User-Agent, χωρίς διάκριση πεζών/κεφαλαίων):"
+
+#: includes/class-pncp-admin.php:672
+msgid "It contains two AI categories: training crawlers (GPTBot, ClaudeBot, CCBot, Google-Extended etc.) and AI search / assistants (OAI-SearchBot, ChatGPT-User, Claude-SearchBot, PerplexityBot etc.). You can allow the second one in the next section."
+msgstr "Περιέχει δύο κατηγορίες AI: crawlers εκπαίδευσης (GPTBot, ClaudeBot, CCBot, Google-Extended κ.ά.) και AI αναζήτηση / βοηθούς (OAI-SearchBot, ChatGPT-User, Claude-SearchBot, PerplexityBot κ.ά.). Τη δεύτερη μπορείτε να την επιτρέψετε στην επόμενη ενότητα."
+
+#: includes/class-pncp-admin.php:675
+msgid "AI search and training"
+msgstr "AI αναζήτηση και εκπαίδευση"
+
+#: includes/class-pncp-admin.php:677
+msgid "Allow AI search engines and assistants (not training crawlers)"
+msgstr "Επιτρέπονται οι AI μηχανές αναζήτησης και βοηθοί (όχι οι crawlers εκπαίδευσης)"
+
+#. translators: %s: list of User-Agents
+#: includes/class-pncp-admin.php:677
+#, php-format
+msgid "So the site appears in AI search answers with a link, without being given for model training. Allowed: %s. They are also removed from the robots.txt Disallow and from the server rules. The page limit still applies, because the User-Agent can be spoofed."
+msgstr "Για να εμφανίζεται το site στις απαντήσεις AI αναζήτησης με σύνδεσμο, χωρίς να δίνεται για εκπαίδευση μοντέλων. Επιτρέπονται: %s. Βγαίνουν και από το Disallow του robots.txt και από τους κανόνες server. Το όριο σελίδων ισχύει κανονικά, γιατί το User-Agent πλαστογραφείται."
+
+#. translators: %s: list of User-Agents
+#: includes/class-pncp-admin.php:678
+msgid "Verify AI search bots with their official IP lists (OpenAI, Perplexity)"
+msgstr "Επαλήθευση των AI bots αναζήτησης με τις επίσημες λίστες IP τους (OpenAI, Perplexity)"
+
+#. translators: %s: list of User-Agents
+#: includes/class-pncp-admin.php:678
+msgid "With AI search allowed: the real OAI-SearchBot, ChatGPT-User, PerplexityBot and Perplexity-User are never limited or blocked, and requests that only use their name get a 403 (“Fake AI search bot”). The lists are downloaded once a day; until then nothing changes."
+msgstr "Όταν επιτρέπεται η AI αναζήτηση: τα πραγματικά OAI-SearchBot, ChatGPT-User, PerplexityBot και Perplexity-User δεν παίρνουν ποτέ όριο ή αποκλεισμό, και τα αιτήματα που απλώς χρησιμοποιούν το όνομά τους παίρνουν 403 («Ψεύτικο AI bot αναζήτησης»). Οι λίστες κατεβαίνουν μία φορά τη μέρα· μέχρι τότε δεν αλλάζει τίποτα."
+
+#: includes/class-pncp-admin.php:679
+msgid "Declare AI crawlers in robots.txt (Disallow)"
+msgstr "Δήλωση των AI crawlers στο robots.txt (Disallow)"
+
+#: includes/class-pncp-admin.php:679
+msgid "Applies to the virtual robots.txt of WordPress. If a physical robots.txt file exists, it takes precedence."
+msgstr "Ισχύει για το εικονικό robots.txt του WordPress. Αν υπάρχει φυσικό αρχείο robots.txt, αυτό έχει προτεραιότητα."
+
+#: includes/class-pncp-admin.php:680
+msgid "Content Signals in robots.txt: search yes, AI training no"
+msgstr "Content Signals στο robots.txt: αναζήτηση ναι, εκπαίδευση AI όχι"
+
+#: includes/class-pncp-admin.php:680
+msgid "A line that says what the content may be used for (contentsignals.org): search=yes, ai-train=no, and ai-input according to “Allow AI search engines”. It does not block anything; it is a statement of your terms that well-behaved companies read."
+msgstr "Μια γραμμή που λέει για τι επιτρέπεται να χρησιμοποιηθεί το περιεχόμενο (contentsignals.org): search=yes, ai-train=no, και ai-input ανάλογα με το «Να επιτρέπονται οι μηχανές αναζήτησης AI». Δεν μπλοκάρει τίποτα· είναι δήλωση των όρων σας, που τη διαβάζουν οι εταιρείες που σέβονται τους κανόνες."
+
+#: includes/class-pncp-admin.php:685
+msgid "Always allowed User-Agents (link previews, price comparison platforms, monitoring):"
+msgstr "Πάντα επιτρεπτά User-Agents (previews συνδέσμων, πλατφόρμες τιμών, monitoring):"
+
+#: includes/class-pncp-admin.php:685
+msgid "They override the bot list and “Browsers only”. The page limit applies to them too, because the User-Agent is easy to spoof. To accept an entry only from specific IPs, add @ and the addresses, e.g. Skroutz@203.0.113.0/24."
+msgstr "Υπερισχύουν της λίστας bots και του «Μόνο browsers». Το όριο σελίδων ισχύει και για αυτούς, γιατί το User-Agent πλαστογραφείται εύκολα. Για να γίνεται δεκτή μια γραμμή μόνο από συγκεκριμένες IP, προσθέστε @ και τις διευθύνσεις, π.χ. Skroutz@203.0.113.0/24."
+
+#: includes/class-pncp-admin.php:686
+msgid "Always allowed IPs / CIDR (office, ERP, monitoring), one per line:"
+msgstr "Πάντα επιτρεπτές IP / CIDR (γραφείο, ERP, monitoring), μία ανά γραμμή:"
+
+#: includes/class-pncp-admin.php:686
+msgid "They are never checked, never count towards limits and are never blocked."
+msgstr "Δεν ελέγχονται, δεν μετρούν στα όρια και δεν αποκλείονται ποτέ."
+
+#: includes/class-pncp-admin.php:691
+msgid "IPs / CIDR that are always blocked (403), one per line:"
+msgstr "IP / CIDR που αποκλείονται πάντα (403), μία ανά γραμμή:"
+
+#: includes/class-pncp-admin.php:691
+msgid "For example a scraper's server or a hosting network you see in the log. The “Always allowed IPs” take precedence."
+msgstr "Για παράδειγμα ο server ενός scraper ή ένα δίκτυο hosting που βλέπετε στο αρχείο. Οι «Πάντα επιτρεπτές IP» έχουν προτεραιότητα."
+
+#: includes/class-pncp-admin.php:692
+msgid "Referrer domains that are always blocked (403), one per line, e.g. copy-site.example:"
+msgstr "Domains παραπομπής (Referer) που αποκλείονται πάντα (403), ένα ανά γραμμή, π.χ. copy-site.example:"
+
+#: includes/class-pncp-admin.php:692
+msgid "Requests that come from links or embeds on these sites. Each entry also covers its subdomains."
+msgstr "Αιτήματα που έρχονται από συνδέσμους ή ενσωματώσεις σε αυτά τα sites. Κάθε γραμμή καλύπτει και τα subdomains της."
+
+#: includes/class-pncp-admin.php:693
+msgid "Hide usernames from visitors"
+msgstr "Απόκρυψη των ονομάτων χρηστών από τους επισκέπτες"
+
+#: includes/class-pncp-admin.php:693
+msgid "?author=1, 2, 3… returns “page not found” instead of the redirect to /author/username/, the REST API does not list users, and the users sitemap is removed. Logged-in users see everything as before. Author archives with a link stay."
+msgstr "Το ?author=1, 2, 3… δίνει «η σελίδα δεν βρέθηκε» αντί για ανακατεύθυνση στο /author/όνομα-χρήστη/, το REST API δεν δίνει λίστα χρηστών και ο χάρτης χρηστών του sitemap αφαιρείται. Οι συνδεδεμένοι χρήστες βλέπουν τα πάντα όπως πριν. Οι σελίδες συγγραφέων με σύνδεσμο μένουν."
+
+#: includes/class-pncp-admin.php:696
+msgid "Limits per IP"
+msgstr "Όρια ανά IP"
+
+#: includes/class-pncp-admin.php:698
+msgid "Pages per minute (0 = off):"
+msgstr "Σελίδες ανά λεπτό (0 = ανενεργό):"
+
+#: includes/class-pncp-admin.php:698
+msgid "Starting value: 60. Above the limit it returns 429. Be careful with networks that share an IP (companies, mobile carriers) and with CDNs: set the “Real visitor IP” correctly first."
+msgstr "Τιμή εκκίνησης: 60. Πάνω από το όριο απαντά 429. Προσοχή σε δίκτυα με κοινή IP (εταιρείες, κινητή τηλεφωνία) και σε CDN: ορίστε πρώτα σωστά την «Πραγματική IP επισκέπτη»."
+
+#: includes/class-pncp-admin.php:699
+msgid "Searches (?s=) per minute (0 = off):"
+msgstr "Αναζητήσεις (?s=) ανά λεπτό (0 = ανενεργό):"
+
+#: includes/class-pncp-admin.php:699
+msgid "Search is heavy for the server and a favourite of scrapers. Starting value: 20."
+msgstr "Η αναζήτηση είναι βαριά για τον server και αγαπημένη των scrapers. Τιμή εκκίνησης: 20."
+
+#: includes/class-pncp-admin.php:700
+msgid "REST API (/wp-json/) and GraphQL requests per minute (0 = off):"
+msgstr "Αιτήματα REST API (/wp-json/) και GraphQL ανά λεπτό (0 = ανενεργό):"
+
+#: includes/class-pncp-admin.php:700
+msgid "Only read requests from visitors. Cart, checkout and forms (POST) do not count. Starting value: 60."
+msgstr "Μόνο αιτήματα ανάγνωσης από επισκέπτες. Καλάθι, ταμείο και φόρμες (POST) δεν μετράνε. Τιμή εκκίνησης: 60."
+
+#: includes/class-pncp-admin.php:701
+msgid "“Page not found” (404) per minute (0 = off):"
+msgstr "«Η σελίδα δεν βρέθηκε» (404) ανά λεπτό (0 = ανενεργό):"
+
+#: includes/class-pncp-admin.php:701
+msgid "Scrapers guess addresses (?p=1, 2, 3…, old product URLs) to find content. Missing images, CSS, scripts and the favicon do not count. Starting value: 30."
+msgstr "Οι scrapers μαντεύουν διευθύνσεις (?p=1, 2, 3…, παλιά URL προϊόντων) για να βρουν περιεχόμενο. Εικόνες, CSS, scripts και favicon που λείπουν δεν μετρούν. Αρχική τιμή: 30."
+
+#: includes/class-pncp-admin.php:702
+msgid "Sitemaps per minute (0 = off):"
+msgstr "Sitemap ανά λεπτό (0 = ανενεργό):"
+
+#: includes/class-pncp-admin.php:702
+msgid "Scrapers read the sitemap first to find every page. Covers the sitemaps of WordPress, Rank Math, Yoast and similar plugins. Google, Bing and the other verified search engines are never limited. Starting value: 5."
+msgstr "Οι scrapers διαβάζουν πρώτα το sitemap για να βρουν όλες τις σελίδες. Καλύπτει τα sitemap του WordPress, του Rank Math, του Yoast και παρόμοιων plugins. Το Google, το Bing και οι άλλες επαληθευμένες μηχανές αναζήτησης δεν περιορίζονται ποτέ. Αρχική τιμή: 5."
+
+#: includes/class-pncp-admin.php:707
+msgid "Stricter page limit for visitors who have not shown they are people"
+msgstr "Αυστηρότερο όριο σελίδων για επισκέπτες που δεν έχουν δείξει ότι είναι άνθρωποι"
+
+#: includes/class-pncp-admin.php:707
+msgid "A small script waits for the visitor's first real interaction (scroll, tap, key or mouse movement), solves a light challenge in the background and receives a cookie for 7 days. Nobody sees a captcha or a window. Visitors without the cookie (scripts, and people with JavaScript turned off) get the limit below instead of the normal page limit. Search engines and verified AI search bots are not affected. It works with page caches such as WP Rocket. A determined scraper can repeat the steps, but each of its IPs has to do the work."
+msgstr "Ένα μικρό script περιμένει την πρώτη πραγματική αλληλεπίδραση του επισκέπτη (scroll, άγγιγμα, πλήκτρο ή κίνηση ποντικιού), λύνει στο παρασκήνιο ένα ελαφρύ «πρόβλημα» και παίρνει cookie για 7 ημέρες. Κανείς δεν βλέπει captcha ή παράθυρο. Όσοι δεν έχουν το cookie (scripts, και άνθρωποι με απενεργοποιημένη JavaScript) παίρνουν το παρακάτω όριο αντί για το κανονικό όριο σελίδων. Οι μηχανές αναζήτησης και τα επαληθευμένα AI bots αναζήτησης δεν επηρεάζονται. Δουλεύει με page cache όπως το WP Rocket. Ένας αποφασισμένος scraper μπορεί να επαναλάβει τα βήματα, αλλά κάθε IP του πρέπει να κάνει τη δουλειά."
+
+#: includes/class-pncp-admin.php:708
+msgid "Pages per minute without the cookie (0 = off):"
+msgstr "Σελίδες ανά λεπτό χωρίς το cookie (0 = ανενεργό):"
+
+#: includes/class-pncp-admin.php:708
+msgid "Starting value: 20. A person reads far fewer pages per minute, and gets the cookie with the first scroll or tap."
+msgstr "Αρχική τιμή: 20. Ένας άνθρωπος διαβάζει πολύ λιγότερες σελίδες το λεπτό, και παίρνει το cookie με το πρώτο scroll ή άγγιγμα."
+
+#: includes/class-pncp-admin.php:713
+msgid "Download the free country database (DB-IP Lite, once a month)"
+msgstr "Λήψη της δωρεάν βάσης χωρών (DB-IP Lite, μία φορά τον μήνα)"
+
+#: includes/class-pncp-admin.php:713
+msgid "Needed when the site is not behind Cloudflare or Bunny CDN. About 5 MB to download, stored as two small files in uploads/scrapelock-geo. Behind Cloudflare the country that Cloudflare sends is used, behind Bunny the one Bunny sends (when it reaches the site directly from Bunny), and the database is not needed."
+msgstr "Χρειάζεται όταν το site δεν είναι πίσω από Cloudflare ή Bunny CDN. Περίπου 5 MB για λήψη, αποθηκεύονται ως δύο μικρά αρχεία στο uploads/scrapelock-geo. Πίσω από Cloudflare χρησιμοποιείται η χώρα που στέλνει η Cloudflare, πίσω από Bunny αυτή που στέλνει το Bunny (όταν το αίτημα φτάνει απευθείας από το Bunny), και η βάση δεν χρειάζεται."
+
+#: includes/class-pncp-admin.php:714
+msgid "Blocked countries (403), two-letter codes separated by commas, e.g. CN, RU:"
+msgstr "Αποκλεισμένες χώρες (403), κωδικοί δύο γραμμάτων χωρισμένοι με κόμμα, π.χ. CN, RU:"
+
+#: includes/class-pncp-admin.php:714
+msgid "Search engines, verified AI search bots and the “Always allowed” list are never blocked by country. People who travel or use a VPN appear with the country of their connection."
+msgstr "Οι μηχανές αναζήτησης, τα επαληθευμένα AI bots αναζήτησης και η λίστα «Πάντα επιτρεπτά» δεν μπλοκάρονται ποτέ λόγω χώρας. Όσοι ταξιδεύουν ή χρησιμοποιούν VPN εμφανίζονται με τη χώρα της σύνδεσής τους."
+
+#: includes/class-pncp-admin.php:715
+msgid "Countries with a stricter page limit, e.g. those your customers do not come from:"
+msgstr "Χώρες με αυστηρότερο όριο σελίδων, π.χ. αυτές από όπου δεν έρχονται οι πελάτες σας:"
+
+#: includes/class-pncp-admin.php:716
+msgid "Pages per minute for these countries (0 = off):"
+msgstr "Σελίδες ανά λεπτό για αυτές τις χώρες (0 = ανενεργό):"
+
+#: includes/class-pncp-admin.php:716
+msgid "Starting value: 10."
+msgstr "Αρχική τιμή: 10."
+
+#: includes/class-pncp-admin.php:724
+msgid "Block after this many violations within 10 minutes (0 = never):"
+msgstr "Αποκλεισμός μετά από τόσες παραβάσεις μέσα σε 10 λεπτά (0 = ποτέ):"
+
+#: includes/class-pncp-admin.php:724
+msgid "Violation: every minute in which the IP exceeded a limit, and every fake Googlebot. The trap blocks immediately."
+msgstr "Παράβαση: κάθε λεπτό που η IP ξεπέρασε ένα όριο, και κάθε ψεύτικο Googlebot. Η παγίδα αποκλείει αμέσως."
+
+#: includes/class-pncp-admin.php:725
+msgid "Block duration (minutes):"
+msgstr "Διάρκεια αποκλεισμού (λεπτά):"
+
+#: includes/class-pncp-admin.php:726
+msgid "Early check: block known bots before the theme and the other plugins load"
+msgstr "Πρώιμος έλεγχος: μπλοκάρισμα γνωστών bots πριν φορτώσουν το θέμα και τα άλλα plugins"
+
+#: includes/class-pncp-admin.php:726
+msgid "Adds the small file wp-content/mu-plugins/scrapelock-early.php, which stops blocked IPs and referrers, temporarily blocked IPs and User-Agents in the bot list with less server load. Search engines, logged-in users, forms and feeds are left to the normal check. It is removed when you turn this off or deactivate the plugin."
+msgstr "Προσθέτει το μικρό αρχείο wp-content/mu-plugins/scrapelock-early.php, που σταματά αποκλεισμένες IP και referrers, προσωρινά αποκλεισμένες IP και User-Agents της λίστας bots με λιγότερο φόρτο για τον server. Μηχανές αναζήτησης, συνδεδεμένοι χρήστες, φόρμες και feeds μένουν στον κανονικό έλεγχο. Αφαιρείται όταν το απενεργοποιήσετε ή απενεργοποιήσετε το plugin."
+
+#: includes/class-pncp-admin.php:728
+msgid "The file could not be created (the server does not allow direct file writes to wp-content/mu-plugins). The normal check works as before."
+msgstr "Το αρχείο δεν δημιουργήθηκε (ο server δεν επιτρέπει απευθείας εγγραφή στο wp-content/mu-plugins). Ο κανονικός έλεγχος λειτουργεί όπως πριν."
+
+#: includes/class-pncp-admin.php:731
+msgid "Pre-cache check: apply the page limit and blocks also to pages served from the page cache"
+msgstr "Έλεγχος πριν από το cache: το όριο σελίδων και οι αποκλεισμοί ισχύουν και για τις σελίδες από το cache σελίδων"
+
+#: includes/class-pncp-admin.php:731
+msgid "Page caches such as WP Rocket serve stored pages before any plugin loads, so a bot that looks like a browser could read them without a limit. This adds one line at the top of wp-config.php that loads a small check before the cache: always-blocked IPs, temporarily blocked IPs and the “Pages per minute” limit. Counters are kept in APCu or in wp-content/scrapelock-precheck. Search engines, logged-in users, forms, wp-admin and the REST API are left to the normal check. The line and the files are removed when you turn this off or deactivate the plugin."
+msgstr "Τα cache σελίδων, όπως του WP Rocket, σερβίρουν τις αποθηκευμένες σελίδες πριν φορτώσει οποιοδήποτε plugin, οπότε ένα bot που μοιάζει με browser μπορούσε να τις διαβάζει χωρίς όριο. Αυτή η ρύθμιση προσθέτει μία γραμμή στην κορυφή του wp-config.php, που φορτώνει έναν μικρό έλεγχο πριν από το cache: πάντα αποκλεισμένες IP, προσωρινά αποκλεισμένες IP και το όριο «Σελίδες ανά λεπτό». Οι μετρητές κρατιούνται στο APCu ή στο wp-content/scrapelock-precheck. Οι μηχανές αναζήτησης, οι συνδεδεμένοι χρήστες, οι φόρμες, το wp-admin και το REST API μένουν στον κανονικό έλεγχο. Η γραμμή και τα αρχεία αφαιρούνται όταν το απενεργοποιήσετε ή απενεργοποιήσετε το plugin."
+
+#: includes/class-pncp-admin.php:735
+msgid "Keep the block log for:"
+msgstr "Διατήρηση αρχείου αποκλεισμών:"
+
+#: includes/class-pncp-admin.php:741
+#: includes/class-pncp-admin.php:1086
+msgid "1 day"
+msgstr "1 ημέρα"
+
+#: includes/class-pncp-admin.php:742
+#: includes/class-pncp-admin.php:1087
+msgid "7 days"
+msgstr "7 ημέρες"
+
+#: includes/class-pncp-admin.php:743
+#: includes/class-pncp-admin.php:1088
+msgid "30 days"
+msgstr "30 ημέρες"
+
+#: includes/class-pncp-admin.php:745
+msgid "The log keeps IP and User-Agent, i.e. personal data (GDPR). It is deleted automatically."
+msgstr "Το αρχείο κρατά IP και User-Agent, δηλαδή προσωπικά δεδομένα (GDPR). Σβήνεται αυτόματα."
+
+#: includes/class-pncp-admin.php:759
+msgid "REMOTE_ADDR (no CDN/proxy)"
+msgstr "REMOTE_ADDR (χωρίς CDN/proxy)"
+
+#: includes/class-pncp-admin.php:765
+msgid "Behind a CDN or reverse proxy all visitors appear with the CDN's IP. Choose the header with the real IP."
+msgstr "Πίσω από CDN ή reverse proxy όλοι οι επισκέπτες φαίνονται με την IP του CDN. Επιλέξτε το header με την πραγματική IP."
+
+#: includes/class-pncp-admin.php:768
+msgid "Trusted Proxy:"
+msgstr "Trusted Proxy:"
+
+#: includes/class-pncp-admin.php:768
+msgid "the header is read only when the request comes from a proxy you trust. Otherwise anyone could write any IP they want and bypass limits and blocks. CF-Connecting-IP: only from Cloudflare. X-Real-IP / X-Forwarded-For: from Bunny CDN, the server itself or a private network (Nginx in front of Apache). True-Client-IP: only from the proxies in the list."
+msgstr "η κεφαλίδα διαβάζεται μόνο όταν το αίτημα έρχεται από proxy που εμπιστεύεστε. Αλλιώς ο καθένας θα μπορούσε να γράψει όποια IP θέλει και να παρακάμψει όρια και αποκλεισμούς. CF-Connecting-IP: μόνο από την Cloudflare. X-Real-IP / X-Forwarded-For: από το Bunny CDN, τον ίδιο τον server ή ιδιωτικό δίκτυο (Nginx μπροστά από Apache). True-Client-IP: μόνο από τους proxies της λίστας."
+
+#: includes/class-pncp-admin.php:770
+msgid "Trust Cloudflare addresses"
+msgstr "Αξιόπιστες οι διευθύνσεις του Cloudflare"
+
+#: includes/class-pncp-admin.php:770
+msgid "The official Cloudflare list is refreshed every day."
+msgstr "Η επίσημη λίστα του Cloudflare ανανεώνεται κάθε μέρα."
+
+#: includes/class-pncp-admin.php:771
+msgid "Trust Bunny CDN addresses"
+msgstr "Εμπιστοσύνη στις διευθύνσεις του Bunny CDN"
+
+#: includes/class-pncp-admin.php:771
+msgid "For X-Real-IP / X-Forwarded-For and Bunny's country header. The official list of Bunny edge servers is refreshed every day."
+msgstr "Για το X-Real-IP / X-Forwarded-For και την κεφαλίδα χώρας του Bunny. Η επίσημη λίστα των edge servers του Bunny ανανεώνεται κάθε μέρα."
+
+#: includes/class-pncp-admin.php:774
+msgid "Trust every request (1.4 behaviour, insecure)"
+msgstr "Εμπιστοσύνη σε κάθε αίτημα (συμπεριφορά της 1.4, μη ασφαλής)"
+
+#: includes/class-pncp-admin.php:774
+msgid "On because this is how version 1.4 worked. Fill in your proxies below and uncheck it. Once turned off, it cannot be turned on again."
+msgstr "Ενεργή γιατί έτσι δούλευε η έκδοση 1.4. Συμπληρώστε τους proxies σας παρακάτω και ξετσεκάρετέ την. Αφού κλείσει, δεν ξανανοίγει."
+
+#: includes/class-pncp-admin.php:777
+msgid "Other trusted proxies / load balancers (IP or CIDR, one per line):"
+msgstr "Άλλοι αξιόπιστοι proxies / load balancers (IP ή CIDR, μία ανά γραμμή):"
+
+#: includes/class-pncp-admin.php:781
+msgid "What the server sees on this request:"
+msgstr "Τι βλέπει ο server σε αυτό το αίτημα:"
+
+#: includes/class-pncp-admin.php:788
+msgid "Trusted proxy:"
+msgstr "Αξιόπιστος proxy:"
+
+#: includes/class-pncp-admin.php:788
+msgid "yes"
+msgstr "ναι"
+
+#: includes/class-pncp-admin.php:788
+msgid "no"
+msgstr "όχι"
+
+#: includes/class-pncp-admin.php:789
+msgid "IP the plugin uses now:"
+msgstr "IP που χρησιμοποιεί τώρα το plugin:"
+
+#: includes/class-pncp-admin.php:810
+msgid "The site is behind Cloudflare, but all visitors appear with a Cloudflare address."
+msgstr "Το site είναι πίσω από Cloudflare, αλλά όλοι οι επισκέπτες εμφανίζονται με διεύθυνση της Cloudflare."
+
+#: includes/class-pncp-admin.php:811
+msgid "Then limits and blocks hit Cloudflare itself, i.e. many visitors at once. Use the CF-Connecting-IP header, trusted only when the request comes from Cloudflare."
+msgstr "Τότε τα όρια και οι αποκλεισμοί πέφτουν στην ίδια την Cloudflare, δηλαδή σε πολλούς επισκέπτες μαζί. Χρησιμοποιήστε το header CF-Connecting-IP, με εμπιστοσύνη μόνο όταν το αίτημα έρχεται από την Cloudflare."
+
+#: includes/class-pncp-admin.php:813
+msgid "Use CF-Connecting-IP (recommended)"
+msgstr "Χρήση CF-Connecting-IP (προτείνεται)"
+
+#: includes/class-pncp-admin.php:820
+msgid "Cloudflare detected. REMOTE_ADDR already holds the visitor's IP (the Cloudflare plugin or the server replaced it), so “REMOTE_ADDR” is the right choice."
+msgstr "Εντοπίστηκε Cloudflare. Το REMOTE_ADDR έχει ήδη την IP του επισκέπτη (την αντικατέστησε το plugin της Cloudflare ή ο server), οπότε το «REMOTE_ADDR» είναι η σωστή επιλογή."
+
+#: includes/class-pncp-admin.php:836
+msgid "Running: wp-config.php loads the check before the page cache."
+msgstr "Σε λειτουργία: το wp-config.php φορτώνει τον έλεγχο πριν από το cache σελίδων."
+
+#: includes/class-pncp-admin.php:837
+msgid "Counters: APCu."
+msgstr "Μετρητές: APCu."
+
+#: includes/class-pncp-admin.php:837
+msgid "Counters: files in wp-content/scrapelock-precheck."
+msgstr "Μετρητές: αρχεία στο wp-content/scrapelock-precheck."
+
+#: includes/class-pncp-admin.php:844
+msgid "Not running: the folder wp-content/scrapelock-precheck could not be created (the server does not allow direct file writes). The normal check works as before."
+msgstr "Δεν λειτουργεί: ο φάκελος wp-content/scrapelock-precheck δεν μπόρεσε να δημιουργηθεί (ο server δεν επιτρέπει απευθείας εγγραφή αρχείων). Ο κανονικός έλεγχος λειτουργεί όπως πριν."
+
+#: includes/class-pncp-admin.php:846
+msgid "Not running yet: wp-config.php could not be changed (not writable, or it does not start with “<?php” on its own line). Add these lines right after the first line (<?php) of wp-config.php, then reload this page:"
+msgstr "Δεν λειτουργεί ακόμη: το wp-config.php δεν μπόρεσε να αλλάξει (δεν επιτρέπεται η εγγραφή, ή δεν ξεκινά με «<?php» σε δική του γραμμή). Προσθέστε αυτές τις γραμμές αμέσως μετά την πρώτη γραμμή (<?php) του wp-config.php και ανανεώστε τη σελίδα:"
+
+#: includes/class-pncp-admin.php:850
+msgid "If you remove the setting later, remove the lines too: without the plugin they do nothing."
+msgstr "Αν αργότερα απενεργοποιήσετε τη ρύθμιση, σβήστε και τις γραμμές: χωρίς το plugin δεν κάνουν τίποτα."
+
+#: includes/class-pncp-admin.php:870
+msgid "Bunny CDN detected. REMOTE_ADDR already holds the visitor's IP (the server replaced it), so “REMOTE_ADDR” is the right choice."
+msgstr "Εντοπίστηκε Bunny CDN. Το REMOTE_ADDR έχει ήδη την IP του επισκέπτη (την αντικατέστησε ο server), οπότε το «REMOTE_ADDR» είναι η σωστή επιλογή."
+
+#: includes/class-pncp-admin.php:879
+msgid "The site is behind Bunny CDN, but all visitors appear with a Bunny address."
+msgstr "Το site είναι πίσω από Bunny CDN, αλλά όλοι οι επισκέπτες εμφανίζονται με διεύθυνση του Bunny."
+
+#: includes/class-pncp-admin.php:880
+msgid "Then limits and blocks hit Bunny itself, i.e. many visitors at once. Use the X-Real-IP header, trusted only when the request comes from a Bunny edge server (the official list is downloaded now)."
+msgstr "Τότε τα όρια και οι αποκλεισμοί πέφτουν στο ίδιο το Bunny, δηλαδή σε πολλούς επισκέπτες μαζί. Χρησιμοποιήστε την κεφαλίδα X-Real-IP, που γίνεται δεκτή μόνο όταν το αίτημα έρχεται από edge server του Bunny (η επίσημη λίστα κατεβαίνει τώρα)."
+
+#: includes/class-pncp-admin.php:882
+msgid "Use X-Real-IP from Bunny (recommended)"
+msgstr "X-Real-IP από το Bunny (προτείνεται)"
+
+#: includes/class-pncp-admin.php:911
+msgid "Official IP lists"
+msgstr "Επίσημες λίστες IP"
+
+#: includes/class-pncp-admin.php:919
+msgid "not used with the current “Real visitor IP” setting (the built-in list is enough to detect Cloudflare)"
+msgstr "δεν χρησιμοποιείται με την τρέχουσα ρύθμιση «Πραγματική IP επισκέπτη» (η ενσωματωμένη λίστα αρκεί για τον εντοπισμό της Cloudflare)"
+
+#: includes/class-pncp-admin.php:921
+msgid "built-in list (not downloaded yet)"
+msgstr "ενσωματωμένη λίστα (δεν έχει κατέβει ακόμη)"
+
+#: includes/class-pncp-admin.php:923
+msgid "not used with the current settings"
+msgstr "δεν χρησιμοποιείται με τις τρέχουσες ρυθμίσεις"
+
+#: includes/class-pncp-admin.php:925
+msgid "not downloaded yet, no verification until then"
+msgstr "δεν έχει κατέβει ακόμη, χωρίς επαλήθευση μέχρι τότε"
+
+#: includes/class-pncp-admin.php:927
+msgid "not downloaded yet, only DNS is used"
+msgstr "δεν έχει κατέβει ακόμη, χρησιμοποιείται μόνο DNS"
+
+#. translators: 1: number of addresses, 2: date
+#: includes/class-pncp-admin.php:933
+#, php-format
+msgid "%1$s addresses, updated %2$s"
+msgstr "%1$s διευθύνσεις, ενημέρωση %2$s"
+
+#: includes/class-pncp-admin.php:945
+msgid "Refresh now"
+msgstr "Ανανέωση τώρα"
+
+#: includes/class-pncp-admin.php:948
+msgid "Country database"
+msgstr "Βάση χωρών"
+
+#: includes/class-pncp-admin.php:951
+msgid "Downloads DB-IP Lite now (about 5 MB, it may take up to a minute). It is also refreshed automatically once a month."
+msgstr "Κατεβάζει τώρα τη DB-IP Lite (περίπου 5 MB, μπορεί να πάρει έως ένα λεπτό). Ανανεώνεται και αυτόματα μία φορά τον μήνα."
+
+#: includes/class-pncp-admin.php:952
+msgid "Download now"
+msgstr "Λήψη τώρα"
+
+#: includes/class-pncp-admin.php:968
+#: includes/class-pncp-status.php:239
+msgid "Protected feeds"
+msgstr "Προστατευμένα feeds"
+
+#: includes/class-pncp-admin.php:971
+msgid "Paths that are not public (one per line, * means “anything”), e.g. /skroutz.xml, /feeds/*.xml:"
+msgstr "Διαδρομές που δεν είναι δημόσιες (μία ανά γραμμή, το * σημαίνει «οτιδήποτε»), π.χ. /skroutz.xml, /feeds/*.xml:"
+
+#: includes/class-pncp-admin.php:972
+msgid "Or allowed IPs / CIDR of the service (one per line):"
+msgstr "Ή επιτρεπόμενες IP / CIDR της υπηρεσίας (μία ανά γραμμή):"
+
+#: includes/class-pncp-admin.php:972
+msgid "Without a valid token or an allowed IP it returns 403. Applies to feeds generated by PHP. For static .xml files see the “Server rules” tab."
+msgstr "Χωρίς σωστό token ή επιτρεπόμενη IP απαντά 403. Ισχύει για feeds που φτιάχνει η PHP. Για στατικά αρχεία .xml δείτε την καρτέλα «Κανόνες server»."
+
+#: includes/class-pncp-admin.php:977
+msgid "REST API"
+msgstr "REST API"
+
+#: includes/class-pncp-admin.php:979
+msgid "Hide the text (content, excerpt) of posts, pages and products from visitors"
+msgstr "Κρύψιμο του κειμένου (content, excerpt) των άρθρων, σελίδων και προϊόντων από επισκέπτες"
+
+#: includes/class-pncp-admin.php:979
+msgid "REST stays open for forms, oEmbed, SEO plugins and your own endpoints. Users who can write posts see the text normally. Exceptions from code: filter pncp_rest_hide_content."
+msgstr "Το REST μένει ανοιχτό για φόρμες, oEmbed, SEO plugins και δικά σας endpoints. Όσοι μπορούν να γράψουν άρθρα βλέπουν κανονικά το κείμενο. Εξαιρέσεις από κώδικα: φίλτρο pncp_rest_hide_content."
+
+#: includes/class-pncp-admin.php:983
+msgid "GraphQL"
+msgstr "GraphQL"
+
+#: includes/class-pncp-admin.php:986
+msgid "Hide the text in WPGraphQL (content, excerpt, product descriptions)"
+msgstr "Κρύψιμο του κειμένου στο WPGraphQL (content, excerpt, περιγραφές προϊόντων)"
+
+#: includes/class-pncp-admin.php:987
+msgid "WPGraphQL is active: the bot check, blocks and the REST / GraphQL limit apply too."
+msgstr "Το WPGraphQL είναι ενεργό: ισχύουν και ο έλεγχος bots, οι αποκλεισμοί και το όριο REST / GraphQL."
+
+#: includes/class-pncp-admin.php:987
+msgid "WPGraphQL is not installed; the setting will apply if you install it."
+msgstr "Το WPGraphQL δεν είναι εγκατεστημένο· η ρύθμιση θα ισχύσει αν το εγκαταστήσετε."
+
+#: includes/class-pncp-admin.php:992
+#: includes/class-pncp-admin.php:998
+msgid "RSS / Atom feeds"
+msgstr "RSS / Atom feeds"
+
+#: includes/class-pncp-admin.php:1000
+msgid "Short excerpt only, with a link to the post (recommended)"
+msgstr "Μόνο σύντομη περίληψη με σύνδεσμο προς το άρθρο (συνιστάται)"
+
+#: includes/class-pncp-admin.php:1001
+msgid "Full text"
+msgstr "Πλήρες κείμενο"
+
+#: includes/class-pncp-admin.php:1002
+msgid "Disabled"
+msgstr "Απενεργοποιημένα"
+
+#: includes/class-pncp-admin.php:1005
+msgid "Full text: add “The post … first appeared on …” at the end"
+msgstr "Πλήρες κείμενο: προσθήκη «Το άρθρο … δημοσιεύτηκε πρώτα στο …» στο τέλος"
+
+#: includes/class-pncp-admin.php:1005
+msgid "Sites that republish the feed automatically then link back to the original article, so search engines see where it first appeared."
+msgstr "Τα sites που αναδημοσιεύουν αυτόματα το feed δίνουν τότε σύνδεσμο προς το πρωτότυπο άρθρο, οπότε οι μηχανές αναζήτησης βλέπουν πού δημοσιεύτηκε πρώτα."
+
+#: includes/class-pncp-admin.php:1029
+msgid "Access token"
+msgstr "Token πρόσβασης"
+
+#: includes/class-pncp-admin.php:1032
+msgid "New token. Copy it now: it will not be shown again."
+msgstr "Νέο token. Αντιγράψτε το τώρα: δεν θα ξαναεμφανιστεί."
+
+#: includes/class-pncp-admin.php:1033
+#: includes/class-pncp-admin.php:1039
+#: includes/class-pncp-admin.php:1320
+msgid "Copy"
+msgstr "Αντιγραφή"
+
+#: includes/class-pncp-admin.php:1034
+msgid "Header for ERP / API:"
+msgstr "Header για ERP / API:"
+
+#: includes/class-pncp-admin.php:1034
+msgid "or"
+msgstr "ή"
+
+#: includes/class-pncp-admin.php:1036
+msgid "URL for Skroutz, BestPrice, Google Merchant (they accept only URLs):"
+msgstr "URL για Skroutz, BestPrice, Google Merchant (δέχονται μόνο URL):"
+
+#: includes/class-pncp-admin.php:1048
+msgid "There is no token. Create one to give the services access."
+msgstr "Δεν υπάρχει token. Δημιουργήστε ένα για να δώσετε πρόσβαση στις υπηρεσίες."
+
+#. translators: 1: last 4 characters, 2: date
+#: includes/class-pncp-admin.php:1053
+#, php-format
+msgid "Active token ending in …%1$s, since %2$s. Only its hash is stored, so it cannot be shown again."
+msgstr "Ενεργό token που τελειώνει σε …%1$s, από %2$s. Αποθηκεύεται μόνο το hash του, οπότε δεν μπορεί να εμφανιστεί ξανά."
+
+#. translators: 1: last 4 characters, 2: date
+#: includes/class-pncp-admin.php:1067
+#, php-format
+msgid "The previous token (…%1$s) is still valid until %2$s, so you have time to change the URL in the services."
+msgstr "Το προηγούμενο token (…%1$s) ισχύει ακόμη μέχρι %2$s, ώστε να προλάβετε να αλλάξετε το URL στις υπηρεσίες."
+
+#: includes/class-pncp-admin.php:1076
+msgid "Revoke the previous one now"
+msgstr "Ακύρωση του προηγούμενου τώρα"
+
+#: includes/class-pncp-admin.php:1083
+msgid "Keep the current token valid for:"
+msgstr "Το τρέχον token να ισχύει ακόμη:"
+
+#: includes/class-pncp-admin.php:1085
+msgid "Not at all (revoke immediately)"
+msgstr "Καθόλου (ακύρωση αμέσως)"
+
+#: includes/class-pncp-admin.php:1091
+msgid "Create token"
+msgstr "Δημιουργία token"
+
+#: includes/class-pncp-admin.php:1091
+msgid "New token (rotate)"
+msgstr "Νέο token (εναλλαγή)"
+
+#: includes/class-pncp-admin.php:1094
+msgid "Header for ERP and your own integrations (not visible in logs and history). Token in the URL for Skroutz, BestPrice and Google Merchant, which accept only URLs."
+msgstr "Header για ERP και δικά σας integrations (δεν φαίνεται σε logs και ιστορικό). Token στο URL για Skroutz, BestPrice και Google Merchant, που δέχονται μόνο URL."
+
+#: includes/class-pncp-admin.php:1097
+msgid "Access per feed"
+msgstr "Πρόσβαση ανά feed"
+
+#: includes/class-pncp-admin.php:1101
+#: includes/class-pncp-admin.php:1427
+#: includes/class-pncp-admin.php:1474
+msgid "Path"
+msgstr "Διαδρομή"
+
+#: includes/class-pncp-admin.php:1102
+msgid "Successes"
+msgstr "Επιτυχίες"
+
+#: includes/class-pncp-admin.php:1103
+msgid "Last access"
+msgstr "Τελευταία πρόσβαση"
+
+#: includes/class-pncp-admin.php:1104
+msgid "Via"
+msgstr "Με"
+
+#: includes/class-pncp-admin.php:1105
+msgid "Denials"
+msgstr "Αρνήσεις"
+
+#: includes/class-pncp-admin.php:1111
+msgid "header"
+msgstr "header"
+
+#: includes/class-pncp-admin.php:1112
+msgid "token in URL"
+msgstr "token στο URL"
+
+#: includes/class-pncp-admin.php:1113
+msgid "allowed IP"
+msgstr "επιτρεπόμενη IP"
+
+#: includes/class-pncp-admin.php:1114
+msgid "administrator"
+msgstr "διαχειριστής"
+
+#: includes/class-pncp-admin.php:1122
+msgid "Never"
+msgstr "Ποτέ"
+
+#: includes/class-pncp-admin.php:1143
+msgid "Watermark"
+msgstr "Υδατογράφημα"
+
+#: includes/class-pncp-admin.php:1146
+msgid "Watermark new images"
+msgstr "Υδατογράφημα στις νέες εικόνες"
+
+#: includes/class-pncp-admin.php:1146
+msgid "It is added to the sizes WordPress generates (thumbnails, medium, large). For existing images, use the tool below. The site icon, the logo and the watermark itself never get it."
+msgstr "Μπαίνει στα μεγέθη που φτιάχνει το WordPress (thumbnails, medium, large). Για εικόνες που υπάρχουν ήδη, χρησιμοποιήστε το εργαλείο πιο κάτω. Το εικονίδιο site, το λογότυπο και το ίδιο το υδατογράφημα δεν το παίρνουν ποτέ."
+
+#: includes/class-pncp-admin.php:1148
+msgid "The PHP GD library is not available on the server, so the watermark will not be applied."
+msgstr "Η βιβλιοθήκη GD της PHP δεν είναι διαθέσιμη στον server, οπότε το υδατογράφημα δεν θα εφαρμοστεί."
+
+#: includes/class-pncp-admin.php:1150
+msgid "Watermark the full-size image too"
+msgstr "Υδατογράφημα και στην εικόνα πλήρους μεγέθους"
+
+#: includes/class-pncp-admin.php:1150
+msgid "Without this, the full image stays clean and can be downloaded from its URL. The clean original is kept in a hidden folder, so it can always be restored."
+msgstr "Χωρίς αυτό, η πλήρης εικόνα μένει καθαρή και κατεβαίνει από τη διεύθυνσή της. Το καθαρό πρωτότυπο φυλάγεται σε κρυφό φάκελο, ώστε να γίνεται πάντα επαναφορά."
+
+#: includes/class-pncp-admin.php:1151
+msgid "Watermark WooCommerce product images too"
+msgstr "Υδατογράφημα και στις εικόνες προϊόντων WooCommerce"
+
+#: includes/class-pncp-admin.php:1153
+msgid "Not recommended: Google Merchant Center, Skroutz and BestPrice reject product images with a watermark, and feeds usually show the full-size image. For products, hotlink protection (“Server rules” tab) is a better choice. If a watermarked image later becomes a product image, logo or icon, the watermark is removed automatically."
+msgstr "Δεν συνιστάται: Google Merchant Center, Skroutz και BestPrice απορρίπτουν εικόνες προϊόντων με υδατογράφημα, και τα feeds δείχνουν συνήθως την εικόνα πλήρους μεγέθους. Για τα προϊόντα, η προστασία από hotlink (καρτέλα «Κανόνες server») είναι καλύτερη επιλογή. Αν μια εικόνα με υδατογράφημα γίνει αργότερα εικόνα προϊόντος, λογότυπο ή εικονίδιο, το υδατογράφημα αφαιρείται αυτόματα."
+
+#: includes/class-pncp-admin.php:1157
+msgid "Appearance"
+msgstr "Εμφάνιση"
+
+#: includes/class-pncp-admin.php:1160
+msgid "PNG image ID from the Media Library (0 = the site's domain as text):"
+msgstr "ID εικόνας PNG από τη Βιβλιοθήκη πολυμέσων (0 = το domain του site ως κείμενο):"
+
+#: includes/class-pncp-admin.php:1160
+msgid "A PNG with a transparent background is recommended (e.g. the logo). The ID appears in the address when you open the image in the Library."
+msgstr "Συνιστάται PNG με διάφανο φόντο (π.χ. το λογότυπο). Το ID φαίνεται στη διεύθυνση όταν ανοίγετε την εικόνα στη Βιβλιοθήκη."
+
+#: includes/class-pncp-admin.php:1162
+msgid "Position:"
+msgstr "Θέση:"
+
+#: includes/class-pncp-admin.php:1168
+msgid "Bottom right"
+msgstr "Κάτω δεξιά"
+
+#: includes/class-pncp-admin.php:1169
+msgid "Bottom left"
+msgstr "Κάτω αριστερά"
+
+#: includes/class-pncp-admin.php:1170
+msgid "Top right"
+msgstr "Πάνω δεξιά"
+
+#: includes/class-pncp-admin.php:1171
+msgid "Top left"
+msgstr "Πάνω αριστερά"
+
+#: includes/class-pncp-admin.php:1172
+msgid "Centre"
+msgstr "Στο κέντρο"
+
+#: includes/class-pncp-admin.php:1173
+msgid "Repeat diagonally across the whole image (hard to remove)"
+msgstr "Επανάληψη σε όλη την εικόνα, διαγώνια (δύσκολα αφαιρείται)"
+
+#: includes/class-pncp-admin.php:1179
+msgid "Size (% of the image width):"
+msgstr "Μέγεθος (% του πλάτους της εικόνας):"
+
+#: includes/class-pncp-admin.php:1179
+msgid "With diagonal repeat, the size of each repetition."
+msgstr "Στη διαγώνια επανάληψη, το μέγεθος κάθε επανάληψης."
+
+#: includes/class-pncp-admin.php:1180
+msgid "Opacity (%):"
+msgstr "Αδιαφάνεια (%):"
+
+#: includes/class-pncp-admin.php:1181
+msgid "Only on sizes with width from (px):"
+msgstr "Μόνο σε μεγέθη με πλάτος από (px):"
+
+#: includes/class-pncp-admin.php:1181
+msgid "Small thumbnails stay clean."
+msgstr "Τα μικρά thumbnails μένουν καθαρά."
+
+#: includes/class-pncp-admin.php:1199
+msgid "Existing images"
+msgstr "Εικόνες που υπάρχουν ήδη"
+
+#. translators: %s: count
+#: includes/class-pncp-admin.php:1200
+#, php-format
+msgid "JPEG / PNG / WebP images in the library: %s."
+msgstr "Εικόνες JPEG / PNG / WebP στη βιβλιοθήκη: %s."
+
+#. translators: %s: count
+#: includes/class-pncp-admin.php:1201
+msgid "Each image is regenerated from the clean original, so a watermark is never added twice, not even on images watermarked by version 1.x. If the page closes midway, click again: it resumes where it stopped. Keep a backup of the uploads folder before you start."
+msgstr "Κάθε εικόνα ξαναφτιάχνεται από το καθαρό πρωτότυπο, οπότε δεν μπαίνει ποτέ διπλό υδατογράφημα, ούτε σε εικόνες που πήραν υδατογράφημα από την έκδοση 1.x. Αν η σελίδα κλείσει στη μέση, πατήστε ξανά: συνεχίζει από εκεί που σταμάτησε. Κρατήστε backup του φακέλου uploads πριν ξεκινήσετε."
+
+#: includes/class-pncp-admin.php:1203
+msgid "The watermark is off: “Apply” will leave the images clean. Enable it and save first."
+msgstr "Το υδατογράφημα είναι ανενεργό: η «Εφαρμογή» θα αφήσει τις εικόνες καθαρές. Ενεργοποιήστε το και αποθηκεύστε πρώτα."
+
+#: includes/class-pncp-admin.php:1206
+msgid "Apply watermark"
+msgstr "Εφαρμογή υδατογραφήματος"
+
+#: includes/class-pncp-admin.php:1207
+msgid "Remove watermark"
+msgstr "Αφαίρεση υδατογραφήματος"
+
+#: includes/class-pncp-admin.php:1234
+msgid "You are not allowed to do this."
+msgstr "Δεν έχετε δικαίωμα."
+
+#: includes/class-pncp-admin.php:1282
+msgid "The plugin only checks requests that reach PHP. Pages from page cache, images and static files are served directly by the server or the CDN. The rules below are generated for your site, with the current settings. Test them on staging first."
+msgstr "Το plugin ελέγχει μόνο αιτήματα που φτάνουν στην PHP. Σελίδες από page cache, εικόνες και στατικά αρχεία τα σερβίρει απευθείας ο server ή το CDN. Οι παρακάτω κανόνες είναι φτιαγμένοι για το δικό σας site, με τις τρέχουσες ρυθμίσεις. Δοκιμάστε τους πρώτα σε staging."
+
+#: includes/class-pncp-admin.php:1283
+msgid "The plugin does not keep a Cloudflare API token in the database: you add the rules yourself, where you already have access."
+msgstr "Το plugin δεν κρατά API token του Cloudflare στη βάση: εσείς περνάτε τους κανόνες, εκεί που έχετε ήδη πρόσβαση."
+
+#: includes/class-pncp-admin.php:1285
+msgid "Cloudflare"
+msgstr "Cloudflare"
+
+#: includes/class-pncp-admin.php:1287
+msgid "APO and “Cache Everything”: pages served from the Cloudflare cache never reach the plugin, so the bot list, limits and the trap do not apply to them. The WAF rules below apply before the cache. ScrapeLock tells the Cloudflare plugin not to cache blocks and private feeds, and purges its cache when you save the settings."
+msgstr "APO και «Cache Everything»: οι σελίδες που σερβίρονται από την cache της Cloudflare δεν φτάνουν ποτέ στο plugin, οπότε δεν ισχύουν γι' αυτές η λίστα bots, τα όρια και η παγίδα. Οι κανόνες WAF παρακάτω ισχύουν πριν από την cache. Το ScrapeLock λέει στο plugin της Cloudflare να μην κρατά στην cache αποκλεισμούς και ιδιωτικά feeds, και καθαρίζει την cache του όταν αποθηκεύετε τις ρυθμίσεις."
+
+#: includes/class-pncp-admin.php:1289
+msgid "Security → WAF → Custom rules → Create rule → Edit expression. Paste the expression and choose the action shown."
+msgstr "Security → WAF → Custom rules → Create rule → Edit expression. Επικολλήστε την έκφραση και επιλέξτε την ενέργεια που αναφέρεται."
+
+#: includes/class-pncp-admin.php:1295
+msgid "Nginx"
+msgstr "Nginx"
+
+#: includes/class-pncp-admin.php:1296
+msgid "1) Inside http { }, e.g. in the file /etc/nginx/conf.d/scrapelock.conf:"
+msgstr "1) Μέσα στο http { }, π.χ. στο αρχείο /etc/nginx/conf.d/scrapelock.conf:"
+
+#: includes/class-pncp-admin.php:1298
+msgid "2) Inside the site's server { }, before the other location blocks. Then: nginx -t and reload."
+msgstr "2) Μέσα στο server { } του site, πριν από τα υπόλοιπα location. Μετά: nginx -t και reload."
+
+#: includes/class-pncp-admin.php:1301
+msgid "Apache (.htaccess, above # BEGIN WordPress)"
+msgstr "Apache (.htaccess, πάνω από το # BEGIN WordPress)"
+
+#: includes/class-pncp-admin.php:1318
+msgid "Rules to copy"
+msgstr "Κανόνες για αντιγραφή"
+
+#: includes/class-pncp-admin.php:1336
+#: includes/class-pncp-admin.php:1357
+msgid "Last 24 hours"
+msgstr "Τελευταίες 24 ώρες"
+
+#. translators: %s: count
+#: includes/class-pncp-admin.php:1337
+#, php-format
+msgid "%s blocked requests"
+msgstr "%s μπλοκαρισμένα αιτήματα"
+
+#: includes/class-pncp-admin.php:1340
+msgid "By reason"
+msgstr "Ανά λόγο"
+
+#: includes/class-pncp-admin.php:1344
+msgid "Top IPs"
+msgstr "Κορυφαίες IP"
+
+#: includes/class-pncp-admin.php:1348
+msgid "Top User-Agents"
+msgstr "Κορυφαία User-Agents"
+
+#: includes/class-pncp-admin.php:1353
+msgid "What they try to copy"
+msgstr "Τι προσπαθούν να αντιγράψουν"
+
+#: includes/class-pncp-admin.php:1354
+msgid "The blocked requests grouped by page. “Pages” are your content: what scrapers were after. “Files” are scanners looking for passwords, backups or admin areas: no content leaks there, it only shows they tried."
+msgstr "Τα αιτήματα που μπλοκαρίστηκαν, ανά σελίδα. Οι «Σελίδες» είναι το περιεχόμενό σας: αυτό που ήθελαν οι scrapers. Τα «Αρχεία» είναι scanners που ψάχνουν κωδικούς, backups ή περιοχές διαχείρισης: εκεί δεν διαρρέει περιεχόμενο, απλώς φαίνεται ότι προσπάθησαν."
+
+#: includes/class-pncp-admin.php:1358
+msgid "Last 7 days"
+msgstr "Τελευταίες 7 ημέρες"
+
+#: includes/class-pncp-admin.php:1370
+msgid "Files and admin paths"
+msgstr "Αρχεία και διαδρομές διαχείρισης"
+
+#: includes/class-pncp-admin.php:1376
+msgid "The log is kept for 1 day, so the 7-day view shows only the last day. Change “Keep the block log for” in the “Bots and limits” tab to see more."
+msgstr "Το αρχείο κρατιέται 1 ημέρα, οπότε η προβολή 7 ημερών δείχνει μόνο την τελευταία ημέρα. Αλλάξτε το «Διατήρηση αρχείου αποκλεισμών» στην καρτέλα «Bots και όρια» για να βλέπετε περισσότερα."
+
+#: includes/class-pncp-admin.php:1379
+msgid "IPs blocked now"
+msgstr "Αποκλεισμένες IP τώρα"
+
+#: includes/class-pncp-admin.php:1381
+msgid "None."
+msgstr "Καμία."
+
+#: includes/class-pncp-admin.php:1386
+#: includes/class-pncp-admin.php:1424
+msgid "IP"
+msgstr "IP"
+
+#: includes/class-pncp-admin.php:1387
+#: includes/class-pncp-admin.php:1425
+msgid "Reason"
+msgstr "Αιτία"
+
+#: includes/class-pncp-admin.php:1388
+msgid "Expires"
+msgstr "Λήγει"
+
+#: includes/class-pncp-admin.php:1389
+msgid "Action"
+msgstr "Ενέργεια"
+
+#: includes/class-pncp-admin.php:1402
+msgid "Unblock"
+msgstr "Άρση"
+
+#: includes/class-pncp-admin.php:1411
+msgid "Unblock all"
+msgstr "Άρση όλων"
+
+#: includes/class-pncp-admin.php:1415
+msgid "Latest events"
+msgstr "Τελευταία συμβάντα"
+
+#: includes/class-pncp-admin.php:1418
+msgid "No events."
+msgstr "Δεν υπάρχουν συμβάντα."
+
+#: includes/class-pncp-admin.php:1423
+msgid "Time"
+msgstr "Ώρα"
+
+#: includes/class-pncp-admin.php:1426
+#: includes/class-pncp-admin.php:1475
+msgid "Requests"
+msgstr "Αιτήματα"
+
+#: includes/class-pncp-admin.php:1428
+msgid "User-Agent"
+msgstr "User-Agent"
+
+#. translators: %s: days
+#: includes/class-pncp-admin.php:1450
+#, php-format
+msgid "The log is deleted automatically after %s days (setting in the “Bots and limits” tab)."
+msgstr "Το αρχείο σβήνεται αυτόματα μετά από %s ημέρες (ρύθμιση στην καρτέλα «Bots και όρια»)."
+
+#: includes/class-pncp-admin.php:1458
+msgid "Delete log"
+msgstr "Διαγραφή αρχείου"
+
+#: includes/class-pncp-admin.php:1470
+#: includes/class-pncp-admin.php:1497
+msgid "Nothing."
+msgstr "Τίποτα."
+
+#: includes/class-pncp-admin.php:1476
+msgid "IPs"
+msgstr "IP"
+
+#: includes/class-pncp-admin.php:1516
+#: includes/class-pncp-status.php:120
+#: includes/class-pncp-status.php:159
+msgid "You are not allowed to change this setting."
+msgstr "Δεν έχετε δικαίωμα να αλλάξετε αυτή τη ρύθμιση."
+
+#: includes/class-pncp-admin.php:1659
+msgid "Preset applied."
+msgstr "Το προφίλ εφαρμόστηκε."
+
+#: includes/class-pncp-admin.php:1660
+msgid "New token created."
+msgstr "Δημιουργήθηκε νέο token."
+
+#: includes/class-pncp-admin.php:1661
+msgid "Previous token revoked."
+msgstr "Το προηγούμενο token ακυρώθηκε."
+
+#: includes/class-pncp-admin.php:1662
+msgid "Block lifted."
+msgstr "Ο αποκλεισμός άρθηκε."
+
+#: includes/class-pncp-admin.php:1663
+msgid "Log deleted."
+msgstr "Το αρχείο διαγράφηκε."
+
+#: includes/class-pncp-admin.php:1664
+msgid "IP lists refreshed."
+msgstr "Οι λίστες IP ανανεώθηκαν."
+
+#: includes/class-pncp-admin.php:1665
+msgid "Country database downloaded."
+msgstr "Η βάση χωρών κατέβηκε."
+
+#: includes/class-pncp-admin.php:1666
+msgid "The country database could not be downloaded or read; the previous one (if any) was kept. It will try again tomorrow."
+msgstr "Η βάση χωρών δεν κατέβηκε ή δεν διαβάστηκε· κρατήθηκε η προηγούμενη (αν υπάρχει). Θα ξαναδοκιμάσει αύριο."
+
+#: includes/class-pncp-admin.php:1667
+msgid "The real visitor IP is now read from CF-Connecting-IP, only for requests from Cloudflare."
+msgstr "Η πραγματική IP του επισκέπτη διαβάζεται τώρα από το CF-Connecting-IP, μόνο για αιτήματα από την Cloudflare."
+
+#: includes/class-pncp-admin.php:1668
+msgid "The real visitor IP is now read from X-Real-IP, only for requests from Bunny CDN."
+msgstr "Η πραγματική IP του επισκέπτη διαβάζεται πλέον από το X-Real-IP, μόνο για αιτήματα από το Bunny CDN."
+
+#: includes/class-pncp-admin.php:1669
+msgid "X-Real-IP is selected for Bunny CDN, but the list of Bunny addresses could not be downloaded. Until it is, the header is not trusted. It will try again tomorrow, or use “Refresh now” under “Official IP lists”."
+msgstr "Επιλέχθηκε X-Real-IP για το Bunny CDN, αλλά η λίστα με τις διευθύνσεις του Bunny δεν μπόρεσε να κατέβει. Μέχρι να κατέβει, η κεφαλίδα δεν γίνεται δεκτή. Θα ξαναδοκιμάσει αύριο, ή πατήστε «Ανανέωση τώρα» στις «Επίσημες λίστες IP»."
+
+#: includes/class-pncp-admin.php:1670
+msgid "Some IP lists could not be downloaded; their previous version was kept. It will try again tomorrow."
+msgstr "Κάποιες λίστες IP δεν κατέβηκαν· κρατήθηκε η προηγούμενη εκδοχή τους. Θα ξαναδοκιμάσει αύριο."
+
+#: includes/class-pncp-admin.php:1671
+msgid "The action was not completed."
+msgstr "Η ενέργεια δεν ολοκληρώθηκε."
+
+#: includes/class-pncp-admin.php:1682
+msgid "Since 2.1 the feed token is stored only as a hash. The old token is still valid but can no longer be shown. If you have not saved it, create a new token."
+msgstr "Από την 2.1 το token των feeds αποθηκεύεται μόνο ως hash. Το παλιό token εξακολουθεί να ισχύει, αλλά δεν μπορεί πλέον να εμφανιστεί. Αν δεν το έχετε αποθηκευμένο, δημιουργήστε νέο token."
+
+#: includes/class-pncp-admin.php:1684
+msgid "Feeds and token"
+msgstr "Feeds και token"
+
+#: includes/class-pncp-admin.php:1690
+msgid "ScrapeLock: the real IP is read from a header without checking the proxy (as in 1.4). This allows IP spoofing."
+msgstr "Προστασία περιεχομένου: η πραγματική IP διαβάζεται από header χωρίς έλεγχο του proxy (όπως στην 1.4). Αυτό επιτρέπει πλαστογράφηση της IP."
+
+#: includes/class-pncp-admin.php:1692
+msgid "Trusted Proxy settings"
+msgstr "Ρύθμιση Trusted Proxy"
+
+#: includes/class-pncp-bots.php:180
+msgid "Sorry, you are not allowed to list users."
+msgstr "Δεν επιτρέπεται η προβολή της λίστας χρηστών."
+
+#: includes/class-pncp-bots.php:200
+#: includes/class-pncp-bots.php:894
+#: includes/class-pncp-graphql.php:61
 msgid "Too many requests. Please try again in a minute."
 msgstr "Πάρα πολλά αιτήματα. Δοκιμάστε ξανά σε ένα λεπτό."
 
-#: includes/class-pncp-bots.php:122 includes/class-pncp-bots.php:530 includes/class-pncp-graphql.php:61
+#: includes/class-pncp-bots.php:200
+#: includes/class-pncp-bots.php:896
+#: includes/class-pncp-graphql.php:61
 msgid "Access denied."
 msgstr "Η πρόσβαση δεν επιτρέπεται."
 
-#: includes/class-pncp-bots.php:558
+#: includes/class-pncp-bots.php:945
 msgid "Archive"
 msgstr "Αρχείο"
 
-#: includes/class-pncp-status.php:120 includes/class-pncp-status.php:159 includes/class-pncp-admin.php:1174
-msgid "You are not allowed to change this setting."
-msgstr "Δεν έχετε δικαίωμα να αλλάξετε αυτή τη ρύθμιση."
+#. translators: 1: site name, 2: article link
+#: includes/class-pncp-feed.php:84
+#, php-format
+msgid "Read the full article at %1$s: %2$s"
+msgstr "Διαβάστε το πλήρες άρθρο στο %1$s: %2$s"
+
+#. translators: 1: article link, 2: site link
+#: includes/class-pncp-feed.php:106
+#, php-format
+msgid "The post %1$s first appeared on %2$s."
+msgstr "Το άρθρο %1$s δημοσιεύτηκε πρώτα στο %2$s."
+
+#. translators: %s: site name
+#: includes/class-pncp-feed.php:141
+#, php-format
+msgid "Read the full article at %s"
+msgstr "Διαβάστε το πλήρες άρθρο στο %s"
+
+#: includes/class-pncp-feed.php:153
+msgid "The feeds of this site are disabled."
+msgstr "Τα feeds αυτού του site είναι απενεργοποιημένα."
+
+#: includes/class-pncp-feed.php:154
+msgid "Unavailable"
+msgstr "Μη διαθέσιμο"
+
+#: includes/class-pncp-frontend.php:181
+msgid "Source"
+msgstr "Πηγή"
+
+#: includes/class-pncp-frontend.php:182
+msgid "Printing this page is not allowed."
+msgstr "Η εκτύπωση αυτής της σελίδας δεν επιτρέπεται."
+
+#: includes/class-pncp-log.php:136
+msgid "User-Agent in the bot list"
+msgstr "User-Agent στη λίστα bots"
+
+#: includes/class-pncp-log.php:137
+msgid "No User-Agent"
+msgstr "Χωρίς User-Agent"
+
+#: includes/class-pncp-log.php:138
+msgid "Fake search engine"
+msgstr "Ψεύτικη μηχανή αναζήτησης"
+
+#: includes/class-pncp-log.php:139
+msgid "Fake AI search bot"
+msgstr "Ψεύτικο AI bot αναζήτησης"
+
+#: includes/class-pncp-log.php:140
+msgid "No browser headers"
+msgstr "Χωρίς headers browser"
+
+#: includes/class-pncp-log.php:141
+msgid "Headless browser"
+msgstr "Headless browser"
+
+#: includes/class-pncp-log.php:142
+msgid "Fake browser"
+msgstr "Ψεύτικος browser"
+
+#: includes/class-pncp-log.php:143
+msgid "Page limit"
+msgstr "Όριο σελίδων"
+
+#: includes/class-pncp-log.php:144
+msgid "Search limit"
+msgstr "Όριο αναζητήσεων"
+
+#: includes/class-pncp-log.php:145
+msgid "REST / GraphQL limit"
+msgstr "Όριο REST / GraphQL"
+
+#: includes/class-pncp-log.php:146
+msgid "Sitemap limit"
+msgstr "Όριο sitemap"
+
+#: includes/class-pncp-log.php:147
+msgid "Page limit for unverified visitors"
+msgstr "Όριο σελίδων για μη επαληθευμένους επισκέπτες"
+
+#: includes/class-pncp-log.php:148
+msgid "Blocked country"
+msgstr "Αποκλεισμένη χώρα"
+
+#: includes/class-pncp-log.php:149
+msgid "Page limit for the stricter countries"
+msgstr "Όριο σελίδων για τις χώρες με αυστηρότερο όριο"
+
+#: includes/class-pncp-log.php:150
+msgid "“Page not found” limit"
+msgstr "Όριο «η σελίδα δεν βρέθηκε»"
+
+#: includes/class-pncp-log.php:151
+msgid "IP in the always-blocked list"
+msgstr "IP στη λίστα «πάντα αποκλεισμένες»"
+
+#: includes/class-pncp-log.php:152
+msgid "Referrer in the always-blocked list"
+msgstr "Referrer στη λίστα «πάντα αποκλεισμένοι»"
+
+#: includes/class-pncp-log.php:154
+msgid "New temporary block"
+msgstr "Νέος προσωρινός αποκλεισμός"
+
+#: includes/class-pncp-log.php:155
+msgid "Request from a blocked IP"
+msgstr "Αίτημα από αποκλεισμένη IP"
+
+#: includes/class-pncp-log.php:156
+msgid "Private URL without token"
+msgstr "Ιδιωτικό URL χωρίς token"
+
+#: includes/class-pncp-log.php:651
+msgid "To protect content from automated copying, when a request is blocked we record the IP address, the browser's User-Agent, the page and the time. This data is deleted automatically after a few days and is not used for any other purpose."
+msgstr "Για την προστασία του περιεχομένου από αυτοματοποιημένη αντιγραφή, όταν ένα αίτημα μπλοκάρεται καταγράφουμε τη διεύθυνση IP, το User-Agent του browser, τη σελίδα και την ώρα. Τα στοιχεία αυτά διαγράφονται αυτόματα μετά από λίγες ημέρες και δεν χρησιμοποιούνται για άλλο σκοπό."
+
+#: includes/class-pncp-options.php:324
+msgid "The content of this page is protected."
+msgstr "Το περιεχόμενο αυτής της σελίδας προστατεύεται."
+
+#: includes/class-pncp-rules.php:306
+msgid "Scrapers and AI bots"
+msgstr "Scrapers και AI bots"
+
+#: includes/class-pncp-rules.php:313
+msgid "Fake Googlebot / Bingbot (not a verified Cloudflare bot)"
+msgstr "Ψεύτικα Googlebot / Bingbot (όχι από επαληθευμένο bot του Cloudflare)"
+
+#: includes/class-pncp-rules.php:323
+msgid "Image hotlinking"
+msgstr "Hotlink εικόνων"
+
+#: includes/class-pncp-rules.php:331
+msgid "Clean originals folder"
+msgstr "Φάκελος καθαρών πρωτοτύπων"
+
+#. translators: %d: pages per minute
+#: includes/class-pncp-rules.php:341
+#, php-format
+msgid "Rate limiting: %d requests per minute per IP (Rate limiting rules, characteristic: IP)"
+msgstr "Rate limiting: %d αιτήματα ανά λεπτό ανά IP (Rate limiting rules, χαρακτηριστικό: IP)"
+
+#: includes/class-pncp-rules.php:344
+msgid "Block · period 1 minute (on the free plan: 10 sec, with limit / 6)"
+msgstr "Block · περίοδος 1 λεπτό (στο δωρεάν πλάνο: 10 δευτ., με όριο / 6)"
+
+#: includes/class-pncp-rules.php:350
+msgid "AI crawlers declared by Cloudflare (category “AI Crawler”)"
+msgstr "AI crawlers που δηλώνει το Cloudflare (κατηγορία «AI Crawler»)"
 
 #: includes/class-pncp-status.php:132
 msgid "Invalid request."
@@ -59,18 +1685,11 @@ msgstr "Το Emergency Mode σταμάτησε. Ισχύουν ξανά οι κ�
 msgid "Emergency Mode is on."
 msgstr "Emergency Mode σε λειτουργία."
 
+#. translators: %s: date and time
 #: includes/class-pncp-status.php:205
 #, php-format
 msgid "Stricter limits apply until %s."
 msgstr "Ισχύουν αυστηρότερα όρια μέχρι %s."
-
-#: includes/class-pncp-status.php:210 includes/class-pncp-admin.php:508
-msgid "End now"
-msgstr "Τέλος τώρα"
-
-#: includes/class-pncp-status.php:220 includes/class-pncp-admin.php:39 includes/class-pncp-admin.php:40 includes/class-pncp-admin.php:303 includes/class-pncp-log.php:549
-msgid "ScrapeLock"
-msgstr "ScrapeLock"
 
 #: includes/class-pncp-status.php:232
 msgid "Copy / right click on the page"
@@ -92,17 +1711,9 @@ msgstr "Μπλοκάρισμα scrapers / AI bots"
 msgid "Fake Googlebot / Bingbot"
 msgstr "Ψεύτικα Googlebot / Bingbot"
 
-#: includes/class-pncp-status.php:237 includes/class-pncp-admin.php:544 includes/class-pncp-log.php:143
-msgid "Bot trap"
-msgstr "Παγίδα για bots"
-
 #: includes/class-pncp-status.php:238
 msgid "Page limit per IP"
 msgstr "Όριο σελίδων ανά IP"
-
-#: includes/class-pncp-status.php:239 includes/class-pncp-admin.php:683
-msgid "Protected feeds"
-msgstr "Προστατευμένα feeds"
 
 #: includes/class-pncp-status.php:240
 msgid "No framing by other sites"
@@ -116,7 +1727,8 @@ msgstr "Δήλωση εξαίρεσης από AI (TDM)"
 msgid "Image watermark"
 msgstr "Υδατογράφημα εικόνων"
 
-#: includes/class-pncp-status.php:261 includes/class-pncp-status.php:330
+#: includes/class-pncp-status.php:261
+#: includes/class-pncp-status.php:330
 msgid "Protection is disabled"
 msgstr "Η προστασία είναι απενεργοποιημένη"
 
@@ -124,10 +1736,12 @@ msgstr "Η προστασία είναι απενεργοποιημένη"
 msgid "Emergency Mode is active"
 msgstr "Emergency Mode σε λειτουργία"
 
-#: includes/class-pncp-status.php:265 includes/class-pncp-status.php:330
+#: includes/class-pncp-status.php:265
+#: includes/class-pncp-status.php:330
 msgid "The site is protected"
 msgstr "Το site προστατεύεται"
 
+#. translators: 1: requests, 2: active bans
 #: includes/class-pncp-status.php:276
 #, php-format
 msgid "Last 24 hours: %1$s blocked requests · %2$s IPs blocked now"
@@ -141,21 +1755,15 @@ msgstr "(ενεργό)"
 msgid "(off)"
 msgstr "(ανενεργό)"
 
-#: includes/class-pncp-status.php:295 includes/class-pncp-status.php:338
+#: includes/class-pncp-status.php:295
+#: includes/class-pncp-status.php:338
 msgid "Disable…"
 msgstr "Απενεργοποίηση…"
 
-#: includes/class-pncp-status.php:297 includes/class-pncp-status.php:338
+#: includes/class-pncp-status.php:297
+#: includes/class-pncp-status.php:338
 msgid "Enable"
 msgstr "Ενεργοποίηση"
-
-#: includes/class-pncp-status.php:299 includes/class-pncp-status.php:356 includes/class-pncp-admin.php:101
-msgid "Settings"
-msgstr "Ρυθμίσεις"
-
-#: includes/class-pncp-status.php:300 includes/class-pncp-admin.php:117
-msgid "Log"
-msgstr "Αρχείο"
 
 #: includes/class-pncp-status.php:318
 msgid "Protection: EMERGENCY"
@@ -172,1262 +1780,3 @@ msgstr "Προστασία: OFF"
 #: includes/class-pncp-status.php:347
 msgid "End Emergency Mode"
 msgstr "Τέλος Emergency Mode"
-
-#: includes/class-pncp-options.php:284
-msgid "The content of this page is protected."
-msgstr "Το περιεχόμενο αυτής της σελίδας προστατεύεται."
-
-#: includes/class-pncp-admin.php:81
-msgid "All images in the library will be regenerated with a watermark. Do you have a backup of the uploads folder? Continue?"
-msgstr "Θα ξαναφτιαχτούν όλες οι εικόνες της βιβλιοθήκης με υδατογράφημα. Έχετε backup του φακέλου uploads; Συνέχεια;"
-
-#: includes/class-pncp-admin.php:82
-msgid "The watermark will be removed from all images. Continue?"
-msgstr "Θα αφαιρεθεί το υδατογράφημα από όλες τις εικόνες. Συνέχεια;"
-
-#: includes/class-pncp-admin.php:84
-#, php-format
-msgid "Processed %1$s of %2$s images…"
-msgstr "Επεξεργάστηκαν %1$s από %2$s εικόνες…"
-
-#: includes/class-pncp-admin.php:86
-#, php-format
-msgid "Done: %1$s images. Errors: %2$s."
-msgstr "Ολοκληρώθηκε: %1$s εικόνες. Σφάλματα: %2$s."
-
-#: includes/class-pncp-admin.php:87
-msgid "Stopped because of an error. Click the button again to resume where it stopped."
-msgstr "Διακοπή λόγω σφάλματος. Πατήστε ξανά το κουμπί για να συνεχίσει από εκεί που σταμάτησε."
-
-#: includes/class-pncp-admin.php:88
-msgid "Copied"
-msgstr "Αντιγράφηκε"
-
-#: includes/class-pncp-admin.php:112
-msgid "On the page"
-msgstr "Στη σελίδα"
-
-#: includes/class-pncp-admin.php:113
-msgid "Bots and limits"
-msgstr "Bots και όρια"
-
-#: includes/class-pncp-admin.php:114
-msgid "Feeds and API"
-msgstr "Feeds και API"
-
-#: includes/class-pncp-admin.php:115
-msgid "Images"
-msgstr "Εικόνες"
-
-#: includes/class-pncp-admin.php:116
-msgid "Server rules"
-msgstr "Κανόνες server"
-
-#: includes/class-pncp-admin.php:274
-msgid "Save changes"
-msgstr "Αποθήκευση αλλαγών"
-
-#: includes/class-pncp-admin.php:310
-msgid "Settings sections"
-msgstr "Ενότητες ρυθμίσεων"
-
-#: includes/class-pncp-admin.php:329
-msgid "Disable protection on the whole site?"
-msgstr "Να απενεργοποιηθεί η προστασία σε όλο το site;"
-
-#: includes/class-pncp-admin.php:330
-msgid "Until you enable it again, bots and visitors will be able to copy texts, images and feeds freely."
-msgstr "Μέχρι να την ενεργοποιήσετε ξανά, bots και επισκέπτες θα μπορούν να αντιγράφουν ελεύθερα κείμενα, εικόνες και feeds."
-
-#: includes/class-pncp-admin.php:334
-msgid "Yes, disable"
-msgstr "Ναι, απενεργοποίηση"
-
-#: includes/class-pncp-admin.php:335
-msgid "Cancel"
-msgstr "Ακύρωση"
-
-#: includes/class-pncp-admin.php:352
-msgid "Status"
-msgstr "Κατάσταση"
-
-#: includes/class-pncp-admin.php:353
-msgid "Protection is active"
-msgstr "Η προστασία είναι ενεργή"
-
-#: includes/class-pncp-admin.php:356
-msgid "Where it applies"
-msgstr "Πού εφαρμόζεται"
-
-#: includes/class-pncp-admin.php:359
-msgid "Posts"
-msgstr "Άρθρα"
-
-#: includes/class-pncp-admin.php:360
-msgid "Pages"
-msgstr "Σελίδες"
-
-#: includes/class-pncp-admin.php:361
-msgid "Home, categories, search and archives"
-msgstr "Αρχική, κατηγορίες, αναζήτηση και αρχεία"
-
-#: includes/class-pncp-admin.php:362
-msgid "WooCommerce products"
-msgstr "Προϊόντα WooCommerce"
-
-#: includes/class-pncp-admin.php:363
-msgid "Do not apply on cart, checkout and “My account”"
-msgstr "Να μην εφαρμόζεται σε καλάθι, ταμείο και «Ο λογαριασμός μου»"
-
-#: includes/class-pncp-admin.php:363
-msgid "Recommended: customers must be able to copy order numbers and coupon codes."
-msgstr "Συνιστάται: οι πελάτες πρέπει να μπορούν να αντιγράφουν αριθμό παραγγελίας και κωδικούς κουπονιών."
-
-#: includes/class-pncp-admin.php:368
-msgid "Exceptions"
-msgstr "Εξαιρέσεις"
-
-#: includes/class-pncp-admin.php:371
-msgid "Comma-separated page or post IDs, e.g. 12, 45. For a single piece of text (phone, email, code), give it the CSS class pncp-allow."
-msgstr "IDs σελίδων ή άρθρων χωρισμένα με κόμμα, π.χ. 12, 45. Για ένα μόνο κομμάτι κειμένου (τηλέφωνο, email, κωδικό), βάλτε του την CSS κλάση pncp-allow."
-
-#: includes/class-pncp-admin.php:375
-msgid "What is blocked"
-msgstr "Τι μπλοκάρεται"
-
-#: includes/class-pncp-admin.php:378
-msgid "Text selection with the mouse or finger"
-msgstr "Επιλογή κειμένου με το ποντίκι ή το δάχτυλο"
-
-#: includes/class-pncp-admin.php:379
-msgid "Right click"
-msgstr "Δεξί κλικ"
-
-#: includes/class-pncp-admin.php:380
-msgid "Shortcuts Ctrl/Cmd + A, C, X, S, U"
-msgstr "Συντομεύσεις Ctrl/Cmd + A, C, X, S, U"
-
-#: includes/class-pncp-admin.php:380
-msgid "Keyboard navigation (Tab, arrows, Enter) is never affected."
-msgstr "Η πλοήγηση με πληκτρολόγιο (Tab, βελάκια, Enter) δεν επηρεάζεται ποτέ."
-
-#: includes/class-pncp-admin.php:381
-msgid "Developer tools shortcuts (F12, Ctrl+Shift+I/J/C/K, Cmd+Opt+I/J/C/U)"
-msgstr "Συντομεύσεις εργαλείων προγραμματιστή (F12, Ctrl+Shift+I/J/C/K, Cmd+Opt+I/J/C/U)"
-
-#: includes/class-pncp-admin.php:381
-msgid "Cosmetic: it only blocks the shortcuts. It does not detect DevTools and does not “break” the page."
-msgstr "Κοσμητικό: κόβει μόνο τις συντομεύσεις. Δεν ανιχνεύει τα DevTools και δεν «σπάει» τη σελίδα."
-
-#: includes/class-pncp-admin.php:382
-msgid "Dragging images and “Save image” with a long press on mobile"
-msgstr "Σύρσιμο εικόνων και «Αποθήκευση εικόνας» με παρατεταμένο πάτημα στο κινητό"
-
-#: includes/class-pncp-admin.php:383
-msgid "Dragging selected text to another window"
-msgstr "Σύρσιμο επιλεγμένου κειμένου σε άλλο παράθυρο"
-
-#: includes/class-pncp-admin.php:384
-msgid "Blur the page when Print Screen or a screenshot shortcut is pressed"
-msgstr "Θόλωμα της σελίδας όταν πατηθεί Print Screen ή συντόμευση στιγμιότυπου οθόνης"
-
-#: includes/class-pncp-admin.php:384
-msgid "Optional. It only catches the shortcuts the browser sees (Print Screen, Win+Shift+S, Cmd+Shift+3/4/5). It does not stop tools outside the browser or a photo taken with a phone."
-msgstr "Προαιρετικό. Πιάνει μόνο τις συντομεύσεις που βλέπει ο browser (Print Screen, Win+Shift+S, Cmd+Shift+3/4/5). Δεν σταματά εργαλεία εκτός browser ή φωτογραφία με κινητό."
-
-#: includes/class-pncp-admin.php:389 includes/class-pncp-admin.php:395
-msgid "When someone copies"
-msgstr "Όταν κάποιος αντιγράφει"
-
-#: includes/class-pncp-admin.php:397
-msgid "Block copying"
-msgstr "Να μπλοκάρεται η αντιγραφή"
-
-#: includes/class-pncp-admin.php:398
-msgid "Allow, with the source and link appended at the end"
-msgstr "Να επιτρέπεται, με την πηγή και τον σύνδεσμο προσαρτημένα στο τέλος"
-
-#: includes/class-pncp-admin.php:399
-msgid "Allow normally"
-msgstr "Να επιτρέπεται κανονικά"
-
-#: includes/class-pncp-admin.php:402
-msgid "Append the source from this many characters and up:"
-msgstr "Η πηγή προσαρτάται από τόσους χαρακτήρες και πάνω:"
-
-#: includes/class-pncp-admin.php:402
-msgid "Shorter snippets (e.g. a word or a phone number) are copied without the source. 0 = always."
-msgstr "Μικρότερα αποσπάσματα (π.χ. μια λέξη ή ένα τηλέφωνο) αντιγράφονται χωρίς πηγή. 0 = πάντα."
-
-#: includes/class-pncp-admin.php:404
-msgid "The source option makes sense when text selection is allowed."
-msgstr "Η επιλογή με την πηγή έχει νόημα όταν η επιλογή κειμένου είναι ανοιχτή."
-
-#: includes/class-pncp-admin.php:408 includes/class-pncp-admin.php:414
-msgid "Printing"
-msgstr "Εκτύπωση"
-
-#: includes/class-pncp-admin.php:416
-msgid "Allowed, with the page link at the bottom (recommended)"
-msgstr "Επιτρέπεται, με τον σύνδεσμο της σελίδας στο κάτω μέρος (συνιστάται)"
-
-#: includes/class-pncp-admin.php:417
-msgid "Allowed normally"
-msgstr "Επιτρέπεται κανονικά"
-
-#: includes/class-pncp-admin.php:418
-msgid "Not allowed"
-msgstr "Δεν επιτρέπεται"
-
-#: includes/class-pncp-admin.php:425
-msgid "Who is excluded"
-msgstr "Ποιοι εξαιρούνται"
-
-#: includes/class-pncp-admin.php:432
-msgid "Logged-in authors and administrators"
-msgstr "Συνδεδεμένοι συντάκτες και διαχειριστές"
-
-#: includes/class-pncp-admin.php:433
-msgid "Logged-in editors and administrators"
-msgstr "Συνδεδεμένοι αρχισυντάκτες και διαχειριστές"
-
-#: includes/class-pncp-admin.php:434
-msgid "Administrators only"
-msgstr "Μόνο οι διαχειριστές"
-
-#: includes/class-pncp-admin.php:435
-msgid "Nobody (for testing the protection)"
-msgstr "Κανείς (για δοκιμή της προστασίας)"
-
-#: includes/class-pncp-admin.php:437
-msgid "Applies to the on-page protection and to the server checks (bots, limits, blocks). Customers with an account are not excluded."
-msgstr "Ισχύει για την προστασία στη σελίδα και για τους ελέγχους στον server (bots, όρια, αποκλεισμοί). Πελάτες με λογαριασμό δεν εξαιρούνται."
-
-#: includes/class-pncp-admin.php:443
-msgid "Message to the visitor"
-msgstr "Μήνυμα στον επισκέπτη"
-
-#: includes/class-pncp-admin.php:445
-msgid "Show a message when something is blocked"
-msgstr "Να εμφανίζεται μήνυμα όταν μπλοκάρεται κάτι"
-
-#: includes/class-pncp-admin.php:446
-msgid "Message text"
-msgstr "Κείμενο μηνύματος"
-
-#: includes/class-pncp-admin.php:451
-msgid "Iframe and AI"
-msgstr "Iframe και AI"
-
-#: includes/class-pncp-admin.php:454
-msgid "Pages do not open inside another site's iframe"
-msgstr "Οι σελίδες δεν ανοίγουν μέσα σε iframe άλλου site"
-
-#: includes/class-pncp-admin.php:454
-msgid "X-Frame-Options and CSP frame-ancestors headers. WordPress embeds (oEmbed) keep working."
-msgstr "Headers X-Frame-Options και CSP frame-ancestors. Τα embeds του WordPress (oEmbed) συνεχίζουν να λειτουργούν."
-
-#: includes/class-pncp-admin.php:455
-msgid "Opt-out declaration from AI training and text and data mining (TDM)"
-msgstr "Δήλωση εξαίρεσης από εκπαίδευση AI και εξόρυξη κειμένου (TDM)"
-
-#: includes/class-pncp-admin.php:455
-msgid "tdm-reservation header and meta, /.well-known/tdmrep.json and noai/noimageai. Legal basis: Directive (EU) 2019/790, Article 4(3): reservation of rights in a machine-readable format."
-msgstr "Header και meta tdm-reservation, /.well-known/tdmrep.json και noai/noimageai. Νομική βάση: Οδηγία (ΕΕ) 2019/790, άρθρο 4 παρ. 3 (ν. 4996/2022): η επιφύλαξη δικαιωμάτων σε μηχαναγνώσιμη μορφή."
-
-#: includes/class-pncp-admin.php:457
-msgid "Page with the licensing terms (optional):"
-msgstr "Σελίδα με τους όρους αδειοδότησης (προαιρετικό):"
-
-#: includes/class-pncp-admin.php:473
-msgid "Balanced"
-msgstr "Ισορροπημένο"
-
-#: includes/class-pncp-admin.php:473
-msgid "Copy with source, limit 60 pages/minute, block after 3 violations. For most sites."
-msgstr "Αντιγραφή με πηγή, όριο 60 σελίδες/λεπτό, αποκλεισμός μετά από 3 παραβάσεις. Για τα περισσότερα sites."
-
-#: includes/class-pncp-admin.php:474
-msgid "Strict"
-msgstr "Αυστηρό"
-
-#: includes/class-pncp-admin.php:474
-msgid "No text selection or copying, limit 40 pages/minute, 3-hour block after 2 violations."
-msgstr "Χωρίς επιλογή και αντιγραφή κειμένου, όριο 40 σελίδες/λεπτό, αποκλεισμός 3 ωρών μετά από 2 παραβάσεις."
-
-#: includes/class-pncp-admin.php:475
-msgid "Maximum"
-msgstr "Μέγιστο"
-
-#: includes/class-pncp-admin.php:475
-msgid "Also no printing and no RSS, browsers only, blur on screenshot, limit 30/minute, 12-hour block after 2 violations. May annoy some visitors."
-msgstr "Και χωρίς εκτύπωση και RSS, μόνο browsers, θόλωμα σε screenshot, όριο 30/λεπτό, αποκλεισμός 12 ωρών μετά από 2 παραβάσεις. Μπορεί να ενοχλήσει κάποιους επισκέπτες."
-
-#: includes/class-pncp-admin.php:481
-msgid "Presets"
-msgstr "Έτοιμα προφίλ"
-
-#: includes/class-pncp-admin.php:482
-msgid "One click changes the protection and limit settings. Lists, feeds, IPs and watermark do not change. You can adjust anything afterwards."
-msgstr "Ένα κλικ αλλάζει τις ρυθμίσεις προστασίας και ορίων. Λίστες, feeds, IP και υδατογράφημα δεν αλλάζουν. Μετά μπορείτε να προσαρμόσετε ό,τι θέλετε."
-
-#: includes/class-pncp-admin.php:483
-msgid "Current:"
-msgstr "Τώρα:"
-
-#: includes/class-pncp-admin.php:483
-msgid "Custom"
-msgstr "Προσαρμοσμένο"
-
-#: includes/class-pncp-admin.php:494
-msgid "Emergency Mode"
-msgstr "Emergency Mode"
-
-#: includes/class-pncp-admin.php:495
-msgid "For a scraping attack in progress: browsers only, limit 20 pages/minute, 6-hour block after 2 violations, REST/GraphQL without content. Your settings do not change: when it ends, they apply again as they were."
-msgstr "Για επίθεση scraping σε εξέλιξη: μόνο browsers, όριο 20 σελίδες/λεπτό, αποκλεισμός 6 ωρών μετά από 2 παραβάσεις, REST/GraphQL χωρίς κείμενο. Οι ρυθμίσεις σας δεν αλλάζουν: στη λήξη ισχύουν ξανά όπως ήταν."
-
-#: includes/class-pncp-admin.php:502
-#, php-format
-msgid "Active until %s."
-msgstr "Σε λειτουργία μέχρι %s."
-
-#: includes/class-pncp-admin.php:512
-msgid "Duration:"
-msgstr "Διάρκεια:"
-
-#: includes/class-pncp-admin.php:514
-msgid "1 hour"
-msgstr "1 ώρα"
-
-#: includes/class-pncp-admin.php:515
-msgid "6 hours"
-msgstr "6 ώρες"
-
-#: includes/class-pncp-admin.php:516
-msgid "24 hours"
-msgstr "24 ώρες"
-
-#: includes/class-pncp-admin.php:517
-msgid "3 days"
-msgstr "3 ημέρες"
-
-#: includes/class-pncp-admin.php:519
-msgid "Start Emergency Mode"
-msgstr "Έναρξη Emergency Mode"
-
-#: includes/class-pncp-admin.php:537 includes/class-pncp-rules.php:297
-msgid "Scrapers and AI bots"
-msgstr "Scrapers και AI bots"
-
-#: includes/class-pncp-admin.php:540
-msgid "Block (403) the User-Agents in the list"
-msgstr "Μπλοκάρισμα (403) των User-Agents της λίστας"
-
-#: includes/class-pncp-admin.php:541
-msgid "Block requests without a User-Agent"
-msgstr "Μπλοκάρισμα αιτημάτων χωρίς User-Agent"
-
-#: includes/class-pncp-admin.php:542
-msgid "Block fake Googlebot, Bingbot, Applebot and Yandex"
-msgstr "Μπλοκάρισμα ψεύτικων Googlebot, Bingbot, Applebot και Yandex"
-
-#: includes/class-pncp-admin.php:542
-msgid "The IP is checked against the official Google and Bing lists and with reverse DNS. Real search engines always pass, without limits."
-msgstr "Η IP ελέγχεται με τις επίσημες λίστες της Google και της Bing και με reverse DNS. Οι πραγματικές μηχανές αναζήτησης περνούν πάντα, χωρίς όριο."
-
-#: includes/class-pncp-admin.php:543
-msgid "Browsers only: 403 for pages without Accept-Language or without “Mozilla/” in the User-Agent"
-msgstr "Μόνο browsers: 403 σε σελίδες χωρίς Accept-Language ή χωρίς «Mozilla/» στο User-Agent"
-
-#: includes/class-pncp-admin.php:543
-msgid "Stops most scripts. Link previews (Facebook, Viber, WhatsApp etc.) in the “Always allowed” list pass."
-msgstr "Κόβει τα περισσότερα scripts. Τα previews συνδέσμων (Facebook, Viber, WhatsApp κ.ά.) της λίστας «Πάντα επιτρεπτά» περνούν."
-
-#: includes/class-pncp-admin.php:544
-msgid "Invisible link on every page, disallowed in robots.txt. Whoever opens it is blocked temporarily, even if it pretends to be a browser. Visitors do not see it, and another site cannot trap them."
-msgstr "Αόρατος σύνδεσμος σε κάθε σελίδα, απαγορευμένος στο robots.txt. Όποιος τον ανοίγει αποκλείεται προσωρινά, ακόμη κι αν παριστάνει browser. Οι επισκέπτες δεν τον βλέπουν και ένα ξένο site δεν μπορεί να τους παγιδεύσει."
-
-#: includes/class-pncp-admin.php:545
-msgid "User-Agents to block (one per line, matches anywhere in the User-Agent, case-insensitive):"
-msgstr "Λίστα User-Agents που μπλοκάρονται (ένα ανά γραμμή, ταιριάζει οπουδήποτε στο User-Agent, χωρίς διάκριση πεζών/κεφαλαίων):"
-
-#: includes/class-pncp-admin.php:545
-msgid "It contains two AI categories: training crawlers (GPTBot, ClaudeBot, CCBot, Google-Extended etc.) and AI search / assistants (OAI-SearchBot, ChatGPT-User, Claude-SearchBot, PerplexityBot etc.). You can allow the second one with the option below."
-msgstr "Περιέχει δύο κατηγορίες AI: crawlers εκπαίδευσης (GPTBot, ClaudeBot, CCBot, Google-Extended κ.ά.) και AI αναζήτηση / βοηθούς (OAI-SearchBot, ChatGPT-User, Claude-SearchBot, PerplexityBot κ.ά.). Τη δεύτερη μπορείτε να την επιτρέψετε με την επιλογή από κάτω."
-
-#: includes/class-pncp-admin.php:546
-msgid "Allow AI search engines and assistants (not training crawlers)"
-msgstr "Επιτρέπονται οι AI μηχανές αναζήτησης και βοηθοί (όχι οι crawlers εκπαίδευσης)"
-
-#: includes/class-pncp-admin.php:546
-#, php-format
-msgid "So the site appears in AI search answers with a link, without being given for model training. Allowed: %s. They are also removed from the robots.txt Disallow and from the server rules. The page limit still applies, because the User-Agent can be spoofed."
-msgstr "Για να εμφανίζεται το site στις απαντήσεις AI αναζήτησης με σύνδεσμο, χωρίς να δίνεται για εκπαίδευση μοντέλων. Επιτρέπονται: %s. Βγαίνουν και από το Disallow του robots.txt και από τους κανόνες server. Το όριο σελίδων ισχύει κανονικά, γιατί το User-Agent πλαστογραφείται."
-
-#: includes/class-pncp-admin.php:547
-msgid "Always allowed User-Agents (link previews, price comparison platforms, monitoring):"
-msgstr "Πάντα επιτρεπτά User-Agents (previews συνδέσμων, πλατφόρμες τιμών, monitoring):"
-
-#: includes/class-pncp-admin.php:547
-msgid "They override the bot list and “Browsers only”. The page limit applies to them too, because the User-Agent is easy to spoof. To accept an entry only from specific IPs, add @ and the addresses, e.g. Skroutz@203.0.113.0/24."
-msgstr "Υπερισχύουν της λίστας bots και του «Μόνο browsers». Το όριο σελίδων ισχύει και για αυτούς, γιατί το User-Agent πλαστογραφείται εύκολα. Για να γίνεται δεκτή μια γραμμή μόνο από συγκεκριμένες IP, προσθέστε @ και τις διευθύνσεις, π.χ. Skroutz@203.0.113.0/24."
-
-#: includes/class-pncp-admin.php:548
-msgid "Always allowed IPs / CIDR (office, ERP, monitoring), one per line:"
-msgstr "Πάντα επιτρεπτές IP / CIDR (γραφείο, ERP, monitoring), μία ανά γραμμή:"
-
-#: includes/class-pncp-admin.php:548
-msgid "They are never checked, never count towards limits and are never blocked."
-msgstr "Δεν ελέγχονται, δεν μετρούν στα όρια και δεν αποκλείονται ποτέ."
-
-#: includes/class-pncp-admin.php:549
-msgid "Declare AI crawlers in robots.txt (Disallow)"
-msgstr "Δήλωση των AI crawlers στο robots.txt (Disallow)"
-
-#: includes/class-pncp-admin.php:549
-msgid "Applies to the virtual robots.txt of WordPress. If a physical robots.txt file exists, it takes precedence."
-msgstr "Ισχύει για το εικονικό robots.txt του WordPress. Αν υπάρχει φυσικό αρχείο robots.txt, αυτό έχει προτεραιότητα."
-
-#: includes/class-pncp-admin.php:554
-msgid "Limits per IP"
-msgstr "Όρια ανά IP"
-
-#: includes/class-pncp-admin.php:557
-msgid "Pages per minute (0 = off):"
-msgstr "Σελίδες ανά λεπτό (0 = ανενεργό):"
-
-#: includes/class-pncp-admin.php:557
-msgid "Starting value: 60. Above the limit it returns 429. Be careful with networks that share an IP (companies, mobile carriers) and with CDNs: set the “Real visitor IP” correctly first."
-msgstr "Τιμή εκκίνησης: 60. Πάνω από το όριο απαντά 429. Προσοχή σε δίκτυα με κοινή IP (εταιρείες, κινητή τηλεφωνία) και σε CDN: ορίστε πρώτα σωστά την «Πραγματική IP επισκέπτη»."
-
-#: includes/class-pncp-admin.php:558
-msgid "Searches (?s=) per minute (0 = off):"
-msgstr "Αναζητήσεις (?s=) ανά λεπτό (0 = ανενεργό):"
-
-#: includes/class-pncp-admin.php:558
-msgid "Search is heavy for the server and a favourite of scrapers. Starting value: 20."
-msgstr "Η αναζήτηση είναι βαριά για τον server και αγαπημένη των scrapers. Τιμή εκκίνησης: 20."
-
-#: includes/class-pncp-admin.php:559
-msgid "REST API (/wp-json/) and GraphQL requests per minute (0 = off):"
-msgstr "Αιτήματα REST API (/wp-json/) και GraphQL ανά λεπτό (0 = ανενεργό):"
-
-#: includes/class-pncp-admin.php:559
-msgid "Only read requests from visitors. Cart, checkout and forms (POST) do not count. Starting value: 60."
-msgstr "Μόνο αιτήματα ανάγνωσης από επισκέπτες. Καλάθι, ταμείο και φόρμες (POST) δεν μετράνε. Τιμή εκκίνησης: 60."
-
-#: includes/class-pncp-admin.php:564
-msgid "Temporary block"
-msgstr "Προσωρινός αποκλεισμός"
-
-#: includes/class-pncp-admin.php:567
-msgid "Block after this many violations within 10 minutes (0 = never):"
-msgstr "Αποκλεισμός μετά από τόσες παραβάσεις μέσα σε 10 λεπτά (0 = ποτέ):"
-
-#: includes/class-pncp-admin.php:567
-msgid "Violation: every minute in which the IP exceeded a limit, and every fake Googlebot. The trap blocks immediately."
-msgstr "Παράβαση: κάθε λεπτό που η IP ξεπέρασε ένα όριο, και κάθε ψεύτικο Googlebot. Η παγίδα αποκλείει αμέσως."
-
-#: includes/class-pncp-admin.php:568
-msgid "Block duration (minutes):"
-msgstr "Διάρκεια αποκλεισμού (λεπτά):"
-
-#: includes/class-pncp-admin.php:570
-msgid "Keep the block log for:"
-msgstr "Διατήρηση αρχείου αποκλεισμών:"
-
-#: includes/class-pncp-admin.php:576 includes/class-pncp-admin.php:800
-msgid "1 day"
-msgstr "1 ημέρα"
-
-#: includes/class-pncp-admin.php:577 includes/class-pncp-admin.php:801
-msgid "7 days"
-msgstr "7 ημέρες"
-
-#: includes/class-pncp-admin.php:578 includes/class-pncp-admin.php:802
-msgid "30 days"
-msgstr "30 ημέρες"
-
-#: includes/class-pncp-admin.php:580
-msgid "The log keeps IP and User-Agent, i.e. personal data (GDPR). It is deleted automatically."
-msgstr "Το αρχείο κρατά IP και User-Agent, δηλαδή προσωπικά δεδομένα (GDPR). Σβήνεται αυτόματα."
-
-#: includes/class-pncp-admin.php:587
-msgid "Real visitor IP"
-msgstr "Πραγματική IP επισκέπτη"
-
-#: includes/class-pncp-admin.php:594
-msgid "REMOTE_ADDR (no CDN/proxy)"
-msgstr "REMOTE_ADDR (χωρίς CDN/proxy)"
-
-#: includes/class-pncp-admin.php:600
-msgid "Behind a CDN or reverse proxy all visitors appear with the CDN's IP. Choose the header with the real IP."
-msgstr "Πίσω από CDN ή reverse proxy όλοι οι επισκέπτες φαίνονται με την IP του CDN. Επιλέξτε το header με την πραγματική IP."
-
-#: includes/class-pncp-admin.php:603
-msgid "Trusted Proxy:"
-msgstr "Trusted Proxy:"
-
-#: includes/class-pncp-admin.php:603
-msgid "the header is read only when the request comes from a proxy you trust. Otherwise anyone could write any IP they want and bypass limits and blocks. CF-Connecting-IP: only from Cloudflare. X-Real-IP / X-Forwarded-For: also from the server itself or a private network (Nginx in front of Apache). True-Client-IP: only from the proxies in the list."
-msgstr "το header διαβάζεται μόνο όταν το αίτημα έρχεται από proxy που εμπιστεύεστε. Αλλιώς ο καθένας θα μπορούσε να γράψει όποια IP θέλει και να παρακάμψει όρια και αποκλεισμούς. CF-Connecting-IP: μόνο από το Cloudflare. X-Real-IP / X-Forwarded-For: και από τον ίδιο τον server ή ιδιωτικό δίκτυο (Nginx μπροστά από τον Apache). True-Client-IP: μόνο από τους proxies της λίστας."
-
-#: includes/class-pncp-admin.php:605
-msgid "Trust Cloudflare addresses"
-msgstr "Αξιόπιστες οι διευθύνσεις του Cloudflare"
-
-#: includes/class-pncp-admin.php:605
-msgid "The official Cloudflare list is refreshed every day."
-msgstr "Η επίσημη λίστα του Cloudflare ανανεώνεται κάθε μέρα."
-
-#: includes/class-pncp-admin.php:608
-msgid "Trust every request (1.4 behaviour, insecure)"
-msgstr "Εμπιστοσύνη σε κάθε αίτημα (συμπεριφορά της 1.4, μη ασφαλής)"
-
-#: includes/class-pncp-admin.php:608
-msgid "On because this is how version 1.4 worked. Fill in your proxies below and uncheck it. Once turned off, it cannot be turned on again."
-msgstr "Ενεργή γιατί έτσι δούλευε η έκδοση 1.4. Συμπληρώστε τους proxies σας παρακάτω και ξετσεκάρετέ την. Αφού κλείσει, δεν ξανανοίγει."
-
-#: includes/class-pncp-admin.php:611
-msgid "Other trusted proxies / load balancers (IP or CIDR, one per line):"
-msgstr "Άλλοι αξιόπιστοι proxies / load balancers (IP ή CIDR, μία ανά γραμμή):"
-
-#: includes/class-pncp-admin.php:615
-msgid "What the server sees on this request:"
-msgstr "Τι βλέπει ο server σε αυτό το αίτημα:"
-
-#: includes/class-pncp-admin.php:622
-msgid "Trusted proxy:"
-msgstr "Αξιόπιστος proxy:"
-
-#: includes/class-pncp-admin.php:622
-msgid "yes"
-msgstr "ναι"
-
-#: includes/class-pncp-admin.php:622
-msgid "no"
-msgstr "όχι"
-
-#: includes/class-pncp-admin.php:623
-msgid "IP the plugin uses now:"
-msgstr "IP που χρησιμοποιεί τώρα το plugin:"
-
-#: includes/class-pncp-admin.php:644
-msgid "Official IP lists"
-msgstr "Επίσημες λίστες IP"
-
-#: includes/class-pncp-admin.php:651
-msgid "built-in list (not downloaded yet)"
-msgstr "ενσωματωμένη λίστα (δεν έχει κατέβει ακόμη)"
-
-#: includes/class-pncp-admin.php:651
-msgid "not downloaded yet, only DNS is used"
-msgstr "δεν έχει κατέβει ακόμη, χρησιμοποιείται μόνο DNS"
-
-#: includes/class-pncp-admin.php:656
-#, php-format
-msgid "%1$s addresses, updated %2$s"
-msgstr "%1$s διευθύνσεις, ενημέρωση %2$s"
-
-#: includes/class-pncp-admin.php:668
-msgid "Refresh now"
-msgstr "Ανανέωση τώρα"
-
-#: includes/class-pncp-admin.php:686
-msgid "Paths that are not public (one per line, * means “anything”), e.g. /skroutz.xml, /feeds/*.xml:"
-msgstr "Διαδρομές που δεν είναι δημόσιες (μία ανά γραμμή, το * σημαίνει «οτιδήποτε»), π.χ. /skroutz.xml, /feeds/*.xml:"
-
-#: includes/class-pncp-admin.php:687
-msgid "Or allowed IPs / CIDR of the service (one per line):"
-msgstr "Ή επιτρεπόμενες IP / CIDR της υπηρεσίας (μία ανά γραμμή):"
-
-#: includes/class-pncp-admin.php:687
-msgid "Without a valid token or an allowed IP it returns 403. Applies to feeds generated by PHP. For static .xml files see the “Server rules” tab."
-msgstr "Χωρίς σωστό token ή επιτρεπόμενη IP απαντά 403. Ισχύει για feeds που φτιάχνει η PHP. Για στατικά αρχεία .xml δείτε την καρτέλα «Κανόνες server»."
-
-#: includes/class-pncp-admin.php:692
-msgid "REST API"
-msgstr "REST API"
-
-#: includes/class-pncp-admin.php:694
-msgid "Hide the text (content, excerpt) of posts, pages and products from visitors"
-msgstr "Κρύψιμο του κειμένου (content, excerpt) των άρθρων, σελίδων και προϊόντων από επισκέπτες"
-
-#: includes/class-pncp-admin.php:694
-msgid "REST stays open for forms, oEmbed, SEO plugins and your own endpoints. Users who can write posts see the text normally. Exceptions from code: filter pncp_rest_hide_content."
-msgstr "Το REST μένει ανοιχτό για φόρμες, oEmbed, SEO plugins και δικά σας endpoints. Όσοι μπορούν να γράψουν άρθρα βλέπουν κανονικά το κείμενο. Εξαιρέσεις από κώδικα: φίλτρο pncp_rest_hide_content."
-
-#: includes/class-pncp-admin.php:698
-msgid "GraphQL"
-msgstr "GraphQL"
-
-#: includes/class-pncp-admin.php:701
-msgid "Hide the text in WPGraphQL (content, excerpt, product descriptions)"
-msgstr "Κρύψιμο του κειμένου στο WPGraphQL (content, excerpt, περιγραφές προϊόντων)"
-
-#: includes/class-pncp-admin.php:702
-msgid "WPGraphQL is active: the bot check, blocks and the REST / GraphQL limit apply too."
-msgstr "Το WPGraphQL είναι ενεργό: ισχύουν και ο έλεγχος bots, οι αποκλεισμοί και το όριο REST / GraphQL."
-
-#: includes/class-pncp-admin.php:702
-msgid "WPGraphQL is not installed; the setting will apply if you install it."
-msgstr "Το WPGraphQL δεν είναι εγκατεστημένο· η ρύθμιση θα ισχύσει αν το εγκαταστήσετε."
-
-#: includes/class-pncp-admin.php:707 includes/class-pncp-admin.php:713
-msgid "RSS / Atom feeds"
-msgstr "RSS / Atom feeds"
-
-#: includes/class-pncp-admin.php:715
-msgid "Short excerpt only, with a link to the post (recommended)"
-msgstr "Μόνο σύντομη περίληψη με σύνδεσμο προς το άρθρο (συνιστάται)"
-
-#: includes/class-pncp-admin.php:716
-msgid "Full text"
-msgstr "Πλήρες κείμενο"
-
-#: includes/class-pncp-admin.php:717
-msgid "Disabled"
-msgstr "Απενεργοποιημένα"
-
-#: includes/class-pncp-admin.php:743
-msgid "Access token"
-msgstr "Token πρόσβασης"
-
-#: includes/class-pncp-admin.php:746
-msgid "New token. Copy it now: it will not be shown again."
-msgstr "Νέο token. Αντιγράψτε το τώρα: δεν θα ξαναεμφανιστεί."
-
-#: includes/class-pncp-admin.php:747 includes/class-pncp-admin.php:753 includes/class-pncp-admin.php:1031
-msgid "Copy"
-msgstr "Αντιγραφή"
-
-#: includes/class-pncp-admin.php:748
-msgid "Header for ERP / API:"
-msgstr "Header για ERP / API:"
-
-#: includes/class-pncp-admin.php:748
-msgid "or"
-msgstr "ή"
-
-#: includes/class-pncp-admin.php:750
-msgid "URL for Skroutz, BestPrice, Google Merchant (they accept only URLs):"
-msgstr "URL για Skroutz, BestPrice, Google Merchant (δέχονται μόνο URL):"
-
-#: includes/class-pncp-admin.php:762
-msgid "There is no token. Create one to give the services access."
-msgstr "Δεν υπάρχει token. Δημιουργήστε ένα για να δώσετε πρόσβαση στις υπηρεσίες."
-
-#: includes/class-pncp-admin.php:767
-#, php-format
-msgid "Active token ending in …%1$s, since %2$s. Only its hash is stored, so it cannot be shown again."
-msgstr "Ενεργό token που τελειώνει σε …%1$s, από %2$s. Αποθηκεύεται μόνο το hash του, οπότε δεν μπορεί να εμφανιστεί ξανά."
-
-#: includes/class-pncp-admin.php:781
-#, php-format
-msgid "The previous token (…%1$s) is still valid until %2$s, so you have time to change the URL in the services."
-msgstr "Το προηγούμενο token (…%1$s) ισχύει ακόμη μέχρι %2$s, ώστε να προλάβετε να αλλάξετε το URL στις υπηρεσίες."
-
-#: includes/class-pncp-admin.php:790
-msgid "Revoke the previous one now"
-msgstr "Ακύρωση του προηγούμενου τώρα"
-
-#: includes/class-pncp-admin.php:797
-msgid "Keep the current token valid for:"
-msgstr "Το τρέχον token να ισχύει ακόμη:"
-
-#: includes/class-pncp-admin.php:799
-msgid "Not at all (revoke immediately)"
-msgstr "Καθόλου (ακύρωση αμέσως)"
-
-#: includes/class-pncp-admin.php:805
-msgid "Create token"
-msgstr "Δημιουργία token"
-
-#: includes/class-pncp-admin.php:805
-msgid "New token (rotate)"
-msgstr "Νέο token (εναλλαγή)"
-
-#: includes/class-pncp-admin.php:808
-msgid "Header for ERP and your own integrations (not visible in logs and history). Token in the URL for Skroutz, BestPrice and Google Merchant, which accept only URLs."
-msgstr "Header για ERP και δικά σας integrations (δεν φαίνεται σε logs και ιστορικό). Token στο URL για Skroutz, BestPrice και Google Merchant, που δέχονται μόνο URL."
-
-#: includes/class-pncp-admin.php:811
-msgid "Access per feed"
-msgstr "Πρόσβαση ανά feed"
-
-#: includes/class-pncp-admin.php:815 includes/class-pncp-admin.php:1111
-msgid "Path"
-msgstr "Διαδρομή"
-
-#: includes/class-pncp-admin.php:816
-msgid "Successes"
-msgstr "Επιτυχίες"
-
-#: includes/class-pncp-admin.php:817
-msgid "Last access"
-msgstr "Τελευταία πρόσβαση"
-
-#: includes/class-pncp-admin.php:818
-msgid "Via"
-msgstr "Με"
-
-#: includes/class-pncp-admin.php:819
-msgid "Denials"
-msgstr "Αρνήσεις"
-
-#: includes/class-pncp-admin.php:825
-msgid "header"
-msgstr "header"
-
-#: includes/class-pncp-admin.php:826
-msgid "token in URL"
-msgstr "token στο URL"
-
-#: includes/class-pncp-admin.php:827
-msgid "allowed IP"
-msgstr "επιτρεπόμενη IP"
-
-#: includes/class-pncp-admin.php:828
-msgid "administrator"
-msgstr "διαχειριστής"
-
-#: includes/class-pncp-admin.php:836
-msgid "Never"
-msgstr "Ποτέ"
-
-#: includes/class-pncp-admin.php:857
-msgid "Watermark"
-msgstr "Υδατογράφημα"
-
-#: includes/class-pncp-admin.php:860
-msgid "Watermark new images"
-msgstr "Υδατογράφημα στις νέες εικόνες"
-
-#: includes/class-pncp-admin.php:860
-msgid "It is added to the sizes WordPress generates (thumbnails, medium, large). For existing images, use the tool below. The site icon, the logo and the watermark itself never get it."
-msgstr "Μπαίνει στα μεγέθη που φτιάχνει το WordPress (thumbnails, medium, large). Για εικόνες που υπάρχουν ήδη, χρησιμοποιήστε το εργαλείο πιο κάτω. Το εικονίδιο site, το λογότυπο και το ίδιο το υδατογράφημα δεν το παίρνουν ποτέ."
-
-#: includes/class-pncp-admin.php:862
-msgid "The PHP GD library is not available on the server, so the watermark will not be applied."
-msgstr "Η βιβλιοθήκη GD της PHP δεν είναι διαθέσιμη στον server, οπότε το υδατογράφημα δεν θα εφαρμοστεί."
-
-#: includes/class-pncp-admin.php:864
-msgid "Watermark the full-size image too"
-msgstr "Υδατογράφημα και στην εικόνα πλήρους μεγέθους"
-
-#: includes/class-pncp-admin.php:864
-msgid "Without this, the full image stays clean and can be downloaded from its URL. The clean original is kept in a hidden folder, so it can always be restored."
-msgstr "Χωρίς αυτό, η πλήρης εικόνα μένει καθαρή και κατεβαίνει από τη διεύθυνσή της. Το καθαρό πρωτότυπο φυλάγεται σε κρυφό φάκελο, ώστε να γίνεται πάντα επαναφορά."
-
-#: includes/class-pncp-admin.php:865
-msgid "Watermark WooCommerce product images too"
-msgstr "Υδατογράφημα και στις εικόνες προϊόντων WooCommerce"
-
-#: includes/class-pncp-admin.php:867
-msgid "Not recommended: Google Merchant Center, Skroutz and BestPrice reject product images with a watermark, and feeds usually show the full-size image. For products, hotlink protection (“Server rules” tab) is a better choice. If a watermarked image later becomes a product image, logo or icon, the watermark is removed automatically."
-msgstr "Δεν συνιστάται: Google Merchant Center, Skroutz και BestPrice απορρίπτουν εικόνες προϊόντων με υδατογράφημα, και τα feeds δείχνουν συνήθως την εικόνα πλήρους μεγέθους. Για τα προϊόντα, η προστασία από hotlink (καρτέλα «Κανόνες server») είναι καλύτερη επιλογή. Αν μια εικόνα με υδατογράφημα γίνει αργότερα εικόνα προϊόντος, λογότυπο ή εικονίδιο, το υδατογράφημα αφαιρείται αυτόματα."
-
-#: includes/class-pncp-admin.php:871
-msgid "Appearance"
-msgstr "Εμφάνιση"
-
-#: includes/class-pncp-admin.php:874
-msgid "PNG image ID from the Media Library (0 = the site's domain as text):"
-msgstr "ID εικόνας PNG από τη Βιβλιοθήκη πολυμέσων (0 = το domain του site ως κείμενο):"
-
-#: includes/class-pncp-admin.php:874
-msgid "A PNG with a transparent background is recommended (e.g. the logo). The ID appears in the address when you open the image in the Library."
-msgstr "Συνιστάται PNG με διάφανο φόντο (π.χ. το λογότυπο). Το ID φαίνεται στη διεύθυνση όταν ανοίγετε την εικόνα στη Βιβλιοθήκη."
-
-#: includes/class-pncp-admin.php:876
-msgid "Position:"
-msgstr "Θέση:"
-
-#: includes/class-pncp-admin.php:882
-msgid "Bottom right"
-msgstr "Κάτω δεξιά"
-
-#: includes/class-pncp-admin.php:883
-msgid "Bottom left"
-msgstr "Κάτω αριστερά"
-
-#: includes/class-pncp-admin.php:884
-msgid "Top right"
-msgstr "Πάνω δεξιά"
-
-#: includes/class-pncp-admin.php:885
-msgid "Top left"
-msgstr "Πάνω αριστερά"
-
-#: includes/class-pncp-admin.php:886
-msgid "Centre"
-msgstr "Στο κέντρο"
-
-#: includes/class-pncp-admin.php:887
-msgid "Repeat diagonally across the whole image (hard to remove)"
-msgstr "Επανάληψη σε όλη την εικόνα, διαγώνια (δύσκολα αφαιρείται)"
-
-#: includes/class-pncp-admin.php:893
-#, php-format
-msgid "Size (% of the image width):"
-msgstr "Μέγεθος (% του πλάτους της εικόνας):"
-
-#: includes/class-pncp-admin.php:893
-msgid "With diagonal repeat, the size of each repetition."
-msgstr "Στη διαγώνια επανάληψη, το μέγεθος κάθε επανάληψης."
-
-#: includes/class-pncp-admin.php:894
-#, php-format
-msgid "Opacity (%):"
-msgstr "Αδιαφάνεια (%):"
-
-#: includes/class-pncp-admin.php:895
-msgid "Only on sizes with width from (px):"
-msgstr "Μόνο σε μεγέθη με πλάτος από (px):"
-
-#: includes/class-pncp-admin.php:895
-msgid "Small thumbnails stay clean."
-msgstr "Τα μικρά thumbnails μένουν καθαρά."
-
-#: includes/class-pncp-admin.php:913
-msgid "Existing images"
-msgstr "Εικόνες που υπάρχουν ήδη"
-
-#: includes/class-pncp-admin.php:914
-#, php-format
-msgid "JPEG / PNG / WebP images in the library: %s."
-msgstr "Εικόνες JPEG / PNG / WebP στη βιβλιοθήκη: %s."
-
-#: includes/class-pncp-admin.php:915
-msgid "Each image is regenerated from the clean original, so a watermark is never added twice, not even on images watermarked by version 1.x. If the page closes midway, click again: it resumes where it stopped. Keep a backup of the uploads folder before you start."
-msgstr "Κάθε εικόνα ξαναφτιάχνεται από το καθαρό πρωτότυπο, οπότε δεν μπαίνει ποτέ διπλό υδατογράφημα, ούτε σε εικόνες που πήραν υδατογράφημα από την έκδοση 1.x. Αν η σελίδα κλείσει στη μέση, πατήστε ξανά: συνεχίζει από εκεί που σταμάτησε. Κρατήστε backup του φακέλου uploads πριν ξεκινήσετε."
-
-#: includes/class-pncp-admin.php:917
-msgid "The watermark is off: “Apply” will leave the images clean. Enable it and save first."
-msgstr "Το υδατογράφημα είναι ανενεργό: η «Εφαρμογή» θα αφήσει τις εικόνες καθαρές. Ενεργοποιήστε το και αποθηκεύστε πρώτα."
-
-#: includes/class-pncp-admin.php:920
-msgid "Apply watermark"
-msgstr "Εφαρμογή υδατογραφήματος"
-
-#: includes/class-pncp-admin.php:921
-msgid "Remove watermark"
-msgstr "Αφαίρεση υδατογραφήματος"
-
-#: includes/class-pncp-admin.php:948
-msgid "You are not allowed to do this."
-msgstr "Δεν έχετε δικαίωμα."
-
-#: includes/class-pncp-admin.php:996
-msgid "The plugin only checks requests that reach PHP. Pages from page cache, images and static files are served directly by the server or the CDN. The rules below are generated for your site, with the current settings. Test them on staging first."
-msgstr "Το plugin ελέγχει μόνο αιτήματα που φτάνουν στην PHP. Σελίδες από page cache, εικόνες και στατικά αρχεία τα σερβίρει απευθείας ο server ή το CDN. Οι παρακάτω κανόνες είναι φτιαγμένοι για το δικό σας site, με τις τρέχουσες ρυθμίσεις. Δοκιμάστε τους πρώτα σε staging."
-
-#: includes/class-pncp-admin.php:997
-msgid "The plugin does not keep a Cloudflare API token in the database: you add the rules yourself, where you already have access."
-msgstr "Το plugin δεν κρατά API token του Cloudflare στη βάση: εσείς περνάτε τους κανόνες, εκεί που έχετε ήδη πρόσβαση."
-
-#: includes/class-pncp-admin.php:999
-msgid "Cloudflare"
-msgstr "Cloudflare"
-
-#: includes/class-pncp-admin.php:1000
-msgid "Security → WAF → Custom rules → Create rule → Edit expression. Paste the expression and choose the action shown."
-msgstr "Security → WAF → Custom rules → Create rule → Edit expression. Επικολλήστε την έκφραση και επιλέξτε την ενέργεια που αναφέρεται."
-
-#: includes/class-pncp-admin.php:1006
-msgid "Nginx"
-msgstr "Nginx"
-
-#: includes/class-pncp-admin.php:1007
-msgid "1) Inside http { }, e.g. in the file /etc/nginx/conf.d/scrapelock.conf:"
-msgstr "1) Μέσα στο http { }, π.χ. στο αρχείο /etc/nginx/conf.d/scrapelock.conf:"
-
-#: includes/class-pncp-admin.php:1009
-msgid "2) Inside the site's server { }, before the other location blocks. Then: nginx -t and reload."
-msgstr "2) Μέσα στο server { } του site, πριν από τα υπόλοιπα location. Μετά: nginx -t και reload."
-
-#: includes/class-pncp-admin.php:1012
-msgid "Apache (.htaccess, above # BEGIN WordPress)"
-msgstr "Apache (.htaccess, πάνω από το # BEGIN WordPress)"
-
-#: includes/class-pncp-admin.php:1029
-msgid "Rules to copy"
-msgstr "Κανόνες για αντιγραφή"
-
-#: includes/class-pncp-admin.php:1046
-msgid "Last 24 hours"
-msgstr "Τελευταίες 24 ώρες"
-
-#: includes/class-pncp-admin.php:1047
-#, php-format
-msgid "%s blocked requests"
-msgstr "%s μπλοκαρισμένα αιτήματα"
-
-#: includes/class-pncp-admin.php:1050
-msgid "By reason"
-msgstr "Ανά λόγο"
-
-#: includes/class-pncp-admin.php:1054
-msgid "Top IPs"
-msgstr "Κορυφαίες IP"
-
-#: includes/class-pncp-admin.php:1058
-msgid "Top User-Agents"
-msgstr "Κορυφαία User-Agents"
-
-#: includes/class-pncp-admin.php:1063
-msgid "IPs blocked now"
-msgstr "Αποκλεισμένες IP τώρα"
-
-#: includes/class-pncp-admin.php:1065
-msgid "None."
-msgstr "Καμία."
-
-#: includes/class-pncp-admin.php:1070 includes/class-pncp-admin.php:1108
-msgid "IP"
-msgstr "IP"
-
-#: includes/class-pncp-admin.php:1071 includes/class-pncp-admin.php:1109
-msgid "Reason"
-msgstr "Αιτία"
-
-#: includes/class-pncp-admin.php:1072
-msgid "Expires"
-msgstr "Λήγει"
-
-#: includes/class-pncp-admin.php:1073
-msgid "Action"
-msgstr "Ενέργεια"
-
-#: includes/class-pncp-admin.php:1086
-msgid "Unblock"
-msgstr "Άρση"
-
-#: includes/class-pncp-admin.php:1095
-msgid "Unblock all"
-msgstr "Άρση όλων"
-
-#: includes/class-pncp-admin.php:1099
-msgid "Latest events"
-msgstr "Τελευταία συμβάντα"
-
-#: includes/class-pncp-admin.php:1102
-msgid "No events."
-msgstr "Δεν υπάρχουν συμβάντα."
-
-#: includes/class-pncp-admin.php:1107
-msgid "Time"
-msgstr "Ώρα"
-
-#: includes/class-pncp-admin.php:1110
-msgid "Requests"
-msgstr "Αιτήματα"
-
-#: includes/class-pncp-admin.php:1112
-msgid "User-Agent"
-msgstr "User-Agent"
-
-#: includes/class-pncp-admin.php:1134
-#, php-format
-msgid "The log is deleted automatically after %s days (setting in the “Bots and limits” tab)."
-msgstr "Το αρχείο σβήνεται αυτόματα μετά από %s ημέρες (ρύθμιση στην καρτέλα «Bots και όρια»)."
-
-#: includes/class-pncp-admin.php:1142
-msgid "Delete log"
-msgstr "Διαγραφή αρχείου"
-
-#: includes/class-pncp-admin.php:1155
-msgid "Nothing."
-msgstr "Τίποτα."
-
-#: includes/class-pncp-admin.php:1282
-msgid "Preset applied."
-msgstr "Το προφίλ εφαρμόστηκε."
-
-#: includes/class-pncp-admin.php:1283
-msgid "New token created."
-msgstr "Δημιουργήθηκε νέο token."
-
-#: includes/class-pncp-admin.php:1284
-msgid "Previous token revoked."
-msgstr "Το προηγούμενο token ακυρώθηκε."
-
-#: includes/class-pncp-admin.php:1285
-msgid "Block lifted."
-msgstr "Ο αποκλεισμός άρθηκε."
-
-#: includes/class-pncp-admin.php:1286
-msgid "Log deleted."
-msgstr "Το αρχείο διαγράφηκε."
-
-#: includes/class-pncp-admin.php:1287
-msgid "IP lists refreshed."
-msgstr "Οι λίστες IP ανανεώθηκαν."
-
-#: includes/class-pncp-admin.php:1288
-msgid "Some IP lists could not be downloaded; their previous version was kept. It will try again tomorrow."
-msgstr "Κάποιες λίστες IP δεν κατέβηκαν· κρατήθηκε η προηγούμενη εκδοχή τους. Θα ξαναδοκιμάσει αύριο."
-
-#: includes/class-pncp-admin.php:1289
-msgid "The action was not completed."
-msgstr "Η ενέργεια δεν ολοκληρώθηκε."
-
-#: includes/class-pncp-admin.php:1300
-msgid "Since 2.1 the feed token is stored only as a hash. The old token is still valid but can no longer be shown. If you have not saved it, create a new token."
-msgstr "Από την 2.1 το token των feeds αποθηκεύεται μόνο ως hash. Το παλιό token εξακολουθεί να ισχύει, αλλά δεν μπορεί πλέον να εμφανιστεί. Αν δεν το έχετε αποθηκευμένο, δημιουργήστε νέο token."
-
-#: includes/class-pncp-admin.php:1302
-msgid "Feeds and token"
-msgstr "Feeds και token"
-
-#: includes/class-pncp-admin.php:1308
-msgid "ScrapeLock: the real IP is read from a header without checking the proxy (as in 1.4). This allows IP spoofing."
-msgstr "Προστασία περιεχομένου: η πραγματική IP διαβάζεται από header χωρίς έλεγχο του proxy (όπως στην 1.4). Αυτό επιτρέπει πλαστογράφηση της IP."
-
-#: includes/class-pncp-admin.php:1310
-msgid "Trusted Proxy settings"
-msgstr "Ρύθμιση Trusted Proxy"
-
-#: includes/class-pncp-rules.php:304
-msgid "Fake Googlebot / Bingbot (not a verified Cloudflare bot)"
-msgstr "Ψεύτικα Googlebot / Bingbot (όχι από επαληθευμένο bot του Cloudflare)"
-
-#: includes/class-pncp-rules.php:314
-msgid "Image hotlinking"
-msgstr "Hotlink εικόνων"
-
-#: includes/class-pncp-rules.php:322
-msgid "Clean originals folder"
-msgstr "Φάκελος καθαρών πρωτοτύπων"
-
-#: includes/class-pncp-rules.php:332
-#, php-format
-msgid "Rate limiting: %d requests per minute per IP (Rate limiting rules, characteristic: IP)"
-msgstr "Rate limiting: %d αιτήματα ανά λεπτό ανά IP (Rate limiting rules, χαρακτηριστικό: IP)"
-
-#: includes/class-pncp-rules.php:335
-msgid "Block · period 1 minute (on the free plan: 10 sec, with limit / 6)"
-msgstr "Block · περίοδος 1 λεπτό (στο δωρεάν πλάνο: 10 δευτ., με όριο / 6)"
-
-#: includes/class-pncp-rules.php:341
-msgid "AI crawlers declared by Cloudflare (category “AI Crawler”)"
-msgstr "AI crawlers που δηλώνει το Cloudflare (κατηγορία «AI Crawler»)"
-
-#: includes/class-pncp-frontend.php:181
-msgid "Source"
-msgstr "Πηγή"
-
-#: includes/class-pncp-frontend.php:182
-msgid "Printing this page is not allowed."
-msgstr "Η εκτύπωση αυτής της σελίδας δεν επιτρέπεται."
-
-#: includes/class-pncp-log.php:136
-msgid "User-Agent in the bot list"
-msgstr "User-Agent στη λίστα bots"
-
-#: includes/class-pncp-log.php:137
-msgid "No User-Agent"
-msgstr "Χωρίς User-Agent"
-
-#: includes/class-pncp-log.php:138
-msgid "Fake search engine"
-msgstr "Ψεύτικη μηχανή αναζήτησης"
-
-#: includes/class-pncp-log.php:139
-msgid "No browser headers"
-msgstr "Χωρίς headers browser"
-
-#: includes/class-pncp-log.php:140
-msgid "Page limit"
-msgstr "Όριο σελίδων"
-
-#: includes/class-pncp-log.php:141
-msgid "Search limit"
-msgstr "Όριο αναζητήσεων"
-
-#: includes/class-pncp-log.php:142
-msgid "REST / GraphQL limit"
-msgstr "Όριο REST / GraphQL"
-
-#: includes/class-pncp-log.php:144
-msgid "New temporary block"
-msgstr "Νέος προσωρινός αποκλεισμός"
-
-#: includes/class-pncp-log.php:145
-msgid "Request from a blocked IP"
-msgstr "Αίτημα από αποκλεισμένη IP"
-
-#: includes/class-pncp-log.php:146
-msgid "Private URL without token"
-msgstr "Ιδιωτικό URL χωρίς token"
-
-#: includes/class-pncp-log.php:550
-msgid "To protect content from automated copying, when a request is blocked we record the IP address, the browser's User-Agent, the page and the time. This data is deleted automatically after a few days and is not used for any other purpose."
-msgstr "Για την προστασία του περιεχομένου από αυτοματοποιημένη αντιγραφή, όταν ένα αίτημα μπλοκάρεται καταγράφουμε τη διεύθυνση IP, το User-Agent του browser, τη σελίδα και την ώρα. Τα στοιχεία αυτά διαγράφονται αυτόματα μετά από λίγες ημέρες και δεν χρησιμοποιούνται για άλλο σκοπό."
-
-#: includes/class-pncp-feed.php:77
-#, php-format
-msgid "Read the full article at %1$s: %2$s"
-msgstr "Διαβάστε το πλήρες άρθρο στο %1$s: %2$s"
-
-#: includes/class-pncp-feed.php:112
-#, php-format
-msgid "Read the full article at %s"
-msgstr "Διαβάστε το πλήρες άρθρο στο %s"
-
-#: includes/class-pncp-feed.php:124
-msgid "The feeds of this site are disabled."
-msgstr "Τα feeds αυτού του site είναι απενεργοποιημένα."
-
-#: includes/class-pncp-feed.php:125
-msgid "Unavailable"
-msgstr "Μη διαθέσιμο"
-
-#: includes/class-pncp-admin.php:552
-msgid "Content Signals in robots.txt: search yes, AI training no"
-msgstr "Content Signals στο robots.txt: αναζήτηση ναι, εκπαίδευση AI όχι"
-
-#: includes/class-pncp-admin.php:552
-msgid "A line that says what the content may be used for (contentsignals.org): search=yes, ai-train=no, and ai-input according to “Allow AI search engines”. It does not block anything; it is a statement of your terms that well-behaved companies read."
-msgstr "Μια γραμμή που λέει για τι επιτρέπεται να χρησιμοποιηθεί το περιεχόμενο (contentsignals.org): search=yes, ai-train=no, και ai-input ανάλογα με το «Να επιτρέπονται οι μηχανές αναζήτησης AI». Δεν μπλοκάρει τίποτα· είναι δήλωση των όρων σας, που τη διαβάζουν οι εταιρείες που σέβονται τους κανόνες."
-
-#: includes/class-pncp-admin.php:557
-msgid "Always blocked"
-msgstr "Πάντα αποκλεισμένα"
-
-#: includes/class-pncp-admin.php:560
-msgid "IPs / CIDR that are always blocked (403), one per line:"
-msgstr "IP / CIDR που αποκλείονται πάντα (403), μία ανά γραμμή:"
-
-#: includes/class-pncp-admin.php:560
-msgid "For example a scraper's server or a hosting network you see in the log. The “Always allowed IPs” take precedence."
-msgstr "Για παράδειγμα ο server ενός scraper ή ένα δίκτυο hosting που βλέπετε στο αρχείο. Οι «Πάντα επιτρεπτές IP» έχουν προτεραιότητα."
-
-#: includes/class-pncp-admin.php:561
-msgid "Referrer domains that are always blocked (403), one per line, e.g. copy-site.example:"
-msgstr "Domains παραπομπής (Referer) που αποκλείονται πάντα (403), ένα ανά γραμμή, π.χ. copy-site.example:"
-
-#: includes/class-pncp-admin.php:561
-msgid "Requests that come from links or embeds on these sites. Each entry also covers its subdomains."
-msgstr "Αιτήματα που έρχονται από συνδέσμους ή ενσωματώσεις σε αυτά τα sites. Κάθε γραμμή καλύπτει και τα subdomains της."
-
-#: includes/class-pncp-admin.php:562
-msgid "Hide usernames from visitors"
-msgstr "Απόκρυψη των ονομάτων χρηστών από τους επισκέπτες"
-
-#: includes/class-pncp-admin.php:562
-msgid "?author=1, 2, 3… returns “page not found” instead of the redirect to /author/username/, the REST API does not list users, and the users sitemap is removed. Logged-in users see everything as before. Author archives with a link stay."
-msgstr "Το ?author=1, 2, 3… δίνει «η σελίδα δεν βρέθηκε» αντί για ανακατεύθυνση στο /author/όνομα-χρήστη/, το REST API δεν δίνει λίστα χρηστών και ο χάρτης χρηστών του sitemap αφαιρείται. Οι συνδεδεμένοι χρήστες βλέπουν τα πάντα όπως πριν. Οι σελίδες συγγραφέων με σύνδεσμο μένουν."
-
-#: includes/class-pncp-admin.php:573
-msgid "“Page not found” (404) per minute (0 = off):"
-msgstr "«Η σελίδα δεν βρέθηκε» (404) ανά λεπτό (0 = ανενεργό):"
-
-#: includes/class-pncp-admin.php:573
-msgid "Scrapers guess addresses (?p=1, 2, 3…, old product URLs) to find content. Missing images, CSS, scripts and the favicon do not count. Starting value: 30."
-msgstr "Οι scrapers μαντεύουν διευθύνσεις (?p=1, 2, 3…, παλιά URL προϊόντων) για να βρουν περιεχόμενο. Εικόνες, CSS, scripts και favicon που λείπουν δεν μετρούν. Αρχική τιμή: 30."
-
-#: includes/class-pncp-admin.php:583
-msgid "Early check: block known bots before the theme and the other plugins load"
-msgstr "Πρώιμος έλεγχος: μπλοκάρισμα γνωστών bots πριν φορτώσουν το θέμα και τα άλλα plugins"
-
-#: includes/class-pncp-admin.php:583
-msgid "Adds the small file wp-content/mu-plugins/scrapelock-early.php, which stops blocked IPs and referrers, temporarily blocked IPs and User-Agents in the bot list with less server load. Search engines, logged-in users, forms and feeds are left to the normal check. It is removed when you turn this off or deactivate the plugin."
-msgstr "Προσθέτει το μικρό αρχείο wp-content/mu-plugins/scrapelock-early.php, που σταματά αποκλεισμένες IP και referrers, προσωρινά αποκλεισμένες IP και User-Agents της λίστας bots με λιγότερο φόρτο για τον server. Μηχανές αναζήτησης, συνδεδεμένοι χρήστες, φόρμες και feeds μένουν στον κανονικό έλεγχο. Αφαιρείται όταν το απενεργοποιήσετε ή απενεργοποιήσετε το plugin."
-
-#: includes/class-pncp-admin.php:585
-msgid "The file could not be created (the server does not allow direct file writes to wp-content/mu-plugins). The normal check works as before."
-msgstr "Το αρχείο δεν δημιουργήθηκε (ο server δεν επιτρέπει απευθείας εγγραφή στο wp-content/mu-plugins). Ο κανονικός έλεγχος λειτουργεί όπως πριν."
-
-#: includes/class-pncp-admin.php:662
-msgid "The site is behind Cloudflare, but all visitors appear with a Cloudflare address."
-msgstr "Το site είναι πίσω από Cloudflare, αλλά όλοι οι επισκέπτες εμφανίζονται με διεύθυνση της Cloudflare."
-
-#: includes/class-pncp-admin.php:663
-msgid "Then limits and blocks hit Cloudflare itself, i.e. many visitors at once. Use the CF-Connecting-IP header, trusted only when the request comes from Cloudflare."
-msgstr "Τότε τα όρια και οι αποκλεισμοί πέφτουν στην ίδια την Cloudflare, δηλαδή σε πολλούς επισκέπτες μαζί. Χρησιμοποιήστε το header CF-Connecting-IP, με εμπιστοσύνη μόνο όταν το αίτημα έρχεται από την Cloudflare."
-
-#: includes/class-pncp-admin.php:665
-msgid "Use CF-Connecting-IP (recommended)"
-msgstr "Χρήση CF-Connecting-IP (προτείνεται)"
-
-#: includes/class-pncp-admin.php:672
-msgid "Cloudflare detected. REMOTE_ADDR already holds the visitor's IP (the Cloudflare plugin or the server replaced it), so “REMOTE_ADDR” is the right choice."
-msgstr "Εντοπίστηκε Cloudflare. Το REMOTE_ADDR έχει ήδη την IP του επισκέπτη (την αντικατέστησε το plugin της Cloudflare ή ο server), οπότε το «REMOTE_ADDR» είναι η σωστή επιλογή."
-
-#: includes/class-pncp-admin.php:763
-msgid "Full text: add “The post … first appeared on …” at the end"
-msgstr "Πλήρες κείμενο: προσθήκη «Το άρθρο … δημοσιεύτηκε πρώτα στο …» στο τέλος"
-
-#: includes/class-pncp-admin.php:763
-msgid "Sites that republish the feed automatically then link back to the original article, so search engines see where it first appeared."
-msgstr "Τα sites που αναδημοσιεύουν αυτόματα το feed δίνουν τότε σύνδεσμο προς το πρωτότυπο άρθρο, οπότε οι μηχανές αναζήτησης βλέπουν πού δημοσιεύτηκε πρώτα."
-
-#: includes/class-pncp-admin.php:1045
-msgid "APO and “Cache Everything”: pages served from the Cloudflare cache never reach the plugin, so the bot list, limits and the trap do not apply to them. The WAF rules below apply before the cache. ScrapeLock tells the Cloudflare plugin not to cache blocks and private feeds, and purges its cache when you save the settings."
-msgstr "APO και «Cache Everything»: οι σελίδες που σερβίρονται από την cache της Cloudflare δεν φτάνουν ποτέ στο plugin, οπότε δεν ισχύουν γι' αυτές η λίστα bots, τα όρια και η παγίδα. Οι κανόνες WAF παρακάτω ισχύουν πριν από την cache. Το ScrapeLock λέει στο plugin της Cloudflare να μην κρατά στην cache αποκλεισμούς και ιδιωτικά feeds, και καθαρίζει την cache του όταν αποθηκεύετε τις ρυθμίσεις."
-
-#: includes/class-pncp-admin.php:1350
-msgid "The real visitor IP is now read from CF-Connecting-IP, only for requests from Cloudflare."
-msgstr "Η πραγματική IP του επισκέπτη διαβάζεται τώρα από το CF-Connecting-IP, μόνο για αιτήματα από την Cloudflare."
-
-#: includes/class-pncp-bots.php:139
-msgid "Sorry, you are not allowed to list users."
-msgstr "Δεν επιτρέπεται η προβολή της λίστας χρηστών."
-
-#. translators: 1: article link, 2: site link
-#: includes/class-pncp-feed.php:106
-#, php-format
-msgid "The post %1$s first appeared on %2$s."
-msgstr "Το άρθρο %1$s δημοσιεύτηκε πρώτα στο %2$s."
-
-#: includes/class-pncp-log.php:143
-msgid "“Page not found” limit"
-msgstr "Όριο «η σελίδα δεν βρέθηκε»"
-
-#: includes/class-pncp-log.php:144
-msgid "IP in the always-blocked list"
-msgstr "IP στη λίστα «πάντα αποκλεισμένες»"
-
-#: includes/class-pncp-log.php:145
-msgid "Referrer in the always-blocked list"
-msgstr "Referrer στη λίστα «πάντα αποκλεισμένοι»"
-
-#. translators: %s: list of User-Agents
-#: includes/class-pncp-admin.php:549
-msgid "Verify AI search bots with their official IP lists (OpenAI, Perplexity)"
-msgstr "Επαλήθευση των AI bots αναζήτησης με τις επίσημες λίστες IP τους (OpenAI, Perplexity)"
-
-#. translators: %s: list of User-Agents
-#: includes/class-pncp-admin.php:549
-msgid "With AI search allowed: the real OAI-SearchBot, ChatGPT-User, PerplexityBot and Perplexity-User are never limited or blocked, and requests that only use their name get a 403 (“Fake AI search bot”). The lists are downloaded once a day; until then nothing changes."
-msgstr "Όταν επιτρέπεται η AI αναζήτηση: τα πραγματικά OAI-SearchBot, ChatGPT-User, PerplexityBot και Perplexity-User δεν παίρνουν ποτέ όριο ή αποκλεισμό, και τα αιτήματα που απλώς χρησιμοποιούν το όνομά τους παίρνουν 403 («Ψεύτικο AI bot αναζήτησης»). Οι λίστες κατεβαίνουν μία φορά τη μέρα· μέχρι τότε δεν αλλάζει τίποτα."
-
-#: includes/class-pncp-admin.php:709
-msgid "not downloaded yet, no verification until then"
-msgstr "δεν έχει κατέβει ακόμη, χωρίς επαλήθευση μέχρι τότε"
-
-#: includes/class-pncp-log.php:139
-msgid "Fake AI search bot"
-msgstr "Ψεύτικο AI bot αναζήτησης"
-
-#: includes/class-pncp-admin.php:546
-msgid "Block headless and fake browsers"
-msgstr "Μπλοκάρισμα headless και ψεύτικων browsers"
-
-#: includes/class-pncp-admin.php:546
-msgid "Chrome without a window (Puppeteer, Playwright, Selenium) gives itself away in the headers it sends, even with a normal User-Agent. On HTTPS, scripts that only copy the User-Agent of Chrome, Edge or Firefox do not send the Sec-Fetch headers every modern browser sends. In-app browsers (Android WebView) are not checked."
-msgstr "Ο Chrome χωρίς παράθυρο (Puppeteer, Playwright, Selenium) προδίδεται από τα headers που στέλνει, ακόμη και με κανονικό User-Agent. Σε HTTPS, τα scripts που αντιγράφουν μόνο το User-Agent του Chrome, του Edge ή του Firefox δεν στέλνουν τα headers Sec-Fetch που στέλνει κάθε σύγχρονος browser. Οι browsers μέσα σε εφαρμογές (Android WebView) δεν ελέγχονται."
-
-#: includes/class-pncp-admin.php:708
-msgid "not used with the current “Real visitor IP” setting (the built-in list is enough to detect Cloudflare)"
-msgstr "δεν χρησιμοποιείται με την τρέχουσα ρύθμιση «Πραγματική IP επισκέπτη» (η ενσωματωμένη λίστα αρκεί για τον εντοπισμό της Cloudflare)"
-
-#: includes/class-pncp-log.php:141
-msgid "Headless browser"
-msgstr "Headless browser"
-
-#: includes/class-pncp-log.php:142
-msgid "Fake browser"
-msgstr "Ψεύτικος browser"

@@ -4,7 +4,7 @@ Tags: anti-scraping, ai bots, bot protection, rate limit, content protection
 Requires at least: 6.2
 Tested up to: 7.1
 Requires PHP: 7.4
-Stable tag: 2.5.0
+Stable tag: 2.6.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -32,17 +32,21 @@ Nothing can stop a determined human: whatever a visitor sees has already reached
 * Verify allowed AI search bots (OpenAI OAI-SearchBot and ChatGPT-User, PerplexityBot, Perplexity-User) with their official IP lists: real ones are never limited, fakes that only use their name are blocked.
 * Detect fake Googlebot, Bingbot, Applebot and Yandex with the official IP lists and reverse DNS. Real search engines always pass.
 * Invisible bot trap link, disallowed in robots.txt.
-* Optional detection of headless browsers (Puppeteer, Playwright, Selenium) and of scripts that copy a browser's User-Agent but not the headers a real browser sends.
+* Optional blocking of headless browsers that reveal themselves in their headers, and of scripts that copy a browser's User-Agent but not the headers a real browser sends. A carefully disguised automated browser is not detected this way; the page limits, the human check and the bot trap still apply to it.
 * Per-IP limits for pages, searches and REST / GraphQL (IPv6: per /64 network), with temporary blocks after repeated violations.
 * A separate limit for "page not found" (404) requests, for scrapers that guess URLs. Missing images, CSS and scripts do not count.
+* Optional human check: visitors who have not interacted with the page (scroll, tap, key) get a stricter page limit. No captcha, nothing to click; it works with page caches.
+* Optional sitemap limit (WordPress, Rank Math, Yoast and similar sitemaps), never for verified search engines.
+* Optional country rules: blocked countries, or a stricter page limit for countries your visitors do not come from. Uses Cloudflare's or Bunny CDN's country header, or the free DB-IP Lite database.
+* Optional pre-cache check: the page limit and the blocks also apply to pages served from a page cache such as WP Rocket, through one line that ScrapeLock adds to wp-config.php and removes again.
 * Always-blocked lists of IPs / CIDR and referrer domains.
 * Hide usernames from visitors: no `?author=N` redirect, no REST user list, no users sitemap.
 * Optional early check: a small must-use plugin that stops known bots and blocked IPs before the theme and the other plugins load.
 * Content Signals in robots.txt (search yes, AI training no).
-* Trusted Proxy support for Cloudflare and reverse proxies, so the real IP cannot be spoofed. Cloudflare is detected, with a one-click fix when every visitor appears with a Cloudflare address.
+* Trusted Proxy support for Cloudflare, Bunny CDN and reverse proxies, so the real IP cannot be spoofed. Cloudflare and Bunny CDN are detected, with a one-click fix when every visitor appears with a CDN address.
 * Works with the Cloudflare plugin (APO): blocks and private feeds are never cached at the edge, and the Cloudflare cache is purged when you save the settings.
 * Ready-made presets (Balanced, Strict, Maximum) and an Emergency Mode for attacks in progress.
-* Block log with a 24-hour summary, top IPs and User-Agents, and automatic deletion after 1, 7 or 30 days.
+* Block log with a 24-hour summary, top IPs and User-Agents, the pages scrapers target most, and automatic deletion after 1, 7 or 30 days.
 
 = Feeds and API =
 
@@ -77,9 +81,12 @@ ScrapeLock downloads public IP lists once a day, only for the features that use 
 * Google crawler IP ranges, from developers.google.com. Downloaded while protection is enabled, to tell real Googlebot from fakes. [Terms](https://policies.google.com/terms), [Privacy](https://policies.google.com/privacy).
 * Bing crawler IP ranges, from www.bing.com. Downloaded while protection is enabled, to tell real Bingbot from fakes. [Terms](https://www.microsoft.com/servicesagreement), [Privacy](https://privacy.microsoft.com/privacystatement).
 * Cloudflare IP ranges, from the Cloudflare API (api.cloudflare.com/client/v4/ips). Downloaded only when "Real visitor IP" reads the CF-Connecting-IP or X-Forwarded-For header and Cloudflare addresses are trusted. [Terms](https://www.cloudflare.com/website-terms/), [Privacy](https://www.cloudflare.com/privacypolicy/).
+* Bunny CDN edge server addresses, from bunnycdn.com/api/system/edgeserverlist (IPv4 and IPv6). Downloaded only when "Trust Bunny CDN addresses" is on and "Real visitor IP" reads the X-Real-IP or X-Forwarded-For header, or country rules are set. [Terms](https://bunny.net/tos/), [Privacy](https://bunny.net/privacy/).
 
 * OpenAI bot IP ranges (OAI-SearchBot, ChatGPT-User), from openai.com. Downloaded only when AI search is allowed and "Verify AI search bots" is on, to tell the real bots from fakes. [Terms](https://openai.com/policies/terms-of-use/), [Privacy](https://openai.com/policies/privacy-policy/).
 * Perplexity bot IP ranges (PerplexityBot, Perplexity-User), from www.perplexity.com. Downloaded only when AI search is allowed and "Verify AI search bots" is on, for the same reason. [Terms](https://www.perplexity.ai/hub/legal/terms-of-service), [Privacy](https://www.perplexity.ai/hub/legal/privacy-policy).
+
+* DB-IP Lite country database, from download.db-ip.com. Downloaded once a month only when "Download the free country database" is on, to apply the country rules. It is a plain file download: no data about your site or your visitors is sent, and lookups happen on your server. Licensed under CC BY 4.0 ("IP Geolocation by DB-IP"). [Database, license and terms](https://db-ip.com/db/lite.php), [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/).
 
 If a list has not been downloaded, ScrapeLock verifies search engine bots with reverse DNS, and uses a built-in copy of the Cloudflare ranges. AI search bots are not verified until their list has been downloaded.
 
@@ -102,7 +109,15 @@ No. Verified search engines are never limited or blocked. Only fake ones that pr
 
 = Does it work with page cache? =
 
-Pages served from page cache never reach PHP. Use the rules in the "Server rules" tab to apply the bot list and the limits in Nginx, Apache or Cloudflare too.
+ScrapeLock tells WP Rocket not to serve cached pages to the bots in its list, so they are always checked. Other pages served from page cache never reach the plugin: a bot that looks like a browser could read them without a limit. Turn on "Pre-cache check" in "Bots and limits" to apply the page limit and the blocks to those pages too, or use the rules in the "Server rules" tab for Nginx, Apache or Cloudflare.
+
+= What does the pre-cache check change on my server? =
+
+It adds two comment lines and one `include` line right after `<?php` at the top of `wp-config.php`, and a folder `wp-content/scrapelock-precheck` for its counters (or APCu, if your server has it). The check runs before the page cache and WordPress, without a database, and stops only always-blocked IPs, temporarily blocked IPs and visitors over the "Pages per minute" limit. Search engines, logged-in users, forms, wp-admin and the REST API are left to the normal check. If `wp-config.php` is not writable, the setting shows the lines to add yourself. Everything is removed when you turn the setting off or deactivate the plugin. Not available on multisite.
+
+= My site is behind Bunny CDN. What should I set? =
+
+If your server already replaces the IP (for example Nginx with `real_ip_header X-Real-IP` and the Bunny addresses in `set_real_ip_from`), keep "REMOTE_ADDR": ScrapeLock tells you it is correct. Otherwise set "Real visitor IP" to X-Real-IP and turn on "Trust Bunny CDN addresses"; ScrapeLock downloads the official list of Bunny edge servers and trusts the header only from them. When every visitor appears with a Bunny address, it shows a button that does this for you.
 
 = Can I allow ChatGPT or Perplexity search but block training? =
 
@@ -124,6 +139,12 @@ No. The TDM declaration is a machine-readable reservation of rights; it does not
 
 When a request is blocked, the IP address, User-Agent, page and time are logged. The log is deleted automatically after 1, 7 or 30 days.
 
+With the human check on, visitors who interact with the page get a security cookie, `pncp_hv`, for 7 days. It contains only an expiry time and a signature tied to their IP network and browser; it is not used for tracking or statistics. The country database is a local file: no visitor data is sent to DB-IP.
+
+= Does the human check show a captcha? =
+
+No. A small script waits for the first real interaction (scroll, tap, key or mouse movement), solves a light challenge in the background and receives the cookie. Visitors without it are not blocked: they get the stricter page limit you set (20 pages per minute by default). A determined scraper can repeat these steps, but every IP it uses has to do the work, and plain scripts never do.
+
 == Screenshots ==
 
 1. Block log: 24-hour summary by reason, top IPs and User-Agents, temporarily blocked IPs and the latest events.
@@ -134,6 +155,16 @@ When a request is blocked, the IP address, User-Agent, page and time are logged.
 6. Dashboard widget with the protection status and the last 24 hours.
 
 == Changelog ==
+
+= 2.6.0 =
+* New, optional: pre-cache check. One line at the top of wp-config.php applies the page limit, temporary blocks and always-blocked IPs also to pages served from a page cache such as WP Rocket, before the cache and WordPress load. Off until you turn it on; removed when turned off or deactivated.
+* New: Bunny CDN support. "Trust Bunny CDN addresses" reads X-Real-IP / X-Forwarded-For only from Bunny's official edge servers, with detection and a one-click fix, and the country from Bunny's header.
+* New, optional: human check. Visitors get a security cookie after their first real interaction; those without it get a stricter page limit. No captcha, works with page cache.
+* New: a requests-per-minute limit for sitemaps (WordPress, Rank Math, Yoast). Verified search engines are never limited.
+* New, optional: country rules (blocked countries, or a stricter limit), with Cloudflare's or Bunny's country header or the free DB-IP Lite database.
+* New: the Log shows the pages and files that are blocked most, for 24 hours and 7 days.
+* Redesigned settings page: status overview, cards, switches, section links and a save bar that stays visible.
+* On existing sites every new option stays off after the upgrade.
 
 = 2.5.0 =
 * New: verify AI search bots (OpenAI OAI-SearchBot and ChatGPT-User, PerplexityBot, Perplexity-User) with their official IP lists. With AI search allowed, the real ones are never limited or blocked, and requests that only use their name get a 403. Off on existing sites until you turn it on.
