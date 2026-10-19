@@ -245,8 +245,8 @@ settings( array( 'ban_strikes' => 0 ) );
 /* ---------- Ασφάλεια ---------- */
 list( $code, , $body ) = req( '/wp-content/scrapelock-precheck/run.php', visitor( '198.51.100.70' ) );
 t( 'run.php από το web: δεν τρέχει τίποτα, δεν βγάζει τίποτα', '' === trim( $body ), "$code " . substr( $body, 0, 80 ) );
-list( $code, , $body ) = req( '/wp-content/plugins/scrapelock/includes/precheck-runtime.php', visitor( '198.51.100.71' ) );
-t( 'precheck-runtime.php από το web: μόνο ορισμοί συναρτήσεων', '' === trim( $body ), "$code " . substr( $body, 0, 80 ) );
+list( $code, , $body ) = req( '/wp-content/plugins/scrapelock/includes/class-pncp-precheck-runtime.php', visitor( '198.51.100.71' ) );
+t( 'class-pncp-precheck-runtime.php από το web: μόνο ορισμός κλάσης', '' === trim( $body ), "$code " . substr( $body, 0, 80 ) );
 same_minute();
 $c = codes( '/cached-page/', visitor( '198.51.100.72', array( 'X-Forwarded-For' => '10.9.9.9' ) ), 6 );
 t( 'ψεύτικο X-Forwarded-For δεν αλλάζει την IP (μετράει η X-Real-IP)', in_array( 429, $c, true ), implode( ',', $c ) );
