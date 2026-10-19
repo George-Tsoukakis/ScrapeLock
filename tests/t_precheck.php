@@ -256,6 +256,10 @@ t( 'REMOTE_ADDR: η X-Real-IP αγνοείται, όλα από 127.0.0.1 (ο se
 settings( array( 'ip_header' => 'x_real_ip' ) );
 
 /* ---------- Σπασμένα αρχεία δεν ρίχνουν το site ---------- */
+// Με APCu (π.χ. στο GitHub Actions) ο φάκελος hits δεν φτιάχνεται ποτέ.
+if ( ! is_dir( PNCP_Precheck::dir() . '/hits' ) ) {
+	mkdir( PNCP_Precheck::dir() . '/hits', 0755, true );
+}
 file_put_contents( PNCP_Precheck::dir() . '/hits/x', 'not a folder' );
 @chmod( PNCP_Precheck::dir() . '/hits', 0555 );
 list( $code ) = req( '/cached-page/', visitor( '198.51.100.80' ) );
