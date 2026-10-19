@@ -1,10 +1,10 @@
 === ScrapeLock – Content & AI Bot Protection ===
-Contributors: codebunnyhub
+Contributors: codebunnyhube
 Tags: anti-scraping, ai bots, bot protection, rate limit, content protection
 Requires at least: 6.2
 Tested up to: 7.1
 Requires PHP: 7.4
-Stable tag: 2.6.0
+Stable tag: 2.6.1
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -76,19 +76,17 @@ Forms, cart, checkout, the WooCommerce Store API and payment webhooks are not af
 
 == External services ==
 
-ScrapeLock downloads public IP lists once a day, only for the features that use them. These are plain GET requests for public files: no data about your site or your visitors is sent, and the request does not include your site address.
+ScrapeLock downloads public lists of IP addresses, only for the features that use them. Each download is a plain GET request for a public file, made from your server by WordPress (User-Agent "ScrapeLock/version"). No data about your site, your content or your visitors is sent, and the request does not include your site address; as with any download, the provider sees your server's IP address. The lists are stored in your database (or, for the country database, in uploads/scrapelock-geo) and checked on your server.
 
-* Google crawler IP ranges, from developers.google.com. Downloaded while protection is enabled, to tell real Googlebot from fakes. [Terms](https://policies.google.com/terms), [Privacy](https://policies.google.com/privacy).
-* Bing crawler IP ranges, from www.bing.com. Downloaded while protection is enabled, to tell real Bingbot from fakes. [Terms](https://www.microsoft.com/servicesagreement), [Privacy](https://privacy.microsoft.com/privacystatement).
-* Cloudflare IP ranges, from the Cloudflare API (api.cloudflare.com/client/v4/ips). Downloaded only when "Real visitor IP" reads the CF-Connecting-IP or X-Forwarded-For header and Cloudflare addresses are trusted. [Terms](https://www.cloudflare.com/website-terms/), [Privacy](https://www.cloudflare.com/privacypolicy/).
-* Bunny CDN edge server addresses, from bunnycdn.com/api/system/edgeserverlist (IPv4 and IPv6). Downloaded only when "Trust Bunny CDN addresses" is on and "Real visitor IP" reads the X-Real-IP or X-Forwarded-For header, or country rules are set. [Terms](https://bunny.net/tos/), [Privacy](https://bunny.net/privacy/).
+* **Google** crawler IP ranges, to tell real Googlebot from fakes. Downloaded once a day while protection is enabled, from https://developers.google.com/static/search/apis/ipranges/googlebot.json, https://developers.google.com/static/search/apis/ipranges/special-crawlers.json and https://developers.google.com/static/search/apis/ipranges/user-triggered-fetchers-google.json. Provided by Google LLC: [Terms of service](https://policies.google.com/terms), [Privacy policy](https://policies.google.com/privacy).
+* **Bing** crawler IP ranges, to tell real Bingbot from fakes. Downloaded once a day while protection is enabled, from https://www.bing.com/toolbox/bingbot.json. Provided by Microsoft Corporation: [Terms of service](https://www.microsoft.com/servicesagreement), [Privacy policy](https://privacy.microsoft.com/privacystatement).
+* **Cloudflare** IP ranges, to read the real visitor IP only from Cloudflare. Downloaded once a day only when "Real visitor IP" reads the CF-Connecting-IP or X-Forwarded-For header and "Trust Cloudflare addresses" is on, from https://api.cloudflare.com/client/v4/ips. Provided by Cloudflare, Inc.: [Terms of service](https://www.cloudflare.com/website-terms/), [Privacy policy](https://www.cloudflare.com/privacypolicy/).
+* **Bunny CDN** edge server addresses, to read the real visitor IP and country only from Bunny CDN. Downloaded once a day only when "Trust Bunny CDN addresses" is on and "Real visitor IP" reads the X-Real-IP or X-Forwarded-For header, or country rules are set, from https://bunnycdn.com/api/system/edgeserverlist and https://bunnycdn.com/api/system/edgeserverlist/IPv6. Provided by BunnyWay d.o.o. (bunny.net): [Terms of service](https://bunny.net/tos/), [Privacy policy](https://bunny.net/privacy/).
+* **OpenAI** bot IP ranges (OAI-SearchBot, ChatGPT-User), to tell the real bots from fakes. Downloaded once a day only when "Allow AI search engines and assistants" and "Verify AI search bots" are on, from https://openai.com/searchbot.json and https://openai.com/chatgpt-user.json. Provided by OpenAI: [Terms of use](https://openai.com/policies/terms-of-use/), [Privacy policy](https://openai.com/policies/privacy-policy/).
+* **Perplexity** bot IP ranges (PerplexityBot, Perplexity-User), to tell the real bots from fakes. Downloaded once a day only when "Allow AI search engines and assistants" and "Verify AI search bots" are on, from https://www.perplexity.com/perplexitybot.json and https://www.perplexity.com/perplexity-user.json. Provided by Perplexity AI, Inc.: [Terms of service](https://www.perplexity.ai/hub/legal/terms-of-service), [Privacy policy](https://www.perplexity.ai/hub/legal/privacy-policy).
+* **DB-IP Lite** country database, to apply the country rules. Downloaded once a month only when "Download the free country database" is on, from https://download.db-ip.com/free/dbip-country-lite-YYYY-MM.csv.gz (the current or the previous month). Lookups happen on your server. Licensed under CC BY 4.0 ("IP Geolocation by DB-IP"). Provided by db-ip.com: [Terms of service](https://db-ip.com/tos.php), [Privacy policy](https://db-ip.com/privacy.php), [License](https://creativecommons.org/licenses/by/4.0/).
 
-* OpenAI bot IP ranges (OAI-SearchBot, ChatGPT-User), from openai.com. Downloaded only when AI search is allowed and "Verify AI search bots" is on, to tell the real bots from fakes. [Terms](https://openai.com/policies/terms-of-use/), [Privacy](https://openai.com/policies/privacy-policy/).
-* Perplexity bot IP ranges (PerplexityBot, Perplexity-User), from www.perplexity.com. Downloaded only when AI search is allowed and "Verify AI search bots" is on, for the same reason. [Terms](https://www.perplexity.ai/hub/legal/terms-of-service), [Privacy](https://www.perplexity.ai/hub/legal/privacy-policy).
-
-* DB-IP Lite country database, from download.db-ip.com. Downloaded once a month only when "Download the free country database" is on, to apply the country rules. It is a plain file download: no data about your site or your visitors is sent, and lookups happen on your server. Licensed under CC BY 4.0 ("IP Geolocation by DB-IP"). [Database, license and terms](https://db-ip.com/db/lite.php), [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/).
-
-If a list has not been downloaded, ScrapeLock verifies search engine bots with reverse DNS, and uses a built-in copy of the Cloudflare ranges. AI search bots are not verified until their list has been downloaded.
+If a list has not been downloaded, ScrapeLock verifies search engine bots with reverse DNS, and uses a built-in copy of the Cloudflare ranges. AI search bots are not verified until their list has been downloaded. Reverse DNS lookups are made only for requests that claim to be a search engine, through your server's own DNS resolver.
 
 If the official Cloudflare plugin is active, ScrapeLock asks it to purge its cache when you save the ScrapeLock settings. The request is made by the Cloudflare plugin, with the account you connected there; ScrapeLock itself does not contact Cloudflare for this and stores no Cloudflare credentials.
 
@@ -155,6 +153,10 @@ No. A small script waits for the first real interaction (scroll, tap, key or mou
 6. Dashboard widget with the protection status and the last 24 hours.
 
 == Changelog ==
+
+= 2.6.1 =
+* The notices for Emergency Mode and the insecure 1.4 proxy setting now appear only on the Dashboard and the ScrapeLock settings page, not on every admin screen.
+* Readme: every external service is listed with the exact addresses it is downloaded from, and the contributor name is corrected.
 
 = 2.6.0 =
 * New, optional: pre-cache check. One line at the top of wp-config.php applies the page limit, temporary blocks and always-blocked IPs also to pages served from a page cache such as WP Rocket, before the cache and WordPress load. Off until you turn it on; removed when turned off or deactivated.
