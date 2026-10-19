@@ -119,7 +119,7 @@ final class PNCP_Bots {
 	 * Page views and search.
 	 */
 	public static function page_guard() {
-		if ( is_robots() || is_favicon() || self::$sitemap ) {
+		if ( is_robots() || is_favicon() || self::$sitemap || self::is_open_path() ) {
 			return;
 		}
 		if ( self::is_author_scan() ) {
@@ -129,6 +129,31 @@ final class PNCP_Bots {
 		if ( $verdict ) {
 			self::die_html( $verdict['code'] );
 		}
+	}
+
+	/**
+	 * robots.txt, llms.txt and llms-full.txt are never blocked: every bot, also a blocked one, must be able to
+	 * read the rules it is asked to follow. (robots.txt is also recognised by is_robots(); llms.txt may be a
+	 * static file or come from an SEO plugin.)
+	 *
+	 * @param string|null $path Path relative to the site (null = this request).
+	 * @return bool
+	 */
+	public static function is_open_path( $path = null ) {
+		if ( null === $path ) {
+			$uri  = isset( $_SERVER['REQUEST_URI'] ) ? sanitize_text_field( wp_unslash( $_SERVER['REQUEST_URI'] ) ) : '';
+			$path = PNCP_Private_Urls::relative_path( rawurldecode( (string) wp_parse_url( $uri, PHP_URL_PATH ) ) );
+		}
+		return in_array( strtolower( (string) $path ), self::open_paths(), true );
+	}
+
+	/**
+	 * The paths that are never blocked (see is_open_path()).
+	 *
+	 * @return string[]
+	 */
+	public static function open_paths() {
+		return array( '/robots.txt', '/llms.txt', '/llms-full.txt' );
 	}
 
 	/**
@@ -344,7 +369,9 @@ final class PNCP_Bots {
 		// Stricter page limits: visitors without the human-check cookie, and countries in the "stricter" list.
 		if ( $count && 'page' === $context ) {
 			$stricter = array();
-			if ( ! empty( $s['human_check'] ) && (int) $s['rate_limit_unverified'] > 0 && ! PNCP_Human::verified( $ip ) ) {
+			// Not for the always-allowed User-Agents and the allowed AI search bots: they cannot run the
+			// script, so they keep the normal page limit.
+			if ( ! empty( $s['human_check'] ) && ! $allowed_ua && (int) $s['rate_limit_unverified'] > 0 && ! PNCP_Human::verified( $ip ) ) {
 				$stricter['rate_unverified'] = (int) $s['rate_limit_unverified'];
 				PNCP_Human::forget_invalid();
 			}
@@ -397,10 +424,13 @@ final class PNCP_Bots {
 	 */
 	public static function ai_bot_lists() {
 		return array(
-			'OAI-SearchBot'   => 'openai_search',
-			'ChatGPT-User'    => 'openai_user',
-			'PerplexityBot'   => 'perplexity_bot',
-			'Perplexity-User' => 'perplexity_user',
+			'OAI-SearchBot'    => 'openai_search',
+			'ChatGPT-User'     => 'openai_user',
+			'PerplexityBot'    => 'perplexity_bot',
+			'Perplexity-User'  => 'perplexity_user',
+			// Anthropic publishes one list for all its bots (since 2.6.2).
+			'Claude-SearchBot' => 'anthropic',
+			'Claude-User'      => 'anthropic',
 		);
 	}
 

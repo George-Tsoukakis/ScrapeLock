@@ -135,6 +135,27 @@ final class PNCP_Rules {
 			}
 			$lines[] = '}';
 		}
+		if ( ( $s['block_bots'] && self::bots() ) || $s['block_headless'] ) {
+			// robots.txt and llms.txt stay open for every bot: it must be able to read the rules it is asked to follow.
+			$lines[] = 'map $uri $pncp_open_path {';
+			$lines[] = '    default 0;';
+			$lines[] = '    "~*^/(robots|llms|llms-full)\.txt$" 1;';
+			$lines[] = '}';
+		}
+		if ( $s['block_headless'] ) {
+			// Chrome / Edge / Opera 90+ always send Sec-Fetch-Mode and Sec-CH-UA over HTTPS, Firefox 90+ Sec-Fetch-Mode:
+			// a "browser" without them is a script. Android in-app browsers (; wv) and the always-allowed User-Agents pass.
+			$lines[] = 'map "$https|$http_sec_fetch_mode|$http_sec_ch_ua|$http_user_agent" $pncp_fake_browser {';
+			$lines[] = '    default 0;';
+			$lines[] = '    "~*^[^|]*\\|[^|]*\\|[^|]*HeadlessChrome" 1;';
+			$lines[] = '    "~; wv\\)" 0;';
+			// Search engines and other bots also write "Chrome/" in their User-Agent and send no browser headers: they
+			// are not fake browsers (WordPress verifies them by IP / DNS). Bot User-Agents name themselves or a URL.
+			$lines[] = '    "~*^[^|]*\\|[^|]*\\|[^|]*\\|.*' . self::alternation( self::not_fake_browsers() ) . '" 0;';
+			$lines[] = '    "~^on\\|\\|\\|.*\\b(Chrome|Chromium)/(9[0-9]|[1-9][0-9]{2})\\." 1;';
+			$lines[] = '    "~^on\\|\\|[^|]*\\|.*\\bFirefox/(9[0-9]|[1-9][0-9]{2})\\." 1;';
+			$lines[] = '}';
+		}
 		if ( self::private_regexes() ) {
 			// Token for the static feeds: in the URL (cp_token) or in the header. Put your own in place of YOUR_TOKEN.
 			$lines[] = 'map "$arg_cp_token:$http_x_scrapelock_token" $pncp_token_ok {';
@@ -143,10 +164,35 @@ final class PNCP_Rules {
 			$lines[] = '    "~:YOUR_TOKEN$" 1;';
 			$lines[] = '}';
 		}
+		$checks = self::nginx_block_vars();
+		if ( $checks ) {
+			// One variable for the server { } part: blocked when a check says so, except on the open paths.
+			$lines[] = 'map "' . implode( '', $checks ) . ':$pncp_open_path" $pncp_block {';
+			$lines[] = '    default 0;';
+			$lines[] = '    "~^[01]*1[01]*:0$" 1;';
+			$lines[] = '}';
+		}
 		$rate    = (int) $s['rate_limit'] > 0 ? (int) $s['rate_limit'] : 60;
 		$lines[] = 'limit_req_zone $binary_remote_addr zone=pncp_pages:10m rate=' . $rate . 'r/m;';
 		$lines[] = 'limit_req_status 429;';
 		return implode( "\n", $lines ) . "\n";
+	}
+
+	/**
+	 * The Nginx variables (maps in part 1) that block a request: bot list and / or fake browsers.
+	 *
+	 * @return string[]
+	 */
+	private static function nginx_block_vars() {
+		$s    = PNCP_Options::get();
+		$vars = array();
+		if ( $s['block_bots'] && self::bots() ) {
+			$vars[] = '$pncp_bad_bot';
+		}
+		if ( $s['block_headless'] ) {
+			$vars[] = '$pncp_fake_browser';
+		}
+		return $vars;
 	}
 
 	/**
@@ -160,9 +206,10 @@ final class PNCP_Rules {
 		$uploads = self::uploads_path();
 		$backup  = (string) get_option( 'pncp_backup_dir' );
 		$lines   = array();
-		if ( $s['block_bots'] && self::bots() ) {
-			$lines[] = '# Blocks bots BEFORE the page cache (FastCGI cache, WP Rocket, WP Super Cache).';
-			$lines[] = 'if ($pncp_bad_bot) { return 403; }';
+		if ( self::nginx_block_vars() ) {
+			$lines[] = '# Blocks bots' . ( $s['block_headless'] ? ' and fake browsers' : '' ) . ' BEFORE the page cache (FastCGI cache, WP Rocket, WP Super Cache), also';
+			$lines[] = '# for files that never reach WordPress (e.g. scanners asking for .php files). robots.txt / llms.txt stay open.';
+			$lines[] = 'if ($pncp_block) { return 403; }';
 			$lines[] = '';
 		}
 		$lines[] = '# Page limit per IP (also for cached pages): put this line ONLY in the location that serves pages';
@@ -231,15 +278,35 @@ final class PNCP_Rules {
 		$lines[] = '# BEGIN ScrapeLock ' . PNCP_VERSION;
 		$lines[] = '<IfModule mod_rewrite.c>';
 		$lines[] = 'RewriteEngine On';
+		$open    = 'RewriteCond %{REQUEST_URI} !^/(robots|llms|llms-full)\.txt$ [NC]';
 		if ( $s['block_bots'] && self::bots() ) {
-			$lines[] = '# Bots in the list: 403 before the page cache.';
+			$lines[] = '# Bots in the list: 403 before the page cache. robots.txt / llms.txt stay open for every bot.';
+			$lines[] = $open;
 			if ( self::allowed() ) {
 				$lines[] = 'RewriteCond %{HTTP_USER_AGENT} !' . self::alternation( self::allowed() ) . ' [NC]';
 			}
 			$lines[] = 'RewriteCond %{HTTP_USER_AGENT} ' . self::alternation( self::bots() ) . ' [NC]';
 			$lines[] = 'RewriteRule .* - [F,L]';
 			if ( $s['block_empty_ua'] ) {
+				$lines[] = $open;
 				$lines[] = 'RewriteCond %{HTTP_USER_AGENT} ^-?$';
+				$lines[] = 'RewriteRule .* - [F,L]';
+			}
+		}
+		if ( $s['block_headless'] ) {
+			$lines[] = '# Fake browsers: Chrome / Edge 90+ without Sec-Fetch-Mode and Sec-CH-UA, Firefox 90+ without Sec-Fetch-Mode (HTTPS only).';
+			$lines[] = '# Search engines and other bots that write "Chrome/" in their User-Agent are not affected.';
+			foreach ( array( 'chrome', 'firefox' ) as $browser ) {
+				$lines[] = $open;
+				$lines[] = 'RewriteCond %{HTTPS} =on';
+				$lines[] = 'RewriteCond %{HTTP:Sec-Fetch-Mode} ^$';
+				if ( 'chrome' === $browser ) {
+					$lines[] = 'RewriteCond %{HTTP:Sec-CH-UA} ^$';
+					$lines[] = 'RewriteCond %{HTTP_USER_AGENT} \b(Chrome|Chromium)/(9[0-9]|[1-9][0-9]{2})\.';
+				} else {
+					$lines[] = 'RewriteCond %{HTTP_USER_AGENT} \bFirefox/(9[0-9]|[1-9][0-9]{2})\.';
+				}
+				$lines[] = 'RewriteCond %{HTTP_USER_AGENT} !(;\swv\)|' . substr( self::alternation( self::not_fake_browsers() ), 1 ) . ' [NC]';
 				$lines[] = 'RewriteRule .* - [F,L]';
 			}
 		}
@@ -270,6 +337,20 @@ final class PNCP_Rules {
 	}
 
 	/**
+	 * User-Agents that write "Chrome/" or "Firefox/" without being browsers: search engines and other bots, and the
+	 * always-allowed ones. The fake-browser server rules never block them (WordPress verifies them by IP / DNS).
+	 *
+	 * @return string[]
+	 */
+	private static function not_fake_browsers() {
+		$out = array( 'bot', 'crawl', 'spider', 'slurp', 'fetch', 'preview', 'compatible;', 'http://', 'https://', 'lighthouse', 'pagespeed' );
+		foreach ( PNCP_Bots::crawler_families() as $def ) {
+			$out = array_merge( $out, $def['ua'] );
+		}
+		return array_values( array_unique( array_merge( $out, self::allowed() ) ) );
+	}
+
+	/**
 	 * Exclusion of the always-allowed User-Agents in the Cloudflare expression.
 	 *
 	 * @return string
@@ -291,22 +372,52 @@ final class PNCP_Rules {
 		$s       = PNCP_Options::get();
 		$host    = self::host();
 		$uploads = self::uploads_path();
-		$rules   = array();
+		// First rule: robots.txt and llms.txt skip the others, so every bot can read them. A separate rule keeps
+		// the long bot expression under Cloudflare's 4096-character limit.
+		$rules = array(
+			'open' => array(
+				'title'      => __( 'First: robots.txt and llms.txt open for every bot (put this rule at the top)', 'scrapelock' ),
+				'action'     => __( 'Skip · all remaining custom rules', 'scrapelock' ),
+				'expression' => '(http.host eq "' . $host . '") and http.request.uri.path in {"/robots.txt" "/llms.txt" "/llms-full.txt"}',
+			),
+		);
 
 		$bots = self::bots();
 		if ( $s['block_bots'] && $bots ) {
-			$parts = array();
+			// The allowed AI search bots are left out of the list instead of being excluded again after it: shorter.
+			$search = array_map( 'strtolower', PNCP_Options::allowed_ai_search() );
+			$parts  = array();
 			foreach ( $bots as $bot ) {
-				$parts[] = 'lower(http.user_agent) contains "' . strtolower( str_replace( '"', '', $bot ) ) . '"';
+				$bot = strtolower( str_replace( '"', '', $bot ) );
+				if ( ! in_array( $bot, $search, true ) ) {
+					$parts[] = 'lower(http.user_agent) contains "' . $bot . '"';
+				}
 			}
 			if ( $s['block_empty_ua'] ) {
 				$parts[] = 'http.user_agent eq ""';
 			}
-			$rules['bots'] = array(
-				'title'      => __( 'Scrapers and AI bots', 'scrapelock' ),
-				'action'     => 'Block',
-				'expression' => '(http.host eq "' . $host . '") and not cf.client.bot and (' . implode( ' or ', $parts ) . ')' . self::cf_allowed(),
-			);
+			// Cloudflare accepts expressions up to 4096 characters: a long list becomes two or more rules.
+			$head   = '(http.host eq "' . $host . '") and not cf.client.bot and (';
+			$tail   = ')' . self::cf_allowed();
+			$chunks = array( array() );
+			foreach ( $parts as $part ) {
+				$current = end( $chunks );
+				if ( $current && strlen( $head . implode( ' or ', array_merge( $current, array( $part ) ) ) . $tail ) > 4090 ) {
+					$chunks[] = array();
+				}
+				$chunks[ count( $chunks ) - 1 ][] = $part;
+			}
+			foreach ( $chunks as $i => $chunk ) {
+				$rules[ 0 === $i ? 'bots' : 'bots_' . ( $i + 1 ) ] = array(
+					'title'      => 0 === $i ? __( 'Scrapers and AI bots', 'scrapelock' ) : sprintf(
+						/* translators: %d: part number */
+						__( 'Scrapers and AI bots (part %d: the list is longer than one Cloudflare rule)', 'scrapelock' ),
+						$i + 1
+					),
+					'action'     => 'Block',
+					'expression' => $head . implode( ' or ', $chunk ) . $tail,
+				);
+			}
 		}
 
 		$rules['fake'] = array(
@@ -346,10 +457,12 @@ final class PNCP_Rules {
 			// not cart AJAX (wc-ajax, Store API) and not logged-in users.
 			'expression' => '(http.host eq "' . $host . '") and not cf.client.bot and http.request.uri.path.extension in {"" "php" "html" "xml"} and not starts_with(http.request.uri.path, "/wp-admin") and not starts_with(http.request.uri.path, "/wp-includes/") and not starts_with(http.request.uri.path, "/wp-content/") and not starts_with(http.request.uri.path, "/wp-json/wc/store") and not http.request.uri.query contains "wc-ajax=" and not http.cookie contains "wordpress_logged_in_"',
 		);
-		$rules['ai']   = array(
-			'title'      => __( 'AI crawlers declared by Cloudflare (category “AI Crawler”)', 'scrapelock' ),
+		// With "Allow AI search engines and assistants" only the training crawlers: the AI search bots are allowed here too.
+		$categories  = empty( $s['allow_ai_search'] ) ? '"AI Crawler" "AI Assistant" "AI Search"' : '"AI Crawler"';
+		$rules['ai'] = array(
+			'title'      => empty( $s['allow_ai_search'] ) ? __( 'AI crawlers, assistants and AI search declared by Cloudflare', 'scrapelock' ) : __( 'AI training crawlers declared by Cloudflare (category “AI Crawler”; AI search and assistants are allowed)', 'scrapelock' ),
 			'action'     => 'Block',
-			'expression' => '(http.host eq "' . $host . '") and cf.verified_bot_category in {"AI Crawler" "AI Assistant" "AI Search"}',
+			'expression' => '(http.host eq "' . $host . '") and cf.verified_bot_category in {' . $categories . '}',
 		);
 		return $rules;
 	}

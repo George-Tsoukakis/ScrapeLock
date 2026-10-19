@@ -260,8 +260,15 @@ t( 'Cloudflare: εξαιρεί τα επαληθευμένα bots', false !== st
 t( 'Cloudflare: έκφραση κάτω από 4096 χαρακτήρες', strlen( $cf['bots']['expression'] ) < 4096, (string) strlen( $cf['bots']['expression'] ) );
 t( 'Cloudflare: δεν υπάρχει πουθενά token', false === strpos( wp_json_encode( $cf ) . $nginx . PNCP_Rules::apache(), $shown ) );
 $regex = '';
+$in_bots = false;
 foreach ( explode( "\n", $nginx ) as $line ) {
-	if ( preg_match( '/^\s*"~\*(.+)" 1;$/', $line, $m ) ) {
+	// Only the bot map (since 2.6.2 there are more maps after it).
+	if ( false !== strpos( $line, '$pncp_bad_bot {' ) ) {
+		$in_bots = true;
+	} elseif ( $in_bots && '}' === trim( $line ) ) {
+		$in_bots = false;
+	}
+	if ( $in_bots && preg_match( '/^\s*"~\*(.+)" 1;$/', $line, $m ) ) {
 		$regex = $m[1];
 	}
 }
@@ -425,6 +432,42 @@ foreach ( array( 'general', 'content', 'images', 'rules' ) as $tab ) {
 	list( $code, $body ) = http( $page . '&tab=' . $tab );
 	t( "καρτέλα $tab: νέα εμφάνιση χωρίς PHP warnings", 200 === $code && ! php_errors( $body ) && false !== strpos( $body, 'pncp-status-bar' ), (string) $code );
 }
+
+/* ---------- 2.6.2: καρτέλα Log (επαναλαμβανόμενοι, μόνιμος αποκλεισμός, User-Agents) ---------- */
+global $wpdb;
+$keep_log = PNCP_Options::stored();
+PNCP_Log::clear();
+PNCP_Log::unban_all();
+$now_db = gmdate( 'Y-m-d H:i:s' );
+foreach ( array(
+	array( '198.51.100.201', 'ban', 403, 2, 'GPTBot/1.0', 1 ),
+	array( '198.51.100.201', 'rate_page', 429, 40, 'Mozilla/5.0 Chrome/141', 7 ),
+	array( '198.51.100.202', 'fake_crawler', 403, 5, 'Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)', 1 ),
+	array( '198.51.100.203', 'bot_ua', 403, 3, 'Mozilla/5.0 (compatible; Claude-SearchBot/1.0)', 1 ),
+) as $ev ) {
+	$wpdb->insert( $wpdb->prefix . 'pncp_log', array( 'created' => $now_db, 'ip' => $ev[0], 'reason' => $ev[1], 'code' => $ev[2], 'hits' => $ev[3], 'path' => '/x/', 'ua' => $ev[4], 'uas' => $ev[5] ) );
+}
+list( , $body ) = http( $page . '&tab=log' );
+t( 'Log: ενότητα «Blocked again and again» με την IP και κουμπί', false !== strpos( $body, 'Blocked again and again' ) && false !== strpos( $body, '198.51.100.201' ) && false !== strpos( $body, 'value="block_permanent"' ) && ! php_errors( $body ) );
+t( 'Log: ψεύτικο Googlebot σημειώνεται «Fake»', false !== strpos( $body, 'Fake: not from the official addresses' ) );
+t( 'Log: γνωστό όνομα bot χωρίς επαλήθευση σημειώνεται', false !== strpos( $body, 'Known bot name, not verified' ) );
+t( 'Log: «7 different User-Agents in this minute»', false !== strpos( $body, '7 different User-Agents in this minute' ) );
+t( 'Log: νέες ετικέτες ορίων', false !== strpos( $body, 'Pages per minute' ) );
+list( $code, , $loc ) = http( '/wp-admin/admin-post.php', array( 'action' => 'pncp_log', 'op' => 'block_permanent', 'ip' => '198.51.100.201', '_wpnonce' => 'wrong' ) );
+wp_cache_delete( 'alloptions', 'options' );
+PNCP_Options::flush();
+t( 'μόνιμος αποκλεισμός: λάθος nonce, τίποτα δεν αλλάζει', ! PNCP_Options::is_blocked_permanently( '198.51.100.201' ), (string) $code );
+list( $code, , $loc ) = http( '/wp-admin/admin-post.php', array( 'action' => 'pncp_log', 'op' => 'block_permanent', 'ip' => '198.51.100.201', '_wpnonce' => wp_create_nonce( 'pncp_log' ) ) );
+wp_cache_delete( 'alloptions', 'options' );
+PNCP_Options::flush();
+t( 'μόνιμος αποκλεισμός: η IP μπαίνει στις πάντα αποκλεισμένες', 302 === $code && PNCP_Options::is_blocked_permanently( '198.51.100.201' ) && false !== strpos( $loc, 'pncp_message=perm_added' ), "$code $loc" );
+list( , $body ) = http( $page . '&tab=log&pncp_message=perm_added' );
+t( 'μόνιμος αποκλεισμός: μήνυμα, και «Blocked permanently» αντί για κουμπί', false !== strpos( $body, 'was added to the always-blocked IPs' ) && false !== strpos( $body, 'Blocked permanently' ) );
+list( $code, , $loc ) = http( '/wp-admin/admin-post.php', array( 'action' => 'pncp_log', 'op' => 'block_permanent', 'ip' => '127.0.0.1', '_wpnonce' => wp_create_nonce( 'pncp_log' ) ) );
+t( 'μόνιμος αποκλεισμός: ο server αρνείται', false !== strpos( $loc, 'pncp_message=perm_refused' ), $loc );
+PNCP_Log::clear();
+update_option( PNCP_OPTION, $keep_log );
+PNCP_Options::flush();
 
 /* ---------- Κανόνας 11 του WordPress.org: μόνιμες ειδοποιήσεις μόνο στον Πίνακα ελέγχου και στη σελίδα του plugin ---------- */
 $keep_notice = PNCP_Options::stored();

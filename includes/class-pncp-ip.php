@@ -82,6 +82,8 @@ final class PNCP_Ip {
 			'openai_user'     => array( 'https://openai.com/chatgpt-user.json' ),
 			'perplexity_bot'  => array( 'https://www.perplexity.com/perplexitybot.json' ),
 			'perplexity_user' => array( 'https://www.perplexity.com/perplexity-user.json' ),
+			// Anthropic (Claude-SearchBot, Claude-User), since 2.6.2.
+			'anthropic'       => array( 'https://claude.com/crawling/bots.json' ),
 		);
 	}
 

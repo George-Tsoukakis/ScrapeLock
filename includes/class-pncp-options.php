@@ -403,6 +403,51 @@ final class PNCP_Options {
 	}
 
 	/**
+	 * Adds an IP to "Always blocked IPs" (button "Block permanently" in the Log tab). Never the server itself,
+	 * the administrator's own IP, an always-allowed IP or a Google / Bing address. Saving this list does not
+	 * empty the page cache (only the IP list changes).
+	 *
+	 * @param string $ip IP.
+	 * @return string added | exists | full | refused
+	 */
+	public static function block_ip_permanently( $ip ) {
+		$ip = trim( (string) $ip );
+		if ( ! filter_var( $ip, FILTER_VALIDATE_IP ) || PNCP_Ip::is_local( $ip ) || PNCP_Ip::is_private( $ip ) || PNCP_Ip::client_ip() === $ip || PNCP_Bots::is_official_crawler_ip( $ip ) || PNCP_Ip::in_any( $ip, self::parse_list( self::stored()['allow_ips'] ) ) ) {
+			return 'refused';
+		}
+		$stored = self::stored();
+		$list   = self::parse_list( $stored['block_ips'] );
+		if ( in_array( $ip, $list, true ) ) {
+			return 'exists';
+		}
+		if ( count( $list ) >= 200 ) {
+			return 'full'; // The list keeps at most 200 lines (parse_list).
+		}
+		$list[]              = $ip;
+		$stored['block_ips'] = implode( "\n", $list );
+		$purge               = has_action( 'update_option_' . PNCP_OPTION, 'pncp_purge_page_cache' );
+		if ( false !== $purge ) {
+			remove_action( 'update_option_' . PNCP_OPTION, 'pncp_purge_page_cache', $purge );
+		}
+		update_option( PNCP_OPTION, $stored );
+		if ( false !== $purge ) {
+			add_action( 'update_option_' . PNCP_OPTION, 'pncp_purge_page_cache', $purge );
+		}
+		self::flush();
+		return 'added';
+	}
+
+	/**
+	 * Is the IP in "Always blocked IPs"?
+	 *
+	 * @param string $ip IP.
+	 * @return bool
+	 */
+	public static function is_blocked_permanently( $ip ) {
+		return PNCP_Ip::in_any( (string) $ip, self::parse_list( self::stored()['block_ips'] ) );
+	}
+
+	/**
 	 * Country codes (ISO 3166-1 alpha-2) from free text: "cn, RU ru\nkp" -> "CN\nRU\nKP".
 	 *
 	 * @param string $raw Text.
