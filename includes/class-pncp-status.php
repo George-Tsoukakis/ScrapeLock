@@ -170,6 +170,17 @@ final class PNCP_Status {
 	}
 
 	/**
+	 * Lasting notices (Emergency Mode, insecure proxy setting) appear only on the Dashboard and on the
+	 * ScrapeLock settings page, not on every admin screen.
+	 *
+	 * @return bool
+	 */
+	public static function notice_screen() {
+		$screen = function_exists( 'get_current_screen' ) ? get_current_screen() : null;
+		return $screen && in_array( $screen->id, array( 'dashboard', 'settings_page_' . PNCP_Admin::PAGE ), true );
+	}
+
+	/**
 	 * Notices after actions, and a warning while Emergency Mode is running.
 	 */
 	public static function notice() {
@@ -195,7 +206,7 @@ final class PNCP_Status {
 		}
 		// phpcs:enable WordPress.Security.NonceVerification.Recommended
 		$until = PNCP_Options::emergency_until();
-		if ( $until && self::is_enabled() ) {
+		if ( $until && self::is_enabled() && self::notice_screen() ) {
 			printf(
 				'<div class="notice notice-warning"><p><strong>%1$s</strong> %2$s <a href="%3$s">%4$s</a></p></div>',
 				esc_html__( 'Emergency Mode is on.', 'scrapelock' ),
