@@ -217,6 +217,10 @@ list( $code, , $body ) = req( '/cached-page/', visitor( '198.51.100.41' ) );
 t( 'πάντα αποκλεισμένη IP: 403 πριν από το cache', 403 === $code && 'Access denied.' === $body, "$code $body" );
 list( $code ) = req( '/cached-page/', visitor( '198.51.100.200' ) );
 t( 'πάντα αποκλεισμένο CIDR: 403', 403 === $code );
+list( $code, , $body ) = req( '/robots.txt', visitor( '198.51.100.41' ) );
+t( 'πάντα αποκλεισμένη IP: διαβάζει το robots.txt (200)', 200 === $code && false !== stripos( $body, 'User-agent' ), (string) $code );
+list( $code ) = req( '/.well-known/tdmrep.json', visitor( '198.51.100.41' ) );
+t( 'πάντα αποκλεισμένη IP: διαβάζει το tdmrep.json (200)', 200 === $code, (string) $code );
 settings( array( 'allow_ips' => '', 'block_ips' => '' ) );
 
 /* ---------- Αποκλεισμοί: από τον κανονικό έλεγχο και από τον ίδιο ---------- */
@@ -232,6 +236,8 @@ PNCP_Log::clear();
 same_minute();
 $c = codes( '/cached-page/', visitor( '198.51.100.60' ), 7 );
 t( 'όριο + 1 παράβαση = αποκλεισμός: 429 και μετά 403', array( 200, 200, 200, 200, 200, 429, 403 ) === $c, implode( ',', $c ) );
+list( $code ) = req( '/robots.txt', visitor( '198.51.100.60' ) );
+t( 'αποκλεισμένη IP (ban): διαβάζει ακόμη το robots.txt (200)', 200 === $code, (string) $code );
 t( 'αρχείο συμβάντων προστατευμένο («<?php exit;»)', 0 === strpos( (string) file_get_contents( PNCP_Precheck::dir() . '/events.php' ), '<?php exit; ?>' ) );
 list( $code, , $body ) = req( '/wp-content/scrapelock-precheck/events.php', visitor( '198.51.100.61' ) );
 t( 'αρχείο συμβάντων από το web: τίποτα δεν φαίνεται', '' === trim( $body ) || 403 === $code || 404 === $code, "$code " . substr( $body, 0, 60 ) );
