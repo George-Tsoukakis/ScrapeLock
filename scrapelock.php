@@ -68,6 +68,11 @@ PNCP_Lockdown::init();
 PNCP_Surface::init();
 PNCP_Health::init();
 
+if ( defined( 'WP_CLI' ) && WP_CLI ) {
+	require_once PNCP_DIR . 'includes/class-pncp-cli.php';
+	PNCP_Cli::init();
+}
+
 /**
  * Activation: defaults (without touching existing settings), log table, cron.
  *

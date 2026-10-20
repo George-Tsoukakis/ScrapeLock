@@ -558,6 +558,14 @@ t( 'δημόσια routes: ένα νέο route plugin χωρίς έλεγχο ε
 $GLOBALS['wp_rest_server'] = null;
 settings( array( 'disable_pingback' => 0 ) );
 
+/* ---------- 2.8: ξεμπλοκάρισμα IPv6 από τη λίστα (κλειδί /64) ---------- */
+PNCP_Log::ban( '2001:db8:9:9::1', 10, 'trap' );
+PNCP_Log::reset_cache();
+$pncp_keys = array_keys( PNCP_Log::active_bans( 0 ) );
+http( '/wp-admin/admin-post.php', array( 'action' => 'pncp_log', 'op' => 'unban', 'ip' => '2001:db8:9:9::/64', '_wpnonce' => wp_create_nonce( 'pncp_log' ) ) );
+PNCP_Log::reset_cache();
+t( 'Unblock σε IPv6 της λίστας (2001:db8:9:9::/64): το μπλοκ φεύγει', in_array( '2001:db8:9:9::/64', $pncp_keys, true ) && ! PNCP_Log::is_banned( '2001:db8:9:9::1' ) );
+
 /* ---------- 2.8: Site Health ---------- */
 $pncp_tests = apply_filters( 'site_status_tests', array( 'direct' => array(), 'async' => array() ) );
 $pncp_ok    = true;
@@ -573,6 +581,7 @@ settings( array( 'enabled' => 1 ) );
 t( 'Site Health: προστασία ανοιχτή → good', 'good' === PNCP_Health::test_protection()['status'] );
 
 $pncp_server = $_SERVER;
+$pncp_cf     = PNCP_Ip::list_of( 'cloudflare' );
 PNCP_Ip::store_list( 'cloudflare', array( '173.245.48.0/20' ) );
 settings( array( 'ip_header' => 'remote_addr' ) );
 $_SERVER['REMOTE_ADDR'] = '173.245.48.7';
@@ -591,6 +600,7 @@ $_SERVER['HTTP_X_REAL_IP'] = '192.0.2.45';
 PNCP_Ip::reset();
 t( 'Site Health: Bunny με REMOTE_ADDR ήδη σωστό → good', 'good' === PNCP_Health::test_real_ip()['status'] );
 $_SERVER = $pncp_server;
+PNCP_Ip::store_list( 'cloudflare', $pncp_cf );
 PNCP_Ip::reset();
 
 settings( array( 'early_mode' => 1 ) );

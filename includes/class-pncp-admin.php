@@ -1903,7 +1903,8 @@ final class PNCP_Admin {
 		switch ( $op ) {
 			case 'unban':
 				$ip = isset( $_POST['ip'] ) ? sanitize_text_field( wp_unslash( $_POST['ip'] ) ) : '';
-				if ( filter_var( $ip, FILTER_VALIDATE_IP ) ) {
+				// The list shows the ban keys: an IPv4 address, or an IPv6 /64 network.
+				if ( PNCP_Ip::valid_range( $ip ) ) {
 					PNCP_Log::unban( $ip );
 				}
 				self::back( 'log', 'unbanned' );

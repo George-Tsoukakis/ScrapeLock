@@ -74,7 +74,7 @@ jobs:
         run: |
           php -S 127.0.0.1:8099 -t "$WP_DIR" lib/router.php > "$RUNNER_TEMP/server.log" 2>&1 &
           sleep 2
-          WP_DIR="$WP_DIR" BASE=http://127.0.0.1:8099 ./run-all.sh
+          WP_DIR="$WP_DIR" BASE=http://127.0.0.1:8099 WP_CLI="php $RUNNER_TEMP/wp/vendor/wp-cli/wp-cli/php/boot-fs.php --path=$WP_DIR --allow-root" ./run-all.sh
 
   package:
     name: Plugin zip

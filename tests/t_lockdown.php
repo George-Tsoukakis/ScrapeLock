@@ -404,20 +404,26 @@ state_set( array( 'secret' => 'p:' . $secret, 'locked' => true, 'until' => 0 ) )
 t( 'κλειδωμένο πριν από τη γραμμή του wp-config.php', PNCP_Lockdown::is_locked() );
 
 /* ---------- Site Health (2.8) ---------- */
-$pncp_updates = get_site_transient( 'update_plugins' );
-$pncp_fake    = (object) array( 'response' => array( 'hello.php' => (object) array( 'new_version' => '9.9' ) ), 'last_checked' => time() );
-set_site_transient( 'update_plugins', $pncp_fake );
+// Οι πληροφορίες ενημερώσεων του WordPress αλλάζουν μόνο εδώ και επιστρέφουν όπως ήταν (αλλιώς η επόμενη
+// σελίδα του wp-admin θα ξαναρωτούσε το wordpress.org).
+$pncp_saved = array();
+foreach ( array( 'update_plugins', 'update_themes', 'update_core' ) as $pncp_name ) {
+	$pncp_saved[ $pncp_name ] = get_site_transient( $pncp_name );
+	set_site_transient( $pncp_name, (object) array( 'response' => array(), 'updates' => array(), 'last_checked' => time() ) );
+}
+set_site_transient( 'update_plugins', (object) array( 'response' => array( 'hello.php' => (object) array( 'new_version' => '9.9' ) ), 'last_checked' => time() ) );
 $pncp_h = PNCP_Health::test_lockdown();
 t( 'Site Health: κλειδωμένο με ενημέρωση σε αναμονή → recommended, 1 update', 'recommended' === $pncp_h['status'] && false !== strpos( $pncp_h['label'], '1 update' ) && 'scrapelock_lockdown' === $pncp_h['test'], $pncp_h['label'] );
-if ( false === $pncp_updates ) {
-	delete_site_transient( 'update_plugins' );
-} else {
-	set_site_transient( 'update_plugins', (object) array_merge( (array) $pncp_updates, array( 'response' => array() ) ) );
-}
-delete_site_transient( 'update_themes' );
-delete_site_transient( 'update_core' );
+set_site_transient( 'update_plugins', (object) array( 'response' => array(), 'last_checked' => time() ) );
 $pncp_h = PNCP_Health::test_lockdown();
 t( 'Site Health: κλειδωμένο χωρίς ενημερώσεις → good', 'good' === $pncp_h['status'] && false !== strpos( $pncp_h['label'], 'locked' ), $pncp_h['status'] );
+foreach ( $pncp_saved as $pncp_name => $pncp_value ) {
+	if ( false === $pncp_value ) {
+		delete_site_transient( $pncp_name );
+	} else {
+		set_site_transient( $pncp_name, $pncp_value );
+	}
+}
 $pncp_info = PNCP_Health::info( array() );
 t( 'Site Health Info: Lockdown «Locked» και οι παγωμένοι ρόλοι', 'Locked' === $pncp_info['scrapelock']['fields']['lockdown']['value'] && false !== strpos( $pncp_info['scrapelock']['fields']['lockdown_roles']['value'], 'administrator' ) );
 t( 'Site Health Info: κανένα μυστικό (ούτε το secret της εφαρμογής)', false === strpos( wp_json_encode( $pncp_info ), $secret ) );
