@@ -246,7 +246,7 @@ final class PNCP_Status {
 			__( 'Blocking scrapers / AI bots', 'scrapelock' ) => ! empty( $s['block_bots'] ),
 			__( 'Fake Googlebot / Bingbot', 'scrapelock' ) => ! empty( $s['block_fake_crawlers'] ),
 			__( 'Bot trap', 'scrapelock' )                 => ! empty( $s['trap_enabled'] ),
-			__( 'Page limit per IP', 'scrapelock' )        => (int) $s['rate_limit'] > 0,
+			__( 'Pages per minute per IP', 'scrapelock' )  => (int) $s['rate_limit'] > 0,
 			__( 'Protected feeds', 'scrapelock' )          => '' !== trim( (string) $s['private_paths'] ),
 			__( 'No framing by other sites', 'scrapelock' ) => ! empty( $s['block_framing'] ),
 			__( 'AI opt-out declaration (TDM)', 'scrapelock' ) => ! empty( $s['tdm_reservation'] ),

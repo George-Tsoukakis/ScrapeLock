@@ -138,7 +138,7 @@ final class PNCP_Early {
 		}
 		$uri  = isset( $_SERVER['REQUEST_URI'] ) ? sanitize_text_field( wp_unslash( $_SERVER['REQUEST_URI'] ) ) : '';
 		$path = PNCP_Private_Urls::relative_path( rawurldecode( (string) wp_parse_url( $uri, PHP_URL_PATH ) ) );
-		if ( preg_match( '#^/(?:index\.php/)?(?:wp-login\.php|cp-[0-9a-f]{10}(?:/|$))#i', $path ) ) {
+		if ( preg_match( '#^/(?:index\.php/)?(?:wp-login\.php|cp-[0-9a-f]{10}(?:/|$))#i', $path ) || PNCP_Bots::is_open_path( $path ) ) {
 			return true;
 		}
 		$s = PNCP_Options::get();

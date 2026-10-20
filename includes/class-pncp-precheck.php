@@ -439,6 +439,8 @@ final class PNCP_Precheck {
 			$key = $ip . '|' . $reason . '|' . (int) floor( (int) $time / MINUTE_IN_SECONDS );
 			if ( isset( $rows[ $key ] ) ) {
 				++$rows[ $key ]['hits'];
+				$rows[ $key ]['seen'][ md5( $ua ) ] = true;
+				$rows[ $key ]['uas']                = count( $rows[ $key ]['seen'] );
 				continue;
 			}
 			$rows[ $key ] = array(
@@ -449,6 +451,8 @@ final class PNCP_Precheck {
 				'path'   => sanitize_text_field( $path ),
 				'ua'     => sanitize_text_field( $ua ),
 				'hits'   => 1,
+				'uas'    => 1,
+				'seen'   => array( md5( $ua ) => true ),
 			);
 		}
 		foreach ( $rows as $row ) {

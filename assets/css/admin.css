@@ -103,7 +103,9 @@
 }
 
 .pncp-inline-form {
+	display: inline-block;
 	margin: 0;
+	vertical-align: middle;
 }
 
 .pncp-big-number {
@@ -507,4 +509,13 @@
 
 .pncp-card h4 {
 	margin: 0 0 8px;
+}
+
+.pncp-badge--bad {
+	background: #fcf0f1;
+	color: #8a2424;
+}
+
+.pncp-ua-reason {
+	color: #646970;
 }
