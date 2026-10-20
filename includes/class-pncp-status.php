@@ -350,7 +350,7 @@ final class PNCP_Status {
 		$lockdown = array(
 			'parent' => 'pncp-status',
 			'id'     => 'pncp-lockdown',
-			'title'  => '<span class="ab-icon dashicons dashicons-' . ( $locked ? 'lock' : 'unlock' ) . '" aria-hidden="true"></span>' . esc_html( PNCP_Lockdown::bar_label() ),
+			'title'  => '<span class="ab-icon dashicons dashicons-' . ( $locked ? 'lock' : 'unlock' ) . '" aria-hidden="true"></span>' . esc_html__( 'Lockdown', 'scrapelock' ),
 			'href'   => PNCP_Lockdown::page_url(),
 		);
 		if ( $locked ) {

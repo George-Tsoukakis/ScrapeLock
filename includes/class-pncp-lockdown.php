@@ -740,26 +740,6 @@ final class PNCP_Lockdown {
 	}
 
 	/**
-	 * The Lockdown line under ScrapeLock's button in the admin bar.
-	 *
-	 * @return string
-	 */
-	public static function bar_label() {
-		$until = self::unlocked_until();
-		if ( ! self::configured() ) {
-			return __( 'Lockdown: set up…', 'scrapelock' );
-		}
-		if ( self::is_locked() ) {
-			return __( 'Lockdown: locked (unlock…)', 'scrapelock' );
-		}
-		if ( $until ) {
-			/* translators: %s: time */
-			return sprintf( __( 'Lockdown: unlocked until %s', 'scrapelock' ), wp_date( (string) get_option( 'time_format' ), $until ) );
-		}
-		return __( 'Lockdown: lock the site…', 'scrapelock' );
-	}
-
-	/**
 	 * Notices: to staff while locked, to administrators while unlocked for a while or unlocked from the server.
 	 */
 	public static function notices() {
