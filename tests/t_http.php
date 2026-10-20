@@ -886,8 +886,16 @@ PNCP_Log::ban( '198.51.100.133', 5, 'rate_page' );
 PNCP_Log::ban( '198.51.100.133', 5, 'rate_page' );
 PNCP_Log::ban( '198.51.100.134', 5, 'rate_page' );
 error_reporting( $level );
-$pncp_rep = wp_list_pluck( PNCP_Log::repeat_offenders(), 'bans', 'ip' );
-t( 'επαναλαμβανόμενοι: η IP με 2 αποκλεισμούς, όχι αυτή με 1', isset( $pncp_rep['198.51.100.133'] ) && 2 === (int) $pncp_rep['198.51.100.133'] && ! isset( $pncp_rep['198.51.100.134'] ), wp_json_encode( $pncp_rep ) );
+// 2.6.3: και IP που μπλοκάρονται συνέχεια χωρίς να πάρουν ποτέ προσωρινό αποκλεισμό (π.χ. User-Agent της λίστας).
+$wpdb->insert( $wpdb->prefix . 'pncp_log', array( 'created' => gmdate( 'Y-m-d H:i:s' ), 'ip' => '198.51.100.135', 'reason' => 'bot_ua', 'code' => 403, 'hits' => 317, 'path' => '/', 'ua' => 'Scrapy/2.11' ) );
+$wpdb->insert( $wpdb->prefix . 'pncp_log', array( 'created' => gmdate( 'Y-m-d H:i:s' ), 'ip' => '198.51.100.136', 'reason' => 'bot_ua', 'code' => 403, 'hits' => 99, 'path' => '/', 'ua' => 'Scrapy/2.11' ) );
+$pncp_list = PNCP_Log::repeat_offenders();
+$pncp_rep  = wp_list_pluck( $pncp_list, 'bans', 'ip' );
+$pncp_why  = wp_list_pluck( $pncp_list, 'reason', 'ip' );
+t( 'επίμονες IP: η IP με 2 αποκλεισμούς, όχι αυτή με 1', isset( $pncp_rep['198.51.100.133'] ) && 2 === (int) $pncp_rep['198.51.100.133'] && ! isset( $pncp_rep['198.51.100.134'] ), wp_json_encode( $pncp_rep ) );
+t( 'επίμονες IP: 317 αιτήματα χωρίς αποκλεισμό μπαίνουν, 99 όχι', isset( $pncp_rep['198.51.100.135'] ) && ! isset( $pncp_rep['198.51.100.136'] ), wp_json_encode( $pncp_rep ) );
+t( 'επίμονες IP: ο κύριος λόγος (χωρίς τα «New temporary block»)', isset( $pncp_why['198.51.100.135'] ) && 'bot_ua' === $pncp_why['198.51.100.135'] && '' === $pncp_why['198.51.100.133'], wp_json_encode( $pncp_why ) );
+t( 'επίμονες IP: ταξινόμηση κατά αιτήματα', '198.51.100.135' === $pncp_list[0]['ip'], wp_json_encode( $pncp_list ) );
 $pncp_keep_block = PNCP_Options::stored()['block_ips'];
 t( 'μόνιμος αποκλεισμός: προστίθεται', 'added' === PNCP_Options::block_ip_permanently( '198.51.100.133' ) && PNCP_Options::is_blocked_permanently( '198.51.100.133' ) );
 t( 'μόνιμος αποκλεισμός: δεύτερη φορά = υπάρχει ήδη', 'exists' === PNCP_Options::block_ip_permanently( '198.51.100.133' ) );
@@ -1073,15 +1081,39 @@ t( 'βάση χωρών: χωρίς αρχεία, καμία χώρα (τίπο�
 
 /* ---------- 2.6: αναφορά «τι προσπαθούν να αντιγράψουν» ---------- */
 fresh();
-foreach ( array( array( '/some-post/', '198.51.100.160' ), array( '/some-post/', '198.51.100.161' ), array( '/hub/space/eopyy/home', '198.51.100.162' ), array( '/.env', '198.51.100.163' ), array( '/rclone.conf', '198.51.100.164' ) ) as $row ) {
+// 2.6.3: «Pages» μόνο ό,τι υπάρχει στο site· οι διευθύνσεις που δεν υπάρχουν πάνε σε δική τους ομάδα.
+// (Μία IP ανά διαδρομή: η ίδια IP με τον ίδιο λόγο στο ίδιο λεπτό γίνεται μία γραμμή, με την πρώτη διαδρομή.)
+$pncp_cat = wp_insert_term( 'Βιταμίνες τεστ', 'category', array( 'slug' => 'vitamins-test' ) );
+$pncp_rows = array(
+	array( $url, '198.51.100.160' ),
+	array( $url, '198.51.100.161' ),
+	array( '/', '198.51.100.165' ),
+	array( '/category/vitamins-test/', '198.51.100.166' ),
+	array( '/category/vitamins-test/page/2/', '198.51.100.167' ),
+	array( '/2026/10/', '198.51.100.168' ),
+	array( '/axscaz1unupmtl4ld90t', '198.51.100.162' ),
+	array( '/z9x8c7v6b5-debug-trigger', '198.51.100.169' ),
+	array( '/hub/space/eopyy/home', '198.51.100.170' ),
+	array( '/category/not-a-real-category/', '198.51.100.171' ),
+	array( '/.env', '198.51.100.163' ),
+	array( '/rclone.conf', '198.51.100.164' ),
+);
+foreach ( $pncp_rows as $row ) {
 	$_SERVER['REQUEST_URI'] = $row[0];
 	PNCP_Log::add( 'bot_ua', 403, $row[1] );
 }
-$top = PNCP_Log::top_paths( 24 );
+$wpdb->query( "DELETE FROM {$wpdb->options} WHERE option_name LIKE '\_transient\_%pncp\_pc\_%' OR option_name LIKE '\_transient\_timeout\_%pncp\_pc\_%'" );
+$top     = PNCP_Log::top_paths( 24 );
 $content = wp_list_pluck( $top['content'], 'ips', 'path' );
+$unknown = wp_list_pluck( $top['unknown'], 'hits', 'path' );
 $probes  = wp_list_pluck( $top['probes'], 'hits', 'path' );
-t( 'αναφορά: σελίδες με διαφορετικές IP', isset( $content['/some-post/'] ) && 2 === $content['/some-post/'] && isset( $content['/hub/space/eopyy/home'] ), wp_json_encode( $top ) );
-t( 'αναφορά: αρχεία χωριστά', isset( $probes['/.env'], $probes['/rclone.conf'] ) && ! isset( $content['/.env'] ) );
+t( 'αναφορά: άρθρο του site στις σελίδες, με διαφορετικές IP', isset( $content[ $url ] ) && 2 === $content[ $url ], wp_json_encode( $top ) );
+t( 'αναφορά: αρχική, κατηγορία (και σελίδα 2), αρχείο ημερομηνίας στις σελίδες', isset( $content['/'], $content['/category/vitamins-test/'], $content['/category/vitamins-test/page/2/'], $content['/2026/10/'] ), wp_json_encode( $content ) );
+t( 'αναφορά: τυχαία strings και ανύπαρκτες διευθύνσεις χωριστά', isset( $unknown['/axscaz1unupmtl4ld90t'], $unknown['/z9x8c7v6b5-debug-trigger'], $unknown['/hub/space/eopyy/home'], $unknown['/category/not-a-real-category/'] ) && ! isset( $content['/axscaz1unupmtl4ld90t'] ), wp_json_encode( $unknown ) );
+t( 'αναφορά: αρχεία χωριστά', isset( $probes['/.env'], $probes['/rclone.conf'] ) && ! isset( $content['/.env'] ) && ! isset( $unknown['/.env'] ) );
+if ( ! is_wp_error( $pncp_cat ) ) {
+	wp_delete_term( $pncp_cat['term_id'], 'category' );
+}
 t( 'αναφορά: ταξινόμηση διαδρομών', ! PNCP_Log::is_probe_path( '/wp-sitemap.xml' ) && ! PNCP_Log::is_probe_path( '/wp-json/wp/v2/posts' ) && PNCP_Log::is_probe_path( '/@fs/proc/self/cmdline' ) && PNCP_Log::is_probe_path( '/terraform.tfvars' ) && PNCP_Log::is_probe_path( '/wp-admin/includes/rk2.php' ) && ! PNCP_Log::is_probe_path( '/' ) );
 $_SERVER['REQUEST_URI'] = '/';
 fresh();

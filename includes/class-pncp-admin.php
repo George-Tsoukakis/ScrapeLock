@@ -1343,7 +1343,7 @@ final class PNCP_Admin {
 			</section>
 			<section class="pncp-card">
 				<h3><?php esc_html_e( 'Top IPs', 'scrapelock' ); ?></h3>
-				<?php self::count_list( $summary['ips'] ); ?>
+				<?php self::ip_list( $summary['ips'] ); ?>
 			</section>
 			<section class="pncp-card">
 				<h3><?php esc_html_e( 'Top User-Agents', 'scrapelock' ); ?></h3>
@@ -1353,7 +1353,7 @@ final class PNCP_Admin {
 		</div>
 
 		<h2><?php esc_html_e( 'What they try to copy', 'scrapelock' ); ?></h2>
-		<p class="description"><?php esc_html_e( 'The blocked requests grouped by page. “Pages” are your content: what scrapers were after. “Files” are scanners looking for passwords, backups or admin areas: no content leaks there, it only shows they tried.', 'scrapelock' ); ?></p>
+		<p class="description"><?php esc_html_e( 'The blocked requests grouped by address. “Pages” exist on your site: what scrapers were after. “Addresses that do not exist” are random strings and guesses. “Files” are scanners looking for passwords, backups or admin areas. No content leaks in the last two, they only show what was tried.', 'scrapelock' ); ?></p>
 		<?php
 		$periods = array(
 			24  => __( 'Last 24 hours', 'scrapelock' ),
@@ -1367,6 +1367,10 @@ final class PNCP_Admin {
 				<section class="pncp-card">
 					<h4><?php esc_html_e( 'Pages', 'scrapelock' ); ?></h4>
 					<?php self::path_table( $top['content'] ); ?>
+				</section>
+				<section class="pncp-card">
+					<h4><?php esc_html_e( 'Addresses that do not exist', 'scrapelock' ); ?></h4>
+					<?php self::path_table( $top['unknown'] ); ?>
 				</section>
 				<section class="pncp-card">
 					<h4><?php esc_html_e( 'Files and admin paths', 'scrapelock' ); ?></h4>
@@ -1415,7 +1419,7 @@ final class PNCP_Admin {
 			</form>
 		<?php endif; ?>
 
-		<?php self::render_repeat_offenders( $format ); ?>
+		<?php self::render_repeat_offenders( $format, $reasons ); ?>
 
 		<h2><?php esc_html_e( 'Latest events', 'scrapelock' ); ?></h2>
 		<?php $rows = PNCP_Log::recent( 100 ); ?>
@@ -1434,10 +1438,21 @@ final class PNCP_Admin {
 					</tr>
 				</thead>
 				<tbody>
+					<?php $buttons = array(); ?>
 					<?php foreach ( $rows as $row ) : ?>
 						<tr>
 							<td><?php echo esc_html( wp_date( $format, (int) strtotime( $row['created'] . ' UTC' ) ) ); ?></td>
-							<td><code><?php echo esc_html( $row['ip'] ); ?></code></td>
+							<td>
+								<code><?php echo esc_html( $row['ip'] ); ?></code>
+								<?php
+								// The button once per IP: the first (most recent) row of each.
+								if ( ! isset( $buttons[ $row['ip'] ] ) ) {
+									$buttons[ $row['ip'] ] = true;
+									echo '<br>';
+									self::block_permanently_button( (string) $row['ip'] );
+								}
+								?>
+							</td>
 							<td><?php echo esc_html( ( isset( $reasons[ $row['reason'] ] ) ? $reasons[ $row['reason'] ] : $row['reason'] ) . ' (' . $row['code'] . ')' ); ?></td>
 							<td><?php echo esc_html( number_format_i18n( (int) $row['hits'] ) ); ?></td>
 							<td><code><?php echo esc_html( $row['path'] ); ?></code></td>
@@ -1546,15 +1561,27 @@ final class PNCP_Admin {
 	}
 
 	/**
-	 * IPs that were temporarily blocked twice or more in 7 days, with the "Block permanently" button.
+	 * Persistent IPs of the last 7 days (two or more temporary blocks, or many blocked requests), with the
+	 * "Block permanently" button.
 	 *
-	 * @param string $format Date format.
+	 * @param string                $format  Date format.
+	 * @param array<string, string> $reasons Reason labels.
 	 */
-	private static function render_repeat_offenders( $format ) {
+	private static function render_repeat_offenders( $format, $reasons ) {
 		$rows = PNCP_Log::repeat_offenders();
 		?>
-		<h2><?php esc_html_e( 'Blocked again and again (last 7 days)', 'scrapelock' ); ?></h2>
-		<p class="description"><?php esc_html_e( 'IPs that got a temporary block at least twice. They come back after every block: you can block them permanently.', 'scrapelock' ); ?></p>
+		<h2><?php esc_html_e( 'Persistent IPs (last 7 days)', 'scrapelock' ); ?></h2>
+		<p class="description">
+			<?php
+			echo esc_html(
+				sprintf(
+					/* translators: %s: number of requests */
+					__( 'IPs with at least two temporary blocks, or at least %s blocked requests. They keep coming back: you can block them permanently.', 'scrapelock' ),
+					number_format_i18n( (int) apply_filters( 'pncp_persistent_requests', 100 ) )
+				)
+			);
+			?>
+		</p>
 		<?php if ( ! $rows ) : ?>
 			<p><?php esc_html_e( 'None.', 'scrapelock' ); ?></p>
 			<?php
@@ -1567,6 +1594,7 @@ final class PNCP_Admin {
 					<th scope="col"><?php esc_html_e( 'IP', 'scrapelock' ); ?></th>
 					<th scope="col"><?php esc_html_e( 'Temporary blocks', 'scrapelock' ); ?></th>
 					<th scope="col"><?php esc_html_e( 'Blocked requests', 'scrapelock' ); ?></th>
+					<th scope="col"><?php esc_html_e( 'Main reason', 'scrapelock' ); ?></th>
 					<th scope="col"><?php esc_html_e( 'Last seen', 'scrapelock' ); ?></th>
 					<th scope="col"><span class="screen-reader-text"><?php esc_html_e( 'Action', 'scrapelock' ); ?></span></th>
 				</tr>
@@ -1577,6 +1605,7 @@ final class PNCP_Admin {
 						<td><code><?php echo esc_html( $row['ip'] ); ?></code></td>
 						<td><?php echo esc_html( number_format_i18n( $row['bans'] ) ); ?></td>
 						<td><?php echo esc_html( number_format_i18n( $row['total'] ) ); ?></td>
+						<td><?php echo esc_html( isset( $reasons[ $row['reason'] ] ) ? $reasons[ $row['reason'] ] : $row['reason'] ); ?></td>
 						<td><?php echo esc_html( wp_date( $format, (int) strtotime( $row['last'] . ' UTC' ) ) ); ?></td>
 						<td><?php self::block_permanently_button( $row['ip'] ); ?></td>
 					</tr>
@@ -1584,6 +1613,25 @@ final class PNCP_Admin {
 			</tbody>
 		</table>
 		<?php
+	}
+
+	/**
+	 * The top IPs with their requests and the "Block permanently" button.
+	 *
+	 * @param array<string, int> $counts IP => requests.
+	 */
+	private static function ip_list( $counts ) {
+		if ( ! $counts ) {
+			echo '<p>' . esc_html__( 'Nothing.', 'scrapelock' ) . '</p>';
+			return;
+		}
+		echo '<ol class="pncp-count-list pncp-ip-list">';
+		foreach ( $counts as $ip => $count ) {
+			echo '<li><span>' . esc_html( (string) $ip ) . ' ';
+			self::block_permanently_button( (string) $ip );
+			echo '</span> <strong>' . esc_html( number_format_i18n( $count ) ) . '</strong></li>';
+		}
+		echo '</ol>';
 	}
 
 	/**

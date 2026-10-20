@@ -4,7 +4,7 @@ Tags: anti-scraping, ai bots, bot protection, rate limit, content protection
 Requires at least: 6.2
 Tested up to: 7.1
 Requires PHP: 7.4
-Stable tag: 2.6.2
+Stable tag: 2.6.3
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -158,6 +158,11 @@ No. A small script waits for the first real interaction (scroll, tap, key or mou
 6. Dashboard widget with the protection status and the last 24 hours.
 
 == Changelog ==
+
+= 2.6.3 =
+* Log: "Pages" now lists only addresses that exist on the site (posts, pages, products, archives…). Random strings and guesses get their own group, "Addresses that do not exist", next to "Files and admin paths".
+* Log: the "Block permanently" button is also in "Top IPs" and in "Latest events".
+* Log: "Persistent IPs" also lists IPs with at least 100 blocked requests in 7 days, even if they never got a temporary block (for example a User-Agent in the bot list), with their main reason.
 
 = 2.6.2 =
 * robots.txt, llms.txt and llms-full.txt are never blocked, for any bot, in WordPress, the early check, the pre-cache check and the Nginx / Apache / Cloudflare rules.

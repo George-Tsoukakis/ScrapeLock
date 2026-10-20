@@ -386,12 +386,16 @@ final class PNCP_Log {
 	 *
 	 * @param int $hours Period in hours.
 	 * @param int $limit Rows per group.
-	 * @return array{content: array<int, array{path:string, hits:int, ips:int}>, probes: array<int, array{path:string, hits:int, ips:int}>}
+	 * Three groups: "content" (addresses that exist on the site: what scrapers were after), "unknown" (addresses
+	 * that do not exist: random strings and guesses) and "probes" (files and admin paths: scanners).
+	 *
+	 * @return array{content: array<int, array{path:string, hits:int, ips:int}>, unknown: array<int, array{path:string, hits:int, ips:int}>, probes: array<int, array{path:string, hits:int, ips:int}>}
 	 */
 	public static function top_paths( $hours = 24, $limit = 10 ) {
 		global $wpdb;
 		$out = array(
 			'content' => array(),
+			'unknown' => array(),
 			'probes'  => array(),
 		);
 		if ( get_option( 'pncp_db_version' ) !== self::DB_VERSION ) {
@@ -401,7 +405,15 @@ final class PNCP_Log {
 		// phpcs:ignore WordPress.DB.DirectDatabaseQuery -- Admin screen.
 		$rows = $wpdb->get_results( $wpdb->prepare( "SELECT path, SUM(hits) AS n, COUNT(DISTINCT ip) AS ips FROM %i WHERE created >= %s AND path <> '' GROUP BY path ORDER BY n DESC LIMIT 300", self::table(), $since ), ARRAY_A );
 		foreach ( (array) $rows as $row ) {
-			$group = self::is_probe_path( (string) $row['path'] ) ? 'probes' : 'content';
+			if ( self::is_probe_path( (string) $row['path'] ) ) {
+				$group = 'probes';
+			} else {
+				// Checked only while there is room in the groups: each check may look up the address on the site.
+				if ( count( $out['content'] ) >= $limit && count( $out['unknown'] ) >= $limit ) {
+					continue;
+				}
+				$group = self::is_site_content( (string) $row['path'] ) ? 'content' : 'unknown';
+			}
 			if ( count( $out[ $group ] ) < $limit ) {
 				$out[ $group ][] = array(
 					'path' => (string) $row['path'],
@@ -414,31 +426,48 @@ final class PNCP_Log {
 	}
 
 	/**
-	 * IPs that were temporarily blocked again and again: candidates for the always-blocked list.
+	 * Persistent IPs: temporarily blocked again and again, or blocked many times without ever getting a temporary
+	 * block (e.g. a User-Agent in the bot list is refused on every request but never "violates" a limit).
+	 * Candidates for the always-blocked list.
 	 *
-	 * @param int $hours Period in hours.
-	 * @param int $min   Minimum number of temporary blocks.
-	 * @param int $limit Rows.
-	 * @return array<int, array{ip:string, bans:int, total:int, last:string}>
+	 * @param int $hours    Period in hours.
+	 * @param int $min      Minimum number of temporary blocks.
+	 * @param int $requests Minimum number of blocked requests (filter `pncp_persistent_requests`, default 100).
+	 * @param int $limit    Rows.
+	 * @return array<int, array{ip:string, bans:int, total:int, last:string, reason:string}>
 	 */
-	public static function repeat_offenders( $hours = 168, $min = 2, $limit = 20 ) {
+	public static function repeat_offenders( $hours = 168, $min = 2, $requests = 0, $limit = 20 ) {
 		global $wpdb;
 		if ( get_option( 'pncp_db_version' ) !== self::DB_VERSION ) {
 			return array();
 		}
-		$since = gmdate( 'Y-m-d H:i:s', time() - (int) $hours * HOUR_IN_SECONDS );
+		$requests = $requests > 0 ? (int) $requests : max( 1, (int) apply_filters( 'pncp_persistent_requests', 100 ) );
+		$since    = gmdate( 'Y-m-d H:i:s', time() - (int) $hours * HOUR_IN_SECONDS );
+		$table    = self::table();
 		// phpcs:ignore WordPress.DB.DirectDatabaseQuery -- Admin screen.
-		$rows = $wpdb->get_results( $wpdb->prepare( "SELECT ip, SUM(CASE WHEN reason = 'ban' THEN hits ELSE 0 END) AS bans, SUM(hits) AS total, MAX(created) AS last FROM %i WHERE created >= %s GROUP BY ip HAVING SUM(CASE WHEN reason = 'ban' THEN hits ELSE 0 END) >= %d ORDER BY bans DESC, total DESC LIMIT %d", self::table(), $since, max( 1, (int) $min ), max( 1, (int) $limit ) ), ARRAY_A );
+		$rows = $wpdb->get_results( $wpdb->prepare( "SELECT ip, SUM(CASE WHEN reason = 'ban' THEN hits ELSE 0 END) AS bans, SUM(hits) AS total, MAX(created) AS last FROM %i WHERE created >= %s GROUP BY ip HAVING SUM(CASE WHEN reason = 'ban' THEN hits ELSE 0 END) >= %d OR SUM(hits) >= %d ORDER BY total DESC LIMIT %d", $table, $since, max( 1, (int) $min ), $requests, max( 1, (int) $limit ) ), ARRAY_A );
 		$out  = array();
 		foreach ( (array) $rows as $row ) {
-			$out[] = array(
-				'ip'    => (string) $row['ip'],
-				'bans'  => (int) $row['bans'],
-				'total' => (int) $row['total'],
-				'last'  => (string) $row['last'],
+			$out[ (string) $row['ip'] ] = array(
+				'ip'     => (string) $row['ip'],
+				'bans'   => (int) $row['bans'],
+				'total'  => (int) $row['total'],
+				'last'   => (string) $row['last'],
+				'reason' => '',
 			);
 		}
-		return $out;
+		if ( $out ) {
+			// The main reason of each IP (not counting the "new temporary block" events).
+			$list = implode( ', ', array_fill( 0, count( $out ), '%s' ) );
+			// phpcs:ignore WordPress.DB.DirectDatabaseQuery, WordPress.DB.PreparedSQLPlaceholders.UnfinishedPrepare, WordPress.DB.PreparedSQLPlaceholders.ReplacementsWrongNumber, WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- Admin screen; $list holds only %s placeholders, one per value.
+			$reasons = $wpdb->get_results( $wpdb->prepare( "SELECT ip, reason, SUM(hits) AS n FROM %i WHERE created >= %s AND reason <> 'ban' AND ip IN ($list) GROUP BY ip, reason ORDER BY n DESC", array_merge( array( $table, $since ), array_keys( $out ) ) ), ARRAY_A );
+			foreach ( (array) $reasons as $row ) {
+				if ( isset( $out[ $row['ip'] ] ) && '' === $out[ $row['ip'] ]['reason'] ) {
+					$out[ $row['ip'] ]['reason'] = (string) $row['reason'];
+				}
+			}
+		}
+		return array_values( $out );
 	}
 
 	/**
@@ -462,6 +491,75 @@ final class PNCP_Log {
 			return ! self::is_site_page( $path );
 		}
 		return (bool) preg_match( '#\.(?:php\d?|env|ini|conf|cfg|config|json|ya?ml|xml|sql|bak|old|orig|swp|zip|tar|gz|rar|7z|log|txt|tfvars|map|mjs|js|asp|aspx|jsp|cgi|sh|py|rb|pl)$|/\.|/@|\.\.|^/(?:wp-admin|wp-includes|wp-content/(?:plugins|themes|uploads)|cgi-bin|vendor|node_modules|cp-[0-9a-f]{10})(?:/|$)#', $path );
+	}
+
+	/**
+	 * Does the address exist on the site? The home page, posts, pages, products and attachments, their
+	 * pagination / feeds, date archives, post type archives, category / tag / other term archives, author
+	 * archives, sitemaps and the REST API. Cached for 6 hours (admin screen only).
+	 *
+	 * @param string $path Logged path (the full request path).
+	 * @return bool
+	 */
+	public static function is_site_content( $path ) {
+		static $seen = array();
+		$path        = '/' . ltrim( (string) $path, '/' );
+		if ( isset( $seen[ $path ] ) ) {
+			return $seen[ $path ];
+		}
+		$key    = 'pncp_pc_' . md5( $path );
+		$cached = get_transient( $key );
+		if ( false !== $cached ) {
+			$seen[ $path ] = 'yes' === $cached;
+			return $seen[ $path ];
+		}
+		$found         = self::find_site_content( $path );
+		$seen[ $path ] = $found;
+		set_transient( $key, $found ? 'yes' : 'no', 6 * HOUR_IN_SECONDS );
+		return $found;
+	}
+
+	/**
+	 * The actual check of is_site_content().
+	 *
+	 * @param string $path Path.
+	 * @return bool
+	 */
+	private static function find_site_content( $path ) {
+		$lower = strtolower( $path );
+		if ( preg_match( '#(?:^|/)(?:wp-sitemap[a-z0-9_-]*|sitemap(?:_index)?|[a-z0-9_-]+-sitemap[0-9]*)\.xml$#', $lower ) || false !== strpos( $lower, '/wp-json/' ) ) {
+			return true;
+		}
+		$rel = PNCP_Private_Urls::relative_path( $path );
+		// Pagination, feeds, AMP and embeds of an address count as the address itself.
+		$rel = (string) preg_replace( '#/(?:page/[0-9]+|feed(?:/(?:rss2?|atom|rdf))?|amp|embed|comment-page-[0-9]+)/?$#i', '/', $rel );
+		if ( '/' === $rel || '' === trim( $rel, '/' ) ) {
+			return true;
+		}
+		if ( self::is_site_page( $path ) || self::is_site_page( (string) wp_parse_url( home_url( $rel ), PHP_URL_PATH ) ) ) {
+			return true;
+		}
+		if ( preg_match( '#^/[0-9]{4}(?:/[0-9]{2}(?:/[0-9]{2})?)?/?$#', $rel ) ) {
+			return true; // Date archive.
+		}
+		$parts = array_values( array_filter( explode( '/', trim( $rel, '/' ) ), 'strlen' ) );
+		$last  = (string) end( $parts );
+		foreach ( get_post_types( array( 'public' => true ), 'objects' ) as $type ) {
+			$link = $type->has_archive ? get_post_type_archive_link( $type->name ) : '';
+			if ( $link && trailingslashit( PNCP_Private_Urls::relative_path( (string) wp_parse_url( $link, PHP_URL_PATH ) ) ) === trailingslashit( $rel ) ) {
+				return true;
+			}
+		}
+		foreach ( get_taxonomies( array( 'public' => true ), 'objects' ) as $taxonomy ) {
+			$slug = ! empty( $taxonomy->rewrite['slug'] ) ? trim( (string) $taxonomy->rewrite['slug'], '/' ) : '';
+			if ( '' !== $slug && 0 === stripos( ltrim( $rel, '/' ), $slug . '/' ) && get_term_by( 'slug', sanitize_title( $last ), $taxonomy->name ) ) {
+				return true;
+			}
+		}
+		if ( 2 === count( $parts ) && 'author' === strtolower( $parts[0] ) && get_user_by( 'slug', $last ) ) {
+			return true;
+		}
+		return false;
 	}
 
 	/**
