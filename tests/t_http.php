@@ -808,6 +808,8 @@ list( $code ) = req( '/llms.txt', array( 'X-Test-IP' => '198.51.100.124', 'User-
 t( 'llms.txt: bot της λίστας δεν παίρνει 403', 403 !== $code, (string) $code );
 list( $code ) = req( '/llms-full.txt', array( 'X-Test-IP' => '198.51.100.124', 'User-Agent' => 'GPTBot/1.2' ) );
 t( 'llms-full.txt: bot της λίστας δεν παίρνει 403', 403 !== $code, (string) $code );
+list( $code ) = req( '/.well-known/tdmrep.json', array( 'X-Test-IP' => '198.51.100.124', 'User-Agent' => 'GPTBot/1.2' ) );
+t( 'tdmrep.json: bot της λίστας το διαβάζει (200)', 200 === $code, (string) $code );
 list( $code ) = req( '/', array( 'X-Test-IP' => '198.51.100.124', 'User-Agent' => 'GPTBot/1.2' ) );
 t( 'αρχική σελίδα: το ίδιο bot παίρνει 403', 403 === $code, (string) $code );
 settings( array( 'early_mode' => 1 ) );
@@ -816,6 +818,10 @@ list( $code ) = req( '/robots.txt', array( 'X-Test-IP' => '198.51.100.125', 'Use
 t( 'robots.txt με τον πρώιμο έλεγχο: 200', 200 === $code, (string) $code );
 list( $code ) = req( '/llms.txt', array( 'X-Test-IP' => '198.51.100.125', 'User-Agent' => 'GPTBot/1.2' ) );
 t( 'llms.txt με τον πρώιμο έλεγχο: όχι 403', 403 !== $code, (string) $code );
+list( $code ) = req( '/.well-known/tdmrep.json', array( 'X-Test-IP' => '198.51.100.125', 'User-Agent' => 'GPTBot/1.2' ) );
+t( 'tdmrep.json με τον πρώιμο έλεγχο: 200', 200 === $code, (string) $code );
+list( $code ) = req( '/', array( 'X-Test-IP' => '198.51.100.125', 'User-Agent' => 'GPTBot/1.2' ) );
+t( 'αρχική σελίδα με τον πρώιμο έλεγχο: το ίδιο bot παίρνει 403', 403 === $code, (string) $code );
 settings( array( 'early_mode' => 0 ) );
 PNCP_Early::sync();
 t( 'ανοιχτές διαδρομές: robots / llms / llms-full, όχι άλλες', PNCP_Bots::is_open_path( '/robots.txt' ) && PNCP_Bots::is_open_path( '/LLMS.txt' ) && PNCP_Bots::is_open_path( '/llms-full.txt' ) && ! PNCP_Bots::is_open_path( '/robots.txt.bak' ) && ! PNCP_Bots::is_open_path( '/blog/llms.txt' ) );
