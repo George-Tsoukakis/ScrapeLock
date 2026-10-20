@@ -260,11 +260,44 @@ t( 'Cloudflare: εξαιρεί τα επαληθευμένα bots', false !== st
 t( 'Cloudflare: έκφραση κάτω από 4096 χαρακτήρες', strlen( $cf['bots']['expression'] ) < 4096, (string) strlen( $cf['bots']['expression'] ) );
 t( 'Cloudflare: δεν υπάρχει πουθενά token', false === strpos( wp_json_encode( $cf ) . $nginx . PNCP_Rules::apache(), $shown ) );
 $regex = '';
+$in_bots = false;
 foreach ( explode( "\n", $nginx ) as $line ) {
-	if ( preg_match( '/^\s*"~\*(.+)" 1;$/', $line, $m ) ) {
+	// Only the bot map (since 2.6.2 there are more maps after it).
+	if ( false !== strpos( $line, '$pncp_bad_bot_' . PNCP_Rules::nginx_id() . ' {' ) ) {
+		$in_bots = true;
+	} elseif ( $in_bots && '}' === trim( $line ) ) {
+		$in_bots = false;
+	}
+	if ( $in_bots && preg_match( '/^\s*"~\*(.+)" 1;$/', $line, $m ) ) {
 		$regex = $m[1];
 	}
 }
+$id = PNCP_Rules::nginx_id();
+t( 'Nginx: ονόματα με την κατάληξη του site (πολλά WordPress στον ίδιο Nginx)', '' !== $id && preg_match( '/^[a-z0-9_]+$/', $id ) && false !== strpos( $nginx, 'zone=pncp_pages_' . $id . ':' ) && false === strpos( $nginx, '$pncp_bad_bot ' ) );
+t( 'Nginx: limit_req_status στο server { }, όχι στο http { } (δεν επιτρέπεται δύο φορές)', false === strpos( PNCP_Rules::nginx_http(), 'limit_req_status' ) && false !== strpos( PNCP_Rules::nginx_server(), 'limit_req_status 429;' ) );
+t( 'Nginx: διεύθυνση ελέγχου και αποτυπώματα στα δύο μέρη', preg_match( '/map \$host \$pncp_rules_' . $id . ' \{ default "[0-9a-f]{12}"; \}/', PNCP_Rules::nginx_http() ) && preg_match( '#location = /\.well-known/scrapelock-nginx \{.*return 200 "\$pncp_rules_' . $id . ' [0-9a-f]{12}\\\\n";#s', PNCP_Rules::nginx_server() ) );
+$other = function ( $url, $path ) {
+	return 'https://shop.example.org/' . ltrim( $path, '/' );
+};
+add_filter( 'home_url', $other, 99, 2 );
+$other_http = PNCP_Rules::nginx_http();
+remove_filter( 'home_url', $other, 99 );
+t( 'Nginx: άλλο site, άλλα ονόματα', 'shop_example_org' !== $id && false !== strpos( $other_http, '$pncp_bad_bot_shop_example_org' ) && false !== strpos( $other_http, 'zone=pncp_pages_shop_example_org:' ) );
+$long = function ( $url, $path ) {
+	return 'https://' . str_repeat( 'a', 60 ) . '.example/' . ltrim( $path, '/' );
+};
+add_filter( 'home_url', $long, 99, 2 );
+$long_id = PNCP_Rules::nginx_id();
+remove_filter( 'home_url', $long, 99 );
+t( 'Nginx: μακρύ όνομα site, σύντομη κατάληξη', strlen( $long_id ) <= 40 && preg_match( '/_[0-9a-f]{6}$/', $long_id ), $long_id );
+$before     = PNCP_Rules::nginx_http();
+$rate_limit = PNCP_Options::get()['rate_limit'];
+settings( array( 'rate_limit' => (int) $rate_limit + 1 ) );
+t( 'Nginx: άλλη ρύθμιση, άλλο αποτύπωμα', PNCP_Rules::nginx_http() !== $before );
+settings( array( 'rate_limit' => $rate_limit ) );
+delete_transient( 'pncp_nginx_status' );
+$st = PNCP_Rules::nginx_status( true );
+t( 'Nginx: χωρίς κανόνες στον server η κατάσταση είναι «δεν υπάρχουν» ή «σφάλμα», ποτέ «τρέχοντες»', in_array( $st['state'], array( 'missing', 'error' ), true ), $st['state'] );
 t( 'Nginx: το regex των bots είναι έγκυρο και πιάνει GPTBot, όχι Chrome', '' !== $regex && preg_match( '#' . $regex . '#i', 'Mozilla/5.0 GPTBot/1.1' ) && ! preg_match( '#' . $regex . '#i', 'Mozilla/5.0 (Windows NT 10.0) Chrome/141.0 Safari/537.36' ) );
 
 /* ---------- AI αναζήτηση χωριστά από την εκπαίδευση (2.2.1) ---------- */
@@ -425,6 +458,51 @@ foreach ( array( 'general', 'content', 'images', 'rules' ) as $tab ) {
 	list( $code, $body ) = http( $page . '&tab=' . $tab );
 	t( "καρτέλα $tab: νέα εμφάνιση χωρίς PHP warnings", 200 === $code && ! php_errors( $body ) && false !== strpos( $body, 'pncp-status-bar' ), (string) $code );
 }
+
+/* ---------- 2.6.2: καρτέλα Log (επαναλαμβανόμενοι, μόνιμος αποκλεισμός, User-Agents) ---------- */
+global $wpdb;
+$keep_log = PNCP_Options::stored();
+PNCP_Log::clear();
+PNCP_Log::unban_all();
+$now_db = gmdate( 'Y-m-d H:i:s' );
+foreach ( array(
+	array( '198.51.100.201', 'ban', 403, 2, 'GPTBot/1.0', 1 ),
+	array( '198.51.100.201', 'rate_page', 429, 40, 'Mozilla/5.0 Chrome/141', 7 ),
+	array( '198.51.100.202', 'fake_crawler', 403, 5, 'Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)', 1 ),
+	array( '198.51.100.203', 'bot_ua', 403, 3, 'Mozilla/5.0 (compatible; Claude-SearchBot/1.0)', 1 ),
+	array( '160.79.106.140', 'bot_ua', 403, 4, 'Mozilla/5.0 (compatible; ClaudeBot/1.0; +claudebot@anthropic.com)', 1 ),
+) as $ev ) {
+	$wpdb->insert( $wpdb->prefix . 'pncp_log', array( 'created' => $now_db, 'ip' => $ev[0], 'reason' => $ev[1], 'code' => $ev[2], 'hits' => $ev[3], 'path' => '/x/', 'ua' => $ev[4], 'uas' => $ev[5] ) );
+}
+PNCP_Ip::store_list( 'anthropic', array( '160.79.106.128/26' ) );
+list( , $body ) = http( $page . '&tab=log' );
+t( 'Log: IP επίσημης λίστας (ClaudeBot / Anthropic) χωρίς κουμπί, με σήμανση', false === strpos( $body, 'name="ip" value="160.79.106.140"' ) && false !== strpos( $body, '160.79.106.140' ) && false !== strpos( $body, 'Official Anthropic address' ) );
+delete_option( PNCP_Ip::LISTS_OPTION . '_anthropic' );
+t( 'Log: ενότητα «Persistent IPs» με την IP, τον κύριο λόγο και κουμπί', false !== strpos( $body, 'Persistent IPs (last 7 days)' ) && false !== strpos( $body, '198.51.100.201' ) && false !== strpos( $body, 'value="block_permanent"' ) && false !== strpos( $body, 'Main reason' ) && ! php_errors( $body ) );
+$top_ips = substr( $body, (int) strpos( $body, 'pncp-ip-list' ), 3000 );
+t( 'Log: κουμπί «Block permanently» και στα Top IPs', false !== strpos( $top_ips, 'value="block_permanent"' ) && false !== strpos( $top_ips, '198.51.100.202' ) );
+$latest = substr( $body, (int) strpos( $body, 'pncp-log-table' ) );
+t( 'Log: κουμπί «Block permanently» και στα Latest events, μία φορά ανά IP', substr_count( $latest, 'name="ip" value="198.51.100.201"' ) === 1 && false !== strpos( $latest, 'name="ip" value="198.51.100.203"' ) );
+t( 'Log: τρεις ομάδες διαδρομών', false !== strpos( $body, 'Addresses that do not exist' ) && false !== strpos( $body, 'Files and admin paths' ) );
+t( 'Log: ψεύτικο Googlebot σημειώνεται «Fake»', false !== strpos( $body, 'Fake: not from the official addresses' ) );
+t( 'Log: γνωστό όνομα bot χωρίς επαλήθευση σημειώνεται', false !== strpos( $body, 'Known bot name, not verified' ) );
+t( 'Log: «7 different User-Agents in this minute»', false !== strpos( $body, '7 different User-Agents in this minute' ) );
+t( 'Log: νέες ετικέτες ορίων', false !== strpos( $body, 'Pages per minute' ) );
+list( $code, , $loc ) = http( '/wp-admin/admin-post.php', array( 'action' => 'pncp_log', 'op' => 'block_permanent', 'ip' => '198.51.100.201', '_wpnonce' => 'wrong' ) );
+wp_cache_delete( 'alloptions', 'options' );
+PNCP_Options::flush();
+t( 'μόνιμος αποκλεισμός: λάθος nonce, τίποτα δεν αλλάζει', ! PNCP_Options::is_blocked_permanently( '198.51.100.201' ), (string) $code );
+list( $code, , $loc ) = http( '/wp-admin/admin-post.php', array( 'action' => 'pncp_log', 'op' => 'block_permanent', 'ip' => '198.51.100.201', '_wpnonce' => wp_create_nonce( 'pncp_log' ) ) );
+wp_cache_delete( 'alloptions', 'options' );
+PNCP_Options::flush();
+t( 'μόνιμος αποκλεισμός: η IP μπαίνει στις πάντα αποκλεισμένες', 302 === $code && PNCP_Options::is_blocked_permanently( '198.51.100.201' ) && false !== strpos( $loc, 'pncp_message=perm_added' ), "$code $loc" );
+list( , $body ) = http( $page . '&tab=log&pncp_message=perm_added' );
+t( 'μόνιμος αποκλεισμός: μήνυμα, και «Blocked permanently» αντί για κουμπί', false !== strpos( $body, 'was added to the always-blocked IPs' ) && false !== strpos( $body, 'Blocked permanently' ) );
+list( $code, , $loc ) = http( '/wp-admin/admin-post.php', array( 'action' => 'pncp_log', 'op' => 'block_permanent', 'ip' => '127.0.0.1', '_wpnonce' => wp_create_nonce( 'pncp_log' ) ) );
+t( 'μόνιμος αποκλεισμός: ο server αρνείται', false !== strpos( $loc, 'pncp_message=perm_refused' ), $loc );
+PNCP_Log::clear();
+update_option( PNCP_OPTION, $keep_log );
+PNCP_Options::flush();
 
 /* ---------- Κανόνας 11 του WordPress.org: μόνιμες ειδοποιήσεις μόνο στον Πίνακα ελέγχου και στη σελίδα του plugin ---------- */
 $keep_notice = PNCP_Options::stored();

@@ -675,7 +675,7 @@ final class PNCP_Admin {
 		<?php self::row_open( 'ai', __( 'AI search and training', 'scrapelock' ) ); ?>
 				<?php
 				self::checkbox( $s, 'allow_ai_search', __( 'Allow AI search engines and assistants (not training crawlers)', 'scrapelock' ), sprintf( /* translators: %s: list of User-Agents */ __( 'So the site appears in AI search answers with a link, without being given for model training. Allowed: %s. They are also removed from the robots.txt Disallow and from the server rules. The page limit still applies, because the User-Agent can be spoofed.', 'scrapelock' ), implode( ', ', PNCP_Options::ai_search_agents() ) ) );
-				self::checkbox( $s, 'verify_ai_bots', __( 'Verify AI search bots with their official IP lists (OpenAI, Perplexity)', 'scrapelock' ), __( 'With AI search allowed: the real OAI-SearchBot, ChatGPT-User, PerplexityBot and Perplexity-User are never limited or blocked, and requests that only use their name get a 403 (“Fake AI search bot”). The lists are downloaded once a day; until then nothing changes.', 'scrapelock' ) );
+				self::checkbox( $s, 'verify_ai_bots', __( 'Verify AI search bots with their official IP lists (OpenAI, Perplexity, Anthropic)', 'scrapelock' ), __( 'With AI search allowed: the real OAI-SearchBot, ChatGPT-User, PerplexityBot, Perplexity-User, Claude-SearchBot and Claude-User are never limited or blocked, and requests that only use their name get a 403 (“Fake AI search bot”). The lists are downloaded once a day; until then nothing changes.', 'scrapelock' ) );
 				self::checkbox( $s, 'robots_ai_block', __( 'Declare AI crawlers in robots.txt (Disallow)', 'scrapelock' ), __( 'Applies to the virtual robots.txt of WordPress. If a physical robots.txt file exists, it takes precedence.', 'scrapelock' ) );
 				self::checkbox( $s, 'content_signal', __( 'Content Signals in robots.txt: search yes, AI training no', 'scrapelock' ), __( 'A line that says what the content may be used for (contentsignals.org): search=yes, ai-train=no, and ai-input according to “Allow AI search engines”. It does not block anything; it is a statement of your terms that well-behaved companies read.', 'scrapelock' ) );
 				?>
@@ -746,6 +746,7 @@ final class PNCP_Admin {
 				);
 				?>
 				</p>
+				<?php self::textarea( $s, 'content_paths', __( 'Content addresses: path prefixes of pages that other plugins show, one per line, e.g. /hub/space/', 'scrapelock' ), __( 'Only for the log: blocked requests under these addresses count as “Pages”. Routes that plugins register as WordPress rewrite rules, and all posts, pages, products and terms, are found without this. Nothing is blocked or allowed because of it.', 'scrapelock' ), 2 ); ?>
 			</td>
 		</tr>
 		<tr id="pncp-sec-ip">
@@ -899,6 +900,7 @@ final class PNCP_Admin {
 			'openai_user'     => 'OpenAI ChatGPT-User',
 			'perplexity_bot'  => 'PerplexityBot',
 			'perplexity_user' => 'Perplexity-User',
+			'anthropic'       => 'Anthropic (Claude-SearchBot, Claude-User)',
 		);
 		$needed  = PNCP_Ip::needed_lists();
 		// The AI search lists are shown only when they are used or have been downloaded.
@@ -942,7 +944,7 @@ final class PNCP_Admin {
 		</ul>
 		<?php self::action_form_open( 'pncp_log', 'pncp_log' ); ?>
 			<input type="hidden" name="op" value="refresh_lists">
-			<?php submit_button( __( 'Refresh now', 'scrapelock' ), 'secondary', 'submit', false ); ?>
+			<?php submit_button( __( 'Refresh lists now', 'scrapelock' ), 'secondary', 'submit', false ); ?>
 		</form>
 		<?php if ( PNCP_Geo::needed() ) : ?>
 			<h3><?php esc_html_e( 'Country database', 'scrapelock' ); ?></h3>
@@ -1293,13 +1295,69 @@ final class PNCP_Admin {
 		<?php endforeach; ?>
 
 		<h2><?php esc_html_e( 'Nginx', 'scrapelock' ); ?></h2>
-		<p class="description"><?php esc_html_e( '1) Inside http { }, e.g. in the file /etc/nginx/conf.d/scrapelock.conf:', 'scrapelock' ); ?></p>
+		<?php self::render_nginx_status(); ?>
+		<p class="description"><?php esc_html_e( 'Optional: they stop the bots before PHP and the page cache, so the server does less work. Without access to the Nginx configuration (shared hosting) skip them: the plugin and the pre-cache check still protect the pages. The names carry this site\'s suffix, so several WordPress sites can use their rules on the same Nginx.', 'scrapelock' ); ?></p>
+		<p class="description"><?php esc_html_e( '1) Inside http { }: a new file in a folder that nginx.conf includes there, e.g.', 'scrapelock' ); ?></p>
+		<ul class="ul-disc description">
+			<li><?php esc_html_e( 'Debian / Ubuntu, CentOS / RHEL, Plesk and most servers:', 'scrapelock' ); ?> <code><?php echo esc_html( '/etc/nginx/conf.d/scrapelock-' . PNCP_Rules::nginx_id() . '.conf' ); ?></code></li>
+			<li><?php esc_html_e( 'aaPanel:', 'scrapelock' ); ?> <code><?php echo esc_html( '/www/server/panel/vhost/nginx/0.scrapelock-' . PNCP_Rules::nginx_id() . '.conf' ); ?></code></li>
+		</ul>
 		<?php self::code_block( 'pncp-nginx-http', PNCP_Rules::nginx_http(), 8 ); ?>
-		<p class="description"><?php esc_html_e( '2) Inside the site\'s server { }, before the other location blocks. Then: nginx -t and reload.', 'scrapelock' ); ?></p>
+		<p class="description"><?php esc_html_e( '2) Inside the site\'s server { } (the one for HTTPS, and for HTTP if it serves pages too), before the other location blocks:', 'scrapelock' ); ?></p>
+		<ul class="ul-disc description">
+			<li><?php esc_html_e( 'Your own server: the site\'s file, e.g. /etc/nginx/sites-available/, or a file it includes.', 'scrapelock' ); ?></li>
+			<li><?php esc_html_e( 'aaPanel: Website → the site → Config, or a file in the site\'s folder under /www/server/panel/vhost/nginx/extension/ when the site\'s configuration includes it.', 'scrapelock' ); ?></li>
+			<li><?php esc_html_e( 'Plesk: Websites & Domains → Apache & nginx Settings → Additional nginx directives.', 'scrapelock' ); ?></li>
+			<li><?php esc_html_e( 'Other panels: the place they give for custom server { } directives.', 'scrapelock' ); ?></li>
+		</ul>
 		<?php self::code_block( 'pncp-nginx-server', PNCP_Rules::nginx_server(), 18 ); ?>
+		<p class="description"><?php esc_html_e( '3) Run nginx -t: only if it says “test is successful”, reload Nginx (nginx -s reload or systemctl reload nginx). If it shows an error, nothing has changed yet: remove what you added. 4) Check the status above. After every change of the settings that changes the rules, it says “out of date”: copy the part it names again.', 'scrapelock' ); ?></p>
 
 		<h2><?php esc_html_e( 'Apache (.htaccess, above # BEGIN WordPress)', 'scrapelock' ); ?></h2>
 		<?php self::code_block( 'pncp-apache', PNCP_Rules::apache(), 14 ); ?>
+		<?php
+	}
+
+	/**
+	 * Whether the Nginx rules are installed and match the current settings (the site asks itself).
+	 */
+	private static function render_nginx_status() {
+		// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Only asks the site again; changes nothing.
+		$status = PNCP_Rules::nginx_status( isset( $_GET['pncp_nginx_check'] ) );
+		$names  = array(
+			'http'   => __( '1) http { }', 'scrapelock' ),
+			'server' => __( '2) server { }', 'scrapelock' ),
+		);
+		if ( 'current' === $status['state'] ) {
+			$class   = 'notice-success';
+			$message = __( 'Installed and up to date with the current settings.', 'scrapelock' );
+		} elseif ( 'stale' === $status['state'] ) {
+			$class   = 'notice-warning';
+			$message = sprintf(
+				/* translators: %s: the parts, e.g. "1) http { }, 2) server { }" */
+				__( 'Installed, but out of date: the settings have changed since. Copy again: %s. Then nginx -t and reload.', 'scrapelock' ),
+				implode( ', ', array_intersect_key( $names, array_flip( $status['parts'] ) ) )
+			);
+		} elseif ( 'error' === $status['state'] ) {
+			$class   = 'notice-info';
+			$message = sprintf(
+				/* translators: %s: error message */
+				__( 'Could not check: the site could not reach itself (%s).', 'scrapelock' ),
+				$status['error']
+			);
+		} else {
+			$class   = 'notice-info';
+			$message = __( 'Not installed on this site\'s Nginx (or the site is not served by Nginx).', 'scrapelock' );
+		}
+		$again = PNCP_Status::settings_url(
+			array(
+				'tab'              => 'rules',
+				'pncp_nginx_check' => 1,
+			)
+		);
+		?>
+		<div class="notice <?php echo esc_attr( $class ); ?> inline"><p><strong><?php esc_html_e( 'Status:', 'scrapelock' ); ?></strong> <?php echo esc_html( $message ); ?>
+			<a href="<?php echo esc_url( $again ); ?>"><?php esc_html_e( 'Check again', 'scrapelock' ); ?></a></p></div>
 		<?php
 	}
 
@@ -1342,16 +1400,17 @@ final class PNCP_Admin {
 			</section>
 			<section class="pncp-card">
 				<h3><?php esc_html_e( 'Top IPs', 'scrapelock' ); ?></h3>
-				<?php self::count_list( $summary['ips'] ); ?>
+				<?php self::ip_list( $summary['ips'] ); ?>
 			</section>
 			<section class="pncp-card">
 				<h3><?php esc_html_e( 'Top User-Agents', 'scrapelock' ); ?></h3>
-				<?php self::count_list( $summary['uas'] ); ?>
+				<?php self::ua_list( $summary['uas'], $summary['ua_reasons'], $reasons ); ?>
+				<p class="description"><?php esc_html_e( 'Verified search engines and AI bots are never blocked, so they never appear here: a known bot name in this list was a fake one or could not be verified.', 'scrapelock' ); ?></p>
 			</section>
 		</div>
 
 		<h2><?php esc_html_e( 'What they try to copy', 'scrapelock' ); ?></h2>
-		<p class="description"><?php esc_html_e( 'The blocked requests grouped by page. “Pages” are your content: what scrapers were after. “Files” are scanners looking for passwords, backups or admin areas: no content leaks there, it only shows they tried.', 'scrapelock' ); ?></p>
+		<p class="description"><?php esc_html_e( 'The blocked requests grouped by address. “Pages” exist on your site: what scrapers were after. “Addresses that do not exist” are random strings and guesses. “Files” are scanners looking for passwords, backups or admin areas. No content leaks in the last two, they only show what was tried.', 'scrapelock' ); ?></p>
 		<?php
 		$periods = array(
 			24  => __( 'Last 24 hours', 'scrapelock' ),
@@ -1365,6 +1424,13 @@ final class PNCP_Admin {
 				<section class="pncp-card">
 					<h4><?php esc_html_e( 'Pages', 'scrapelock' ); ?></h4>
 					<?php self::path_table( $top['content'] ); ?>
+				</section>
+				<section class="pncp-card">
+					<h4><?php esc_html_e( 'Addresses that do not exist', 'scrapelock' ); ?></h4>
+					<?php self::path_table( $top['unknown'] ); ?>
+					<?php if ( $top['unknown'] ) : ?>
+						<p class="description"><?php esc_html_e( 'A real page here? Pages of plugins that WordPress does not know (e.g. a community or forum) count as “Pages” when you add their prefix in “Content addresses” (Bots and limits tab).', 'scrapelock' ); ?></p>
+					<?php endif; ?>
 				</section>
 				<section class="pncp-card">
 					<h4><?php esc_html_e( 'Files and admin paths', 'scrapelock' ); ?></h4>
@@ -1401,6 +1467,7 @@ final class PNCP_Admin {
 									<input type="hidden" name="ip" value="<?php echo esc_attr( $ip ); ?>">
 									<button type="submit" class="button button-small"><?php esc_html_e( 'Unblock', 'scrapelock' ); ?></button>
 								</form>
+								<?php self::block_permanently_button( (string) $ip ); ?>
 							</td>
 						</tr>
 					<?php endforeach; ?>
@@ -1411,6 +1478,8 @@ final class PNCP_Admin {
 				<?php submit_button( __( 'Unblock all', 'scrapelock' ), 'secondary', 'submit', true ); ?>
 			</form>
 		<?php endif; ?>
+
+		<?php self::render_repeat_offenders( $format, $reasons ); ?>
 
 		<h2><?php esc_html_e( 'Latest events', 'scrapelock' ); ?></h2>
 		<?php $rows = PNCP_Log::recent( 100 ); ?>
@@ -1429,14 +1498,38 @@ final class PNCP_Admin {
 					</tr>
 				</thead>
 				<tbody>
+					<?php $buttons = array(); ?>
 					<?php foreach ( $rows as $row ) : ?>
 						<tr>
 							<td><?php echo esc_html( wp_date( $format, (int) strtotime( $row['created'] . ' UTC' ) ) ); ?></td>
-							<td><code><?php echo esc_html( $row['ip'] ); ?></code></td>
+							<td>
+								<code><?php echo esc_html( $row['ip'] ); ?></code>
+								<?php
+								// The button once per IP: the first (most recent) row of each.
+								if ( ! isset( $buttons[ $row['ip'] ] ) ) {
+									$buttons[ $row['ip'] ] = true;
+									echo '<br>';
+									self::block_permanently_button( (string) $row['ip'] );
+								}
+								?>
+							</td>
 							<td><?php echo esc_html( ( isset( $reasons[ $row['reason'] ] ) ? $reasons[ $row['reason'] ] : $row['reason'] ) . ' (' . $row['code'] . ')' ); ?></td>
 							<td><?php echo esc_html( number_format_i18n( (int) $row['hits'] ) ); ?></td>
 							<td><code><?php echo esc_html( $row['path'] ); ?></code></td>
-							<td class="pncp-ua"><?php echo esc_html( $row['ua'] ); ?></td>
+							<td class="pncp-ua">
+								<?php
+								echo esc_html( $row['ua'] );
+								if ( isset( $row['uas'] ) && (int) $row['uas'] > 1 ) {
+									echo '<br><span class="pncp-badge">' . esc_html(
+										sprintf(
+											/* translators: %s: number of different User-Agents */
+											_n( '%s different User-Agent in this minute', '%s different User-Agents in this minute', (int) $row['uas'], 'scrapelock' ),
+											number_format_i18n( (int) $row['uas'] )
+										)
+									) . '</span>';
+								}
+								?>
+							</td>
 						</tr>
 					<?php endforeach; ?>
 				</tbody>
@@ -1500,6 +1593,148 @@ final class PNCP_Admin {
 		echo '<ol class="pncp-count-list">';
 		foreach ( $counts as $key => $count ) {
 			printf( '<li><span>%s</span> <strong>%s</strong></li>', esc_html( isset( $labels[ $key ] ) ? $labels[ $key ] : (string) $key ), esc_html( number_format_i18n( $count ) ) );
+		}
+		echo '</ol>';
+	}
+
+	/**
+	 * The "Block permanently" button: adds the IP to "Always blocked IPs". Not shown for the administrator's own
+	 * IP and the server, and replaced by a note when the IP is already in the list.
+	 *
+	 * @param string $ip IP.
+	 */
+	private static function block_permanently_button( $ip ) {
+		if ( PNCP_Options::is_blocked_permanently( $ip ) ) {
+			echo ' <span class="pncp-badge pncp-badge--bad">' . esc_html__( 'Blocked permanently', 'scrapelock' ) . '</span>';
+			return;
+		}
+		if ( PNCP_Ip::client_ip() === $ip || PNCP_Ip::is_local( $ip ) ) {
+			return;
+		}
+		$owner = PNCP_Ip::official_owner( $ip );
+		if ( '' !== $owner ) {
+			printf(
+				' <span class="pncp-badge" title="%2$s">%1$s</span>',
+				/* translators: %s: company, e.g. Anthropic or Cloudflare */
+				esc_html( sprintf( __( 'Official %s address', 'scrapelock' ), $owner ) ),
+				esc_attr__( 'No “Block permanently” here: the address is in an official list, so blocking it would also stop that company\'s search bots, or every visitor behind a CDN. Its training crawlers are already blocked by the bot list (User-Agent).', 'scrapelock' )
+			);
+			return;
+		}
+		self::action_form_open( 'pncp_log', 'pncp_log', 'pncp-inline-form' );
+		?>
+			<input type="hidden" name="op" value="block_permanent">
+			<input type="hidden" name="ip" value="<?php echo esc_attr( $ip ); ?>">
+			<button type="submit" class="button button-small"><?php esc_html_e( 'Block permanently', 'scrapelock' ); ?></button>
+		</form>
+		<?php
+	}
+
+	/**
+	 * Persistent IPs of the last 7 days (two or more temporary blocks, or many blocked requests), with the
+	 * "Block permanently" button.
+	 *
+	 * @param string                $format  Date format.
+	 * @param array<string, string> $reasons Reason labels.
+	 */
+	private static function render_repeat_offenders( $format, $reasons ) {
+		$rows = PNCP_Log::repeat_offenders();
+		?>
+		<h2><?php esc_html_e( 'Persistent IPs (last 7 days)', 'scrapelock' ); ?></h2>
+		<p class="description">
+			<?php
+			echo esc_html(
+				sprintf(
+					/* translators: %s: number of requests */
+					__( 'IPs with at least two temporary blocks, or at least %s blocked requests. They keep coming back: you can block them permanently.', 'scrapelock' ),
+					number_format_i18n( (int) apply_filters( 'pncp_persistent_requests', 100 ) )
+				)
+			);
+			?>
+		</p>
+		<?php if ( ! $rows ) : ?>
+			<p><?php esc_html_e( 'None.', 'scrapelock' ); ?></p>
+			<?php
+			return;
+		endif;
+		?>
+		<table class="widefat striped pncp-table">
+			<thead>
+				<tr>
+					<th scope="col"><?php esc_html_e( 'IP', 'scrapelock' ); ?></th>
+					<th scope="col"><?php esc_html_e( 'Temporary blocks', 'scrapelock' ); ?></th>
+					<th scope="col"><?php esc_html_e( 'Blocked requests', 'scrapelock' ); ?></th>
+					<th scope="col"><?php esc_html_e( 'Main reason', 'scrapelock' ); ?></th>
+					<th scope="col"><?php esc_html_e( 'Last seen', 'scrapelock' ); ?></th>
+					<th scope="col"><span class="screen-reader-text"><?php esc_html_e( 'Action', 'scrapelock' ); ?></span></th>
+				</tr>
+			</thead>
+			<tbody>
+				<?php foreach ( $rows as $row ) : ?>
+					<tr>
+						<td><code><?php echo esc_html( $row['ip'] ); ?></code></td>
+						<td><?php echo esc_html( number_format_i18n( $row['bans'] ) ); ?></td>
+						<td><?php echo esc_html( number_format_i18n( $row['total'] ) ); ?></td>
+						<td><?php echo esc_html( isset( $reasons[ $row['reason'] ] ) ? $reasons[ $row['reason'] ] : $row['reason'] ); ?></td>
+						<td><?php echo esc_html( wp_date( $format, (int) strtotime( $row['last'] . ' UTC' ) ) ); ?></td>
+						<td><?php self::block_permanently_button( $row['ip'] ); ?></td>
+					</tr>
+				<?php endforeach; ?>
+			</tbody>
+		</table>
+		<?php
+	}
+
+	/**
+	 * The top IPs with their requests and the "Block permanently" button.
+	 *
+	 * @param array<string, int> $counts IP => requests.
+	 */
+	private static function ip_list( $counts ) {
+		if ( ! $counts ) {
+			echo '<p>' . esc_html__( 'Nothing.', 'scrapelock' ) . '</p>';
+			return;
+		}
+		echo '<ol class="pncp-count-list pncp-ip-list">';
+		foreach ( $counts as $ip => $count ) {
+			echo '<li><span>' . esc_html( (string) $ip ) . ' ';
+			self::block_permanently_button( (string) $ip );
+			echo '</span> <strong>' . esc_html( number_format_i18n( $count ) ) . '</strong></li>';
+		}
+		echo '</ol>';
+	}
+
+	/**
+	 * The top User-Agents with why they were blocked: "Fake" for a search engine or AI bot that came from
+	 * another address, "Not verified" for a known bot name that could not be checked, and the main reason.
+	 *
+	 * @param array<string, int>                $counts  User-Agent => requests.
+	 * @param array<string, array<string, int>> $why     User-Agent => reason => requests.
+	 * @param array<string, string>             $reasons Reason labels.
+	 */
+	private static function ua_list( $counts, $why, $reasons ) {
+		if ( ! $counts ) {
+			echo '<p>' . esc_html__( 'Nothing.', 'scrapelock' ) . '</p>';
+			return;
+		}
+		echo '<ol class="pncp-count-list pncp-ua-list">';
+		foreach ( $counts as $ua => $count ) {
+			$ua    = (string) $ua;
+			$by    = isset( $why[ $ua ] ) ? $why[ $ua ] : array();
+			$badge = '';
+			if ( isset( $by['fake_crawler'] ) || isset( $by['fake_ai_bot'] ) ) {
+				$badge = '<span class="pncp-badge pncp-badge--bad">' . esc_html__( 'Fake: not from the official addresses', 'scrapelock' ) . '</span>';
+			} elseif ( '' !== PNCP_Bots::claimed_crawler( $ua ) || PNCP_Bots::ua_in_list( $ua, PNCP_Options::ai_search_agents() ) ) {
+				$badge = '<span class="pncp-badge">' . esc_html__( 'Known bot name, not verified', 'scrapelock' ) . '</span>';
+			}
+			$main = $by ? (string) array_key_first( $by ) : '';
+			printf(
+				'<li><span>%1$s%2$s%3$s</span> <strong>%4$s</strong></li>',
+				esc_html( $ua ),
+				$badge, // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Built above from escaped text.
+				'' !== $main ? '<br><small class="pncp-ua-reason">' . esc_html( isset( $reasons[ $main ] ) ? $reasons[ $main ] : $main ) . '</small>' : '',
+				esc_html( number_format_i18n( $count ) )
+			);
 		}
 		echo '</ol>';
 	}
@@ -1595,6 +1830,11 @@ final class PNCP_Admin {
 				PNCP_Log::unban_all();
 				self::back( 'log', 'unbanned' );
 				break;
+			case 'block_permanent':
+				$ip     = isset( $_POST['ip'] ) ? sanitize_text_field( wp_unslash( $_POST['ip'] ) ) : '';
+				$result = PNCP_Options::block_ip_permanently( $ip );
+				self::back( 'log', 'perm_' . $result );
+				break;
 			case 'clear_log':
 				PNCP_Log::clear();
 				self::back( 'log', 'cleared' );
@@ -1661,6 +1901,10 @@ final class PNCP_Admin {
 			'revoked'         => array( 'success', __( 'Previous token revoked.', 'scrapelock' ) ),
 			'unbanned'        => array( 'success', __( 'Block lifted.', 'scrapelock' ) ),
 			'cleared'         => array( 'success', __( 'Log deleted.', 'scrapelock' ) ),
+			'perm_added'      => array( 'success', __( 'The IP was added to the always-blocked IPs (“Bots and limits” → “Always blocked”). You can remove it there.', 'scrapelock' ) ),
+			'perm_exists'     => array( 'info', __( 'The IP is already in the always-blocked IPs.', 'scrapelock' ) ),
+			'perm_full'       => array( 'error', __( 'The always-blocked IPs already have 200 lines. Combine addresses into CIDR ranges there first.', 'scrapelock' ) ),
+			'perm_refused'    => array( 'error', __( 'This IP cannot be blocked permanently: it is the server itself, your own IP, a private address, an always-allowed IP or an address in an official list (Google, Bing, AI search services, Cloudflare, Bunny CDN).', 'scrapelock' ) ),
 			'lists'           => array( 'success', __( 'IP lists refreshed.', 'scrapelock' ) ),
 			'geo'             => array( 'success', __( 'Country database downloaded.', 'scrapelock' ) ),
 			'geo_failed'      => array( 'error', __( 'The country database could not be downloaded or read; the previous one (if any) was kept. It will try again tomorrow.', 'scrapelock' ) ),

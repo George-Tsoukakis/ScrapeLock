@@ -153,6 +153,10 @@ final class PNCP_Precheck_Runtime {
 		if ( '' !== $home && ( 0 === strcasecmp( $path, $home ) || 0 === stripos( $path, $home . '/' ) ) ) {
 			$path = '/' . ltrim( substr( $path, strlen( $home ) ), '/' );
 		}
+		// robots.txt and llms.txt: every bot must be able to read them.
+		if ( preg_match( '#^/(?:robots|llms|llms-full)\.txt$#i', $path ) ) {
+			return false;
+		}
 		return ! preg_match( '#^/(?:index\.php/)?(?:wp-admin|wp-login\.php|wp-cron\.php|xmlrpc\.php|wp-json|wp-signup\.php|wp-activate\.php|wp-trackback\.php|wp-comments-post\.php|cp-[0-9a-f]{10})(?:/|$)#i', $path );
 	}
 

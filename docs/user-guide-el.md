@@ -22,11 +22,14 @@
 | Απόκρυψη ονομάτων χρηστών: `?author=N` → 404, REST `/wp/v2/users` → 401, χωρίς χάρτη χρηστών στο sitemap (οι συνδεδεμένοι βλέπουν τα πάντα) | PHP | Bots και όρια |
 | Πρώιμος έλεγχος (προαιρετικός): το `wp-content/mu-plugins/scrapelock-early.php` σταματά bots της λίστας, αποκλεισμένες IP και referrers πριν φορτώσουν θέμα και plugins | PHP (mu-plugin) | Bots και όρια |
 | Έλεγχος πριν από το cache (προαιρετικός): μία γραμμή στην κορυφή του `wp-config.php` εφαρμόζει το όριο σελίδων, τους αποκλεισμούς και τις πάντα αποκλεισμένες IP και στις σελίδες που σερβίρει το cache (WP Rocket κ.ά.) | PHP (wp-config.php) | Bots και όρια |
+| robots.txt, llms.txt και llms-full.txt δεν μπλοκάρονται ποτέ, για κανένα bot (και στους κανόνες server), ώστε κάθε bot να μπορεί να διαβάσει τους κανόνες | PHP + server | — |
+| Αρχείο: κουμπί «Μόνιμος αποκλεισμός», λίστα «Αποκλείστηκαν ξανά και ξανά (7 ημέρες)», σήμανση ψεύτικων / μη επαληθευμένων User-Agents, πόσα διαφορετικά User-Agents είχε ένα event | — | Αρχείο |
 | Content Signals στο robots.txt: `search=yes, ai-train=no`, και `ai-input` ανάλογα με την AI αναζήτηση | robots.txt | Bots και όρια |
 | Επαλήθευση ανθρώπου (προαιρετική): μετά την πρώτη πραγματική αλληλεπίδραση (scroll, άγγιγμα, πλήκτρο, κίνηση ποντικιού) ο browser λύνει στο παρασκήνιο ένα ελαφρύ «πρόβλημα» και παίρνει cookie `pncp_hv` για 7 ημέρες· όσοι δεν το έχουν παίρνουν αυστηρότερο όριο σελίδων. Χωρίς captcha, δουλεύει με page cache | PHP + JS | Bots και όρια |
 | Όριο sitemap ανά IP (WordPress, Rank Math, Yoast κ.ά.)· ποτέ για επαληθευμένες μηχανές αναζήτησης | PHP | Bots και όρια |
 | Χώρες: αποκλεισμός ή αυστηρότερο όριο. Χώρα από το `CF-IPCountry` (μόνο από Cloudflare), το `CDN-RequestCountryCode` (μόνο από Bunny CDN) ή από τη δωρεάν βάση DB-IP Lite (μία φορά τον μήνα, στο `uploads/scrapelock-geo`) | PHP | Bots και όρια |
 | Αναφορά «τι προσπαθούν να αντιγράψουν»: οι σελίδες και τα αρχεία που μπλοκαρίστηκαν περισσότερο (24 ώρες / 7 ημέρες) | — | Αρχείο |
+| Σελίδες άλλων plugins (π.χ. κοινότητα στο `/hub/space/`) στα «Pages»: από τα rewrite rules ή από τη ρύθμιση «Content addresses». Χωρίς «Μόνιμο αποκλεισμό» σε επίσημες διευθύνσεις (Google, Bing, OpenAI, Perplexity, Anthropic, Cloudflare, Bunny) | — | Αρχείο, Bots και όρια |
 | Trusted Proxy: το `CF-Connecting-IP` / `X-Real-IP` / `X-Forwarded-For` διαβάζεται μόνο από αξιόπιστο proxy (Cloudflare, Bunny CDN με την επίσημη λίστα του, ιδιωτικό δίκτυο, δική σας λίστα) · αν όλοι οι επισκέπτες φαίνονται με διεύθυνση Cloudflare ή Bunny, κουμπί που το διορθώνει με ένα κλικ | PHP | Bots και όρια |
 | REST API και WPGraphQL χωρίς κείμενο για επισκέπτες · RSS μόνο περίληψη, ή πλήρες με «Το άρθρο … δημοσιεύτηκε πρώτα στο …» στο τέλος | PHP | Feeds και API |
 | Προστατευμένα XML feeds με token (header για ERP, URL για Skroutz/BestPrice/Merchant), μόνο hash στη βάση (ποτέ σε καθαρή μορφή, ούτε στη μετάβαση από την 1.x), εναλλαγή με περίοδο χάριτος, στατιστικά | PHP | Feeds και API |
@@ -63,25 +66,37 @@ if ( is_file( '/…/wp-content/scrapelock-precheck/run.php' ) ) { include_once '
 - Δεν εφαρμόζει τα αυστηρότερα όρια (επαλήθευση ανθρώπου, χώρες) και το Emergency Mode: αυτά ισχύουν για τις σελίδες εκτός cache.
 - Αν το `wp-config.php` δεν γράφεται, η ρύθμιση δείχνει τις γραμμές για να τις βάλετε με το χέρι. Όλα αφαιρούνται όταν κλείνει η ρύθμιση ή απενεργοποιείται το plugin. Όχι σε multisite.
 
+**Ψεύτικοι browsers στους κανόνες server (2.6.2).** Με το «Block headless and fake browsers» ενεργό, οι κανόνες Nginx και Apache μπλοκάρουν και στον server τον «Chrome» / «Firefox» χωρίς τα headers που στέλνει πάντα ένας πραγματικός browser σε HTTPS. Έτσι πιάνονται και οι scanners που ζητούν αρχεία `.php` και δεν φτάνουν ποτέ στο WordPress. Το Googlebot και τα άλλα bots που γράφουν «Chrome/» στο User-Agent, τα in-app browsers του Android (WebView) και τα «Πάντα επιτρεπτά» δεν επηρεάζονται.
+
 **Κανόνες server.** Για cache του Nginx (FastCGI cache) ή του CDN, που δεν περνούν καθόλου από την PHP, και για τα στατικά αρχεία: οι κανόνες της καρτέλας **Κανόνες server**. Οι κανόνες βγαίνουν με το domain, τη λίστα bots, τα feeds και τον φάκελο αντιγράφων του δικού σας site. Τα βασικά για Nginx:
 
 ```nginx
-# http { }
-map $http_user_agent $pncp_bad_bot {
+# http { }  (π.χ. /etc/nginx/conf.d/scrapelock-example_gr.conf)
+map $http_user_agent $pncp_bad_bot_example_gr {
     default 0;
     "~*(GPTBot|ClaudeBot|CCBot|Bytespider|HeadlessChrome|python-requests|curl/)" 1;
     "" 1;
 }
-limit_req_zone $binary_remote_addr zone=pncp_pages:10m rate=60r/m;
+limit_req_zone $binary_remote_addr zone=pncp_pages_example_gr:10m rate=60r/m;
 
 # server { }
-if ($pncp_bad_bot) { return 403; }
+if ($pncp_block_example_gr) { return 403; }
 location ^~ /wp-content/uploads/pncp-originals-XXXXXXXXXXXX/ { deny all; return 404; }
 # μέσα στο υπάρχον location / { }:
-#   limit_req zone=pncp_pages burst=20 nodelay;
+#   limit_req zone=pncp_pages_example_gr burst=20 nodelay;
 ```
 
 Η καρτέλα δίνει τους κανόνες σε δύο μέρη, `http { }` και `server { }`, φτιαγμένους για το site σας: domain, λίστα bots, feeds, φάκελος αντιγράφων. Τα παραπάνω είναι μόνο παράδειγμα.
+
+**Nginx σε κάθε server (2.6.3).**
+- Τα ονόματα (μεταβλητές, ζώνη ορίου) έχουν την κατάληξη του site, π.χ. `_pharmacyneeds_gr`. Έτσι πολλά sites WordPress στον ίδιο Nginx βάζουν το καθένα τους δικούς του κανόνες χωρίς σύγκρουση στο `nginx -t`.
+- Η καρτέλα γράφει πού μπαίνει κάθε μέρος: Debian / Ubuntu, CentOS / RHEL, Plesk, aaPanel, άλλα πάνελ.
+- **Κατάσταση:** το plugin ρωτά το ίδιο το site στη διεύθυνση `/.well-known/scrapelock-nginx`, την οποία απαντά μόνο ο Nginx με τους κανόνες. Η καρτέλα δείχνει:
+  - «Εγκατεστημένοι και ίδιοι με τις τρέχουσες ρυθμίσεις»·
+  - «Εγκατεστημένοι, αλλά παλιοί», με το μέρος που πρέπει να αντιγραφεί ξανά·
+  - «Δεν υπάρχουν».
+- Χωρίς πρόσβαση στον Nginx (κοινόχρηστη φιλοξενία) οι κανόνες παραλείπονται: η προστασία γίνεται από το plugin και τον έλεγχο πριν από την cache.
+- Το plugin **δεν** γράφει ποτέ το ίδιο στις ρυθμίσεις του Nginx: ο Nginx τις διαβάζει ως root, άρα ένα αρχείο που μπορεί να αλλάξει η PHP θα ήταν κίνδυνος.
 
 **Plugin της Cloudflare (APO):** οι σελίδες από την cache της Cloudflare δεν φτάνουν στην PHP, όπως κάθε page cache. Το ScrapeLock λέει στο plugin της Cloudflare να μην κρατά στην cache τα 403 / 429, την παγίδα και τα feeds με token (`cf-edge-cache: no-cache` και φίλτρο `cloudflare_use_cache`), και του ζητά να αδειάσει την cache όταν αποθηκεύετε ρυθμίσεις. Για τις σελίδες από cache, οι κανόνες WAF της καρτέλας ισχύουν πριν από την cache.
 
@@ -138,6 +153,7 @@ real_ip_header CF-Connecting-IP;
 | `pncp_robots_ai_agents` | AI crawlers στο robots.txt |
 | `pncp_ai_search_agents` | Οι AI μηχανές αναζήτησης / βοηθοί της επιλογής «Επιτρέπονται οι AI μηχανές αναζήτησης» |
 | `pncp_hotlink_allowed` | Domains που επιτρέπεται να φορτώνουν εικόνες |
+| `pncp_content_paths` | Αρχές διαδρομών με σελίδες άλλων plugins, για τα «Pages» του αρχείου |
 | `pncp_block_framing` | `false` για να επιτρέψετε iframe |
 
 Για ένα κομμάτι κειμένου που πρέπει να αντιγράφεται (τηλέφωνο, κουπόνι), βάλτε την κλάση `pncp-allow`.

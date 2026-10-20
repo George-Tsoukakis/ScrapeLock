@@ -119,7 +119,7 @@ final class PNCP_Bots {
 	 * Page views and search.
 	 */
 	public static function page_guard() {
-		if ( is_robots() || is_favicon() || self::$sitemap ) {
+		if ( is_robots() || is_favicon() || self::$sitemap || self::is_open_path() ) {
 			return;
 		}
 		if ( self::is_author_scan() ) {
@@ -129,6 +129,31 @@ final class PNCP_Bots {
 		if ( $verdict ) {
 			self::die_html( $verdict['code'] );
 		}
+	}
+
+	/**
+	 * robots.txt, llms.txt and llms-full.txt are never blocked: every bot, also a blocked one, must be able to
+	 * read the rules it is asked to follow. (robots.txt is also recognised by is_robots(); llms.txt may be a
+	 * static file or come from an SEO plugin.)
+	 *
+	 * @param string|null $path Path relative to the site (null = this request).
+	 * @return bool
+	 */
+	public static function is_open_path( $path = null ) {
+		if ( null === $path ) {
+			$uri  = isset( $_SERVER['REQUEST_URI'] ) ? sanitize_text_field( wp_unslash( $_SERVER['REQUEST_URI'] ) ) : '';
+			$path = PNCP_Private_Urls::relative_path( rawurldecode( (string) wp_parse_url( $uri, PHP_URL_PATH ) ) );
+		}
+		return in_array( strtolower( (string) $path ), self::open_paths(), true );
+	}
+
+	/**
+	 * The paths that are never blocked (see is_open_path()).
+	 *
+	 * @return string[]
+	 */
+	public static function open_paths() {
+		return array( '/robots.txt', '/llms.txt', '/llms-full.txt' );
 	}
 
 	/**
@@ -344,7 +369,9 @@ final class PNCP_Bots {
 		// Stricter page limits: visitors without the human-check cookie, and countries in the "stricter" list.
 		if ( $count && 'page' === $context ) {
 			$stricter = array();
-			if ( ! empty( $s['human_check'] ) && (int) $s['rate_limit_unverified'] > 0 && ! PNCP_Human::verified( $ip ) ) {
+			// Not for the always-allowed User-Agents and the allowed AI search bots: they cannot run the
+			// script, so they keep the normal page limit.
+			if ( ! empty( $s['human_check'] ) && ! $allowed_ua && (int) $s['rate_limit_unverified'] > 0 && ! PNCP_Human::verified( $ip ) ) {
 				$stricter['rate_unverified'] = (int) $s['rate_limit_unverified'];
 				PNCP_Human::forget_invalid();
 			}
@@ -397,10 +424,13 @@ final class PNCP_Bots {
 	 */
 	public static function ai_bot_lists() {
 		return array(
-			'OAI-SearchBot'   => 'openai_search',
-			'ChatGPT-User'    => 'openai_user',
-			'PerplexityBot'   => 'perplexity_bot',
-			'Perplexity-User' => 'perplexity_user',
+			'OAI-SearchBot'    => 'openai_search',
+			'ChatGPT-User'     => 'openai_user',
+			'PerplexityBot'    => 'perplexity_bot',
+			'Perplexity-User'  => 'perplexity_user',
+			// Anthropic publishes one list for all its bots (since 2.6.2).
+			'Claude-SearchBot' => 'anthropic',
+			'Claude-User'      => 'anthropic',
 		);
 	}
 
@@ -1085,12 +1115,23 @@ final class PNCP_Bots {
 			return $output;
 		}
 
-		$block = '';
+		// The rules for every bot go into the robots.txt's existing "User-agent: *" group: one group, since simple
+		// parsers read only the first one (Google merges them).
+		$star = array();
 		if ( ! empty( $s['trap_enabled'] ) ) {
-			$block .= "\n# ScrapeLock\nUser-agent: *\nDisallow: " . wp_parse_url( home_url( self::trap_path() ), PHP_URL_PATH ) . "\n";
+			$star[] = '# ScrapeLock';
+			$star[] = 'Disallow: ' . wp_parse_url( home_url( self::trap_path() ), PHP_URL_PATH );
 		}
+		if ( ! empty( $s['content_signal'] ) ) {
+			// contentsignals.org: what the content may be used for, after it is fetched. Does not block anything.
+			$star[] = '# ScrapeLock: Content Signals (contentsignals.org). search = search index and links,';
+			$star[] = '# ai-input = use in AI answers, ai-train = training or fine-tuning AI models.';
+			$star[] = 'Content-Signal: search=yes, ai-input=' . ( empty( $s['allow_ai_search'] ) ? 'no' : 'yes' ) . ', ai-train=no';
+		}
+		$output = $star ? self::add_to_star_group( $output, $star ) : $output;
+
 		if ( ! empty( $s['robots_ai_block'] ) ) {
-			$block .= "\n# ScrapeLock: AI crawlers\n";
+			$block  = "\n# ScrapeLock: AI crawlers\n";
 			$search = array_map( 'strtolower', PNCP_Options::allowed_ai_search() );
 			foreach ( self::robots_agents() as $agent ) {
 				if ( in_array( strtolower( $agent ), $search, true ) ) {
@@ -1098,14 +1139,48 @@ final class PNCP_Bots {
 				}
 				$block .= 'User-agent: ' . $agent . "\n";
 			}
-			$block .= "Disallow: /\n";
+			$output = rtrim( $output ) . "\n" . $block . "Disallow: /\n";
 		}
-		if ( ! empty( $s['content_signal'] ) ) {
-			// contentsignals.org: what the content may be used for, after it is fetched. Does not block anything.
-			$block .= "\n# ScrapeLock: Content Signals (contentsignals.org). search = search index and links,\n# ai-input = use in AI answers, ai-train = training or fine-tuning AI models.\n";
-			$block .= "User-agent: *\nContent-Signal: search=yes, ai-input=" . ( empty( $s['allow_ai_search'] ) ? 'no' : 'yes' ) . ", ai-train=no\nAllow: /\n";
+		return $output;
+	}
+
+	/**
+	 * Adds lines to the first "User-agent: *" group of a robots.txt, after its last rule; without one, a new group.
+	 *
+	 * @param string   $output The robots.txt.
+	 * @param string[] $lines  Lines.
+	 * @return string
+	 */
+	public static function add_to_star_group( $output, $lines ) {
+		$rows  = '' === trim( $output ) ? array() : preg_split( '/\r\n|\r|\n/', rtrim( $output ) );
+		$count = count( $rows );
+		$start = null;
+		foreach ( $rows as $i => $row ) {
+			if ( preg_match( '/^\s*user-agent\s*:\s*\*\s*(?:#.*)?$/i', $row ) ) {
+				$start = $i;
+				break;
+			}
 		}
-		return '' === $block ? $output : rtrim( $output ) . "\n" . $block;
+		if ( null === $start ) {
+			$rules = preg_grep( '/^\s*(?:dis)?allow\s*:/i', $lines );
+			$group = array_merge( array( 'User-agent: *' ), $lines, $rules ? array() : array( 'Allow: /' ) );
+			return ( $rows ? implode( "\n", $rows ) . "\n\n" : '' ) . implode( "\n", $group ) . "\n";
+		}
+		// The group: its User-agent lines, then its rules up to a blank line, the next group or a Sitemap line.
+		$end = $start;
+		$i   = $start + 1;
+		while ( $i < $count && preg_match( '/^\s*user-agent\s*:/i', $rows[ $i ] ) ) {
+			$end = $i++;
+		}
+		for ( ; $i < $count; $i++ ) {
+			$row = trim( $rows[ $i ] );
+			if ( '' === $row || preg_match( '/^(?:user-agent|sitemap)\s*:/i', $row ) ) {
+				break;
+			}
+			$end = $i;
+		}
+		array_splice( $rows, $end + 1, 0, $lines );
+		return implode( "\n", $rows ) . "\n";
 	}
 
 	/**
