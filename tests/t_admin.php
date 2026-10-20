@@ -263,7 +263,7 @@ $regex = '';
 $in_bots = false;
 foreach ( explode( "\n", $nginx ) as $line ) {
 	// Only the bot map (since 2.6.2 there are more maps after it).
-	if ( false !== strpos( $line, '$pncp_bad_bot {' ) ) {
+	if ( false !== strpos( $line, '$pncp_bad_bot_' . PNCP_Rules::nginx_id() . ' {' ) ) {
 		$in_bots = true;
 	} elseif ( $in_bots && '}' === trim( $line ) ) {
 		$in_bots = false;
@@ -272,6 +272,32 @@ foreach ( explode( "\n", $nginx ) as $line ) {
 		$regex = $m[1];
 	}
 }
+$id = PNCP_Rules::nginx_id();
+t( 'Nginx: ονόματα με την κατάληξη του site (πολλά WordPress στον ίδιο Nginx)', '' !== $id && preg_match( '/^[a-z0-9_]+$/', $id ) && false !== strpos( $nginx, 'zone=pncp_pages_' . $id . ':' ) && false === strpos( $nginx, '$pncp_bad_bot ' ) );
+t( 'Nginx: limit_req_status στο server { }, όχι στο http { } (δεν επιτρέπεται δύο φορές)', false === strpos( PNCP_Rules::nginx_http(), 'limit_req_status' ) && false !== strpos( PNCP_Rules::nginx_server(), 'limit_req_status 429;' ) );
+t( 'Nginx: διεύθυνση ελέγχου και αποτυπώματα στα δύο μέρη', preg_match( '/map \$host \$pncp_rules_' . $id . ' \{ default "[0-9a-f]{12}"; \}/', PNCP_Rules::nginx_http() ) && preg_match( '#location = /\.well-known/scrapelock-nginx \{.*return 200 "\$pncp_rules_' . $id . ' [0-9a-f]{12}\\\\n";#s', PNCP_Rules::nginx_server() ) );
+$other = function ( $url, $path ) {
+	return 'https://shop.example.org/' . ltrim( $path, '/' );
+};
+add_filter( 'home_url', $other, 99, 2 );
+$other_http = PNCP_Rules::nginx_http();
+remove_filter( 'home_url', $other, 99 );
+t( 'Nginx: άλλο site, άλλα ονόματα', 'shop_example_org' !== $id && false !== strpos( $other_http, '$pncp_bad_bot_shop_example_org' ) && false !== strpos( $other_http, 'zone=pncp_pages_shop_example_org:' ) );
+$long = function ( $url, $path ) {
+	return 'https://' . str_repeat( 'a', 60 ) . '.example/' . ltrim( $path, '/' );
+};
+add_filter( 'home_url', $long, 99, 2 );
+$long_id = PNCP_Rules::nginx_id();
+remove_filter( 'home_url', $long, 99 );
+t( 'Nginx: μακρύ όνομα site, σύντομη κατάληξη', strlen( $long_id ) <= 40 && preg_match( '/_[0-9a-f]{6}$/', $long_id ), $long_id );
+$before     = PNCP_Rules::nginx_http();
+$rate_limit = PNCP_Options::get()['rate_limit'];
+settings( array( 'rate_limit' => (int) $rate_limit + 1 ) );
+t( 'Nginx: άλλη ρύθμιση, άλλο αποτύπωμα', PNCP_Rules::nginx_http() !== $before );
+settings( array( 'rate_limit' => $rate_limit ) );
+delete_transient( 'pncp_nginx_status' );
+$st = PNCP_Rules::nginx_status( true );
+t( 'Nginx: χωρίς κανόνες στον server η κατάσταση είναι «δεν υπάρχουν» ή «σφάλμα», ποτέ «τρέχοντες»', in_array( $st['state'], array( 'missing', 'error' ), true ), $st['state'] );
 t( 'Nginx: το regex των bots είναι έγκυρο και πιάνει GPTBot, όχι Chrome', '' !== $regex && preg_match( '#' . $regex . '#i', 'Mozilla/5.0 GPTBot/1.1' ) && ! preg_match( '#' . $regex . '#i', 'Mozilla/5.0 (Windows NT 10.0) Chrome/141.0 Safari/537.36' ) );
 
 /* ---------- AI αναζήτηση χωριστά από την εκπαίδευση (2.2.1) ---------- */

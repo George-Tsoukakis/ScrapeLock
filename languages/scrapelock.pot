@@ -9,7 +9,7 @@ msgstr ""
 "MIME-Version: 1.0\n"
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
-"POT-Creation-Date: 2026-10-20T05:50:51+00:00\n"
+"POT-Creation-Date: 2026-10-20T06:12:17+00:00\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "X-Generator: WP-CLI 2.12.0\n"
 "X-Domain: scrapelock\n"
@@ -222,7 +222,7 @@ msgid "Posts"
 msgstr ""
 
 #: includes/class-pncp-admin.php:473
-#: includes/class-pncp-admin.php:1368
+#: includes/class-pncp-admin.php:1424
 msgid "Pages"
 msgstr ""
 
@@ -1038,7 +1038,7 @@ msgstr ""
 
 #: includes/class-pncp-admin.php:1034
 #: includes/class-pncp-admin.php:1040
-#: includes/class-pncp-admin.php:1321
+#: includes/class-pncp-admin.php:1377
 msgid "Copy"
 msgstr ""
 
@@ -1099,8 +1099,8 @@ msgid "Access per feed"
 msgstr ""
 
 #: includes/class-pncp-admin.php:1102
-#: includes/class-pncp-admin.php:1436
-#: includes/class-pncp-admin.php:1507
+#: includes/class-pncp-admin.php:1492
+#: includes/class-pncp-admin.php:1563
 msgid "Path"
 msgstr ""
 
@@ -1287,133 +1287,201 @@ msgstr ""
 msgid "Nginx"
 msgstr ""
 
-#: includes/class-pncp-admin.php:1297
-msgid "1) Inside http { }, e.g. in the file /etc/nginx/conf.d/scrapelock.conf:"
+#: includes/class-pncp-admin.php:1298
+msgid "Optional: they stop the bots before PHP and the page cache, so the server does less work. Without access to the Nginx configuration (shared hosting) skip them: the plugin and the pre-cache check still protect the pages. The names carry this site's suffix, so several WordPress sites can use their rules on the same Nginx."
 msgstr ""
 
 #: includes/class-pncp-admin.php:1299
-msgid "2) Inside the site's server { }, before the other location blocks. Then: nginx -t and reload."
+msgid "1) Inside http { }: a new file in a folder that nginx.conf includes there, e.g."
+msgstr ""
+
+#: includes/class-pncp-admin.php:1301
+msgid "Debian / Ubuntu, CentOS / RHEL, Plesk and most servers:"
 msgstr ""
 
 #: includes/class-pncp-admin.php:1302
+msgid "aaPanel:"
+msgstr ""
+
+#: includes/class-pncp-admin.php:1305
+msgid "2) Inside the site's server { } (the one for HTTPS, and for HTTP if it serves pages too), before the other location blocks:"
+msgstr ""
+
+#: includes/class-pncp-admin.php:1307
+msgid "Your own server: the site's file, e.g. /etc/nginx/sites-available/, or a file it includes."
+msgstr ""
+
+#: includes/class-pncp-admin.php:1308
+msgid "aaPanel: Website → the site → Config, or a file in the site's folder under /www/server/panel/vhost/nginx/extension/ when the site's configuration includes it."
+msgstr ""
+
+#: includes/class-pncp-admin.php:1309
+msgid "Plesk: Websites & Domains → Apache & nginx Settings → Additional nginx directives."
+msgstr ""
+
+#: includes/class-pncp-admin.php:1310
+msgid "Other panels: the place they give for custom server { } directives."
+msgstr ""
+
+#: includes/class-pncp-admin.php:1313
+msgid "3) Run nginx -t: only if it says “test is successful”, reload Nginx (nginx -s reload or systemctl reload nginx). If it shows an error, nothing has changed yet: remove what you added. 4) Check the status above. After every change of the settings that changes the rules, it says “out of date”: copy the part it names again."
+msgstr ""
+
+#: includes/class-pncp-admin.php:1315
 msgid "Apache (.htaccess, above # BEGIN WordPress)"
 msgstr ""
 
-#: includes/class-pncp-admin.php:1319
+#: includes/class-pncp-admin.php:1327
+msgid "1) http { }"
+msgstr ""
+
+#: includes/class-pncp-admin.php:1328
+msgid "2) server { }"
+msgstr ""
+
+#: includes/class-pncp-admin.php:1332
+msgid "Installed and up to date with the current settings."
+msgstr ""
+
+#. translators: %s: the parts, e.g. "1) http { }, 2) server { }"
+#: includes/class-pncp-admin.php:1337
+#, php-format
+msgid "Installed, but out of date: the settings have changed since. Copy again: %s. Then nginx -t and reload."
+msgstr ""
+
+#. translators: %s: error message
+#: includes/class-pncp-admin.php:1344
+#, php-format
+msgid "Could not check: the site could not reach itself (%s)."
+msgstr ""
+
+#: includes/class-pncp-admin.php:1349
+msgid "Not installed on this site's Nginx (or the site is not served by Nginx)."
+msgstr ""
+
+#: includes/class-pncp-admin.php:1358
+msgid "Status:"
+msgstr ""
+
+#: includes/class-pncp-admin.php:1359
+msgid "Check again"
+msgstr ""
+
+#: includes/class-pncp-admin.php:1375
 msgid "Rules to copy"
 msgstr ""
 
-#: includes/class-pncp-admin.php:1337
-#: includes/class-pncp-admin.php:1359
+#: includes/class-pncp-admin.php:1393
+#: includes/class-pncp-admin.php:1415
 msgid "Last 24 hours"
 msgstr ""
 
 #. translators: %s: count
-#: includes/class-pncp-admin.php:1338
+#: includes/class-pncp-admin.php:1394
 #, php-format
 msgid "%s blocked requests"
 msgstr ""
 
-#: includes/class-pncp-admin.php:1341
+#: includes/class-pncp-admin.php:1397
 msgid "By reason"
 msgstr ""
 
-#: includes/class-pncp-admin.php:1345
+#: includes/class-pncp-admin.php:1401
 msgid "Top IPs"
 msgstr ""
 
-#: includes/class-pncp-admin.php:1349
+#: includes/class-pncp-admin.php:1405
 msgid "Top User-Agents"
 msgstr ""
 
-#: includes/class-pncp-admin.php:1351
+#: includes/class-pncp-admin.php:1407
 msgid "Verified search engines and AI bots are never blocked, so they never appear here: a known bot name in this list was a fake one or could not be verified."
 msgstr ""
 
-#: includes/class-pncp-admin.php:1355
+#: includes/class-pncp-admin.php:1411
 msgid "What they try to copy"
 msgstr ""
 
-#: includes/class-pncp-admin.php:1356
+#: includes/class-pncp-admin.php:1412
 msgid "The blocked requests grouped by address. “Pages” exist on your site: what scrapers were after. “Addresses that do not exist” are random strings and guesses. “Files” are scanners looking for passwords, backups or admin areas. No content leaks in the last two, they only show what was tried."
 msgstr ""
 
-#: includes/class-pncp-admin.php:1360
+#: includes/class-pncp-admin.php:1416
 msgid "Last 7 days"
 msgstr ""
 
-#: includes/class-pncp-admin.php:1372
+#: includes/class-pncp-admin.php:1428
 msgid "Addresses that do not exist"
 msgstr ""
 
-#: includes/class-pncp-admin.php:1376
+#: includes/class-pncp-admin.php:1432
 msgid "Files and admin paths"
 msgstr ""
 
-#: includes/class-pncp-admin.php:1382
+#: includes/class-pncp-admin.php:1438
 msgid "The log is kept for 1 day, so the 7-day view shows only the last day. Change “Keep the block log for” in the “Bots and limits” tab to see more."
 msgstr ""
 
-#: includes/class-pncp-admin.php:1385
+#: includes/class-pncp-admin.php:1441
 msgid "IPs blocked now"
 msgstr ""
 
-#: includes/class-pncp-admin.php:1387
-#: includes/class-pncp-admin.php:1586
+#: includes/class-pncp-admin.php:1443
+#: includes/class-pncp-admin.php:1642
 msgid "None."
 msgstr ""
 
-#: includes/class-pncp-admin.php:1392
-#: includes/class-pncp-admin.php:1433
-#: includes/class-pncp-admin.php:1594
+#: includes/class-pncp-admin.php:1448
+#: includes/class-pncp-admin.php:1489
+#: includes/class-pncp-admin.php:1650
 msgid "IP"
 msgstr ""
 
-#: includes/class-pncp-admin.php:1393
-#: includes/class-pncp-admin.php:1434
+#: includes/class-pncp-admin.php:1449
+#: includes/class-pncp-admin.php:1490
 msgid "Reason"
 msgstr ""
 
-#: includes/class-pncp-admin.php:1394
+#: includes/class-pncp-admin.php:1450
 msgid "Expires"
 msgstr ""
 
-#: includes/class-pncp-admin.php:1395
-#: includes/class-pncp-admin.php:1599
+#: includes/class-pncp-admin.php:1451
+#: includes/class-pncp-admin.php:1655
 msgid "Action"
 msgstr ""
 
-#: includes/class-pncp-admin.php:1408
+#: includes/class-pncp-admin.php:1464
 msgid "Unblock"
 msgstr ""
 
-#: includes/class-pncp-admin.php:1418
+#: includes/class-pncp-admin.php:1474
 msgid "Unblock all"
 msgstr ""
 
-#: includes/class-pncp-admin.php:1424
+#: includes/class-pncp-admin.php:1480
 msgid "Latest events"
 msgstr ""
 
-#: includes/class-pncp-admin.php:1427
+#: includes/class-pncp-admin.php:1483
 msgid "No events."
 msgstr ""
 
-#: includes/class-pncp-admin.php:1432
+#: includes/class-pncp-admin.php:1488
 msgid "Time"
 msgstr ""
 
-#: includes/class-pncp-admin.php:1435
-#: includes/class-pncp-admin.php:1508
+#: includes/class-pncp-admin.php:1491
+#: includes/class-pncp-admin.php:1564
 msgid "Requests"
 msgstr ""
 
-#: includes/class-pncp-admin.php:1437
+#: includes/class-pncp-admin.php:1493
 msgid "User-Agent"
 msgstr ""
 
 #. translators: %s: number of different User-Agents
-#: includes/class-pncp-admin.php:1466
+#: includes/class-pncp-admin.php:1522
 #, php-format
 msgid "%s different User-Agent in this minute"
 msgid_plural "%s different User-Agents in this minute"
@@ -1421,155 +1489,155 @@ msgstr[0] ""
 msgstr[1] ""
 
 #. translators: %s: days
-#: includes/class-pncp-admin.php:1483
+#: includes/class-pncp-admin.php:1539
 #, php-format
 msgid "The log is deleted automatically after %s days (setting in the “Bots and limits” tab)."
 msgstr ""
 
-#: includes/class-pncp-admin.php:1491
+#: includes/class-pncp-admin.php:1547
 msgid "Delete log"
 msgstr ""
 
-#: includes/class-pncp-admin.php:1503
-#: includes/class-pncp-admin.php:1530
-#: includes/class-pncp-admin.php:1625
-#: includes/class-pncp-admin.php:1647
+#: includes/class-pncp-admin.php:1559
+#: includes/class-pncp-admin.php:1586
+#: includes/class-pncp-admin.php:1681
+#: includes/class-pncp-admin.php:1703
 msgid "Nothing."
 msgstr ""
 
-#: includes/class-pncp-admin.php:1509
+#: includes/class-pncp-admin.php:1565
 msgid "IPs"
 msgstr ""
 
-#: includes/class-pncp-admin.php:1548
+#: includes/class-pncp-admin.php:1604
 msgid "Blocked permanently"
 msgstr ""
 
-#: includes/class-pncp-admin.php:1558
+#: includes/class-pncp-admin.php:1614
 msgid "Block permanently"
 msgstr ""
 
-#: includes/class-pncp-admin.php:1573
+#: includes/class-pncp-admin.php:1629
 msgid "Persistent IPs (last 7 days)"
 msgstr ""
 
 #. translators: %s: number of requests
-#: includes/class-pncp-admin.php:1579
+#: includes/class-pncp-admin.php:1635
 #, php-format
 msgid "IPs with at least two temporary blocks, or at least %s blocked requests. They keep coming back: you can block them permanently."
 msgstr ""
 
-#: includes/class-pncp-admin.php:1595
+#: includes/class-pncp-admin.php:1651
 msgid "Temporary blocks"
 msgstr ""
 
-#: includes/class-pncp-admin.php:1596
+#: includes/class-pncp-admin.php:1652
 msgid "Blocked requests"
 msgstr ""
 
-#: includes/class-pncp-admin.php:1597
+#: includes/class-pncp-admin.php:1653
 msgid "Main reason"
 msgstr ""
 
-#: includes/class-pncp-admin.php:1598
+#: includes/class-pncp-admin.php:1654
 msgid "Last seen"
 msgstr ""
 
-#: includes/class-pncp-admin.php:1656
+#: includes/class-pncp-admin.php:1712
 msgid "Fake: not from the official addresses"
 msgstr ""
 
-#: includes/class-pncp-admin.php:1658
+#: includes/class-pncp-admin.php:1714
 msgid "Known bot name, not verified"
 msgstr ""
 
-#: includes/class-pncp-admin.php:1681
+#: includes/class-pncp-admin.php:1737
 #: includes/class-pncp-status.php:120
 #: includes/class-pncp-status.php:159
 msgid "You are not allowed to change this setting."
 msgstr ""
 
-#: includes/class-pncp-admin.php:1829
+#: includes/class-pncp-admin.php:1885
 msgid "Preset applied."
 msgstr ""
 
-#: includes/class-pncp-admin.php:1830
+#: includes/class-pncp-admin.php:1886
 msgid "New token created."
 msgstr ""
 
-#: includes/class-pncp-admin.php:1831
+#: includes/class-pncp-admin.php:1887
 msgid "Previous token revoked."
 msgstr ""
 
-#: includes/class-pncp-admin.php:1832
+#: includes/class-pncp-admin.php:1888
 msgid "Block lifted."
 msgstr ""
 
-#: includes/class-pncp-admin.php:1833
+#: includes/class-pncp-admin.php:1889
 msgid "Log deleted."
 msgstr ""
 
-#: includes/class-pncp-admin.php:1834
+#: includes/class-pncp-admin.php:1890
 msgid "The IP was added to the always-blocked IPs (“Bots and limits” → “Always blocked”). You can remove it there."
 msgstr ""
 
-#: includes/class-pncp-admin.php:1835
+#: includes/class-pncp-admin.php:1891
 msgid "The IP is already in the always-blocked IPs."
 msgstr ""
 
-#: includes/class-pncp-admin.php:1836
+#: includes/class-pncp-admin.php:1892
 msgid "The always-blocked IPs already have 200 lines. Combine addresses into CIDR ranges there first."
 msgstr ""
 
-#: includes/class-pncp-admin.php:1837
+#: includes/class-pncp-admin.php:1893
 msgid "This IP cannot be blocked permanently: it is the server itself, your own IP, a private address, an always-allowed IP or an official Google / Bing address."
 msgstr ""
 
-#: includes/class-pncp-admin.php:1838
+#: includes/class-pncp-admin.php:1894
 msgid "IP lists refreshed."
 msgstr ""
 
-#: includes/class-pncp-admin.php:1839
+#: includes/class-pncp-admin.php:1895
 msgid "Country database downloaded."
 msgstr ""
 
-#: includes/class-pncp-admin.php:1840
+#: includes/class-pncp-admin.php:1896
 msgid "The country database could not be downloaded or read; the previous one (if any) was kept. It will try again tomorrow."
 msgstr ""
 
-#: includes/class-pncp-admin.php:1841
+#: includes/class-pncp-admin.php:1897
 msgid "The real visitor IP is now read from CF-Connecting-IP, only for requests from Cloudflare."
 msgstr ""
 
-#: includes/class-pncp-admin.php:1842
+#: includes/class-pncp-admin.php:1898
 msgid "The real visitor IP is now read from X-Real-IP, only for requests from Bunny CDN."
 msgstr ""
 
-#: includes/class-pncp-admin.php:1843
+#: includes/class-pncp-admin.php:1899
 msgid "X-Real-IP is selected for Bunny CDN, but the list of Bunny addresses could not be downloaded. Until it is, the header is not trusted. It will try again tomorrow, or use “Refresh now” under “Official IP lists”."
 msgstr ""
 
-#: includes/class-pncp-admin.php:1844
+#: includes/class-pncp-admin.php:1900
 msgid "Some IP lists could not be downloaded; their previous version was kept. It will try again tomorrow."
 msgstr ""
 
-#: includes/class-pncp-admin.php:1845
+#: includes/class-pncp-admin.php:1901
 msgid "The action was not completed."
 msgstr ""
 
-#: includes/class-pncp-admin.php:1856
+#: includes/class-pncp-admin.php:1912
 msgid "Since 2.1 the feed token is stored only as a hash. The old token is still valid but can no longer be shown. If you have not saved it, create a new token."
 msgstr ""
 
-#: includes/class-pncp-admin.php:1858
+#: includes/class-pncp-admin.php:1914
 msgid "Feeds and token"
 msgstr ""
 
-#: includes/class-pncp-admin.php:1864
+#: includes/class-pncp-admin.php:1920
 msgid "ScrapeLock: the real IP is read from a header without checking the proxy (as in 1.4). This allows IP spoofing."
 msgstr ""
 
-#: includes/class-pncp-admin.php:1866
+#: includes/class-pncp-admin.php:1922
 msgid "Trusted Proxy settings"
 msgstr ""
 
@@ -1715,51 +1783,51 @@ msgstr ""
 msgid "The content of this page is protected."
 msgstr ""
 
-#: includes/class-pncp-rules.php:379
+#: includes/class-pncp-rules.php:490
 msgid "First: robots.txt and llms.txt open for every bot (put this rule at the top)"
 msgstr ""
 
-#: includes/class-pncp-rules.php:380
+#: includes/class-pncp-rules.php:491
 msgid "Skip · all remaining custom rules"
 msgstr ""
 
-#: includes/class-pncp-rules.php:412
+#: includes/class-pncp-rules.php:523
 msgid "Scrapers and AI bots"
 msgstr ""
 
 #. translators: %d: part number
-#: includes/class-pncp-rules.php:414
+#: includes/class-pncp-rules.php:525
 #, php-format
 msgid "Scrapers and AI bots (part %d: the list is longer than one Cloudflare rule)"
 msgstr ""
 
-#: includes/class-pncp-rules.php:424
+#: includes/class-pncp-rules.php:535
 msgid "Fake Googlebot / Bingbot (not a verified Cloudflare bot)"
 msgstr ""
 
-#: includes/class-pncp-rules.php:434
+#: includes/class-pncp-rules.php:545
 msgid "Image hotlinking"
 msgstr ""
 
-#: includes/class-pncp-rules.php:442
+#: includes/class-pncp-rules.php:553
 msgid "Clean originals folder"
 msgstr ""
 
 #. translators: %d: pages per minute
-#: includes/class-pncp-rules.php:452
+#: includes/class-pncp-rules.php:563
 #, php-format
 msgid "Rate limiting: %d requests per minute per IP (Rate limiting rules, characteristic: IP)"
 msgstr ""
 
-#: includes/class-pncp-rules.php:455
+#: includes/class-pncp-rules.php:566
 msgid "Block · period 1 minute (on the free plan: 10 sec, with limit / 6)"
 msgstr ""
 
-#: includes/class-pncp-rules.php:463
+#: includes/class-pncp-rules.php:574
 msgid "AI crawlers, assistants and AI search declared by Cloudflare"
 msgstr ""
 
-#: includes/class-pncp-rules.php:463
+#: includes/class-pncp-rules.php:574
 msgid "AI training crawlers declared by Cloudflare (category “AI Crawler”; AI search and assistants are allowed)"
 msgstr ""
 

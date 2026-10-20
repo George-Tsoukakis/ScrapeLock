@@ -70,22 +70,32 @@ if ( is_file( '/…/wp-content/scrapelock-precheck/run.php' ) ) { include_once '
 **Κανόνες server.** Για cache του Nginx (FastCGI cache) ή του CDN, που δεν περνούν καθόλου από την PHP, και για τα στατικά αρχεία: οι κανόνες της καρτέλας **Κανόνες server**. Οι κανόνες βγαίνουν με το domain, τη λίστα bots, τα feeds και τον φάκελο αντιγράφων του δικού σας site. Τα βασικά για Nginx:
 
 ```nginx
-# http { }
-map $http_user_agent $pncp_bad_bot {
+# http { }  (π.χ. /etc/nginx/conf.d/scrapelock-example_gr.conf)
+map $http_user_agent $pncp_bad_bot_example_gr {
     default 0;
     "~*(GPTBot|ClaudeBot|CCBot|Bytespider|HeadlessChrome|python-requests|curl/)" 1;
     "" 1;
 }
-limit_req_zone $binary_remote_addr zone=pncp_pages:10m rate=60r/m;
+limit_req_zone $binary_remote_addr zone=pncp_pages_example_gr:10m rate=60r/m;
 
 # server { }
-if ($pncp_bad_bot) { return 403; }
+if ($pncp_block_example_gr) { return 403; }
 location ^~ /wp-content/uploads/pncp-originals-XXXXXXXXXXXX/ { deny all; return 404; }
 # μέσα στο υπάρχον location / { }:
-#   limit_req zone=pncp_pages burst=20 nodelay;
+#   limit_req zone=pncp_pages_example_gr burst=20 nodelay;
 ```
 
 Η καρτέλα δίνει τους κανόνες σε δύο μέρη, `http { }` και `server { }`, φτιαγμένους για το site σας: domain, λίστα bots, feeds, φάκελος αντιγράφων. Τα παραπάνω είναι μόνο παράδειγμα.
+
+**Nginx σε κάθε server (2.6.3).**
+- Τα ονόματα (μεταβλητές, ζώνη ορίου) έχουν την κατάληξη του site, π.χ. `_pharmacyneeds_gr`. Έτσι πολλά sites WordPress στον ίδιο Nginx βάζουν το καθένα τους δικούς του κανόνες χωρίς σύγκρουση στο `nginx -t`.
+- Η καρτέλα γράφει πού μπαίνει κάθε μέρος: Debian / Ubuntu, CentOS / RHEL, Plesk, aaPanel, άλλα πάνελ.
+- **Κατάσταση:** το plugin ρωτά το ίδιο το site στη διεύθυνση `/.well-known/scrapelock-nginx`, την οποία απαντά μόνο ο Nginx με τους κανόνες. Η καρτέλα δείχνει:
+  - «Εγκατεστημένοι και ίδιοι με τις τρέχουσες ρυθμίσεις»·
+  - «Εγκατεστημένοι, αλλά παλιοί», με το μέρος που πρέπει να αντιγραφεί ξανά·
+  - «Δεν υπάρχουν».
+- Χωρίς πρόσβαση στον Nginx (κοινόχρηστη φιλοξενία) οι κανόνες παραλείπονται: η προστασία γίνεται από το plugin και τον έλεγχο πριν από την cache.
+- Το plugin **δεν** γράφει ποτέ το ίδιο στις ρυθμίσεις του Nginx: ο Nginx τις διαβάζει ως root, άρα ένα αρχείο που μπορεί να αλλάξει η PHP θα ήταν κίνδυνος.
 
 **Plugin της Cloudflare (APO):** οι σελίδες από την cache της Cloudflare δεν φτάνουν στην PHP, όπως κάθε page cache. Το ScrapeLock λέει στο plugin της Cloudflare να μην κρατά στην cache τα 403 / 429, την παγίδα και τα feeds με token (`cf-edge-cache: no-cache` και φίλτρο `cloudflare_use_cache`), και του ζητά να αδειάσει την cache όταν αποθηκεύετε ρυθμίσεις. Για τις σελίδες από cache, οι κανόνες WAF της καρτέλας ισχύουν πριν από την cache.
 

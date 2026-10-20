@@ -1294,13 +1294,69 @@ final class PNCP_Admin {
 		<?php endforeach; ?>
 
 		<h2><?php esc_html_e( 'Nginx', 'scrapelock' ); ?></h2>
-		<p class="description"><?php esc_html_e( '1) Inside http { }, e.g. in the file /etc/nginx/conf.d/scrapelock.conf:', 'scrapelock' ); ?></p>
+		<?php self::render_nginx_status(); ?>
+		<p class="description"><?php esc_html_e( 'Optional: they stop the bots before PHP and the page cache, so the server does less work. Without access to the Nginx configuration (shared hosting) skip them: the plugin and the pre-cache check still protect the pages. The names carry this site\'s suffix, so several WordPress sites can use their rules on the same Nginx.', 'scrapelock' ); ?></p>
+		<p class="description"><?php esc_html_e( '1) Inside http { }: a new file in a folder that nginx.conf includes there, e.g.', 'scrapelock' ); ?></p>
+		<ul class="ul-disc description">
+			<li><?php esc_html_e( 'Debian / Ubuntu, CentOS / RHEL, Plesk and most servers:', 'scrapelock' ); ?> <code><?php echo esc_html( '/etc/nginx/conf.d/scrapelock-' . PNCP_Rules::nginx_id() . '.conf' ); ?></code></li>
+			<li><?php esc_html_e( 'aaPanel:', 'scrapelock' ); ?> <code><?php echo esc_html( '/www/server/panel/vhost/nginx/0.scrapelock-' . PNCP_Rules::nginx_id() . '.conf' ); ?></code></li>
+		</ul>
 		<?php self::code_block( 'pncp-nginx-http', PNCP_Rules::nginx_http(), 8 ); ?>
-		<p class="description"><?php esc_html_e( '2) Inside the site\'s server { }, before the other location blocks. Then: nginx -t and reload.', 'scrapelock' ); ?></p>
+		<p class="description"><?php esc_html_e( '2) Inside the site\'s server { } (the one for HTTPS, and for HTTP if it serves pages too), before the other location blocks:', 'scrapelock' ); ?></p>
+		<ul class="ul-disc description">
+			<li><?php esc_html_e( 'Your own server: the site\'s file, e.g. /etc/nginx/sites-available/, or a file it includes.', 'scrapelock' ); ?></li>
+			<li><?php esc_html_e( 'aaPanel: Website → the site → Config, or a file in the site\'s folder under /www/server/panel/vhost/nginx/extension/ when the site\'s configuration includes it.', 'scrapelock' ); ?></li>
+			<li><?php esc_html_e( 'Plesk: Websites & Domains → Apache & nginx Settings → Additional nginx directives.', 'scrapelock' ); ?></li>
+			<li><?php esc_html_e( 'Other panels: the place they give for custom server { } directives.', 'scrapelock' ); ?></li>
+		</ul>
 		<?php self::code_block( 'pncp-nginx-server', PNCP_Rules::nginx_server(), 18 ); ?>
+		<p class="description"><?php esc_html_e( '3) Run nginx -t: only if it says “test is successful”, reload Nginx (nginx -s reload or systemctl reload nginx). If it shows an error, nothing has changed yet: remove what you added. 4) Check the status above. After every change of the settings that changes the rules, it says “out of date”: copy the part it names again.', 'scrapelock' ); ?></p>
 
 		<h2><?php esc_html_e( 'Apache (.htaccess, above # BEGIN WordPress)', 'scrapelock' ); ?></h2>
 		<?php self::code_block( 'pncp-apache', PNCP_Rules::apache(), 14 ); ?>
+		<?php
+	}
+
+	/**
+	 * Whether the Nginx rules are installed and match the current settings (the site asks itself).
+	 */
+	private static function render_nginx_status() {
+		// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Only asks the site again; changes nothing.
+		$status = PNCP_Rules::nginx_status( isset( $_GET['pncp_nginx_check'] ) );
+		$names  = array(
+			'http'   => __( '1) http { }', 'scrapelock' ),
+			'server' => __( '2) server { }', 'scrapelock' ),
+		);
+		if ( 'current' === $status['state'] ) {
+			$class   = 'notice-success';
+			$message = __( 'Installed and up to date with the current settings.', 'scrapelock' );
+		} elseif ( 'stale' === $status['state'] ) {
+			$class   = 'notice-warning';
+			$message = sprintf(
+				/* translators: %s: the parts, e.g. "1) http { }, 2) server { }" */
+				__( 'Installed, but out of date: the settings have changed since. Copy again: %s. Then nginx -t and reload.', 'scrapelock' ),
+				implode( ', ', array_intersect_key( $names, array_flip( $status['parts'] ) ) )
+			);
+		} elseif ( 'error' === $status['state'] ) {
+			$class   = 'notice-info';
+			$message = sprintf(
+				/* translators: %s: error message */
+				__( 'Could not check: the site could not reach itself (%s).', 'scrapelock' ),
+				$status['error']
+			);
+		} else {
+			$class   = 'notice-info';
+			$message = __( 'Not installed on this site\'s Nginx (or the site is not served by Nginx).', 'scrapelock' );
+		}
+		$again = PNCP_Status::settings_url(
+			array(
+				'tab'              => 'rules',
+				'pncp_nginx_check' => 1,
+			)
+		);
+		?>
+		<div class="notice <?php echo esc_attr( $class ); ?> inline"><p><strong><?php esc_html_e( 'Status:', 'scrapelock' ); ?></strong> <?php echo esc_html( $message ); ?>
+			<a href="<?php echo esc_url( $again ); ?>"><?php esc_html_e( 'Check again', 'scrapelock' ); ?></a></p></div>
 		<?php
 	}
 
