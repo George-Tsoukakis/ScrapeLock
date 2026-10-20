@@ -139,7 +139,7 @@ t( 'καρτέλα Lockdown: προειδοποίηση «μόνο ένας τρ
 t( 'καρτέλα Lockdown: πλήρης αναφορά (τι κλειδώνει, τι δουλεύει, ποιοι λογαριασμοί)', false !== strpos( $body, 'What exactly is locked' ) && false !== strpos( $body, 'What keeps working' ) && 1 === preg_match( '/Staff accounts that keep only &quot;read&quot; while locked: [^<]*Administrator: \d+[^<]*Editor: \d+/', $body ) && 1 === preg_match( '/\d+ customer (or|and) subscriber accounts? (is|are) not affected/', $body ), preg_match( '/Staff accounts[^<]*|\d+ customer[^<]*/', $body, $pncp_m ) ? $pncp_m[0] : '' );
 t( 'όχι ξεχωριστό μενού Lockdown', false === strpos( $body, 'toplevel_page_scrapelock-lockdown' ) );
 list( , $body ) = http( '/' );
-t( 'μπάρα: «Protection: ON» → «Lockdown: set up…»', false !== strpos( $body, 'wp-admin-bar-pncp-lockdown' ) && false !== strpos( $body, 'Lockdown: set up' ) && false !== strpos( $body, 'wp-admin-bar-pncp-toggle' ) );
+t( 'μπάρα: «Protection: ON» → «Lockdown»', 1 === preg_match( '/id=.wp-admin-bar-pncp-lockdown..*?dashicons-unlock[^<]*<\/span>Lockdown</s', $body ) && false !== strpos( $body, 'wp-admin-bar-pncp-toggle' ) );
 as_user( $editor_id );
 list( $code, $body ) = http( $page );
 t( 'editor: χωρίς πρόσβαση στη σελίδα', false === strpos( $body, 'Connect the app' ) && false === strpos( $body, 'What exactly is locked' ), (string) $code );
@@ -186,7 +186,7 @@ t( 'κλειδωμένο: η αναφορά φαίνεται και τώρα, ό
 list( $code, $body ) = http( '/wp-admin/options-general.php?page=scrapelock&tab=bots' );
 t( 'κλειδωμένο: κάθε άλλη καρτέλα δείχνει το Lockdown (οι άλλες γκρίζες)', 200 === $code && false !== strpos( $body, 'Until I lock it again' ) && false === strpos( $body, 'name="pncp_settings[rate_limit]"' ) && false !== strpos( $body, 'pncp-tab-locked' ) && false === strpos( $body, 'pncp-status-bar' ), (string) $code );
 t( 'κλειδωμένο: Ρυθμίσεις → ScrapeLock υπάρχει στο μενού', false !== strpos( $body, 'options-general.php?page=scrapelock' ) );
-t( 'κλειδωμένο: μπάρα «Protection: ON · Locked» με μόνο το Lockdown', false !== strpos( $body, 'Protection: ON · Locked' ) && false !== strpos( $body, 'Lockdown: locked (unlock' ) && false === strpos( $body, 'wp-admin-bar-pncp-toggle' ) && false === strpos( $body, 'wp-admin-bar-pncp-settings' ) );
+t( 'κλειδωμένο: μπάρα «Protection: ON · Locked» με μόνο το Lockdown', false !== strpos( $body, 'Protection: ON · Locked' ) && 1 === preg_match( '/id=.wp-admin-bar-pncp-lockdown..*?dashicons-lock[^<]*<\/span>Lockdown</s', $body ) && false === strpos( $body, 'wp-admin-bar-pncp-toggle' ) && false === strpos( $body, 'wp-admin-bar-pncp-settings' ) );
 list( $code ) = http( '/wp-admin/options.php', array( 'option_page' => 'general', 'action' => 'update', '_wpnonce' => wp_create_nonce( 'general-options' ), 'blogname' => 'Hacked' ) );
 wp_cache_flush();
 t( 'κλειδωμένο: Ρυθμίσεις → Γενικές δεν αποθηκεύονται', 'Hacked' !== get_option( 'blogname' ), (string) $code );
