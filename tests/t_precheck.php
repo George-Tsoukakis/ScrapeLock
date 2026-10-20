@@ -147,7 +147,13 @@ t( 'χωρίς τον έλεγχο: 8 σελίδες από το cache, όλες
 t( 'χωρίς τον έλεγχο: καμία γραμμή στο wp-config.php', ! PNCP_Precheck::in_config() );
 
 /* ---------- Ενεργοποίηση ---------- */
+// Εκτός wp-admin / WP-CLI / cron (π.χ. αναβάθμιση από αίτημα επισκέπτη) το wp-config.php δεν αλλάζει (2.6.4).
 settings( array( 'precheck' => 1 ) );
+t( 'εκτός wp-admin: κατάσταση deferred, το wp-config.php δεν άλλαξε', 'deferred' === get_option( PNCP_Precheck::STATUS ) && ! PNCP_Precheck::in_config(), (string) get_option( PNCP_Precheck::STATUS ) );
+// Από εδώ και πέρα όπως στη σελίδα ρυθμίσεων: στο wp-admin. Το admin_init ολοκληρώνει ό,τι περίμενε.
+require_once ABSPATH . 'wp-admin/includes/class-wp-screen.php';
+WP_Screen::get( 'settings_page_scrapelock' )->set_current_screen();
+PNCP_Precheck::maybe_sync();
 sleep( 3 ); // OPcache: το νέο wp-config.php.
 t( 'ενεργοποίηση: κατάσταση ok', 'ok' === get_option( PNCP_Precheck::STATUS ), (string) get_option( PNCP_Precheck::STATUS ) );
 t( 'ενεργοποίηση: η γραμμή μπαίνει αμέσως μετά το <?php', 0 === strpos( (string) file_get_contents( $config_file ), "<?php\n" . PNCP_Precheck::block() . "define( 'WP_CACHE'" ) );
@@ -174,8 +180,11 @@ t( 'cache: HEAD μετράει και αυτό, χωρίς σώμα', 429 === $c
 same_minute();
 $c = codes( '/cached-page/', visitor( '203.0.113.20' ), 8, 'GET', 'wordpress_logged_in_abc=x' );
 t( 'συνδεδεμένοι (cookie wordpress_logged_in_): δεν μετρούν εδώ', ! in_array( 429, $c, true ), implode( ',', $c ) );
-$c = codes( '/cached-page/', visitor( '203.0.113.21', array( 'Sec-Purpose' => 'prefetch' ) ), 8 );
+$c = codes( '/cached-page/', visitor( '203.0.113.21', array( 'Sec-Purpose' => 'prefetch', 'Sec-Fetch-Dest' => 'document' ) ), 8 );
 t( 'prefetch: δεν μετράει', ! in_array( 429, $c, true ), implode( ',', $c ) );
+same_minute();
+$c = codes( '/cached-page/', visitor( '203.0.113.29', array( 'Sec-Purpose' => 'prefetch' ) ), 8 );
+t( '«prefetch» χωρίς Sec-Fetch-Dest (script): μετράει', in_array( 429, $c, true ), implode( ',', $c ) );
 $c = codes( '/wp-json/', visitor( '203.0.113.22' ), 7 );
 t( 'REST (/wp-json/): αφήνεται στον κανονικό έλεγχο (δικό του όριο)', ! in_array( 429, $c, true ), implode( ',', $c ) );
 $c = codes( '/wp-login.php', visitor( '203.0.113.23' ), 7 );
