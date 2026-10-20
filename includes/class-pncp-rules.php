@@ -241,6 +241,7 @@ final class PNCP_Rules {
 			$lines[] = 'map $uri $' . self::nv( 'open_path' ) . ' {';
 			$lines[] = '    default 0;';
 			$lines[] = '    "~*^/(robots|llms|llms-full)\.txt$" 1;';
+			$lines[] = '    "~*^/\.well-known/tdmrep\.json$" 1;';
 			$lines[] = '    ' . self::nginx_check_path() . ' 1;';
 			$lines[] = '}';
 		}
@@ -389,7 +390,7 @@ final class PNCP_Rules {
 		$lines[] = '# BEGIN ScrapeLock ' . PNCP_VERSION;
 		$lines[] = '<IfModule mod_rewrite.c>';
 		$lines[] = 'RewriteEngine On';
-		$open    = 'RewriteCond %{REQUEST_URI} !^/(robots|llms|llms-full)\.txt$ [NC]';
+		$open    = 'RewriteCond %{REQUEST_URI} !^/(?:(robots|llms|llms-full)\.txt|\.well-known/tdmrep\.json)$ [NC]';
 		if ( $s['block_bots'] && self::bots() ) {
 			$lines[] = '# Bots in the list: 403 before the page cache. robots.txt / llms.txt stay open for every bot.';
 			$lines[] = $open;
@@ -489,7 +490,7 @@ final class PNCP_Rules {
 			'open' => array(
 				'title'      => __( 'First: robots.txt and llms.txt open for every bot (put this rule at the top)', 'scrapelock' ),
 				'action'     => __( 'Skip · all remaining custom rules', 'scrapelock' ),
-				'expression' => '(http.host eq "' . $host . '") and http.request.uri.path in {"/robots.txt" "/llms.txt" "/llms-full.txt"}',
+				'expression' => '(http.host eq "' . $host . '") and http.request.uri.path in {"/robots.txt" "/llms.txt" "/llms-full.txt" "/.well-known/tdmrep.json"}',
 			),
 		);
 

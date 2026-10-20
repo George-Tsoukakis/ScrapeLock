@@ -140,11 +140,21 @@ final class PNCP_Bots {
 	 * @return bool
 	 */
 	public static function is_open_path( $path = null ) {
+		$raw = '';
 		if ( null === $path ) {
 			$uri  = isset( $_SERVER['REQUEST_URI'] ) ? sanitize_text_field( wp_unslash( $_SERVER['REQUEST_URI'] ) ) : '';
-			$path = PNCP_Private_Urls::relative_path( rawurldecode( (string) wp_parse_url( $uri, PHP_URL_PATH ) ) );
+			$raw  = '/' . ltrim( rawurldecode( (string) wp_parse_url( $uri, PHP_URL_PATH ) ), '/' );
+			$path = PNCP_Private_Urls::relative_path( $raw );
+		} else {
+			$raw = '/' . ltrim( (string) $path, '/' );
 		}
-		return in_array( strtolower( (string) $path ), self::open_paths(), true );
+		if ( in_array( strtolower( (string) $path ), self::open_paths(), true ) ) {
+			return true;
+		}
+		// Also match the raw request path directly (independent of the home path / subfolder handling), so a
+		// blocked bot can always read robots.txt, llms.txt and the TDM opt-out even if the relative path
+		// resolves oddly. These files are only ever served from the domain root.
+		return (bool) preg_match( '#^/(?:robots\.txt|llms\.txt|llms-full\.txt|\.well-known/tdmrep\.json)$#i', $raw );
 	}
 
 	/**
@@ -153,7 +163,9 @@ final class PNCP_Bots {
 	 * @return string[]
 	 */
 	public static function open_paths() {
-		return array( '/robots.txt', '/llms.txt', '/llms-full.txt' );
+		// /.well-known/tdmrep.json is the opt-out declaration itself: the AI and TDM bots meant to read it
+		// must never be blocked from it, exactly like robots.txt.
+		return array( '/robots.txt', '/llms.txt', '/llms-full.txt', '/.well-known/tdmrep.json' );
 	}
 
 	/**
@@ -208,8 +220,11 @@ final class PNCP_Bots {
 		if ( ! in_array( strtoupper( (string) $request->get_method() ), array( 'GET', 'HEAD' ), true ) ) {
 			return $result;
 		}
-		// WooCommerce's Store API (cart, mini-cart) is called from every page: it does not count toward the limit.
-		$count   = 0 !== strpos( (string) $request->get_route(), '/wc/store' );
+		// Only the transactional Store API routes (cart, checkout, batch) are called from every page and are
+		// exempt from the limit. The product catalogue (/wc/store/.../products) is scrapable data and counts
+		// toward the REST limit like any other read.
+		$route   = (string) $request->get_route();
+		$count   = ! preg_match( '#^/wc/store(?:/v\d+)?/(?:cart|checkout|batch)(?:/|$)#i', $route );
 		$verdict = self::check( 'rest', $count );
 		if ( ! $verdict ) {
 			return $result;
@@ -250,8 +265,18 @@ final class PNCP_Bots {
 		if ( PNCP_Options::user_is_exempt( $s ) || ( in_array( $context, array( 'rest', 'graphql' ), true ) && current_user_can( 'edit_posts' ) ) ) {
 			return null;
 		}
+		// robots.txt, llms.txt and the TDM opt-out are never blocked, whatever the bot: a blocked bot must
+		// still be able to read the rules it is asked to follow. page_guard already skips them; this is a
+		// safety net so no caller of check() can ever return a 403 for them.
+		if ( in_array( $context, array( 'page', 'search' ), true ) && self::is_open_path() ) {
+			return null;
+		}
 		$method = isset( $_SERVER['REQUEST_METHOD'] ) ? strtoupper( sanitize_key( wp_unslash( $_SERVER['REQUEST_METHOD'] ) ) ) : 'GET';
-		if ( 'graphql' !== $context && ( ! in_array( $method, array( 'GET', 'HEAD' ), true ) || self::is_prefetch() ) ) {
+		// Only genuine views count toward the limit. A real browser prefetch and a visitor's own form
+		// submission do not; but an anonymous POST and a script that merely sends a "prefetch" header
+		// (without the browser's fetch-metadata signal) are counted, so neither can be used to bypass
+		// the limit and, with it, the strikes and temporary bans.
+		if ( 'graphql' !== $context && ( self::is_form_submission( $method ) || self::is_prefetch() ) ) {
 			$count = false;
 		}
 		// WooCommerce AJAX (cart, checkout): does not count toward the page limit, but bots, fake crawlers and
@@ -314,14 +339,14 @@ final class PNCP_Bots {
 			return self::verdict( 403, 'fake_ai_bot', $ip );
 		}
 
-		if ( '' !== $family && ! empty( $s['block_fake_crawlers'] ) ) {
-			// No violation when the check could not finish: otherwise anyone could use up the DNS budget
-			// with fake "Applebot" requests and get the real Applebot / YandexBot banned.
-			if ( ! self::$verify_inconclusive ) {
-				PNCP_Log::strike( $ip, 'fake_crawler' );
-			}
+		if ( '' !== $family && ! empty( $s['block_fake_crawlers'] ) && ! self::$verify_inconclusive ) {
+			PNCP_Log::strike( $ip, 'fake_crawler' );
 			return self::verdict( 403, 'fake_crawler', $ip );
 		}
+		// When verification could not finish (DNS budget used up, or a temporary DNS failure) the request is
+		// NOT blocked as a fake crawler: otherwise a flood of fake "Applebot" requests from many IPs could
+		// exhaust the shared DNS budget and make the real Applebot / YandexBot get a 403. It falls through to
+		// the normal per-minute limits instead, so a real crawler passes and a fake one is still rate-limited.
 
 		$allowed_ua = '' !== $ua && ( self::allow_list_match( $ua, $ip, $s ) || self::ua_in_list( $ua, PNCP_Options::allowed_ai_search() ) );
 
@@ -336,8 +361,12 @@ final class PNCP_Bots {
 
 		// Blocked countries. Link previews and AI search in the allowed lists are not affected (they come from
 		// abroad by nature); verified search engines never get here.
-		$country = '';
-		if ( ! $allowed_ua && ( '' !== $s['countries_block'] || '' !== $s['countries_strict'] ) ) {
+		// Country blocking exempts only entries verified by IP (a pinned allow entry or a verified AI search
+		// bot), not a User-Agent-only allow match, which anyone can spoof. A legitimate same-country bot is
+		// unaffected; to fully exempt one, pin it to its IP range in the allow list (UA@CIDR).
+		$country         = '';
+		$country_exempt  = $allowed_ua && ( self::allow_list_match_pinned( $ua, $ip, $s ) || self::ua_in_list( $ua, PNCP_Options::allowed_ai_search() ) );
+		if ( ! $country_exempt && ( '' !== $s['countries_block'] || '' !== $s['countries_strict'] ) ) {
 			$country = PNCP_Geo::country( $ip );
 			if ( '' !== $country && in_array( $country, PNCP_Options::parse_countries( $s['countries_block'] ), true ) ) {
 				return self::verdict( 403, 'country', $ip );
@@ -613,12 +642,43 @@ final class PNCP_Bots {
 	 * @return bool
 	 */
 	public static function is_prefetch() {
+		// A real speculative navigation always carries the browser's own fetch-metadata header
+		// (Sec-Fetch-Dest). A script can set "Sec-Purpose: prefetch" by hand but not forge that signal,
+		// so without it the request is treated as a normal view and counts toward the limit.
+		if ( empty( $_SERVER['HTTP_SEC_FETCH_DEST'] ) ) {
+			return false;
+		}
 		foreach ( array( 'HTTP_SEC_PURPOSE', 'HTTP_PURPOSE', 'HTTP_X_MOZ', 'HTTP_X_PURPOSE' ) as $key ) {
 			if ( ! empty( $_SERVER[ $key ] ) && false !== stripos( sanitize_text_field( wp_unslash( $_SERVER[ $key ] ) ), 'prefetch' ) ) {
 				return true;
 			}
 		}
 		return ! empty( $_SERVER['HTTP_SEC_PURPOSE'] ) && false !== stripos( sanitize_text_field( wp_unslash( $_SERVER['HTTP_SEC_PURPOSE'] ) ), 'prerender' );
+	}
+
+	/**
+	 * A visitor's own form submission (not a GET/HEAD view): a POST/PUT/… that carries a WordPress login
+	 * or a WooCommerce session cookie. These do not count toward the page limit, because a logged-in user
+	 * or a shopper legitimately posts forms. An anonymous POST carries no such cookie, so it is counted
+	 * like a view and cannot be used to scrape past the limit on uncached pages.
+	 *
+	 * @param string $method Request method (upper-case).
+	 * @return bool
+	 */
+	public static function is_form_submission( $method ) {
+		if ( in_array( $method, array( 'GET', 'HEAD' ), true ) ) {
+			return false;
+		}
+		if ( self::is_wc_ajax() ) {
+			return true;
+		}
+		foreach ( array_keys( $_COOKIE ) as $name ) {
+			$name = (string) $name;
+			if ( 0 === strpos( $name, 'wordpress_logged_in_' ) || 0 === strpos( $name, 'woocommerce_' ) || 0 === strpos( $name, 'wp_woocommerce_session_' ) ) {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	/**
@@ -699,6 +759,29 @@ final class PNCP_Bots {
 	}
 
 	/**
+	 * Like allow_list_match(), but true only for an entry pinned to an IP range (UA@CIDR) that the request's
+	 * IP matches. A User-Agent-only entry can be spoofed by anyone, so it earns the bot-list / headless
+	 * bypass but not a pass from country blocking; a pinned entry is verified by IP and is fully exempt.
+	 *
+	 * @param string               $ua User-Agent.
+	 * @param string               $ip IP.
+	 * @param array<string, mixed> $s  Settings.
+	 * @return bool
+	 */
+	public static function allow_list_match_pinned( $ua, $ip, $s ) {
+		foreach ( PNCP_Options::parse_list( $s['allow_list'] ) as $entry ) {
+			$entry = PNCP_Options::split_allow_entry( $entry );
+			if ( '' === $entry['ua'] || false === stripos( $ua, $entry['ua'] ) ) {
+				continue;
+			}
+			if ( $entry['pinned'] && PNCP_Ip::reliable() && PNCP_Ip::in_any( $ip, $entry['ips'] ) ) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	/**
 	 * The search engines: family => User-Agents, DNS domains and official IP list ('' = none).
 	 *
 	 * @return array<string, array{ua:string[], dns:string[], list:string}>
@@ -749,9 +832,10 @@ final class PNCP_Bots {
 			return 'yes' === $cached;
 		}
 
-		// DNS blocks the PHP worker: up to 20 checks per minute site-wide. Beyond that, treated as
+		// DNS blocks the PHP worker: up to 20 checks per minute, per crawler family (a separate budget each,
+		// so a flood of one fake family cannot starve verification of another). Beyond that, treated as
 		// unverified (Google and Bing are already verified via the IP lists, without DNS).
-		$budget = 'pncp_dns_' . (int) floor( time() / MINUTE_IN_SECONDS );
+		$budget = 'pncp_dns_' . $family . '_' . (int) floor( time() / MINUTE_IN_SECONDS );
 		$used   = (int) PNCP_Log::cache_get( $budget );
 		if ( $used >= (int) apply_filters( 'pncp_dns_lookups_per_minute', 20 ) ) {
 			self::$verify_inconclusive = true;
@@ -1061,6 +1145,12 @@ final class PNCP_Bots {
 		if ( ( '' !== $family && ( self::is_verified_crawler( $family, $ip ) || self::$verify_inconclusive ) ) || self::ua_in_list( $ua, self::trap_exempt_agents() ) ) {
 			return false; // Verified, or not verifiable right now: a real search engine is never banned.
 		}
+		// Allowed bots (link previews such as facebookexternalhit, price-comparison, monitoring) and allowed
+		// AI search bots are never banned by the trap: a page elsewhere embedding the trap URL (e.g. a link
+		// shared on a chat app) must not get the real preview bot banned.
+		if ( '' !== $ua && ( self::allow_list_match( $ua, $ip, $s ) || self::ua_in_list( $ua, PNCP_Options::allowed_ai_search() ) ) ) {
+			return false;
+		}
 		if ( self::is_prefetch() ) {
 			return false;
 		}
@@ -1079,11 +1169,13 @@ final class PNCP_Bots {
 			return false; // Human click on a link (e.g. someone posted the address in a comment).
 		}
 		if ( '' === $site && 0 === strpos( $ua, 'Mozilla/' ) ) {
-			// Browser without Sec-Fetch: perhaps an old browser that loaded another site's <img>. Second time = bot.
-			$key  = 'pncp_tr_' . md5( $ip );
+			// Browser without Sec-Fetch: perhaps an old browser that loaded another site's <img>. Only after
+			// repeated hits (3rd within 10 minutes) is it treated as a bot, so a one-off cross-site <img> on
+			// someone else's page does not get an old-browser visitor banned.
+			$key  = 'pncp_tr_' . md5( PNCP_Ip::limit_key( $ip ) );
 			$seen = (int) PNCP_Log::cache_get( $key );
 			PNCP_Log::cache_set( $key, $seen + 1, 10 * MINUTE_IN_SECONDS );
-			return $seen >= 1;
+			return $seen >= 2;
 		}
 		return true;
 	}

@@ -87,6 +87,17 @@ final class PNCP_Human {
 	}
 
 	/**
+	 * Maximum challenge requests and answer attempts per minute, per IP (IPv6: per /64). Stops a script from
+	 * hammering the endpoint (each call boots WordPress) or brute-forcing many challenges at once. A real
+	 * visitor needs one or two. Filter `pncp_human_max_per_minute`.
+	 *
+	 * @return int
+	 */
+	public static function max_per_minute() {
+		return max( 1, (int) apply_filters( 'pncp_human_max_per_minute', 20 ) );
+	}
+
+	/**
 	 * Signature tied to this site, the IP and the browser.
 	 *
 	 * @param string $data Data.
@@ -192,6 +203,14 @@ final class PNCP_Human {
 		if ( ! self::enabled() || '' === $ip ) {
 			wp_send_json_error( null, 404 );
 		}
+		// Throttle both challenge requests and answer attempts per IP (IPv6: per /64), so a script cannot
+		// hammer the endpoint or brute-force many challenges at once.
+		$bucket = 'pncp_hv_' . md5( PNCP_Ip::limit_key( $ip ) ) . '_' . (int) floor( time() / MINUTE_IN_SECONDS );
+		$tries  = (int) PNCP_Log::cache_get( $bucket ) + 1;
+		PNCP_Log::cache_set( $bucket, $tries, MINUTE_IN_SECONDS );
+		if ( $tries > self::max_per_minute() ) {
+			wp_send_json_error( null, 429 );
+		}
 		$method = isset( $_SERVER['REQUEST_METHOD'] ) ? strtoupper( sanitize_key( wp_unslash( $_SERVER['REQUEST_METHOD'] ) ) ) : 'GET';
 		if ( 'POST' !== $method ) {
 			wp_send_json_success(
@@ -205,8 +224,17 @@ final class PNCP_Human {
 		$challenge = isset( $_POST['c'] ) ? sanitize_text_field( wp_unslash( $_POST['c'] ) ) : '';
 		$answer    = isset( $_POST['n'] ) ? sanitize_text_field( wp_unslash( $_POST['n'] ) ) : '';
 		// phpcs:enable
+		// Single use: a challenge that was already spent cannot be replayed (so one solved proof of work
+		// cannot hand out many cookies, e.g. across rotating IPs in the same /64).
+		$spent = '' !== $challenge ? 'pncp_hvu_' . md5( $challenge ) : '';
+		if ( '' !== $spent && PNCP_Log::cache_get( $spent ) ) {
+			wp_send_json_error( null, 403 );
+		}
 		if ( ! self::check_answer( $challenge, $answer, $ip ) ) {
 			wp_send_json_error( null, 403 );
+		}
+		if ( '' !== $spent ) {
+			PNCP_Log::cache_set( $spent, 1, self::CHALLENGE_TTL );
 		}
 		setcookie(
 			self::COOKIE,

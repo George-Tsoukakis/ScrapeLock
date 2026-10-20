@@ -4,7 +4,7 @@ Tags: anti-scraping, ai bots, bot protection, rate limit, content protection
 Requires at least: 6.2
 Tested up to: 7.1
 Requires PHP: 7.4
-Stable tag: 2.6.3
+Stable tag: 2.6.8
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -158,6 +158,36 @@ No. A small script waits for the first real interaction (scroll, tap, key or mou
 6. Dashboard widget with the protection status and the last 24 hours.
 
 == Changelog ==
+
+= 2.6.8 =
+* Hardening: downloaded IP lists (Google, Bing, Cloudflare, Bunny, AI bots) are sanity-checked before use. An absurdly broad entry such as 0.0.0.0/0, ::/0 or any prefix shorter than /8 (IPv4) / /16 (IPv6) is dropped, so a bad or hostile source cannot make every IP an official crawler, a trusted proxy or a blocked one.
+* Privacy (GDPR): the feed statistics now store the last client IP anonymised (IPv4 last octet zeroed, IPv6 last 80 bits), instead of keeping a full IP indefinitely in an option.
+* Hardening: the one-time plaintext feed token is now kept for 2 minutes instead of 10 while it waits to be shown once, keeping it in the database as briefly as possible.
+* Reliability: the strike counter that leads to a temporary ban is now atomic when a persistent object cache is present, so two simultaneous violations can no longer lose a strike.
+* Cleanup on uninstall: the country-database folder is removed (not just its files), on multisite it is cleaned per site, and the per-attachment watermark marker (_pncp_wm) is deleted. The clean image originals and the pointer to them are kept on purpose.
+* Fix: the "Feeds and token" link in the legacy-token notice pointed to a tab that does not exist; it now opens the Feeds and API tab.
+
+= 2.6.7 =
+* Fix: a blocked bot (e.g. a training crawler such as ClaudeBot) could still receive a 403 on /robots.txt in some setups. robots.txt, llms.txt and the TDM opt-out are now recognised directly from the raw request path, independent of the home-path/subfolder handling, and the main check has a safety net so no path can return a 403 for them. Every bot can always read the rules it is asked to follow.
+* Change: the "CDN shared secret" field is now a single-line password input instead of a plain multi-line box.
+
+= 2.6.6 =
+* Security (M4): optional CDN shared secret. A multi-tenant CDN (Bunny, Cloudflare) shares its edge IPs, so by default anyone could point their own CDN zone at your origin and spoof the real-IP header. Set a secret under "Real visitor IP" and have your CDN send it as the header X-ScrapeLock-CDN; the CDN's real-IP header is then trusted only when it matches. Empty = unchanged behaviour.
+* Security (M6): the WooCommerce Store API product catalogue (/wc/store/.../products) now counts toward the REST limit; only cart, checkout and batch stay exempt. Product descriptions are also stripped from cart line items, so the catalogue text cannot be read via "add to cart, then read the cart".
+* Security (M8): the bot trap no longer bans allowed bots (link-preview, price-comparison, monitoring) or allowed AI search bots, even if another page embeds the trap URL; an old browser with no Sec-Fetch headers is treated as a bot only after a third hit, and the counter is per /64.
+* Security (M10): when a crawler cannot be verified because the DNS budget is used up or DNS failed, the request is no longer blocked as a fake crawler (it falls through to the normal limits), so a flood of fake "Applebot" requests can no longer get the real Applebot or YandexBot a 403. Each crawler family now has its own DNS budget.
+* Performance (M9): the pncp_version and pncp_db_version options are autoloaded, removing one database query per request on sites without a persistent object cache.
+
+= 2.6.5 =
+* Security: temporary bans are now kept per IPv6 /64 (like the limits and strikes), so a client can no longer dodge a ban by switching to another address in the same /64. IPv4 is unchanged.
+* Security: the human-check endpoint now limits challenge requests and answer attempts per IP (per /64 on IPv6) and makes each challenge single-use, so one solved proof of work cannot be replayed and the endpoint cannot be hammered.
+* Security: a User-Agent-only entry in the "Always allowed" list no longer skips country blocking (anyone can copy such a User-Agent). Pin an entry to its IP range (UA@1.2.3.0/24) to keep it fully exempt; verified AI search bots stay exempt.
+* /.well-known/tdmrep.json is now always readable (normal check, early check, pre-cache check and the generated Nginx/Apache/Cloudflare rules), like robots.txt, so the AI/TDM bots meant to read your opt-out are never blocked from it. If you installed the server rules, copy them again.
+
+= 2.6.4 =
+* Security: a request could skip the per-minute limits (and so the strikes and temporary bans) by sending a "prefetch" header or by using POST. A prefetch is now trusted only with the browser's own Sec-Fetch-Dest signal, and an anonymous POST counts like a view; the pre-cache check still applies the always-blocked list and bans to every request.
+* Security: the pre-cache events file is written with its "<?php exit;" guard and first line under one lock, and logged values can no longer contain <, > or ?, so a log file can never become executable code.
+* Security: wp-config.php is now updated atomically (temporary file + rename) with a concurrent-change check, is never edited during a front-end request (it waits for wp-admin), and is left untouched when the file begins with declare() or namespace.
 
 = 2.6.3 =
 * Log: "Pages" now lists only addresses that exist on the site (posts, pages, products, archives…). Random strings and guesses get their own group, "Addresses that do not exist", next to "Files and admin paths".

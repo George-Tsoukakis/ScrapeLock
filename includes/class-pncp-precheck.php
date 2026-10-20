@@ -29,6 +29,19 @@ final class PNCP_Precheck {
 	public static function init() {
 		add_action( PNCP_Log::CRON, array( __CLASS__, 'import_events' ), 5 );
 		add_action( PNCP_Ip::CRON, array( __CLASS__, 'refresh' ), 30 );
+		// If the wp-config.php line could not be added during a front-end request (it is never edited there),
+		// finish it on the next admin page load, where editing the config file is safe.
+		add_action( 'admin_init', array( __CLASS__, 'maybe_sync' ), 1 );
+	}
+
+	/**
+	 * Re-runs sync() in wp-admin when the pre-cache check is wanted but not yet fully in place (e.g. the
+	 * wp-config.php line was deferred from a front-end upgrade request).
+	 */
+	public static function maybe_sync() {
+		if ( self::wanted() && 'ok' !== get_option( self::STATUS ) ) {
+			self::sync();
+		}
 	}
 
 	/**
@@ -200,6 +213,10 @@ final class PNCP_Precheck {
 			'private'     => in_array( $setting, array( 'x_real_ip', 'x_forwarded_for' ), true ),
 			'trust_any'   => ! empty( $s['trust_any_proxy'] ),
 			'proxies'     => self::set( $proxies ),
+			// Explicit "Trusted proxies" only (no CDN edge lists): used when a CDN secret is set but the
+			// request does not carry it, so a spoofed CDN edge IP is not trusted for the real-IP header.
+			'proxies_base' => self::set( PNCP_Options::parse_list( $s['trusted_proxies'] ) ),
+			'cdn_secret'   => isset( $s['cdn_secret'] ) ? (string) $s['cdn_secret'] : '',
 			'cdn'         => self::set( array_merge( PNCP_Ip::list_of( 'cloudflare' ), PNCP_Ip::list_of( 'bunny' ) ) ),
 			'allow'       => self::set( PNCP_Options::parse_list( $s['allow_ips'] ) ),
 			'block'       => self::set( PNCP_Options::parse_list( $s['block_ips'] ) ),
@@ -310,9 +327,21 @@ final class PNCP_Precheck {
 		if ( ! preg_match( '/\A<\?php[ \t]*\r?\n/', $clean, $m ) ) {
 			return 'not_writable'; // Unusual start (BOM, comment before <?php): left to the administrator.
 		}
-		$wanted = $m[0] . self::block() . substr( $clean, strlen( $m[0] ) );
+		$rest = substr( $clean, strlen( $m[0] ) );
+		// declare(strict_types=1) or namespace must stay the file's first statement; our line right after
+		// "<?php" would make it a fatal error. Left to the administrator in that case.
+		if ( preg_match( '/\A\s*(?:#[^\n]*\n|\/\/[^\n]*\n|\/\*.*?\*\/\s*)*\s*(?:declare|namespace)\b/s', $rest ) ) {
+			return 'not_writable';
+		}
+		$wanted = $m[0] . self::block() . $rest;
 		if ( $wanted === $original ) {
 			return 'ok';
+		}
+		// Never rewrite wp-config.php during a normal front-end request (the upgrade can run there): only in
+		// wp-admin, WP-CLI or cron. Otherwise it waits for the next admin page load (maybe_sync on admin_init),
+		// so a visitor's request never touches the site's main config file.
+		if ( ! is_admin() && ! ( defined( 'WP_CLI' ) && WP_CLI ) && ! wp_doing_cron() ) {
+			return 'deferred';
 		}
 		return self::write_config( $path, $wanted, $original ) ? 'ok' : 'not_writable';
 	}
@@ -352,17 +381,33 @@ final class PNCP_Precheck {
 	 */
 	private static function write_config( $path, $wanted, $original ) {
 		$filesystem = self::filesystem( dirname( $path ) );
-		if ( ! $filesystem || ! $filesystem->is_writable( $path ) ) {
+		if ( ! $filesystem || ! $filesystem->is_writable( $path ) || ! $filesystem->is_writable( dirname( $path ) ) ) {
 			return false;
 		}
 		$mode = fileperms( $path ) & 0777;
-		if ( $filesystem->put_contents( $path, $wanted, $mode ) && (string) file_get_contents( $path ) === $wanted ) { // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Local file.
-			self::opcache_forget( $path );
-			return true;
+		if ( ! $mode ) {
+			$mode = FS_CHMOD_FILE;
 		}
-		$filesystem->put_contents( $path, $original, $mode );
+		// Write a temporary file in the same folder, then rename it over wp-config.php. rename() is atomic
+		// on one filesystem, so a concurrent request always reads either the whole old file or the whole new
+		// one, never a half-written one; and if the write fails (disk full, quota) the original stays in
+		// place, so there is no risk window and no "restore" step that could also fail.
+		$tmp = $path . '.scrapelock-' . wp_generate_password( 8, false ) . '.tmp';
+		if ( ! $filesystem->put_contents( $tmp, $wanted, $mode ) || (string) file_get_contents( $tmp ) !== $wanted ) { // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Local file.
+			$filesystem->delete( $tmp );
+			return false;
+		}
+		// Do not clobber a change another process (e.g. another plugin) made to wp-config.php meanwhile.
+		if ( (string) file_get_contents( $path ) !== $original ) { // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Local file.
+			$filesystem->delete( $tmp );
+			return false;
+		}
+		if ( ! @rename( $tmp, $path ) ) { // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged, WordPress.WP.AlternativeFunctions.rename_rename -- Atomic replace in the same folder; WP_Filesystem has no atomic move.
+			$filesystem->delete( $tmp );
+			return false;
+		}
 		self::opcache_forget( $path );
-		return false;
+		return (string) file_get_contents( $path ) === $wanted; // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Local file.
 	}
 
 	/* ---------- Bans and events ---------- */

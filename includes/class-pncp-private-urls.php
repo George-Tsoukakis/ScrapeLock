@@ -290,7 +290,10 @@ final class PNCP_Private_Urls {
 			++$row['ok'];
 			$row['last_ok']  = time();
 			$row['last_via'] = $via;
-			$row['last_ip']  = PNCP_Ip::client_ip();
+			// Stored anonymised (IPv4: last octet zeroed, IPv6: last 80 bits), so no full personal IP is kept
+			// indefinitely in an option (GDPR). It is only a hint of which network last used the feed.
+			$ip             = PNCP_Ip::client_ip();
+			$row['last_ip'] = ( '' !== $ip && function_exists( 'wp_privacy_anonymize_ip' ) ) ? wp_privacy_anonymize_ip( $ip ) : '';
 		}
 		$stats[ $key ] = $row;
 		update_option( self::STATS_OPTION, array_slice( $stats, 0, 200, true ), false );

@@ -61,7 +61,7 @@ final class PNCP_Precheck_Runtime {
 	 * @return array{0:int, 1:string, 2:string}|null
 	 */
 	public static function verdict( $c, $now ) {
-		if ( 'cli' === PHP_SAPI || ! self::counts( $c ) ) {
+		if ( 'cli' === PHP_SAPI || ! self::applies( $c ) ) {
 			return null;
 		}
 		$ip = self::client_ip( $c, $reliable );
@@ -91,23 +91,29 @@ final class PNCP_Precheck_Runtime {
 			}
 		}
 
-		$dir = (string) $c['dir'];
-		if ( self::banned( $dir, $ip, $now ) ) {
+		$dir    = (string) $c['dir'];
+		$bankey = self::limit_key( $ip, (int) $c['v6_prefix'] ); // IPv6: the /64, so a ban is not dodged by rotating addresses.
+		if ( self::banned( $dir, $bankey, $now ) ) {
 			return array( 403, 'banned', $ip );
+		}
+		// Up to here (always-blocked IPs and temporary bans) every request is checked, even a prefetch or a
+		// POST: otherwise a cached page could be served to an IP that is already blocked or banned. Only the
+		// rate limit below is for genuine, countable views.
+		if ( ! self::countable() ) {
+			return null;
 		}
 		$limit = (int) $c['limit'];
 		if ( $limit < 1 ) {
 			return null;
 		}
-		$key   = self::limit_key( $ip, (int) $c['v6_prefix'] );
-		$count = self::hit( $c, $key, $now );
+		$count = self::hit( $c, $bankey, $now );
 		if ( $count <= $limit ) {
 			return null;
 		}
 		// One "violation" per minute over the limit, as in the normal check; enough of them = a ban.
-		if ( $count === $limit + 1 && self::strike( $c, $key, $now ) ) {
-			self::ban( $dir, $ip, $now + max( 1, (int) $c['ban_minutes'] ) * 60 );
-			self::event( $c, 403, 'ban', $ip );
+		if ( $count === $limit + 1 && self::strike( $c, $bankey, $now ) ) {
+			self::ban( $dir, $bankey, $now + max( 1, (int) $c['ban_minutes'] ) * 60 );
+			self::event( $c, 403, 'ban', $ip ); // The event keeps the exact IP for the log.
 		}
 		return array( 429, 'rate_page', $ip );
 	}
@@ -128,15 +134,7 @@ final class PNCP_Precheck_Runtime {
 	 * @param array<string, mixed> $c Configuration.
 	 * @return bool
 	 */
-	public static function counts( $c ) {
-		if ( ! in_array( self::method(), array( 'GET', 'HEAD' ), true ) ) {
-			return false;
-		}
-		foreach ( array( 'HTTP_SEC_PURPOSE', 'HTTP_PURPOSE', 'HTTP_X_MOZ', 'HTTP_X_PURPOSE' ) as $header ) {
-			if ( isset( $_SERVER[ $header ] ) && false !== stripos( (string) $_SERVER[ $header ], 'prefetch' ) ) {
-				return false;
-			}
-		}
+	public static function applies( $c ) {
 		// Page caches never serve these cookies a stored page: the normal check sees them.
 		foreach ( array_keys( $_COOKIE ) as $name ) {
 			if ( 0 === strpos( (string) $name, 'wordpress_logged_in_' ) ) {
@@ -153,11 +151,33 @@ final class PNCP_Precheck_Runtime {
 		if ( '' !== $home && ( 0 === strcasecmp( $path, $home ) || 0 === stripos( $path, $home . '/' ) ) ) {
 			$path = '/' . ltrim( substr( $path, strlen( $home ) ), '/' );
 		}
-		// robots.txt and llms.txt: every bot must be able to read them.
-		if ( preg_match( '#^/(?:robots|llms|llms-full)\.txt$#i', $path ) ) {
+		// robots.txt, llms.txt and the TDM opt-out: every bot must be able to read them.
+		if ( preg_match( '#^/(?:robots|llms|llms-full)\.txt$#i', $path ) || 0 === strcasecmp( $path, '/.well-known/tdmrep.json' ) ) {
 			return false;
 		}
 		return ! preg_match( '#^/(?:index\.php/)?(?:wp-admin|wp-login\.php|wp-cron\.php|xmlrpc\.php|wp-json|wp-signup\.php|wp-activate\.php|wp-trackback\.php|wp-comments-post\.php|cp-[0-9a-f]{10})(?:/|$)#i', $path );
+	}
+
+	/**
+	 * Does this request count toward the page limit? Only a real GET/HEAD view. A form (POST etc.) and a
+	 * genuine browser prefetch do not, but a bare "prefetch" header from a script (without the browser's
+	 * Sec-Fetch-Dest signal) is counted, so it cannot be used to scrape a cached page without limit. The
+	 * always-blocked list and the temporary bans in verdict() run regardless of this.
+	 *
+	 * @return bool
+	 */
+	public static function countable() {
+		if ( ! in_array( self::method(), array( 'GET', 'HEAD' ), true ) ) {
+			return false;
+		}
+		if ( ! empty( $_SERVER['HTTP_SEC_FETCH_DEST'] ) ) {
+			foreach ( array( 'HTTP_SEC_PURPOSE', 'HTTP_PURPOSE', 'HTTP_X_MOZ', 'HTTP_X_PURPOSE' ) as $header ) {
+				if ( isset( $_SERVER[ $header ] ) && false !== stripos( (string) $_SERVER[ $header ], 'prefetch' ) ) {
+					return false;
+				}
+			}
+		}
+		return true;
 	}
 
 	/**
@@ -209,7 +229,25 @@ final class PNCP_Precheck_Runtime {
 		if ( ! empty( $c['private'] ) && filter_var( $ip, FILTER_VALIDATE_IP ) && ! filter_var( $ip, FILTER_VALIDATE_IP, FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE ) ) {
 			return true;
 		}
-		return self::in_any( $ip, $c['proxies'] );
+		// With a CDN secret set but not present on the request, only the explicit "Trusted proxies" are
+		// trusted, not the CDN edge lists (so a spoofed CDN edge IP cannot set the real-IP header).
+		$set = self::cdn_trust_ok( $c ) ? $c['proxies'] : ( isset( $c['proxies_base'] ) ? $c['proxies_base'] : $c['proxies'] );
+		return self::in_any( $ip, $set );
+	}
+
+	/**
+	 * Is the CDN shared secret satisfied for this request? (true when none is configured).
+	 *
+	 * @param array<string, mixed> $c Configuration.
+	 * @return bool
+	 */
+	public static function cdn_trust_ok( $c ) {
+		$secret = isset( $c['cdn_secret'] ) ? trim( (string) $c['cdn_secret'] ) : '';
+		if ( '' === $secret ) {
+			return true;
+		}
+		$sent = isset( $_SERVER['HTTP_X_SCRAPELOCK_CDN'] ) ? trim( (string) $_SERVER['HTTP_X_SCRAPELOCK_CDN'] ) : '';
+		return '' !== $sent && hash_equals( $secret, $sent );
 	}
 
 	/**
@@ -458,14 +496,29 @@ final class PNCP_Precheck_Runtime {
 			return;
 		}
 		$clean = static function ( $value, $max ) {
-			return substr( (string) preg_replace( '/[\x00-\x1F\x7F]+/', ' ', (string) $value ), 0, $max );
+			// Also removes < > ? so a logged value (path, User-Agent) can never form a PHP open tag,
+			// even if the file were ever served or included without its "<?php exit;" guard.
+			return substr( (string) preg_replace( '/[\x00-\x1F\x7F<>?]+/', ' ', (string) $value ), 0, $max );
 		};
 		$uri   = isset( $_SERVER['REQUEST_URI'] ) ? (string) parse_url( (string) $_SERVER['REQUEST_URI'], PHP_URL_PATH ) : '';
 		$ua    = isset( $_SERVER['HTTP_USER_AGENT'] ) ? (string) $_SERVER['HTTP_USER_AGENT'] : '';
 		$line  = implode( "\t", array( time(), (int) $code, $clean( $reason, 20 ), $clean( $ip, 45 ), $clean( $uri, 255 ), $clean( $ua, 255 ) ) ) . "\n";
-		if ( ! is_file( $file ) ) {
-			$line = "<?php exit; ?>\n" . $line;
+		// The "<?php exit;" guard and the first line are written under one lock, checking the size while
+		// holding it. So even if import_events() renames the file away between two writers, the next writer
+		// finds an empty file and writes the guard again: a guard-less events.php can never be created.
+		$handle = @fopen( $file, 'a' ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged, WordPress.WP.AlternativeFunctions.file_system_operations_fopen -- Runs before WordPress; no WP_Filesystem.
+		if ( ! $handle ) {
+			return;
 		}
-		@file_put_contents( $file, $line, FILE_APPEND | LOCK_EX );
+		if ( flock( $handle, LOCK_EX ) ) {
+			$stat = fstat( $handle );
+			if ( is_array( $stat ) && isset( $stat['size'] ) && 0 === (int) $stat['size'] ) {
+				fwrite( $handle, "<?php exit; ?>\n" );
+			}
+			fwrite( $handle, $line );
+			fflush( $handle );
+			flock( $handle, LOCK_UN );
+		}
+		fclose( $handle ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fclose -- Runs before WordPress; no WP_Filesystem.
 	}
 }
