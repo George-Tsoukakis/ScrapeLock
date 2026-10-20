@@ -2,7 +2,7 @@
 /**
  * Plugin Name:       ScrapeLock – Content & AI Bot Protection
  * Description:       Protects your content: makes copying text and images harder, hides the text in the REST API, GraphQL and RSS, blocks scrapers, AI bots and fake Googlebots, temporarily blocks persistent IPs, protects XML feeds with a token and adds an optional watermark. Forms, cart, checkout and search engines are not affected.
- * Version:           2.6.3
+ * Version:           2.6.8
  * Requires at least: 6.2
  * Requires PHP:      7.4
  * Author:            CodeBunny
@@ -19,7 +19,7 @@ if ( defined( 'PNCP_VERSION' ) ) {
 	return;
 }
 
-define( 'PNCP_VERSION', '2.6.3' );
+define( 'PNCP_VERSION', '2.6.8' );
 define( 'PNCP_FILE', __FILE__ );
 define( 'PNCP_DIR', plugin_dir_path( __FILE__ ) );
 define( 'PNCP_URL', plugin_dir_url( __FILE__ ) );
@@ -153,7 +153,7 @@ function pncp_upgrade() {
 	if ( ! wp_next_scheduled( PNCP_Log::CRON ) ) {
 		wp_schedule_event( time() + 5 * MINUTE_IN_SECONDS, 'hourly', PNCP_Log::CRON );
 	}
-	update_option( 'pncp_version', PNCP_VERSION, false );
+	update_option( 'pncp_version', PNCP_VERSION, true ); // Autoloaded: read on every request by pncp_maybe_upgrade().
 	PNCP_Options::flush();
 	// The early check (mu-plugin): written again if the plugin folder changed, removed if it is off.
 	PNCP_Early::sync();

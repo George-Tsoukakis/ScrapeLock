@@ -145,7 +145,7 @@ final class PNCP_Options {
 	public static function sections() {
 		return array(
 			'general' => array( 'enabled', 'scope_posts', 'scope_pages', 'scope_home', 'scope_products', 'skip_woo_pages', 'excluded_ids', 'block_selection', 'block_context_menu', 'block_shortcuts', 'block_devtools', 'block_image_drag', 'block_text_drag', 'blur_on_capture', 'copy_mode', 'attribution_min_chars', 'print_mode', 'exempt_cap', 'show_message', 'message', 'block_framing', 'tdm_reservation', 'tdm_policy_url' ),
-			'bots'    => array( 'block_bots', 'block_empty_ua', 'block_fake_crawlers', 'require_browser_headers', 'block_headless', 'trap_enabled', 'bot_list', 'allow_list', 'allow_ips', 'allow_ai_search', 'verify_ai_bots', 'robots_ai_block', 'content_signal', 'block_ips', 'block_referrers', 'block_user_enum', 'rate_limit', 'rate_limit_search', 'rate_limit_rest', 'rate_limit_404', 'rate_limit_sitemap', 'human_check', 'rate_limit_unverified', 'geo_db', 'countries_block', 'countries_strict', 'rate_limit_country', 'ban_strikes', 'ban_minutes', 'early_mode', 'precheck', 'log_retention', 'content_paths', 'ip_header', 'trust_cloudflare', 'trust_bunny', 'trust_any_proxy', 'trusted_proxies' ),
+			'bots'    => array( 'block_bots', 'block_empty_ua', 'block_fake_crawlers', 'require_browser_headers', 'block_headless', 'trap_enabled', 'bot_list', 'allow_list', 'allow_ips', 'allow_ai_search', 'verify_ai_bots', 'robots_ai_block', 'content_signal', 'block_ips', 'block_referrers', 'block_user_enum', 'rate_limit', 'rate_limit_search', 'rate_limit_rest', 'rate_limit_404', 'rate_limit_sitemap', 'human_check', 'rate_limit_unverified', 'geo_db', 'countries_block', 'countries_strict', 'rate_limit_country', 'ban_strikes', 'ban_minutes', 'early_mode', 'precheck', 'log_retention', 'content_paths', 'ip_header', 'trust_cloudflare', 'trust_bunny', 'trust_any_proxy', 'trusted_proxies', 'cdn_secret' ),
 			'content' => array( 'rest_hide_content', 'graphql_hide_content', 'feed_mode', 'feed_source_link', 'private_paths', 'private_ips' ),
 			'images'  => array( 'watermark_enabled', 'watermark_full', 'watermark_products', 'watermark_image_id', 'watermark_opacity', 'watermark_size', 'watermark_position', 'watermark_min_width' ),
 		);
@@ -350,6 +350,7 @@ final class PNCP_Options {
 			'trust_cloudflare'        => 1,
 			'trust_any_proxy'         => 0,
 			'trusted_proxies'         => '',
+			'cdn_secret'              => '',
 			'private_paths'           => '',
 			'private_ips'             => '',
 			'watermark_enabled'       => 0,
@@ -730,6 +731,10 @@ final class PNCP_Options {
 
 		$policy                  = isset( $input['tdm_policy_url'] ) ? esc_url_raw( trim( (string) $input['tdm_policy_url'] ), array( 'https', 'http' ) ) : '';
 		$clean['tdm_policy_url'] = (string) $policy;
+
+		// A shared secret for the CDN (header value): only safe characters, kept short.
+		$secret               = isset( $input['cdn_secret'] ) ? (string) preg_replace( '/[^A-Za-z0-9._\-]/', '', (string) $input['cdn_secret'] ) : '';
+		$clean['cdn_secret']  = substr( $secret, 0, 100 );
 
 		$stored = self::stored();
 

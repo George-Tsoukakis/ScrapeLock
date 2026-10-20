@@ -113,7 +113,7 @@ final class PNCP_Log {
 				return;
 			}
 		}
-		update_option( 'pncp_db_version', self::DB_VERSION, false );
+		update_option( 'pncp_db_version', self::DB_VERSION, true ); // Autoloaded: read on every request by is_banned().
 		// Since 2.6.2: the number of different User-Agents of a grouped event. Only used when the column exists
 		// (a database that could not add it keeps logging as before).
 		// A plain SELECT works on every database (SHOW COLUMNS does not, e.g. on SQLite).
@@ -128,7 +128,7 @@ final class PNCP_Log {
 		if ( is_array( $old ) ) {
 			foreach ( $old as $ip => $ban ) {
 				if ( is_array( $ban ) && isset( $ban['until'] ) && (int) $ban['until'] > time() && filter_var( $ip, FILTER_VALIDATE_IP ) ) {
-					self::store_ban( (string) $ip, (int) $ban['until'], isset( $ban['reason'] ) ? (string) $ban['reason'] : 'ban', isset( $ban['since'] ) ? (int) $ban['since'] : time() );
+					self::store_ban( PNCP_Ip::limit_key( (string) $ip ), (int) $ban['until'], isset( $ban['reason'] ) ? (string) $ban['reason'] : 'ban', isset( $ban['since'] ) ? (int) $ban['since'] : time() );
 				}
 			}
 		}
@@ -673,24 +673,27 @@ final class PNCP_Log {
 		if ( '' === $ip || get_option( 'pncp_db_version' ) !== self::DB_VERSION ) {
 			return false;
 		}
-		if ( isset( self::$banned[ $ip ] ) ) {
-			return self::$banned[ $ip ];
+		// Bans are stored per ban key (IPv6: the /64, like the limits and strikes), so a client cannot dodge
+		// a ban by moving to another address in the same /64.
+		$bankey = PNCP_Ip::limit_key( $ip );
+		if ( isset( self::$banned[ $bankey ] ) ) {
+			return self::$banned[ $bankey ];
 		}
-		$key = 'pncp_ban_' . md5( $ip );
+		$key = 'pncp_ban_' . md5( $bankey );
 		if ( wp_using_ext_object_cache() ) {
 			$until = wp_cache_get( $key, 'pncp' );
 			if ( false !== $until ) {
-				self::$banned[ $ip ] = (int) $until > time();
-				return self::$banned[ $ip ];
+				self::$banned[ $bankey ] = (int) $until > time();
+				return self::$banned[ $bankey ];
 			}
 		}
 		// phpcs:ignore WordPress.DB.DirectDatabaseQuery -- Plugin table; the cache is above.
-		$until = (int) $wpdb->get_var( $wpdb->prepare( 'SELECT until_ts FROM %i WHERE ip = %s', self::bans_table(), $ip ) );
+		$until = (int) $wpdb->get_var( $wpdb->prepare( 'SELECT until_ts FROM %i WHERE ip = %s', self::bans_table(), $bankey ) );
 		if ( wp_using_ext_object_cache() ) {
 			wp_cache_set( $key, $until, 'pncp', $until > time() ? $until - time() : 5 * MINUTE_IN_SECONDS );
 		}
-		self::$banned[ $ip ] = $until > time();
-		return self::$banned[ $ip ];
+		self::$banned[ $bankey ] = $until > time();
+		return self::$banned[ $bankey ];
 	}
 
 	/**
@@ -713,7 +716,8 @@ final class PNCP_Log {
 			return;
 		}
 		$until = time() + max( 1, (int) $minutes ) * MINUTE_IN_SECONDS;
-		self::store_ban( $ip, $until, $reason, time() );
+		// Stored under the ban key (IPv6: the /64); the log entry keeps the exact IP that tripped it.
+		self::store_ban( PNCP_Ip::limit_key( $ip ), $until, $reason, time() );
 		self::add( 'ban', 403, $ip );
 	}
 
@@ -772,7 +776,7 @@ final class PNCP_Log {
 		if ( '' === $ip || ! filter_var( $ip, FILTER_VALIDATE_IP ) || $until <= time() || PNCP_Bots::is_official_crawler_ip( $ip ) ) {
 			return;
 		}
-		self::store_ban( $ip, (int) $until, $reason, (int) $since );
+		self::store_ban( PNCP_Ip::limit_key( $ip ), (int) $until, $reason, (int) $since );
 	}
 
 	/**
@@ -864,9 +868,15 @@ final class PNCP_Log {
 		if ( $strikes < 1 || '' === $ip ) {
 			return false;
 		}
-		$key   = 'pncp_st_' . md5( PNCP_Ip::limit_key( $ip ) ); // IPv6: per /64, like the limits.
-		$count = (int) self::cache_get( $key ) + 1;
-		self::cache_set( $key, $count, 10 * MINUTE_IN_SECONDS );
+		$key = 'pncp_st_' . md5( PNCP_Ip::limit_key( $ip ) ); // IPv6: per /64, like the limits.
+		if ( wp_using_ext_object_cache() ) {
+			// Atomic: two concurrent violations cannot both read the same value and lose a strike.
+			wp_cache_add( $key, 0, 'pncp', 10 * MINUTE_IN_SECONDS );
+			$count = (int) wp_cache_incr( $key, 1, 'pncp' );
+		} else {
+			$count = (int) self::cache_get( $key ) + 1;
+			self::cache_set( $key, $count, 10 * MINUTE_IN_SECONDS );
+		}
 		if ( $count >= $strikes ) {
 			self::cache_delete( $key );
 			self::ban( $ip, (int) $s['ban_minutes'], $reason );
