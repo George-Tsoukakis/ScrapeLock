@@ -40,7 +40,8 @@ final class PNCP_Admin {
 		add_options_page(
 			__( 'ScrapeLock', 'scrapelock' ),
 			__( 'ScrapeLock', 'scrapelock' ),
-			'manage_options',
+			// Administrators keep only "read" while the site is locked: they still reach the Lockdown tab.
+			PNCP_Lockdown::is_owner( get_current_user_id() ) ? 'read' : 'manage_options',
 			self::PAGE,
 			array( __CLASS__, 'render' )
 		);
@@ -111,12 +112,13 @@ final class PNCP_Admin {
 	 */
 	private static function tabs() {
 		return array(
-			'general' => __( 'On the page', 'scrapelock' ),
-			'bots'    => __( 'Bots and limits', 'scrapelock' ),
-			'content' => __( 'Feeds and API', 'scrapelock' ),
-			'images'  => __( 'Images', 'scrapelock' ),
-			'rules'   => __( 'Server rules', 'scrapelock' ),
-			'log'     => __( 'Log', 'scrapelock' ),
+			'general'  => __( 'On the page', 'scrapelock' ),
+			'bots'     => __( 'Bots and limits', 'scrapelock' ),
+			'content'  => __( 'Feeds and API', 'scrapelock' ),
+			'images'   => __( 'Images', 'scrapelock' ),
+			'rules'    => __( 'Server rules', 'scrapelock' ),
+			'log'      => __( 'Log', 'scrapelock' ),
+			'lockdown' => __( 'Lockdown', 'scrapelock' ),
 		);
 	}
 
@@ -128,6 +130,9 @@ final class PNCP_Admin {
 	private static function current_tab() {
 		// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Only selects a tab.
 		$tab = isset( $_GET['tab'] ) ? sanitize_key( wp_unslash( $_GET['tab'] ) ) : 'general';
+		if ( PNCP_Lockdown::is_locked() ) {
+			return 'lockdown'; // Nothing else can be changed while locked.
+		}
 		return array_key_exists( $tab, self::tabs() ) ? $tab : 'general';
 	}
 
@@ -432,28 +437,39 @@ final class PNCP_Admin {
 	 * The settings page.
 	 */
 	public static function render() {
-		if ( ! current_user_can( 'manage_options' ) ) {
+		if ( ! PNCP_Lockdown::can( 'manage_options' ) ) {
 			return;
 		}
-		$tab = self::current_tab();
+		$tab    = self::current_tab();
+		$locked = PNCP_Lockdown::is_locked();
 		?>
 		<div class="wrap pncp-admin">
 			<h1 class="pncp-title"><?php esc_html_e( 'ScrapeLock', 'scrapelock' ); ?> <span class="pncp-version"><?php echo esc_html( PNCP_VERSION ); ?></span></h1>
 			<?php
 			// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Only displays the confirmation.
-			if ( isset( $_GET['pncp_confirm'] ) && PNCP_Status::is_enabled() ) {
+			if ( isset( $_GET['pncp_confirm'] ) && PNCP_Status::is_enabled() && ! $locked ) {
 				self::render_disable_confirm();
 			}
+			if ( ! $locked ) {
+				self::render_status_bar( PNCP_Options::stored() );
+			}
 			?>
-			<?php self::render_status_bar( PNCP_Options::stored() ); ?>
 			<nav class="nav-tab-wrapper" aria-label="<?php esc_attr_e( 'Settings sections', 'scrapelock' ); ?>">
 				<?php foreach ( self::tabs() as $key => $label ) : ?>
-					<a href="<?php echo esc_url( PNCP_Status::settings_url( array( 'tab' => $key ) ) ); ?>" class="nav-tab<?php echo $tab === $key ? ' nav-tab-active' : ''; ?>"<?php echo $tab === $key ? ' aria-current="page"' : ''; ?>><?php echo esc_html( $label ); ?></a>
+					<?php if ( $locked && 'lockdown' !== $key ) : ?>
+						<span class="nav-tab pncp-tab-locked" title="<?php esc_attr_e( 'Locked: unlock the site to change the settings', 'scrapelock' ); ?>"><?php echo esc_html( $label ); ?></span>
+					<?php else : ?>
+						<a href="<?php echo esc_url( PNCP_Status::settings_url( array( 'tab' => $key ) ) ); ?>" class="nav-tab<?php echo $tab === $key ? ' nav-tab-active' : ''; ?><?php echo 'lockdown' === $key ? ' pncp-tab-lockdown' : ''; ?>"<?php echo $tab === $key ? ' aria-current="page"' : ''; ?>><?php echo 'lockdown' === $key ? '<span class="dashicons dashicons-' . ( $locked ? 'lock' : 'unlock' ) . '" aria-hidden="true"></span> ' : ''; ?><?php echo esc_html( $label ); ?></a>
+					<?php endif; ?>
 				<?php endforeach; ?>
 			</nav>
 			<?php
-			$method = 'tab_' . $tab;
-			self::$method( PNCP_Options::stored() );
+			if ( 'lockdown' === $tab ) {
+				PNCP_Lockdown::render_tab();
+			} else {
+				$method = 'tab_' . $tab;
+				self::$method( PNCP_Options::stored() );
+			}
 			?>
 		</div>
 		<?php

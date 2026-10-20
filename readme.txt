@@ -81,6 +81,8 @@ Generated Nginx, Apache and Cloudflare rules for your own site, so cached pages 
 * Unlock for 15 minutes to 2 hours (it locks again by itself) or until you lock it again. Locking and unlocking are logged and emailed to the site's admin address.
 * Lost your phone: ten one-time recovery codes, or `define( 'SCRAPELOCK_UNLOCK', true );` in wp-config.php as a last resort.
 * The QR code is drawn in your browser and the secret is stored encrypted with the keys in wp-config.php: it is never sent anywhere.
+* Part of ScrapeLock: a Lockdown tab in Settings → ScrapeLock and a Lockdown line under the "Protection" button in the admin bar. While locked, administrators still reach that tab; the other tabs are greyed out.
+* A clear warning that there is a single way to unlock (the app, its recovery codes, or the server), a checkbox to confirm the recovery codes are saved before the first lock, and a full report of what is frozen, what keeps working and which accounts on your site it applies to.
 
 Forms, cart, checkout, the WooCommerce Store API and payment webhooks are not affected.
 
@@ -182,11 +184,12 @@ No. A small script waits for the first real interaction (scroll, tap, key or mou
 == Changelog ==
 
 = 2.7.0 =
-* New: Lockdown. Freezes every change to the site (plugins, themes, updates, the file editor, users and roles, staff email and password, settings, content) until an administrator unlocks it with a code from an authenticator app (TOTP, RFC 6238). Visitors and customers are not affected.
+* New: Lockdown, a tab in Settings → ScrapeLock and a line under the "Protection" button in the admin bar. Freezes every change to the site (plugins, themes, updates, the file editor, users and roles, staff email and password, settings, content) until an administrator unlocks it with a code from an authenticator app (TOTP, RFC 6238). Visitors and customers are not affected.
 * Enforced through WordPress capabilities and also against code: protected options (active plugins, theme, site address, admin email, registration, default role, user roles, ScrapeLock's own settings), role changes, staff email and password changes, password resets and new application passwords are refused while locked.
 * Each code is accepted once, even when two requests send it at the same moment (the check runs under a short database lock, on the state as it is in the database). New recovery codes stay in the database in plain form for 2 minutes at most, until they are shown.
 * Temporary unlock (15 minutes to 2 hours, then it locks again by itself), ten one-time recovery codes, the SCRAPELOCK_UNLOCK constant as a last resort, 5 wrong codes per 15 minutes, a log of the last 30 events and an email to the admin address on every unlock.
 * The secret is encrypted with the keys in wp-config.php; the QR code is drawn in the browser with the bundled qrcode-generator 1.4.4 (MIT, Kazuhiko Arase).
+* The Lockdown tab warns that there is a single way to unlock, asks to confirm the recovery codes are saved before the first lock, and shows a full report: what is frozen, what keeps working, and the staff accounts, customers, plugins and theme on your site it applies to.
 
 = 2.6.8 =
 * Hardening: downloaded IP lists (Google, Bing, Cloudflare, Bunny, AI bots) are sanity-checked before use. An absurdly broad entry such as 0.0.0.0/0, ::/0 or any prefix shorter than /8 (IPv4) / /16 (IPv6) is dropped, so a bad or hostile source cannot make every IP an official crawler, a trusted proxy or a blocked one.

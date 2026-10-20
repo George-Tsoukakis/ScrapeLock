@@ -21,7 +21,6 @@ final class PNCP_Lockdown {
 	const OPTION        = 'pncp_lockdown';
 	const LOG_OPTION    = 'pncp_lockdown_log';
 	const PENDING_META  = 'pncp_lockdown_pending';
-	const PAGE          = 'scrapelock-lockdown';
 	const ACTION        = 'pncp_lockdown';
 	const MAX_FAILS     = 5;  // Per user, in 15 minutes.
 	const MAX_FAILS_ALL = 20; // All users together, in an hour.
@@ -82,9 +81,7 @@ final class PNCP_Lockdown {
 		// would then not even reach the unlock page.
 		add_filter( 'woocommerce_prevent_admin_access', array( __CLASS__, 'woocommerce_admin_access' ) );
 		add_filter( 'woocommerce_disable_admin_bar', array( __CLASS__, 'woocommerce_admin_access' ) );
-		add_action( 'admin_bar_menu', array( __CLASS__, 'admin_bar' ), 100 );
 		if ( is_admin() ) {
-			add_action( 'admin_menu', array( __CLASS__, 'menu' ) );
 			add_action( 'admin_post_' . self::ACTION, array( __CLASS__, 'handle' ) );
 			add_action( 'admin_notices', array( __CLASS__, 'notices' ) );
 			add_action( 'network_admin_notices', array( __CLASS__, 'notices' ) );
@@ -110,6 +107,7 @@ final class PNCP_Lockdown {
 					'last_step' => 0,
 					'codes'     => array(),
 					'since'     => 0,
+					'ack'       => false,
 				),
 				is_array( $stored ) ? $stored : array()
 			);
@@ -707,72 +705,65 @@ final class PNCP_Lockdown {
 	/* ---------- wp-admin ---------- */
 
 	/**
-	 * The page address.
+	 * The Lockdown tab of the ScrapeLock page (reachable for administrators also while locked).
 	 *
 	 * @param array<string, string> $args Query arguments.
 	 * @return string
 	 */
 	public static function page_url( $args = array() ) {
-		return add_query_arg( array_merge( array( 'page' => self::PAGE ), $args ), admin_url( 'admin.php' ) );
+		return PNCP_Status::settings_url( array_merge( array( 'tab' => 'lockdown' ), $args ) );
 	}
 
 	/**
-	 * The menu entry: for administrators only, also while locked (then they keep only "read").
+	 * Is this the Lockdown tab? (While locked, the ScrapeLock page shows only that tab.)
+	 *
+	 * @return bool
 	 */
-	public static function menu() {
-		if ( ! self::is_owner( get_current_user_id() ) ) {
-			return;
-		}
-		add_menu_page( __( 'Lockdown', 'scrapelock' ), __( 'Lockdown', 'scrapelock' ), 'read', self::PAGE, array( __CLASS__, 'render' ), 'dashicons-lock', 81 );
+	public static function on_tab() {
+		$screen = function_exists( 'get_current_screen' ) ? get_current_screen() : null;
+		// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Only selects a tab.
+		$tab = isset( $_GET['tab'] ) ? sanitize_key( wp_unslash( $_GET['tab'] ) ) : '';
+		return $screen && 'settings_page_' . PNCP_Admin::PAGE === $screen->id && ( 'lockdown' === $tab || self::is_locked() );
 	}
 
 	/**
-	 * CSS and JS on the page.
+	 * QR code and code field scripts on the Lockdown tab.
 	 *
 	 * @param string $hook Page hook.
 	 */
 	public static function assets( $hook ) {
-		if ( 'toplevel_page_' . self::PAGE !== $hook ) {
+		if ( 'settings_page_' . PNCP_Admin::PAGE !== $hook || ! self::on_tab() ) {
 			return;
 		}
-		wp_enqueue_style( 'pncp-admin', PNCP_URL . 'assets/css/admin.css', array(), PNCP_VERSION );
 		wp_enqueue_script( 'pncp-qrcode', PNCP_URL . 'assets/js/vendor/qrcode.js', array(), '1.4.4', true );
 		wp_enqueue_script( 'pncp-lockdown', PNCP_URL . 'assets/js/lockdown.js', array( 'pncp-qrcode' ), PNCP_VERSION, true );
 	}
 
 	/**
-	 * Lock state in the admin bar, for administrators.
+	 * The Lockdown line under ScrapeLock's button in the admin bar.
 	 *
-	 * @param WP_Admin_Bar $bar Admin bar.
+	 * @return string
 	 */
-	public static function admin_bar( $bar ) {
-		if ( ! self::configured() || ! self::is_owner( get_current_user_id() ) ) {
-			return;
-		}
+	public static function bar_label() {
 		$until = self::unlocked_until();
-		if ( self::is_locked() ) {
-			$title = __( 'Locked', 'scrapelock' );
-		} elseif ( $until ) {
-			/* translators: %s: time */
-			$title = sprintf( __( 'Unlocked until %s', 'scrapelock' ), wp_date( (string) get_option( 'time_format' ), $until ) );
-		} else {
-			$title = __( 'Not locked', 'scrapelock' );
+		if ( ! self::configured() ) {
+			return __( 'Lockdown: set up…', 'scrapelock' );
 		}
-		$bar->add_node(
-			array(
-				'id'    => 'pncp-lockdown',
-				'title' => '<span class="ab-icon dashicons dashicons-' . ( self::is_locked() ? 'lock' : 'unlock' ) . '" style="top:2px"></span>' . esc_html( $title ),
-				'href'  => self::page_url(),
-			)
-		);
+		if ( self::is_locked() ) {
+			return __( 'Lockdown: locked (unlock…)', 'scrapelock' );
+		}
+		if ( $until ) {
+			/* translators: %s: time */
+			return sprintf( __( 'Lockdown: unlocked until %s', 'scrapelock' ), wp_date( (string) get_option( 'time_format' ), $until ) );
+		}
+		return __( 'Lockdown: lock the site…', 'scrapelock' );
 	}
 
 	/**
 	 * Notices: to staff while locked, to administrators while unlocked for a while or unlocked from the server.
 	 */
 	public static function notices() {
-		$screen = function_exists( 'get_current_screen' ) ? get_current_screen() : null;
-		if ( $screen && 'toplevel_page_' . self::PAGE === $screen->id ) {
+		if ( self::on_tab() ) {
 			return;
 		}
 		$user  = get_current_user_id();
@@ -845,9 +836,9 @@ final class PNCP_Lockdown {
 	}
 
 	/**
-	 * The page.
+	 * The Lockdown tab.
 	 */
-	public static function render() {
+	public static function render_tab() {
 		if ( ! self::is_owner( get_current_user_id() ) ) {
 			wp_die( esc_html__( 'Only administrators can lock and unlock the site.', 'scrapelock' ), '', array( 'response' => 403 ) );
 		}
@@ -855,8 +846,7 @@ final class PNCP_Lockdown {
 		$pending = (string) get_user_meta( get_current_user_id(), self::PENDING_META, true );
 		$fmt     = get_option( 'date_format' ) . ' ' . get_option( 'time_format' );
 		?>
-		<div class="wrap pncp-admin pncp-ld">
-			<h1><?php esc_html_e( 'Lockdown', 'scrapelock' ); ?></h1>
+		<div class="pncp-ld">
 			<p class="pncp-ld-intro"><?php esc_html_e( 'While the site is locked, nobody can change it from wp-admin, the REST API or XML-RPC, not even an administrator or someone who stole a password: no plugins, themes or updates, no file editing, no new users or role changes, no settings, no content changes. Visitors and customers are not affected. Locking and unlocking need a code from your authenticator app.', 'scrapelock' ); ?></p>
 			<?php
 			self::render_message();
@@ -871,6 +861,9 @@ final class PNCP_Lockdown {
 				delete_site_transient( 'pncp_ld_codes_' . get_current_user_id() );
 				self::render_codes( $codes );
 			}
+			if ( ! self::is_locked() ) {
+				self::render_warning();
+			}
 			if ( ! self::configured() && '' !== $pending ) {
 				self::render_pending( self::unseal( $pending ) );
 			} elseif ( ! self::configured() ) {
@@ -878,6 +871,7 @@ final class PNCP_Lockdown {
 			} else {
 				self::render_status( $state, $fmt );
 			}
+			self::render_report();
 			self::render_log( $fmt );
 			?>
 		</div>
@@ -900,10 +894,121 @@ final class PNCP_Lockdown {
 			'wrong'     => array( 'error', __( 'Wrong or expired code. Wait for a new code in the app and try again.', 'scrapelock' ) ),
 			'wait'      => array( 'error', __( 'Too many wrong codes. Try again in 15 minutes.', 'scrapelock' ) ),
 			'error'     => array( 'error', __( 'That action is not possible right now.', 'scrapelock' ) ),
+			'ack'       => array( 'error', __( 'Tick the box to confirm that you have saved your recovery codes and understand how to unlock the site.', 'scrapelock' ) ),
 		);
 		if ( isset( $messages[ $code ] ) ) {
 			printf( '<div class="notice notice-%s inline"><p>%s</p></div>', esc_attr( $messages[ $code ][0] ), esc_html( $messages[ $code ][1] ) );
 		}
+	}
+
+	/**
+	 * Before locking: there is a single way to unlock.
+	 */
+	private static function render_warning() {
+		?>
+		<div class="pncp-ld-box pncp-ld-warning" role="note">
+			<h2><span class="dashicons dashicons-warning" aria-hidden="true"></span> <?php esc_html_e( 'Important: there is only one way to unlock', 'scrapelock' ); ?></h2>
+			<ul>
+				<li><?php esc_html_e( 'Only the 6-digit code from the authenticator app on your phone unlocks the site. There is no reset by email or SMS, no "forgot code" link, and no other administrator, your hosting company or ScrapeLock support can unlock it from WordPress.', 'scrapelock' ); ?></li>
+				<li><?php esc_html_e( 'Backup: the 10 recovery codes shown once when you connect the app. Print them and keep them away from the phone; each one unlocks the site once.', 'scrapelock' ); ?></li>
+				<li><?php esc_html_e( 'Lost both the phone and the recovery codes? Only someone with access to the server files (FTP or your hosting panel) can unlock the site, by adding a line to wp-config.php.', 'scrapelock' ); ?></li>
+				<li><?php esc_html_e( 'While locked, password resets for staff are frozen too: if you forget your WordPress password, the same line in wp-config.php is the way back.', 'scrapelock' ); ?></li>
+			</ul>
+		</div>
+		<?php
+	}
+
+	/**
+	 * The full report: what the lock freezes, what keeps working, and who it applies to on this site.
+	 */
+	private static function render_report() {
+		$counts = count_users();
+		$staff  = array();
+		$others = 0;
+		$names  = wp_roles()->get_names();
+		foreach ( $counts['avail_roles'] as $role => $count ) {
+			if ( ! $count || 'none' === $role ) {
+				continue;
+			}
+			if ( array() !== self::privileged( array( $role => true ) ) ) {
+				$staff[] = sprintf( '%s: %d', isset( $names[ $role ] ) ? translate_user_role( $names[ $role ] ) : $role, $count );
+			} else {
+				$others += $count;
+			}
+		}
+		$theme   = wp_get_theme();
+		$plugins = count( (array) get_option( 'active_plugins', array() ) ) + count( (array) get_site_option( 'active_sitewide_plugins', array() ) );
+		$frozen  = array(
+			__( 'Plugins', 'scrapelock' )          => array(
+				__( 'Installing, uploading a zip, updating, deleting, activating and deactivating plugins, including ScrapeLock itself.', 'scrapelock' ),
+				__( 'Automatic plugin updates.', 'scrapelock' ),
+			),
+			__( 'Themes', 'scrapelock' )           => array(
+				__( 'Installing, updating, deleting and switching themes; automatic theme updates.', 'scrapelock' ),
+				__( 'The Customizer, the Site Editor, menus and widgets.', 'scrapelock' ),
+			),
+			__( 'WordPress', 'scrapelock' )        => array(
+				__( 'WordPress core updates, automatic updates and translation updates.', 'scrapelock' ),
+				__( 'The plugin and theme file editor: no file can be changed through WordPress.', 'scrapelock' ),
+			),
+			__( 'Users', 'scrapelock' )            => array(
+				__( 'Creating, deleting and editing users; changing roles; creating administrators, also by code.', 'scrapelock' ),
+				__( 'Staff email and password changes, "lost password" resets for staff, and new application passwords for staff. Existing application passwords of staff stop working.', 'scrapelock' ),
+			),
+			__( 'Settings', 'scrapelock' )         => array(
+				__( 'Every settings page (General, Reading, Permalinks, WooCommerce, other plugins) and the ScrapeLock settings.', 'scrapelock' ),
+				__( 'Also by code: active plugins, theme, site address, admin email, registration, default role, role definitions, automatic update lists, ScrapeLock settings and the lock itself.', 'scrapelock' ),
+			),
+			__( 'Content', 'scrapelock' )          => array(
+				__( 'Creating, editing and deleting posts, pages, products, coupons, categories and media; comment moderation.', 'scrapelock' ),
+				__( 'Orders in wp-admin: staff cannot process them while locked.', 'scrapelock' ),
+			),
+			__( 'Where it applies', 'scrapelock' ) => array(
+				__( 'wp-admin, admin-ajax, the REST API (also WooCommerce REST API keys of staff, e.g. an ERP that writes stock), XML-RPC, application passwords, and the code of other plugins for the protected items above.', 'scrapelock' ),
+			),
+		);
+		$open    = array(
+			__( 'Visitors browse the site; search engines and the bots you allow are not affected.', 'scrapelock' ),
+			__( 'Customers order and pay, register, log in, edit their own account and reset their own password.', 'scrapelock' ),
+			__( 'Comments from visitors, payment webhooks, cron jobs and the scheduled tasks of plugins.', 'scrapelock' ),
+			__( 'Logging in (also for staff, who then only see the dashboard); the ScrapeLock bot protection and firewalls such as Wordfence.', 'scrapelock' ),
+			__( 'Read-only XML feeds with a ScrapeLock token.', 'scrapelock' ),
+		);
+		?>
+		<div class="pncp-ld-box pncp-ld-report">
+			<h2><?php esc_html_e( 'What exactly is locked', 'scrapelock' ); ?></h2>
+			<table class="widefat striped pncp-ld-report-table">
+				<tbody>
+					<?php foreach ( $frozen as $area => $items ) : ?>
+						<tr>
+							<th scope="row"><?php echo esc_html( $area ); ?></th>
+							<td><ul>
+								<?php foreach ( $items as $item ) : ?>
+									<li><span class="dashicons dashicons-lock" aria-hidden="true"></span> <?php echo esc_html( $item ); ?></li>
+								<?php endforeach; ?>
+							</ul></td>
+						</tr>
+					<?php endforeach; ?>
+				</tbody>
+			</table>
+			<h3><?php esc_html_e( 'What keeps working', 'scrapelock' ); ?></h3>
+			<ul class="pncp-ld-open">
+				<?php foreach ( $open as $item ) : ?>
+					<li><span class="dashicons dashicons-yes" aria-hidden="true"></span> <?php echo esc_html( $item ); ?></li>
+				<?php endforeach; ?>
+			</ul>
+			<h3><?php esc_html_e( 'On this site', 'scrapelock' ); ?></h3>
+			<ul class="pncp-ld-site">
+				<?php /* translators: %s: roles and number of users, e.g. "Administrator: 2, Editor: 1" */ ?>
+				<li><?php echo esc_html( sprintf( __( 'Staff accounts that keep only "read" while locked: %s.', 'scrapelock' ), $staff ? implode( ', ', $staff ) : __( 'none', 'scrapelock' ) ) ); ?></li>
+				<?php /* translators: %d: number of users */ ?>
+				<li><?php echo esc_html( sprintf( _n( '%d customer or subscriber account is not affected.', '%d customer and subscriber accounts are not affected.', $others, 'scrapelock' ), $others ) ); ?></li>
+				<?php /* translators: 1: number of plugins, 2: theme name */ ?>
+				<li><?php echo esc_html( sprintf( _n( '%1$d active plugin and the theme "%2$s" stay exactly as they are.', '%1$d active plugins and the theme "%2$s" stay exactly as they are.', $plugins, 'scrapelock' ), $plugins, $theme->get( 'Name' ) ) ); ?></li>
+				<li><?php esc_html_e( 'Not covered: whoever can change the files or the database on the server (FTP, hosting panel, WP-CLI) controls the site with or without the lock.', 'scrapelock' ); ?></li>
+			</ul>
+		</div>
+		<?php
 	}
 
 	/**
@@ -1025,6 +1130,9 @@ final class PNCP_Lockdown {
 			} elseif ( ! self::server_unlocked() ) {
 				self::form_open( 'lock' );
 				self::code_field();
+				if ( empty( $state['ack'] ) ) {
+					echo '<p><label><input type="checkbox" name="ack" value="1" required> ' . esc_html__( 'I have printed or saved my recovery codes, and I understand that only the app, a recovery code or access to the server files can unlock the site.', 'scrapelock' ) . '</label></p>';
+				}
 				submit_button( __( 'Lock the site', 'scrapelock' ), 'primary', 'submit', false );
 				echo '</form>';
 			}
@@ -1052,11 +1160,13 @@ final class PNCP_Lockdown {
 				?>
 			</div>
 		<?php endif; ?>
+		<?php if ( $locked ) : ?>
 		<div class="pncp-ld-box">
 			<h2><?php esc_html_e( 'Lost your phone?', 'scrapelock' ); ?></h2>
 			<p><?php esc_html_e( 'Type one of your recovery codes in the unlock field instead of an app code. No codes left? Add this line to wp-config.php (FTP or your hosting panel), then remove the app here and connect a new one:', 'scrapelock' ); ?></p>
 			<p><code>define( 'SCRAPELOCK_UNLOCK', true );</code></p>
 		</div>
+		<?php endif; ?>
 		<?php
 	}
 
@@ -1124,6 +1234,7 @@ final class PNCP_Lockdown {
 		$op   = isset( $_POST['op'] ) ? sanitize_key( wp_unslash( $_POST['op'] ) ) : '';
 		$code = isset( $_POST['code'] ) ? sanitize_text_field( wp_unslash( $_POST['code'] ) ) : '';
 		$mins = isset( $_POST['minutes'] ) ? absint( $_POST['minutes'] ) : 30;
+		$ack  = ! empty( $_POST['ack'] );
 		// phpcs:enable
 		$state = self::state();
 
@@ -1185,6 +1296,10 @@ final class PNCP_Lockdown {
 		}
 
 		$locked = self::is_locked();
+		// The first lock: only after confirming the recovery codes are saved (checked before the code is used).
+		if ( 'lock' === $op && empty( $state['ack'] ) && ! $ack ) {
+			self::back( 'ack' );
+		}
 		if ( ! self::configured() || ( 'lock' === $op && ( $locked || self::unlocked_until() ) ) || ( 'unlock' === $op && ! $locked ) || ( in_array( $op, array( 'codes', 'remove' ), true ) && $locked ) || ( 'remove' === $op && self::unlocked_until() ) ) {
 			self::back( 'error' );
 		}
@@ -1202,6 +1317,7 @@ final class PNCP_Lockdown {
 			$state['locked'] = true;
 			$state['until']  = 0;
 			$state['since']  = time();
+			$state['ack']    = true;
 			self::save( $state );
 			self::event( 'locked' );
 			self::back( 'locked' );
@@ -1242,6 +1358,7 @@ final class PNCP_Lockdown {
 		$state['until']     = 0;
 		$state['last_step'] = 0;
 		$state['codes']     = array();
+		$state['ack']       = false;
 		self::save( $state );
 		self::event( 'removed' );
 		self::mail( __( 'The authenticator app was removed', 'scrapelock' ), __( 'The authenticator app was removed from the Lockdown page and the lock is off. If it was not you, change the administrators\' passwords.', 'scrapelock' ) );
