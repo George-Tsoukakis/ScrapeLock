@@ -448,7 +448,12 @@ foreach ( array(
 	$wpdb->insert( $wpdb->prefix . 'pncp_log', array( 'created' => $now_db, 'ip' => $ev[0], 'reason' => $ev[1], 'code' => $ev[2], 'hits' => $ev[3], 'path' => '/x/', 'ua' => $ev[4], 'uas' => $ev[5] ) );
 }
 list( , $body ) = http( $page . '&tab=log' );
-t( 'Log: ενότητα «Blocked again and again» με την IP και κουμπί', false !== strpos( $body, 'Blocked again and again' ) && false !== strpos( $body, '198.51.100.201' ) && false !== strpos( $body, 'value="block_permanent"' ) && ! php_errors( $body ) );
+t( 'Log: ενότητα «Persistent IPs» με την IP, τον κύριο λόγο και κουμπί', false !== strpos( $body, 'Persistent IPs (last 7 days)' ) && false !== strpos( $body, '198.51.100.201' ) && false !== strpos( $body, 'value="block_permanent"' ) && false !== strpos( $body, 'Main reason' ) && ! php_errors( $body ) );
+$top_ips = substr( $body, (int) strpos( $body, 'pncp-ip-list' ), 3000 );
+t( 'Log: κουμπί «Block permanently» και στα Top IPs', false !== strpos( $top_ips, 'value="block_permanent"' ) && false !== strpos( $top_ips, '198.51.100.202' ) );
+$latest = substr( $body, (int) strpos( $body, 'pncp-log-table' ) );
+t( 'Log: κουμπί «Block permanently» και στα Latest events, μία φορά ανά IP', substr_count( $latest, 'name="ip" value="198.51.100.201"' ) === 1 && false !== strpos( $latest, 'name="ip" value="198.51.100.203"' ) );
+t( 'Log: τρεις ομάδες διαδρομών', false !== strpos( $body, 'Addresses that do not exist' ) && false !== strpos( $body, 'Files and admin paths' ) );
 t( 'Log: ψεύτικο Googlebot σημειώνεται «Fake»', false !== strpos( $body, 'Fake: not from the official addresses' ) );
 t( 'Log: γνωστό όνομα bot χωρίς επαλήθευση σημειώνεται', false !== strpos( $body, 'Known bot name, not verified' ) );
 t( 'Log: «7 different User-Agents in this minute»', false !== strpos( $body, '7 different User-Agents in this minute' ) );

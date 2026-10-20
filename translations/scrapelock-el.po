@@ -1,6 +1,6 @@
 msgid ""
 msgstr ""
-"Project-Id-Version: ScrapeLock 2.6.2\n"
+"Project-Id-Version: ScrapeLock 2.6.3\n"
 "Report-Msgid-Bugs-To: https://wordpress.org/support/plugin/scrapelock\n"
 "MIME-Version: 1.0\n"
 "Content-Type: text/plain; charset=UTF-8\n"
@@ -27,7 +27,7 @@ msgstr ""
 #: includes/class-pncp-admin.php:41
 #: includes/class-pncp-admin.php:42
 #: includes/class-pncp-admin.php:415
-#: includes/class-pncp-log.php:748
+#: includes/class-pncp-log.php:846
 #: includes/class-pncp-status.php:231
 msgid "ScrapeLock"
 msgstr "ScrapeLock"
@@ -1094,8 +1094,8 @@ msgid "Access per feed"
 msgstr "Πρόσβαση ανά feed"
 
 #: includes/class-pncp-admin.php:1102
-#: includes/class-pncp-admin.php:1432
-#: includes/class-pncp-admin.php:1492
+#: includes/class-pncp-admin.php:1436
+#: includes/class-pncp-admin.php:1507
 msgid "Path"
 msgstr "Διαδρομή"
 
@@ -1330,81 +1330,85 @@ msgid "What they try to copy"
 msgstr "Τι προσπαθούν να αντιγράψουν"
 
 #: includes/class-pncp-admin.php:1356
-msgid "The blocked requests grouped by page. “Pages” are your content: what scrapers were after. “Files” are scanners looking for passwords, backups or admin areas: no content leaks there, it only shows they tried."
-msgstr "Τα αιτήματα που μπλοκαρίστηκαν, ανά σελίδα. Οι «Σελίδες» είναι το περιεχόμενό σας: αυτό που ήθελαν οι scrapers. Τα «Αρχεία» είναι scanners που ψάχνουν κωδικούς, backups ή περιοχές διαχείρισης: εκεί δεν διαρρέει περιεχόμενο, απλώς φαίνεται ότι προσπάθησαν."
+msgid "The blocked requests grouped by address. “Pages” exist on your site: what scrapers were after. “Addresses that do not exist” are random strings and guesses. “Files” are scanners looking for passwords, backups or admin areas. No content leaks in the last two, they only show what was tried."
+msgstr "Τα μπλοκαρισμένα αιτήματα ανά διεύθυνση. Οι «Σελίδες» υπάρχουν στο site σας: αυτό που ήθελαν οι scrapers. Οι «Διευθύνσεις που δεν υπάρχουν» είναι τυχαία strings και μαντεψιές. Τα «Αρχεία» είναι scanners που ψάχνουν κωδικούς, backups ή σελίδες διαχείρισης. Στις δύο τελευταίες δεν διαρρέει περιεχόμενο· δείχνουν μόνο τι δοκίμασαν."
 
 #: includes/class-pncp-admin.php:1360
 msgid "Last 7 days"
 msgstr "Τελευταίες 7 ημέρες"
 
 #: includes/class-pncp-admin.php:1372
+msgid "Addresses that do not exist"
+msgstr "Διευθύνσεις που δεν υπάρχουν"
+
+#: includes/class-pncp-admin.php:1376
 msgid "Files and admin paths"
 msgstr "Αρχεία και διαδρομές διαχείρισης"
 
-#: includes/class-pncp-admin.php:1378
+#: includes/class-pncp-admin.php:1382
 msgid "The log is kept for 1 day, so the 7-day view shows only the last day. Change “Keep the block log for” in the “Bots and limits” tab to see more."
 msgstr "Το αρχείο κρατιέται 1 ημέρα, οπότε η προβολή 7 ημερών δείχνει μόνο την τελευταία ημέρα. Αλλάξτε το «Διατήρηση αρχείου αποκλεισμών» στην καρτέλα «Bots και όρια» για να βλέπετε περισσότερα."
 
-#: includes/class-pncp-admin.php:1381
+#: includes/class-pncp-admin.php:1385
 msgid "IPs blocked now"
 msgstr "Αποκλεισμένες IP τώρα"
 
-#: includes/class-pncp-admin.php:1383
-#: includes/class-pncp-admin.php:1559
+#: includes/class-pncp-admin.php:1387
+#: includes/class-pncp-admin.php:1586
 msgid "None."
 msgstr "Καμία."
 
-#: includes/class-pncp-admin.php:1388
-#: includes/class-pncp-admin.php:1429
-#: includes/class-pncp-admin.php:1567
+#: includes/class-pncp-admin.php:1392
+#: includes/class-pncp-admin.php:1433
+#: includes/class-pncp-admin.php:1594
 msgid "IP"
 msgstr "IP"
 
-#: includes/class-pncp-admin.php:1389
-#: includes/class-pncp-admin.php:1430
+#: includes/class-pncp-admin.php:1393
+#: includes/class-pncp-admin.php:1434
 msgid "Reason"
 msgstr "Αιτία"
 
-#: includes/class-pncp-admin.php:1390
+#: includes/class-pncp-admin.php:1394
 msgid "Expires"
 msgstr "Λήγει"
 
-#: includes/class-pncp-admin.php:1391
-#: includes/class-pncp-admin.php:1571
+#: includes/class-pncp-admin.php:1395
+#: includes/class-pncp-admin.php:1599
 msgid "Action"
 msgstr "Ενέργεια"
 
-#: includes/class-pncp-admin.php:1404
+#: includes/class-pncp-admin.php:1408
 msgid "Unblock"
 msgstr "Άρση"
 
-#: includes/class-pncp-admin.php:1414
+#: includes/class-pncp-admin.php:1418
 msgid "Unblock all"
 msgstr "Άρση όλων"
 
-#: includes/class-pncp-admin.php:1420
+#: includes/class-pncp-admin.php:1424
 msgid "Latest events"
 msgstr "Τελευταία συμβάντα"
 
-#: includes/class-pncp-admin.php:1423
+#: includes/class-pncp-admin.php:1427
 msgid "No events."
 msgstr "Δεν υπάρχουν συμβάντα."
 
-#: includes/class-pncp-admin.php:1428
+#: includes/class-pncp-admin.php:1432
 msgid "Time"
 msgstr "Ώρα"
 
-#: includes/class-pncp-admin.php:1431
-#: includes/class-pncp-admin.php:1493
+#: includes/class-pncp-admin.php:1435
+#: includes/class-pncp-admin.php:1508
 msgid "Requests"
 msgstr "Αιτήματα"
 
-#: includes/class-pncp-admin.php:1433
+#: includes/class-pncp-admin.php:1437
 msgid "User-Agent"
 msgstr "User-Agent"
 
 #. translators: %s: number of different User-Agents
-#: includes/class-pncp-admin.php:1451
+#: includes/class-pncp-admin.php:1466
 #, php-format
 msgid "%s different User-Agent in this minute"
 msgid_plural "%s different User-Agents in this minute"
@@ -1412,148 +1416,155 @@ msgstr[0] "%s διαφορετικό User-Agent σε αυτό το λεπτό"
 msgstr[1] "%s διαφορετικά User-Agents σε αυτό το λεπτό"
 
 #. translators: %s: days
-#: includes/class-pncp-admin.php:1468
+#: includes/class-pncp-admin.php:1483
 #, php-format
 msgid "The log is deleted automatically after %s days (setting in the “Bots and limits” tab)."
 msgstr "Το αρχείο σβήνεται αυτόματα μετά από %s ημέρες (ρύθμιση στην καρτέλα «Bots και όρια»)."
 
-#: includes/class-pncp-admin.php:1476
+#: includes/class-pncp-admin.php:1491
 msgid "Delete log"
 msgstr "Διαγραφή αρχείου"
 
-#: includes/class-pncp-admin.php:1488
-#: includes/class-pncp-admin.php:1515
-#: includes/class-pncp-admin.php:1599
+#: includes/class-pncp-admin.php:1503
+#: includes/class-pncp-admin.php:1530
+#: includes/class-pncp-admin.php:1625
+#: includes/class-pncp-admin.php:1647
 msgid "Nothing."
 msgstr "Τίποτα."
 
-#: includes/class-pncp-admin.php:1494
+#: includes/class-pncp-admin.php:1509
 msgid "IPs"
 msgstr "IP"
 
-#: includes/class-pncp-admin.php:1533
+#: includes/class-pncp-admin.php:1548
 msgid "Blocked permanently"
 msgstr "Μόνιμα αποκλεισμένη"
 
-#: includes/class-pncp-admin.php:1543
+#: includes/class-pncp-admin.php:1558
 msgid "Block permanently"
 msgstr "Μόνιμος αποκλεισμός"
 
-#: includes/class-pncp-admin.php:1556
-msgid "Blocked again and again (last 7 days)"
-msgstr "Αποκλείστηκαν ξανά και ξανά (τελευταίες 7 ημέρες)"
+#: includes/class-pncp-admin.php:1573
+msgid "Persistent IPs (last 7 days)"
+msgstr "Επίμονες IP (τελευταίες 7 ημέρες)"
 
-#: includes/class-pncp-admin.php:1557
-msgid "IPs that got a temporary block at least twice. They come back after every block: you can block them permanently."
-msgstr "IP που αποκλείστηκαν προσωρινά τουλάχιστον δύο φορές. Επιστρέφουν μετά από κάθε αποκλεισμό: μπορείτε να τις αποκλείσετε μόνιμα."
+#. translators: %s: number of requests
+#: includes/class-pncp-admin.php:1579
+#, php-format
+msgid "IPs with at least two temporary blocks, or at least %s blocked requests. They keep coming back: you can block them permanently."
+msgstr "IP με τουλάχιστον δύο προσωρινούς αποκλεισμούς ή τουλάχιστον %s μπλοκαρισμένα αιτήματα. Επιστρέφουν συνέχεια: μπορείτε να τις αποκλείσετε μόνιμα."
 
-#: includes/class-pncp-admin.php:1568
+#: includes/class-pncp-admin.php:1595
 msgid "Temporary blocks"
 msgstr "Προσωρινοί αποκλεισμοί"
 
-#: includes/class-pncp-admin.php:1569
+#: includes/class-pncp-admin.php:1596
 msgid "Blocked requests"
 msgstr "Μπλοκαρισμένα αιτήματα"
 
-#: includes/class-pncp-admin.php:1570
+#: includes/class-pncp-admin.php:1597
+msgid "Main reason"
+msgstr "Κύριος λόγος"
+
+#: includes/class-pncp-admin.php:1598
 msgid "Last seen"
 msgstr "Τελευταία φορά"
 
-#: includes/class-pncp-admin.php:1608
+#: includes/class-pncp-admin.php:1656
 msgid "Fake: not from the official addresses"
 msgstr "Ψεύτικο: όχι από τις επίσημες διευθύνσεις"
 
-#: includes/class-pncp-admin.php:1610
+#: includes/class-pncp-admin.php:1658
 msgid "Known bot name, not verified"
 msgstr "Γνωστό όνομα bot, χωρίς επαλήθευση"
 
-#: includes/class-pncp-admin.php:1633
+#: includes/class-pncp-admin.php:1681
 #: includes/class-pncp-status.php:120
 #: includes/class-pncp-status.php:159
 msgid "You are not allowed to change this setting."
 msgstr "Δεν έχετε δικαίωμα να αλλάξετε αυτή τη ρύθμιση."
 
-#: includes/class-pncp-admin.php:1781
+#: includes/class-pncp-admin.php:1829
 msgid "Preset applied."
 msgstr "Το προφίλ εφαρμόστηκε."
 
-#: includes/class-pncp-admin.php:1782
+#: includes/class-pncp-admin.php:1830
 msgid "New token created."
 msgstr "Δημιουργήθηκε νέο token."
 
-#: includes/class-pncp-admin.php:1783
+#: includes/class-pncp-admin.php:1831
 msgid "Previous token revoked."
 msgstr "Το προηγούμενο token ακυρώθηκε."
 
-#: includes/class-pncp-admin.php:1784
+#: includes/class-pncp-admin.php:1832
 msgid "Block lifted."
 msgstr "Ο αποκλεισμός άρθηκε."
 
-#: includes/class-pncp-admin.php:1785
+#: includes/class-pncp-admin.php:1833
 msgid "Log deleted."
 msgstr "Το αρχείο διαγράφηκε."
 
-#: includes/class-pncp-admin.php:1786
+#: includes/class-pncp-admin.php:1834
 msgid "The IP was added to the always-blocked IPs (“Bots and limits” → “Always blocked”). You can remove it there."
 msgstr "Η IP προστέθηκε στις πάντα αποκλεισμένες IP («Bots και όρια» → «Πάντα αποκλεισμένα»). Μπορείτε να την αφαιρέσετε από εκεί."
 
-#: includes/class-pncp-admin.php:1787
+#: includes/class-pncp-admin.php:1835
 msgid "The IP is already in the always-blocked IPs."
 msgstr "Η IP είναι ήδη στις πάντα αποκλεισμένες IP."
 
-#: includes/class-pncp-admin.php:1788
+#: includes/class-pncp-admin.php:1836
 msgid "The always-blocked IPs already have 200 lines. Combine addresses into CIDR ranges there first."
 msgstr "Οι πάντα αποκλεισμένες IP έχουν ήδη 200 γραμμές. Ενώστε πρώτα διευθύνσεις σε περιοχές CIDR εκεί."
 
-#: includes/class-pncp-admin.php:1789
+#: includes/class-pncp-admin.php:1837
 msgid "This IP cannot be blocked permanently: it is the server itself, your own IP, a private address, an always-allowed IP or an official Google / Bing address."
 msgstr "Αυτή η IP δεν μπορεί να αποκλειστεί μόνιμα: είναι ο ίδιος ο server, η δική σας IP, ιδιωτική διεύθυνση, πάντα επιτρεπτή IP ή επίσημη διεύθυνση του Google / Bing."
 
-#: includes/class-pncp-admin.php:1790
+#: includes/class-pncp-admin.php:1838
 msgid "IP lists refreshed."
 msgstr "Οι λίστες IP ανανεώθηκαν."
 
-#: includes/class-pncp-admin.php:1791
+#: includes/class-pncp-admin.php:1839
 msgid "Country database downloaded."
 msgstr "Η βάση χωρών κατέβηκε."
 
-#: includes/class-pncp-admin.php:1792
+#: includes/class-pncp-admin.php:1840
 msgid "The country database could not be downloaded or read; the previous one (if any) was kept. It will try again tomorrow."
 msgstr "Η βάση χωρών δεν κατέβηκε ή δεν διαβάστηκε· κρατήθηκε η προηγούμενη (αν υπάρχει). Θα ξαναδοκιμάσει αύριο."
 
-#: includes/class-pncp-admin.php:1793
+#: includes/class-pncp-admin.php:1841
 msgid "The real visitor IP is now read from CF-Connecting-IP, only for requests from Cloudflare."
 msgstr "Η πραγματική IP του επισκέπτη διαβάζεται τώρα από το CF-Connecting-IP, μόνο για αιτήματα από την Cloudflare."
 
-#: includes/class-pncp-admin.php:1794
+#: includes/class-pncp-admin.php:1842
 msgid "The real visitor IP is now read from X-Real-IP, only for requests from Bunny CDN."
 msgstr "Η πραγματική IP του επισκέπτη διαβάζεται πλέον από το X-Real-IP, μόνο για αιτήματα από το Bunny CDN."
 
-#: includes/class-pncp-admin.php:1795
+#: includes/class-pncp-admin.php:1843
 msgid "X-Real-IP is selected for Bunny CDN, but the list of Bunny addresses could not be downloaded. Until it is, the header is not trusted. It will try again tomorrow, or use “Refresh now” under “Official IP lists”."
 msgstr "Επιλέχθηκε X-Real-IP για το Bunny CDN, αλλά η λίστα με τις διευθύνσεις του Bunny δεν μπόρεσε να κατέβει. Μέχρι να κατέβει, η κεφαλίδα δεν γίνεται δεκτή. Θα ξαναδοκιμάσει αύριο, ή πατήστε «Ανανέωση τώρα» στις «Επίσημες λίστες IP»."
 
-#: includes/class-pncp-admin.php:1796
+#: includes/class-pncp-admin.php:1844
 msgid "Some IP lists could not be downloaded; their previous version was kept. It will try again tomorrow."
 msgstr "Κάποιες λίστες IP δεν κατέβηκαν· κρατήθηκε η προηγούμενη εκδοχή τους. Θα ξαναδοκιμάσει αύριο."
 
-#: includes/class-pncp-admin.php:1797
+#: includes/class-pncp-admin.php:1845
 msgid "The action was not completed."
 msgstr "Η ενέργεια δεν ολοκληρώθηκε."
 
-#: includes/class-pncp-admin.php:1808
+#: includes/class-pncp-admin.php:1856
 msgid "Since 2.1 the feed token is stored only as a hash. The old token is still valid but can no longer be shown. If you have not saved it, create a new token."
 msgstr "Από την 2.1 το token των feeds αποθηκεύεται μόνο ως hash. Το παλιό token εξακολουθεί να ισχύει, αλλά δεν μπορεί πλέον να εμφανιστεί. Αν δεν το έχετε αποθηκευμένο, δημιουργήστε νέο token."
 
-#: includes/class-pncp-admin.php:1810
+#: includes/class-pncp-admin.php:1858
 msgid "Feeds and token"
 msgstr "Feeds και token"
 
-#: includes/class-pncp-admin.php:1816
+#: includes/class-pncp-admin.php:1864
 msgid "ScrapeLock: the real IP is read from a header without checking the proxy (as in 1.4). This allows IP spoofing."
 msgstr "Προστασία περιεχομένου: η πραγματική IP διαβάζεται από header χωρίς έλεγχο του proxy (όπως στην 1.4). Αυτό επιτρέπει πλαστογράφηση της IP."
 
-#: includes/class-pncp-admin.php:1818
+#: includes/class-pncp-admin.php:1866
 msgid "Trusted Proxy settings"
 msgstr "Ρύθμιση Trusted Proxy"
 
@@ -1691,7 +1702,7 @@ msgstr "Αίτημα από αποκλεισμένη IP"
 msgid "Private URL without token"
 msgstr "Ιδιωτικό URL χωρίς token"
 
-#: includes/class-pncp-log.php:749
+#: includes/class-pncp-log.php:847
 msgid "To protect content from automated copying, when a request is blocked we record the IP address, the browser's User-Agent, the page and the time. This data is deleted automatically after a few days and is not used for any other purpose."
 msgstr "Για την προστασία του περιεχομένου από αυτοματοποιημένη αντιγραφή, όταν ένα αίτημα μπλοκάρεται καταγράφουμε τη διεύθυνση IP, το User-Agent του browser, τη σελίδα και την ώρα. Τα στοιχεία αυτά διαγράφονται αυτόματα μετά από λίγες ημέρες και δεν χρησιμοποιούνται για άλλο σκοπό."
 

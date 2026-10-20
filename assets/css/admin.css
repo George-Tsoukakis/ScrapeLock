@@ -103,7 +103,9 @@
 }
 
 .pncp-inline-form {
+	display: inline-block;
 	margin: 0;
+	vertical-align: middle;
 }
 
 .pncp-big-number {
