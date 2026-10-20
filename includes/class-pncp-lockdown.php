@@ -108,6 +108,7 @@ final class PNCP_Lockdown {
 					'codes'     => array(),
 					'since'     => 0,
 					'ack'       => false,
+					'roles'     => null,
 				),
 				is_array( $stored ) ? $stored : array()
 			);
@@ -171,9 +172,104 @@ final class PNCP_Lockdown {
 	/* ---------- Who ---------- */
 
 	/**
-	 * Staff: any user with a capability beyond reading (authors, editors, shop managers, administrators).
-	 * Customers and subscribers are not staff: the lock does not touch them. Uses the roles as stored,
-	 * not the capabilities the lock takes away.
+	 * Capabilities that let a role take over the site (plugins, themes, files, users, settings). A role
+	 * with any of them is always frozen while locked; it cannot be unticked.
+	 *
+	 * @return string[]
+	 */
+	public static function control_caps() {
+		return array( 'manage_options', 'activate_plugins', 'install_plugins', 'update_plugins', 'delete_plugins', 'edit_plugins', 'install_themes', 'update_themes', 'delete_themes', 'switch_themes', 'edit_themes', 'edit_theme_options', 'update_core', 'edit_files', 'create_users', 'edit_users', 'promote_users', 'delete_users', 'remove_users', 'unfiltered_upload', 'manage_network', 'manage_network_options', 'manage_network_plugins' );
+	}
+
+	/**
+	 * Capabilities of editorial and shop staff: a role with any of them is frozen by default (it can be
+	 * unticked on the Lockdown tab).
+	 *
+	 * @return string[]
+	 */
+	private static function staff_caps() {
+		return array( 'unfiltered_html', 'list_users', 'import', 'export', 'manage_categories', 'moderate_comments', 'edit_others_posts', 'edit_others_pages', 'edit_pages', 'publish_pages', 'manage_woocommerce', 'edit_shop_orders', 'edit_others_shop_orders', 'edit_others_products', 'view_woocommerce_reports' );
+	}
+
+	/**
+	 * The capabilities a role grants.
+	 *
+	 * @param string $role Role.
+	 * @return string[]
+	 */
+	private static function role_caps( $role ) {
+		$object = wp_roles()->get_role( (string) $role );
+		return $object ? array_keys( array_filter( $object->capabilities ) ) : array();
+	}
+
+	/**
+	 * Is this role always frozen (it can take over the site)?
+	 *
+	 * @param string $role Role.
+	 * @return bool
+	 */
+	public static function role_always( $role ) {
+		return array() !== array_intersect( self::role_caps( $role ), self::control_caps() );
+	}
+
+	/**
+	 * Is this role frozen when nothing was chosen? Roles that can take over the site, editorial and shop
+	 * staff, and WordPress' own content roles. Subscribers, customers and member roles of other plugins
+	 * (e.g. accounts that post listings or community posts) are not, even with extra capabilities.
+	 *
+	 * @param string $role Role.
+	 * @return bool
+	 */
+	private static function role_default( $role ) {
+		return self::role_always( $role ) || in_array( $role, array( 'administrator', 'editor', 'author', 'contributor', 'shop_manager' ), true ) || array() !== array_intersect( self::role_caps( $role ), self::staff_caps() );
+	}
+
+	/**
+	 * The roles frozen while locked: the ones chosen on the Lockdown tab (or the defaults), plus every role
+	 * that can take over the site.
+	 *
+	 * @return string[]
+	 */
+	public static function frozen_roles() {
+		$chosen = self::state()['roles'];
+		$roles  = array();
+		foreach ( array_keys( wp_roles()->get_names() ) as $role ) {
+			if ( self::role_always( $role ) || ( is_array( $chosen ) ? in_array( $role, $chosen, true ) : self::role_default( $role ) ) ) {
+				$roles[] = $role;
+			}
+		}
+		return $roles;
+	}
+
+	/**
+	 * Do these stored capabilities ({prefix}capabilities) make a user staff? A frozen role, or a single
+	 * capability given to the user that belongs to staff.
+	 *
+	 * @param mixed $caps {prefix}capabilities value.
+	 * @return bool
+	 */
+	private static function grants_staff( $caps ) {
+		if ( ! is_array( $caps ) ) {
+			return false;
+		}
+		$frozen = self::frozen_roles();
+		$roles  = wp_roles();
+		foreach ( $caps as $name => $grant ) {
+			$name = (string) $name;
+			if ( ! $grant ) {
+				continue;
+			}
+			if ( $roles->is_role( $name ) ? in_array( $name, $frozen, true ) : in_array( $name, array_merge( self::control_caps(), self::staff_caps() ), true ) ) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	/**
+	 * Staff: users with a frozen role (see frozen_roles()) or a staff capability of their own. Everyone
+	 * else (customers, subscribers, members) is not touched by the lock. Uses the roles as stored, not the
+	 * capabilities the lock takes away.
 	 *
 	 * @param int $user_id User.
 	 * @return bool
@@ -184,7 +280,7 @@ final class PNCP_Lockdown {
 			return false;
 		}
 		if ( ! isset( self::$staff[ $user_id ] ) ) {
-			self::$staff[ $user_id ] = ( is_multisite() && is_super_admin( $user_id ) ) || array() !== self::privileged( self::user_caps( $user_id ) );
+			self::$staff[ $user_id ] = ( is_multisite() && is_super_admin( $user_id ) ) || self::grants_staff( self::user_caps( $user_id ) );
 		}
 		return self::$staff[ $user_id ];
 	}
@@ -326,7 +422,8 @@ final class PNCP_Lockdown {
 
 	/**
 	 * No new staff and no role changes for staff while locked (every role change ends up in
-	 * {prefix}capabilities). Customers registering or changing role between customer roles are not affected.
+	 * {prefix}capabilities). Customers and members registering or changing between roles that are not
+	 * frozen are not affected.
 	 *
 	 * @param null|bool $check    Short-circuit.
 	 * @param int       $user_id  User.
@@ -340,7 +437,8 @@ final class PNCP_Lockdown {
 			return $check;
 		}
 		$old = get_user_meta( $user_id, $meta_key, true );
-		if ( self::privileged( maybe_unserialize( $value ) ) === self::privileged( $old ) ) {
+		$new = maybe_unserialize( $value );
+		if ( ( ! self::grants_staff( $old ) && ! self::grants_staff( $new ) ) || self::privileged( $new ) === self::privileged( $old ) ) {
 			return $check;
 		}
 		self::refused( 'role:' . (int) $user_id );
@@ -878,6 +976,7 @@ final class PNCP_Lockdown {
 			'wrong'     => array( 'error', __( 'Wrong or expired code. Wait for a new code in the app and try again.', 'scrapelock' ) ),
 			'wait'      => array( 'error', __( 'Too many wrong codes. Try again in 15 minutes.', 'scrapelock' ) ),
 			'error'     => array( 'error', __( 'That action is not possible right now.', 'scrapelock' ) ),
+			'roles'     => array( 'success', __( 'The frozen roles were saved.', 'scrapelock' ) ),
 			'ack'       => array( 'error', __( 'Tick the box to confirm that you have saved your recovery codes and understand how to unlock the site.', 'scrapelock' ) ),
 		);
 		if ( isset( $messages[ $code ] ) ) {
@@ -906,18 +1005,20 @@ final class PNCP_Lockdown {
 	 * The full report: what the lock freezes, what keeps working, and who it applies to on this site.
 	 */
 	private static function render_report() {
-		$counts = count_users();
-		$staff  = array();
-		$others = 0;
-		$names  = wp_roles()->get_names();
+		$counts       = count_users();
+		$frozen_roles = self::frozen_roles();
+		$staff        = array();
+		$open_roles   = array();
+		$names        = wp_roles()->get_names();
 		foreach ( $counts['avail_roles'] as $role => $count ) {
 			if ( ! $count || 'none' === $role ) {
 				continue;
 			}
-			if ( array() !== self::privileged( array( $role => true ) ) ) {
-				$staff[] = sprintf( '%s: %d', isset( $names[ $role ] ) ? translate_user_role( $names[ $role ] ) : $role, $count );
+			$label = sprintf( '%s: %d', isset( $names[ $role ] ) ? translate_user_role( $names[ $role ] ) : $role, $count );
+			if ( in_array( $role, $frozen_roles, true ) ) {
+				$staff[] = $label;
 			} else {
-				$others += $count;
+				$open_roles[] = $label;
 			}
 		}
 		$theme   = wp_get_theme();
@@ -985,8 +1086,8 @@ final class PNCP_Lockdown {
 			<ul class="pncp-ld-site">
 				<?php /* translators: %s: roles and number of users, e.g. "Administrator: 2, Editor: 1" */ ?>
 				<li><?php echo esc_html( sprintf( __( 'Staff accounts that keep only "read" while locked: %s.', 'scrapelock' ), $staff ? implode( ', ', $staff ) : __( 'none', 'scrapelock' ) ) ); ?></li>
-				<?php /* translators: %d: number of users */ ?>
-				<li><?php echo esc_html( sprintf( _n( '%d customer or subscriber account is not affected.', '%d customer and subscriber accounts are not affected.', $others, 'scrapelock' ), $others ) ); ?></li>
+				<?php /* translators: %s: roles and number of users, e.g. "Subscriber: 120, Customer: 3000" */ ?>
+				<li><?php echo esc_html( sprintf( __( 'Accounts that keep working as usual while locked: %s.', 'scrapelock' ), $open_roles ? implode( ', ', $open_roles ) : __( 'none', 'scrapelock' ) ) ); ?></li>
 				<?php /* translators: 1: number of plugins, 2: theme name */ ?>
 				<li><?php echo esc_html( sprintf( _n( '%1$d active plugin and the theme "%2$s" stay exactly as they are.', '%1$d active plugins and the theme "%2$s" stay exactly as they are.', $plugins, 'scrapelock' ), $plugins, $theme->get( 'Name' ) ) ); ?></li>
 				<li><?php esc_html_e( 'Not covered: whoever can change the files or the database on the server (FTP, hosting panel, WP-CLI) controls the site with or without the lock.', 'scrapelock' ); ?></li>
@@ -1123,6 +1224,7 @@ final class PNCP_Lockdown {
 			?>
 		</div>
 		<?php if ( ! $locked ) : ?>
+			<?php self::render_roles(); ?>
 			<div class="pncp-ld-box">
 				<h2><?php esc_html_e( 'Recovery codes and app', 'scrapelock' ); ?></h2>
 				<?php /* translators: %d: number of codes */ ?>
@@ -1155,6 +1257,48 @@ final class PNCP_Lockdown {
 	}
 
 	/**
+	 * Which roles are frozen while locked: every role with its number of users, ticked if frozen. Roles that
+	 * can take over the site are always ticked.
+	 */
+	private static function render_roles() {
+		$counts = count_users();
+		$frozen = self::frozen_roles();
+		?>
+		<div class="pncp-ld-box pncp-ld-roles">
+			<h2><?php esc_html_e( 'Who is frozen while locked', 'scrapelock' ); ?></h2>
+			<p><?php esc_html_e( 'Ticked roles keep only "read" while the site is locked. Untick the roles of your members or customers if they create content on the site themselves (listings, community posts): they then keep working as usual, including their own email and password. Roles that can change plugins, themes, users or settings are always frozen.', 'scrapelock' ); ?></p>
+			<?php self::form_open( 'roles' ); ?>
+			<input type="hidden" name="roles[]" value="">
+			<ul class="pncp-ld-role-list">
+				<?php foreach ( wp_roles()->get_names() as $role => $name ) : ?>
+					<?php
+					$always = self::role_always( $role );
+					$count  = isset( $counts['avail_roles'][ $role ] ) ? (int) $counts['avail_roles'][ $role ] : 0;
+					?>
+					<li>
+						<label>
+							<input type="checkbox" name="roles[]" value="<?php echo esc_attr( $role ); ?>"<?php checked( in_array( $role, $frozen, true ) ); ?><?php disabled( $always ); ?>>
+							<?php
+							/* translators: 1: role name, 2: number of users */
+							echo esc_html( sprintf( _n( '%1$s (%2$d user)', '%1$s (%2$d users)', $count, 'scrapelock' ), translate_user_role( $name ), $count ) );
+							if ( $always ) {
+								echo ' <span class="description">' . esc_html__( 'always frozen', 'scrapelock' ) . '</span>';
+							}
+							?>
+						</label>
+					</li>
+				<?php endforeach; ?>
+			</ul>
+			<?php
+			self::code_field();
+			submit_button( __( 'Save frozen roles', 'scrapelock' ), 'secondary', 'submit', false );
+			echo '</form>';
+			?>
+		</div>
+		<?php
+	}
+
+	/**
 	 * The lockdown log.
 	 *
 	 * @param string $fmt Date format.
@@ -1174,6 +1318,7 @@ final class PNCP_Lockdown {
 			'codes'         => __( 'New recovery codes', 'scrapelock' ),
 			'removed'       => __( 'App removed', 'scrapelock' ),
 			'refused'       => __( 'Change refused', 'scrapelock' ),
+			'roles'         => __( 'Frozen roles changed', 'scrapelock' ),
 		);
 		?>
 		<h2><?php esc_html_e( 'Recent lockdown events', 'scrapelock' ); ?></h2>
@@ -1219,6 +1364,7 @@ final class PNCP_Lockdown {
 		$code = isset( $_POST['code'] ) ? sanitize_text_field( wp_unslash( $_POST['code'] ) ) : '';
 		$mins = isset( $_POST['minutes'] ) ? absint( $_POST['minutes'] ) : 30;
 		$ack  = ! empty( $_POST['ack'] );
+		$pick = isset( $_POST['roles'] ) && is_array( $_POST['roles'] ) ? array_filter( array_map( 'sanitize_key', wp_unslash( $_POST['roles'] ) ) ) : array();
 		// phpcs:enable
 		$state = self::state();
 
@@ -1246,7 +1392,7 @@ final class PNCP_Lockdown {
 		if ( 'remove' === $op && self::server_unlocked() ) {
 			self::remove_app( $state );
 		}
-		if ( ! in_array( $op, array( 'confirm', 'lock', 'unlock', 'codes', 'remove' ), true ) ) {
+		if ( ! in_array( $op, array( 'confirm', 'lock', 'unlock', 'codes', 'remove', 'roles' ), true ) ) {
 			self::back( 'error' );
 		}
 		if ( self::too_many_fails() ) {
@@ -1284,7 +1430,7 @@ final class PNCP_Lockdown {
 		if ( 'lock' === $op && empty( $state['ack'] ) && ! $ack ) {
 			self::back( 'ack' );
 		}
-		if ( ! self::configured() || ( 'lock' === $op && ( $locked || self::unlocked_until() ) ) || ( 'unlock' === $op && ! $locked ) || ( in_array( $op, array( 'codes', 'remove' ), true ) && $locked ) || ( 'remove' === $op && self::unlocked_until() ) ) {
+		if ( ! self::configured() || ( 'lock' === $op && ( $locked || self::unlocked_until() ) ) || ( 'unlock' === $op && ! $locked ) || ( in_array( $op, array( 'codes', 'remove', 'roles' ), true ) && $locked ) || ( 'remove' === $op && self::unlocked_until() ) ) {
 			self::back( 'error' );
 		}
 		$how = self::check_code( $code, 'unlock' === $op );
@@ -1319,6 +1465,14 @@ final class PNCP_Lockdown {
 			self::event( 'unlocked', $mins ? sprintf( __( '%d min', 'scrapelock' ), $mins ) : __( 'until locked again', 'scrapelock' ) );
 			self::mail( __( 'The site was unlocked', 'scrapelock' ), __( 'The site was unlocked on the Lockdown page. If it was not you, lock it again and change the administrators\' passwords.', 'scrapelock' ) );
 			self::back( 'unlocked' );
+		}
+		if ( 'roles' === $op ) {
+			// Only existing roles; the roles that can take over the site are added in frozen_roles() anyway.
+			$state['roles'] = array_values( array_intersect( array_keys( wp_roles()->get_names() ), $pick ) );
+			self::save( $state );
+			self::$staff = array();
+			self::event( 'roles', implode( ', ', self::frozen_roles() ) );
+			self::back( 'roles' );
 		}
 		if ( 'codes' === $op ) {
 			$codes          = self::new_codes();
