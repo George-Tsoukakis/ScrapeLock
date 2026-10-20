@@ -639,3 +639,12 @@
 	color: #a7aaad;
 	cursor: not-allowed;
 }
+
+.pncp-ld-role-list {
+	columns: 2;
+	max-width: 620px;
+}
+
+.pncp-ld-role-list li {
+	margin: 0 0 6px;
+}
