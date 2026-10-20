@@ -184,6 +184,7 @@ No. A small script waits for the first real interaction (scroll, tap, key or mou
 = 2.7.0 =
 * New: Lockdown. Freezes every change to the site (plugins, themes, updates, the file editor, users and roles, staff email and password, settings, content) until an administrator unlocks it with a code from an authenticator app (TOTP, RFC 6238). Visitors and customers are not affected.
 * Enforced through WordPress capabilities and also against code: protected options (active plugins, theme, site address, admin email, registration, default role, user roles, ScrapeLock's own settings), role changes, staff email and password changes, password resets and new application passwords are refused while locked.
+* Each code is accepted once, even when two requests send it at the same moment (the check runs under a short database lock, on the state as it is in the database). New recovery codes stay in the database in plain form for 2 minutes at most, until they are shown.
 * Temporary unlock (15 minutes to 2 hours, then it locks again by itself), ten one-time recovery codes, the SCRAPELOCK_UNLOCK constant as a last resort, 5 wrong codes per 15 minutes, a log of the last 30 events and an email to the admin address on every unlock.
 * The secret is encrypted with the keys in wp-config.php; the QR code is drawn in the browser with the bundled qrcode-generator 1.4.4 (MIT, Kazuhiko Arase).
 

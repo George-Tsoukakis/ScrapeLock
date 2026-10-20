@@ -9,7 +9,7 @@ msgstr ""
 "MIME-Version: 1.0\n"
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
-"POT-Creation-Date: 2026-10-20T20:11:53+00:00\n"
+"POT-Creation-Date: 2026-10-20T20:26:32+00:00\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "X-Generator: WP-CLI 2.12.0\n"
 "X-Domain: scrapelock\n"
@@ -202,7 +202,7 @@ msgid "Yes, disable"
 msgstr ""
 
 #: includes/class-pncp-admin.php:474
-#: includes/class-pncp-lockdown.php:861
+#: includes/class-pncp-lockdown.php:945
 msgid "Cancel"
 msgstr ""
 
@@ -461,7 +461,7 @@ msgid "Duration:"
 msgstr ""
 
 #: includes/class-pncp-admin.php:653
-#: includes/class-pncp-lockdown.php:928
+#: includes/class-pncp-lockdown.php:1012
 msgid "1 hour"
 msgstr ""
 
@@ -1456,7 +1456,7 @@ msgstr ""
 #: includes/class-pncp-admin.php:1479
 #: includes/class-pncp-admin.php:1520
 #: includes/class-pncp-admin.php:1691
-#: includes/class-pncp-lockdown.php:1003
+#: includes/class-pncp-lockdown.php:1087
 msgid "IP"
 msgstr ""
 
@@ -1728,342 +1728,342 @@ msgstr ""
 msgid "Printing this page is not allowed."
 msgstr ""
 
-#: includes/class-pncp-lockdown.php:413
+#: includes/class-pncp-lockdown.php:414
 msgid "This site is locked: account details of staff cannot be changed until an administrator unlocks it."
 msgstr ""
 
-#: includes/class-pncp-lockdown.php:540
+#: includes/class-pncp-lockdown.php:541
 msgid "Too many wrong lockdown codes"
 msgstr ""
 
-#: includes/class-pncp-lockdown.php:540
+#: includes/class-pncp-lockdown.php:541
 msgid "Someone typed several wrong authenticator codes on the Lockdown page. Further attempts from that account are blocked for 15 minutes. If it was not you, change that account's password."
 msgstr ""
 
-#: includes/class-pncp-lockdown.php:569
+#: includes/class-pncp-lockdown.php:591
 msgid "A lockdown recovery code was used"
 msgstr ""
 
-#: includes/class-pncp-lockdown.php:569
+#: includes/class-pncp-lockdown.php:591
 msgid "A recovery code was used on the Lockdown page. If it was not you, change the administrators' passwords and create new recovery codes."
 msgstr ""
 
 #. translators: %s: user name
-#: includes/class-pncp-lockdown.php:616
+#: includes/class-pncp-lockdown.php:700
 #, php-format
 msgid "User: %s"
 msgstr ""
 
 #. translators: %s: IP address
-#: includes/class-pncp-lockdown.php:618
+#: includes/class-pncp-lockdown.php:702
 #, php-format
 msgid "IP: %s"
 msgstr ""
 
-#: includes/class-pncp-lockdown.php:642
-#: includes/class-pncp-lockdown.php:775
+#: includes/class-pncp-lockdown.php:726
+#: includes/class-pncp-lockdown.php:859
 msgid "Lockdown"
 msgstr ""
 
-#: includes/class-pncp-lockdown.php:670
-#: includes/class-pncp-lockdown.php:991
+#: includes/class-pncp-lockdown.php:754
+#: includes/class-pncp-lockdown.php:1075
 msgid "Locked"
 msgstr ""
 
 #. translators: %s: time
-#: includes/class-pncp-lockdown.php:673
-#: includes/class-pncp-lockdown.php:906
+#: includes/class-pncp-lockdown.php:757
+#: includes/class-pncp-lockdown.php:990
 #, php-format
 msgid "Unlocked until %s"
 msgstr ""
 
-#: includes/class-pncp-lockdown.php:675
+#: includes/class-pncp-lockdown.php:759
 msgid "Not locked"
 msgstr ""
 
-#: includes/class-pncp-lockdown.php:697
+#: includes/class-pncp-lockdown.php:781
 msgid "ScrapeLock Lockdown is off from the server: SCRAPELOCK_UNLOCK is set in wp-config.php. Remove that line as soon as you can."
 msgstr ""
 
-#: includes/class-pncp-lockdown.php:701
+#: includes/class-pncp-lockdown.php:785
 msgid "This site is locked."
 msgstr ""
 
-#: includes/class-pncp-lockdown.php:701
+#: includes/class-pncp-lockdown.php:785
 msgid "Changes from wp-admin are disabled until an administrator unlocks the site with the authenticator app."
 msgstr ""
 
-#: includes/class-pncp-lockdown.php:703
-#: includes/class-pncp-lockdown.php:935
+#: includes/class-pncp-lockdown.php:787
+#: includes/class-pncp-lockdown.php:1019
 msgid "Unlock"
 msgstr ""
 
 #. translators: %s: time
-#: includes/class-pncp-lockdown.php:711
+#: includes/class-pncp-lockdown.php:795
 #, php-format
 msgid "The site is unlocked until %s, then it locks again by itself."
 msgstr ""
 
 #. translators: %s: time
-#: includes/class-pncp-lockdown.php:711
+#: includes/class-pncp-lockdown.php:795
 msgid "Lock now"
 msgstr ""
 
-#: includes/class-pncp-lockdown.php:758
+#: includes/class-pncp-lockdown.php:842
 msgid "Code from the authenticator app (or a recovery code)"
 msgstr ""
 
-#: includes/class-pncp-lockdown.php:758
+#: includes/class-pncp-lockdown.php:842
 msgid "Code from the authenticator app"
 msgstr ""
 
-#: includes/class-pncp-lockdown.php:768
-#: includes/class-pncp-lockdown.php:1036
+#: includes/class-pncp-lockdown.php:852
+#: includes/class-pncp-lockdown.php:1120
 msgid "Only administrators can lock and unlock the site."
 msgstr ""
 
-#: includes/class-pncp-lockdown.php:776
+#: includes/class-pncp-lockdown.php:860
 msgid "While the site is locked, nobody can change it from wp-admin, the REST API or XML-RPC, not even an administrator or someone who stole a password: no plugins, themes or updates, no file editing, no new users or role changes, no settings, no content changes. Visitors and customers are not affected. Locking and unlocking need a code from your authenticator app."
 msgstr ""
 
-#: includes/class-pncp-lockdown.php:780
+#: includes/class-pncp-lockdown.php:864
 msgid "Unlocked from the server."
 msgstr ""
 
-#: includes/class-pncp-lockdown.php:780
+#: includes/class-pncp-lockdown.php:864
 msgid "SCRAPELOCK_UNLOCK is set in wp-config.php, so the lock is not applied. You can remove the authenticator below and connect a new one; then remove that line from wp-config.php."
 msgstr ""
 
-#: includes/class-pncp-lockdown.php:783
+#: includes/class-pncp-lockdown.php:867
 msgid "The app secret cannot be read: the security keys in wp-config.php have changed. Unlock with a recovery code, or from the server, then connect the app again."
 msgstr ""
 
-#: includes/class-pncp-lockdown.php:810
+#: includes/class-pncp-lockdown.php:894
 msgid "The authenticator app is connected. You can lock the site now."
 msgstr ""
 
-#: includes/class-pncp-lockdown.php:811
+#: includes/class-pncp-lockdown.php:895
 msgid "The site is locked."
 msgstr ""
 
-#: includes/class-pncp-lockdown.php:812
+#: includes/class-pncp-lockdown.php:896
 msgid "The site is unlocked."
 msgstr ""
 
-#: includes/class-pncp-lockdown.php:813
+#: includes/class-pncp-lockdown.php:897
 msgid "New recovery codes created. The old ones no longer work."
 msgstr ""
 
-#: includes/class-pncp-lockdown.php:814
+#: includes/class-pncp-lockdown.php:898
 msgid "The authenticator app was removed and the lock is off."
 msgstr ""
 
-#: includes/class-pncp-lockdown.php:815
+#: includes/class-pncp-lockdown.php:899
 msgid "Setup cancelled."
 msgstr ""
 
-#: includes/class-pncp-lockdown.php:816
+#: includes/class-pncp-lockdown.php:900
 msgid "Wrong or expired code. Wait for a new code in the app and try again."
 msgstr ""
 
-#: includes/class-pncp-lockdown.php:817
+#: includes/class-pncp-lockdown.php:901
 msgid "Too many wrong codes. Try again in 15 minutes."
 msgstr ""
 
-#: includes/class-pncp-lockdown.php:818
+#: includes/class-pncp-lockdown.php:902
 msgid "That action is not possible right now."
 msgstr ""
 
-#: includes/class-pncp-lockdown.php:831
+#: includes/class-pncp-lockdown.php:915
 msgid "Connect an authenticator app"
 msgstr ""
 
-#: includes/class-pncp-lockdown.php:832
+#: includes/class-pncp-lockdown.php:916
 msgid "Install an authenticator app on your phone (Google Authenticator, Microsoft Authenticator, Authy, 1Password or similar). Then click the button: a QR code appears for the app to scan."
 msgstr ""
 
-#: includes/class-pncp-lockdown.php:835
+#: includes/class-pncp-lockdown.php:919
 msgid "Connect the app"
 msgstr ""
 
-#: includes/class-pncp-lockdown.php:851
+#: includes/class-pncp-lockdown.php:935
 msgid "Scan the QR code"
 msgstr ""
 
-#: includes/class-pncp-lockdown.php:852
+#: includes/class-pncp-lockdown.php:936
 msgid "In the app, add an account and scan this code. The QR code is created in your browser: the secret is not sent anywhere."
 msgstr ""
 
-#: includes/class-pncp-lockdown.php:854
+#: includes/class-pncp-lockdown.php:938
 msgid "Cannot scan? Type this key in the app instead:"
 msgstr ""
 
-#: includes/class-pncp-lockdown.php:858
+#: includes/class-pncp-lockdown.php:942
 msgid "Confirm"
 msgstr ""
 
-#: includes/class-pncp-lockdown.php:876
+#: includes/class-pncp-lockdown.php:960
 msgid "Your recovery codes"
 msgstr ""
 
-#: includes/class-pncp-lockdown.php:877
+#: includes/class-pncp-lockdown.php:961
 msgid "Print them or keep them somewhere safe, away from your phone. They are shown only now."
 msgstr ""
 
-#: includes/class-pncp-lockdown.php:877
+#: includes/class-pncp-lockdown.php:961
 msgid "If you lose your phone, each code unlocks the site once."
 msgstr ""
 
-#: includes/class-pncp-lockdown.php:903
+#: includes/class-pncp-lockdown.php:987
 msgid "The site is locked"
 msgstr ""
 
-#: includes/class-pncp-lockdown.php:908
+#: includes/class-pncp-lockdown.php:992
 msgid "The site is not locked"
 msgstr ""
 
 #. translators: %s: date and time
-#: includes/class-pncp-lockdown.php:914
+#: includes/class-pncp-lockdown.php:998
 #, php-format
 msgid "Locked since %s."
 msgstr ""
 
 #. translators: %d: number of updates
-#: includes/class-pncp-lockdown.php:918
+#: includes/class-pncp-lockdown.php:1002
 #, php-format
 msgid "%d update is waiting. Unlock for a while to install it, then lock again."
 msgid_plural "%d updates are waiting. Unlock for a while to install them, then lock again."
 msgstr[0] ""
 msgstr[1] ""
 
-#: includes/class-pncp-lockdown.php:924
+#: includes/class-pncp-lockdown.php:1008
 msgid "Unlock for"
 msgstr ""
 
-#: includes/class-pncp-lockdown.php:926
+#: includes/class-pncp-lockdown.php:1010
 msgid "15 minutes"
 msgstr ""
 
-#: includes/class-pncp-lockdown.php:927
+#: includes/class-pncp-lockdown.php:1011
 msgid "30 minutes"
 msgstr ""
 
-#: includes/class-pncp-lockdown.php:929
+#: includes/class-pncp-lockdown.php:1013
 msgid "2 hours"
 msgstr ""
 
-#: includes/class-pncp-lockdown.php:930
+#: includes/class-pncp-lockdown.php:1014
 msgid "Until I lock it again"
 msgstr ""
 
-#: includes/class-pncp-lockdown.php:939
+#: includes/class-pncp-lockdown.php:1023
 msgid "Lock again now"
 msgstr ""
 
-#: includes/class-pncp-lockdown.php:944
+#: includes/class-pncp-lockdown.php:1028
 msgid "Lock the site"
 msgstr ""
 
-#: includes/class-pncp-lockdown.php:951
+#: includes/class-pncp-lockdown.php:1035
 msgid "Recovery codes and app"
 msgstr ""
 
 #. translators: %d: number of codes
-#: includes/class-pncp-lockdown.php:953
+#: includes/class-pncp-lockdown.php:1037
 #, php-format
 msgid "%d recovery code left."
 msgid_plural "%d recovery codes left."
 msgstr[0] ""
 msgstr[1] ""
 
-#: includes/class-pncp-lockdown.php:957
+#: includes/class-pncp-lockdown.php:1041
 msgid "Create new recovery codes"
 msgstr ""
 
-#: includes/class-pncp-lockdown.php:965
+#: includes/class-pncp-lockdown.php:1049
 msgid "Remove the authenticator app"
 msgstr ""
 
-#: includes/class-pncp-lockdown.php:972
+#: includes/class-pncp-lockdown.php:1056
 msgid "Lost your phone?"
 msgstr ""
 
-#: includes/class-pncp-lockdown.php:973
+#: includes/class-pncp-lockdown.php:1057
 msgid "Type one of your recovery codes in the unlock field instead of an app code. No codes left? Add this line to wp-config.php (FTP or your hosting panel), then remove the app here and connect a new one:"
 msgstr ""
 
-#: includes/class-pncp-lockdown.php:990
+#: includes/class-pncp-lockdown.php:1074
 msgid "App connected"
 msgstr ""
 
-#: includes/class-pncp-lockdown.php:992
+#: includes/class-pncp-lockdown.php:1076
 msgid "Unlocked"
 msgstr ""
 
-#: includes/class-pncp-lockdown.php:993
+#: includes/class-pncp-lockdown.php:1077
 msgid "Locked again"
 msgstr ""
 
-#: includes/class-pncp-lockdown.php:994
+#: includes/class-pncp-lockdown.php:1078
 msgid "Wrong code"
 msgstr ""
 
-#: includes/class-pncp-lockdown.php:995
+#: includes/class-pncp-lockdown.php:1079
 msgid "Recovery code used"
 msgstr ""
 
-#: includes/class-pncp-lockdown.php:996
+#: includes/class-pncp-lockdown.php:1080
 msgid "New recovery codes"
 msgstr ""
 
-#: includes/class-pncp-lockdown.php:997
+#: includes/class-pncp-lockdown.php:1081
 msgid "App removed"
 msgstr ""
 
-#: includes/class-pncp-lockdown.php:998
+#: includes/class-pncp-lockdown.php:1082
 msgid "Change refused"
 msgstr ""
 
-#: includes/class-pncp-lockdown.php:1001
+#: includes/class-pncp-lockdown.php:1085
 msgid "Recent lockdown events"
 msgstr ""
 
-#: includes/class-pncp-lockdown.php:1003
+#: includes/class-pncp-lockdown.php:1087
 msgid "When"
 msgstr ""
 
-#: includes/class-pncp-lockdown.php:1003
+#: includes/class-pncp-lockdown.php:1087
 msgid "Event"
 msgstr ""
 
-#: includes/class-pncp-lockdown.php:1003
+#: includes/class-pncp-lockdown.php:1087
 msgid "User"
 msgstr ""
 
 #. translators: %d: minutes
-#: includes/class-pncp-lockdown.php:1132
+#: includes/class-pncp-lockdown.php:1219
 #, php-format
 msgid "%d min"
 msgstr ""
 
 #. translators: %d: minutes
-#: includes/class-pncp-lockdown.php:1132
+#: includes/class-pncp-lockdown.php:1219
 msgid "until locked again"
 msgstr ""
 
-#: includes/class-pncp-lockdown.php:1133
+#: includes/class-pncp-lockdown.php:1220
 msgid "The site was unlocked"
 msgstr ""
 
-#: includes/class-pncp-lockdown.php:1133
+#: includes/class-pncp-lockdown.php:1220
 msgid "The site was unlocked on the Lockdown page. If it was not you, lock it again and change the administrators' passwords."
 msgstr ""
 
-#: includes/class-pncp-lockdown.php:1160
+#: includes/class-pncp-lockdown.php:1247
 msgid "The authenticator app was removed"
 msgstr ""
 
-#: includes/class-pncp-lockdown.php:1160
+#: includes/class-pncp-lockdown.php:1247
 msgid "The authenticator app was removed from the Lockdown page and the lock is off. If it was not you, change the administrators' passwords."
 msgstr ""
 
