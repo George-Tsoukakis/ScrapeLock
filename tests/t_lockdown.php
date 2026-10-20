@@ -402,8 +402,30 @@ t( '… και με νέα εφαρμογή ξαναζητείται το κου
 /* ---------- Ξεκλείδωμα από τον server (wp-config.php) ---------- */
 state_set( array( 'secret' => 'p:' . $secret, 'locked' => true, 'until' => 0 ) );
 t( 'κλειδωμένο πριν από τη γραμμή του wp-config.php', PNCP_Lockdown::is_locked() );
+
+/* ---------- Site Health (2.8) ---------- */
+$pncp_updates = get_site_transient( 'update_plugins' );
+$pncp_fake    = (object) array( 'response' => array( 'hello.php' => (object) array( 'new_version' => '9.9' ) ), 'last_checked' => time() );
+set_site_transient( 'update_plugins', $pncp_fake );
+$pncp_h = PNCP_Health::test_lockdown();
+t( 'Site Health: κλειδωμένο με ενημέρωση σε αναμονή → recommended, 1 update', 'recommended' === $pncp_h['status'] && false !== strpos( $pncp_h['label'], '1 update' ) && 'scrapelock_lockdown' === $pncp_h['test'], $pncp_h['label'] );
+if ( false === $pncp_updates ) {
+	delete_site_transient( 'update_plugins' );
+} else {
+	set_site_transient( 'update_plugins', (object) array_merge( (array) $pncp_updates, array( 'response' => array() ) ) );
+}
+delete_site_transient( 'update_themes' );
+delete_site_transient( 'update_core' );
+$pncp_h = PNCP_Health::test_lockdown();
+t( 'Site Health: κλειδωμένο χωρίς ενημερώσεις → good', 'good' === $pncp_h['status'] && false !== strpos( $pncp_h['label'], 'locked' ), $pncp_h['status'] );
+$pncp_info = PNCP_Health::info( array() );
+t( 'Site Health Info: Lockdown «Locked» και οι παγωμένοι ρόλοι', 'Locked' === $pncp_info['scrapelock']['fields']['lockdown']['value'] && false !== strpos( $pncp_info['scrapelock']['fields']['lockdown_roles']['value'], 'administrator' ) );
+t( 'Site Health Info: κανένα μυστικό (ούτε το secret της εφαρμογής)', false === strpos( wp_json_encode( $pncp_info ), $secret ) );
+
 define( 'SCRAPELOCK_UNLOCK', true );
 t( 'SCRAPELOCK_UNLOCK: το κλείδωμα δεν εφαρμόζεται', ! PNCP_Lockdown::is_locked() && current_user_can( 'manage_options' ) );
+$pncp_h = PNCP_Health::test_lockdown();
+t( 'Site Health: SCRAPELOCK_UNLOCK → critical', 'critical' === $pncp_h['status'] && 'red' === $pncp_h['badge']['color'] );
 
 /* ---------- Καθάρισμα ---------- */
 delete_site_option( PNCP_Lockdown::OPTION );

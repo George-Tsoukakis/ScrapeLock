@@ -181,7 +181,7 @@ final class PNCP_Ip {
 			if ( '' === $range || ! self::valid_range( $range ) ) {
 				continue;
 			}
-			$parts  = explode( '/', $range, 2 );
+			$parts   = explode( '/', $range, 2 );
 			$is_ipv6 = (bool) filter_var( $parts[0], FILTER_VALIDATE_IP, FILTER_FLAG_IPV6 );
 			if ( isset( $parts[1] ) ) {
 				$prefix = (int) $parts[1];
@@ -494,6 +494,27 @@ final class PNCP_Ip {
 	public static function behind_bunny() {
 		$via = isset( $_SERVER['HTTP_VIA'] ) ? sanitize_text_field( wp_unslash( $_SERVER['HTTP_VIA'] ) ) : '';
 		return ! empty( $_SERVER['HTTP_CDN_SERVERID'] ) || false !== stripos( $via, 'BunnyCDN' );
+	}
+
+	/**
+	 * Is the site behind a CDN while every visitor appears with the CDN's address (the "Real visitor IP"
+	 * setting does not match)? Then limits and blocks hit the CDN itself. Judged from the current request.
+	 *
+	 * @return string 'cloudflare', 'bunny' or ''.
+	 */
+	public static function cdn_hides_visitors() {
+		$ip = self::client_ip();
+		if ( self::remote_is_cloudflare() && '' !== $ip && self::in_any( $ip, self::list_of( 'cloudflare' ) ) ) {
+			return 'cloudflare';
+		}
+		if ( ! self::behind_bunny() ) {
+			return '';
+		}
+		$real = isset( $_SERVER['HTTP_X_REAL_IP'] ) ? sanitize_text_field( wp_unslash( $_SERVER['HTTP_X_REAL_IP'] ) ) : '';
+		if ( '' === $real || self::remote_addr() === $real || ! filter_var( $real, FILTER_VALIDATE_IP ) || $ip === $real ) {
+			return '';
+		}
+		return 'bunny';
 	}
 
 	/**

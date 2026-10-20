@@ -847,8 +847,7 @@ final class PNCP_Admin {
 	 * @param array<string, mixed> $s Settings.
 	 */
 	private static function render_cloudflare_hint( $s ) {
-		$ip = PNCP_Ip::client_ip();
-		if ( PNCP_Ip::remote_is_cloudflare() && '' !== $ip && PNCP_Ip::in_any( $ip, PNCP_Ip::list_of( 'cloudflare' ) ) ) {
+		if ( 'cloudflare' === PNCP_Ip::cdn_hides_visitors() ) {
 			?>
 			<div class="notice notice-warning inline">
 				<p><strong><?php esc_html_e( 'The site is behind Cloudflare, but all visitors appear with a Cloudflare address.', 'scrapelock' ); ?></strong>
@@ -915,7 +914,7 @@ final class PNCP_Admin {
 			}
 			return;
 		}
-		if ( '' === $real || ! filter_var( $real, FILTER_VALIDATE_IP ) || PNCP_Ip::client_ip() === $real ) {
+		if ( 'bunny' !== PNCP_Ip::cdn_hides_visitors() ) {
 			return;
 		}
 		?>
