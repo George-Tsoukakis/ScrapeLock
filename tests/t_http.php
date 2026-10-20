@@ -569,6 +569,11 @@ for ( $i = 1; $i <= 5; $i++ ) {
 t( 'όριο 404 = 0: ανενεργό', array( 404, 404, 404, 404, 404 ) === $codes, implode( ',', $codes ) );
 
 settings( array( 'block_user_enum' => 0 ) );
+$pncp_oembed_post = get_post( wp_insert_post( array( 'post_title' => 'oEmbed', 'post_status' => 'publish', 'post_author' => 1, 'post_content' => 'x' ) ) );
+$pncp_oembed      = '/wp-json/oembed/1.0/embed?url=' . rawurlencode( get_permalink( $pncp_oembed_post ) );
+$pncp_login       = get_userdata( $pncp_oembed_post->post_author )->user_login;
+list( $code, , $body ) = req( $pncp_oembed, browser( '198.51.100.83' ) );
+t( 'oEmbed χωρίς προστασία: author_url με το /author/username/ (το κενό)', 200 === $code && false !== strpos( (string) json_decode( $body, true )['author_url'], '/author/' . $pncp_login ), "$code " . substr( $body, 0, 160 ) );
 list( $code, $hdr ) = req( '/?author=1', browser( '198.51.100.83' ) );
 t( '?author=1 χωρίς προστασία: ανακατεύθυνση στο /author/…', in_array( $code, array( 301, 302 ), true ) && false !== strpos( $hdr, '/author/' ), (string) $code );
 list( $code ) = req( '/wp-json/wp/v2/users', browser( '198.51.100.83' ) );
@@ -586,6 +591,12 @@ list( $code ) = req( '/?rest_route=/wp/v2/users', browser( '198.51.100.83' ) );
 t( '?rest_route=/wp/v2/users με προστασία: 401', 401 === $code, (string) $code );
 list( $code ) = req( '/wp-json/wp/v2/posts', browser( '198.51.100.83' ) );
 t( 'REST posts: ανεπηρέαστο', 200 === $code, (string) $code );
+list( $code, , $body ) = req( $pncp_oembed, browser( '198.51.100.83' ) );
+$pncp_json = json_decode( $body, true );
+t( 'oEmbed με προστασία: χωρίς username (όνομα και διεύθυνση του site), το embed δουλεύει', 200 === $code && home_url() === $pncp_json['author_url'] && get_bloginfo( 'name' ) === $pncp_json['author_name'] && false === stripos( $body, $pncp_login ) && ! empty( $pncp_json['html'] ), "$code " . substr( $body, 0, 200 ) );
+list( , , $body ) = req( '/?oembed=true&format=json&url=' . rawurlencode( get_permalink( $pncp_oembed_post ) ), browser( '198.51.100.83' ) );
+t( 'oEmbed με προστασία, και από το παλιό ?oembed=true', false === strpos( $body, '/author/' ), substr( $body, 0, 160 ) );
+wp_delete_post( $pncp_oembed_post->ID, true );
 list( $code, $hdr, $body ) = req( '/wp-sitemap.xml', browser( '198.51.100.83' ) );
 t( 'sitemap: χωρίς τον χάρτη χρηστών', 200 === $code && false === strpos( $body, 'wp-sitemap-users' ), (string) $code );
 list( $code ) = req( '/wp-json/wp/v2/users', browser( '198.51.100.83', array( 'Cookie' => 'wordpress_logged_in_x=1' ) ) );
@@ -1245,6 +1256,54 @@ settings( array( 'enabled' => 0 ) );
 list( $code2 ) = req( $url, array( 'X-Test-IP' => '198.51.100.60', 'User-Agent' => 'GPTBot' ) );
 t( 'ανενεργό plugin: τίποτα δεν μπλοκάρεται', 403 === $code && 200 === $code2, "$code/$code2" );
 settings( array( 'enabled' => 1 ) );
+
+/* ---------- 2.8: pingbacks και χάρτης REST (προαιρετικά, κλειστά από προεπιλογή) ---------- */
+function xmlrpc_methods_list( $ip ) {
+	global $base;
+	$ch = curl_init( $base . '/xmlrpc.php' );
+	curl_setopt_array(
+		$ch,
+		array(
+			CURLOPT_RETURNTRANSFER => true,
+			CURLOPT_POST           => true,
+			CURLOPT_POSTFIELDS     => '<?xml version="1.0"?><methodCall><methodName>system.listMethods</methodName><params></params></methodCall>',
+			CURLOPT_HTTPHEADER     => array( 'Content-Type: text/xml', 'X-Test-IP: ' . $ip, 'User-Agent: Mozilla/5.0 Chrome/141' ),
+			CURLOPT_TIMEOUT        => 30,
+		)
+	);
+	$out = (string) curl_exec( $ch );
+	curl_close( $ch );
+	return $out;
+}
+fresh();
+t( 'νέα ρύθμιση: pingbacks / χάρτης REST κλειστά από προεπιλογή', 0 === PNCP_Options::defaults()['disable_pingback'] && 0 === PNCP_Options::defaults()['hide_rest_discovery'] );
+settings( array( 'disable_pingback' => 0, 'hide_rest_discovery' => 0 ) );
+$pncp_x = xmlrpc_methods_list( '198.51.100.90' );
+list( , $hdr ) = req( $url, browser( '198.51.100.90' ) );
+t( 'pingbacks ανοιχτά: pingback.ping στο XML-RPC και X-Pingback header (όπως το WordPress)', false !== strpos( $pncp_x, '<string>pingback.ping</string>' ) && false !== strpos( $hdr, 'x-pingback:' ), substr( $pncp_x, 0, 120 ) );
+settings( array( 'disable_pingback' => 1 ) );
+$pncp_x = xmlrpc_methods_list( '198.51.100.90' );
+list( , $hdr ) = req( $url, browser( '198.51.100.90' ) );
+t( 'pingbacks κλειστά: χωρίς pingback.ping / getPingbacks και χωρίς X-Pingback', false === strpos( $pncp_x, 'pingback.ping' ) && false === strpos( $pncp_x, 'pingback.extensions.getPingbacks' ) && false === strpos( $hdr, 'x-pingback:' ), substr( $pncp_x, 0, 120 ) );
+t( '… οι άλλες μέθοδοι XML-RPC μένουν', false !== strpos( $pncp_x, '<string>system.listMethods</string>' ) && false !== strpos( $pncp_x, '<string>wp.getPosts</string>' ) );
+settings( array( 'disable_pingback' => 0 ) );
+
+list( $code, $hdr, $body ) = req( $url, browser( '198.51.100.91' ) );
+list( $icode, , $ibody ) = req( '/wp-json/', browser( '198.51.100.91' ) );
+$pncp_index = json_decode( $ibody, true );
+t( 'χάρτης REST ορατός: link api.w.org, Link header, oEmbed discovery, /wp-json/ με namespaces', false !== strpos( $body, 'https://api.w.org/' ) && false !== strpos( $hdr, 'rel="https://api.w.org/"' ) && false !== strpos( $body, 'application/json+oembed' ) && ! empty( $pncp_index['namespaces'] ) && ! empty( $pncp_index['routes'] ), (string) $icode );
+settings( array( 'hide_rest_discovery' => 1 ) );
+list( $code, $hdr, $body ) = req( $url, browser( '198.51.100.91' ) );
+t( 'χάρτης REST κρυφός: χωρίς link / Link header / oEmbed discovery στη σελίδα', 200 === $code && false === strpos( $body, 'https://api.w.org/' ) && false === strpos( $hdr, 'api.w.org' ) && false === strpos( $body, 'application/json+oembed' ), (string) $code );
+list( $icode, , $ibody ) = req( '/wp-json/', browser( '198.51.100.91' ) );
+$pncp_index = json_decode( $ibody, true );
+t( 'χάρτης REST κρυφός: /wp-json/ χωρίς namespaces και routes', 200 === $icode && array() === $pncp_index['namespaces'] && array() === $pncp_index['routes'] && ! empty( $pncp_index['name'] ), substr( $ibody, 0, 120 ) );
+list( $icode, , $ibody ) = req( '/wp-json/wp/v2', browser( '198.51.100.91' ) );
+t( 'χάρτης REST κρυφός: /wp-json/wp/v2 χωρίς routes', 200 === $icode && array() === json_decode( $ibody, true )['routes'], substr( $ibody, 0, 120 ) );
+list( $icode ) = req( '/wp-json/wp/v2/posts', browser( '198.51.100.91' ) );
+list( $ocode ) = req( '/wp-json/oembed/1.0/embed?url=' . rawurlencode( get_permalink( $post ) ), browser( '198.51.100.91' ) );
+t( 'χάρτης REST κρυφός: τα routes δουλεύουν κανονικά (posts, oEmbed)', 200 === $icode && 200 === $ocode, "$icode/$ocode" );
+settings( array( 'hide_rest_discovery' => 0 ) );
 
 echo $fails ? "\n$fails FAIL\n" : "\nΟΛΑ PASS\n";
 exit( $fails ? 1 : 0 );

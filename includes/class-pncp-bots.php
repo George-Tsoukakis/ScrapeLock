@@ -82,8 +82,9 @@ final class PNCP_Bots {
 		add_filter( 'rocket_cache_reject_ua', array( __CLASS__, 'rocket_reject_ua' ) );
 		// Cloudflare plugin (APO): never cache at the edge what must not be cached.
 		add_filter( 'cloudflare_use_cache', array( __CLASS__, 'cloudflare_use_cache' ), 99 );
-		// Usernames are not given to visitors (?author=N, REST /wp/v2/users, users sitemap).
+		// Usernames are not given to visitors (?author=N, REST /wp/v2/users, users sitemap, oEmbed).
 		add_filter( 'wp_sitemaps_add_provider', array( __CLASS__, 'sitemaps_provider' ), 10, 2 );
+		add_filter( 'oembed_response_data', array( __CLASS__, 'oembed_author' ), 20 );
 	}
 
 	/**
@@ -575,6 +576,22 @@ final class PNCP_Bots {
 		}
 		status_header( 404 );
 		nocache_headers();
+	}
+
+	/**
+	 * oEmbed (/wp-json/oembed/1.0/embed?url=…) gives the author's /author/username/ address and display name,
+	 * which is the username unless it was changed: one request per post collects them. With usernames
+	 * hidden, visitors get what WordPress gives for a post without an author: the site's name and address.
+	 *
+	 * @param array<string, mixed> $data oEmbed response data.
+	 * @return array<string, mixed>
+	 */
+	public static function oembed_author( $data ) {
+		if ( is_array( $data ) && self::blocks_user_enum() ) {
+			$data['author_name'] = get_bloginfo( 'name' );
+			$data['author_url']  = get_home_url();
+		}
+		return $data;
 	}
 
 	/**

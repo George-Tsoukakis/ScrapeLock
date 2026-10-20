@@ -43,6 +43,7 @@ require_once PNCP_DIR . 'includes/class-pncp-geo.php';
 require_once PNCP_DIR . 'includes/class-pncp-precheck.php';
 require_once PNCP_DIR . 'includes/class-pncp-totp.php';
 require_once PNCP_DIR . 'includes/class-pncp-lockdown.php';
+require_once PNCP_DIR . 'includes/class-pncp-surface.php';
 
 if ( is_admin() ) {
 	require_once PNCP_DIR . 'includes/class-pncp-admin.php';
@@ -63,6 +64,7 @@ PNCP_Human::init();
 PNCP_Geo::init();
 PNCP_Precheck::init();
 PNCP_Lockdown::init();
+PNCP_Surface::init();
 
 /**
  * Activation: defaults (without touching existing settings), log table, cron.
