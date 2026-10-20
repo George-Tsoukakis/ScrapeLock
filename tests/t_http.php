@@ -225,27 +225,27 @@ t( 'IPv6: άλλο /64 δεν επηρεάζεται', 200 === $code, (string) $
 t( 'IPv6: ::ffff:198.51.100.7 μετρά ως 198.51.100.7', '198.51.100.7' === PNCP_Ip::limit_key( '::ffff:198.51.100.7' ) );
 settings( array( 'rate_limit' => 0, 'ban_strikes' => 3 ) );
 
-/* ---------- Applebot / YandexBot: χωρίς αποκλεισμό όταν το DNS δεν δίνει απάντηση ---------- */
+/* ---------- Applebot / YandexBot: χωρίς 403 και αποκλεισμό όταν το DNS δεν δίνει απάντηση (2.6.6) ---------- */
 $ab = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Safari/605.1.15 (Applebot/0.1; +http://www.apple.com/go/applebot)';
 fresh();
 settings( array( 'ban_strikes' => 1, 'ban_minutes' => 30 ) );
-// Ο προϋπολογισμός DNS εξαντλημένος (π.χ. από ψεύτικα «Applebot» άλλων IP), και για το επόμενο λεπτό.
+// Ο προϋπολογισμός DNS του Applebot εξαντλημένος (π.χ. από ψεύτικα «Applebot» άλλων IP), και για το επόμενο λεπτό.
 $minute = (int) floor( time() / MINUTE_IN_SECONDS );
-PNCP_Log::cache_set( 'pncp_dns_' . $minute, 1000, 2 * MINUTE_IN_SECONDS );
-PNCP_Log::cache_set( 'pncp_dns_' . ( $minute + 1 ), 1000, 2 * MINUTE_IN_SECONDS );
+PNCP_Log::cache_set( 'pncp_dns_apple_' . $minute, 1000, 2 * MINUTE_IN_SECONDS );
+PNCP_Log::cache_set( 'pncp_dns_apple_' . ( $minute + 1 ), 1000, 2 * MINUTE_IN_SECONDS );
 $codes = array();
 for ( $i = 0; $i < 2; $i++ ) {
 	$codes[] = req( $url, array( 'X-Test-IP' => '17.58.101.10', 'User-Agent' => $ab, 'X-Test-RDNS' => '17-58-101-10.applebot.apple.com', 'X-Test-FDNS' => '17.58.101.10' ) )[0];
 }
 wp_cache_flush(); PNCP_Log::reset_cache();
-t( 'Applebot χωρίς διαθέσιμο DNS: 403 αλλά χωρίς αποκλεισμό', array( 403, 403 ) === $codes && ! isset( PNCP_Log::active_bans()['17.58.101.10'] ), implode( ',', $codes ) );
+t( 'Applebot χωρίς διαθέσιμο DNS: 200 (κανονικά όρια), χωρίς αποκλεισμό', array( 200, 200 ) === $codes && ! isset( PNCP_Log::active_bans()['17.58.101.10'] ), implode( ',', $codes ) );
 fresh();
 list( $code ) = req( $url, array( 'X-Test-IP' => '17.58.101.11', 'User-Agent' => $ab, 'X-Test-RDNS' => '17.58.101.11' ) );
 wp_cache_flush(); PNCP_Log::reset_cache();
-t( 'Applebot χωρίς reverse DNS: 403 αλλά χωρίς αποκλεισμό', 403 === $code && ! isset( PNCP_Log::active_bans()['17.58.101.11'] ), (string) $code );
+t( 'Applebot χωρίς reverse DNS: 200 (κανονικά όρια), χωρίς αποκλεισμό', 200 === $code && ! isset( PNCP_Log::active_bans()['17.58.101.11'] ), (string) $code );
 list( $code ) = req( $url, array( 'X-Test-IP' => '17.58.101.11', 'User-Agent' => $ab, 'X-Test-RDNS' => '17.58.101.11' ) );
 wp_cache_flush(); PNCP_Log::reset_cache();
-t( 'Applebot χωρίς reverse DNS, 2ο αίτημα (από την cache): πάλι χωρίς αποκλεισμό', 403 === $code && ! isset( PNCP_Log::active_bans()['17.58.101.11'] ), (string) $code );
+t( 'Applebot χωρίς reverse DNS, 2ο αίτημα (από την cache): πάλι χωρίς αποκλεισμό', 200 === $code && ! isset( PNCP_Log::active_bans()['17.58.101.11'] ), (string) $code );
 fresh();
 list( $code ) = req( $url, array( 'X-Test-IP' => '17.58.101.12', 'User-Agent' => $ab, 'X-Test-RDNS' => '17-58-101-12.applebot.apple.com', 'X-Test-FDNS' => '17.58.101.12' ) );
 t( 'πραγματικό Applebot (rDNS + forward DNS): 200', 200 === $code, (string) $code );
@@ -265,9 +265,14 @@ t( 'REST POST (π.χ. webhook πληρωμής με Go-http-client): δεν μπ
 settings( array( 'rate_limit' => 1, 'ban_strikes' => 0 ) );
 $codes = array();
 for ( $i = 0; $i < 3; $i++ ) {
-	$codes[] = req( $url, browser( '203.0.113.25', array( 'Sec-Purpose' => 'prefetch' ) ) )[0];
+	$codes[] = req( $url, browser( '203.0.113.25', array( 'Sec-Purpose' => 'prefetch', 'Sec-Fetch-Dest' => 'document' ) ) )[0];
 }
 t( 'prefetch δεν μετρά στο όριο σελίδων', array( 200, 200, 200 ) === $codes, implode( ',', $codes ) );
+$codes = array();
+for ( $i = 0; $i < 3; $i++ ) {
+	$codes[] = req( $url, browser( '203.0.113.26', array( 'Sec-Purpose' => 'prefetch' ) ) )[0];
+}
+t( '«prefetch» χωρίς Sec-Fetch-Dest (script): μετρά στο όριο', array( 200, 429, 429 ) === $codes, implode( ',', $codes ) );
 settings( array( 'rate_limit' => 0, 'ban_strikes' => 3 ) );
 
 /* ---------- 2.1.1: συνδεδεμένοι χρήστες, page builders, wc-ajax ---------- */
@@ -343,9 +348,12 @@ list( $code ) = req( $trap, array( 'X-Test-IP' => '203.0.113.32', 'User-Agent' =
 wp_cache_flush(); PNCP_Log::reset_cache();
 t( 'παγίδα από «browser» χωρίς Sec-Fetch (παλιό Safari;): όχι αποκλεισμός την πρώτη φορά', ! PNCP_Log::is_banned( '203.0.113.32' ) );
 list( $code ) = req( $trap, array( 'X-Test-IP' => '203.0.113.32', 'User-Agent' => 'Mozilla/5.0 Chrome' ) );
+wp_cache_flush(); PNCP_Log::reset_cache();
+t( '… ούτε τη δεύτερη φορά', ! PNCP_Log::is_banned( '203.0.113.32' ) );
+list( $code ) = req( $trap, array( 'X-Test-IP' => '203.0.113.32', 'User-Agent' => 'Mozilla/5.0 Chrome' ) );
 list( $code2 ) = req( $url, browser( '203.0.113.32' ) );
 wp_cache_flush(); PNCP_Log::reset_cache();
-t( '… αποκλεισμός τη δεύτερη φορά και 403 μετά', PNCP_Log::is_banned( '203.0.113.32' ) && 403 === $code2, (string) $code2 );
+t( '… αποκλεισμός την τρίτη φορά και 403 μετά', PNCP_Log::is_banned( '203.0.113.32' ) && 403 === $code2, (string) $code2 );
 req( $trap, array( 'X-Test-IP' => '203.0.113.34', 'User-Agent' => 'python-requests/2.32' ) );
 wp_cache_flush(); PNCP_Log::reset_cache();
 t( 'παγίδα από script με μη-browser User-Agent: αποκλεισμός αμέσως', PNCP_Log::is_banned( '203.0.113.34' ) );
@@ -849,12 +857,12 @@ t( 'Anthropic: χωρίς λίστα ακόμη, τίποτα δεν αλλάζ�
 $cf = PNCP_Rules::cloudflare();
 t( 'Cloudflare: με AI search επιτρεπτό, μόνο η κατηγορία «AI Crawler»', false !== strpos( $cf['ai']['expression'], '{"AI Crawler"}' ) && false === strpos( $cf['ai']['expression'], 'AI Search' ) );
 t( 'Cloudflare: τα AI search bots εξαιρούνται από τον κανόνα bots', false !== strpos( $cf['bots']['expression'], 'not (' ) && false !== strpos( $cf['bots']['expression'], 'claude-user' ) );
-t( 'Cloudflare: πρώτος κανόνας Skip για robots.txt / llms.txt', 'open' === array_key_first( $cf ) && false !== strpos( $cf['open']['expression'], 'http.request.uri.path in {"/robots.txt" "/llms.txt" "/llms-full.txt"}' ) && 0 === strpos( $cf['open']['action'], 'Skip' ) );
+t( 'Cloudflare: πρώτος κανόνας Skip για robots.txt / llms.txt', 'open' === array_key_first( $cf ) && false !== strpos( $cf['open']['expression'], 'http.request.uri.path in {"/robots.txt" "/llms.txt" "/llms-full.txt" "/.well-known/tdmrep.json"}' ) && 0 === strpos( $cf['open']['action'], 'Skip' ) );
 $ng = PNCP_Rules::nginx();
 t( 'Nginx: map για robots / llms και ενιαίο $pncp_block', false !== strpos( $ng, 'map $uri $pncp_open_path' ) && false !== strpos( $ng, 'if ($pncp_block_' . PNCP_Rules::nginx_id() . ') { return 403; }' ) && false === strpos( $ng, 'if ($pncp_bad_bot' ) );
 t( 'Nginx: ψεύτικοι browsers, με εξαίρεση τα Googlebot / bots', false !== strpos( $ng, '$pncp_fake_browser' ) && false !== strpos( $ng, 'googlebot' ) );
 $ap = PNCP_Rules::apache();
-t( 'Apache: robots / llms ανοιχτά και κανόνας ψεύτικων browsers', false !== strpos( $ap, '!^/(robots|llms|llms-full)\\.txt$' ) && false !== strpos( $ap, '%{HTTP:Sec-Fetch-Mode} ^$' ) );
+t( 'Apache: robots / llms / tdmrep ανοιχτά και κανόνας ψεύτικων browsers', false !== strpos( $ap, '!^/(?:(robots|llms|llms-full)\\.txt|\\.well-known/tdmrep\\.json)$' ) && false !== strpos( $ap, '%{HTTP:Sec-Fetch-Mode} ^$' ) );
 settings( array( 'allow_ai_search' => 0 ) );
 $cf = PNCP_Rules::cloudflare();
 t( 'Cloudflare: χωρίς AI search, και οι τρεις κατηγορίες', false !== strpos( $cf['ai']['expression'], '"AI Crawler" "AI Assistant" "AI Search"' ) );
@@ -1059,7 +1067,12 @@ t( 'αρχείο: country', in_array( 'country', log_reasons(), true ), implode(
 list( $code ) = req( $url, browser( '203.0.113.9' ) );
 t( 'άλλη χώρα: 200', 200 === $code, (string) $code );
 list( $code ) = req( $url, array( 'X-Test-IP' => '198.51.100.8', 'User-Agent' => 'facebookexternalhit/1.1' ) );
-t( 'preview της λίστας «Πάντα επιτρεπτά» από αποκλεισμένη χώρα: 200', 200 === $code, (string) $code );
+t( 'μόνο User-Agent της λίστας «Πάντα επιτρεπτά» από αποκλεισμένη χώρα: 403 (2.6.5)', 403 === $code, (string) $code );
+$pncp_allow_list = PNCP_Options::stored()['allow_list'];
+settings( array( 'allow_list' => $pncp_allow_list . "\nfacebookexternalhit@198.51.100.0/24" ) );
+list( $code ) = req( $url, array( 'X-Test-IP' => '198.51.100.8', 'User-Agent' => 'facebookexternalhit/1.1' ) );
+t( 'preview «Πάντα επιτρεπτό» με εύρος IP (UA@CIDR) από αποκλεισμένη χώρα: 200', 200 === $code, (string) $code );
+settings( array( 'allow_list' => $pncp_allow_list ) );
 settings( array( 'countries_block' => 'KP' ) );
 list( $code ) = req( $url, browser( '203.0.113.20', array( 'CF-IPCountry' => 'KP' ) ) );
 t( 'CF-IPCountry χωρίς Cloudflare (πλαστό): αγνοείται', 200 === $code, (string) $code );

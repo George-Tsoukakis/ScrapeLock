@@ -23,6 +23,23 @@ function pncp_uninstall_site() {
 	wp_clear_scheduled_hook( 'pncp_log_cleanup' );
 	wp_clear_scheduled_hook( 'pncp_wm_unmark' );
 
+	// The per-attachment "already watermarked" marker. (pncp_backup_dir is kept on purpose: it points to the
+	// clean image originals, which are intentionally not deleted — see the file header.)
+	delete_post_meta_by_key( '_pncp_wm' );
+
+	// The country database folder (this site's uploads; on multisite each site has its own). Its files first,
+	// then the now-empty folder.
+	$pncp_geo = trailingslashit( wp_upload_dir( null, false )['basedir'] ) . 'scrapelock-geo';
+	foreach ( array( 'v4.bin', 'v6.bin', 'index.php', '.htaccess' ) as $pncp_geo_file ) {
+		if ( file_exists( $pncp_geo . '/' . $pncp_geo_file ) ) {
+			wp_delete_file( $pncp_geo . '/' . $pncp_geo_file );
+		}
+	}
+	if ( is_dir( $pncp_geo ) ) {
+		@rmdir( $pncp_geo ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged, WordPress.WP.AlternativeFunctions.file_system_operations_rmdir -- Only succeeds when empty; harmless otherwise.
+	}
+	unset( $pncp_geo, $pncp_geo_file );
+
 	// phpcs:disable WordPress.DB.DirectDatabaseQuery, WordPress.DB.DirectDatabaseQuery.SchemaChange -- Runs once, on uninstall.
 	$wpdb->query( $wpdb->prepare( 'DROP TABLE IF EXISTS %i', $wpdb->prefix . 'pncp_log' ) );
 	$wpdb->query( $wpdb->prepare( 'DROP TABLE IF EXISTS %i', $wpdb->prefix . 'pncp_bans' ) );
@@ -35,15 +52,6 @@ function pncp_uninstall_site() {
 	);
 	// phpcs:enable
 }
-
-// The country database (uploads/scrapelock-geo, shared by the sites of a network).
-$pncp_geo = trailingslashit( wp_upload_dir( null, false )['basedir'] ) . 'scrapelock-geo';
-foreach ( array( 'v4.bin', 'v6.bin', 'index.php', '.htaccess' ) as $pncp_file ) {
-	if ( file_exists( $pncp_geo . '/' . $pncp_file ) ) {
-		wp_delete_file( $pncp_geo . '/' . $pncp_file );
-	}
-}
-unset( $pncp_geo, $pncp_file );
 
 // The pre-cache check (normally already removed on deactivation): its line in wp-config.php and its files.
 if ( ! is_multisite() ) {

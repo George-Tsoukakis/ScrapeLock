@@ -155,6 +155,7 @@ final class PNCP_Ip {
 	 * @param string[] $ranges CIDR.
 	 */
 	public static function store_list( $name, $ranges ) {
+		$ranges = self::sane_ranges( $ranges );
 		update_option( self::LISTS_OPTION . '_' . $name, array_values( $ranges ), in_array( $name, array( 'cloudflare', 'bunny' ), true ) );
 		$updated          = get_option( self::LISTS_OPTION . '_updated', array() );
 		$updated          = is_array( $updated ) ? $updated : array();
@@ -162,6 +163,40 @@ final class PNCP_Ip {
 		update_option( self::LISTS_OPTION . '_updated', $updated, false );
 		unset( self::$lists[ $name ] );
 		self::$bunny = null;
+	}
+
+	/**
+	 * Drops absurdly broad or malformed entries from a downloaded list, so a bad or hostile source cannot
+	 * ship "0.0.0.0/0" (which would make every IP an official crawler, a trusted proxy, or a blocked one).
+	 * A single address keeps its full /32 or /128. Rejected: non-ranges, prefixes shorter than /8 (IPv4) or
+	 * /16 (IPv6), and the all-zero network.
+	 *
+	 * @param string[] $ranges IPs and CIDRs.
+	 * @return string[]
+	 */
+	public static function sane_ranges( $ranges ) {
+		$out = array();
+		foreach ( (array) $ranges as $range ) {
+			$range = trim( (string) $range );
+			if ( '' === $range || ! self::valid_range( $range ) ) {
+				continue;
+			}
+			$parts  = explode( '/', $range, 2 );
+			$is_ipv6 = (bool) filter_var( $parts[0], FILTER_VALIDATE_IP, FILTER_FLAG_IPV6 );
+			if ( isset( $parts[1] ) ) {
+				$prefix = (int) $parts[1];
+				$min    = $is_ipv6 ? 16 : 8;
+				if ( $prefix < $min ) {
+					continue; // Far too broad for an edge/crawler list.
+				}
+			}
+			$packed = @inet_pton( $parts[0] ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged -- Validated above.
+			if ( false !== $packed && str_repeat( "\0", strlen( $packed ) ) === $packed ) {
+				continue; // 0.0.0.0 / :: base: reject.
+			}
+			$out[] = $range;
+		}
+		return $out;
 	}
 
 	/**
@@ -490,17 +525,39 @@ final class PNCP_Ip {
 		if ( self::in_any( $ip, PNCP_Options::parse_list( $s['trusted_proxies'] ) ) ) {
 			return true;
 		}
-		$cloudflare = ! empty( $s['trust_cloudflare'] ) && self::in_any( $ip, self::list_of( 'cloudflare' ) );
+		// A multi-tenant CDN (Bunny, Cloudflare) trusts its own edge IPs, but an attacker can point their own
+		// pull zone at this origin and set the real-IP header to anything. When a CDN secret is configured,
+		// the CDN edge is trusted only if the request carries it (the admin sets the CDN to inject the header).
+		$secret_ok  = self::cdn_secret_ok( $s );
+		$cloudflare = ! empty( $s['trust_cloudflare'] ) && $secret_ok && self::in_any( $ip, self::list_of( 'cloudflare' ) );
+		$bunny      = ! empty( $s['trust_bunny'] ) && $secret_ok && self::is_bunny( $ip );
 		switch ( $setting ) {
 			case 'cf_connecting_ip':
 				return $cloudflare;
 			case 'true_client_ip':
 				return false;
 			case 'x_real_ip':
-				return self::is_private( $ip ) || ( ! empty( $s['trust_bunny'] ) && self::is_bunny( $ip ) );
+				return self::is_private( $ip ) || $bunny;
 			default:
-				return $cloudflare || self::is_private( $ip ) || ( ! empty( $s['trust_bunny'] ) && self::is_bunny( $ip ) );
+				return $cloudflare || self::is_private( $ip ) || $bunny;
 		}
+	}
+
+	/**
+	 * Is the CDN shared secret satisfied? True when none is configured (behaviour unchanged), or when the
+	 * request carries the matching X-ScrapeLock-CDN header. Explicit "Trusted proxies" and private proxies
+	 * are never gated by this; only the CDN edge lists are.
+	 *
+	 * @param array<string, mixed> $s Settings.
+	 * @return bool
+	 */
+	public static function cdn_secret_ok( $s ) {
+		$secret = isset( $s['cdn_secret'] ) ? trim( (string) $s['cdn_secret'] ) : '';
+		if ( '' === $secret ) {
+			return true;
+		}
+		$sent = isset( $_SERVER['HTTP_X_SCRAPELOCK_CDN'] ) ? trim( sanitize_text_field( wp_unslash( $_SERVER['HTTP_X_SCRAPELOCK_CDN'] ) ) ) : '';
+		return '' !== $sent && hash_equals( $secret, $sent );
 	}
 
 	/**

@@ -53,13 +53,15 @@ final class PNCP_Rest {
 		foreach ( self::post_types() as $type ) {
 			add_filter( 'rest_prepare_' . $type, array( __CLASS__, 'strip' ), 99, 3 );
 		}
-		// WooCommerce's public Store API (/wc/store/v1/products) serves product descriptions without login.
-		// Only products: the cart and checkout are left untouched.
+		// WooCommerce's public Store API serves product descriptions without login, in /products and also in
+		// the cart line items. Both are stripped for visitors; cart totals, prices and quantities are left.
 		add_filter( 'rest_post_dispatch', array( __CLASS__, 'strip_store_api' ), 99, 3 );
 	}
 
 	/**
-	 * Empties description / short_description in the WooCommerce Store API for visitors.
+	 * Empties description / short_description in the WooCommerce Store API for visitors, in both the product
+	 * routes and the cart line items (so the catalogue text cannot be read through "add to cart, then read
+	 * the cart").
 	 *
 	 * @param WP_HTTP_Response $result  The response.
 	 * @param WP_REST_Server   $server  The server.
@@ -67,7 +69,8 @@ final class PNCP_Rest {
 	 * @return WP_HTTP_Response
 	 */
 	public static function strip_store_api( $result, $server, $request ) {
-		if ( ! $result instanceof WP_HTTP_Response || ! preg_match( '#^/wc/store(/v\d+)?/products#', (string) $request->get_route() ) ) {
+		$route = (string) $request->get_route();
+		if ( ! $result instanceof WP_HTTP_Response || ! preg_match( '#^/wc/store(/v\d+)?/(products|cart)#', $route, $m ) ) {
 			return $result;
 		}
 		if ( current_user_can( 'edit_posts' ) || PNCP_Options::user_is_exempt( PNCP_Options::get() ) ) {
@@ -91,8 +94,19 @@ final class PNCP_Rest {
 			}
 			return $item;
 		};
-		// A list of products or a single product.
-		$data = isset( $data['id'] ) ? $strip( $data ) : array_map( $strip, $data );
+		if ( 'cart' === $m[2] ) {
+			// The cart object (or /cart/items, a bare list): strip each line item's description.
+			if ( isset( $data['items'] ) && is_array( $data['items'] ) ) {
+				$data['items'] = array_map( $strip, $data['items'] );
+			} elseif ( isset( $data['id'] ) || isset( $data['key'] ) ) {
+				$data = $strip( $data );
+			} else {
+				$data = array_map( $strip, $data );
+			}
+		} else {
+			// A list of products or a single product.
+			$data = isset( $data['id'] ) ? $strip( $data ) : array_map( $strip, $data );
+		}
 		$result->set_data( $data );
 
 		return $result;
