@@ -533,5 +533,30 @@ settings( array( 'excluded_ids' => '' ) );
 wp_set_current_user( 1 );
 t( 'GraphQL: διαχειριστής βλέπει το κείμενο', '<p>κείμενο</p>' === PNCP_Graphql::resolve_field( '<p>κείμενο</p>', $src, array(), null, null, 'Post', 'content' ) );
 
+/* ---------- 2.8: χάρτης REST για συνδεδεμένους, δημόσια REST routes ---------- */
+settings( array( 'hide_rest_discovery' => 1 ) );
+list( $code, $body ) = http( '/wp-json/', null, false, array( 'X-Test-IP: 192.0.2.200', 'User-Agent: Mozilla/5.0 Chrome/141', 'X-WP-Nonce: ' . wp_create_nonce( 'wp_rest' ) ) );
+$pncp_index = json_decode( $body, true );
+t( 'χάρτης REST κρυφός: ο συνδεδεμένος διαχειριστής βλέπει namespaces και routes', 200 === $code && ! empty( $pncp_index['namespaces'] ) && ! empty( $pncp_index['routes'] ), (string) $code );
+list( , $body ) = http( '/' );
+t( 'χάρτης REST κρυφός: ο συνδεδεμένος βλέπει το link api.w.org στη σελίδα', false !== strpos( $body, 'https://api.w.org/' ) );
+settings( array( 'hide_rest_discovery' => 0 ) );
+list( $code, $body ) = http( $page . '&tab=content' );
+t( 'καρτέλα Feeds and API: ρυθμίσεις χάρτη REST και pingbacks', 200 === $code && false !== strpos( $body, 'name="pncp_settings[hide_rest_discovery]"' ) && false !== strpos( $body, 'name="pncp_settings[disable_pingback]"' ) && ! php_errors( $body ) );
+t( 'καρτέλα Feeds and API: λίστα REST routes ανοιχτών σε όλους (π.χ. oEmbed)', false !== strpos( $body, 'REST routes open to everyone' ) && false !== strpos( $body, '<code>/oembed/1.0/embed</code>' ) );
+$pncp_open = PNCP_Surface::public_routes();
+t( 'δημόσια routes: το /oembed/1.0/embed (permission __return_true) μέσα, το /wp/v2/users (έλεγχος δικαιωμάτων) έξω', isset( $pncp_open['/oembed']['/oembed/1.0/embed'] ) && ! isset( $pncp_open['/wp']['/wp/v2/users'] ) );
+add_action(
+	'rest_api_init',
+	function () {
+		register_rest_route( 'pncp-test/v1', '/leak', array( 'methods' => 'GET', 'callback' => '__return_empty_array', 'permission_callback' => '__return_true' ) );
+	}
+);
+$GLOBALS['wp_rest_server'] = null;
+$pncp_open = PNCP_Surface::public_routes();
+t( 'δημόσια routes: ένα νέο route plugin χωρίς έλεγχο εμφανίζεται αμέσως', isset( $pncp_open['/pncp-test']['/pncp-test/v1/leak'] ) && array( 'GET' ) === $pncp_open['/pncp-test']['/pncp-test/v1/leak'] );
+$GLOBALS['wp_rest_server'] = null;
+settings( array( 'disable_pingback' => 0 ) );
+
 echo $fails ? "\n$fails FAIL\n" : "\nΟΛΑ PASS\n";
 exit( $fails ? 1 : 0 );

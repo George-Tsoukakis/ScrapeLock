@@ -732,7 +732,7 @@ final class PNCP_Admin {
 				<?php
 				self::textarea( $s, 'block_ips', __( 'IPs / CIDR that are always blocked (403), one per line:', 'scrapelock' ), __( 'For example a scraper\'s server or a hosting network you see in the log. The “Always allowed IPs” take precedence.', 'scrapelock' ), 3 );
 				self::textarea( $s, 'block_referrers', __( 'Referrer domains that are always blocked (403), one per line, e.g. copy-site.example:', 'scrapelock' ), __( 'Requests that come from links or embeds on these sites. Each entry also covers its subdomains.', 'scrapelock' ), 3 );
-				self::checkbox( $s, 'block_user_enum', __( 'Hide usernames from visitors', 'scrapelock' ), __( '?author=1, 2, 3… returns “page not found” instead of the redirect to /author/username/, the REST API does not list users, and the users sitemap is removed. Logged-in users see everything as before. Author archives with a link stay.', 'scrapelock' ) );
+				self::checkbox( $s, 'block_user_enum', __( 'Hide usernames from visitors', 'scrapelock' ), __( '?author=1, 2, 3… returns “page not found” instead of the redirect to /author/username/, the REST API does not list users, the users sitemap is removed and oEmbed shows the site instead of the author. Logged-in users see everything as before. Author archives with a link stay.', 'scrapelock' ) );
 				?>
 		<?php self::row_close(); ?>
 		<?php self::row_open( 'limits', __( 'Limits per IP', 'scrapelock' ) ); ?>
@@ -1021,7 +1021,10 @@ final class PNCP_Admin {
 		<tr>
 			<th scope="row"><?php esc_html_e( 'REST API', 'scrapelock' ); ?></th>
 			<td>
-				<?php self::checkbox( $s, 'rest_hide_content', __( 'Hide the text (content, excerpt) of posts, pages and products from visitors', 'scrapelock' ), __( 'REST stays open for forms, oEmbed, SEO plugins and your own endpoints. Users who can write posts see the text normally. Exceptions from code: filter pncp_rest_hide_content.', 'scrapelock' ) ); ?>
+				<?php
+				self::checkbox( $s, 'rest_hide_content', __( 'Hide the text (content, excerpt) of posts, pages and products from visitors', 'scrapelock' ), __( 'REST stays open for forms, oEmbed, SEO plugins and your own endpoints. Users who can write posts see the text normally. Exceptions from code: filter pncp_rest_hide_content.', 'scrapelock' ) );
+				self::checkbox( $s, 'hide_rest_discovery', __( 'Hide the REST API map from visitors', 'scrapelock' ), __( '/wp-json/ no longer lists the namespaces and routes (a map of your plugins), and the page head and the Link header no longer point to the REST API and to oEmbed. Every route keeps working when called; logged-in users see everything. Leave it off if an app or service reads /wp-json/ to discover your site.', 'scrapelock' ) );
+				?>
 			</td>
 		</tr>
 		<tr>
@@ -1051,8 +1054,44 @@ final class PNCP_Admin {
 				?>
 			</td>
 		</tr>
+		<tr>
+			<th scope="row"><?php esc_html_e( 'XML-RPC', 'scrapelock' ); ?></th>
+			<td>
+				<?php self::checkbox( $s, 'disable_pingback', __( 'Turn off pingbacks', 'scrapelock' ), __( 'pingback.ping stays open even when XML-RPC is "disabled", and is used to make your site send requests to other sites or to check which pages exist. This removes the two pingback methods and the X-Pingback header; other XML-RPC methods (e.g. Jetpack) keep working. You no longer receive pingbacks from other blogs.', 'scrapelock' ) ); ?>
+			</td>
+		</tr>
 		<?php
 		self::form_close();
+		self::render_public_routes();
+	}
+
+	/**
+	 * REST routes anyone can call without logging in (a report, nothing is changed).
+	 */
+	private static function render_public_routes() {
+		$open  = PNCP_Surface::public_routes();
+		$total = 0;
+		foreach ( $open as $routes ) {
+			$total += count( $routes );
+		}
+		?>
+		<h2><?php esc_html_e( 'REST routes open to everyone', 'scrapelock' ); ?></h2>
+		<?php /* translators: %d: number of routes */ ?>
+		<p><?php echo esc_html( sprintf( _n( '%d route can be called without logging in, because its permission is open to everyone. Check after installing a plugin or updating WordPress whether a new one gives out content or data it should not.', '%d routes can be called without logging in, because their permission is open to everyone. Check after installing a plugin or updating WordPress whether a new one gives out content or data it should not.', $total, 'scrapelock' ), $total ) ); ?> <?php esc_html_e( 'Routes with their own permission check (e.g. published posts) are not listed: their text is covered by "Hide the text" above.', 'scrapelock' ); ?></p>
+		<details class="pncp-public-routes">
+			<summary><?php esc_html_e( 'Show the routes', 'scrapelock' ); ?></summary>
+			<table class="widefat striped">
+				<thead><tr><th><?php esc_html_e( 'Namespace', 'scrapelock' ); ?></th><th><?php esc_html_e( 'Route', 'scrapelock' ); ?></th><th><?php esc_html_e( 'Methods', 'scrapelock' ); ?></th></tr></thead>
+				<tbody>
+					<?php foreach ( $open as $namespace => $routes ) : ?>
+						<?php foreach ( $routes as $route => $methods ) : ?>
+							<tr><td><code><?php echo esc_html( $namespace ); ?></code></td><td><code><?php echo esc_html( $route ); ?></code></td><td><?php echo esc_html( implode( ', ', $methods ) ); ?></td></tr>
+						<?php endforeach; ?>
+					<?php endforeach; ?>
+				</tbody>
+			</table>
+		</details>
+		<?php
 	}
 
 	/**
