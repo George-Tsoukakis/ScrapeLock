@@ -264,6 +264,51 @@ t( 'ο ίδιος κωδικός ανάκτησης δεύτερη φορά: ό�
 state_set( array( 'until' => time() - 1 ) );
 t( 'το προσωρινό ξεκλείδωμα λήγει και ξανακλειδώνει μόνο του', PNCP_Lockdown::is_locked() );
 
+/* ---------- Ταυτόχρονα αιτήματα με τον ίδιο κωδικό ---------- */
+// Το αίτημα Α έχει ήδη διαβάσει την κατάσταση· στο μεταξύ το αίτημα Β (server) χρησιμοποιεί τον κωδικό· μετά το Α
+// δοκιμάζει τον ίδιο κωδικό με ό,τι είχε διαβάσει. Πρέπει να απορριφθεί.
+$check = function ( $code, $recovery ) {
+	return self::check_code( $code, $recovery );
+};
+$check = $check->bindTo( null, 'PNCP_Lockdown' );
+reset_fails( array( 1 ) );
+$same = app_code( $secret );
+PNCP_Lockdown::state(); // Α: διάβασε.
+t( 'ταυτόχρονα: το αίτημα Β ξεκλειδώνει με τον κωδικό', 'unlocked' === ld( 'unlock', array( 'code' => $same, 'minutes' => 15 ) ) );
+state_set( array( 'until' => 0 ) ); // Ξανά κλειδωμένο, χωρίς να πειραχτεί το last_step.
+$stale = PNCP_Lockdown::state();
+( function ( $s ) {
+	self::$state = $s; // Α: κρατά την παλιά κατάσταση, όπως ένα αίτημα που ξεκίνησε πριν από το Β.
+} )->bindTo( null, 'PNCP_Lockdown' )( array_merge( $stale, array( 'last_step' => 0 ) ) );
+t( 'ταυτόχρονα: το αίτημα Α με τον ίδιο κωδικό απορρίπτεται', '' === $check( $same, false ) );
+fresh();
+$codes_before = count( PNCP_Lockdown::state()['codes'] );
+t( 'ταυτόχρονα: το αίτημα Β χρησιμοποιεί κωδικό ανάκτησης', 'unlocked' === ld( 'unlock', array( 'code' => $recovery[1], 'minutes' => 15 ) ) );
+state_set( array( 'until' => 0 ) );
+( function ( $s ) {
+	self::$state = $s;
+} )->bindTo( null, 'PNCP_Lockdown' )( $stale ); // Α: η παλιά λίστα έχει ακόμη τον κωδικό.
+t( 'ταυτόχρονα: το αίτημα Α με τον ίδιο κωδικό ανάκτησης απορρίπτεται', '' === $check( $recovery[1], true ) );
+fresh();
+t( '… ο κωδικός ανάκτησης μετρήθηκε μία φορά', $codes_before - 1 === count( PNCP_Lockdown::state()['codes'] ) );
+// Όσο ένα άλλο αίτημα ελέγχει κωδικό (κρατά το κλείδωμα), το δεύτερο περιμένει και δεν ελέγχει τίποτα.
+$lock    = ( function () {
+	return self::lock();
+} )->bindTo( null, 'PNCP_Lockdown' );
+$release = ( function () {
+	self::release();
+} )->bindTo( null, 'PNCP_Lockdown' );
+t( 'κλείδωμα ελέγχου: ένα αίτημα το παίρνει', $lock() );
+$t0 = microtime( true );
+t( 'κλείδωμα ελέγχου: το δεύτερο δεν ελέγχει τον κωδικό όσο κρατιέται', 'error' === ld( 'unlock', array( 'code' => app_code( $secret ) ) ) && PNCP_Lockdown::is_locked(), round( microtime( true ) - $t0, 1 ) . 's' );
+$release();
+t( 'κλείδωμα ελέγχου: μετά ξανά κανονικά', 'unlocked' === ld( 'unlock', array( 'code' => app_code( $secret ), 'minutes' => 15 ) ) );
+state_set( array( 'until' => 0 ) );
+global $wpdb;
+$wpdb->query( $wpdb->prepare( "UPDATE {$wpdb->options} SET option_value = %s WHERE option_name = %s", (string) ( time() - 1 ), 'pncp_lockdown_mutex' ) );
+t( 'κλείδωμα ελέγχου: ένα αίτημα που «πέθανε» κρατώντας το δεν το μπλοκάρει για πάντα (λήγει σε 10″)', $lock() );
+$release();
+
 /* ---------- Όριο λάθος κωδικών ---------- */
 reset_fails( array( 1 ) );
 for ( $i = 0; $i < PNCP_Lockdown::MAX_FAILS; $i++ ) {
@@ -295,6 +340,7 @@ t( 'SCRAPELOCK_UNLOCK: το κλείδωμα δεν εφαρμόζεται', ! P
 /* ---------- Καθάρισμα ---------- */
 delete_site_option( PNCP_Lockdown::OPTION );
 delete_site_option( PNCP_Lockdown::LOG_OPTION );
+delete_site_option( PNCP_Lockdown::MUTEX );
 fresh();
 require_once ABSPATH . 'wp-admin/includes/user.php';
 foreach ( array( $editor_id, $customer_id, $new, $shopper ) as $id ) {

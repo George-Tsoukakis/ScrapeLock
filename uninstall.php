@@ -84,4 +84,5 @@ if ( is_multisite() ) {
 // Lockdown: on multisite its state is network-wide (site options); the pending app secret is user meta.
 delete_site_option( 'pncp_lockdown' );
 delete_site_option( 'pncp_lockdown_log' );
+delete_site_option( 'pncp_lockdown_mutex' );
 delete_metadata( 'user', 0, 'pncp_lockdown_pending', '', true );

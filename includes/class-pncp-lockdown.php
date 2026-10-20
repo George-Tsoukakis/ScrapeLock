@@ -26,6 +26,7 @@ final class PNCP_Lockdown {
 	const MAX_FAILS     = 5;  // Per user, in 15 minutes.
 	const MAX_FAILS_ALL = 20; // All users together, in an hour.
 	const CODES         = 10;
+	const MUTEX         = 'pncp_lockdown_mutex';
 
 	/**
 	 * Inside can(): the lock does not take capabilities away.
@@ -549,6 +550,27 @@ final class PNCP_Lockdown {
 	 * @return string 'app', 'recovery' or '' (wrong).
 	 */
 	private static function check_code( $code, $allow_recovery ) {
+		// One check at a time, on the state as it is in the database now: two requests with the same code at
+		// the same moment cannot both pass (the second sees the step or the recovery code already used).
+		if ( ! self::lock() ) {
+			return 'busy';
+		}
+		try {
+			self::reload();
+			return self::check_code_locked( $code, $allow_recovery );
+		} finally {
+			self::release();
+		}
+	}
+
+	/**
+	 * check_code(), inside the lock.
+	 *
+	 * @param string $code           Code typed.
+	 * @param bool   $allow_recovery Recovery codes accepted.
+	 * @return string 'app', 'recovery' or '' (wrong).
+	 */
+	private static function check_code_locked( $code, $allow_recovery ) {
 		$state  = self::state();
 		$secret = self::unseal( $state['secret'] );
 		$step   = '' !== $secret ? PNCP_Totp::verify( $secret, $code, (int) $state['last_step'] ) : false;
@@ -572,6 +594,68 @@ final class PNCP_Lockdown {
 			}
 		}
 		return '';
+	}
+
+	/**
+	 * The table, key column, value column and extra condition of the row that holds the lock (the same place
+	 * as the state: wp_options, or wp_sitemeta on multisite).
+	 *
+	 * @return string[]
+	 */
+	private static function mutex_row() {
+		global $wpdb;
+		if ( is_multisite() ) {
+			return array( $wpdb->sitemeta, 'meta_key', 'meta_value', $wpdb->prepare( ' AND site_id = %d', get_current_network_id() ) );
+		}
+		return array( $wpdb->options, 'option_name', 'option_value', '' );
+	}
+
+	/**
+	 * Takes the lock: an atomic UPDATE that only one request can win, valid for 10 seconds at most (so a
+	 * request that dies never leaves it held). Waits up to 3 seconds for it.
+	 *
+	 * @return bool
+	 */
+	private static function lock() {
+		global $wpdb;
+		if ( false === get_site_option( self::MUTEX, false ) ) {
+			add_site_option( self::MUTEX, '0' );
+		}
+		list( $table, $key, $value, $where ) = self::mutex_row();
+		for ( $i = 0; $i < 30; $i++ ) {
+			$now = time();
+			// phpcs:ignore WordPress.DB.DirectDatabaseQuery, WordPress.DB.PreparedSQL.NotPrepared -- An atomic compare-and-set; $where is prepared above.
+			if ( 1 === (int) $wpdb->query( $wpdb->prepare( 'UPDATE %i SET %i = %s WHERE %i = %s AND %i + 0 < %d', $table, $value, (string) ( $now + 10 ), $key, self::MUTEX, $value, $now ) . $where ) ) {
+				return true;
+			}
+			usleep( 100000 );
+		}
+		return false;
+	}
+
+	/**
+	 * Releases the lock.
+	 */
+	private static function release() {
+		global $wpdb;
+		list( $table, $key, $value, $where ) = self::mutex_row();
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery, WordPress.DB.PreparedSQL.NotPrepared -- $where is prepared in mutex_row().
+		$wpdb->query( $wpdb->prepare( 'UPDATE %i SET %i = %s WHERE %i = %s', $table, $value, '0', $key, self::MUTEX ) . $where );
+	}
+
+	/**
+	 * Forgets the state read earlier in this request, so the next read comes from the database (or from a
+	 * persistent object cache, which the request that changed it has already updated).
+	 */
+	private static function reload() {
+		if ( is_multisite() ) {
+			wp_cache_delete( get_current_network_id() . ':' . self::OPTION, 'site-options' );
+		} else {
+			wp_cache_delete( self::OPTION, 'options' );
+			wp_cache_delete( 'alloptions', 'options' );
+			wp_cache_delete( 'notoptions', 'options' );
+		}
+		self::$state = null;
 	}
 
 	/* ---------- Log and email ---------- */
@@ -1095,7 +1179,7 @@ final class PNCP_Lockdown {
 				)
 			);
 			delete_user_meta( $user, self::PENDING_META );
-			set_site_transient( 'pncp_ld_codes_' . $user, $codes, 5 * MINUTE_IN_SECONDS );
+			set_site_transient( 'pncp_ld_codes_' . $user, $codes, 2 * MINUTE_IN_SECONDS );
 			self::event( 'connected' );
 			self::back( 'connected' );
 		}
@@ -1105,6 +1189,9 @@ final class PNCP_Lockdown {
 			self::back( 'error' );
 		}
 		$how = self::check_code( $code, 'unlock' === $op );
+		if ( 'busy' === $how ) {
+			self::back( 'error' );
+		}
 		if ( '' === $how ) {
 			self::failed();
 			self::back( 'wrong' );
@@ -1137,7 +1224,7 @@ final class PNCP_Lockdown {
 			$codes          = self::new_codes();
 			$state['codes'] = array_map( array( __CLASS__, 'hash_code' ), $codes );
 			self::save( $state );
-			set_site_transient( 'pncp_ld_codes_' . $user, $codes, 5 * MINUTE_IN_SECONDS );
+			set_site_transient( 'pncp_ld_codes_' . $user, $codes, 2 * MINUTE_IN_SECONDS );
 			self::event( 'codes' );
 			self::back( 'codes' );
 		}
