@@ -91,7 +91,7 @@ final class PNCP_Graphql {
 		if ( empty( $s['enabled'] ) || empty( $s['graphql_hide_content'] ) ) {
 			return $result;
 		}
-		if ( current_user_can( 'edit_posts' ) || PNCP_Options::user_is_exempt( $s ) ) {
+		if ( PNCP_Lockdown::can( 'edit_posts' ) || PNCP_Options::user_is_exempt( $s ) ) {
 			return $result;
 		}
 		$id = isset( $source->databaseId ) ? (int) $source->databaseId : ( isset( $source->ID ) ? (int) $source->ID : 0 ); // phpcs:ignore WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase -- WPGraphQL field.
