@@ -65,7 +65,7 @@ final class PNCP_Lockdown {
 		foreach ( self::protected_options() as $option ) {
 			add_filter( 'pre_update_option_' . $option, array( __CLASS__, 'keep_option' ), 9999, 3 );
 		}
-		foreach ( array( 'active_sitewide_plugins', 'auto_update_plugins', 'auto_update_themes', 'admin_email', self::OPTION ) as $option ) {
+		foreach ( array( 'active_sitewide_plugins', 'admin_email', self::OPTION ) as $option ) {
 			add_filter( 'pre_update_site_option_' . $option, array( __CLASS__, 'keep_option' ), 9999, 3 );
 		}
 		add_filter( 'update_user_metadata', array( __CLASS__, 'keep_roles' ), 9999, 4 );
@@ -305,7 +305,7 @@ final class PNCP_Lockdown {
 	 */
 	private static function protected_options() {
 		global $wpdb;
-		return array( 'active_plugins', 'template', 'stylesheet', 'siteurl', 'home', 'admin_email', 'new_admin_email', 'users_can_register', 'default_role', 'auto_update_plugins', 'auto_update_themes', $wpdb->get_blog_prefix() . 'user_roles', PNCP_OPTION, self::OPTION );
+		return array( 'active_plugins', 'template', 'stylesheet', 'siteurl', 'home', 'admin_email', 'new_admin_email', 'users_can_register', 'default_role', $wpdb->get_blog_prefix() . 'user_roles', PNCP_OPTION, self::OPTION );
 	}
 
 	/**
@@ -595,17 +595,27 @@ final class PNCP_Lockdown {
 	}
 
 	/**
-	 * The table, key column, value column and extra condition of the row that holds the lock (the same place
-	 * as the state: wp_options, or wp_sitemeta on multisite).
+	 * Sets the row that holds the lock (the same place as the state: wp_options, or wp_sitemeta on
+	 * multisite) to a value, optionally only while its current value is below a time: one atomic UPDATE.
 	 *
-	 * @return string[]
+	 * @param string   $value      New value.
+	 * @param int|null $older_than Only if the current value is below this (null: always).
+	 * @return int Rows changed.
 	 */
-	private static function mutex_row() {
+	private static function mutex_set( $value, $older_than = null ) {
 		global $wpdb;
+		// phpcs:disable WordPress.DB.DirectDatabaseQuery -- An atomic compare-and-set on our own row; no cache to update.
 		if ( is_multisite() ) {
-			return array( $wpdb->sitemeta, 'meta_key', 'meta_value', $wpdb->prepare( ' AND site_id = %d', get_current_network_id() ) );
+			$rows = null === $older_than
+				? $wpdb->query( $wpdb->prepare( 'UPDATE %i SET meta_value = %s WHERE meta_key = %s AND site_id = %d', $wpdb->sitemeta, $value, self::MUTEX, get_current_network_id() ) )
+				: $wpdb->query( $wpdb->prepare( 'UPDATE %i SET meta_value = %s WHERE meta_key = %s AND site_id = %d AND meta_value + 0 < %d', $wpdb->sitemeta, $value, self::MUTEX, get_current_network_id(), $older_than ) );
+		} else {
+			$rows = null === $older_than
+				? $wpdb->query( $wpdb->prepare( 'UPDATE %i SET option_value = %s WHERE option_name = %s', $wpdb->options, $value, self::MUTEX ) )
+				: $wpdb->query( $wpdb->prepare( 'UPDATE %i SET option_value = %s WHERE option_name = %s AND option_value + 0 < %d', $wpdb->options, $value, self::MUTEX, $older_than ) );
 		}
-		return array( $wpdb->options, 'option_name', 'option_value', '' );
+		// phpcs:enable
+		return (int) $rows;
 	}
 
 	/**
@@ -615,15 +625,12 @@ final class PNCP_Lockdown {
 	 * @return bool
 	 */
 	private static function lock() {
-		global $wpdb;
 		if ( false === get_site_option( self::MUTEX, false ) ) {
 			add_site_option( self::MUTEX, '0' );
 		}
-		list( $table, $key, $value, $where ) = self::mutex_row();
 		for ( $i = 0; $i < 30; $i++ ) {
 			$now = time();
-			// phpcs:ignore WordPress.DB.DirectDatabaseQuery, WordPress.DB.PreparedSQL.NotPrepared -- An atomic compare-and-set; $where is prepared above.
-			if ( 1 === (int) $wpdb->query( $wpdb->prepare( 'UPDATE %i SET %i = %s WHERE %i = %s AND %i + 0 < %d', $table, $value, (string) ( $now + 10 ), $key, self::MUTEX, $value, $now ) . $where ) ) {
+			if ( 1 === self::mutex_set( (string) ( $now + 10 ), $now ) ) {
 				return true;
 			}
 			usleep( 100000 );
@@ -635,10 +642,7 @@ final class PNCP_Lockdown {
 	 * Releases the lock.
 	 */
 	private static function release() {
-		global $wpdb;
-		list( $table, $key, $value, $where ) = self::mutex_row();
-		// phpcs:ignore WordPress.DB.DirectDatabaseQuery, WordPress.DB.PreparedSQL.NotPrepared -- $where is prepared in mutex_row().
-		$wpdb->query( $wpdb->prepare( 'UPDATE %i SET %i = %s WHERE %i = %s', $table, $value, '0', $key, self::MUTEX ) . $where );
+		self::mutex_set( '0' );
 	}
 
 	/**
@@ -937,7 +941,7 @@ final class PNCP_Lockdown {
 			),
 			__( 'Settings', 'scrapelock' )         => array(
 				__( 'Every settings page (General, Reading, Permalinks, WooCommerce, other plugins) and the ScrapeLock settings.', 'scrapelock' ),
-				__( 'Also by code: active plugins, theme, site address, admin email, registration, default role, role definitions, automatic update lists, ScrapeLock settings and the lock itself.', 'scrapelock' ),
+				__( 'Also by code: active plugins, theme, site address, admin email, registration, default role, role definitions, ScrapeLock settings and the lock itself.', 'scrapelock' ),
 			),
 			__( 'Content', 'scrapelock' )          => array(
 				__( 'Creating, editing and deleting posts, pages, products, coupons, categories and media; comment moderation.', 'scrapelock' ),
