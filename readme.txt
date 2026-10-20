@@ -4,7 +4,7 @@ Tags: anti-scraping, ai bots, bot protection, rate limit, content protection
 Requires at least: 6.2
 Tested up to: 7.1
 Requires PHP: 7.4
-Stable tag: 2.7.1
+Stable tag: 2.7.2
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -158,7 +158,7 @@ Yes. robots.txt, llms.txt and llms-full.txt are never blocked, for any bot, so e
 
 = What does Lockdown freeze, and what keeps working? =
 
-While locked, every user with more than reading rights (authors, editors, shop managers, administrators) keeps only "read": they can log in and open the dashboard, but cannot change anything. Customers and subscribers are not affected, and neither are visitors, orders, payments, webhooks, cron jobs and comments. Shop staff cannot process orders in wp-admin while the site is locked: unlock it for a while to do so.
+While locked, users with a frozen role keep only "read": they can log in and open the dashboard, but cannot change anything. Roles that can change plugins, themes, users or settings are always frozen; editors, authors, contributors and shop managers are frozen by default, and you choose the rest on the Lockdown tab. Customers, subscribers and members (for example accounts that post listings through another plugin) are not affected, and neither are visitors, orders, payments, webhooks, cron jobs and comments. Shop staff cannot process orders in wp-admin while the site is locked: unlock it for a while to do so.
 
 = I lost my phone. How do I unlock the site? =
 
@@ -182,6 +182,11 @@ No. A small script waits for the first real interaction (scroll, tap, key or mou
 6. Dashboard widget with the protection status and the last 24 hours.
 
 == Changelog ==
+
+= 2.7.2 =
+* Fix: Lockdown froze every role with any capability beyond "read", so members who create content themselves (for example subscribers who post listings or community posts through another plugin) lost their rights and their password reset while the site was locked. Now only roles that manage the site are frozen: roles that can change plugins, themes, users or settings (always), and by default editorial and shop staff and WordPress' own content roles. Every other role keeps working as usual.
+* New: "Who is frozen while locked" on the Lockdown tab: every role with its number of users, ticked if frozen. Saving needs the app code and is possible only while the site is not locked; roles that can take over the site cannot be unticked.
+* Role changes while locked are refused only when the old or the new role is frozen, so another plugin can still move a member between member roles.
 
 = 2.7.1 =
 * Plugin Check: Lockdown no longer lists the automatic update options among the options it keeps unchanged (it never altered update routines; while locked, automatic updates are already off through the core filters). The lock's database queries are each prepared in one piece.

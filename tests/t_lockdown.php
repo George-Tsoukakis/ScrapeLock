@@ -21,7 +21,7 @@ function t( $label, $ok, $extra = '' ) {
 }
 
 /* ---------- Χρήστες και συνδέσεις ---------- */
-foreach ( array( 'ld_editor', 'ld_customer', 'ld_newadmin', 'ld_shopper' ) as $login ) {
+foreach ( array( 'ld_editor', 'ld_customer', 'ld_newadmin', 'ld_shopper', 'ld_member', 'ld_member2' ) as $login ) {
 	$old = get_user_by( 'login', $login );
 	if ( $old ) {
 		require_once ABSPATH . 'wp-admin/includes/user.php';
@@ -30,6 +30,10 @@ foreach ( array( 'ld_editor', 'ld_customer', 'ld_newadmin', 'ld_shopper' ) as $l
 }
 $editor_id   = wp_insert_user( array( 'user_login' => 'ld_editor', 'user_pass' => wp_generate_password(), 'user_email' => 'ld_editor@example.com', 'role' => 'editor' ) );
 $customer_id = wp_insert_user( array( 'user_login' => 'ld_customer', 'user_pass' => wp_generate_password(), 'user_email' => 'ld_customer@example.com', 'role' => 'subscriber' ) );
+// Μέλος που ανεβάζει μόνο του περιεχόμενο (π.χ. αγγελίες, Hub): subscriber με δικαιώματα δημοσίευσης.
+remove_role( 'ld_member' );
+add_role( 'ld_member', 'LD Member', array( 'read' => true, 'level_0' => true, 'edit_posts' => true, 'publish_posts' => true, 'upload_files' => true, 'delete_posts' => true ) );
+$member_id = wp_insert_user( array( 'user_login' => 'ld_member', 'user_pass' => wp_generate_password(), 'user_email' => 'ld_member@example.com', 'role' => 'ld_member' ) );
 
 $sessions = array();
 /** Σύνδεση χρήστη: cookies για το HTTP και ίδια συνεδρία στο CLI, ώστε τα nonces να ταιριάζουν. */
@@ -136,7 +140,8 @@ as_user( 1 );
 list( $code, $body ) = http( $page );
 t( 'καρτέλα Lockdown στις ρυθμίσεις του ScrapeLock: 200 χωρίς PHP warnings, κουμπί σύνδεσης', 200 === $code && ! php_errors( $body ) && false !== strpos( $body, 'Connect the app' ) && false !== strpos( $body, 'nav-tab nav-tab-active pncp-tab-lockdown' ), (string) $code );
 t( 'καρτέλα Lockdown: προειδοποίηση «μόνο ένας τρόπος ξεκλειδώματος»', false !== strpos( $body, 'there is only one way to unlock' ) && false !== strpos( $body, 'wp-config.php' ) );
-t( 'καρτέλα Lockdown: πλήρης αναφορά (τι κλειδώνει, τι δουλεύει, ποιοι λογαριασμοί)', false !== strpos( $body, 'What exactly is locked' ) && false !== strpos( $body, 'What keeps working' ) && 1 === preg_match( '/Staff accounts that keep only &quot;read&quot; while locked: [^<]*Administrator: \d+[^<]*Editor: \d+/', $body ) && 1 === preg_match( '/\d+ customer (or|and) subscriber accounts? (is|are) not affected/', $body ), preg_match( '/Staff accounts[^<]*|\d+ customer[^<]*/', $body, $pncp_m ) ? $pncp_m[0] : '' );
+t( 'καρτέλα Lockdown: πλήρης αναφορά (τι κλειδώνει, τι δουλεύει, ποιοι λογαριασμοί)', false !== strpos( $body, 'What exactly is locked' ) && false !== strpos( $body, 'What keeps working' ) && 1 === preg_match( '/Staff accounts that keep only &quot;read&quot; while locked: [^<]*Administrator: \d+[^<]*Editor: \d+/', $body ) && 1 === preg_match( '/Accounts that keep working as usual while locked: [^<]*Subscriber: \d+[^<]*LD Member: 1/', $body ), preg_match( '/Staff accounts[^<]*|Accounts that keep[^<]*/', $body, $pncp_m ) ? $pncp_m[0] : '' );
+t( 'ρόλοι: προεπιλογή = διαχείριση και περιεχόμενο site, όχι μέλη / συνδρομητές', array( 'administrator', 'editor', 'author', 'contributor' ) === array_values( array_intersect( array( 'administrator', 'editor', 'author', 'contributor', 'subscriber', 'ld_member' ), PNCP_Lockdown::frozen_roles() ) ) );
 t( 'όχι ξεχωριστό μενού Lockdown', false === strpos( $body, 'toplevel_page_scrapelock-lockdown' ) );
 list( , $body ) = http( '/' );
 t( 'μπάρα: «Protection: ON» → «Lockdown»', 1 === preg_match( '/id=.wp-admin-bar-pncp-lockdown..*?dashicons-unlock[^<]*<\/span>Lockdown</s', $body ) && false !== strpos( $body, 'wp-admin-bar-pncp-toggle' ) );
@@ -157,6 +162,7 @@ list( , $body ) = http( $page );
 preg_match_all( '/<li><code>([a-z0-9]{4}-[a-z0-9]{4})<\/code><\/li>/', $body, $m );
 $recovery = $m[1];
 t( '10 κωδικοί ανάκτησης, μία φορά', 10 === count( $recovery ) && false !== strpos( $body, 'Lock the site' ) );
+t( 'ρόλοι: λίστα με κουτάκια, ο διαχειριστής πάντα (κλειδωμένο κουτάκι)', 1 === preg_match( '/value="administrator" checked=\'checked\' disabled=\'disabled\'/', $body ) && 1 === preg_match( '/value="ld_member"\s*>/', $body ) && 1 === preg_match( '/value="editor" checked=\'checked\'\s*>/', $body ) );
 list( , $body ) = http( $page );
 t( '… δεύτερη φορά δεν φαίνονται', false === strpos( $body, 'Your recovery codes' ) );
 t( 'οι κωδικοί ανάκτησης αποθηκεύονται μόνο ως hash', false === strpos( wp_json_encode( get_site_option( PNCP_Lockdown::OPTION ) ), $recovery[0] ) );
@@ -233,6 +239,15 @@ t( 'κώδικας: νέος διαχειριστής δεν δημιουργε�
 $shopper = wp_insert_user( array( 'user_login' => 'ld_shopper', 'user_pass' => wp_generate_password(), 'user_email' => 'ld_shopper@example.com', 'role' => 'subscriber' ) );
 fresh();
 t( 'κώδικας: εγγραφή πελάτη γίνεται κανονικά', ! is_wp_error( $shopper ) && in_array( 'subscriber', get_userdata( $shopper )->roles, true ) );
+$member2 = wp_insert_user( array( 'user_login' => 'ld_member2', 'user_pass' => wp_generate_password(), 'user_email' => 'ld_member2@example.com', 'role' => 'ld_member' ) );
+fresh();
+t( 'κώδικας: νέο μέλος (ρόλος με δικαίωμα δημοσίευσης, όχι διαχείρισης) δημιουργείται κανονικά', ! is_wp_error( $member2 ) && in_array( 'ld_member', get_userdata( $member2 )->roles, true ) );
+( new WP_User( $shopper ) )->set_role( 'ld_member' );
+fresh();
+t( 'κώδικας: συνδρομητής → μέλος (π.χ. από το plugin αγγελιών) επιτρέπεται', in_array( 'ld_member', get_userdata( $shopper )->roles, true ) );
+( new WP_User( $member2 ) )->set_role( 'editor' );
+fresh();
+t( 'κώδικας: μέλος → editor όχι', ! in_array( 'editor', get_userdata( $member2 )->roles, true ) );
 $hash   = get_userdata( $editor_id )->user_pass;
 $mails  = array();
 $record = function ( $pre, $atts ) use ( &$mails ) {
@@ -256,6 +271,28 @@ t( 'πελάτης: τα δικαιώματά του δεν αλλάζουν (re
 wp_set_current_user( 1 );
 t( 'διαχειριστής: μόνο read', current_user_can( 'read' ) && ! current_user_can( 'manage_options' ) && ! current_user_can( 'edit_posts' ) && ! current_user_can( 'edit_user', 1 ) );
 t( 'διαχειριστής: το ScrapeLock τον βλέπει ακόμη ως διαχειριστή (εξαιρέσεις)', PNCP_Lockdown::can( 'manage_options' ) );
+
+/* ---------- Κλειδωμένο: μέλος που ανεβάζει περιεχόμενο (π.χ. αγγελίες) ---------- */
+fresh();
+t( 'μέλος: δεν είναι «προσωπικό»', ! PNCP_Lockdown::is_staff( $member_id ) );
+wp_set_current_user( $member_id );
+t( 'μέλος: κρατά τα δικαιώματά του (δημοσίευση, ανέβασμα αρχείων)', current_user_can( 'edit_posts' ) && current_user_can( 'publish_posts' ) && current_user_can( 'upload_files' ) );
+wp_set_current_user( 0 );
+t( 'μέλος: «ξέχασα τον κωδικό» δουλεύει', apply_filters( 'allow_password_reset', true, $member_id ) );
+as_user( $member_id );
+list( $code, $body ) = http( '/wp-json/wp/v2/posts', array( 'title' => 'Αγγελία μέλους', 'status' => 'publish' ), array( 'X-WP-Nonce: ' . wp_create_nonce( 'wp_rest' ) ) );
+$pncp_post = json_decode( $body, true );
+t( 'μέλος: δημοσιεύει περιεχόμενο με το site κλειδωμένο (REST 201)', 201 === $code, "$code " . substr( $body, 0, 100 ) );
+if ( isset( $pncp_post['id'] ) ) {
+	wp_delete_post( (int) $pncp_post['id'], true );
+}
+list( , $body ) = http( '/wp-admin/index.php' );
+t( 'μέλος: χωρίς ειδοποίηση «κλειδωμένο» στο wp-admin', false === strpos( $body, 'This site is locked.' ) );
+add_filter( 'pre_wp_mail', '__return_false' );
+wp_update_user( array( 'ID' => $member_id, 'user_email' => 'ld_member_new@example.com' ) );
+remove_filter( 'pre_wp_mail', '__return_false' );
+wp_cache_flush();
+t( 'μέλος: αλλάζει το email του', 'ld_member_new@example.com' === get_userdata( $member_id )->user_email );
 
 /* ---------- Κλειδωμένο: editor ---------- */
 as_user( $editor_id );
@@ -338,6 +375,20 @@ wp_set_current_user( 1 );
 t( 'ξεκλείδωτο: ο διαχειριστής έχει ξανά όλα τα δικαιώματα', current_user_can( 'manage_options' ) && wp_is_file_mod_allowed( 'x' ) );
 update_option( 'blogname', 'Test' );
 t( 'ξεκλείδωτο: οι ρυθμίσεις αλλάζουν', 'Test' === get_option( 'blogname' ) );
+
+/* ---------- Επιλογή ρόλων που παγώνουν ---------- */
+t( 'ρόλοι: αποθήκευση χωρίς κωδικό: όχι', 'wrong' === ld( 'roles', array( 'roles' => array( 'editor', 'ld_member' ), 'code' => '' ) ) );
+reset_fails( array( 1 ) );
+t( 'ρόλοι: το μέλος παγώνει όταν το τσεκάρετε (και ο διαχειριστής μένει, ας μην τσεκαρίστηκε)', 'roles' === ld( 'roles', array( 'roles' => array( 'editor', 'ld_member' ), 'code' => app_code( $secret ) ) ) && in_array( 'ld_member', PNCP_Lockdown::frozen_roles(), true ) && in_array( 'administrator', PNCP_Lockdown::frozen_roles(), true ) && ! in_array( 'author', PNCP_Lockdown::frozen_roles(), true ) );
+t( 'ρόλοι: κλειδωμένο → το μέλος κρατά μόνο read', 'locked' === ld( 'lock', array( 'code' => app_code( $secret ) ) ) && PNCP_Lockdown::is_staff( $member_id ) && ( function () use ( $member_id ) {
+	wp_set_current_user( $member_id );
+	$ok = current_user_can( 'read' ) && ! current_user_can( 'edit_posts' );
+	wp_set_current_user( 1 );
+	return $ok;
+} )() );
+t( 'ρόλοι: όσο είναι κλειδωμένο δεν αλλάζουν', 'error' === ld( 'roles', array( 'roles' => array(), 'code' => app_code( $secret ) ) ) && in_array( 'ld_member', PNCP_Lockdown::frozen_roles(), true ) );
+reset_fails( array( 1 ) );
+t( 'ρόλοι: ξεκλείδωμα και επιστροφή στην προεπιλογή', 'unlocked' === ld( 'unlock', array( 'code' => app_code( $secret ), 'minutes' => 0 ) ) && 'roles' === ld( 'roles', array( 'roles' => array( 'editor', 'author', 'contributor' ), 'code' => app_code( $secret ) ) ) && ! PNCP_Lockdown::is_staff( $member_id ) );
 t( 'νέοι κωδικοί ανάκτησης με τον κωδικό της εφαρμογής', 'codes' === ld( 'codes', array( 'code' => app_code( $secret ) ) ) && 10 === count( PNCP_Lockdown::state()['codes'] ) );
 list( , $body ) = http( $page );
 t( 'αρχείο: συμβάντα στη σελίδα (κλείδωμα, κωδικός ανάκτησης, λάθος, άρνηση αλλαγής)', false !== strpos( $body, 'Recovery code used' ) && false !== strpos( $body, 'Wrong code' ) && false !== strpos( $body, 'Change refused' ) && ! php_errors( $body ) );
@@ -360,12 +411,13 @@ delete_site_option( PNCP_Lockdown::LOG_OPTION );
 delete_site_option( PNCP_Lockdown::MUTEX );
 fresh();
 require_once ABSPATH . 'wp-admin/includes/user.php';
-foreach ( array( $editor_id, $customer_id, $new, $shopper ) as $id ) {
+foreach ( array( $editor_id, $customer_id, $new, $shopper, $member_id, $member2 ) as $id ) {
 	if ( $id && ! is_wp_error( $id ) ) {
 		wp_delete_user( $id );
 	}
 }
 reset_fails( array( 1, $editor_id ) );
+remove_role( 'ld_member' );
 
 echo $fails ? "$fails FAIL\n" : "OK\n";
 exit( $fails ? 1 : 0 );

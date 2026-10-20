@@ -1,6 +1,6 @@
 msgid ""
 msgstr ""
-"Project-Id-Version: ScrapeLock 2.7.1\n"
+"Project-Id-Version: ScrapeLock 2.7.2\n"
 "Report-Msgid-Bugs-To: https://wordpress.org/support/plugin/scrapelock\n"
 "Last-Translator: \n"
 "Language-Team: \n"
@@ -8,7 +8,7 @@ msgstr ""
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
 "POT-Creation-Date: 2026-10-20T20:11:53+00:00\n"
-"PO-Revision-Date: 2026-10-20T22:12:10+00:00\n"
+"PO-Revision-Date: 2026-10-20T23:01:12+00:00\n"
 "Language: el\n"
 "Plural-Forms: nplurals=2; plural=(n != 1);\n"
 "X-Domain: scrapelock\n"
@@ -65,7 +65,7 @@ msgid "Copied"
 msgstr "Αντιγράφηκε"
 
 #: includes/class-pncp-admin.php:104
-#: includes/class-pncp-lockdown.php:942
+#: includes/class-pncp-lockdown.php:1043
 #: includes/class-pncp-status.php:310
 #: includes/class-pncp-status.php:383
 msgid "Settings"
@@ -211,7 +211,7 @@ msgid "Yes, disable"
 msgstr "Ναι, απενεργοποίηση"
 
 #: includes/class-pncp-admin.php:490
-#: includes/class-pncp-lockdown.php:1034
+#: includes/class-pncp-lockdown.php:1135
 msgid "Cancel"
 msgstr "Ακύρωση"
 
@@ -224,7 +224,7 @@ msgid "Protection is active"
 msgstr "Η προστασία είναι ενεργή"
 
 #: includes/class-pncp-admin.php:511
-#: includes/class-pncp-lockdown.php:950
+#: includes/class-pncp-lockdown.php:1051
 msgid "Where it applies"
 msgstr "Πού εφαρμόζεται"
 
@@ -471,7 +471,7 @@ msgid "Duration:"
 msgstr "Διάρκεια:"
 
 #: includes/class-pncp-admin.php:669
-#: includes/class-pncp-lockdown.php:1101
+#: includes/class-pncp-lockdown.php:1202
 msgid "1 hour"
 msgstr "1 ώρα"
 
@@ -1466,7 +1466,7 @@ msgstr "Καμία."
 #: includes/class-pncp-admin.php:1495
 #: includes/class-pncp-admin.php:1536
 #: includes/class-pncp-admin.php:1707
-#: includes/class-pncp-lockdown.php:1181
+#: includes/class-pncp-lockdown.php:1326
 msgid "IP"
 msgstr "IP"
 
@@ -1738,495 +1738,527 @@ msgstr "Πηγή"
 msgid "Printing this page is not allowed."
 msgstr "Η εκτύπωση αυτής της σελίδας δεν επιτρέπεται."
 
-#: includes/class-pncp-lockdown.php:412
+#: includes/class-pncp-lockdown.php:510
 msgid "This site is locked: account details of staff cannot be changed until an administrator unlocks it."
 msgstr "Το site είναι κλειδωμένο: τα στοιχεία λογαριασμού του προσωπικού δεν αλλάζουν μέχρι να το ξεκλειδώσει ένας διαχειριστής."
 
-#: includes/class-pncp-lockdown.php:539
+#: includes/class-pncp-lockdown.php:637
 msgid "Too many wrong lockdown codes"
 msgstr "Πολλοί λάθος κωδικοί κλειδώματος"
 
-#: includes/class-pncp-lockdown.php:539
+#: includes/class-pncp-lockdown.php:637
 msgid "Someone typed several wrong authenticator codes on the Lockdown page. Further attempts from that account are blocked for 15 minutes. If it was not you, change that account's password."
 msgstr "Κάποιος έγραψε πολλούς λάθος κωδικούς authenticator στη σελίδα Κλειδώματος. Οι επόμενες προσπάθειες από αυτόν τον λογαριασμό μπλοκάρονται για 15 λεπτά. Αν δεν ήσασταν εσείς, αλλάξτε τον κωδικό αυτού του λογαριασμού."
 
-#: includes/class-pncp-lockdown.php:589
+#: includes/class-pncp-lockdown.php:687
 msgid "A lockdown recovery code was used"
 msgstr "Χρησιμοποιήθηκε κωδικός ανάκτησης κλειδώματος"
 
-#: includes/class-pncp-lockdown.php:589
+#: includes/class-pncp-lockdown.php:687
 msgid "A recovery code was used on the Lockdown page. If it was not you, change the administrators' passwords and create new recovery codes."
 msgstr "Χρησιμοποιήθηκε κωδικός ανάκτησης στη σελίδα Κλειδώματος. Αν δεν ήσασταν εσείς, αλλάξτε τους κωδικούς των διαχειριστών και φτιάξτε νέους κωδικούς ανάκτησης."
 
 #. translators: %s: user name
-#: includes/class-pncp-lockdown.php:702
+#: includes/class-pncp-lockdown.php:800
 #, php-format
 msgid "User: %s"
 msgstr "Χρήστης: %s"
 
 #. translators: %s: IP address
-#: includes/class-pncp-lockdown.php:704
+#: includes/class-pncp-lockdown.php:802
 #, php-format
 msgid "IP: %s"
 msgstr "IP: %s"
 
-#: includes/class-pncp-lockdown.php:756
+#: includes/class-pncp-lockdown.php:854
 msgid "ScrapeLock Lockdown is off from the server: SCRAPELOCK_UNLOCK is set in wp-config.php. Remove that line as soon as you can."
 msgstr "Το Κλείδωμα του ScrapeLock είναι ανενεργό από τον server: στο wp-config.php υπάρχει το SCRAPELOCK_UNLOCK. Σβήστε αυτή τη γραμμή το συντομότερο."
 
-#: includes/class-pncp-lockdown.php:760
+#: includes/class-pncp-lockdown.php:858
 msgid "This site is locked."
 msgstr "Το site είναι κλειδωμένο."
 
-#: includes/class-pncp-lockdown.php:760
+#: includes/class-pncp-lockdown.php:858
 msgid "Changes from wp-admin are disabled until an administrator unlocks the site with the authenticator app."
 msgstr "Οι αλλαγές από το wp-admin είναι απενεργοποιημένες μέχρι να ξεκλειδώσει το site ένας διαχειριστής με την εφαρμογή authenticator."
 
-#: includes/class-pncp-lockdown.php:762
-#: includes/class-pncp-lockdown.php:1108
+#: includes/class-pncp-lockdown.php:860
+#: includes/class-pncp-lockdown.php:1209
 msgid "Unlock"
 msgstr "Ξεκλείδωμα"
 
 #. translators: %s: time
-#: includes/class-pncp-lockdown.php:770
+#: includes/class-pncp-lockdown.php:868
 #, php-format
 msgid "The site is unlocked until %s, then it locks again by itself."
 msgstr "Το site είναι ξεκλείδωτο έως %s και μετά κλειδώνει ξανά μόνο του."
 
 #. translators: %s: time
-#: includes/class-pncp-lockdown.php:770
+#: includes/class-pncp-lockdown.php:868
 msgid "Lock now"
 msgstr "Κλείδωμα τώρα"
 
-#: includes/class-pncp-lockdown.php:817
+#: includes/class-pncp-lockdown.php:915
 msgid "Code from the authenticator app (or a recovery code)"
 msgstr "Κωδικός από την εφαρμογή authenticator (ή κωδικός ανάκτησης)"
 
-#: includes/class-pncp-lockdown.php:817
+#: includes/class-pncp-lockdown.php:915
 msgid "Code from the authenticator app"
 msgstr "Κωδικός από την εφαρμογή authenticator"
 
-#: includes/class-pncp-lockdown.php:827
-#: includes/class-pncp-lockdown.php:1214
+#: includes/class-pncp-lockdown.php:925
+#: includes/class-pncp-lockdown.php:1359
 msgid "Only administrators can lock and unlock the site."
 msgstr "Μόνο οι διαχειριστές κλειδώνουν και ξεκλειδώνουν το site."
 
-#: includes/class-pncp-lockdown.php:834
+#: includes/class-pncp-lockdown.php:932
 msgid "While the site is locked, nobody can change it from wp-admin, the REST API or XML-RPC, not even an administrator or someone who stole a password: no plugins, themes or updates, no file editing, no new users or role changes, no settings, no content changes. Visitors and customers are not affected. Locking and unlocking need a code from your authenticator app."
 msgstr "Όσο το site είναι κλειδωμένο, κανείς δεν μπορεί να το αλλάξει από το wp-admin, το REST API ή το XML-RPC, ούτε ένας διαχειριστής ούτε κάποιος που έκλεψε κωδικό: όχι plugins, themes ή ενημερώσεις, όχι επεξεργασία αρχείων, όχι νέοι χρήστες ή αλλαγές ρόλων, όχι ρυθμίσεις, όχι αλλαγές περιεχομένου. Οι επισκέπτες και οι πελάτες δεν επηρεάζονται. Το κλείδωμα και το ξεκλείδωμα θέλουν κωδικό από την εφαρμογή authenticator."
 
-#: includes/class-pncp-lockdown.php:838
+#: includes/class-pncp-lockdown.php:936
 msgid "Unlocked from the server."
 msgstr "Ξεκλείδωτο από τον server."
 
-#: includes/class-pncp-lockdown.php:838
+#: includes/class-pncp-lockdown.php:936
 msgid "SCRAPELOCK_UNLOCK is set in wp-config.php, so the lock is not applied. You can remove the authenticator below and connect a new one; then remove that line from wp-config.php."
 msgstr "Στο wp-config.php υπάρχει το SCRAPELOCK_UNLOCK, οπότε το κλείδωμα δεν εφαρμόζεται. Μπορείτε να αφαιρέσετε την εφαρμογή παρακάτω και να συνδέσετε νέα· μετά σβήστε αυτή τη γραμμή από το wp-config.php."
 
-#: includes/class-pncp-lockdown.php:841
+#: includes/class-pncp-lockdown.php:939
 msgid "The app secret cannot be read: the security keys in wp-config.php have changed. Unlock with a recovery code, or from the server, then connect the app again."
 msgstr "Το κλειδί της εφαρμογής δεν διαβάζεται: τα κλειδιά ασφαλείας στο wp-config.php άλλαξαν. Ξεκλειδώστε με κωδικό ανάκτησης ή από τον server και συνδέστε ξανά την εφαρμογή."
 
-#: includes/class-pncp-lockdown.php:872
+#: includes/class-pncp-lockdown.php:970
 msgid "The authenticator app is connected. You can lock the site now."
 msgstr "Η εφαρμογή authenticator συνδέθηκε. Μπορείτε να κλειδώσετε το site."
 
-#: includes/class-pncp-lockdown.php:873
+#: includes/class-pncp-lockdown.php:971
 msgid "The site is locked."
 msgstr "Το site κλειδώθηκε."
 
-#: includes/class-pncp-lockdown.php:874
+#: includes/class-pncp-lockdown.php:972
 msgid "The site is unlocked."
 msgstr "Το site ξεκλειδώθηκε."
 
-#: includes/class-pncp-lockdown.php:875
+#: includes/class-pncp-lockdown.php:973
 msgid "New recovery codes created. The old ones no longer work."
 msgstr "Φτιάχτηκαν νέοι κωδικοί ανάκτησης. Οι παλιοί δεν ισχύουν πια."
 
-#: includes/class-pncp-lockdown.php:876
+#: includes/class-pncp-lockdown.php:974
 msgid "The authenticator app was removed and the lock is off."
 msgstr "Η εφαρμογή authenticator αφαιρέθηκε και το κλείδωμα είναι ανενεργό."
 
-#: includes/class-pncp-lockdown.php:877
+#: includes/class-pncp-lockdown.php:975
 msgid "Setup cancelled."
 msgstr "Η σύνδεση ακυρώθηκε."
 
-#: includes/class-pncp-lockdown.php:878
+#: includes/class-pncp-lockdown.php:976
 msgid "Wrong or expired code. Wait for a new code in the app and try again."
 msgstr "Λάθος ή ληγμένος κωδικός. Περιμένετε νέο κωδικό στην εφαρμογή και δοκιμάστε ξανά."
 
-#: includes/class-pncp-lockdown.php:879
+#: includes/class-pncp-lockdown.php:977
 msgid "Too many wrong codes. Try again in 15 minutes."
 msgstr "Πολλοί λάθος κωδικοί. Δοκιμάστε ξανά σε 15 λεπτά."
 
-#: includes/class-pncp-lockdown.php:880
+#: includes/class-pncp-lockdown.php:978
 msgid "That action is not possible right now."
 msgstr "Αυτή η ενέργεια δεν είναι δυνατή τώρα."
 
-#: includes/class-pncp-lockdown.php:881
+#: includes/class-pncp-lockdown.php:979
+msgid "The frozen roles were saved."
+msgstr "Οι ρόλοι που παγώνουν αποθηκεύτηκαν."
+
+#: includes/class-pncp-lockdown.php:980
 msgid "Tick the box to confirm that you have saved your recovery codes and understand how to unlock the site."
 msgstr "Τσεκάρετε το κουτάκι για να επιβεβαιώσετε ότι φυλάξατε τους κωδικούς ανάκτησης και ξέρετε πώς ξεκλειδώνει το site."
 
-#: includes/class-pncp-lockdown.php:894
+#: includes/class-pncp-lockdown.php:993
 msgid "Important: there is only one way to unlock"
 msgstr "Σημαντικό: υπάρχει μόνο ένας τρόπος ξεκλειδώματος"
 
-#: includes/class-pncp-lockdown.php:896
+#: includes/class-pncp-lockdown.php:995
 msgid "Only the 6-digit code from the authenticator app on your phone unlocks the site. There is no reset by email or SMS, no \"forgot code\" link, and no other administrator, your hosting company or ScrapeLock support can unlock it from WordPress."
 msgstr "Μόνο ο 6ψήφιος κωδικός από την εφαρμογή authenticator στο κινητό σας ξεκλειδώνει το site. Δεν υπάρχει επαναφορά με email ή SMS, ούτε σύνδεσμος «ξέχασα τον κωδικό», και κανένας άλλος διαχειριστής, η εταιρεία φιλοξενίας ή η υποστήριξη του ScrapeLock δεν μπορεί να το ξεκλειδώσει από το WordPress."
 
-#: includes/class-pncp-lockdown.php:897
+#: includes/class-pncp-lockdown.php:996
 msgid "Backup: the 10 recovery codes shown once when you connect the app. Print them and keep them away from the phone; each one unlocks the site once."
 msgstr "Εφεδρεία: οι 10 κωδικοί ανάκτησης που εμφανίζονται μία φορά όταν συνδέετε την εφαρμογή. Τυπώστε τους και κρατήστε τους μακριά από το κινητό· ο καθένας ξεκλειδώνει το site μία φορά."
 
-#: includes/class-pncp-lockdown.php:898
+#: includes/class-pncp-lockdown.php:997
 msgid "Lost both the phone and the recovery codes? Only someone with access to the server files (FTP or your hosting panel) can unlock the site, by adding a line to wp-config.php."
 msgstr "Χάσατε και το κινητό και τους κωδικούς ανάκτησης; Μόνο κάποιος με πρόσβαση στα αρχεία του server (FTP ή πάνελ φιλοξενίας) μπορεί να ξεκλειδώσει το site, προσθέτοντας μια γραμμή στο wp-config.php."
 
-#: includes/class-pncp-lockdown.php:899
+#: includes/class-pncp-lockdown.php:998
 msgid "While locked, password resets for staff are frozen too: if you forget your WordPress password, the same line in wp-config.php is the way back."
 msgstr "Όσο είναι κλειδωμένο, παγώνει και η επαναφορά κωδικού για το προσωπικό: αν ξεχάσετε τον κωδικό σας στο WordPress, ο τρόπος επιστροφής είναι η ίδια γραμμή στο wp-config.php."
 
-#: includes/class-pncp-lockdown.php:926
+#: includes/class-pncp-lockdown.php:1027
 msgid "Plugins"
 msgstr "Plugins"
 
-#: includes/class-pncp-lockdown.php:927
+#: includes/class-pncp-lockdown.php:1028
 msgid "Installing, uploading a zip, updating, deleting, activating and deactivating plugins, including ScrapeLock itself."
 msgstr "Εγκατάσταση, ανέβασμα zip, ενημέρωση, διαγραφή, ενεργοποίηση και απενεργοποίηση plugins, μαζί και του ίδιου του ScrapeLock."
 
-#: includes/class-pncp-lockdown.php:928
+#: includes/class-pncp-lockdown.php:1029
 msgid "Automatic plugin updates."
 msgstr "Αυτόματες ενημερώσεις plugins."
 
-#: includes/class-pncp-lockdown.php:930
+#: includes/class-pncp-lockdown.php:1031
 msgid "Themes"
 msgstr "Themes"
 
-#: includes/class-pncp-lockdown.php:931
+#: includes/class-pncp-lockdown.php:1032
 msgid "Installing, updating, deleting and switching themes; automatic theme updates."
 msgstr "Εγκατάσταση, ενημέρωση, διαγραφή και αλλαγή theme· αυτόματες ενημερώσεις themes."
 
-#: includes/class-pncp-lockdown.php:932
+#: includes/class-pncp-lockdown.php:1033
 msgid "The Customizer, the Site Editor, menus and widgets."
 msgstr "Ο Customizer, ο Site Editor, τα μενού και τα widgets."
 
-#: includes/class-pncp-lockdown.php:934
+#: includes/class-pncp-lockdown.php:1035
 msgid "WordPress"
 msgstr "WordPress"
 
-#: includes/class-pncp-lockdown.php:935
+#: includes/class-pncp-lockdown.php:1036
 msgid "WordPress core updates, automatic updates and translation updates."
 msgstr "Ενημερώσεις του WordPress, αυτόματες ενημερώσεις και ενημερώσεις μεταφράσεων."
 
-#: includes/class-pncp-lockdown.php:936
+#: includes/class-pncp-lockdown.php:1037
 msgid "The plugin and theme file editor: no file can be changed through WordPress."
 msgstr "Ο επεξεργαστής αρχείων plugins και themes: κανένα αρχείο δεν αλλάζει μέσα από το WordPress."
 
-#: includes/class-pncp-lockdown.php:938
+#: includes/class-pncp-lockdown.php:1039
 msgid "Users"
 msgstr "Χρήστες"
 
-#: includes/class-pncp-lockdown.php:939
+#: includes/class-pncp-lockdown.php:1040
 msgid "Creating, deleting and editing users; changing roles; creating administrators, also by code."
 msgstr "Δημιουργία, διαγραφή και επεξεργασία χρηστών· αλλαγές ρόλων· νέοι διαχειριστές, και από κώδικα."
 
-#: includes/class-pncp-lockdown.php:940
+#: includes/class-pncp-lockdown.php:1041
 msgid "Staff email and password changes, \"lost password\" resets for staff, and new application passwords for staff. Existing application passwords of staff stop working."
 msgstr "Αλλαγή email και κωδικού του προσωπικού, «ξέχασα τον κωδικό» για το προσωπικό και νέα application passwords για το προσωπικό. Τα υπάρχοντα application passwords του προσωπικού σταματούν να δουλεύουν."
 
-#: includes/class-pncp-lockdown.php:943
+#: includes/class-pncp-lockdown.php:1044
 msgid "Every settings page (General, Reading, Permalinks, WooCommerce, other plugins) and the ScrapeLock settings."
 msgstr "Κάθε σελίδα ρυθμίσεων (Γενικά, Ανάγνωση, Μόνιμοι σύνδεσμοι, WooCommerce, άλλα plugins) και οι ρυθμίσεις του ScrapeLock."
 
-#: includes/class-pncp-lockdown.php:944
+#: includes/class-pncp-lockdown.php:1045
 msgid "Also by code: active plugins, theme, site address, admin email, registration, default role, role definitions, ScrapeLock settings and the lock itself."
 msgstr "Και από κώδικα: ενεργά plugins, theme, διεύθυνση του site, email διαχείρισης, εγγραφές, προεπιλεγμένος ρόλος, ορισμοί ρόλων, ρυθμίσεις του ScrapeLock και το ίδιο το κλείδωμα."
 
-#: includes/class-pncp-lockdown.php:946
+#: includes/class-pncp-lockdown.php:1047
 msgid "Content"
 msgstr "Περιεχόμενο"
 
-#: includes/class-pncp-lockdown.php:947
+#: includes/class-pncp-lockdown.php:1048
 msgid "Creating, editing and deleting posts, pages, products, coupons, categories and media; comment moderation."
 msgstr "Δημιουργία, επεξεργασία και διαγραφή άρθρων, σελίδων, προϊόντων, κουπονιών, κατηγοριών και πολυμέσων· έγκριση σχολίων."
 
-#: includes/class-pncp-lockdown.php:948
+#: includes/class-pncp-lockdown.php:1049
 msgid "Orders in wp-admin: staff cannot process them while locked."
 msgstr "Παραγγελίες στο wp-admin: το προσωπικό δεν τις επεξεργάζεται όσο είναι κλειδωμένο."
 
-#: includes/class-pncp-lockdown.php:951
+#: includes/class-pncp-lockdown.php:1052
 msgid "wp-admin, admin-ajax, the REST API (also WooCommerce REST API keys of staff, e.g. an ERP that writes stock), XML-RPC, application passwords, and the code of other plugins for the protected items above."
 msgstr "wp-admin, admin-ajax, REST API (και κλειδιά WooCommerce REST API του προσωπικού, π.χ. ERP που γράφει απόθεμα), XML-RPC, application passwords, και ο κώδικας άλλων plugins για τα προστατευμένα στοιχεία παραπάνω."
 
-#: includes/class-pncp-lockdown.php:955
+#: includes/class-pncp-lockdown.php:1056
 msgid "Visitors browse the site; search engines and the bots you allow are not affected."
 msgstr "Οι επισκέπτες βλέπουν το site· οι μηχανές αναζήτησης και τα bots που επιτρέπετε δεν επηρεάζονται."
 
-#: includes/class-pncp-lockdown.php:956
+#: includes/class-pncp-lockdown.php:1057
 msgid "Customers order and pay, register, log in, edit their own account and reset their own password."
 msgstr "Οι πελάτες παραγγέλνουν και πληρώνουν, κάνουν εγγραφή, συνδέονται, αλλάζουν τον λογαριασμό τους και επαναφέρουν τον κωδικό τους."
 
-#: includes/class-pncp-lockdown.php:957
+#: includes/class-pncp-lockdown.php:1058
 msgid "Comments from visitors, payment webhooks, cron jobs and the scheduled tasks of plugins."
 msgstr "Σχόλια επισκεπτών, webhooks πληρωμών, cron και οι προγραμματισμένες εργασίες των plugins."
 
-#: includes/class-pncp-lockdown.php:958
+#: includes/class-pncp-lockdown.php:1059
 msgid "Logging in (also for staff, who then only see the dashboard); the ScrapeLock bot protection and firewalls such as Wordfence."
 msgstr "Η σύνδεση (και του προσωπικού, που τότε βλέπει μόνο τον Πίνακα ελέγχου)· η προστασία από bots του ScrapeLock και firewalls όπως το Wordfence."
 
-#: includes/class-pncp-lockdown.php:959
+#: includes/class-pncp-lockdown.php:1060
 msgid "Read-only XML feeds with a ScrapeLock token."
 msgstr "Τα XML feeds ανάγνωσης με token του ScrapeLock."
 
-#: includes/class-pncp-lockdown.php:963
+#: includes/class-pncp-lockdown.php:1064
 msgid "What exactly is locked"
 msgstr "Τι ακριβώς κλειδώνει"
 
-#: includes/class-pncp-lockdown.php:978
+#: includes/class-pncp-lockdown.php:1079
 msgid "What keeps working"
 msgstr "Τι συνεχίζει να δουλεύει"
 
-#: includes/class-pncp-lockdown.php:984
+#: includes/class-pncp-lockdown.php:1085
 msgid "On this site"
 msgstr "Σε αυτό το site"
 
 #. translators: %s: roles and number of users, e.g. "Administrator: 2, Editor: 1"
-#: includes/class-pncp-lockdown.php:987
+#: includes/class-pncp-lockdown.php:1088
 #, php-format
 msgid "Staff accounts that keep only \"read\" while locked: %s."
 msgstr "Λογαριασμοί προσωπικού που κρατούν μόνο την «ανάγνωση» όσο είναι κλειδωμένο: %s."
 
 #. translators: %s: roles and number of users, e.g. "Administrator: 2, Editor: 1"
-#: includes/class-pncp-lockdown.php:987
+#. translators: %s: roles and number of users, e.g. "Subscriber: 120, Customer: 3000"
+#: includes/class-pncp-lockdown.php:1088
+#: includes/class-pncp-lockdown.php:1090
 msgid "none"
 msgstr "κανένας"
 
-#. translators: %d: number of users
-#: includes/class-pncp-lockdown.php:989
+#. translators: %s: roles and number of users, e.g. "Subscriber: 120, Customer: 3000"
+#: includes/class-pncp-lockdown.php:1090
 #, php-format
-msgid "%d customer or subscriber account is not affected."
-msgid_plural "%d customer and subscriber accounts are not affected."
-msgstr[0] "%d λογαριασμός πελάτη ή συνδρομητή δεν επηρεάζεται."
-msgstr[1] "%d λογαριασμοί πελατών και συνδρομητών δεν επηρεάζονται."
+msgid "Accounts that keep working as usual while locked: %s."
+msgstr "Λογαριασμοί που δουλεύουν κανονικά όσο είναι κλειδωμένο: %s."
 
 #. translators: 1: number of plugins, 2: theme name
-#: includes/class-pncp-lockdown.php:991
+#: includes/class-pncp-lockdown.php:1092
 #, php-format
 msgid "%1$d active plugin and the theme \"%2$s\" stay exactly as they are."
 msgid_plural "%1$d active plugins and the theme \"%2$s\" stay exactly as they are."
 msgstr[0] "%1$d ενεργό plugin και το theme «%2$s» μένουν ακριβώς όπως είναι."
 msgstr[1] "%1$d ενεργά plugins και το theme «%2$s» μένουν ακριβώς όπως είναι."
 
-#: includes/class-pncp-lockdown.php:992
+#: includes/class-pncp-lockdown.php:1093
 msgid "Not covered: whoever can change the files or the database on the server (FTP, hosting panel, WP-CLI) controls the site with or without the lock."
 msgstr "Δεν καλύπτεται: όποιος μπορεί να αλλάξει τα αρχεία ή τη βάση στον server (FTP, πάνελ φιλοξενίας, WP-CLI) ελέγχει το site με ή χωρίς κλείδωμα."
 
-#: includes/class-pncp-lockdown.php:1004
+#: includes/class-pncp-lockdown.php:1105
 msgid "Connect an authenticator app"
 msgstr "Σύνδεση εφαρμογής authenticator"
 
-#: includes/class-pncp-lockdown.php:1005
+#: includes/class-pncp-lockdown.php:1106
 msgid "Install an authenticator app on your phone (Google Authenticator, Microsoft Authenticator, Authy, 1Password or similar). Then click the button: a QR code appears for the app to scan."
 msgstr "Εγκαταστήστε στο κινητό μια εφαρμογή authenticator (Google Authenticator, Microsoft Authenticator, Authy, 1Password ή παρόμοια). Μετά πατήστε το κουμπί: εμφανίζεται ένα QR code για να το σκανάρει η εφαρμογή."
 
-#: includes/class-pncp-lockdown.php:1008
+#: includes/class-pncp-lockdown.php:1109
 msgid "Connect the app"
 msgstr "Σύνδεση εφαρμογής"
 
-#: includes/class-pncp-lockdown.php:1024
+#: includes/class-pncp-lockdown.php:1125
 msgid "Scan the QR code"
 msgstr "Σκανάρετε το QR code"
 
-#: includes/class-pncp-lockdown.php:1025
+#: includes/class-pncp-lockdown.php:1126
 msgid "In the app, add an account and scan this code. The QR code is created in your browser: the secret is not sent anywhere."
 msgstr "Στην εφαρμογή, προσθέστε λογαριασμό και σκανάρετε αυτόν τον κωδικό. Το QR code φτιάχνεται στον browser σας: το κλειδί δεν στέλνεται πουθενά."
 
-#: includes/class-pncp-lockdown.php:1027
+#: includes/class-pncp-lockdown.php:1128
 msgid "Cannot scan? Type this key in the app instead:"
 msgstr "Δεν σκανάρεται; Γράψτε στην εφαρμογή αυτό το κλειδί:"
 
-#: includes/class-pncp-lockdown.php:1031
+#: includes/class-pncp-lockdown.php:1132
 msgid "Confirm"
 msgstr "Επιβεβαίωση"
 
-#: includes/class-pncp-lockdown.php:1049
+#: includes/class-pncp-lockdown.php:1150
 msgid "Your recovery codes"
 msgstr "Οι κωδικοί ανάκτησής σας"
 
-#: includes/class-pncp-lockdown.php:1050
+#: includes/class-pncp-lockdown.php:1151
 msgid "Print them or keep them somewhere safe, away from your phone. They are shown only now."
 msgstr "Τυπώστε τους ή φυλάξτε τους κάπου ασφαλές, μακριά από το κινητό σας. Εμφανίζονται μόνο τώρα."
 
-#: includes/class-pncp-lockdown.php:1050
+#: includes/class-pncp-lockdown.php:1151
 msgid "If you lose your phone, each code unlocks the site once."
 msgstr "Αν χάσετε το κινητό, κάθε κωδικός ξεκλειδώνει το site μία φορά."
 
-#: includes/class-pncp-lockdown.php:1076
+#: includes/class-pncp-lockdown.php:1177
 msgid "The site is locked"
 msgstr "Το site είναι κλειδωμένο"
 
 #. translators: %s: time
-#: includes/class-pncp-lockdown.php:1079
+#: includes/class-pncp-lockdown.php:1180
 #, php-format
 msgid "Unlocked until %s"
 msgstr "Ξεκλείδωτο έως %s"
 
-#: includes/class-pncp-lockdown.php:1081
+#: includes/class-pncp-lockdown.php:1182
 msgid "The site is not locked"
 msgstr "Το site δεν είναι κλειδωμένο"
 
 #. translators: %s: date and time
-#: includes/class-pncp-lockdown.php:1087
+#: includes/class-pncp-lockdown.php:1188
 #, php-format
 msgid "Locked since %s."
 msgstr "Κλειδωμένο από %s."
 
 #. translators: %d: number of updates
-#: includes/class-pncp-lockdown.php:1091
+#: includes/class-pncp-lockdown.php:1192
 #, php-format
 msgid "%d update is waiting. Unlock for a while to install it, then lock again."
 msgid_plural "%d updates are waiting. Unlock for a while to install them, then lock again."
 msgstr[0] "Περιμένει %d ενημέρωση. Ξεκλειδώστε για λίγο για να την εγκαταστήσετε και μετά κλειδώστε ξανά."
 msgstr[1] "Περιμένουν %d ενημερώσεις. Ξεκλειδώστε για λίγο για να τις εγκαταστήσετε και μετά κλειδώστε ξανά."
 
-#: includes/class-pncp-lockdown.php:1097
+#: includes/class-pncp-lockdown.php:1198
 msgid "Unlock for"
 msgstr "Ξεκλείδωμα για"
 
-#: includes/class-pncp-lockdown.php:1099
+#: includes/class-pncp-lockdown.php:1200
 msgid "15 minutes"
 msgstr "15 λεπτά"
 
-#: includes/class-pncp-lockdown.php:1100
+#: includes/class-pncp-lockdown.php:1201
 msgid "30 minutes"
 msgstr "30 λεπτά"
 
-#: includes/class-pncp-lockdown.php:1102
+#: includes/class-pncp-lockdown.php:1203
 msgid "2 hours"
 msgstr "2 ώρες"
 
-#: includes/class-pncp-lockdown.php:1103
+#: includes/class-pncp-lockdown.php:1204
 msgid "Until I lock it again"
 msgstr "Μέχρι να το κλειδώσω ξανά"
 
-#: includes/class-pncp-lockdown.php:1112
+#: includes/class-pncp-lockdown.php:1213
 msgid "Lock again now"
 msgstr "Ξανά κλείδωμα τώρα"
 
-#: includes/class-pncp-lockdown.php:1118
+#: includes/class-pncp-lockdown.php:1219
 msgid "I have printed or saved my recovery codes, and I understand that only the app, a recovery code or access to the server files can unlock the site."
 msgstr "Τύπωσα ή φύλαξα τους κωδικούς ανάκτησης και καταλαβαίνω ότι μόνο η εφαρμογή, ένας κωδικός ανάκτησης ή η πρόσβαση στα αρχεία του server ξεκλειδώνουν το site."
 
-#: includes/class-pncp-lockdown.php:1120
+#: includes/class-pncp-lockdown.php:1221
 msgid "Lock the site"
 msgstr "Κλείδωμα του site"
 
-#: includes/class-pncp-lockdown.php:1127
+#: includes/class-pncp-lockdown.php:1229
 msgid "Recovery codes and app"
 msgstr "Κωδικοί ανάκτησης και εφαρμογή"
 
 #. translators: %d: number of codes
-#: includes/class-pncp-lockdown.php:1129
+#: includes/class-pncp-lockdown.php:1231
 #, php-format
 msgid "%d recovery code left."
 msgid_plural "%d recovery codes left."
 msgstr[0] "Έμεινε %d κωδικός ανάκτησης."
 msgstr[1] "Έμειναν %d κωδικοί ανάκτησης."
 
-#: includes/class-pncp-lockdown.php:1133
+#: includes/class-pncp-lockdown.php:1235
 msgid "Create new recovery codes"
 msgstr "Νέοι κωδικοί ανάκτησης"
 
-#: includes/class-pncp-lockdown.php:1141
+#: includes/class-pncp-lockdown.php:1243
 msgid "Remove the authenticator app"
 msgstr "Αφαίρεση της εφαρμογής authenticator"
 
-#: includes/class-pncp-lockdown.php:1149
+#: includes/class-pncp-lockdown.php:1251
 msgid "Lost your phone?"
 msgstr "Χάσατε το κινητό;"
 
-#: includes/class-pncp-lockdown.php:1150
+#: includes/class-pncp-lockdown.php:1252
 msgid "Type one of your recovery codes in the unlock field instead of an app code. No codes left? Add this line to wp-config.php (FTP or your hosting panel), then remove the app here and connect a new one:"
 msgstr "Γράψτε έναν κωδικό ανάκτησης στο πεδίο ξεκλειδώματος, στη θέση του κωδικού της εφαρμογής. Δεν έχουν μείνει κωδικοί; Προσθέστε αυτή τη γραμμή στο wp-config.php (FTP ή πάνελ φιλοξενίας), μετά αφαιρέστε εδώ την εφαρμογή και συνδέστε νέα:"
 
-#: includes/class-pncp-lockdown.php:1168
+#: includes/class-pncp-lockdown.php:1268
+msgid "Who is frozen while locked"
+msgstr "Ποιοι παγώνουν όσο είναι κλειδωμένο"
+
+#: includes/class-pncp-lockdown.php:1269
+msgid "Ticked roles keep only \"read\" while the site is locked. Untick the roles of your members or customers if they create content on the site themselves (listings, community posts): they then keep working as usual, including their own email and password. Roles that can change plugins, themes, users or settings are always frozen."
+msgstr "Οι τσεκαρισμένοι ρόλοι κρατούν μόνο την «ανάγνωση» όσο το site είναι κλειδωμένο. Ξετσεκάρετε τους ρόλους των μελών ή των πελατών σας αν ανεβάζουν μόνοι τους περιεχόμενο στο site (αγγελίες, δημοσιεύσεις κοινότητας): τότε δουλεύουν κανονικά, μαζί και το email και ο κωδικός τους. Οι ρόλοι που μπορούν να αλλάξουν plugins, themes, χρήστες ή ρυθμίσεις παγώνουν πάντα."
+
+#. translators: 1: role name, 2: number of users
+#: includes/class-pncp-lockdown.php:1283
+#, php-format
+msgid "%1$s (%2$d user)"
+msgid_plural "%1$s (%2$d users)"
+msgstr[0] "%1$s (%2$d χρήστης)"
+msgstr[1] "%1$s (%2$d χρήστες)"
+
+#: includes/class-pncp-lockdown.php:1285
+msgid "always frozen"
+msgstr "παγώνει πάντα"
+
+#: includes/class-pncp-lockdown.php:1294
+msgid "Save frozen roles"
+msgstr "Αποθήκευση ρόλων"
+
+#: includes/class-pncp-lockdown.php:1312
 msgid "App connected"
 msgstr "Σύνδεση εφαρμογής"
 
-#: includes/class-pncp-lockdown.php:1169
+#: includes/class-pncp-lockdown.php:1313
 #: includes/class-pncp-status.php:336
 msgid "Locked"
 msgstr "Κλειδωμένο"
 
-#: includes/class-pncp-lockdown.php:1170
+#: includes/class-pncp-lockdown.php:1314
 msgid "Unlocked"
 msgstr "Ξεκλείδωμα"
 
-#: includes/class-pncp-lockdown.php:1171
+#: includes/class-pncp-lockdown.php:1315
 msgid "Locked again"
 msgstr "Ξανά κλείδωμα"
 
-#: includes/class-pncp-lockdown.php:1172
+#: includes/class-pncp-lockdown.php:1316
 msgid "Wrong code"
 msgstr "Λάθος κωδικός"
 
-#: includes/class-pncp-lockdown.php:1173
+#: includes/class-pncp-lockdown.php:1317
 msgid "Recovery code used"
 msgstr "Χρήση κωδικού ανάκτησης"
 
-#: includes/class-pncp-lockdown.php:1174
+#: includes/class-pncp-lockdown.php:1318
 msgid "New recovery codes"
 msgstr "Νέοι κωδικοί ανάκτησης"
 
-#: includes/class-pncp-lockdown.php:1175
+#: includes/class-pncp-lockdown.php:1319
 msgid "App removed"
 msgstr "Αφαίρεση εφαρμογής"
 
-#: includes/class-pncp-lockdown.php:1176
+#: includes/class-pncp-lockdown.php:1320
 msgid "Change refused"
 msgstr "Αλλαγή που απορρίφθηκε"
 
-#: includes/class-pncp-lockdown.php:1179
+#: includes/class-pncp-lockdown.php:1321
+msgid "Frozen roles changed"
+msgstr "Αλλαγή ρόλων που παγώνουν"
+
+#: includes/class-pncp-lockdown.php:1324
 msgid "Recent lockdown events"
 msgstr "Πρόσφατα συμβάντα κλειδώματος"
 
-#: includes/class-pncp-lockdown.php:1181
+#: includes/class-pncp-lockdown.php:1326
 msgid "When"
 msgstr "Πότε"
 
-#: includes/class-pncp-lockdown.php:1181
+#: includes/class-pncp-lockdown.php:1326
 msgid "Event"
 msgstr "Συμβάν"
 
-#: includes/class-pncp-lockdown.php:1181
+#: includes/class-pncp-lockdown.php:1326
 msgid "User"
 msgstr "Χρήστης"
 
 #. translators: %d: minutes
-#: includes/class-pncp-lockdown.php:1319
+#: includes/class-pncp-lockdown.php:1465
 #, php-format
 msgid "%d min"
 msgstr "%d λεπ."
 
 #. translators: %d: minutes
-#: includes/class-pncp-lockdown.php:1319
+#: includes/class-pncp-lockdown.php:1465
 msgid "until locked again"
 msgstr "μέχρι νέο κλείδωμα"
 
-#: includes/class-pncp-lockdown.php:1320
+#: includes/class-pncp-lockdown.php:1466
 msgid "The site was unlocked"
 msgstr "Το site ξεκλειδώθηκε"
 
-#: includes/class-pncp-lockdown.php:1320
+#: includes/class-pncp-lockdown.php:1466
 msgid "The site was unlocked on the Lockdown page. If it was not you, lock it again and change the administrators' passwords."
 msgstr "Το site ξεκλειδώθηκε από τη σελίδα Κλειδώματος. Αν δεν ήσασταν εσείς, κλειδώστε το ξανά και αλλάξτε τους κωδικούς των διαχειριστών."
 
-#: includes/class-pncp-lockdown.php:1348
+#: includes/class-pncp-lockdown.php:1502
 msgid "The authenticator app was removed"
 msgstr "Η εφαρμογή authenticator αφαιρέθηκε"
 
-#: includes/class-pncp-lockdown.php:1348
+#: includes/class-pncp-lockdown.php:1502
 msgid "The authenticator app was removed from the Lockdown page and the lock is off. If it was not you, change the administrators' passwords."
 msgstr "Η εφαρμογή authenticator αφαιρέθηκε από τη σελίδα Κλειδώματος και το κλείδωμα είναι ανενεργό. Αν δεν ήσασταν εσείς, αλλάξτε τους κωδικούς των διαχειριστών."
 
