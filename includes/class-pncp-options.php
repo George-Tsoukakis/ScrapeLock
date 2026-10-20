@@ -812,6 +812,6 @@ final class PNCP_Options {
 	 * @return bool
 	 */
 	public static function user_is_exempt( $settings ) {
-		return 'none' !== $settings['exempt_cap'] && is_user_logged_in() && current_user_can( $settings['exempt_cap'] );
+		return 'none' !== $settings['exempt_cap'] && is_user_logged_in() && PNCP_Lockdown::can( $settings['exempt_cap'] );
 	}
 }

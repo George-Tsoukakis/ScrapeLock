@@ -73,7 +73,7 @@ final class PNCP_Rest {
 		if ( ! $result instanceof WP_HTTP_Response || ! preg_match( '#^/wc/store(/v\d+)?/(products|cart)#', $route, $m ) ) {
 			return $result;
 		}
-		if ( current_user_can( 'edit_posts' ) || PNCP_Options::user_is_exempt( PNCP_Options::get() ) ) {
+		if ( PNCP_Lockdown::can( 'edit_posts' ) || PNCP_Options::user_is_exempt( PNCP_Options::get() ) ) {
 			return $result;
 		}
 		if ( ! apply_filters( 'pncp_rest_hide_content', true, null ) ) {
@@ -120,7 +120,7 @@ final class PNCP_Rest {
 	 */
 	private static function should_strip( $post ) {
 		// Content authors need it (block editor, apps).
-		if ( current_user_can( 'edit_posts' ) || PNCP_Options::user_is_exempt( PNCP_Options::get() ) ) {
+		if ( PNCP_Lockdown::can( 'edit_posts' ) || PNCP_Options::user_is_exempt( PNCP_Options::get() ) ) {
 			return false;
 		}
 		if ( in_array( (int) $post->ID, PNCP_Options::excluded_ids( PNCP_Options::get() ), true ) ) {

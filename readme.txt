@@ -4,7 +4,7 @@ Tags: anti-scraping, ai bots, bot protection, rate limit, content protection
 Requires at least: 6.2
 Tested up to: 7.1
 Requires PHP: 7.4
-Stable tag: 2.6.8
+Stable tag: 2.7.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -71,6 +71,18 @@ Generated Nginx, Apache and Cloudflare rules for your own site, so cached pages 
 * Watermark in a corner, the centre or repeated diagonally, optionally on the full-size image too. The clean original is kept, so the watermark can always be removed.
 * Product images are never watermarked by default, because Google Merchant Center and price comparison platforms reject them.
 * Batch tool for existing images.
+
+= Lockdown =
+
+* Freeze the whole site with one click and a code from your authenticator app (Google Authenticator, Microsoft Authenticator, Authy and the like). While it is locked, nobody can change the site from wp-admin, the REST API or XML-RPC, not even an administrator or someone who stole a password.
+* Frozen: installing, updating, deleting, activating and deactivating plugins and themes; WordPress core and automatic updates; the file editor; new users, role changes, new administrators; staff email and password changes and resets; new application passwords; all settings; posts, pages, products, media and menus.
+* Also enforced against code: if another plugin is exploited, it cannot activate plugins, change the site address or the admin email, add an administrator or unlock the lock.
+* Visitors and customers are not affected: they browse, order, pay, register as customers and comment as usual.
+* Unlock for 15 minutes to 2 hours (it locks again by itself) or until you lock it again. Locking and unlocking are logged and emailed to the site's admin address.
+* Lost your phone: ten one-time recovery codes, or `define( 'SCRAPELOCK_UNLOCK', true );` in wp-config.php as a last resort.
+* The QR code is drawn in your browser and the secret is stored encrypted with the keys in wp-config.php: it is never sent anywhere.
+* Part of ScrapeLock: a Lockdown tab in Settings → ScrapeLock and a Lockdown line under the "Protection" button in the admin bar. While locked, administrators still reach that tab; the other tabs are greyed out.
+* A clear warning that there is a single way to unlock (the app, its recovery codes, or the server), a checkbox to confirm the recovery codes are saved before the first lock, and a full report of what is frozen, what keeps working and which accounts on your site it applies to.
 
 Forms, cart, checkout, the WooCommerce Store API and payment webhooks are not affected.
 
@@ -144,6 +156,18 @@ With the human check on, visitors who interact with the page get a security cook
 
 Yes. robots.txt, llms.txt and llms-full.txt are never blocked, for any bot, so every bot can read the rules it is asked to follow. The server rules in the "Server rules" tab keep them open too.
 
+= What does Lockdown freeze, and what keeps working? =
+
+While locked, every user with more than reading rights (authors, editors, shop managers, administrators) keeps only "read": they can log in and open the dashboard, but cannot change anything. Customers and subscribers are not affected, and neither are visitors, orders, payments, webhooks, cron jobs and comments. Shop staff cannot process orders in wp-admin while the site is locked: unlock it for a while to do so.
+
+= I lost my phone. How do I unlock the site? =
+
+Type one of your recovery codes in the unlock field instead of an app code. If you have none left, add `define( 'SCRAPELOCK_UNLOCK', true );` to wp-config.php (FTP or your hosting panel), go to the Lockdown page, remove the app and connect a new one, then remove that line. The same works if you forget an administrator password while the site is locked, because password resets for staff are frozen too.
+
+= Can someone with access to my server bypass Lockdown? =
+
+Yes. Lockdown protects the site against changes through WordPress (wp-admin, the REST API, XML-RPC and code running inside WordPress). Whoever can edit files or the database on your server controls the site anyway, which is also why the server line is the last-resort unlock.
+
 = Does the human check show a captcha? =
 
 No. A small script waits for the first real interaction (scroll, tap, key or mouse movement), solves a light challenge in the background and receives the cookie. Visitors without it are not blocked: they get the stricter page limit you set (20 pages per minute by default). A determined scraper can repeat these steps, but every IP it uses has to do the work, and plain scripts never do.
@@ -158,6 +182,14 @@ No. A small script waits for the first real interaction (scroll, tap, key or mou
 6. Dashboard widget with the protection status and the last 24 hours.
 
 == Changelog ==
+
+= 2.7.0 =
+* New: Lockdown, a tab in Settings → ScrapeLock and a line under the "Protection" button in the admin bar. Freezes every change to the site (plugins, themes, updates, the file editor, users and roles, staff email and password, settings, content) until an administrator unlocks it with a code from an authenticator app (TOTP, RFC 6238). Visitors and customers are not affected.
+* Enforced through WordPress capabilities and also against code: protected options (active plugins, theme, site address, admin email, registration, default role, user roles, ScrapeLock's own settings), role changes, staff email and password changes, password resets and new application passwords are refused while locked.
+* Each code is accepted once, even when two requests send it at the same moment (the check runs under a short database lock, on the state as it is in the database). New recovery codes stay in the database in plain form for 2 minutes at most, until they are shown.
+* Temporary unlock (15 minutes to 2 hours, then it locks again by itself), ten one-time recovery codes, the SCRAPELOCK_UNLOCK constant as a last resort, 5 wrong codes per 15 minutes, a log of the last 30 events and an email to the admin address on every unlock.
+* The secret is encrypted with the keys in wp-config.php; the QR code is drawn in the browser with the bundled qrcode-generator 1.4.4 (MIT, Kazuhiko Arase).
+* The Lockdown tab warns that there is a single way to unlock, asks to confirm the recovery codes are saved before the first lock, and shows a full report: what is frozen, what keeps working, and the staff accounts, customers, plugins and theme on your site it applies to.
 
 = 2.6.8 =
 * Hardening: downloaded IP lists (Google, Bing, Cloudflare, Bunny, AI bots) are sanity-checked before use. An absurdly broad entry such as 0.0.0.0/0, ::/0 or any prefix shorter than /8 (IPv4) / /16 (IPv6) is dropped, so a bad or hostile source cannot make every IP an official crawler, a trusted proxy or a blocked one.

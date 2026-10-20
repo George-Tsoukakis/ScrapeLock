@@ -262,7 +262,7 @@ final class PNCP_Bots {
 		// Only the roles in the "Who is exempt" setting are exempt, not every logged-in user: a
 		// WooCommerce customer account can be created by anyone. On REST / GraphQL, those who
 		// write content are also exempt, because the block editor makes dozens of requests per minute.
-		if ( PNCP_Options::user_is_exempt( $s ) || ( in_array( $context, array( 'rest', 'graphql' ), true ) && current_user_can( 'edit_posts' ) ) ) {
+		if ( PNCP_Options::user_is_exempt( $s ) || ( in_array( $context, array( 'rest', 'graphql' ), true ) && PNCP_Lockdown::can( 'edit_posts' ) ) ) {
 			return null;
 		}
 		// robots.txt, llms.txt and the TDM opt-out are never blocked, whatever the bot: a blocked bot must

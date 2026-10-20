@@ -143,7 +143,7 @@ final class PNCP_Frontend {
 			return false;
 		}
 		$id = get_queried_object_id();
-		return $id ? current_user_can( 'edit_post', $id ) : current_user_can( 'edit_posts' );
+		return $id ? PNCP_Lockdown::can( 'edit_post', $id ) : PNCP_Lockdown::can( 'edit_posts' );
 	}
 
 	/**
