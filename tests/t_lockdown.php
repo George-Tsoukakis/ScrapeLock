@@ -428,6 +428,18 @@ $pncp_info = PNCP_Health::info( array() );
 t( 'Site Health Info: Lockdown «Locked» και οι παγωμένοι ρόλοι', 'Locked' === $pncp_info['scrapelock']['fields']['lockdown']['value'] && false !== strpos( $pncp_info['scrapelock']['fields']['lockdown_roles']['value'], 'administrator' ) );
 t( 'Site Health Info: κανένα μυστικό (ούτε το secret της εφαρμογής)', false === strpos( wp_json_encode( $pncp_info ), $secret ) );
 
+/* ---------- Abilities API (2.8) κλειδωμένο ---------- */
+if ( function_exists( 'wp_get_ability' ) ) {
+	as_user( 1 );
+	$pncp_sum = wp_get_ability( 'scrapelock/get-summary' )->execute( array() );
+	t( 'ability get-summary κλειδωμένο: διαβάζεται, «locked»', is_array( $pncp_sum ) && 'locked' === $pncp_sum['lockdown'] );
+	$pncp_res = wp_get_ability( 'scrapelock/block-ip' )->execute( array( 'ip' => '203.0.113.91' ) );
+	PNCP_Log::reset_cache();
+	t( 'ability block-ip κλειδωμένο: όχι', is_wp_error( $pncp_res ) && ! PNCP_Log::is_banned( '203.0.113.91' ) );
+	$pncp_res = wp_get_ability( 'scrapelock/emergency-mode' )->execute( array( 'hours' => 2 ) );
+	t( 'ability emergency-mode κλειδωμένο: όχι', is_wp_error( $pncp_res ) && ! PNCP_Options::emergency_until() );
+}
+
 define( 'SCRAPELOCK_UNLOCK', true );
 t( 'SCRAPELOCK_UNLOCK: το κλείδωμα δεν εφαρμόζεται', ! PNCP_Lockdown::is_locked() && current_user_can( 'manage_options' ) );
 $pncp_h = PNCP_Health::test_lockdown();

@@ -45,6 +45,7 @@ require_once PNCP_DIR . 'includes/class-pncp-totp.php';
 require_once PNCP_DIR . 'includes/class-pncp-lockdown.php';
 require_once PNCP_DIR . 'includes/class-pncp-surface.php';
 require_once PNCP_DIR . 'includes/class-pncp-health.php';
+require_once PNCP_DIR . 'includes/class-pncp-abilities.php';
 
 if ( is_admin() ) {
 	require_once PNCP_DIR . 'includes/class-pncp-admin.php';
@@ -67,6 +68,7 @@ PNCP_Precheck::init();
 PNCP_Lockdown::init();
 PNCP_Surface::init();
 PNCP_Health::init();
+PNCP_Abilities::init();
 
 if ( defined( 'WP_CLI' ) && WP_CLI ) {
 	require_once PNCP_DIR . 'includes/class-pncp-cli.php';
