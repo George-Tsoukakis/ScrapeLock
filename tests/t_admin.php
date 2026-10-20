@@ -470,10 +470,14 @@ foreach ( array(
 	array( '198.51.100.201', 'rate_page', 429, 40, 'Mozilla/5.0 Chrome/141', 7 ),
 	array( '198.51.100.202', 'fake_crawler', 403, 5, 'Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)', 1 ),
 	array( '198.51.100.203', 'bot_ua', 403, 3, 'Mozilla/5.0 (compatible; Claude-SearchBot/1.0)', 1 ),
+	array( '160.79.106.140', 'bot_ua', 403, 4, 'Mozilla/5.0 (compatible; ClaudeBot/1.0; +claudebot@anthropic.com)', 1 ),
 ) as $ev ) {
 	$wpdb->insert( $wpdb->prefix . 'pncp_log', array( 'created' => $now_db, 'ip' => $ev[0], 'reason' => $ev[1], 'code' => $ev[2], 'hits' => $ev[3], 'path' => '/x/', 'ua' => $ev[4], 'uas' => $ev[5] ) );
 }
+PNCP_Ip::store_list( 'anthropic', array( '160.79.106.128/26' ) );
 list( , $body ) = http( $page . '&tab=log' );
+t( 'Log: IP επίσημης λίστας (ClaudeBot / Anthropic) χωρίς κουμπί, με σήμανση', false === strpos( $body, 'name="ip" value="160.79.106.140"' ) && false !== strpos( $body, '160.79.106.140' ) && false !== strpos( $body, 'Official Anthropic address' ) );
+delete_option( PNCP_Ip::LISTS_OPTION . '_anthropic' );
 t( 'Log: ενότητα «Persistent IPs» με την IP, τον κύριο λόγο και κουμπί', false !== strpos( $body, 'Persistent IPs (last 7 days)' ) && false !== strpos( $body, '198.51.100.201' ) && false !== strpos( $body, 'value="block_permanent"' ) && false !== strpos( $body, 'Main reason' ) && ! php_errors( $body ) );
 $top_ips = substr( $body, (int) strpos( $body, 'pncp-ip-list' ), 3000 );
 t( 'Log: κουμπί «Block permanently» και στα Top IPs', false !== strpos( $top_ips, 'value="block_permanent"' ) && false !== strpos( $top_ips, '198.51.100.202' ) );

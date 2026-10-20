@@ -159,6 +159,9 @@ function pncp_upgrade() {
 	PNCP_Early::sync();
 	// The pre-cache check: the loader is written again (new version, new plugin folder) or removed.
 	PNCP_Precheck::sync();
+	// A list that is new in this version (e.g. Anthropic in 2.6.2) is downloaded now, not with the daily refresh.
+	PNCP_Ip::forget_missing_try();
+	PNCP_Ip::fetch_missing();
 	// Cache plugins (e.g. LiteSpeed, WP Rocket) finish loading later: before init the purge waits for init.
 	pncp_purge_page_cache();
 }

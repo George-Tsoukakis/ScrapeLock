@@ -504,17 +504,17 @@ final class PNCP_Log {
 	public static function is_site_content( $path ) {
 		static $seen = array();
 		$path        = '/' . ltrim( (string) $path, '/' );
-		if ( isset( $seen[ $path ] ) ) {
-			return $seen[ $path ];
+		$key         = 'pncp_pc_' . md5( $path . '|' . PNCP_Options::stored()['content_paths'] ); // A new prefix asks again.
+		if ( isset( $seen[ $key ] ) ) {
+			return $seen[ $key ];
 		}
-		$key    = 'pncp_pc_' . md5( $path );
 		$cached = get_transient( $key );
 		if ( false !== $cached ) {
-			$seen[ $path ] = 'yes' === $cached;
-			return $seen[ $path ];
+			$seen[ $key ] = 'yes' === $cached;
+			return $seen[ $key ];
 		}
-		$found         = self::find_site_content( $path );
-		$seen[ $path ] = $found;
+		$found        = self::find_site_content( $path );
+		$seen[ $key ] = $found;
 		set_transient( $key, $found ? 'yes' : 'no', 6 * HOUR_IN_SECONDS );
 		return $found;
 	}
@@ -539,6 +539,14 @@ final class PNCP_Log {
 		if ( self::is_site_page( $path ) || self::is_site_page( (string) wp_parse_url( home_url( $rel ), PHP_URL_PATH ) ) ) {
 			return true;
 		}
+		foreach ( self::content_paths() as $prefix ) {
+			if ( 0 === stripos( trailingslashit( $rel ), trailingslashit( $prefix ) ) ) {
+				return true;
+			}
+		}
+		if ( self::is_plugin_route( $rel ) ) {
+			return true;
+		}
 		if ( preg_match( '#^/[0-9]{4}(?:/[0-9]{2}(?:/[0-9]{2})?)?/?$#', $rel ) ) {
 			return true; // Date archive.
 		}
@@ -560,6 +568,78 @@ final class PNCP_Log {
 			return true;
 		}
 		return false;
+	}
+
+	/**
+	 * The "Content addresses" setting: path prefixes of content that WordPress itself does not know, e.g. the
+	 * pages of a community or forum plugin (/hub/space/).
+	 *
+	 * @return string[] E.g. /hub/space.
+	 */
+	public static function content_paths() {
+		$out = array();
+		foreach ( PNCP_Options::parse_list( PNCP_Options::stored()['content_paths'] ) as $entry ) {
+			$path = (string) wp_parse_url( $entry, PHP_URL_PATH ); // A full address is accepted too.
+			$path = '/' . trim( PNCP_Private_Urls::relative_path( '' !== $path ? $path : $entry ), '/' );
+			if ( '/' !== $path ) {
+				$out[] = $path;
+			}
+		}
+		return (array) apply_filters( 'pncp_content_paths', $out );
+	}
+
+	/**
+	 * Is the path a route of another plugin? The first rewrite rule that matches decides, as in WordPress: a rule
+	 * with only its own query variables (e.g. index.php?fcom_route=…) belongs to a plugin that shows content
+	 * WordPress cannot find by itself. Rules for posts, pages, terms and authors were already checked.
+	 *
+	 * @param string $rel Path within the site.
+	 * @return bool
+	 */
+	private static function is_plugin_route( $rel ) {
+		global $wp_rewrite;
+		if ( ! $wp_rewrite instanceof WP_Rewrite || ! $wp_rewrite->using_permalinks() ) {
+			return false;
+		}
+		$rules = $wp_rewrite->wp_rewrite_rules();
+		if ( ! is_array( $rules ) || ! $rules ) {
+			return false;
+		}
+		$request = trim( $rel, '/' );
+		$decoded = rawurldecode( $request );
+		foreach ( $rules as $match => $query ) {
+			if ( ! preg_match( '#^' . $match . '#', $request ) && ! preg_match( '#^' . $match . '#', $decoded ) ) {
+				continue;
+			}
+			preg_match_all( '/[?&]([^=&]+)=/', (string) $query, $vars );
+			$vars = array_diff( $vars[1], array( 'paged', 'page', 'feed', 'cpage', 'embed' ) );
+			return $vars && ! array_intersect( $vars, self::core_query_vars() );
+		}
+		return false;
+	}
+
+	/**
+	 * The query variables of WordPress itself and of the post types and taxonomies.
+	 *
+	 * @return string[]
+	 */
+	private static function core_query_vars() {
+		static $vars = null;
+		if ( null === $vars ) {
+			$wp   = new WP(); // A fresh object: its lists do not include what plugins add with the query_vars filter.
+			$vars = array_merge( $wp->public_query_vars, $wp->private_query_vars, array( 'rest_route', 'sitemap', 'sitemap-subtype', 'sitemap-stylesheet', 'favicon' ) );
+			foreach ( get_post_types( array(), 'objects' ) as $type ) {
+				if ( is_string( $type->query_var ) && '' !== $type->query_var ) {
+					$vars[] = $type->query_var;
+				}
+			}
+			foreach ( get_taxonomies( array(), 'objects' ) as $taxonomy ) {
+				if ( is_string( $taxonomy->query_var ) && '' !== $taxonomy->query_var ) {
+					$vars[] = $taxonomy->query_var;
+				}
+			}
+		}
+		return $vars;
 	}
 
 	/**

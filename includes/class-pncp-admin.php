@@ -746,6 +746,7 @@ final class PNCP_Admin {
 				);
 				?>
 				</p>
+				<?php self::textarea( $s, 'content_paths', __( 'Content addresses: path prefixes of pages that other plugins show, one per line, e.g. /hub/space/', 'scrapelock' ), __( 'Only for the log: blocked requests under these addresses count as “Pages”. Routes that plugins register as WordPress rewrite rules, and all posts, pages, products and terms, are found without this. Nothing is blocked or allowed because of it.', 'scrapelock' ), 2 ); ?>
 			</td>
 		</tr>
 		<tr id="pncp-sec-ip">
@@ -943,7 +944,7 @@ final class PNCP_Admin {
 		</ul>
 		<?php self::action_form_open( 'pncp_log', 'pncp_log' ); ?>
 			<input type="hidden" name="op" value="refresh_lists">
-			<?php submit_button( __( 'Refresh now', 'scrapelock' ), 'secondary', 'submit', false ); ?>
+			<?php submit_button( __( 'Refresh lists now', 'scrapelock' ), 'secondary', 'submit', false ); ?>
 		</form>
 		<?php if ( PNCP_Geo::needed() ) : ?>
 			<h3><?php esc_html_e( 'Country database', 'scrapelock' ); ?></h3>
@@ -1427,6 +1428,9 @@ final class PNCP_Admin {
 				<section class="pncp-card">
 					<h4><?php esc_html_e( 'Addresses that do not exist', 'scrapelock' ); ?></h4>
 					<?php self::path_table( $top['unknown'] ); ?>
+					<?php if ( $top['unknown'] ) : ?>
+						<p class="description"><?php esc_html_e( 'A real page here? Pages of plugins that WordPress does not know (e.g. a community or forum) count as “Pages” when you add their prefix in “Content addresses” (Bots and limits tab).', 'scrapelock' ); ?></p>
+					<?php endif; ?>
 				</section>
 				<section class="pncp-card">
 					<h4><?php esc_html_e( 'Files and admin paths', 'scrapelock' ); ?></h4>
@@ -1605,6 +1609,16 @@ final class PNCP_Admin {
 			return;
 		}
 		if ( PNCP_Ip::client_ip() === $ip || PNCP_Ip::is_local( $ip ) ) {
+			return;
+		}
+		$owner = PNCP_Ip::official_owner( $ip );
+		if ( '' !== $owner ) {
+			printf(
+				' <span class="pncp-badge" title="%2$s">%1$s</span>',
+				/* translators: %s: company, e.g. Anthropic or Cloudflare */
+				esc_html( sprintf( __( 'Official %s address', 'scrapelock' ), $owner ) ),
+				esc_attr__( 'No “Block permanently” here: the address is in an official list, so blocking it would also stop that company\'s search bots, or every visitor behind a CDN. Its training crawlers are already blocked by the bot list (User-Agent).', 'scrapelock' )
+			);
 			return;
 		}
 		self::action_form_open( 'pncp_log', 'pncp_log', 'pncp-inline-form' );
@@ -1890,7 +1904,7 @@ final class PNCP_Admin {
 			'perm_added'      => array( 'success', __( 'The IP was added to the always-blocked IPs (“Bots and limits” → “Always blocked”). You can remove it there.', 'scrapelock' ) ),
 			'perm_exists'     => array( 'info', __( 'The IP is already in the always-blocked IPs.', 'scrapelock' ) ),
 			'perm_full'       => array( 'error', __( 'The always-blocked IPs already have 200 lines. Combine addresses into CIDR ranges there first.', 'scrapelock' ) ),
-			'perm_refused'    => array( 'error', __( 'This IP cannot be blocked permanently: it is the server itself, your own IP, a private address, an always-allowed IP or an official Google / Bing address.', 'scrapelock' ) ),
+			'perm_refused'    => array( 'error', __( 'This IP cannot be blocked permanently: it is the server itself, your own IP, a private address, an always-allowed IP or an address in an official list (Google, Bing, AI search services, Cloudflare, Bunny CDN).', 'scrapelock' ) ),
 			'lists'           => array( 'success', __( 'IP lists refreshed.', 'scrapelock' ) ),
 			'geo'             => array( 'success', __( 'Country database downloaded.', 'scrapelock' ) ),
 			'geo_failed'      => array( 'error', __( 'The country database could not be downloaded or read; the previous one (if any) was kept. It will try again tomorrow.', 'scrapelock' ) ),

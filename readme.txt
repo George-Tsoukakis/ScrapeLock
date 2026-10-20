@@ -163,6 +163,10 @@ No. A small script waits for the first real interaction (scroll, tap, key or mou
 * Log: "Pages" now lists only addresses that exist on the site (posts, pages, products, archives…). Random strings and guesses get their own group, "Addresses that do not exist", next to "Files and admin paths".
 * Log: the "Block permanently" button is also in "Top IPs" and in "Latest events".
 * Log: "Persistent IPs" also lists IPs with at least 100 blocked requests in 7 days, even if they never got a temporary block (for example a User-Agent in the bot list), with their main reason.
+* Log: pages that other plugins show (for example a community under /hub/space/) count as "Pages", found from the WordPress rewrite rules or from the new "Content addresses" setting.
+* Log: no "Block permanently" for addresses in an official list (Google, Bing, OpenAI, Perplexity, Anthropic, Cloudflare, Bunny CDN): blocking them would also stop that company's search bots, or every visitor behind the CDN.
+* Official IP lists that the settings need but were never downloaded (for example Anthropic after an update) are downloaded right away, not with the daily refresh. "Refresh lists now" button.
+* robots.txt: the trap and Content-Signal go into the existing "User-agent: *" group instead of separate groups.
 * Nginx rules: the names carry the site's suffix, so several WordPress sites can use their rules on the same Nginx. If you installed the 2.6.2 rules, copy both parts again.
 * Nginx rules: the "Server rules" tab shows whether they are installed and up to date with the current settings, and where each part goes on the common servers and panels.
 
