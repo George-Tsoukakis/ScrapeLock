@@ -579,3 +579,63 @@
 .pncp-ld-log {
 	max-width: 780px;
 }
+
+.pncp-ld-warning {
+	border-left: 4px solid #d63638;
+	background: #fcf0f1;
+}
+
+.pncp-ld-warning h2 .dashicons {
+	color: #d63638;
+	vertical-align: -3px;
+}
+
+.pncp-ld-warning ul {
+	list-style: disc;
+	padding-left: 20px;
+}
+
+.pncp-ld-report-table th {
+	width: 140px;
+	font-weight: 600;
+}
+
+.pncp-ld-report-table ul,
+.pncp-ld-open,
+.pncp-ld-site {
+	margin: 0;
+}
+
+.pncp-ld-report-table li,
+.pncp-ld-open li {
+	display: flex;
+	gap: 6px;
+	margin: 2px 0 6px;
+}
+
+.pncp-ld-report-table .dashicons-lock {
+	flex: none;
+	color: #8a2424;
+	font-size: 16px;
+	margin-top: 2px;
+}
+
+.pncp-ld-open .dashicons-yes {
+	flex: none;
+	color: #1a7f37;
+}
+
+.pncp-ld-site {
+	list-style: disc;
+	padding-left: 20px;
+}
+
+.pncp-tab-lockdown .dashicons {
+	font-size: 16px;
+	vertical-align: -3px;
+}
+
+.nav-tab.pncp-tab-locked {
+	color: #a7aaad;
+	cursor: not-allowed;
+}

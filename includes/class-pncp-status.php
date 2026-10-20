@@ -320,28 +320,44 @@ final class PNCP_Status {
 	 * @param WP_Admin_Bar $bar The admin bar.
 	 */
 	public static function admin_bar( $bar ) {
-		if ( ! current_user_can( 'manage_options' ) ) {
+		// Administrators keep the button while the site is locked: it leads to the Lockdown tab.
+		if ( ! PNCP_Lockdown::can( 'manage_options' ) ) {
 			return;
 		}
 		$on        = self::is_enabled();
 		$emergency = $on && PNCP_Options::emergency_until();
+		$locked    = PNCP_Lockdown::is_locked();
 		if ( $emergency ) {
 			$label = __( 'Protection: EMERGENCY', 'scrapelock' );
 		} else {
 			$label = $on ? __( 'Protection: ON', 'scrapelock' ) : __( 'Protection: OFF', 'scrapelock' );
+		}
+		if ( $locked ) {
+			$label .= ' · ' . __( 'Locked', 'scrapelock' );
 		}
 
 		$bar->add_node(
 			array(
 				'id'    => 'pncp-status',
 				'title' => '<span class="ab-icon dashicons ' . ( $on ? 'dashicons-shield-alt' : 'dashicons-warning' ) . '" aria-hidden="true"></span><span class="ab-label">' . esc_html( $label ) . '</span>',
-				'href'  => self::settings_url(),
+				'href'  => $locked ? PNCP_Lockdown::page_url() : self::settings_url(),
 				'meta'  => array(
 					'class' => $emergency ? 'pncp-emergency' : ( $on ? 'pncp-on' : 'pncp-off' ),
 					'title' => $on ? __( 'The site is protected', 'scrapelock' ) : __( 'Protection is disabled', 'scrapelock' ),
 				),
 			)
 		);
+		$lockdown = array(
+			'parent' => 'pncp-status',
+			'id'     => 'pncp-lockdown',
+			'title'  => '<span class="ab-icon dashicons dashicons-' . ( $locked ? 'lock' : 'unlock' ) . '" aria-hidden="true"></span>' . esc_html( PNCP_Lockdown::bar_label() ),
+			'href'   => PNCP_Lockdown::page_url(),
+		);
+		if ( $locked ) {
+			// Nothing else can be changed while locked.
+			$bar->add_node( $lockdown );
+			return;
+		}
 		$bar->add_node(
 			array(
 				'parent' => 'pncp-status',
@@ -368,16 +384,18 @@ final class PNCP_Status {
 				'href'   => self::settings_url(),
 			)
 		);
+		$bar->add_node( $lockdown );
 	}
 
 	/**
 	 * Colors for the button and the widget (green = ON, red = OFF, orange = Emergency).
 	 */
 	public static function admin_bar_css() {
-		if ( ! is_admin_bar_showing() || ! current_user_can( 'manage_options' ) ) {
+		if ( ! is_admin_bar_showing() || ! PNCP_Lockdown::can( 'manage_options' ) ) {
 			return;
 		}
 		$css = '#wpadminbar #wp-admin-bar-pncp-status .ab-icon:before{top:2px}'
+			. '#wpadminbar #wp-admin-bar-pncp-lockdown .ab-icon:before{top:3px;font-size:16px}'
 			. '#wpadminbar #wp-admin-bar-pncp-status.pncp-on>.ab-item .ab-icon:before{color:#46b450}'
 			. '#wpadminbar #wp-admin-bar-pncp-status.pncp-off>.ab-item{background:#b32d2e;color:#fff}'
 			. '#wpadminbar #wp-admin-bar-pncp-status.pncp-emergency>.ab-item{background:#9a4a00;color:#fff}'

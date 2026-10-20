@@ -123,7 +123,7 @@ delete_site_option( PNCP_Lockdown::LOG_OPTION );
 delete_metadata( 'user', 0, PNCP_Lockdown::PENDING_META, '', true );
 reset_fails( array( 1, $editor_id ) );
 fresh();
-$page = '/wp-admin/admin.php?page=scrapelock-lockdown';
+$page = '/wp-admin/options-general.php?page=scrapelock&tab=lockdown';
 
 /* ---------- TOTP (RFC 6238, παράρτημα B) ---------- */
 $rfc = PNCP_Totp::base32_encode( '12345678901234567890' );
@@ -134,10 +134,15 @@ t( 'TOTP: ο ίδιος κωδικός δεύτερη φορά απορρίπτ�
 /* ---------- Σύνδεση εφαρμογής ---------- */
 as_user( 1 );
 list( $code, $body ) = http( $page );
-t( 'σελίδα: 200 χωρίς PHP warnings, κουμπί σύνδεσης', 200 === $code && ! php_errors( $body ) && false !== strpos( $body, 'Connect the app' ), (string) $code );
+t( 'καρτέλα Lockdown στις ρυθμίσεις του ScrapeLock: 200 χωρίς PHP warnings, κουμπί σύνδεσης', 200 === $code && ! php_errors( $body ) && false !== strpos( $body, 'Connect the app' ) && false !== strpos( $body, 'nav-tab nav-tab-active pncp-tab-lockdown' ), (string) $code );
+t( 'καρτέλα Lockdown: προειδοποίηση «μόνο ένας τρόπος ξεκλειδώματος»', false !== strpos( $body, 'there is only one way to unlock' ) && false !== strpos( $body, 'wp-config.php' ) );
+t( 'καρτέλα Lockdown: πλήρης αναφορά (τι κλειδώνει, τι δουλεύει, ποιοι λογαριασμοί)', false !== strpos( $body, 'What exactly is locked' ) && false !== strpos( $body, 'What keeps working' ) && 1 === preg_match( '/Staff accounts that keep only &quot;read&quot; while locked: [^<]*Administrator: \d+[^<]*Editor: \d+/', $body ) && 1 === preg_match( '/\d+ customer (or|and) subscriber accounts? (is|are) not affected/', $body ), preg_match( '/Staff accounts[^<]*|\d+ customer[^<]*/', $body, $pncp_m ) ? $pncp_m[0] : '' );
+t( 'όχι ξεχωριστό μενού Lockdown', false === strpos( $body, 'toplevel_page_scrapelock-lockdown' ) );
+list( , $body ) = http( '/' );
+t( 'μπάρα: «Protection: ON» → «Lockdown: set up…»', false !== strpos( $body, 'wp-admin-bar-pncp-lockdown' ) && false !== strpos( $body, 'Lockdown: set up' ) && false !== strpos( $body, 'wp-admin-bar-pncp-toggle' ) );
 as_user( $editor_id );
 list( $code, $body ) = http( $page );
-t( 'editor: χωρίς πρόσβαση στη σελίδα', false === strpos( $body, 'Connect the app' ), (string) $code );
+t( 'editor: χωρίς πρόσβαση στη σελίδα', false === strpos( $body, 'Connect the app' ) && false === strpos( $body, 'What exactly is locked' ), (string) $code );
 t( 'editor: δεν μπορεί να συνδέσει εφαρμογή', 'http 403' === ld( 'setup' ) );
 
 as_user( 1 );
@@ -160,9 +165,13 @@ reset_fails( array( 1 ) );
 /* ---------- Κλείδωμα ---------- */
 $used = PNCP_Totp::step();
 state_set( array( 'last_step' => $used ) );
-t( 'κλείδωμα με κωδικό που χρησιμοποιήθηκε ήδη: όχι', 'wrong' === ld( 'lock', array( 'code' => PNCP_Totp::code( $secret, $used ) ) ) && ! PNCP_Lockdown::is_locked() );
+list( , $body ) = http( $page );
+t( 'πρώτο κλείδωμα: κουτάκι «αποθήκευσα τους κωδικούς»', false !== strpos( $body, 'name="ack" value="1" required' ) );
+$before = PNCP_Lockdown::state()['last_step'];
+t( 'πρώτο κλείδωμα χωρίς το κουτάκι: όχι, και ο κωδικός δεν «καίγεται»', 'ack' === ld( 'lock', array( 'code' => PNCP_Totp::code( $secret, PNCP_Totp::step() + 1 ) ) ) && ! PNCP_Lockdown::is_locked() && PNCP_Lockdown::state()['last_step'] === $before );
+t( 'κλείδωμα με κωδικό που χρησιμοποιήθηκε ήδη: όχι', 'wrong' === ld( 'lock', array( 'code' => PNCP_Totp::code( $secret, $used ), 'ack' => 1 ) ) && ! PNCP_Lockdown::is_locked() );
 reset_fails( array( 1 ) );
-t( 'κλείδωμα με τον κωδικό της εφαρμογής', 'locked' === ld( 'lock', array( 'code' => app_code( $secret ) ) ) && PNCP_Lockdown::is_locked() );
+t( 'κλείδωμα με τον κωδικό της εφαρμογής', 'locked' === ld( 'lock', array( 'code' => app_code( $secret ), 'ack' => 1 ) ) && PNCP_Lockdown::is_locked() && PNCP_Lockdown::state()['ack'] );
 
 /* ---------- Κλειδωμένο: ο διαχειριστής δεν αλλάζει τίποτα ---------- */
 foreach ( array( 'plugins.php', 'plugin-install.php', 'update-core.php', 'theme-editor.php', 'options-general.php', 'post-new.php', 'edit.php', 'users.php', 'user-new.php' ) as $screen ) {
@@ -172,7 +181,12 @@ foreach ( array( 'plugins.php', 'plugin-install.php', 'update-core.php', 'theme-
 list( $code, $body ) = http( '/wp-admin/index.php' );
 t( 'κλειδωμένο: ο Πίνακας ελέγχου ανοίγει, με ειδοποίηση', 200 === $code && false !== strpos( $body, 'This site is locked.' ) && ! php_errors( $body ), (string) $code );
 list( $code, $body ) = http( $page );
-t( 'κλειδωμένο: η σελίδα Lockdown ανοίγει, με ξεκλείδωμα', 200 === $code && false !== strpos( $body, 'Until I lock it again' ) && ! php_errors( $body ), (string) $code );
+t( 'κλειδωμένο: η καρτέλα Lockdown ανοίγει, με ξεκλείδωμα', 200 === $code && false !== strpos( $body, 'Until I lock it again' ) && ! php_errors( $body ), (string) $code );
+t( 'κλειδωμένο: η αναφορά φαίνεται και τώρα, όχι η προειδοποίηση', false !== strpos( $body, 'What exactly is locked' ) && false === strpos( $body, 'there is only one way to unlock' ) && false !== strpos( $body, 'Lost your phone?' ) );
+list( $code, $body ) = http( '/wp-admin/options-general.php?page=scrapelock&tab=bots' );
+t( 'κλειδωμένο: κάθε άλλη καρτέλα δείχνει το Lockdown (οι άλλες γκρίζες)', 200 === $code && false !== strpos( $body, 'Until I lock it again' ) && false === strpos( $body, 'name="pncp_settings[rate_limit]"' ) && false !== strpos( $body, 'pncp-tab-locked' ) && false === strpos( $body, 'pncp-status-bar' ), (string) $code );
+t( 'κλειδωμένο: Ρυθμίσεις → ScrapeLock υπάρχει στο μενού', false !== strpos( $body, 'options-general.php?page=scrapelock' ) );
+t( 'κλειδωμένο: μπάρα «Protection: ON · Locked» με μόνο το Lockdown', false !== strpos( $body, 'Protection: ON · Locked' ) && false !== strpos( $body, 'Lockdown: locked (unlock' ) && false === strpos( $body, 'wp-admin-bar-pncp-toggle' ) && false === strpos( $body, 'wp-admin-bar-pncp-settings' ) );
 list( $code ) = http( '/wp-admin/options.php', array( 'option_page' => 'general', 'action' => 'update', '_wpnonce' => wp_create_nonce( 'general-options' ), 'blogname' => 'Hacked' ) );
 wp_cache_flush();
 t( 'κλειδωμένο: Ρυθμίσεις → Γενικές δεν αποθηκεύονται', 'Hacked' !== get_option( 'blogname' ), (string) $code );
@@ -248,7 +262,9 @@ as_user( $editor_id );
 list( $code, $body ) = http( '/wp-admin/edit.php' );
 t( 'editor: δεν επεξεργάζεται άρθρα', 403 === $code || false !== strpos( $body, 'not allowed' ), (string) $code );
 list( , $body ) = http( '/wp-admin/index.php' );
-t( 'editor: βλέπει ότι το site είναι κλειδωμένο, χωρίς σύνδεσμο ξεκλειδώματος', false !== strpos( $body, 'This site is locked.' ) && false === strpos( $body, 'page=scrapelock-lockdown' ) );
+t( 'editor: βλέπει ότι το site είναι κλειδωμένο, χωρίς σύνδεσμο ξεκλειδώματος', false !== strpos( $body, 'This site is locked.' ) && false === strpos( $body, 'tab=lockdown' ) && false === strpos( $body, 'wp-admin-bar-pncp-status' ) );
+list( $code, $body ) = http( '/wp-admin/options-general.php?page=scrapelock&tab=lockdown' );
+t( 'editor: η σελίδα του ScrapeLock δεν ανοίγει', false === strpos( $body, 'Until I lock it again' ), (string) $code );
 t( 'editor: δεν ξεκλειδώνει', 'http 403' === ld( 'unlock', array( 'code' => app_code( $secret ) ) ) && PNCP_Lockdown::is_locked() );
 
 /* ---------- Ξεκλείδωμα ---------- */
@@ -330,6 +346,7 @@ t( 'αρχείο: συμβάντα στη σελίδα (κλείδωμα, κωδ
 t( 'αφαίρεση χωρίς κωδικό: όχι', 'wrong' === ld( 'remove', array( 'code' => '' ) ) && PNCP_Lockdown::configured() );
 reset_fails( array( 1 ) );
 t( 'αφαίρεση με κωδικό: η εφαρμογή φεύγει', 'removed' === ld( 'remove', array( 'code' => app_code( $secret ) ) ) && ! PNCP_Lockdown::configured() && ! PNCP_Lockdown::is_locked() );
+t( '… και με νέα εφαρμογή ξαναζητείται το κουτάκι', empty( PNCP_Lockdown::state()['ack'] ) );
 
 /* ---------- Ξεκλείδωμα από τον server (wp-config.php) ---------- */
 state_set( array( 'secret' => 'p:' . $secret, 'locked' => true, 'until' => 0 ) );
