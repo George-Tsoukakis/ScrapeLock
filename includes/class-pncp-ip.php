@@ -55,7 +55,16 @@ final class PNCP_Ip {
 	 * Attaches the hooks.
 	 */
 	public static function init() {
-		add_action( self::CRON, array( __CLASS__, 'refresh_lists' ) );
+		add_action( self::CRON, array( __CLASS__, 'refresh_lists' ), 10, 0 );
+		add_action( 'admin_init', array( __CLASS__, 'fetch_missing' ) ); // Also right after a settings change.
+		add_action( 'update_option_' . PNCP_OPTION, array( __CLASS__, 'forget_missing_try' ) );
+	}
+
+	/**
+	 * A settings change can need a new list: it is asked for at once, not after the hourly pause.
+	 */
+	public static function forget_missing_try() {
+		delete_transient( 'pncp_lists_missing_try' );
 	}
 
 	/**
@@ -190,6 +199,69 @@ final class PNCP_Ip {
 			$needed = array_merge( $needed, array_values( PNCP_Bots::ai_bot_lists() ) );
 		}
 		return $needed;
+	}
+
+	/**
+	 * Whose official address is this: a search engine, an AI search service or a CDN in front of the site?
+	 * Blocking one of these would stop that company's search bots, or every visitor behind the CDN.
+	 *
+	 * @param string $ip IP.
+	 * @return string The owner, e.g. Anthropic; '' when it is in none of the lists.
+	 */
+	public static function official_owner( $ip ) {
+		static $seen = array();
+		$ip          = (string) $ip;
+		if ( isset( $seen[ $ip ] ) ) {
+			return $seen[ $ip ];
+		}
+		$owners = array(
+			'google'          => 'Google',
+			'bing'            => 'Bing',
+			'openai_search'   => 'OpenAI',
+			'openai_user'     => 'OpenAI',
+			'perplexity_bot'  => 'Perplexity',
+			'perplexity_user' => 'Perplexity',
+			'anthropic'       => 'Anthropic',
+			'cloudflare'      => 'Cloudflare',
+		);
+		$owner  = '';
+		if ( filter_var( $ip, FILTER_VALIDATE_IP ) ) {
+			foreach ( $owners as $list => $name ) {
+				if ( self::in_any( $ip, self::list_of( $list ) ) ) {
+					$owner = $name;
+					break;
+				}
+			}
+			if ( '' === $owner && self::is_bunny( $ip ) ) {
+				$owner = 'Bunny CDN';
+			}
+		}
+		$seen[ $ip ] = $owner;
+		return $owner;
+	}
+
+	/**
+	 * The lists the current settings use but that were never downloaded (e.g. a list new in an update, or one
+	 * a setting has just turned on).
+	 *
+	 * @return string[]
+	 */
+	public static function missing_lists() {
+		return array_values( array_diff( array_unique( self::needed_lists() ), array_keys( self::lists_updated() ) ) );
+	}
+
+	/**
+	 * Downloads the missing lists right away (in the background, on the next request) instead of waiting for
+	 * the daily refresh. At most once an hour, so a source that is down is not asked on every request.
+	 */
+	public static function fetch_missing() {
+		if ( ! self::missing_lists() || get_transient( 'pncp_lists_missing_try' ) ) {
+			return;
+		}
+		set_transient( 'pncp_lists_missing_try', 1, HOUR_IN_SECONDS );
+		if ( ! wp_next_scheduled( self::CRON, array( 'missing' ) ) ) {
+			wp_schedule_single_event( time(), self::CRON, array( 'missing' ) );
+		}
 	}
 
 	/**

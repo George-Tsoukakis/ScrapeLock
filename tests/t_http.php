@@ -611,6 +611,11 @@ settings( array( 'block_referrers' => '' ) );
 settings( array( 'content_signal' => 1, 'allow_ai_search' => 0 ) );
 list( $code, $hdr, $body ) = req( '/robots.txt', browser( '198.51.100.40' ) );
 t( 'robots.txt: Content-Signal ai-input=no', false !== strpos( $body, 'Content-Signal: search=yes, ai-input=no, ai-train=no' ), $body );
+t( 'robots.txt: ένα μόνο group «User-agent: *» (η παγίδα και το Content-Signal μέσα σε αυτό)', 1 === preg_match_all( '/^User-agent: \*\s*$/mi', $body ) && preg_match( '/^User-agent: \*\n(?:[^\n]+\n)*Content-Signal: [^\n]+\n/m', $body ) && strpos( $body, 'Content-Signal' ) < strpos( $body, 'Sitemap:' ), $body );
+$pncp_rb = PNCP_Bots::add_to_star_group( "User-agent: Googlebot\nDisallow: /x/\n\nSitemap: https://example.org/s.xml", array( 'Disallow: /trap/' ) );
+t( 'robots.txt: χωρίς group για όλους, ένα νέο', 1 === preg_match_all( '/^User-agent: \*$/m', $pncp_rb ) && false !== strpos( $pncp_rb, "User-agent: *\nDisallow: /trap/" ) && false !== strpos( $pncp_rb, "User-agent: Googlebot\nDisallow: /x/" ), $pncp_rb );
+$pncp_rb = PNCP_Bots::add_to_star_group( "User-agent: *\nDisallow: /wp-admin/\nAllow: /wp-admin/admin-ajax.php\n\nSitemap: https://example.org/s.xml", array( 'Content-Signal: search=yes' ) );
+t( 'robots.txt: μέσα στο υπάρχον group, μετά τον τελευταίο κανόνα, πριν από το Sitemap', "User-agent: *\nDisallow: /wp-admin/\nAllow: /wp-admin/admin-ajax.php\nContent-Signal: search=yes\n\nSitemap: https://example.org/s.xml\n" === $pncp_rb, $pncp_rb );
 settings( array( 'allow_ai_search' => 1 ) );
 list( $code, $hdr, $body ) = req( '/robots.txt', browser( '198.51.100.40' ) );
 t( 'robots.txt: με AI search ai-input=yes', false !== strpos( $body, 'Content-Signal: search=yes, ai-input=yes, ai-train=no' ), $body );
@@ -902,6 +907,8 @@ t( 'μόνιμος αποκλεισμός: δεύτερη φορά = υπάρχ�
 t( 'μόνιμος αποκλεισμός: ποτέ ο server, ιδιωτική IP, άκυρη τιμή', 'refused' === PNCP_Options::block_ip_permanently( '127.0.0.1' ) && 'refused' === PNCP_Options::block_ip_permanently( '10.0.0.5' ) && 'refused' === PNCP_Options::block_ip_permanently( 'not-an-ip' ) );
 PNCP_Ip::store_list( 'google', array( '66.249.64.0/19' ) );
 t( 'μόνιμος αποκλεισμός: ποτέ διεύθυνση του Google', 'refused' === PNCP_Options::block_ip_permanently( '66.249.66.1' ) );
+PNCP_Ip::store_list( 'anthropic', array( '160.79.106.128/28' ) );
+t( 'μόνιμος αποκλεισμός: ποτέ διεύθυνση της Anthropic (θα έκοβε και το Claude-SearchBot) ή της Cloudflare', 'Anthropic' === PNCP_Ip::official_owner( '160.79.106.131' ) && 'refused' === PNCP_Options::block_ip_permanently( '160.79.106.131' ) && 'Cloudflare' === PNCP_Ip::official_owner( '173.245.48.9' ) && 'refused' === PNCP_Options::block_ip_permanently( '173.245.48.9' ) && '' === PNCP_Ip::official_owner( '198.51.100.137' ) );
 delete_option( PNCP_Ip::LISTS_OPTION . '_google' );
 list( $code ) = req( $url, browser( '198.51.100.133' ) );
 t( 'μόνιμος αποκλεισμός: ισχύει αμέσως (403)', 403 === $code, (string) $code );
@@ -1114,9 +1121,48 @@ t( 'αναφορά: αρχεία χωριστά', isset( $probes['/.env'], $prob
 if ( ! is_wp_error( $pncp_cat ) ) {
 	wp_delete_term( $pncp_cat['term_id'], 'category' );
 }
+// Σελίδες άλλων plugins (π.χ. κοινότητα στο /hub/space/): rewrite rules ή «Content addresses».
+global $wp_rewrite;
+add_rewrite_rule( '^fcom-hub/(.*)?', 'index.php?fcom_route=$matches[1]', 'top' );
+add_rewrite_rule( '(.?.+?)/fake-endpoint(/(.*))?/?$', 'index.php?pagename=$matches[1]&fake-endpoint=$matches[3]', 'top' );
+$wp_rewrite->flush_rules( false );
+t( 'αναφορά: διαδρομή plugin από rewrite rule με δικές του μεταβλητές = σελίδα', PNCP_Log::is_site_content( '/fcom-hub/space/pharmacies-eopyy/post/farmakeio-evroy' ) );
+t( 'αναφορά: endpoint με pagename ανύπαρκτης σελίδας (τύπου WooCommerce) = δεν υπάρχει', ! PNCP_Log::is_site_content( '/no-such-page-xyz/fake-endpoint/' ) );
+t( 'αναφορά: /hub/space/ χωρίς rule ούτε ρύθμιση = δεν υπάρχει', ! PNCP_Log::is_site_content( '/hub/space/eopyy/home' ) );
+settings( array( 'content_paths' => "/hub/space/\nhttps://example.org/forum" ) );
+t( 'αναφορά: «Content addresses» /hub/space/ = σελίδα, αμέσως (χωρίς την αποθηκευμένη απάντηση)', PNCP_Log::is_site_content( '/hub/space/eopyy/home' ) && PNCP_Log::is_site_content( '/hub/space' ) && PNCP_Log::is_site_content( '/forum/topic/1' ) && ! PNCP_Log::is_site_content( '/hub/spaceship' ), wp_json_encode( PNCP_Log::content_paths() ) );
+$pncp_in        = array( 'content_paths' => " /hub/space/ \n\n/forum/" );
+$pncp_sanitized = PNCP_Options::sanitize( array_merge( PNCP_Options::stored(), $pncp_in ) );
+t( 'ρύθμιση «Content addresses»: μία ανά γραμμή, χωρίς κενά', "/hub/space/\n/forum/" === $pncp_sanitized['content_paths'], wp_json_encode( $pncp_sanitized['content_paths'] ) );
+settings( array( 'content_paths' => '' ) );
+unset( $wp_rewrite->extra_rules_top['^fcom-hub/(.*)?'], $wp_rewrite->extra_rules_top['(.?.+?)/fake-endpoint(/(.*))?/?$'] );
+$wp_rewrite->flush_rules( false );
 t( 'αναφορά: ταξινόμηση διαδρομών', ! PNCP_Log::is_probe_path( '/wp-sitemap.xml' ) && ! PNCP_Log::is_probe_path( '/wp-json/wp/v2/posts' ) && PNCP_Log::is_probe_path( '/@fs/proc/self/cmdline' ) && PNCP_Log::is_probe_path( '/terraform.tfvars' ) && PNCP_Log::is_probe_path( '/wp-admin/includes/rk2.php' ) && ! PNCP_Log::is_probe_path( '/' ) );
 $_SERVER['REQUEST_URI'] = '/';
 fresh();
+
+/* ---------- 2.6.3: λίστες που λείπουν κατεβαίνουν αμέσως ---------- */
+$pncp_upd = get_option( PNCP_Ip::LISTS_OPTION . '_updated' );
+delete_transient( 'pncp_lists_missing_try' );
+wp_clear_scheduled_hook( PNCP_Ip::CRON, array( 'missing' ) );
+$pncp_u = PNCP_Ip::lists_updated();
+unset( $pncp_u['bing'] );
+update_option( PNCP_Ip::LISTS_OPTION . '_updated', $pncp_u, false );
+t( 'λίστες: η Bing λείπει', in_array( 'bing', PNCP_Ip::missing_lists(), true ), wp_json_encode( PNCP_Ip::missing_lists() ) );
+PNCP_Ip::fetch_missing();
+$pncp_next = wp_next_scheduled( PNCP_Ip::CRON, array( 'missing' ) );
+t( 'λίστες: κατέβασμα τώρα (όχι με τον ημερήσιο κύκλο)', $pncp_next && $pncp_next <= time() + 5 && get_transient( 'pncp_lists_missing_try' ) );
+wp_clear_scheduled_hook( PNCP_Ip::CRON, array( 'missing' ) );
+PNCP_Ip::fetch_missing();
+t( 'λίστες: όχι ξανά μέσα στην ίδια ώρα', ! wp_next_scheduled( PNCP_Ip::CRON, array( 'missing' ) ) );
+settings( array( 'rate_limit' => PNCP_Options::stored()['rate_limit'] + 1 ) );
+PNCP_Ip::fetch_missing();
+t( 'λίστες: μετά από αλλαγή ρυθμίσεων ξανά αμέσως', (bool) wp_next_scheduled( PNCP_Ip::CRON, array( 'missing' ) ) );
+settings( array( 'rate_limit' => PNCP_Options::stored()['rate_limit'] - 1 ) );
+wp_clear_scheduled_hook( PNCP_Ip::CRON, array( 'missing' ) );
+delete_transient( 'pncp_lists_missing_try' );
+update_option( PNCP_Ip::LISTS_OPTION . '_updated', $pncp_upd, false );
+t( 'λίστες: η ημερήσια ενημέρωση μένει προγραμματισμένη', (bool) wp_next_scheduled( PNCP_Ip::CRON ) );
 
 /* ---------- 2.4: αναβάθμιση και νέα εγκατάσταση ---------- */
 // Το dbDelta του PNCP_Log::install() βγάζει Deprecated μέσα στο SQLite drop-in (wp-sqlite-db), όχι στο plugin.

@@ -29,6 +29,7 @@
 | Όριο sitemap ανά IP (WordPress, Rank Math, Yoast κ.ά.)· ποτέ για επαληθευμένες μηχανές αναζήτησης | PHP | Bots και όρια |
 | Χώρες: αποκλεισμός ή αυστηρότερο όριο. Χώρα από το `CF-IPCountry` (μόνο από Cloudflare), το `CDN-RequestCountryCode` (μόνο από Bunny CDN) ή από τη δωρεάν βάση DB-IP Lite (μία φορά τον μήνα, στο `uploads/scrapelock-geo`) | PHP | Bots και όρια |
 | Αναφορά «τι προσπαθούν να αντιγράψουν»: οι σελίδες και τα αρχεία που μπλοκαρίστηκαν περισσότερο (24 ώρες / 7 ημέρες) | — | Αρχείο |
+| Σελίδες άλλων plugins (π.χ. κοινότητα στο `/hub/space/`) στα «Pages»: από τα rewrite rules ή από τη ρύθμιση «Content addresses». Χωρίς «Μόνιμο αποκλεισμό» σε επίσημες διευθύνσεις (Google, Bing, OpenAI, Perplexity, Anthropic, Cloudflare, Bunny) | — | Αρχείο, Bots και όρια |
 | Trusted Proxy: το `CF-Connecting-IP` / `X-Real-IP` / `X-Forwarded-For` διαβάζεται μόνο από αξιόπιστο proxy (Cloudflare, Bunny CDN με την επίσημη λίστα του, ιδιωτικό δίκτυο, δική σας λίστα) · αν όλοι οι επισκέπτες φαίνονται με διεύθυνση Cloudflare ή Bunny, κουμπί που το διορθώνει με ένα κλικ | PHP | Bots και όρια |
 | REST API και WPGraphQL χωρίς κείμενο για επισκέπτες · RSS μόνο περίληψη, ή πλήρες με «Το άρθρο … δημοσιεύτηκε πρώτα στο …» στο τέλος | PHP | Feeds και API |
 | Προστατευμένα XML feeds με token (header για ERP, URL για Skroutz/BestPrice/Merchant), μόνο hash στη βάση (ποτέ σε καθαρή μορφή, ούτε στη μετάβαση από την 1.x), εναλλαγή με περίοδο χάριτος, στατιστικά | PHP | Feeds και API |
@@ -152,6 +153,7 @@ real_ip_header CF-Connecting-IP;
 | `pncp_robots_ai_agents` | AI crawlers στο robots.txt |
 | `pncp_ai_search_agents` | Οι AI μηχανές αναζήτησης / βοηθοί της επιλογής «Επιτρέπονται οι AI μηχανές αναζήτησης» |
 | `pncp_hotlink_allowed` | Domains που επιτρέπεται να φορτώνουν εικόνες |
+| `pncp_content_paths` | Αρχές διαδρομών με σελίδες άλλων plugins, για τα «Pages» του αρχείου |
 | `pncp_block_framing` | `false` για να επιτρέψετε iframe |
 
 Για ένα κομμάτι κειμένου που πρέπει να αντιγράφεται (τηλέφωνο, κουπόνι), βάλτε την κλάση `pncp-allow`.
