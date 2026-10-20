@@ -1,5 +1,13 @@
 # Αλλαγές
 
+## 2.7.1 — 2026-10-21
+
+Διορθώσεις μετά το Plugin Check (3 warnings, 0 errors στην 2.7.0). Καμία αλλαγή στη λειτουργία.
+
+- **«Plugin Updater detected» (`auto_update_plugin`):** οι ρυθμίσεις `auto_update_plugins` / `auto_update_themes` βγήκαν από τη λίστα που κρατά ίδια το Κλείδωμα. Όσο είναι κλειδωμένο, οι αυτόματες ενημερώσεις είναι ήδη κλειστές με τα φίλτρα του WordPress (`automatic_updater_disabled`, `file_mod_allowed`).
+- **«Unescaped parameter $where used in $wpdb->query()»** (γραμμές 626 και 641): τα queries του κλειδώματος ελέγχου γίνονται πλέον το καθένα με ένα πλήρες `prepare` (χωριστό για wp_options και για wp_sitemeta), χωρίς ένωση κειμένου μετά.
+- Έλεγχος: Plugin Check 2.1.0 τοπικά (όλες οι κατηγορίες, και experimental) και ο κανόνας PluginCheck.Security.DirectDB σε όλα τα αρχεία: στην 2.7.0 βγάζουν ακριβώς τα 3 warnings, στην 2.7.1 κανένα.
+
 ## 2.7.0 — 2026-10-20
 
 Νέα λειτουργία **Κλείδωμα (Lockdown)**: παγώνει κάθε αλλαγή στο site μέχρι να το ξεκλειδώσει ένας διαχειριστής με κωδικό από εφαρμογή authenticator (Google Authenticator, Microsoft Authenticator, Authy κ.ά.). Οι επισκέπτες και οι πελάτες δεν επηρεάζονται.
