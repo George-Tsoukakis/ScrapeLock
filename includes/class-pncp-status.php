@@ -395,7 +395,10 @@ final class PNCP_Status {
 			return;
 		}
 		$css = '#wpadminbar #wp-admin-bar-pncp-status .ab-icon:before{top:2px}'
-			. '#wpadminbar #wp-admin-bar-pncp-lockdown .ab-icon:before{top:3px;font-size:16px}'
+			// The lock in the drop-down sits on the text line, centred with "Lockdown".
+			. '#wpadminbar #wp-admin-bar-pncp-lockdown>.ab-item{display:flex;align-items:center;gap:6px}'
+			. '#wpadminbar #wp-admin-bar-pncp-status #wp-admin-bar-pncp-lockdown .ab-icon{float:none;display:block;width:16px;height:16px;margin:0!important;padding:0!important}'
+			. '#wpadminbar #wp-admin-bar-pncp-lockdown .ab-icon:before{display:block;top:0;padding:0;font-size:16px;line-height:16px;width:16px;height:16px}'
 			. '#wpadminbar #wp-admin-bar-pncp-status.pncp-on>.ab-item .ab-icon:before{color:#46b450}'
 			. '#wpadminbar #wp-admin-bar-pncp-status.pncp-off>.ab-item{background:#b32d2e;color:#fff}'
 			. '#wpadminbar #wp-admin-bar-pncp-status.pncp-emergency>.ab-item{background:#9a4a00;color:#fff}'
