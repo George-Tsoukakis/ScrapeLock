@@ -243,6 +243,32 @@ final class PNCP_Admin {
 	 * @param int                  $rows  Rows.
 	 * @param bool                 $fold  Long list: shown folded, with the number of entries.
 	 */
+	/**
+	 * A single-line password field (for a secret). The value is not shown as plain text.
+	 *
+	 * @param array<string, mixed> $s     Settings.
+	 * @param string               $key   Option key.
+	 * @param string               $label Label.
+	 * @param string               $help  Help text.
+	 */
+	private static function password( $s, $key, $label, $help = '' ) {
+		$id = 'pncp-' . $key;
+		echo '<div class="pncp-field">';
+		printf( '<p><label for="%s">%s</label></p>', esc_attr( $id ), esc_html( $label ) );
+		printf(
+			'<input type="password" class="regular-text" id="%1$s" name="%2$s[%3$s]" value="%4$s" autocomplete="new-password" spellcheck="false"%5$s>',
+			esc_attr( $id ),
+			esc_attr( PNCP_OPTION ),
+			esc_attr( $key ),
+			esc_attr( (string) ( isset( $s[ $key ] ) ? $s[ $key ] : '' ) ),
+			$help ? ' aria-describedby="' . esc_attr( $id . '-help' ) . '"' : ''
+		);
+		if ( $help ) {
+			printf( '<p class="description" id="%s">%s</p>', esc_attr( $id . '-help' ), esc_html( $help ) );
+		}
+		echo '</div>';
+	}
+
 	private static function textarea( $s, $key, $label, $help = '', $rows = 4, $fold = false ) {
 		$id = 'pncp-' . $key;
 		echo '<div class="pncp-field pncp-field--text">';
@@ -776,6 +802,7 @@ final class PNCP_Admin {
 					echo '</div>';
 				}
 				self::textarea( $s, 'trusted_proxies', __( 'Other trusted proxies / load balancers (IP or CIDR, one per line):', 'scrapelock' ), '', 3 );
+				self::password( $s, 'cdn_secret', __( 'CDN shared secret (optional):', 'scrapelock' ), __( 'Only when "Real visitor IP" is a CDN header (CF-Connecting-IP, X-Real-IP, X-Forwarded-For). A CDN (Bunny, Cloudflare) is multi-tenant: its edge IPs are shared, so by default anyone could point their own CDN zone at your origin and set the real-IP header. Set a secret here and configure your CDN to send it on every request as the header “X-ScrapeLock-CDN”; the CDN’s real-IP header is then trusted only when the secret matches. Leave empty to keep the current behaviour. For best effect, also restrict your origin so it is reachable only through the CDN.', 'scrapelock' ) );
 				?>
 				<p class="description">
 					<?php
@@ -1799,8 +1826,9 @@ final class PNCP_Admin {
 			$grace = isset( $_POST['grace'] ) ? absint( $_POST['grace'] ) : 0;
 			$grace = in_array( $grace, array( 0, 1, 7, 30 ), true ) ? $grace : 7;
 			$token = PNCP_Private_Urls::rotate( $grace );
-			// Shown once, only to this user, for a few minutes.
-			set_transient( 'pncp_new_token_' . get_current_user_id(), $token, 10 * MINUTE_IN_SECONDS );
+			// Shown once to this user on the next page load, then deleted. Kept only 2 minutes, to keep the
+			// plaintext token in the database as briefly as possible (the redirect-render happens at once).
+			set_transient( 'pncp_new_token_' . get_current_user_id(), $token, 2 * MINUTE_IN_SECONDS );
 			self::back( 'content', 'token' );
 		}
 		if ( 'revoke_prev' === $op ) {
@@ -1924,7 +1952,7 @@ final class PNCP_Admin {
 			printf(
 				'<div class="notice notice-info"><p>%1$s <a href="%2$s">%3$s</a></p></div>',
 				esc_html__( 'Since 2.1 the feed token is stored only as a hash. The old token is still valid but can no longer be shown. If you have not saved it, create a new token.', 'scrapelock' ),
-				esc_url( PNCP_Status::settings_url( array( 'tab' => 'feeds' ) ) ),
+				esc_url( PNCP_Status::settings_url( array( 'tab' => 'content' ) ) ),
 				esc_html__( 'Feeds and token', 'scrapelock' )
 			);
 		}
