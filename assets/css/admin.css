@@ -519,3 +519,123 @@
 .pncp-ua-reason {
 	color: #646970;
 }
+
+/* ---------- Lockdown ---------- */
+
+.pncp-ld-intro {
+	max-width: 780px;
+}
+
+.pncp-ld-box {
+	max-width: 780px;
+	margin: 16px 0;
+	padding: 4px 20px 16px;
+	background: #fff;
+	border: 1px solid #c3c4c7;
+	border-radius: 4px;
+}
+
+.pncp-ld-status.is-locked {
+	border-left: 4px solid #00a32a;
+}
+
+.pncp-ld-status.is-open {
+	border-left: 4px solid #dba617;
+}
+
+.pncp-ld-status h2 .dashicons {
+	vertical-align: -3px;
+}
+
+.pncp-ld-qr svg {
+	display: block;
+	width: 220px;
+	height: 220px;
+	background: #fff;
+}
+
+.pncp-ld-secret {
+	font-size: 15px;
+	letter-spacing: 1px;
+}
+
+.pncp-ld-code-list {
+	columns: 2;
+	max-width: 320px;
+}
+
+.pncp-ld-code-list code {
+	font-size: 15px;
+}
+
+.pncp-ld-codes {
+	border-left: 4px solid #d63638;
+}
+
+.pncp-ld-form + .pncp-ld-form {
+	margin-top: 8px;
+}
+
+.pncp-ld-log {
+	max-width: 780px;
+}
+
+.pncp-ld-warning {
+	border-left: 4px solid #d63638;
+	background: #fcf0f1;
+}
+
+.pncp-ld-warning h2 .dashicons {
+	color: #d63638;
+	vertical-align: -3px;
+}
+
+.pncp-ld-warning ul {
+	list-style: disc;
+	padding-left: 20px;
+}
+
+.pncp-ld-report-table th {
+	width: 140px;
+	font-weight: 600;
+}
+
+.pncp-ld-report-table ul,
+.pncp-ld-open,
+.pncp-ld-site {
+	margin: 0;
+}
+
+.pncp-ld-report-table li,
+.pncp-ld-open li {
+	display: flex;
+	gap: 6px;
+	margin: 2px 0 6px;
+}
+
+.pncp-ld-report-table .dashicons-lock {
+	flex: none;
+	color: #8a2424;
+	font-size: 16px;
+	margin-top: 2px;
+}
+
+.pncp-ld-open .dashicons-yes {
+	flex: none;
+	color: #1a7f37;
+}
+
+.pncp-ld-site {
+	list-style: disc;
+	padding-left: 20px;
+}
+
+.pncp-tab-lockdown .dashicons {
+	font-size: 16px;
+	vertical-align: -3px;
+}
+
+.nav-tab.pncp-tab-locked {
+	color: #a7aaad;
+	cursor: not-allowed;
+}

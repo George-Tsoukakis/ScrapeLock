@@ -16,7 +16,7 @@ defined( 'WP_UNINSTALL_PLUGIN' ) || exit;
 function pncp_uninstall_site() {
 	global $wpdb;
 
-	foreach ( array( 'pncp_settings', 'pncp_version', 'pncp_db_version', 'pncp_emergency_until', 'pncp_ip_lists', 'pncp_ip_lists_cloudflare', 'pncp_ip_lists_bunny', 'pncp_ip_lists_google', 'pncp_ip_lists_bing', 'pncp_ip_lists_openai_search', 'pncp_ip_lists_openai_user', 'pncp_ip_lists_perplexity_bot', 'pncp_ip_lists_perplexity_user', 'pncp_ip_lists_anthropic', 'pncp_ip_lists_updated', 'pncp_bans', 'pncp_feed_token', 'pncp_feed_stats', 'pncp_legacy_token_notice', 'pncp_legacy_token_migrated', 'pncp_wm_cursor_apply', 'pncp_wm_cursor_remove', 'pncp_upgrade_lock', 'pncp_geo', 'pncp_precheck_status', 'pncp_log_uas' ) as $pncp_option ) {
+	foreach ( array( 'pncp_settings', 'pncp_version', 'pncp_db_version', 'pncp_emergency_until', 'pncp_ip_lists', 'pncp_ip_lists_cloudflare', 'pncp_ip_lists_bunny', 'pncp_ip_lists_google', 'pncp_ip_lists_bing', 'pncp_ip_lists_openai_search', 'pncp_ip_lists_openai_user', 'pncp_ip_lists_perplexity_bot', 'pncp_ip_lists_perplexity_user', 'pncp_ip_lists_anthropic', 'pncp_ip_lists_updated', 'pncp_bans', 'pncp_feed_token', 'pncp_feed_stats', 'pncp_legacy_token_notice', 'pncp_legacy_token_migrated', 'pncp_wm_cursor_apply', 'pncp_wm_cursor_remove', 'pncp_upgrade_lock', 'pncp_geo', 'pncp_precheck_status', 'pncp_log_uas', 'pncp_lockdown', 'pncp_lockdown_log' ) as $pncp_option ) {
 		delete_option( $pncp_option );
 	}
 	wp_clear_scheduled_hook( 'pncp_refresh_ip_lists' );
@@ -80,3 +80,9 @@ if ( is_multisite() ) {
 } else {
 	pncp_uninstall_site();
 }
+
+// Lockdown: on multisite its state is network-wide (site options); the pending app secret is user meta.
+delete_site_option( 'pncp_lockdown' );
+delete_site_option( 'pncp_lockdown_log' );
+delete_site_option( 'pncp_lockdown_mutex' );
+delete_metadata( 'user', 0, 'pncp_lockdown_pending', '', true );
