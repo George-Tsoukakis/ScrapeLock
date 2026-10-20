@@ -519,3 +519,63 @@
 .pncp-ua-reason {
 	color: #646970;
 }
+
+/* ---------- Lockdown ---------- */
+
+.pncp-ld-intro {
+	max-width: 780px;
+}
+
+.pncp-ld-box {
+	max-width: 780px;
+	margin: 16px 0;
+	padding: 4px 20px 16px;
+	background: #fff;
+	border: 1px solid #c3c4c7;
+	border-radius: 4px;
+}
+
+.pncp-ld-status.is-locked {
+	border-left: 4px solid #00a32a;
+}
+
+.pncp-ld-status.is-open {
+	border-left: 4px solid #dba617;
+}
+
+.pncp-ld-status h2 .dashicons {
+	vertical-align: -3px;
+}
+
+.pncp-ld-qr svg {
+	display: block;
+	width: 220px;
+	height: 220px;
+	background: #fff;
+}
+
+.pncp-ld-secret {
+	font-size: 15px;
+	letter-spacing: 1px;
+}
+
+.pncp-ld-code-list {
+	columns: 2;
+	max-width: 320px;
+}
+
+.pncp-ld-code-list code {
+	font-size: 15px;
+}
+
+.pncp-ld-codes {
+	border-left: 4px solid #d63638;
+}
+
+.pncp-ld-form + .pncp-ld-form {
+	margin-top: 8px;
+}
+
+.pncp-ld-log {
+	max-width: 780px;
+}

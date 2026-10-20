@@ -120,7 +120,7 @@ final class PNCP_Private_Urls {
 			return 'ip';
 		}
 
-		return current_user_can( 'manage_options' ) ? 'admin' : '';
+		return PNCP_Lockdown::can( 'manage_options' ) ? 'admin' : '';
 	}
 
 	/**
