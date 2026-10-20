@@ -163,6 +163,8 @@ No. A small script waits for the first real interaction (scroll, tap, key or mou
 * Log: "Pages" now lists only addresses that exist on the site (posts, pages, products, archives…). Random strings and guesses get their own group, "Addresses that do not exist", next to "Files and admin paths".
 * Log: the "Block permanently" button is also in "Top IPs" and in "Latest events".
 * Log: "Persistent IPs" also lists IPs with at least 100 blocked requests in 7 days, even if they never got a temporary block (for example a User-Agent in the bot list), with their main reason.
+* Nginx rules: the names carry the site's suffix, so several WordPress sites can use their rules on the same Nginx. If you installed the 2.6.2 rules, copy both parts again.
+* Nginx rules: the "Server rules" tab shows whether they are installed and up to date with the current settings, and where each part goes on the common servers and panels.
 
 = 2.6.2 =
 * robots.txt, llms.txt and llms-full.txt are never blocked, for any bot, in WordPress, the early check, the pre-cache check and the Nginx / Apache / Cloudflare rules.

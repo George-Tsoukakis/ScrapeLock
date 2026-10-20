@@ -62,10 +62,29 @@ $backup_path = wp_parse_url( $uploads['baseurl'], PHP_URL_PATH ) . '/' . basenam
 /* ---------- Nginx ---------- */
 file_put_contents( '/etc/nginx/conf.d/pncp-http.conf', str_replace( 'YOUR_TOKEN', $token, PNCP_Rules::nginx_http() ) );
 file_put_contents( '/etc/nginx/pncp-rules.conf', str_replace( 'YOUR_TOKEN', $token, PNCP_Rules::nginx_server() ) );
+// A second WordPress on the same Nginx: its http { } part next to this one's.
+$other = function ( $url, $path ) {
+	return 'https://shop.example.org/' . ltrim( $path, '/' );
+};
+add_filter( 'home_url', $other, 99, 2 );
+file_put_contents( '/etc/nginx/conf.d/pncp-http-other.conf', PNCP_Rules::nginx_http() );
+remove_filter( 'home_url', $other, 99 );
 exec( 'nginx -t 2>&1', $out, $rc );
-t( 'Nginx: nginx -t δέχεται τους κανόνες', 0 === $rc, implode( ' | ', $out ) );
+t( 'Nginx: nginx -t δέχεται τους κανόνες, και με δεύτερο site στον ίδιο Nginx', 0 === $rc, implode( ' | ', $out ) );
 exec( 'nginx -s reload 2>&1' );
 usleep( 700000 );
+$st = PNCP_Rules::nginx_status( true );
+t( 'Nginx: το plugin βλέπει ότι οι κανόνες είναι εγκατεστημένοι και τρέχοντες', 'current' === $st['state'], wp_json_encode( $st ) );
+list( $code ) = get( $nginx . '/.well-known/scrapelock-nginx', array( 'User-Agent' => 'Mozilla/5.0 (compatible; GPTBot/1.2)' ) );
+t( 'Nginx: η διεύθυνση ελέγχου απαντά και σε μπλοκαρισμένο User-Agent', 200 === $code, (string) $code );
+$s2               = PNCP_Options::stored();
+$s2['rate_limit'] = (int) $s2['rate_limit'] + 1;
+update_option( PNCP_OPTION, $s2 );
+PNCP_Options::flush();
+$st = PNCP_Rules::nginx_status();
+t( 'Nginx: μετά από αλλαγή ρύθμισης, «παλιοί», με το μέρος http { }', 'stale' === $st['state'] && array( 'http' ) === $st['parts'], wp_json_encode( $st ) );
+update_option( PNCP_OPTION, $s );
+PNCP_Options::flush();
 
 list( $code ) = get( $nginx . '/hello-world/', $browser );
 t( 'Nginx: browser 200', 200 === $code, (string) $code );
@@ -145,6 +164,7 @@ foreach ( PNCP_Rules::cloudflare() as $key => $rule ) {
 /* ---------- Καθάρισμα ---------- */
 file_put_contents( '/etc/nginx/pncp-rules.conf', "# empty\n" );
 @unlink( '/etc/nginx/conf.d/pncp-http.conf' );
+@unlink( '/etc/nginx/conf.d/pncp-http-other.conf' );
 exec( 'nginx -s reload 2>&1' );
 unlink( ABSPATH . 'static-feed.xml' );
 

@@ -846,7 +846,7 @@ t( 'Cloudflare: με AI search επιτρεπτό, μόνο η κατηγορί�
 t( 'Cloudflare: τα AI search bots εξαιρούνται από τον κανόνα bots', false !== strpos( $cf['bots']['expression'], 'not (' ) && false !== strpos( $cf['bots']['expression'], 'claude-user' ) );
 t( 'Cloudflare: πρώτος κανόνας Skip για robots.txt / llms.txt', 'open' === array_key_first( $cf ) && false !== strpos( $cf['open']['expression'], 'http.request.uri.path in {"/robots.txt" "/llms.txt" "/llms-full.txt"}' ) && 0 === strpos( $cf['open']['action'], 'Skip' ) );
 $ng = PNCP_Rules::nginx();
-t( 'Nginx: map για robots / llms και ενιαίο $pncp_block', false !== strpos( $ng, 'map $uri $pncp_open_path' ) && false !== strpos( $ng, 'if ($pncp_block) { return 403; }' ) && false === strpos( $ng, 'if ($pncp_bad_bot)' ) );
+t( 'Nginx: map για robots / llms και ενιαίο $pncp_block', false !== strpos( $ng, 'map $uri $pncp_open_path' ) && false !== strpos( $ng, 'if ($pncp_block_' . PNCP_Rules::nginx_id() . ') { return 403; }' ) && false === strpos( $ng, 'if ($pncp_bad_bot' ) );
 t( 'Nginx: ψεύτικοι browsers, με εξαίρεση τα Googlebot / bots', false !== strpos( $ng, '$pncp_fake_browser' ) && false !== strpos( $ng, 'googlebot' ) );
 $ap = PNCP_Rules::apache();
 t( 'Apache: robots / llms ανοιχτά και κανόνας ψεύτικων browsers', false !== strpos( $ap, '!^/(robots|llms|llms-full)\\.txt$' ) && false !== strpos( $ap, '%{HTTP:Sec-Fetch-Mode} ^$' ) );

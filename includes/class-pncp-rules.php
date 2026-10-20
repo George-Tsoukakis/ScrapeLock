@@ -106,6 +106,107 @@ final class PNCP_Rules {
 	}
 
 	/**
+	 * The site's own suffix for the Nginx names (variables, limit zone): several WordPress sites can share one
+	 * Nginx, and the same name defined twice in http { } stops nginx -t.
+	 *
+	 * @return string E.g. pharmacyneeds_gr.
+	 */
+	public static function nginx_id() {
+		$site = (string) preg_replace( '#^[a-z]+://#i', '', untrailingslashit( home_url() ) );
+		$id   = trim( strtolower( (string) preg_replace( '/[^A-Za-z0-9]+/', '_', $site ) ), '_' );
+		if ( '' === $id || strlen( $id ) > 40 ) {
+			$id = substr( $id, 0, 33 ) . '_' . substr( md5( $site ), 0, 6 );
+		}
+		return $id;
+	}
+
+	/**
+	 * Nginx name with the site's suffix (without the $).
+	 *
+	 * @param string $name Name, e.g. block.
+	 * @return string E.g. pncp_block_pharmacyneeds_gr.
+	 */
+	private static function nv( $name ) {
+		return 'pncp_' . $name . '_' . self::nginx_id();
+	}
+
+	/**
+	 * Fingerprint of the rules: the lines without the comments, so a new plugin version with the same rules is
+	 * not reported as out of date.
+	 *
+	 * @param string[] $lines Lines.
+	 * @return string
+	 */
+	private static function nginx_hash( $lines ) {
+		$rules = array();
+		foreach ( $lines as $line ) {
+			if ( '' !== trim( $line ) && 0 !== strpos( ltrim( $line ), '#' ) ) {
+				$rules[] = trim( $line );
+			}
+		}
+		return substr( md5( implode( "\n", $rules ) ), 0, 12 );
+	}
+
+	/**
+	 * The address at which the installed rules answer with their fingerprints.
+	 *
+	 * @return string E.g. /.well-known/scrapelock-nginx.
+	 */
+	public static function nginx_check_path() {
+		return (string) wp_parse_url( home_url( '/.well-known/scrapelock-nginx' ), PHP_URL_PATH );
+	}
+
+	/**
+	 * Whether the Nginx rules are installed and match the current settings. The site asks itself; the answer is
+	 * kept for 5 minutes and is asked again as soon as the settings change the rules.
+	 *
+	 * @param bool $fresh Ask again now.
+	 * @return array{state: string, parts: string[], error: string} state: current, stale, missing or error; parts:
+	 *                                                               the out-of-date parts (http, server).
+	 */
+	public static function nginx_status( $fresh = false ) {
+		preg_match( '/default "([0-9a-f]+)"/', self::nginx_http(), $http );
+		preg_match( '/ ([0-9a-f]+)\\\\n";/', self::nginx_server(), $server );
+		$want = ( $http[1] ?? '' ) . ' ' . ( $server[1] ?? '' );
+		$key  = 'pncp_nginx_status';
+		$got  = $fresh ? false : get_transient( $key );
+		if ( ! is_array( $got ) || ( $got['want'] ?? '' ) !== $want ) {
+			$response = wp_remote_get(
+				add_query_arg( 't', time(), home_url( '/.well-known/scrapelock-nginx' ) ), // Past any CDN cache.
+				array(
+					'timeout'     => 5,
+					'redirection' => 0,
+					'sslverify'   => apply_filters( 'https_local_ssl_verify', false ), // phpcs:ignore WordPress.NamingConventions.PrefixAllGlobals.NonPrefixedHooknameFound -- Core filter for requests to the site itself.
+				)
+			);
+			$got      = array(
+				'want'  => $want,
+				'body'  => is_wp_error( $response ) || 200 !== (int) wp_remote_retrieve_response_code( $response ) ? '' : trim( (string) wp_remote_retrieve_body( $response ) ),
+				'error' => is_wp_error( $response ) ? $response->get_error_message() : '',
+			);
+			set_transient( $key, $got, 5 * MINUTE_IN_SECONDS );
+		}
+		$out = array(
+			'state' => 'missing',
+			'parts' => array(),
+			'error' => $got['error'],
+		);
+		if ( '' !== $got['error'] ) {
+			$out['state'] = 'error';
+		} elseif ( preg_match( '/^([0-9a-f]+) ([0-9a-f]+)$/', $got['body'], $m ) ) {
+			list( $want_http, $want_server ) = explode( ' ', $want );
+			if ( $m[1] !== $want_http ) {
+				$out['parts'][] = 'http';
+			}
+			if ( $m[2] !== $want_server ) {
+				$out['parts'][] = 'server';
+			}
+			$out['state'] = $out['parts'] ? 'stale' : 'current';
+		}
+		return $out;
+	}
+
+	/**
 	 * Nginx rules: both parts together (for copying into a notes file).
 	 *
 	 * @return string
@@ -124,7 +225,7 @@ final class PNCP_Rules {
 		$s     = PNCP_Options::get();
 		$lines = array();
 		if ( $s['block_bots'] && self::bots() ) {
-			$lines[] = 'map $http_user_agent $pncp_bad_bot {';
+			$lines[] = 'map $http_user_agent $' . self::nv( 'bad_bot' ) . ' {';
 			$lines[] = '    default 0;';
 			if ( self::allowed() ) {
 				$lines[] = '    "~*' . self::alternation( self::allowed() ) . '" 0;'; // First: it matches first.
@@ -137,15 +238,16 @@ final class PNCP_Rules {
 		}
 		if ( ( $s['block_bots'] && self::bots() ) || $s['block_headless'] ) {
 			// robots.txt and llms.txt stay open for every bot: it must be able to read the rules it is asked to follow.
-			$lines[] = 'map $uri $pncp_open_path {';
+			$lines[] = 'map $uri $' . self::nv( 'open_path' ) . ' {';
 			$lines[] = '    default 0;';
 			$lines[] = '    "~*^/(robots|llms|llms-full)\.txt$" 1;';
+			$lines[] = '    ' . self::nginx_check_path() . ' 1;';
 			$lines[] = '}';
 		}
 		if ( $s['block_headless'] ) {
 			// Chrome / Edge / Opera 90+ always send Sec-Fetch-Mode and Sec-CH-UA over HTTPS, Firefox 90+ Sec-Fetch-Mode:
 			// a "browser" without them is a script. Android in-app browsers (; wv) and the always-allowed User-Agents pass.
-			$lines[] = 'map "$https|$http_sec_fetch_mode|$http_sec_ch_ua|$http_user_agent" $pncp_fake_browser {';
+			$lines[] = 'map "$https|$http_sec_fetch_mode|$http_sec_ch_ua|$http_user_agent" $' . self::nv( 'fake_browser' ) . ' {';
 			$lines[] = '    default 0;';
 			$lines[] = '    "~*^[^|]*\\|[^|]*\\|[^|]*HeadlessChrome" 1;';
 			$lines[] = '    "~; wv\\)" 0;';
@@ -158,7 +260,7 @@ final class PNCP_Rules {
 		}
 		if ( self::private_regexes() ) {
 			// Token for the static feeds: in the URL (cp_token) or in the header. Put your own in place of YOUR_TOKEN.
-			$lines[] = 'map "$arg_cp_token:$http_x_scrapelock_token" $pncp_token_ok {';
+			$lines[] = 'map "$arg_cp_token:$http_x_scrapelock_token" $' . self::nv( 'token_ok' ) . ' {';
 			$lines[] = '    default 0;';
 			$lines[] = '    "~^YOUR_TOKEN:" 1;';
 			$lines[] = '    "~:YOUR_TOKEN$" 1;';
@@ -167,14 +269,15 @@ final class PNCP_Rules {
 		$checks = self::nginx_block_vars();
 		if ( $checks ) {
 			// One variable for the server { } part: blocked when a check says so, except on the open paths.
-			$lines[] = 'map "' . implode( '', $checks ) . ':$pncp_open_path" $pncp_block {';
+			$lines[] = 'map "' . implode( '', $checks ) . ':$' . self::nv( 'open_path' ) . '" $' . self::nv( 'block' ) . ' {';
 			$lines[] = '    default 0;';
 			$lines[] = '    "~^[01]*1[01]*:0$" 1;';
 			$lines[] = '}';
 		}
 		$rate    = (int) $s['rate_limit'] > 0 ? (int) $s['rate_limit'] : 60;
-		$lines[] = 'limit_req_zone $binary_remote_addr zone=pncp_pages:10m rate=' . $rate . 'r/m;';
-		$lines[] = 'limit_req_status 429;';
+		$lines[] = 'limit_req_zone $binary_remote_addr zone=' . self::nv( 'pages' ) . ':10m rate=' . $rate . 'r/m;';
+		// Lets the plugin see that this part is installed and matches the current settings.
+		$lines[] = 'map $host $' . self::nv( 'rules' ) . ' { default "' . self::nginx_hash( $lines ) . '"; }';
 		return implode( "\n", $lines ) . "\n";
 	}
 
@@ -187,10 +290,10 @@ final class PNCP_Rules {
 		$s    = PNCP_Options::get();
 		$vars = array();
 		if ( $s['block_bots'] && self::bots() ) {
-			$vars[] = '$pncp_bad_bot';
+			$vars[] = '$' . self::nv( 'bad_bot' );
 		}
 		if ( $s['block_headless'] ) {
-			$vars[] = '$pncp_fake_browser';
+			$vars[] = '$' . self::nv( 'fake_browser' );
 		}
 		return $vars;
 	}
@@ -209,14 +312,15 @@ final class PNCP_Rules {
 		if ( self::nginx_block_vars() ) {
 			$lines[] = '# Blocks bots' . ( $s['block_headless'] ? ' and fake browsers' : '' ) . ' BEFORE the page cache (FastCGI cache, WP Rocket, WP Super Cache), also';
 			$lines[] = '# for files that never reach WordPress (e.g. scanners asking for .php files). robots.txt / llms.txt stay open.';
-			$lines[] = 'if ($pncp_block) { return 403; }';
+			$lines[] = 'if ($' . self::nv( 'block' ) . ') { return 403; }';
 			$lines[] = '';
 		}
 		$lines[] = '# Page limit per IP (also for cached pages): put this line ONLY in the location that serves pages';
 		$lines[] = '# (PHP / page cache), NOT where CSS, JS, images and fonts are served: one page loads dozens of them.';
 		$lines[] = '# Behind Cloudflare: set real_ip_header CF-Connecting-IP first (see the plugin FAQ).';
 		$lines[] = '# Behind Bunny CDN: real_ip_header X-Real-IP, with set_real_ip_from for each Bunny edge server.';
-		$lines[] = '#   limit_req zone=pncp_pages burst=20 nodelay;';
+		$lines[] = '#   limit_req zone=' . self::nv( 'pages' ) . ' burst=20 nodelay;';
+		$lines[] = 'limit_req_status 429;';
 		$lines[] = '';
 		if ( '' !== $backup ) {
 			$lines[] = '# Clean originals of watermarked images: never public.';
@@ -233,7 +337,7 @@ final class PNCP_Rules {
 		$regexes = self::private_regexes();
 		if ( $regexes ) {
 			$lines[] = '';
-			$lines[] = '# Feeds: static files only with the token (map $pncp_token_ok in http { }). Feeds generated by PHP';
+			$lines[] = '# Feeds: static files only with the token (map $' . self::nv( 'token_ok' ) . ' in http { }). Feeds generated by PHP';
 			$lines[] = '# go to WordPress, which checks the token, Bearer, allowed IPs and administrator.';
 			$lines[] = '# (Only return inside the ifs: otherwise the Nginx "if is evil" problem would lose try_files.)';
 			foreach ( $regexes as $regex ) {
@@ -244,12 +348,19 @@ final class PNCP_Rules {
 				$lines[] = '}';
 			}
 			$lines[] = 'location @pncp_static_feed {';
-			$lines[] = '    if ($pncp_token_ok = 0) { return 403; }';
+			$lines[] = '    if ($' . self::nv( 'token_ok' ) . ' = 0) { return 403; }';
 			$lines[] = '    add_header Cache-Control "private, no-store" always;';
 			$lines[] = '    add_header Referrer-Policy "no-referrer" always;';
 			$lines[] = '    try_files $uri =404;';
 			$lines[] = '}';
 		}
+		$lines[] = '';
+		$lines[] = '# Lets ScrapeLock check that both parts are installed and match the current settings (tab "Server rules").';
+		$lines[] = 'location = ' . self::nginx_check_path() . ' {';
+		$lines[] = '    default_type text/plain;';
+		$lines[] = '    add_header Cache-Control "no-store" always;';
+		$lines[] = '    return 200 "$' . self::nv( 'rules' ) . ' ' . self::nginx_hash( $lines ) . '\\n";';
+		$lines[] = '}';
 		return implode( "\n", $lines ) . "\n";
 	}
 
