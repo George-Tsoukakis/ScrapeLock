@@ -1,5 +1,18 @@
 # Αλλαγές
 
+## 2.8.0 — 2026-10-21
+
+Υγεία ιστότοπου, WP-CLI, Abilities API για AI agents, και λιγότερα όσα δείχνει το site σε όλους.
+
+- **Υγεία ιστότοπου (Εργαλεία → Υγεία ιστότοπου):** έλεγχοι για προστασία κλειστή, όλους τους επισκέπτες με διεύθυνση Cloudflare ή Bunny CDN (τότε τα όρια χτυπούν το ίδιο το CDN), πρώιμο έλεγχο ή έλεγχο πριν από το cache ανοιχτό αλλά χωρίς να τρέχει, Lockdown ανοιχτό από τον server (`SCRAPELOCK_UNLOCK`, κρίσιμο) και ενημερώσεις που περιμένουν όσο είναι κλειδωμένο. Στην καρτέλα «Πληροφορίες» ενότητα ScrapeLock με ό,τι είναι ανοιχτό και κλειστό, χωρίς μυστικά.
+- **WP-CLI:** `wp scrapelock status`, `block <ip> [--minutes=]`, `unblock <ip>… | --all`, `blocked`, `emergency on|off|status [--hours=]`, `log [--top] [--hours=] [--limit=]`. Καμία εντολή για ξεκλείδωμα του Lockdown.
+- **Abilities API (WordPress 6.9+):** `scrapelock/get-summary`, `scrapelock/block-ip`, `scrapelock/unblock-ip`, `scrapelock/emergency-mode`, μόνο για διαχειριστές (`manage_options`), και μέσα από το `/wp-json/wp-abilities/v1`. Όσο είναι κλειδωμένο, οι αλλαγές απορρίπτονται και διαβάζεται μόνο η σύνοψη· καμία ability δεν ξεκλειδώνει.
+- **Νέο στην καρτέλα Feeds and API:** «Απόκρυψη του χάρτη REST από επισκέπτες» (το `/wp-json/` χωρίς namespaces και routes, χωρίς links στο `<head>` και στο header `Link`· κάθε route δουλεύει κανονικά, οι συνδεδεμένοι βλέπουν τα πάντα), «Χωρίς pingbacks» (βγαίνουν τα `pingback.ping` / `pingback.extensions.getPingbacks` και το `X-Pingback`· το υπόλοιπο XML-RPC, π.χ. Jetpack, δουλεύει), και λίστα με τα REST routes που μπορεί να καλέσει ο καθένας χωρίς σύνδεση. Και τα δύο κλειστά από προεπιλογή.
+- **«Απόκρυψη ονομάτων χρηστών» και στο oEmbed:** όνομα και διεύθυνση του site αντί για το username του συντάκτη.
+- **Διόρθωση:** το «Unblock» στη λίστα «IPs blocked now» δεν έκανε τίποτα για IPv6 (μπλοκάρονται ανά δίκτυο /64 και η λίστα δείχνει το /64).
+- **WordPress 7.2:** όλες οι δοκιμές περνούν στο 7.2-beta1 χωρίς κανένα warning· «Tested up to: 7.2».
+- **Δοκιμές:** `t_cli.php` (17 έλεγχοι, μέσα από το πραγματικό `wp`), Abilities μέσα από REST (διαχειριστής, editor, χωρίς σύνδεση, κλειδωμένο), Site Health (Cloudflare / Bunny, early, pre-cache, Lockdown), ξεμπλοκάρισμα IPv6 /64 (αποτυγχάνει με τον κώδικα της 2.7.2), oEmbed, pingbacks, χάρτης REST.
+
 ## 2.7.2 — 2026-10-21
 
 Διόρθωση στο Κλείδωμα: τα μέλη που ανεβάζουν μόνα τους περιεχόμενο δεν παγώνουν πια.

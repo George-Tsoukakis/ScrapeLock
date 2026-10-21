@@ -211,7 +211,7 @@ final class PNCP_Health {
 			/* translators: %s: date and time. */
 			$lock = sprintf( __( 'Unlocked until %s', 'scrapelock' ), wp_date( 'Y-m-d H:i', PNCP_Lockdown::unlocked_until() ) );
 		} else {
-			$lock = __( 'Unlocked', 'scrapelock' );
+			$lock = __( 'Not locked', 'scrapelock' );
 		}
 		$fields = array(
 			'version'        => array( __( 'Version', 'scrapelock' ), PNCP_VERSION ),

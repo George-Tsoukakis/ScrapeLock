@@ -21,6 +21,9 @@ ScrapeLock — δοκιμές σε πραγματικό WordPress (όχι stubs)
                     αντίγραφο, -scaled, αφαίρεση, εικονίδιο/λογότυπο/προϊόντα/εικόνα υδατογραφήματος, θέσεις, JPEG/WebP
   t_admin.php       καρτέλες χωρίς PHP warnings, απενεργοποίηση μόνο με επιβεβαίωση, φόρμα καρτέλας που δεν σβήνει
                     άλλες, προφίλ, token μία φορά, αρχείο/διατήρηση, λίστες IP, εργαλείο εικόνων, κανόνες, GraphQL
+  t_precheck.php    έλεγχος πριν από το cache (wp-config.php, loader, όρια, αποκλεισμοί)
+  t_lockdown.php    Κλείδωμα: εφαρμογή authenticator, κάθε οθόνη, REST, κώδικας, ρόλοι, Abilities, Site Health
+  t_cli.php         wp scrapelock … μέσα από το πραγματικό wp (χρειάζεται WP_CLI, αλλιώς SKIP)
   browser/          protect.js σε Chromium: δεξί κλικ/αντιγραφή/επιλογή/σύρσιμο ακόμη και με «εχθρικό» script,
                     αντιγραφή με πηγή, .pncp-allow, πεδία φόρμας, ελληνική διάταξη, θόλωμα (npm install && npm test)
 
