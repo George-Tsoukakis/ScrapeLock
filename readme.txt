@@ -196,7 +196,7 @@ No. A small script waits for the first real interaction (scroll, tap, key or mou
 == Changelog ==
 
 = 2.8.1 =
-* Lockdown: while the site is locked, WordPress' "Sorry, you are not allowed to…" pages in wp-admin (for example your own profile) now say that the site is locked, and show administrators an Unlock button that leads to the Lockdown tab. Other staff see only that the site is locked. AJAX, REST and XML-RPC answers are unchanged.
+* Lockdown: while the site is locked, WordPress' bare "Sorry, you are not allowed to…" pages in wp-admin (for example your own profile) are replaced with a clear "The site is locked" page: what is frozen and why, an "Unlock the site" button for administrators, "ask an administrator" for other staff, and a link back to the Dashboard. WordPress' own message stays under "Technical detail". AJAX, REST and XML-RPC answers are unchanged.
 
 = 2.8.0 =
 * New: Site Health tests (protection off, every visitor appearing with a Cloudflare or Bunny CDN address, the early or pre-cache check on but not running, Lockdown off from the server, updates waiting while locked) and a ScrapeLock section on the Info tab, without secrets.
