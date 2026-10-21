@@ -184,6 +184,12 @@ foreach ( array( 'plugins.php', 'plugin-install.php', 'update-core.php', 'theme-
 	list( $code, $body ) = http( '/wp-admin/' . $screen );
 	t( "κλειδωμένο: /wp-admin/$screen απαγορεύεται", 403 === $code || false !== strpos( $body, 'not allowed' ), (string) $code );
 }
+list( $code, $body ) = http( '/wp-admin/profile.php' );
+t( 'κλειδωμένο (2.8.1): το «not allowed» του προφίλ λέει ότι το site είναι κλειδωμένο, με κουμπί ξεκλειδώματος', in_array( $code, array( 403, 500 ), true ) && false !== strpos( $body, 'This site is locked.' ) && false !== strpos( $body, 'not allowed to edit this user' ) && 1 === preg_match( '/<a class="button button-primary" href="[^"]*page=scrapelock(&#038;|&amp;|&)tab=lockdown"/', $body ) && ! php_errors( $body ), (string) $code );
+list( $code, $body ) = http( '/wp-admin/plugin-install.php' );
+t( 'κλειδωμένο (2.8.1): και σε άλλη σελίδα «not allowed» (plugin-install.php)', false !== strpos( $body, 'This site is locked.' ) && false !== strpos( $body, 'tab=lockdown' ), (string) $code );
+list( $code, $body ) = http( '/wp-admin/admin-ajax.php', array( 'action' => 'pncp_no_such_action' ) );
+t( 'κλειδωμένο (2.8.1): οι απαντήσεις AJAX μένουν ίδιες', false === strpos( $body, 'This site is locked.' ), (string) $code );
 list( $code, $body ) = http( '/wp-admin/index.php' );
 t( 'κλειδωμένο: ο Πίνακας ελέγχου ανοίγει, με ειδοποίηση', 200 === $code && false !== strpos( $body, 'This site is locked.' ) && ! php_errors( $body ), (string) $code );
 list( $code, $body ) = http( $page );
@@ -298,6 +304,7 @@ t( 'μέλος: αλλάζει το email του', 'ld_member_new@example.com' =
 as_user( $editor_id );
 list( $code, $body ) = http( '/wp-admin/edit.php' );
 t( 'editor: δεν επεξεργάζεται άρθρα', 403 === $code || false !== strpos( $body, 'not allowed' ), (string) $code );
+t( 'editor (2.8.1): το «not allowed» λέει ότι το site είναι κλειδωμένο, χωρίς σύνδεσμο ξεκλειδώματος', false !== strpos( $body, 'This site is locked.' ) && false === strpos( $body, 'tab=lockdown' ) && false === strpos( $body, 'button-primary' ) );
 list( , $body ) = http( '/wp-admin/index.php' );
 t( 'editor: βλέπει ότι το site είναι κλειδωμένο, χωρίς σύνδεσμο ξεκλειδώματος', false !== strpos( $body, 'This site is locked.' ) && false === strpos( $body, 'tab=lockdown' ) && false === strpos( $body, 'wp-admin-bar-pncp-status' ) );
 list( $code, $body ) = http( '/wp-admin/options-general.php?page=scrapelock&tab=lockdown' );
@@ -371,6 +378,12 @@ t( 'μετά από 5 λάθος κωδικούς, ούτε ο σωστός (15 
 reset_fails( array( 1 ) );
 
 t( 'ξεκλείδωμα «μέχρι να το κλειδώσω ξανά»', 'unlocked' === ld( 'unlock', array( 'code' => app_code( $secret ), 'minutes' => 0 ) ) && ! PNCP_Lockdown::is_locked() && ! PNCP_Lockdown::unlocked_until() );
+list( $code, $body ) = http( '/wp-admin/profile.php' );
+t( 'ξεκλείδωτο (2.8.1): το προφίλ ανοίγει κανονικά', 200 === $code && false === strpos( $body, 'This site is locked.' ), (string) $code );
+as_user( $editor_id );
+list( , $body ) = http( '/wp-admin/plugins.php' );
+t( 'ξεκλείδωτο (2.8.1): το «not allowed» του editor μένει όπως του WordPress', false !== strpos( $body, 'not allowed' ) && false === strpos( $body, 'This site is locked.' ) );
+as_user( 1 );
 wp_set_current_user( 1 );
 t( 'ξεκλείδωτο: ο διαχειριστής έχει ξανά όλα τα δικαιώματα', current_user_can( 'manage_options' ) && wp_is_file_mod_allowed( 'x' ) );
 update_option( 'blogname', 'Test' );
