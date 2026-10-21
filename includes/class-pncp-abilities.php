@@ -29,6 +29,9 @@ final class PNCP_Abilities {
 	 * The ScrapeLock category.
 	 */
 	public static function category() {
+		if ( ! function_exists( 'wp_register_ability_category' ) ) {
+			return;
+		}
 		wp_register_ability_category(
 			'scrapelock',
 			array(
