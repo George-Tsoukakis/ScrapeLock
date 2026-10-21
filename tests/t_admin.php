@@ -533,5 +533,190 @@ settings( array( 'excluded_ids' => '' ) );
 wp_set_current_user( 1 );
 t( 'GraphQL: διαχειριστής βλέπει το κείμενο', '<p>κείμενο</p>' === PNCP_Graphql::resolve_field( '<p>κείμενο</p>', $src, array(), null, null, 'Post', 'content' ) );
 
+/* ---------- 2.8: χάρτης REST για συνδεδεμένους, δημόσια REST routes ---------- */
+settings( array( 'hide_rest_discovery' => 1 ) );
+list( $code, $body ) = http( '/wp-json/', null, false, array( 'X-Test-IP: 192.0.2.200', 'User-Agent: Mozilla/5.0 Chrome/141', 'X-WP-Nonce: ' . wp_create_nonce( 'wp_rest' ) ) );
+$pncp_index = json_decode( $body, true );
+t( 'χάρτης REST κρυφός: ο συνδεδεμένος διαχειριστής βλέπει namespaces και routes', 200 === $code && ! empty( $pncp_index['namespaces'] ) && ! empty( $pncp_index['routes'] ), (string) $code );
+list( , $body ) = http( '/' );
+t( 'χάρτης REST κρυφός: ο συνδεδεμένος βλέπει το link api.w.org στη σελίδα', false !== strpos( $body, 'https://api.w.org/' ) );
+settings( array( 'hide_rest_discovery' => 0 ) );
+list( $code, $body ) = http( $page . '&tab=content' );
+t( 'καρτέλα Feeds and API: ρυθμίσεις χάρτη REST και pingbacks', 200 === $code && false !== strpos( $body, 'name="pncp_settings[hide_rest_discovery]"' ) && false !== strpos( $body, 'name="pncp_settings[disable_pingback]"' ) && ! php_errors( $body ) );
+t( 'καρτέλα Feeds and API: λίστα REST routes ανοιχτών σε όλους (π.χ. oEmbed)', false !== strpos( $body, 'REST routes open to everyone' ) && false !== strpos( $body, '<code>/oembed/1.0/embed</code>' ) );
+$pncp_open = PNCP_Surface::public_routes();
+t( 'δημόσια routes: το /oembed/1.0/embed (permission __return_true) μέσα, το /wp/v2/users (έλεγχος δικαιωμάτων) έξω', isset( $pncp_open['/oembed']['/oembed/1.0/embed'] ) && ! isset( $pncp_open['/wp']['/wp/v2/users'] ) );
+add_action(
+	'rest_api_init',
+	function () {
+		register_rest_route( 'pncp-test/v1', '/leak', array( 'methods' => 'GET', 'callback' => '__return_empty_array', 'permission_callback' => '__return_true' ) );
+	}
+);
+$GLOBALS['wp_rest_server'] = null;
+$pncp_open = PNCP_Surface::public_routes();
+t( 'δημόσια routes: ένα νέο route plugin χωρίς έλεγχο εμφανίζεται αμέσως', isset( $pncp_open['/pncp-test']['/pncp-test/v1/leak'] ) && array( 'GET' ) === $pncp_open['/pncp-test']['/pncp-test/v1/leak'] );
+$GLOBALS['wp_rest_server'] = null;
+settings( array( 'disable_pingback' => 0 ) );
+
+/* ---------- 2.8: ξεμπλοκάρισμα IPv6 από τη λίστα (κλειδί /64) ---------- */
+PNCP_Log::ban( '2001:db8:9:9::1', 10, 'trap' );
+PNCP_Log::reset_cache();
+$pncp_keys = array_keys( PNCP_Log::active_bans( 0 ) );
+http( '/wp-admin/admin-post.php', array( 'action' => 'pncp_log', 'op' => 'unban', 'ip' => '2001:db8:9:9::/64', '_wpnonce' => wp_create_nonce( 'pncp_log' ) ) );
+PNCP_Log::reset_cache();
+t( 'Unblock σε IPv6 της λίστας (2001:db8:9:9::/64): το μπλοκ φεύγει', in_array( '2001:db8:9:9::/64', $pncp_keys, true ) && ! PNCP_Log::is_banned( '2001:db8:9:9::1' ) );
+
+/* ---------- 2.8: Abilities API (WordPress 6.9+) ---------- */
+/** Κλήση του /wp-abilities/v1 ως ο τρέχων χρήστης (cookies + nonce): [κωδικός, JSON]. */
+function ability( $name, $method = 'GET', $input = null ) {
+	global $base, $cookies;
+	$url = $base . '/wp-json/wp-abilities/v1/abilities/' . $name . '/run';
+	if ( 'GET' === $method && null !== $input ) {
+		$url .= '?' . http_build_query( array( 'input' => $input ) );
+	}
+	$jar = array();
+	foreach ( $cookies as $k => $v ) {
+		$jar[] = $k . '=' . rawurlencode( $v );
+	}
+	$ch = curl_init( $url );
+	curl_setopt_array(
+		$ch,
+		array(
+			CURLOPT_RETURNTRANSFER => true,
+			CURLOPT_COOKIE         => implode( '; ', $jar ),
+			CURLOPT_CUSTOMREQUEST  => $method,
+			CURLOPT_HTTPHEADER     => array( 'X-Test-IP: 192.0.2.200', 'User-Agent: Mozilla/5.0 Chrome/141', 'Accept-Language: el', 'Content-Type: application/json', 'X-WP-Nonce: ' . wp_create_nonce( 'wp_rest' ) ),
+			CURLOPT_POSTFIELDS     => 'GET' === $method ? null : wp_json_encode( array( 'input' => $input ) ),
+			CURLOPT_TIMEOUT        => 60,
+		)
+	);
+	$body = (string) curl_exec( $ch );
+	$code = (int) curl_getinfo( $ch, CURLINFO_HTTP_CODE );
+	curl_close( $ch );
+	PNCP_Log::reset_cache();
+	wp_cache_flush();
+	return array( $code, json_decode( $body, true ) );
+}
+if ( function_exists( 'wp_register_ability' ) ) {
+	PNCP_Log::unban_all();
+	list( $code, $res ) = ability( 'scrapelock/get-summary', 'GET', array( 'hours' => 48 ) );
+	t( 'ability get-summary (GET): προστασία, Lockdown, σύνολα', 200 === $code && true === $res['enabled'] && 48 === $res['hours'] && 'not_set_up' === $res['lockdown'] && 0 === $res['blocked_ips'] && is_array( $res['reasons'] ), $code . ' ' . wp_json_encode( $res ) );
+	list( $code ) = ability( 'scrapelock/get-summary' );
+	t( 'ability get-summary χωρίς input: 24 ώρες', 200 === $code );
+	list( $code ) = ability( 'scrapelock/get-summary', 'POST', array() );
+	t( 'ability get-summary: μόνο GET (readonly)', 405 === $code, (string) $code );
+	list( $code, $res ) = ability( 'scrapelock/block-ip', 'POST', array( 'ip' => '203.0.113.81', 'minutes' => 30 ) );
+	t( 'ability block-ip: η IP μπλοκάρεται', 200 === $code && true === $res['blocked'] && '203.0.113.81' === $res['ip'] && PNCP_Log::is_banned( '203.0.113.81' ), $code . ' ' . wp_json_encode( $res ) );
+	t( 'ability block-ip: αιτία «manual»', 'manual' === PNCP_Log::active_bans( 0 )['203.0.113.81']['reason'] );
+	list( $code ) = ability( 'scrapelock/block-ip', 'POST', array( 'ip' => '203.0.113.82', 'minutes' => 99999 ) );
+	t( 'ability block-ip: λεπτά εκτός ορίων → 400, χωρίς μπλοκ', 400 === $code && ! PNCP_Log::is_banned( '203.0.113.82' ), (string) $code );
+	list( $code ) = ability( 'scrapelock/block-ip', 'POST', array( 'ip' => 'x.y' ) );
+	t( 'ability block-ip: λάθος IP → σφάλμα', $code >= 400 );
+	list( $code, $res ) = ability( 'scrapelock/get-summary' );
+	t( 'ability get-summary: 1 μπλοκαρισμένη IP', 200 === $code && 1 === $res['blocked_ips'] );
+	list( $code, $res ) = ability( 'scrapelock/unblock-ip', 'POST', array( 'ip' => '203.0.113.81' ) );
+	t( 'ability unblock-ip: το μπλοκ φεύγει', 200 === $code && false === $res['blocked'] && ! PNCP_Log::is_banned( '203.0.113.81' ), $code . ' ' . wp_json_encode( $res ) );
+	list( $code, $res ) = ability( 'scrapelock/emergency-mode', 'POST', array( 'hours' => 1 ) );
+	t( 'ability emergency-mode 1 ώρα', 200 === $code && abs( $res['emergency_until'] - ( time() + HOUR_IN_SECONDS ) ) < 30 && PNCP_Options::emergency_until() );
+	list( $code, $res ) = ability( 'scrapelock/emergency-mode', 'POST', array( 'hours' => 0 ) );
+	t( 'ability emergency-mode 0: σταματά', 200 === $code && 0 === $res['emergency_until'] && ! PNCP_Options::emergency_until() );
+	$pncp_names = array();
+	foreach ( wp_get_abilities() as $pncp_ability ) {
+		if ( 0 === strpos( $pncp_ability->get_name(), 'scrapelock/' ) ) {
+			$pncp_names[] = $pncp_ability->get_name();
+		}
+	}
+	sort( $pncp_names );
+	t( 'abilities: μόνο οι 4, καμία για ξεκλείδωμα του Lockdown', array( 'scrapelock/block-ip', 'scrapelock/emergency-mode', 'scrapelock/get-summary', 'scrapelock/unblock-ip' ) === $pncp_names, implode( ',', $pncp_names ) );
+
+	// Χωρίς σύνδεση και ως editor: τίποτα.
+	$pncp_cookies = $cookies;
+	$cookies      = array();
+	wp_set_current_user( 0 );
+	list( $code ) = ability( 'scrapelock/block-ip', 'POST', array( 'ip' => '203.0.113.84' ) );
+	t( 'ability χωρίς σύνδεση → 401/403, χωρίς μπλοκ', in_array( $code, array( 401, 403 ), true ) && ! PNCP_Log::is_banned( '203.0.113.84' ), (string) $code );
+	$pncp_ed = wp_insert_user( array( 'user_login' => 'ab_editor', 'user_pass' => wp_generate_password(), 'user_email' => 'ab_editor@example.com', 'role' => 'editor' ) );
+	$pncp_ex = time() + HOUR_IN_SECONDS;
+	$pncp_tk = WP_Session_Tokens::get_instance( $pncp_ed )->create( $pncp_ex );
+	$cookies = array(
+		AUTH_COOKIE      => wp_generate_auth_cookie( $pncp_ed, $pncp_ex, 'auth', $pncp_tk ),
+		LOGGED_IN_COOKIE => wp_generate_auth_cookie( $pncp_ed, $pncp_ex, 'logged_in', $pncp_tk ),
+	);
+	$_COOKIE[ LOGGED_IN_COOKIE ] = $cookies[ LOGGED_IN_COOKIE ];
+	wp_set_current_user( $pncp_ed );
+	list( $code ) = ability( 'scrapelock/block-ip', 'POST', array( 'ip' => '203.0.113.83' ) );
+	t( 'ability block-ip ως editor → 403, χωρίς μπλοκ', 403 === $code && ! PNCP_Log::is_banned( '203.0.113.83' ), (string) $code );
+	require_once ABSPATH . 'wp-admin/includes/user.php';
+	wp_delete_user( $pncp_ed );
+	$cookies                     = $pncp_cookies;
+	$_COOKIE[ LOGGED_IN_COOKIE ] = $cookies[ LOGGED_IN_COOKIE ];
+	wp_set_current_user( 1 );
+	PNCP_Log::unban_all();
+} else {
+	echo "SKIP Abilities API: WordPress χωρίς wp_register_ability\n";
+}
+
+/* ---------- 2.8: Site Health ---------- */
+$pncp_tests = apply_filters( 'site_status_tests', array( 'direct' => array(), 'async' => array() ) );
+$pncp_ok    = true;
+foreach ( array( 'protection', 'real_ip', 'early', 'precheck', 'lockdown' ) as $pncp_key ) {
+	$pncp_t  = isset( $pncp_tests['direct'][ 'scrapelock_' . $pncp_key ] ) ? $pncp_tests['direct'][ 'scrapelock_' . $pncp_key ] : null;
+	$pncp_r  = $pncp_t ? call_user_func( $pncp_t['test'] ) : array();
+	$pncp_ok = $pncp_ok && $pncp_t && in_array( $pncp_r['status'], array( 'good', 'recommended', 'critical' ), true ) && 'scrapelock_' . $pncp_key === $pncp_r['test'] && '' !== $pncp_r['label'];
+}
+t( 'Site Health: 5 έλεγχοι ScrapeLock με σωστή μορφή', $pncp_ok );
+settings( array( 'enabled' => 0 ) );
+t( 'Site Health: προστασία κλειστή → recommended', 'recommended' === PNCP_Health::test_protection()['status'] );
+settings( array( 'enabled' => 1 ) );
+t( 'Site Health: προστασία ανοιχτή → good', 'good' === PNCP_Health::test_protection()['status'] );
+
+$pncp_server = $_SERVER;
+$pncp_cf     = PNCP_Ip::list_of( 'cloudflare' );
+PNCP_Ip::store_list( 'cloudflare', array( '173.245.48.0/20' ) );
+settings( array( 'ip_header' => 'remote_addr' ) );
+$_SERVER['REMOTE_ADDR'] = '173.245.48.7';
+PNCP_Ip::reset();
+$pncp_h = PNCP_Health::test_real_ip();
+t( 'Site Health: πίσω από Cloudflare και όλοι με IP της Cloudflare → critical', 'critical' === $pncp_h['status'] && false !== strpos( $pncp_h['actions'], 'tab=bots' ), $pncp_h['status'] );
+$_SERVER['REMOTE_ADDR'] = '192.0.2.44';
+PNCP_Ip::reset();
+t( 'Site Health: κανονική IP επισκέπτη → good', 'good' === PNCP_Health::test_real_ip()['status'] );
+$_SERVER['REMOTE_ADDR']    = '192.0.2.45';
+$_SERVER['HTTP_CDN_SERVERID'] = '1234';
+$_SERVER['HTTP_X_REAL_IP'] = '198.51.100.9';
+PNCP_Ip::reset();
+t( 'Site Health: πίσω από Bunny και όλοι με IP της Bunny → critical', 'critical' === PNCP_Health::test_real_ip()['status'] );
+$_SERVER['HTTP_X_REAL_IP'] = '192.0.2.45';
+PNCP_Ip::reset();
+t( 'Site Health: Bunny με REMOTE_ADDR ήδη σωστό → good', 'good' === PNCP_Health::test_real_ip()['status'] );
+$_SERVER = $pncp_server;
+PNCP_Ip::store_list( 'cloudflare', $pncp_cf );
+PNCP_Ip::reset();
+
+settings( array( 'early_mode' => 1 ) );
+$pncp_early = PNCP_Early::installed();
+t( 'Site Health: early check ανοιχτό → good μόνο αν το mu-plugin υπάρχει', ( $pncp_early ? 'good' : 'recommended' ) === PNCP_Health::test_early()['status'] );
+if ( $pncp_early ) {
+	PNCP_Early::remove();
+	t( 'Site Health: early check ανοιχτό χωρίς mu-plugin → recommended', 'recommended' === PNCP_Health::test_early()['status'] );
+}
+settings( array( 'early_mode' => 0 ) );
+t( 'Site Health: early check κλειστό → good', 'good' === PNCP_Health::test_early()['status'] );
+$pncp_s = get_option( PNCP_OPTION );
+update_option( PNCP_OPTION, array_merge( $pncp_s, array( 'precheck' => 1 ) ) ); // Χωρίς sync: η γραμμή του wp-config.php λείπει.
+PNCP_Options::flush();
+t( 'Site Health: pre-cache check ανοιχτό αλλά όχι στο wp-config.php → recommended', PNCP_Precheck::active() || 'recommended' === PNCP_Health::test_precheck()['status'] );
+update_option( PNCP_OPTION, $pncp_s );
+PNCP_Options::flush();
+
+list( $code, $body ) = http( '/wp-admin/site-health.php?tab=debug' );
+// Η σελίδα του WordPress βγάζει και δικά της warnings σε SQLite χωρίς δίκτυο: μετρούν μόνο του plugin.
+t( 'Site Health Info: ενότητα ScrapeLock χωρίς PHP warnings από το plugin', 200 === $code && false !== strpos( $body, 'Roles frozen while locked' ) && ! preg_match( '#<b>(Warning|Notice|Deprecated|Fatal error)</b>:[^\n]*(class-pncp|plugins/scrapelock)#', $body ), (string) $code );
+$pncp_cdn = PNCP_Options::stored()['cdn_secret'];
+settings( array( 'cdn_secret' => 'pncp-secret-4f9a2c' ) );
+$pncp_info = PNCP_Health::info( array() );
+t( 'Site Health Info: έκδοση και ρύθμιση IP, χωρίς το μυστικό του CDN', PNCP_VERSION === $pncp_info['scrapelock']['fields']['version']['value'] && 'remote_addr' === $pncp_info['scrapelock']['fields']['ip_header']['value'] && false === strpos( wp_json_encode( $pncp_info ), 'pncp-secret-4f9a2c' ) );
+settings( array( 'cdn_secret' => $pncp_cdn ) );
+
 echo $fails ? "\n$fails FAIL\n" : "\nΟΛΑ PASS\n";
 exit( $fails ? 1 : 0 );

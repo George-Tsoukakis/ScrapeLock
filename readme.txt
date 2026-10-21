@@ -2,9 +2,9 @@
 Contributors: codebunnyhube
 Tags: anti-scraping, ai bots, bot protection, rate limit, content protection
 Requires at least: 6.2
-Tested up to: 7.1
+Tested up to: 7.2
 Requires PHP: 7.4
-Stable tag: 2.7.2
+Stable tag: 2.8.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -53,6 +53,14 @@ Nothing can stop a determined human: whatever a visitor sees has already reached
 * Hide post, page and product text from the REST API and WPGraphQL for visitors.
 * RSS with a short excerpt only, or disabled. With full text, an optional "The post … first appeared on …" line links republished copies back to the original.
 * Private XML feeds (Skroutz, BestPrice, Google Merchant, ERP) protected with a token in a header or URL. Only the token hash is stored. Token rotation with a grace period and per-feed statistics.
+* Optional: hide the REST API map (/wp-json/ and the links to it) from visitors, and turn off pingbacks over XML-RPC. A list shows the REST routes on your site that anyone can call without logging in.
+* With "Hide usernames" on, oEmbed shows the site's name and address instead of the author's username.
+
+= Site Health, WP-CLI and AI agents =
+
+* Tools → Site Health warns when protection is off, when every visitor appears with a Cloudflare or Bunny CDN address, when the early or the pre-cache check is on but not running, when Lockdown is off from the server and when updates wait while the site is locked. The Info tab has a ScrapeLock section.
+* WP-CLI: `wp scrapelock status`, `block <ip>`, `unblock <ip>`, `blocked`, `emergency on|off|status` and `log [--top]`.
+* Abilities API (WordPress 6.9+): `scrapelock/get-summary`, `scrapelock/block-ip`, `scrapelock/unblock-ip` and `scrapelock/emergency-mode`, for administrators only, so an AI agent or MCP client can read the summary and act during an attack. None of them unlocks Lockdown.
 
 = Server rules =
 
@@ -168,6 +176,10 @@ Type one of your recovery codes in the unlock field instead of an app code. If y
 
 Yes. Lockdown protects the site against changes through WordPress (wp-admin, the REST API, XML-RPC and code running inside WordPress). Whoever can edit files or the database on your server controls the site anyway, which is also why the server line is the last-resort unlock.
 
+= Can I unlock Lockdown from WP-CLI or with an AI agent? =
+
+No, on purpose. Lockdown opens only with a code from your authenticator app, a recovery code, or the SCRAPELOCK_UNLOCK line in wp-config.php. The WP-CLI commands and the abilities can block IPs and start Emergency Mode; while the site is locked the abilities can only read the summary.
+
 = Does the human check show a captcha? =
 
 No. A small script waits for the first real interaction (scroll, tap, key or mouse movement), solves a light challenge in the background and receives the cookie. Visitors without it are not blocked: they get the stricter page limit you set (20 pages per minute by default). A determined scraper can repeat these steps, but every IP it uses has to do the work, and plain scripts never do.
@@ -182,6 +194,15 @@ No. A small script waits for the first real interaction (scroll, tap, key or mou
 6. Dashboard widget with the protection status and the last 24 hours.
 
 == Changelog ==
+
+= 2.8.0 =
+* New: Site Health tests (protection off, every visitor appearing with a Cloudflare or Bunny CDN address, the early or pre-cache check on but not running, Lockdown off from the server, updates waiting while locked) and a ScrapeLock section on the Info tab, without secrets.
+* New: WP-CLI commands `wp scrapelock status | block | unblock | blocked | emergency | log`.
+* New: Abilities API (WordPress 6.9+): get-summary, block-ip, unblock-ip and emergency-mode, for administrators only. Changes are refused while Lockdown is locked; no ability unlocks it.
+* New: optional "Hide the REST API map from visitors" and "Turn off pingbacks", and a list of the REST routes anyone can call.
+* "Hide usernames" now also covers oEmbed: the author's name and link are replaced with the site's.
+* Fix: "Unblock" in "IPs blocked now" did nothing for IPv6 addresses, which are blocked per /64 network.
+* Tested with WordPress 7.2 beta 1.
 
 = 2.7.2 =
 * Fix: Lockdown froze every role with any capability beyond "read", so members who create content themselves (for example subscribers who post listings or community posts through another plugin) lost their rights and their password reset while the site was locked. Now only roles that manage the site are frozen: roles that can change plugins, themes, users or settings (always), and by default editorial and shop staff and WordPress' own content roles. Every other role keeps working as usual.
