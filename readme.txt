@@ -4,7 +4,7 @@ Tags: anti-scraping, ai bots, bot protection, rate limit, content protection
 Requires at least: 6.2
 Tested up to: 7.2
 Requires PHP: 7.4
-Stable tag: 2.8.1
+Stable tag: 2.8.2
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -194,6 +194,9 @@ No. A small script waits for the first real interaction (scroll, tap, key or mou
 6. Dashboard widget with the protection status and the last 24 hours.
 
 == Changelog ==
+
+= 2.8.2 =
+* The plugin now includes the full text of its license (GPL-2.0) in a LICENSE file. No code changes.
 
 = 2.8.1 =
 * Lockdown: while the site is locked, WordPress' bare "Sorry, you are not allowed to…" pages in wp-admin (for example your own profile) are replaced with a clear "The site is locked" page: what is frozen and why, an "Unlock the site" button for administrators, "ask an administrator" for other staff, and a link back to the Dashboard. WordPress' own message stays under "Technical detail". AJAX, REST and XML-RPC answers are unchanged.
