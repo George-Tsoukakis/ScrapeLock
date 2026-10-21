@@ -56,6 +56,13 @@ final class PNCP_Lockdown {
 	private static $staff = array();
 
 	/**
+	 * The wp_die() handler that was in place before ours.
+	 *
+	 * @var callable|null
+	 */
+	private static $die_handler = null;
+
+	/**
 	 * Registers the hooks.
 	 */
 	public static function init() {
@@ -86,6 +93,7 @@ final class PNCP_Lockdown {
 			add_action( 'admin_notices', array( __CLASS__, 'notices' ) );
 			add_action( 'network_admin_notices', array( __CLASS__, 'notices' ) );
 			add_action( 'admin_enqueue_scripts', array( __CLASS__, 'assets' ) );
+			add_filter( 'wp_die_handler', array( __CLASS__, 'die_handler' ), 9999 );
 		}
 	}
 
@@ -867,6 +875,45 @@ final class PNCP_Lockdown {
 			/* translators: %s: time */
 			echo '<div class="notice notice-info"><p>' . esc_html( sprintf( __( 'The site is unlocked until %s, then it locks again by itself.', 'scrapelock' ), wp_date( (string) get_option( 'time_format' ), $until ) ) ) . ' <a href="' . esc_url( self::page_url() ) . '">' . esc_html__( 'Lock now', 'scrapelock' ) . '</a></p></div>';
 		}
+	}
+
+	/**
+	 * While locked, "Sorry, you are not allowed to…" in wp-admin says why: the site is locked. Only the HTML
+	 * handler: AJAX, JSON and XML-RPC answers stay as they are.
+	 *
+	 * @param callable $handler The wp_die() handler.
+	 * @return callable
+	 */
+	public static function die_handler( $handler ) {
+		self::$die_handler = $handler;
+		return array( __CLASS__, 'die_locked' );
+	}
+
+	/**
+	 * Adds the lock notice to the error page, with the unlock button for administrators only (other staff
+	 * see that the site is locked, not where it is unlocked), then hands over to the previous handler.
+	 *
+	 * @param string|WP_Error      $message Message.
+	 * @param string|int           $title   Title.
+	 * @param array<string, mixed> $args    Arguments.
+	 */
+	public static function die_locked( $message, $title = '', $args = array() ) {
+		$user = get_current_user_id();
+		// phpcs:ignore WordPress.Security.NonceVerification -- Only skips the notice for the lock's own pages.
+		$own = self::on_tab() || ( isset( $_REQUEST['action'] ) && self::ACTION === $_REQUEST['action'] );
+		if ( $user && ! $own && self::is_locked() && self::is_staff( $user ) ) {
+			$note = '<p><strong>' . esc_html__( 'This site is locked.', 'scrapelock' ) . '</strong> ' . esc_html__( 'Changes from wp-admin are disabled until an administrator unlocks the site with the authenticator app.', 'scrapelock' ) . '</p>';
+			if ( self::is_owner( $user ) ) {
+				$note .= '<p><a class="button button-primary" href="' . esc_url( self::page_url() ) . '">' . esc_html__( 'Unlock', 'scrapelock' ) . '</a></p>';
+			}
+			if ( is_wp_error( $message ) ) {
+				$message->add( 'pncp_locked', $note );
+			} else {
+				$message = $note . ( '' === (string) $message ? '' : '<p>' . $message . '</p>' );
+			}
+		}
+		$handler = is_callable( self::$die_handler ) ? self::$die_handler : '_default_wp_die_handler';
+		call_user_func( $handler, $message, $title, $args );
 	}
 
 	/**
