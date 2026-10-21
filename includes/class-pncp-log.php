@@ -162,6 +162,7 @@ final class PNCP_Log {
 			'blocked_ref'     => __( 'Referrer in the always-blocked list', 'scrapelock' ),
 			'trap'            => __( 'Bot trap', 'scrapelock' ),
 			'ban'             => __( 'New temporary block', 'scrapelock' ),
+			'manual'          => __( 'Blocked by hand', 'scrapelock' ),
 			'banned'          => __( 'Request from a blocked IP', 'scrapelock' ),
 			'feed_denied'     => __( 'Private URL without token', 'scrapelock' ),
 		);
@@ -782,10 +783,12 @@ final class PNCP_Log {
 	/**
 	 * Lifts the ban on an IP.
 	 *
-	 * @param string $ip IP.
+	 * @param string $ip IP, or the ban key as stored (IPv6: e.g. 2001:db8:1:2::/64).
 	 */
 	public static function unban( $ip ) {
 		global $wpdb;
+		// An IPv6 address is banned under its /64 (see ban()): lift that, not the exact address.
+		$ip = false === strpos( (string) $ip, '/' ) ? PNCP_Ip::limit_key( (string) $ip ) : (string) $ip;
 		self::cache_delete( 'pncp_st_' . md5( PNCP_Ip::limit_key( $ip ) ) );
 		if ( wp_using_ext_object_cache() ) {
 			wp_cache_delete( 'pncp_ban_' . md5( $ip ), 'pncp' );

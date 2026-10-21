@@ -2,7 +2,7 @@
 /**
  * Plugin Name:       ScrapeLock – Content & AI Bot Protection
  * Description:       Protects your content: makes copying text and images harder, hides the text in the REST API, GraphQL and RSS, blocks scrapers, AI bots and fake Googlebots, temporarily blocks persistent IPs, protects XML feeds with a token and adds an optional watermark. Lockdown freezes every change to the site until it is unlocked with an authenticator app. Forms, cart, checkout and search engines are not affected.
- * Version:           2.7.2
+ * Version:           2.8.0
  * Requires at least: 6.2
  * Requires PHP:      7.4
  * Author:            CodeBunny
@@ -19,7 +19,7 @@ if ( defined( 'PNCP_VERSION' ) ) {
 	return;
 }
 
-define( 'PNCP_VERSION', '2.7.2' );
+define( 'PNCP_VERSION', '2.8.0' );
 define( 'PNCP_FILE', __FILE__ );
 define( 'PNCP_DIR', plugin_dir_path( __FILE__ ) );
 define( 'PNCP_URL', plugin_dir_url( __FILE__ ) );
@@ -43,6 +43,9 @@ require_once PNCP_DIR . 'includes/class-pncp-geo.php';
 require_once PNCP_DIR . 'includes/class-pncp-precheck.php';
 require_once PNCP_DIR . 'includes/class-pncp-totp.php';
 require_once PNCP_DIR . 'includes/class-pncp-lockdown.php';
+require_once PNCP_DIR . 'includes/class-pncp-surface.php';
+require_once PNCP_DIR . 'includes/class-pncp-health.php';
+require_once PNCP_DIR . 'includes/class-pncp-abilities.php';
 
 if ( is_admin() ) {
 	require_once PNCP_DIR . 'includes/class-pncp-admin.php';
@@ -63,6 +66,14 @@ PNCP_Human::init();
 PNCP_Geo::init();
 PNCP_Precheck::init();
 PNCP_Lockdown::init();
+PNCP_Surface::init();
+PNCP_Health::init();
+PNCP_Abilities::init();
+
+if ( defined( 'WP_CLI' ) && WP_CLI ) {
+	require_once PNCP_DIR . 'includes/class-pncp-cli.php';
+	PNCP_Cli::init();
+}
 
 /**
  * Activation: defaults (without touching existing settings), log table, cron.
