@@ -56,6 +56,13 @@ final class PNCP_Lockdown {
 	private static $staff = array();
 
 	/**
+	 * The wp_die() handler that was in place before ours.
+	 *
+	 * @var callable|null
+	 */
+	private static $die_handler = null;
+
+	/**
 	 * Registers the hooks.
 	 */
 	public static function init() {
@@ -86,6 +93,7 @@ final class PNCP_Lockdown {
 			add_action( 'admin_notices', array( __CLASS__, 'notices' ) );
 			add_action( 'network_admin_notices', array( __CLASS__, 'notices' ) );
 			add_action( 'admin_enqueue_scripts', array( __CLASS__, 'assets' ) );
+			add_filter( 'wp_die_handler', array( __CLASS__, 'die_handler' ), PHP_INT_MAX );
 		}
 	}
 
@@ -867,6 +875,83 @@ final class PNCP_Lockdown {
 			/* translators: %s: time */
 			echo '<div class="notice notice-info"><p>' . esc_html( sprintf( __( 'The site is unlocked until %s, then it locks again by itself.', 'scrapelock' ), wp_date( (string) get_option( 'time_format' ), $until ) ) ) . ' <a href="' . esc_url( self::page_url() ) . '">' . esc_html__( 'Lock now', 'scrapelock' ) . '</a></p></div>';
 		}
+	}
+
+	/**
+	 * While locked, "Sorry, you are not allowed to…" in wp-admin says why: the site is locked. Only the HTML
+	 * handler: AJAX, JSON and XML-RPC answers stay as they are.
+	 *
+	 * @param callable $handler The wp_die() handler.
+	 * @return callable
+	 */
+	public static function die_handler( $handler ) {
+		self::$die_handler = $handler;
+		return array( __CLASS__, 'die_locked' );
+	}
+
+	/**
+	 * Shows a "the site is locked" page instead of WordPress' bare "Sorry, you are not allowed to…": what is
+	 * going on, and for administrators the Unlock button (other staff see that the site is locked, not where
+	 * it is unlocked). WordPress' own message stays under "Technical detail". Then hands over to the previous
+	 * handler, which prints the page.
+	 *
+	 * @param string|WP_Error      $message Message.
+	 * @param string|int           $title   Title.
+	 * @param array<string, mixed> $args    Arguments.
+	 */
+	public static function die_locked( $message, $title = '', $args = array() ) {
+		$user = get_current_user_id();
+		// phpcs:ignore WordPress.Security.NonceVerification -- Only skips the page for the lock's own pages.
+		$own = self::on_tab() || ( isset( $_REQUEST['action'] ) && self::ACTION === $_REQUEST['action'] );
+		if ( $user && ! $own && self::is_locked() && self::is_staff( $user ) ) {
+			$detail  = is_wp_error( $message ) ? $message->get_error_message() : (string) $message;
+			$message = self::locked_page( self::is_owner( $user ), $detail );
+			$title   = __( 'The site is locked', 'scrapelock' );
+			if ( is_array( $args ) && empty( $args['response'] ) ) {
+				$args['response'] = 403;
+			}
+		}
+		$handler = is_callable( self::$die_handler ) ? self::$die_handler : '_default_wp_die_handler';
+		call_user_func( $handler, $message, $title, $args );
+	}
+
+	/**
+	 * The "site is locked" page (inside WordPress' error page).
+	 *
+	 * @param bool   $owner  Administrator: show the Unlock button.
+	 * @param string $detail WordPress' message (already HTML from core).
+	 * @return string HTML.
+	 */
+	private static function locked_page( $owner, $detail ) {
+		$lock  = '<svg viewBox="0 0 24 24" width="40" height="40" aria-hidden="true" focusable="false"><path fill="currentColor" d="M12 2a5 5 0 0 0-5 5v3H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8a2 2 0 0 0-2-2h-1V7a5 5 0 0 0-5-5zm-3 5a3 3 0 1 1 6 0v3H9V7zm3 7a1.5 1.5 0 0 1 .75 2.8V18a.75.75 0 0 1-1.5 0v-1.2A1.5 1.5 0 0 1 12 14z"/></svg>';
+		$style = '<style>'
+			. '.pncp-locked{text-align:center;padding:8px 0 4px}'
+			. '.pncp-locked-icon{display:inline-flex;align-items:center;justify-content:center;width:72px;height:72px;border-radius:50%;background:#fcf0e3;color:#b26200;margin-bottom:4px}'
+			. '#error-page .pncp-locked h1{border:0;margin:12px 0 0;padding:0;font-size:22px;line-height:1.3;color:#1d2327}'
+			. '#error-page .pncp-locked p{margin:12px auto;max-width:520px;font-size:14px;line-height:1.6;color:#3c434a}'
+			. '#error-page .pncp-locked .pncp-locked-actions{margin-top:24px}'
+			. '.pncp-locked-btn{display:inline-block;background:#2271b1;color:#fff!important;border-radius:4px;padding:10px 22px;font-size:14px;font-weight:600;text-decoration:none;margin:0 6px 8px}'
+			. '.pncp-locked-btn:hover,.pncp-locked-btn:focus{background:#135e96}'
+			. '.pncp-locked-link{display:inline-block;margin:0 6px 8px;padding:10px 4px;font-size:14px;color:#2271b1}'
+			. '.pncp-locked details{margin:20px auto 0;max-width:520px;text-align:left;font-size:12px;color:#646970}'
+			. '.pncp-locked summary{cursor:pointer}'
+			. '#error-page .pncp-locked details p{font-size:12px;margin:8px 0 0;color:#646970}'
+			. '</style>';
+		$html  = $style . '<div class="pncp-locked">'
+			. '<div class="pncp-locked-icon">' . $lock . '</div>'
+			. '<h1>' . esc_html__( 'The site is locked', 'scrapelock' ) . '</h1>'
+			. '<p>' . esc_html__( 'ScrapeLock Lockdown is on, so nothing can be changed right now: plugins, themes, users, settings and content are frozen. This keeps the site safe even if someone has stolen a password.', 'scrapelock' ) . '</p>'
+			. '<p>' . ( $owner
+				? esc_html__( 'To make this change, unlock the site with the code from your authenticator app, then lock it again when you are done.', 'scrapelock' )
+				: esc_html__( 'To make this change, ask an administrator to unlock the site.', 'scrapelock' ) ) . '</p>'
+			. '<p class="pncp-locked-actions">'
+			. ( $owner ? '<a class="pncp-locked-btn" href="' . esc_url( self::page_url() ) . '">' . esc_html__( 'Unlock the site', 'scrapelock' ) . '</a>' : '' )
+			. '<a class="pncp-locked-link" href="' . esc_url( admin_url() ) . '">' . esc_html__( 'Back to the Dashboard', 'scrapelock' ) . '</a>'
+			. '</p>';
+		if ( '' !== trim( wp_strip_all_tags( $detail ) ) ) {
+			$html .= '<details><summary>' . esc_html__( 'Technical detail', 'scrapelock' ) . '</summary><p>' . wp_kses_post( $detail ) . '</p></details>';
+		}
+		return $html . '</div>';
 	}
 
 	/**
