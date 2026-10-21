@@ -109,7 +109,7 @@ final class PNCP_Rules {
 	 * The site's own suffix for the Nginx names (variables, limit zone): several WordPress sites can share one
 	 * Nginx, and the same name defined twice in http { } stops nginx -t.
 	 *
-	 * @return string E.g. pharmacyneeds_gr.
+	 * @return string E.g. example_com.
 	 */
 	public static function nginx_id() {
 		$site = (string) preg_replace( '#^[a-z]+://#i', '', untrailingslashit( home_url() ) );
@@ -124,7 +124,7 @@ final class PNCP_Rules {
 	 * Nginx name with the site's suffix (without the $).
 	 *
 	 * @param string $name Name, e.g. block.
-	 * @return string E.g. pncp_block_pharmacyneeds_gr.
+	 * @return string E.g. pncp_block_example_com.
 	 */
 	private static function nv( $name ) {
 		return 'pncp_' . $name . '_' . self::nginx_id();
