@@ -4,7 +4,7 @@ Tags: anti-scraping, ai bots, bot protection, rate limit, content protection
 Requires at least: 6.2
 Tested up to: 7.2
 Requires PHP: 7.4
-Stable tag: 2.8.2
+Stable tag: 2.8.3
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -194,6 +194,12 @@ No. A small script waits for the first real interaction (scroll, tap, key or mou
 6. Dashboard widget with the protection status and the last 24 hours.
 
 == Changelog ==
+
+= 2.8.3 =
+* Security fix: the per-minute page limit could be bypassed from a single IP, with no strike and no ban, by sending the browser's prefetch headers (Sec-Fetch-Dest with Sec-Purpose or Purpose: prefetch) or by a POST with a cookie named wordpress_logged_in_… or woocommerce_… Any script can send these. Now every page request counts, in the normal check and in the pre-cache check. A prefetch has a limit of its own, three times the page limit and never a strike, so speed plugins that prefetch links (Flying Pages, instant.page, speculative loading) do not stop real visitors. WooCommerce AJAX, cart and checkout still do not count, and logged-in staff are still exempt by their role.
+* More bots blocked: more than 100 AI crawlers and agents (DeepSeek, Grok, Qwen, Doubao, ERNIE, Mistral, meta-webindexer, NotebookLM, Gemini Deep Research and others, from ai.robots.txt) are now built into the plugin, blocked by name and listed in robots.txt. The list is updated with each version and does not take room in your own bot list. A few that act for your visitors or tools (e.g. PetalBot, AmazonBuyForMe) are only asked in robots.txt.
+* The bot list now also blocks the default User-Agent of HTTP libraries that passed before: Node.js fetch, Ruby, Java HttpClient, Apache HttpClient, Guzzle, Bun, Deno, Dart, Perl HTTP::Tiny, PowerShell, Faraday and Mechanize. Added to existing lists on update; your own lines stay. A line that starts with "=" must be the whole User-Agent (e.g. "=node").
+* Fix: addresses with non-Latin characters (e.g. Greek) were logged without them (/άρθρο-8/ as /-8/), so the "pages scrapers were after" report missed them. They are now logged as sent and shown readable.
 
 = 2.8.2 =
 * The plugin now includes the full text of its license (GPL-2.0) in a LICENSE file. No code changes.

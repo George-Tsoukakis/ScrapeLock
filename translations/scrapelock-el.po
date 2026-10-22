@@ -665,6 +665,12 @@ msgstr "Λίστα User-Agents που μπλοκάρονται (ένα ανά γ
 msgid "It contains two AI categories: training crawlers (GPTBot, ClaudeBot, CCBot, Google-Extended etc.) and AI search / assistants (OAI-SearchBot, ChatGPT-User, Claude-SearchBot, PerplexityBot etc.). You can allow the second one in the next section."
 msgstr "Περιέχει δύο κατηγορίες AI: crawlers εκπαίδευσης (GPTBot, ClaudeBot, CCBot, Google-Extended κ.ά.) και AI αναζήτηση / βοηθούς (OAI-SearchBot, ChatGPT-User, Claude-SearchBot, PerplexityBot κ.ά.). Τη δεύτερη μπορείτε να την επιτρέψετε στην επόμενη ενότητα."
 
+#: includes/class-pncp-admin.php:714
+#. translators: %s: number of AI crawlers
+#, php-format
+msgid "In addition, %s more AI crawlers and agents (DeepSeek, Grok, Qwen, Mistral, NotebookLM and others) are blocked by name: that list is built into ScrapeLock and updated with each version, so it is not shown here. A line that starts with “=” must be the whole User-Agent, e.g. “=node”."
+msgstr "Επιπλέον, %s ακόμη AI crawlers και agents (DeepSeek, Grok, Qwen, Mistral, NotebookLM κ.ά.) μπλοκάρονται με το όνομά τους: αυτή η λίστα είναι ενσωματωμένη στο ScrapeLock και ενημερώνεται με κάθε έκδοση, γι' αυτό δεν φαίνεται εδώ. Μια γραμμή που ξεκινά με «=» πρέπει να είναι ολόκληρο το User-Agent, π.χ. «=node»."
+
 #: includes/class-pncp-admin.php:717
 msgid "AI search and training"
 msgstr "AI αναζήτηση και εκπαίδευση"
@@ -2684,6 +2690,10 @@ msgstr "Ψεύτικος browser"
 #: includes/class-pncp-log.php:153
 msgid "Pages per minute"
 msgstr "Σελίδες ανά λεπτό"
+
+#: includes/class-pncp-log.php:154
+msgid "Prefetches per minute"
+msgstr "Prefetch ανά λεπτό"
 
 #: includes/class-pncp-log.php:154
 msgid "Searches per minute"

@@ -48,12 +48,15 @@ final class PNCP_Rules {
 	}
 
 	/**
-	 * The User-Agents of the bot list.
+	 * The User-Agents of the bot list, with the AI crawlers built into the plugin (Nginx and Apache: one regex,
+	 * no length limit). Cloudflare gets only the editable list: its own "AI Crawler" category rule covers the rest.
 	 *
+	 * @param bool $builtin Whether to add the built-in AI crawlers.
 	 * @return string[]
 	 */
-	private static function bots() {
-		return PNCP_Options::parse_list( PNCP_Options::get()['bot_list'] );
+	private static function bots( $builtin = true ) {
+		$s = PNCP_Options::get();
+		return $builtin ? PNCP_Options::blocked_agents( $s ) : PNCP_Options::parse_list( $s['bot_list'] );
 	}
 
 	/**
@@ -100,7 +103,8 @@ final class PNCP_Rules {
 	private static function alternation( $words ) {
 		$quoted = array();
 		foreach ( $words as $word ) {
-			$quoted[] = str_replace( array( ' ', '"' ), array( '\\s', '' ), preg_quote( $word, '#' ) );
+			$exact    = '=' === substr( $word, 0, 1 ); // "=node": the whole User-Agent.
+			$quoted[] = ( $exact ? '^' : '' ) . str_replace( array( ' ', '"' ), array( '\\s', '' ), preg_quote( $exact ? substr( $word, 1 ) : $word, '#' ) ) . ( $exact ? '$' : '' );
 		}
 		return '(' . implode( '|', $quoted ) . ')';
 	}
@@ -494,14 +498,16 @@ final class PNCP_Rules {
 			),
 		);
 
-		$bots = self::bots();
+		$bots = self::bots( false );
 		if ( $s['block_bots'] && $bots ) {
 			// The allowed AI search bots are left out of the list instead of being excluded again after it: shorter.
 			$search = array_map( 'strtolower', PNCP_Options::allowed_ai_search() );
 			$parts  = array();
 			foreach ( $bots as $bot ) {
 				$bot = strtolower( str_replace( '"', '', $bot ) );
-				if ( ! in_array( $bot, $search, true ) ) {
+				if ( '=' === substr( $bot, 0, 1 ) ) {
+					$parts[] = 'lower(http.user_agent) eq "' . substr( $bot, 1 ) . '"'; // "=node": the whole User-Agent.
+				} elseif ( ! in_array( $bot, $search, true ) ) {
 					$parts[] = 'lower(http.user_agent) contains "' . $bot . '"';
 				}
 			}

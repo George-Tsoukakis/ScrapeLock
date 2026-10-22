@@ -2,7 +2,7 @@
 /**
  * Plugin Name:       ScrapeLock – Content & AI Bot Protection
  * Description:       Protects your content: makes copying text and images harder, hides the text in the REST API, GraphQL and RSS, blocks scrapers, AI bots and fake Googlebots, temporarily blocks persistent IPs, protects XML feeds with a token and adds an optional watermark. Lockdown freezes every change to the site until it is unlocked with an authenticator app. Forms, cart, checkout and search engines are not affected.
- * Version:           2.8.2
+ * Version:           2.8.3
  * Requires at least: 6.2
  * Requires PHP:      7.4
  * Author:            CodeBunny
@@ -19,7 +19,7 @@ if ( defined( 'PNCP_VERSION' ) ) {
 	return;
 }
 
-define( 'PNCP_VERSION', '2.8.2' );
+define( 'PNCP_VERSION', '2.8.3' );
 define( 'PNCP_FILE', __FILE__ );
 define( 'PNCP_DIR', plugin_dir_path( __FILE__ ) );
 define( 'PNCP_URL', plugin_dir_url( __FILE__ ) );
@@ -142,6 +142,20 @@ function pncp_upgrade() {
 			$added += PNCP_Options::new_in_260();
 		}
 		$added = array_diff_key( $added, $stored );
+		// 2.8.3: the HTTP libraries that passed the bot list are added to it. Your own entries stay; a list
+		// emptied on purpose stays empty.
+		if ( version_compare( $from, '2.8.3', '<' ) && isset( $stored['bot_list'] ) ) {
+			$list = PNCP_Options::parse_list( (string) $stored['bot_list'] );
+			if ( $list ) {
+				$lower = array_map( 'strtolower', $list );
+				foreach ( PNCP_Options::new_bots_in_283() as $entry ) {
+					if ( ! in_array( strtolower( $entry ), $lower, true ) ) {
+						$list[] = $entry;
+					}
+				}
+				$added['bot_list'] = implode( "\n", array_slice( $list, 0, 200 ) );
+			}
+		}
 		if ( $added ) {
 			update_option( PNCP_OPTION, array_merge( $stored, $added ), true );
 		}

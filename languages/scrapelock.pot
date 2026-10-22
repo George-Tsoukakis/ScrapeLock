@@ -666,6 +666,12 @@ msgstr ""
 msgid "It contains two AI categories: training crawlers (GPTBot, ClaudeBot, CCBot, Google-Extended etc.) and AI search / assistants (OAI-SearchBot, ChatGPT-User, Claude-SearchBot, PerplexityBot etc.). You can allow the second one in the next section."
 msgstr ""
 
+#: includes/class-pncp-admin.php:714
+#. translators: %s: number of AI crawlers
+#, php-format
+msgid "In addition, %s more AI crawlers and agents (DeepSeek, Grok, Qwen, Mistral, NotebookLM and others) are blocked by name: that list is built into ScrapeLock and updated with each version, so it is not shown here. A line that starts with “=” must be the whole User-Agent, e.g. “=node”."
+msgstr ""
+
 #: includes/class-pncp-admin.php:717
 msgid "AI search and training"
 msgstr ""
@@ -2684,6 +2690,10 @@ msgstr ""
 
 #: includes/class-pncp-log.php:153
 msgid "Pages per minute"
+msgstr ""
+
+#: includes/class-pncp-log.php:154
+msgid "Prefetches per minute"
 msgstr ""
 
 #: includes/class-pncp-log.php:154

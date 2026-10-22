@@ -151,6 +151,7 @@ final class PNCP_Log {
 			'fake_browser'    => __( 'Fake browser', 'scrapelock' ),
 			// The limits are named after their settings ("Pages per minute", "Searches per minute"…).
 			'rate_page'       => __( 'Pages per minute', 'scrapelock' ),
+			'rate_prefetch'   => __( 'Prefetches per minute', 'scrapelock' ),
 			'rate_search'     => __( 'Searches per minute', 'scrapelock' ),
 			'rate_rest'       => __( 'REST / GraphQL requests per minute', 'scrapelock' ),
 			'rate_sitemap'    => __( 'Sitemaps per minute', 'scrapelock' ),
@@ -166,6 +167,36 @@ final class PNCP_Log {
 			'banned'          => __( 'Request from a blocked IP', 'scrapelock' ),
 			'feed_denied'     => __( 'Private URL without token', 'scrapelock' ),
 		);
+	}
+
+	/**
+	 * The request URI as the browser sent it, percent-encoded, as the pre-cache check also logs it.
+	 * sanitize_text_field() is not used: it removes "%ce%ac" and the like, so a Greek address such as
+	 * /άρθρο-8/ was logged as /-8/ (2.8.2 and earlier). Any byte outside printable ASCII is encoded.
+	 *
+	 * @return string
+	 */
+	public static function request_uri() {
+		// phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- Every byte outside printable ASCII is percent-encoded below; the value is escaped on output.
+		$uri = isset( $_SERVER['REQUEST_URI'] ) ? (string) wp_unslash( $_SERVER['REQUEST_URI'] ) : '';
+		return (string) preg_replace_callback(
+			'/[^\x21-\x7E]/',
+			static function ( $m ) {
+				return rawurlencode( $m[0] );
+			},
+			$uri
+		);
+	}
+
+	/**
+	 * A logged path, readable: /%ce%ac%cf%81… is shown as /άρ…. Invalid UTF-8 stays encoded.
+	 *
+	 * @param string $path Logged path.
+	 * @return string
+	 */
+	public static function display_path( $path ) {
+		$decoded = rawurldecode( (string) $path );
+		return wp_check_invalid_utf8( $decoded ) === $decoded && ! preg_match( '/[\x00-\x1F\x7F]/', $decoded ) ? $decoded : (string) $path;
 	}
 
 	/**
@@ -200,8 +231,7 @@ final class PNCP_Log {
 			return;
 		}
 
-		$uri  = isset( $_SERVER['REQUEST_URI'] ) ? sanitize_text_field( wp_unslash( $_SERVER['REQUEST_URI'] ) ) : '';
-		$path = (string) wp_parse_url( $uri, PHP_URL_PATH );
+		$path = (string) wp_parse_url( self::request_uri(), PHP_URL_PATH );
 
 		// phpcs:ignore WordPress.DB.DirectDatabaseQuery -- Plugin table.
 		$wpdb->insert(

@@ -262,17 +262,33 @@ list( $code ) = req( $url . '?wc-ajax=1', array( 'X-Test-IP' => '198.51.100.12',
 t( '?wc-ajax χωρίς WooCommerce δεν παρακάμπτει τον έλεγχο', 403 === $code, (string) $code );
 list( $code, , $body ) = req( '/wp-json/wp/v2/comments', array( 'X-Test-IP' => '198.51.100.13', 'User-Agent' => 'Go-http-client/1.1' ), 'POST' );
 t( 'REST POST (π.χ. webhook πληρωμής με Go-http-client): δεν μπλοκάρεται από το plugin', false === strpos( $body, 'pncp_' ), $code . ' ' . substr( $body, 0, 100 ) );
-settings( array( 'rate_limit' => 1, 'ban_strikes' => 0 ) );
-$codes = array();
-for ( $i = 0; $i < 3; $i++ ) {
-	$codes[] = req( $url, browser( '203.0.113.25', array( 'Sec-Purpose' => 'prefetch', 'Sec-Fetch-Dest' => 'document' ) ) )[0];
+settings( array( 'rate_limit' => 1, 'ban_strikes' => 1 ) );
+// 2.8.3: το prefetch έχει δικό του όριο (3 × το όριο σελίδων), χωρίς παράβαση: τα plugins ταχύτητας κάνουν prefetch πολλούς
+// συνδέσμους, αλλά τα headers τα στέλνει και ένα script (curl, Python), που μέχρι την 2.8.2 έπαιρνε όλο το site από μία IP.
+foreach ( array( '203.0.113.25' => array( 'Sec-Purpose' => 'prefetch', 'Sec-Fetch-Dest' => 'document' ), '203.0.113.27' => array( 'Sec-Fetch-Dest' => 'document', 'Purpose' => 'prefetch' ) ) as $pncp_ip => $pncp_h ) {
+	$codes = array();
+	for ( $i = 0; $i < 5; $i++ ) {
+		$codes[] = req( $url, browser( $pncp_ip, $pncp_h ) )[0];
+	}
+	wp_cache_flush(); PNCP_Log::reset_cache();
+	t( 'prefetch (' . implode( ', ', array_keys( $pncp_h ) ) . '): δικό του όριο 3 × σελίδες, μετά 429, χωρίς αποκλεισμό (2.8.3)', array( 200, 200, 200, 429, 429 ) === $codes && ! PNCP_Log::is_banned( $pncp_ip ), implode( ',', $codes ) );
 }
-t( 'prefetch δεν μετρά στο όριο σελίδων', array( 200, 200, 200 ) === $codes, implode( ',', $codes ) );
+list( $code ) = req( $url, browser( '203.0.113.25' ) );
+t( '… και η κανονική σελίδα μετά τα prefetch: μέσα στο όριο σελίδων', 200 === $code, (string) $code );
+settings( array( 'ban_strikes' => 0 ) );
 $codes = array();
 for ( $i = 0; $i < 3; $i++ ) {
 	$codes[] = req( $url, browser( '203.0.113.26', array( 'Sec-Purpose' => 'prefetch' ) ) )[0];
 }
-t( '«prefetch» χωρίς Sec-Fetch-Dest (script): μετρά στο όριο', array( 200, 429, 429 ) === $codes, implode( ',', $codes ) );
+t( '«prefetch» χωρίς Sec-Fetch-Dest (script): μετρά στο όριο σελίδων', array( 200, 429, 429 ) === $codes, implode( ',', $codes ) );
+// 2.8.3: ένα ψεύτικο cookie με όνομα WordPress / WooCommerce δεν κάνει το POST «φόρμα» που δεν μετράει.
+foreach ( array( 'wordpress_logged_in_x=1', 'woocommerce_items_in_cart=1', 'wp_woocommerce_session_x=1' ) as $pncp_i => $pncp_cookie ) {
+	$codes = array();
+	for ( $i = 0; $i < 3; $i++ ) {
+		$codes[] = req( $url, browser( '203.0.113.' . ( 231 + $pncp_i ), array( 'Cookie' => $pncp_cookie ) ), 'POST' )[0];
+	}
+	t( "POST με ψεύτικο cookie $pncp_cookie: μετρά στο όριο (2.8.3)", array( 200, 429, 429 ) === $codes, implode( ',', $codes ) );
+}
 settings( array( 'rate_limit' => 0, 'ban_strikes' => 3 ) );
 
 /* ---------- 2.1.1: συνδεδεμένοι χρήστες, page builders, wc-ajax ---------- */
@@ -1280,7 +1296,10 @@ t( 'νέα ρύθμιση: pingbacks / χάρτης REST κλειστά από �
 settings( array( 'disable_pingback' => 0, 'hide_rest_discovery' => 0 ) );
 $pncp_x = xmlrpc_methods_list( '198.51.100.90' );
 list( , $hdr ) = req( $url, browser( '198.51.100.90' ) );
-t( 'pingbacks ανοιχτά: pingback.ping στο XML-RPC και X-Pingback header (όπως το WordPress)', false !== strpos( $pncp_x, '<string>pingback.ping</string>' ) && false !== strpos( $hdr, 'x-pingback:' ), substr( $pncp_x, 0, 120 ) );
+// Από το WordPress 7.1 ο ίδιος ο πυρήνας βγάζει το pingback.ping όταν το site δεν είναι production (WP_ENVIRONMENT_TYPE
+// local / development / staging, όπως στις δοκιμές): τότε φαίνεται μόνο το getPingbacks.
+$pncp_ping = function_exists( 'wp_should_disable_pings_for_environment' ) && wp_should_disable_pings_for_environment() ? 'pingback.extensions.getPingbacks' : 'pingback.ping';
+t( 'pingbacks ανοιχτά: ' . $pncp_ping . ' στο XML-RPC και X-Pingback header (όπως το WordPress)', false !== strpos( $pncp_x, '<string>' . $pncp_ping . '</string>' ) && false !== strpos( $hdr, 'x-pingback:' ), substr( $pncp_x, 0, 120 ) );
 settings( array( 'disable_pingback' => 1 ) );
 $pncp_x = xmlrpc_methods_list( '198.51.100.90' );
 list( , $hdr ) = req( $url, browser( '198.51.100.90' ) );
@@ -1304,6 +1323,76 @@ list( $icode ) = req( '/wp-json/wp/v2/posts', browser( '198.51.100.91' ) );
 list( $ocode ) = req( '/wp-json/oembed/1.0/embed?url=' . rawurlencode( get_permalink( $post ) ), browser( '198.51.100.91' ) );
 t( 'χάρτης REST κρυφός: τα routes δουλεύουν κανονικά (posts, oEmbed)', 200 === $icode && 200 === $ocode, "$icode/$ocode" );
 settings( array( 'hide_rest_discovery' => 0 ) );
+
+/* ---------- 2.8.3: AI crawlers ενσωματωμένοι, εργαλεία HTTP, «=» ολόκληρο το User-Agent, ελληνικές διευθύνσεις ---------- */
+fresh();
+settings( array( 'block_bots' => 1, 'bot_list' => PNCP_Options::default_bot_list(), 'allow_list' => PNCP_Options::default_allow_list(), 'allow_ai_search' => 0, 'rate_limit' => 0, 'ban_strikes' => 0, 'require_browser_headers' => 0, 'block_headless' => 0, 'human_check' => 0 ) );
+$pncp_n = 0;
+foreach ( array( 'Mozilla/5.0 (compatible; DeepSeekBot/1.0)', 'GrokBot/1.0', 'Mozilla/5.0 (compatible; meta-webindexer/1.1)', 'Mozilla/5.0 (compatible; QwenBot/1.0)', 'MistralAI-Training/1.0', 'Mozilla/5.0 Gemini-Deep-Research', 'node', 'NODE', 'Ruby', 'Java-http-client/21.0.12', 'Bun/1.4.2', 'HTTP-Tiny/0.086', 'GuzzleHttp/7', 'Deno/2.1', 'Dart/3.5 (dart:io)', 'Mozilla/5.0 (Windows NT; Windows NT 10.0; en-US) WindowsPowerShell/5.1' ) as $pncp_ua ) {
+	list( $code ) = req( $url, array( 'X-Test-IP' => '192.0.2.' . ( 10 + ++$pncp_n ), 'User-Agent' => $pncp_ua ) );
+	t( "2.8.3 μπλοκάρεται: $pncp_ua", 403 === $code, (string) $code );
+}
+// Ποτέ λάθος αποκλεισμός: browsers, in-app browsers, link previews, τιμές, monitoring, άλλο WordPress, ονόματα που περιέχουν «node» / «Ruby».
+foreach ( array(
+	'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36 Edg/141.0.0.0',
+	'Mozilla/5.0 (Macintosh; Intel Mac OS X 14_6) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Safari/605.1.15',
+	'Mozilla/5.0 (X11; Linux x86_64; rv:142.0) Gecko/20100101 Firefox/142.0',
+	'Mozilla/5.0 (Linux; Android 15; SM-S928B) AppleWebKit/537.36 (KHTML, like Gecko) SamsungBrowser/27.0 Chrome/125.0 Mobile Safari/537.36',
+	'Mozilla/5.0 (Linux; Android 14; wv) AppleWebKit/537.36 Version/4.0 Chrome/141.0 Mobile Safari/537.36 [FB_IAB/FB4A;FBAV/480.0;]',
+	'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 Mobile/22A3354 Instagram 350.0',
+	'facebookexternalhit/1.1 (+http://www.facebook.com/externalhit_uatext.php)',
+	'Mozilla/5.0 (compatible; Skroutz/1.0)',
+	'Mozilla/5.0 (compatible; UptimeRobot/2.0)',
+	'WordPress/7.1.3; https://other.example',
+	'Node-RED',
+	'Ruby-Ruby Feed Reader',
+	'Traefik Health Check',
+) as $pncp_ua ) {
+	list( $code ) = req( $url, array( 'X-Test-IP' => '192.0.2.' . ( 10 + ++$pncp_n ), 'User-Agent' => $pncp_ua, 'Accept-Language' => 'el' ) );
+	t( "2.8.3 περνά: $pncp_ua", 200 === $code, (string) $code );
+}
+t( '2.8.3: ενσωματωμένοι AI crawlers (πάνω από 100), όχι στη λίστα των ρυθμίσεων', count( PNCP_Bots::known_ai_agents() ) > 100 && false === stripos( PNCP_Options::stored()['bot_list'], 'DeepSeekBot' ) );
+t( '2.8.3: «=» = ολόκληρο το User-Agent', PNCP_Bots::ua_in_list( ' Node ', array( '=node' ) ) && ! PNCP_Bots::ua_in_list( 'Node-RED', array( '=node' ) ) && ! PNCP_Bots::ua_in_list( 'x', array( '=' ) ) );
+list( $code ) = req( '/robots.txt', browser( '192.0.2.200' ) );
+list( , , $body ) = req( '/robots.txt', browser( '192.0.2.200' ) );
+t( '2.8.3: robots.txt με τους νέους AI crawlers και όσους δεν μπλοκάρει (PetalBot)', false !== strpos( $body, "User-agent: DeepSeekBot\n" ) && false !== strpos( $body, "User-agent: PetalBot\n" ) && false !== strpos( $body, "User-agent: GPTBot\n" ) && 1 === substr_count( $body, "User-agent: GPTBot\n" ) );
+settings( array( 'allow_list' => PNCP_Options::default_allow_list() . "\nDeepSeekBot" ) );
+list( $code ) = req( $url, array( 'X-Test-IP' => '192.0.2.201', 'User-Agent' => 'Mozilla/5.0 (compatible; DeepSeekBot/1.0)' ) );
+t( '2.8.3: ενσωματωμένος crawler στη λίστα «πάντα επιτρεπτά»: περνά', 200 === $code, (string) $code );
+settings( array( 'allow_list' => PNCP_Options::default_allow_list() ) );
+$pncp_nginx = PNCP_Rules::nginx();
+t( '2.8.3: κανόνες Nginx με τους ενσωματωμένους crawlers και «^node$»', false !== strpos( $pncp_nginx, 'DeepSeekBot' ) && false !== strpos( $pncp_nginx, '|^node$|' ) );
+// Ελληνική διεύθυνση στο αρχείο: όπως τη στέλνει ο browser (κωδικοποιημένη), όχι «/-8/».
+$pncp_gr = get_page_by_path( 'ελληνικό-άρθρο-δοκιμής', OBJECT, 'post' );
+$pncp_gr = $pncp_gr ? $pncp_gr->ID : wp_insert_post( array( 'post_title' => 'Ελληνικό άρθρο δοκιμής', 'post_name' => 'ελληνικό-άρθρο-δοκιμής', 'post_status' => 'publish', 'post_content' => 'Κείμενο.' ) );
+$pncp_gr_path = wp_parse_url( get_permalink( $pncp_gr ), PHP_URL_PATH );
+req( $pncp_gr_path, array( 'X-Test-IP' => '192.0.2.202', 'User-Agent' => 'GPTBot/1.2' ) );
+$pncp_row = $wpdb->get_row( $wpdb->prepare( 'SELECT path FROM %i WHERE ip = %s ORDER BY id DESC LIMIT 1', PNCP_Log::table(), '192.0.2.202' ) );
+t( '2.8.3: ελληνική διεύθυνση στο αρχείο όπως τη στέλνει ο browser', $pncp_row && strtolower( $pncp_row->path ) === strtolower( $pncp_gr_path ), $pncp_row ? $pncp_row->path . ' ≠ ' . $pncp_gr_path : 'no row' );
+t( '2.8.3: … φαίνεται με ελληνικούς χαρακτήρες και αναγνωρίζεται ως άρθρο του site', $pncp_row && '/ελληνικό-άρθρο-δοκιμής/' === PNCP_Log::display_path( $pncp_row->path ) && PNCP_Log::is_site_content( $pncp_row->path ) );
+t( '2.8.3: μη έγκυρο UTF-8 μένει κωδικοποιημένο', '/%ff%fe/' === PNCP_Log::display_path( '/%ff%fe/' ) && '/a%0ab/' === PNCP_Log::display_path( '/a%0ab/' ) );
+wp_delete_post( $pncp_gr, true );
+// Αναβάθμιση 2.8.2 → 2.8.3: τα εργαλεία HTTP μπαίνουν στη λίστα, οι δικές σας γραμμές μένουν, μια άδεια λίστα μένει άδεια.
+$pncp_before = PNCP_Options::stored();
+foreach ( array( "GPTBot\nMyOwnBot\nRuby", '' ) as $pncp_list ) {
+	update_option( PNCP_OPTION, array_merge( $pncp_before, array( 'bot_list' => $pncp_list ) ) );
+	update_option( 'pncp_version', '2.8.2' );
+	PNCP_Options::flush();
+	// Το db.php του SQLite (wp-sqlite-db) βγάζει «Deprecated: trim()» στο CREATE TABLE της αναβάθμισης· όχι σε MySQL / MariaDB.
+	$pncp_er = error_reporting( error_reporting() & ~E_DEPRECATED );
+	pncp_upgrade();
+	error_reporting( $pncp_er );
+	PNCP_Options::flush();
+	$pncp_after = PNCP_Options::parse_list( PNCP_Options::stored()['bot_list'] );
+	if ( '' === $pncp_list ) {
+		t( 'αναβάθμιση 2.8.3: άδεια λίστα bots μένει άδεια', array() === $pncp_after );
+	} else {
+		t( 'αναβάθμιση 2.8.3: + εργαλεία HTTP, οι δικές σας γραμμές μένουν, χωρίς διπλά', array( 'GPTBot', 'MyOwnBot', 'Ruby' ) === array_slice( $pncp_after, 0, 3 ) && in_array( '=node', $pncp_after, true ) && in_array( 'Java-http-client', $pncp_after, true ) && count( $pncp_after ) === count( array_unique( array_map( 'strtolower', $pncp_after ) ) ), implode( ',', $pncp_after ) );
+	}
+}
+update_option( PNCP_OPTION, $pncp_before );
+update_option( 'pncp_version', PNCP_VERSION );
+PNCP_Options::flush();
 
 echo $fails ? "\n$fails FAIL\n" : "\nΟΛΑ PASS\n";
 exit( $fails ? 1 : 0 );

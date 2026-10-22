@@ -221,7 +221,8 @@ final class PNCP_Options {
 				'httpx',
 				'colly',
 				'Nutch',
-			)
+			),
+			self::new_bots_in_283()
 		);
 	}
 
@@ -280,6 +281,35 @@ final class PNCP_Options {
 	 */
 	public static function default_bot_list() {
 		return implode( "\n", self::default_bot_entries() );
+	}
+
+	/**
+	 * The User-Agents blocked when "Block bots" is on: the editable bot list and the AI crawlers built into the
+	 * plugin (PNCP_Bots::known_ai_agents()), without duplicates.
+	 *
+	 * @param array<string, mixed> $s Settings.
+	 * @return string[]
+	 */
+	public static function blocked_agents( $s ) {
+		$out = array();
+		foreach ( array_merge( self::parse_list( $s['bot_list'] ), PNCP_Bots::known_ai_agents() ) as $agent ) {
+			$agent = trim( (string) $agent );
+			if ( '' !== $agent && '=' !== $agent ) {
+				$out[ strtolower( $agent ) ] = $agent;
+			}
+		}
+		return array_values( $out );
+	}
+
+	/**
+	 * HTTP libraries added to the bot list in 2.8.3: the User-Agent each one sends by default (measured, not
+	 * guessed). "=" = the whole User-Agent, for names too short to match safely anywhere in it. Existing sites
+	 * get them on upgrade (pncp_upgrade()).
+	 *
+	 * @return string[]
+	 */
+	public static function new_bots_in_283() {
+		return array( '=node', 'undici', '=Ruby', 'Java-http-client', 'Apache-HttpClient', 'GuzzleHttp', 'Bun/', 'Deno/', 'Dart/', 'HTTP-Tiny', 'PowerShell/', 'Faraday v', 'Mechanize' );
 	}
 
 	/**

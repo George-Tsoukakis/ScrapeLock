@@ -180,8 +180,9 @@ t( 'cache: HEAD μετράει και αυτό, χωρίς σώμα', 429 === $c
 same_minute();
 $c = codes( '/cached-page/', visitor( '203.0.113.20' ), 8, 'GET', 'wordpress_logged_in_abc=x' );
 t( 'συνδεδεμένοι (cookie wordpress_logged_in_): δεν μετρούν εδώ', ! in_array( 429, $c, true ), implode( ',', $c ) );
-$c = codes( '/cached-page/', visitor( '203.0.113.21', array( 'Sec-Purpose' => 'prefetch', 'Sec-Fetch-Dest' => 'document' ) ), 8 );
-t( 'prefetch: δεν μετράει', ! in_array( 429, $c, true ), implode( ',', $c ) );
+same_minute();
+$c = codes( '/cached-page/', visitor( '203.0.113.21', array( 'Sec-Purpose' => 'prefetch', 'Sec-Fetch-Dest' => 'document' ) ), 17 );
+t( 'prefetch με Sec-Fetch-Dest: δικό του όριο 3 × σελίδες (15), μετά 429 (2.8.3· τα headers τα στέλνει και ένα script)', 15 === count( array_keys( $c, 200, true ) ) && 429 === $c[15] && 429 === $c[16], implode( ',', $c ) );
 same_minute();
 $c = codes( '/cached-page/', visitor( '203.0.113.29', array( 'Sec-Purpose' => 'prefetch' ) ), 8 );
 t( '«prefetch» χωρίς Sec-Fetch-Dest (script): μετράει', in_array( 429, $c, true ), implode( ',', $c ) );
@@ -190,7 +191,7 @@ t( 'REST (/wp-json/): αφήνεται στον κανονικό έλεγχο (�
 $c = codes( '/wp-login.php', visitor( '203.0.113.23' ), 7 );
 t( 'wp-login.php: δεν μετράει', ! in_array( 429, $c, true ), implode( ',', $c ) );
 $c = codes( '/cached-page/', visitor( '203.0.113.24' ), 7, 'POST' );
-t( 'POST: δεν μετράει', ! in_array( 429, $c, true ), implode( ',', $c ) );
+t( 'POST: δεν μετράει εδώ (δεν σερβίρεται από την cache· το μετρά ο κανονικός έλεγχος)', ! in_array( 429, $c, true ), implode( ',', $c ) );
 $c = codes( '/cached-page/', array( 'User-Agent' => 'curl/8' ), 8 );
 t( 'ο ίδιος ο server (127.0.0.1, χωρίς X-Real-IP): δεν μετράει', ! in_array( 429, $c, true ), implode( ',', $c ) );
 

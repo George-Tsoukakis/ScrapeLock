@@ -109,7 +109,7 @@ final class PNCP_Early {
 			if ( '' === trim( $ua ) && ! empty( $s['block_empty_ua'] ) ) {
 				return array( 403, 'empty_ua', $ip );
 			}
-			if ( '' !== $ua && PNCP_Bots::ua_in_list( $ua, PNCP_Options::parse_list( $s['bot_list'] ) ) ) {
+			if ( '' !== $ua && PNCP_Bots::ua_in_list( $ua, PNCP_Options::blocked_agents( $s ) ) ) {
 				return array( 403, 'bot_ua', $ip );
 			}
 		}
