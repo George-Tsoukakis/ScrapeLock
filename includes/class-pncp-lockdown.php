@@ -117,6 +117,7 @@ final class PNCP_Lockdown {
 					'since'     => 0,
 					'ack'       => false,
 					'roles'     => null,
+					'quarantine' => false,
 				),
 				is_array( $stored ) ? $stored : array()
 			);
@@ -792,6 +793,46 @@ final class PNCP_Lockdown {
 	}
 
 	/**
+	 * Adds an event of another part of ScrapeLock (file integrity) to the lockdown log.
+	 *
+	 * @param string $event  Event.
+	 * @param string $detail Detail.
+	 */
+	public static function record( $event, $detail = '' ) {
+		self::event( $event, $detail );
+	}
+
+	/**
+	 * Is "Quarantine" on (file integrity)?
+	 *
+	 * @return bool
+	 */
+	public static function quarantine_on() {
+		return ! empty( self::state()['quarantine'] );
+	}
+
+	/**
+	 * Deactivates plugins whose files changed while the site was locked ("Quarantine"). The list of active
+	 * plugins is otherwise frozen while locked; deactivating only takes something away, and ScrapeLock itself
+	 * is never in the list.
+	 *
+	 * @param string[] $files Plugin files (folder/file.php).
+	 */
+	public static function deactivate_for_quarantine( $files ) {
+		$own   = plugin_basename( PNCP_FILE );
+		$files = array_values( array_diff( array_map( 'strval', (array) $files ), array( $own ) ) );
+		if ( ! $files ) {
+			return;
+		}
+		if ( ! function_exists( 'deactivate_plugins' ) ) {
+			require_once ABSPATH . 'wp-admin/includes/plugin.php';
+		}
+		self::$writing = true;
+		deactivate_plugins( $files, true );
+		self::$writing = false;
+	}
+
+	/**
 	 * Emails the site's administration address.
 	 *
 	 * @param string $subject Subject.
@@ -1037,6 +1078,10 @@ final class PNCP_Lockdown {
 				self::render_setup();
 			} else {
 				self::render_status( $state, $fmt );
+				PNCP_Integrity::render( $fmt );
+				if ( ! self::is_locked() ) {
+					self::render_quarantine( $state );
+				}
 			}
 			self::render_report();
 			self::render_log( $fmt );
@@ -1062,6 +1107,8 @@ final class PNCP_Lockdown {
 			'wait'      => array( 'error', __( 'Too many wrong codes. Try again in 15 minutes.', 'scrapelock' ) ),
 			'error'     => array( 'error', __( 'That action is not possible right now.', 'scrapelock' ) ),
 			'roles'     => array( 'success', __( 'The frozen roles were saved.', 'scrapelock' ) ),
+			'integrity' => array( 'success', __( 'The file integrity check is done.', 'scrapelock' ) ),
+			'quarantine' => array( 'success', __( 'The quarantine setting was saved.', 'scrapelock' ) ),
 			'ack'       => array( 'error', __( 'Tick the box to confirm that you have saved your recovery codes and understand how to unlock the site.', 'scrapelock' ) ),
 		);
 		if ( isset( $messages[ $code ] ) ) {
@@ -1384,6 +1431,27 @@ final class PNCP_Lockdown {
 	}
 
 	/**
+	 * "Quarantine" for the file integrity check: saved with the app code, only while not locked (like the roles).
+	 *
+	 * @param array<string, mixed> $state State.
+	 */
+	private static function render_quarantine( $state ) {
+		?>
+		<div class="pncp-ld-box pncp-ld-quarantine">
+			<h2><?php esc_html_e( 'Quarantine', 'scrapelock' ); ?></h2>
+			<?php self::form_open( 'quarantine' ); ?>
+			<p><label><input type="checkbox" name="quarantine" value="1"<?php checked( ! empty( $state['quarantine'] ) ); ?>> <?php esc_html_e( 'When files change while the site is locked: deactivate the plugin they belong to, and rename new PHP files in the uploads folder so they no longer run', 'scrapelock' ); ?></label></p>
+			<p class="description"><?php esc_html_e( 'Nothing is deleted. A deactivated plugin may be one your site needs (for example the shop or the forms), so it stays off until you check it, unlock and activate it again. ScrapeLock itself is never deactivated. Off by default: you are emailed either way.', 'scrapelock' ); ?></p>
+			<?php
+			self::code_field();
+			submit_button( __( 'Save quarantine', 'scrapelock' ), 'secondary', 'submit', false );
+			echo '</form>';
+			?>
+		</div>
+		<?php
+	}
+
+	/**
 	 * The lockdown log.
 	 *
 	 * @param string $fmt Date format.
@@ -1404,6 +1472,9 @@ final class PNCP_Lockdown {
 			'removed'       => __( 'App removed', 'scrapelock' ),
 			'refused'       => __( 'Change refused', 'scrapelock' ),
 			'roles'         => __( 'Frozen roles changed', 'scrapelock' ),
+			'integrity'     => __( 'Changed files found', 'scrapelock' ),
+			'quarantine'    => __( 'Quarantine', 'scrapelock' ),
+			'quarantine_setting' => __( 'Quarantine setting', 'scrapelock' ),
 		);
 		?>
 		<h2><?php esc_html_e( 'Recent lockdown events', 'scrapelock' ); ?></h2>
@@ -1461,6 +1532,7 @@ final class PNCP_Lockdown {
 			$state['until'] = 0;
 			self::save( $state );
 			self::event( 'relocked' );
+			PNCP_Integrity::snapshot(); // Updates may have run while it was open: a new fingerprint.
 			self::back( 'locked' );
 		}
 		if ( 'cancel' === $op ) {
@@ -1477,7 +1549,7 @@ final class PNCP_Lockdown {
 		if ( 'remove' === $op && self::server_unlocked() ) {
 			self::remove_app( $state );
 		}
-		if ( ! in_array( $op, array( 'confirm', 'lock', 'unlock', 'codes', 'remove', 'roles' ), true ) ) {
+		if ( ! in_array( $op, array( 'confirm', 'lock', 'unlock', 'codes', 'remove', 'roles', 'quarantine' ), true ) ) {
 			self::back( 'error' );
 		}
 		if ( self::too_many_fails() ) {
@@ -1515,7 +1587,7 @@ final class PNCP_Lockdown {
 		if ( 'lock' === $op && empty( $state['ack'] ) && ! $ack ) {
 			self::back( 'ack' );
 		}
-		if ( ! self::configured() || ( 'lock' === $op && ( $locked || self::unlocked_until() ) ) || ( 'unlock' === $op && ! $locked ) || ( in_array( $op, array( 'codes', 'remove', 'roles' ), true ) && $locked ) || ( 'remove' === $op && self::unlocked_until() ) ) {
+		if ( ! self::configured() || ( 'lock' === $op && ( $locked || self::unlocked_until() ) ) || ( 'unlock' === $op && ! $locked ) || ( in_array( $op, array( 'codes', 'remove', 'roles', 'quarantine' ), true ) && $locked ) || ( 'remove' === $op && self::unlocked_until() ) ) {
 			self::back( 'error' );
 		}
 		$how = self::check_code( $code, 'unlock' === $op );
@@ -1535,6 +1607,7 @@ final class PNCP_Lockdown {
 			$state['ack']    = true;
 			self::save( $state );
 			self::event( 'locked' );
+			PNCP_Integrity::snapshot();
 			self::back( 'locked' );
 		}
 		if ( 'unlock' === $op ) {
@@ -1546,6 +1619,7 @@ final class PNCP_Lockdown {
 				$state['until'] = time() + $mins * MINUTE_IN_SECONDS;
 			}
 			self::save( $state );
+			PNCP_Integrity::mark_stale(); // Updates are allowed now: the next check takes a new fingerprint.
 			/* translators: %d: minutes */
 			self::event( 'unlocked', $mins ? sprintf( __( '%d min', 'scrapelock' ), $mins ) : __( 'until locked again', 'scrapelock' ) );
 			self::mail( __( 'The site was unlocked', 'scrapelock' ), __( 'The site was unlocked on the Lockdown page. If it was not you, lock it again and change the administrators\' passwords.', 'scrapelock' ) );
@@ -1558,6 +1632,12 @@ final class PNCP_Lockdown {
 			self::$staff = array();
 			self::event( 'roles', implode( ', ', self::frozen_roles() ) );
 			self::back( 'roles' );
+		}
+		if ( 'quarantine' === $op ) {
+			$state['quarantine'] = ! empty( $_POST['quarantine'] ); // phpcs:ignore WordPress.Security.NonceVerification.Missing -- Checked at the top of handle().
+			self::save( $state );
+			self::event( 'quarantine_setting', $state['quarantine'] ? __( 'on', 'scrapelock' ) : __( 'off', 'scrapelock' ) );
+			self::back( 'quarantine' );
 		}
 		if ( 'codes' === $op ) {
 			$codes          = self::new_codes();

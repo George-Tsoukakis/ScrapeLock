@@ -97,6 +97,7 @@ final class PNCP_Options {
 			'list_excerpts',
 			'ipv6_wide',
 			'block_archivers',
+			'block_upload_php',
 		);
 	}
 
@@ -152,7 +153,7 @@ final class PNCP_Options {
 		return array(
 			'general' => array( 'enabled', 'scope_posts', 'scope_pages', 'scope_home', 'scope_products', 'skip_woo_pages', 'excluded_ids', 'block_selection', 'block_context_menu', 'block_shortcuts', 'block_devtools', 'block_image_drag', 'block_text_drag', 'blur_on_capture', 'copy_mode', 'attribution_min_chars', 'print_mode', 'exempt_cap', 'show_message', 'message', 'block_framing', 'tdm_reservation', 'tdm_policy_url' ),
 			'bots'    => array( 'block_bots', 'block_empty_ua', 'block_fake_crawlers', 'require_browser_headers', 'block_headless', 'trap_enabled', 'block_archivers', 'ipv6_wide', 'bot_list', 'allow_list', 'allow_ips', 'allow_ai_search', 'verify_ai_bots', 'robots_ai_block', 'content_signal', 'block_ips', 'block_referrers', 'block_user_enum', 'rate_limit', 'rate_limit_search', 'rate_limit_rest', 'rate_limit_404', 'rate_limit_sitemap', 'human_check', 'rate_limit_unverified', 'geo_db', 'countries_block', 'countries_strict', 'rate_limit_country', 'ban_strikes', 'ban_minutes', 'early_mode', 'precheck', 'log_retention', 'content_paths', 'ip_header', 'trust_cloudflare', 'trust_bunny', 'trust_any_proxy', 'trusted_proxies', 'cdn_secret' ),
-			'content' => array( 'rest_hide_content', 'hide_rest_discovery', 'graphql_hide_content', 'feed_mode', 'feed_source_link', 'list_excerpts', 'private_paths', 'private_ips', 'disable_pingback', 'hide_versions' ),
+			'content' => array( 'rest_hide_content', 'hide_rest_discovery', 'graphql_hide_content', 'feed_mode', 'feed_source_link', 'list_excerpts', 'private_paths', 'private_ips', 'disable_pingback', 'hide_versions', 'block_upload_php' ),
 			'images'  => array( 'watermark_enabled', 'watermark_full', 'watermark_products', 'watermark_image_id', 'watermark_opacity', 'watermark_size', 'watermark_position', 'watermark_min_width' ),
 		);
 	}
@@ -428,6 +429,19 @@ final class PNCP_Options {
 			'list_excerpts'           => 0,
 			'ipv6_wide'               => 0,
 			'block_archivers'         => 0,
+			// Since 3.0. Existing sites get the value of new_in_300() on upgrade (off).
+			'block_upload_php'        => 1,
+		);
+	}
+
+	/**
+	 * The settings added in 3.0, with the values existing sites get on upgrade: off.
+	 *
+	 * @return array<string, int>
+	 */
+	public static function new_in_300() {
+		return array(
+			'block_upload_php' => 0,
 		);
 	}
 

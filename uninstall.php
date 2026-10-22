@@ -16,7 +16,7 @@ defined( 'WP_UNINSTALL_PLUGIN' ) || exit;
 function pncp_uninstall_site() {
 	global $wpdb;
 
-	foreach ( array( 'pncp_settings', 'pncp_version', 'pncp_db_version', 'pncp_emergency_until', 'pncp_ip_lists', 'pncp_ip_lists_cloudflare', 'pncp_ip_lists_bunny', 'pncp_ip_lists_google', 'pncp_ip_lists_bing', 'pncp_ip_lists_openai_search', 'pncp_ip_lists_openai_user', 'pncp_ip_lists_perplexity_bot', 'pncp_ip_lists_perplexity_user', 'pncp_ip_lists_anthropic', 'pncp_ip_lists_updated', 'pncp_bans', 'pncp_feed_token', 'pncp_feed_stats', 'pncp_legacy_token_notice', 'pncp_legacy_token_migrated', 'pncp_wm_cursor_apply', 'pncp_wm_cursor_remove', 'pncp_upgrade_lock', 'pncp_geo', 'pncp_precheck_status', 'pncp_log_uas', 'pncp_lockdown', 'pncp_lockdown_log' ) as $pncp_option ) {
+	foreach ( array( 'pncp_settings', 'pncp_version', 'pncp_db_version', 'pncp_emergency_until', 'pncp_ip_lists', 'pncp_ip_lists_cloudflare', 'pncp_ip_lists_bunny', 'pncp_ip_lists_google', 'pncp_ip_lists_bing', 'pncp_ip_lists_openai_search', 'pncp_ip_lists_openai_user', 'pncp_ip_lists_perplexity_bot', 'pncp_ip_lists_perplexity_user', 'pncp_ip_lists_anthropic', 'pncp_ip_lists_updated', 'pncp_bans', 'pncp_feed_token', 'pncp_feed_stats', 'pncp_legacy_token_notice', 'pncp_legacy_token_migrated', 'pncp_wm_cursor_apply', 'pncp_wm_cursor_remove', 'pncp_upgrade_lock', 'pncp_geo', 'pncp_precheck_status', 'pncp_log_uas', 'pncp_lockdown', 'pncp_lockdown_log', 'pncp_integrity', 'pncp_integrity_report', 'pncp_integrity_alerted' ) as $pncp_option ) {
 		delete_option( $pncp_option );
 	}
 	wp_clear_scheduled_hook( 'pncp_refresh_ip_lists' );
@@ -39,6 +39,14 @@ function pncp_uninstall_site() {
 		@rmdir( $pncp_geo ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged, WordPress.WP.AlternativeFunctions.file_system_operations_rmdir -- Only succeeds when empty; harmless otherwise.
 	}
 	unset( $pncp_geo, $pncp_geo_file );
+
+	// "No PHP in the uploads folder": ScrapeLock's block in the .htaccess of the uploads folder (other content stays).
+	$pncp_htaccess = trailingslashit( wp_upload_dir( null, false )['basedir'] ) . '.htaccess';
+	if ( file_exists( $pncp_htaccess ) ) {
+		require_once ABSPATH . 'wp-admin/includes/misc.php';
+		insert_with_markers( $pncp_htaccess, 'ScrapeLock', array() );
+	}
+	unset( $pncp_htaccess );
 
 	// phpcs:disable WordPress.DB.DirectDatabaseQuery, WordPress.DB.DirectDatabaseQuery.SchemaChange -- Runs once, on uninstall.
 	$wpdb->query( $wpdb->prepare( 'DROP TABLE IF EXISTS %i', $wpdb->prefix . 'pncp_log' ) );
@@ -85,4 +93,6 @@ if ( is_multisite() ) {
 delete_site_option( 'pncp_lockdown' );
 delete_site_option( 'pncp_lockdown_log' );
 delete_site_option( 'pncp_lockdown_mutex' );
+delete_site_option( 'pncp_integrity' );
+delete_site_option( 'pncp_integrity_report' );
 delete_metadata( 'user', 0, 'pncp_lockdown_pending', '', true );

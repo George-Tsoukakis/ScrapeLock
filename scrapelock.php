@@ -2,7 +2,7 @@
 /**
  * Plugin Name:       ScrapeLock – Content & AI Bot Protection
  * Description:       Protects your content: makes copying text and images harder, hides the text in the REST API, GraphQL and RSS, blocks scrapers, AI bots and fake Googlebots, temporarily blocks persistent IPs, protects XML feeds with a token and adds an optional watermark. Lockdown freezes every change to the site until it is unlocked with an authenticator app. Forms, cart, checkout and search engines are not affected.
- * Version:           2.9.0
+ * Version:           3.0.0
  * Requires at least: 6.2
  * Requires PHP:      7.4
  * Author:            CodeBunny
@@ -19,7 +19,7 @@ if ( defined( 'PNCP_VERSION' ) ) {
 	return;
 }
 
-define( 'PNCP_VERSION', '2.9.0' );
+define( 'PNCP_VERSION', '3.0.0' );
 define( 'PNCP_FILE', __FILE__ );
 define( 'PNCP_DIR', plugin_dir_path( __FILE__ ) );
 define( 'PNCP_URL', plugin_dir_url( __FILE__ ) );
@@ -43,6 +43,7 @@ require_once PNCP_DIR . 'includes/class-pncp-geo.php';
 require_once PNCP_DIR . 'includes/class-pncp-precheck.php';
 require_once PNCP_DIR . 'includes/class-pncp-totp.php';
 require_once PNCP_DIR . 'includes/class-pncp-lockdown.php';
+require_once PNCP_DIR . 'includes/class-pncp-integrity.php';
 require_once PNCP_DIR . 'includes/class-pncp-surface.php';
 require_once PNCP_DIR . 'includes/class-pncp-health.php';
 require_once PNCP_DIR . 'includes/class-pncp-abilities.php';
@@ -66,6 +67,7 @@ PNCP_Human::init();
 PNCP_Geo::init();
 PNCP_Precheck::init();
 PNCP_Lockdown::init();
+PNCP_Integrity::init();
 PNCP_Surface::init();
 PNCP_Health::init();
 PNCP_Abilities::init();
@@ -114,6 +116,7 @@ function pncp_deactivate() {
 	}
 	// The pre-cache check: its line in wp-config.php and its files go away with the plugin.
 	PNCP_Precheck::remove();
+	PNCP_Rules::sync_uploads_htaccess( false );
 	pncp_purge_page_cache();
 }
 
@@ -143,6 +146,9 @@ function pncp_upgrade() {
 		}
 		if ( version_compare( $from, '2.9.0', '<' ) ) {
 			$added += PNCP_Options::new_in_290();
+		}
+		if ( version_compare( $from, '3.0.0', '<' ) ) {
+			$added += PNCP_Options::new_in_300();
 		}
 		$added = array_diff_key( $added, $stored );
 		// 2.8.3: the HTTP libraries that passed the bot list are added to it. Your own entries stay; a list
@@ -190,6 +196,7 @@ function pncp_upgrade() {
 	PNCP_Early::sync();
 	// The pre-cache check: the loader is written again (new version, new plugin folder) or removed.
 	PNCP_Precheck::sync();
+	PNCP_Rules::sync_uploads_htaccess();
 	// A list that is new in this version (e.g. Anthropic in 2.6.2) is downloaded now, not with the daily refresh.
 	PNCP_Ip::forget_missing_try();
 	PNCP_Ip::fetch_missing();
@@ -212,8 +219,8 @@ function pncp_upgrade() {
  * @return array<string, mixed>
  */
 function pncp_migrate_from_1x( $old ) {
-	// The 2.4, 2.5, 2.6 and 2.9 additions stay off, as on every existing site.
-	$new = array_merge( PNCP_Options::defaults(), PNCP_Options::new_in_240(), PNCP_Options::new_in_250(), PNCP_Options::new_in_260(), PNCP_Options::new_in_290(), $old );
+	// The 2.4, 2.5, 2.6, 2.9 and 3.0 additions stay off, as on every existing site.
+	$new = array_merge( PNCP_Options::defaults(), PNCP_Options::new_in_240(), PNCP_Options::new_in_250(), PNCP_Options::new_in_260(), PNCP_Options::new_in_290(), PNCP_Options::new_in_300(), $old );
 
 	$list   = isset( $old['bot_list'] ) ? PNCP_Options::parse_list( (string) $old['bot_list'] ) : array();
 	$legacy = array_map( 'strtolower', PNCP_Options::legacy_bot_list() );
@@ -339,6 +346,7 @@ function pncp_settings_changed() {
 add_action( 'update_option_' . PNCP_OPTION, 'pncp_settings_changed', 0 );
 add_action( 'update_option_' . PNCP_OPTION, array( 'PNCP_Early', 'sync' ) );
 add_action( 'update_option_' . PNCP_OPTION, array( 'PNCP_Precheck', 'sync' ) );
+add_action( 'update_option_' . PNCP_OPTION, array( 'PNCP_Rules', 'settings_saved' ) );
 // Settings are first read before the translations load: they are read again afterwards.
 add_action( 'after_setup_theme', array( 'PNCP_Options', 'flush' ), 0 );
 

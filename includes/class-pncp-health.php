@@ -34,6 +34,7 @@ final class PNCP_Health {
 			'early'      => __( 'ScrapeLock early check', 'scrapelock' ),
 			'precheck'   => __( 'ScrapeLock pre-cache check', 'scrapelock' ),
 			'lockdown'   => __( 'ScrapeLock Lockdown', 'scrapelock' ),
+			'integrity'  => __( 'ScrapeLock file integrity', 'scrapelock' ),
 		);
 		foreach ( $names as $key => $label ) {
 			$tests['direct'][ 'scrapelock_' . $key ] = array(
@@ -158,6 +159,29 @@ final class PNCP_Health {
 	}
 
 	/**
+	 * File integrity: code files added or changed while locked, or different from WordPress.org.
+	 *
+	 * @return array<string, mixed>
+	 */
+	public static function test_integrity() {
+		$found = PNCP_Integrity::findings( PNCP_Integrity::report() );
+		if ( $found ) {
+			return self::result(
+				'integrity',
+				'critical',
+				/* translators: %d: number of files. */
+				sprintf( _n( 'ScrapeLock found %d changed code file', 'ScrapeLock found %d changed code files', count( $found ), 'scrapelock' ), count( $found ) ),
+				__( 'Code files were added or changed while the site was locked, or differ from the official copies on WordPress.org. Nobody can install or update anything while the site is locked, so a file you do not recognise is often a backdoor uploaded through a vulnerable plugin. The list is on the Lockdown tab.', 'scrapelock' ),
+				'lockdown'
+			);
+		}
+		if ( ! PNCP_Integrity::baseline()['time'] ) {
+			return self::result( 'integrity', 'good', __( 'ScrapeLock file integrity is not active', 'scrapelock' ), __( 'The fingerprint of the code files is taken when the site is locked with Lockdown, and checked every hour while it stays locked.', 'scrapelock' ) );
+		}
+		return self::result( 'integrity', 'good', __( 'No changed code files', 'scrapelock' ), __( 'No code file was added or changed since the site was locked, and WordPress and its plugins from WordPress.org match their official copies.', 'scrapelock' ) );
+	}
+
+	/**
 	 * Updates WordPress already knows about (core, plugins, themes, translations not counted).
 	 *
 	 * @return int
@@ -229,6 +253,8 @@ final class PNCP_Health {
 			'list_excerpts'  => array( __( 'Excerpts in lists of articles', 'scrapelock' ), $flag( 'list_excerpts' ) ),
 			'ipv6_wide'      => array( __( 'IPv6 /56 limit', 'scrapelock' ), $flag( 'ipv6_wide' ) ),
 			'archives'       => array( __( 'Web archives blocked', 'scrapelock' ), $flag( 'block_archivers' ) ),
+			'upload_php'     => array( __( 'No PHP in the uploads folder', 'scrapelock' ), $flag( 'block_upload_php' ) ),
+			'integrity'      => array( __( 'File integrity fingerprint', 'scrapelock' ), PNCP_Integrity::baseline()['time'] ? wp_date( 'Y-m-d H:i', PNCP_Integrity::baseline()['time'] ) : '-' ),
 			'lockdown'       => array( __( 'Lockdown', 'scrapelock' ), $lock ),
 			'lockdown_roles' => array( __( 'Roles frozen while locked', 'scrapelock' ), implode( ', ', PNCP_Lockdown::frozen_roles() ) ),
 		);

@@ -1068,6 +1068,12 @@ final class PNCP_Admin {
 				<?php self::checkbox( $s, 'hide_versions', __( 'Hide the versions of WordPress, PHP and the plugins', 'scrapelock' ), __( 'Scanners read these versions and look them up in lists of known vulnerabilities. This removes the “generator” tag from the page head and the feeds, the X-Powered-By header with the PHP version, and replaces “?ver=7.1.3” on CSS and JS files with a code that changes when the version changes, so caches still work. The readme and changelog files of WordPress and the plugins are static files: the Nginx and Apache rules in the “Server rules” tab refuse them. It does not fix any vulnerability: keep WordPress and the plugins updated.', 'scrapelock' ) ); ?>
 			</td>
 		</tr>
+		<tr>
+			<th scope="row"><?php esc_html_e( 'Uploads', 'scrapelock' ); ?></th>
+			<td>
+				<?php self::checkbox( $s, 'block_upload_php', __( 'No PHP in the uploads folder', 'scrapelock' ), __( 'Files uploaded to the site (images, documents) never need to run as code. A backdoor uploaded through a vulnerable plugin usually lands in the uploads folder, so this refuses every PHP file there. On Apache it is written into the .htaccess of the uploads folder at once; on Nginx add the rule from the “Server rules” tab. If a plugin of yours really runs PHP from the uploads folder (rare), leave it off.', 'scrapelock' ) ); ?>
+			</td>
+		</tr>
 		<?php
 		self::form_close();
 		self::render_public_routes();

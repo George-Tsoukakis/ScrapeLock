@@ -4,7 +4,7 @@ Tags: anti-scraping, ai bots, bot protection, rate limit, content protection
 Requires at least: 6.2
 Tested up to: 7.2
 Requires PHP: 7.4
-Stable tag: 2.9.0
+Stable tag: 3.0.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -88,6 +88,7 @@ Generated Nginx, Apache and Cloudflare rules for your own site, so cached pages 
 * Frozen: installing, updating, deleting, activating and deactivating plugins and themes; WordPress core and automatic updates; the file editor; new users, role changes, new administrators; staff email and password changes and resets; new application passwords; all settings; posts, pages, products, media and menus.
 * Also enforced against code: if another plugin is exploited, it cannot activate plugins, change the site address or the admin email, add an administrator or unlock the lock.
 * Visitors and customers are not affected: they browse, order, pay, register as customers and comment as usual.
+* File integrity: when you lock, ScrapeLock keeps a fingerprint of every PHP, .htaccess and .user.ini file (WordPress, plugins, themes, uploads, wp-config.php) and checks it every hour. A new or changed file while locked (usually a backdoor uploaded through a vulnerable plugin) is emailed to you, logged and shown in Site Health. WordPress and the plugins from WordPress.org are also compared with their official checksums, which finds changes made before you locked. Optional quarantine deactivates the affected plugin and renames new PHP files in the uploads folder.
 * Unlock for 15 minutes to 2 hours (it locks again by itself) or until you lock it again. Locking and unlocking are logged and emailed to the site's admin address.
 * Lost your phone: ten one-time recovery codes, or `define( 'SCRAPELOCK_UNLOCK', true );` in wp-config.php as a last resort.
 * The QR code is drawn in your browser and the secret is stored encrypted with the keys in wp-config.php: it is never sent anywhere.
@@ -176,7 +177,7 @@ Type one of your recovery codes in the unlock field instead of an app code. If y
 
 = Can someone with access to my server bypass Lockdown? =
 
-Yes. Lockdown protects the site against changes through WordPress (wp-admin, the REST API, XML-RPC and code running inside WordPress). Whoever can edit files or the database on your server controls the site anyway, which is also why the server line is the last-resort unlock.
+Yes. Lockdown protects the site against changes through WordPress (wp-admin, the REST API, XML-RPC and code running inside WordPress). Whoever can edit files or the database on your server controls the site anyway, which is also why the server line is the last-resort unlock. The file integrity check is there for that case: a file written behind WordPress' back is found within the hour and emailed to you. Code that already runs on the server could also stop ScrapeLock itself, so "No PHP in the uploads folder" (a server rule) is what stops most backdoors from running in the first place.
 
 = Can I unlock Lockdown from WP-CLI or with an AI agent? =
 
@@ -196,6 +197,13 @@ No. A small script waits for the first real interaction (scroll, tap, key or mou
 6. Dashboard widget with the protection status and the last 24 hours.
 
 == Changelog ==
+
+= 3.0.0 =
+* New: Lockdown file integrity. When you lock the site, ScrapeLock keeps a fingerprint (SHA-256) of every PHP, .htaccess and .user.ini file in WordPress, the plugins, the themes, the uploads folder and wp-config.php, and checks it every hour while the site stays locked. Nobody can install or update anything while locked, so a new or changed file means something wrote it by itself, usually a backdoor uploaded through a vulnerable plugin. You get one email per new finding, an entry in the lockdown log, a notice in wp-admin and a critical Site Health result. After a temporary unlock (when updates are allowed) a new fingerprint is taken instead of an alarm. Caches and the updater's folders are left out (filter `pncp_integrity_exclude`).
+* New: WordPress and the plugins hosted on WordPress.org are compared once a day with their official checksums (the lists WP-CLI's verify-checksums uses), which also finds a change made before the site was locked. Premium and custom plugins are listed as "cannot be compared".
+* New: optional Quarantine (Lockdown tab, saved with the app code): deactivates a plugin whose files changed while locked and renames new PHP files in the uploads folder so they no longer run. Nothing is deleted; ScrapeLock itself is never deactivated.
+* New: "No PHP in the uploads folder" (Feeds and API tab): written into the .htaccess of the uploads folder for Apache, between ScrapeLock's own markers, and added to the Nginx and Apache rules. On for new installs, off on existing sites.
+* Tests: the Lockdown test suite stops at once when the test server does not answer, instead of changing the test site for real.
 
 = 2.9.0 =
 * New: "Hide the versions of WordPress, PHP and the plugins" (Feeds and API tab). Removes the generator tags (page head, feeds, and plugins that use them, e.g. WooCommerce) and the X-Powered-By header, and replaces "?ver=7.1.3" on the site's own CSS and JS with a code tied to the site that changes with the version, so caches keep working. The Nginx and Apache rules now refuse readme.html, license.txt and the readme / changelog files of plugins and themes (404). On for new installs.

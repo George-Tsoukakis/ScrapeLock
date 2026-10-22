@@ -49,6 +49,8 @@ Freeze the whole site with one click and a code from your authenticator app (Goo
 - TOTP (RFC 6238), each code accepted once even under concurrent requests (database compare-and-set), the secret encrypted with libsodium using the keys in `wp-config.php`, ten one-time recovery codes stored only as hashes, wrong-code limits and an email on every unlock.
 - Temporary unlock (15 minutes to 2 hours, then it locks again by itself). A clear "The site is locked" page with an unlock button for administrators.
 - No WP-CLI command and no ability can unlock it.
+- **File integrity:** a fingerprint of every PHP, `.htaccess` and `.user.ini` file is taken when you lock and checked every hour; WordPress and the plugins from WordPress.org are also compared with their official checksums. A new or changed file (usually a backdoor uploaded through a vulnerable plugin) is emailed to you; optional quarantine deactivates the plugin and renames new PHP files in the uploads folder.
+- **No PHP in the uploads folder:** `.htaccess` for Apache and a rule for Nginx.
 
 Lockdown complements a firewall such as Wordfence: the firewall and two-factor login guard the door, Lockdown guards what happens after someone is inside, for example with a stolen session cookie.
 
