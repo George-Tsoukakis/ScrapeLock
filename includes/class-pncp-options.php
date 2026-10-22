@@ -118,6 +118,7 @@ final class PNCP_Options {
 			'rate_limit_sitemap'    => array( 0, 10000 ),
 			'rate_limit_country'    => array( 0, 10000 ),
 			'auto_emergency_min'    => array( 10, 1000000 ),
+			'rate_limit_datacenter' => array( 0, 10000 ),
 			'ban_strikes'           => array( 0, 20 ),
 			'ban_minutes'           => array( 1, 10080 ),
 			'watermark_image_id'    => array( 0, PHP_INT_MAX ),
@@ -154,7 +155,7 @@ final class PNCP_Options {
 	public static function sections() {
 		return array(
 			'general' => array( 'enabled', 'scope_posts', 'scope_pages', 'scope_home', 'scope_products', 'skip_woo_pages', 'excluded_ids', 'block_selection', 'block_context_menu', 'block_shortcuts', 'block_devtools', 'block_image_drag', 'block_text_drag', 'blur_on_capture', 'copy_mode', 'attribution_min_chars', 'print_mode', 'exempt_cap', 'show_message', 'message', 'block_framing', 'tdm_reservation', 'tdm_policy_url' ),
-			'bots'    => array( 'block_bots', 'block_empty_ua', 'block_fake_crawlers', 'require_browser_headers', 'block_headless', 'trap_enabled', 'block_archivers', 'ipv6_wide', 'bot_list', 'allow_list', 'allow_ips', 'allow_ai_search', 'verify_ai_bots', 'robots_ai_block', 'content_signal', 'block_ips', 'block_referrers', 'block_user_enum', 'rate_limit', 'rate_limit_search', 'rate_limit_rest', 'rate_limit_404', 'rate_limit_sitemap', 'human_check', 'rate_limit_unverified', 'geo_db', 'countries_block', 'countries_strict', 'rate_limit_country', 'ban_strikes', 'ban_minutes', 'auto_emergency', 'auto_emergency_min', 'early_mode', 'precheck', 'log_retention', 'content_paths', 'ip_header', 'trust_cloudflare', 'trust_bunny', 'trust_any_proxy', 'trusted_proxies', 'cdn_secret' ),
+			'bots'    => array( 'block_bots', 'block_empty_ua', 'block_fake_crawlers', 'require_browser_headers', 'block_headless', 'trap_enabled', 'block_archivers', 'ipv6_wide', 'bot_list', 'allow_list', 'allow_ips', 'allow_ai_search', 'verify_ai_bots', 'robots_ai_block', 'content_signal', 'block_ips', 'block_referrers', 'block_user_enum', 'rate_limit', 'rate_limit_search', 'rate_limit_rest', 'rate_limit_404', 'rate_limit_sitemap', 'human_check', 'rate_limit_unverified', 'geo_db', 'countries_block', 'countries_strict', 'rate_limit_country', 'rate_limit_datacenter', 'ban_strikes', 'ban_minutes', 'auto_emergency', 'auto_emergency_min', 'early_mode', 'precheck', 'log_retention', 'content_paths', 'ip_header', 'trust_cloudflare', 'trust_bunny', 'trust_any_proxy', 'trusted_proxies', 'cdn_secret' ),
 			'content' => array( 'rest_hide_content', 'hide_rest_discovery', 'graphql_hide_content', 'feed_mode', 'feed_source_link', 'list_excerpts', 'private_paths', 'private_ips', 'disable_pingback', 'hide_versions', 'block_upload_php' ),
 			'images'  => array( 'watermark_enabled', 'watermark_full', 'watermark_products', 'watermark_image_id', 'watermark_opacity', 'watermark_size', 'watermark_position', 'watermark_min_width' ),
 		);
@@ -436,6 +437,8 @@ final class PNCP_Options {
 			// Starts Emergency Mode on its own during an attack (PNCP_Surge). Existing sites: off.
 			'auto_emergency'          => 1,
 			'auto_emergency_min'      => 300,
+			// Pages per minute from data center addresses (0 = off). Existing sites: off.
+			'rate_limit_datacenter'   => 15,
 		);
 	}
 
@@ -446,8 +449,9 @@ final class PNCP_Options {
 	 */
 	public static function new_in_300() {
 		return array(
-			'block_upload_php' => 0,
-			'auto_emergency'   => 0,
+			'block_upload_php'      => 0,
+			'auto_emergency'        => 0,
+			'rate_limit_datacenter' => 0,
 		);
 	}
 
@@ -706,6 +710,7 @@ final class PNCP_Options {
 			'ban_minutes'             => max( (int) $s['ban_minutes'], 360 ),
 			'list_excerpts'           => 1,
 			'ipv6_wide'               => 1,
+			'rate_limit_datacenter'   => $min( $s['rate_limit_datacenter'], 5 ),
 		);
 	}
 

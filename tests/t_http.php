@@ -1553,5 +1553,56 @@ t( 'αυτόματο Emergency: 3 σελίδες από 3 IP μετρώνται 
 settings( array( 'auto_emergency' => 0 ) );
 t( 'αυτόματο Emergency: νέα εγκατάσταση ανοιχτό, υπάρχον site κλειστό', 1 === PNCP_Options::defaults()['auto_emergency'] && 0 === PNCP_Options::new_in_300()['auto_emergency'] );
 
+/* ---------- 3.0: αυστηρότερο όριο για data centers ---------- */
+fresh();
+// Οι μορφές των επίσημων λιστών (μικρά δείγματα με τη δομή τους).
+$pncp_aws = wp_json_encode(
+	array(
+		'prefixes'      => array( array( 'ip_prefix' => '198.18.250.0/24', 'service' => 'AMAZON' ), array( 'ip_prefix' => '198.18.250.0/24', 'service' => 'EC2' ), array( 'ip_prefix' => '198.18.251.0/24', 'service' => 'CLOUDFRONT' ) ),
+		'ipv6_prefixes' => array( array( 'ipv6_prefix' => '2001:db8:dc::/48', 'service' => 'EC2' ), array( 'ipv6_prefix' => '2001:db8:cf::/48', 'service' => 'CLOUDFRONT' ) ),
+	)
+);
+t( 'data centers: AWS μόνο οι servers (EC2), όχι το CloudFront', array( '198.18.250.0/24', '2001:db8:dc::/48' ) === PNCP_Ip::parse_ranges( $pncp_aws ) );
+t( 'data centers: Oracle Cloud (regions → cidrs)', array( '198.18.252.0/23' ) === PNCP_Ip::parse_ranges( wp_json_encode( array( 'regions' => array( array( 'region' => 'eu', 'cidrs' => array( array( 'cidr' => '198.18.252.0/23', 'tags' => array( 'OCI' ) ) ) ) ) ) ) ) );
+t( 'data centers: Google Cloud (prefixes → ipv4Prefix / ipv6Prefix)', array( '198.18.253.0/24', '2001:db8:6c::/48' ) === PNCP_Ip::parse_ranges( wp_json_encode( array( 'prefixes' => array( array( 'ipv4Prefix' => '198.18.253.0/24' ), array( 'ipv6Prefix' => '2001:db8:6c::/48' ) ) ) ) ) );
+t( 'data centers: geofeed CSV (DigitalOcean, Linode), με σχόλια', array( '198.18.254.0/24', '2001:db8:d0::/48' ) === PNCP_Ip::parse_ranges( "# geofeed\n198.18.254.0/24,US,US-NY,New York,10001\n2001:db8:d0::/48,NL,NL-NH,Amsterdam,\n" ) );
+PNCP_Ip::store_list( 'dc_aws', array( '198.18.250.0/24', '2001:db8:dc::/48' ) );
+PNCP_Ip::store_list( 'dc_digitalocean', array( '198.18.254.0/24' ) );
+t( 'data centers: αναγνώριση IPv4, IPv6, IPv4 μέσα σε IPv6, και ποιος πάροχος', 'AWS' === PNCP_Ip::datacenter( '198.18.250.77' ) && 'AWS' === PNCP_Ip::datacenter( '2001:db8:dc:5::1' ) && 'AWS' === PNCP_Ip::datacenter( '::ffff:198.18.250.77' ) && 'DigitalOcean' === PNCP_Ip::datacenter( '198.18.254.1' ) );
+t( 'data centers: άλλες διευθύνσεις όχι (ούτε η διπλανή, ούτε άκυρες)', '' === PNCP_Ip::datacenter( '198.18.249.255' ) && '' === PNCP_Ip::datacenter( '198.18.251.1' ) && '' === PNCP_Ip::datacenter( '2001:db8:dd::1' ) && '' === PNCP_Ip::datacenter( 'nonsense' ) );
+settings( array( 'rate_limit_datacenter' => 0 ) );
+PNCP_Ip::reset();
+t( 'data centers κλειστό: οι λίστες δεν κατεβαίνουν', ! in_array( 'dc_aws', PNCP_Ip::needed_lists(), true ) );
+settings( array( 'rate_limit' => 10, 'rate_limit_datacenter' => 2, 'ban_strikes' => 0, 'human_check' => 0, 'require_browser_headers' => 0, 'block_headless' => 0 ) );
+PNCP_Ip::reset();
+t( 'data centers ανοιχτό: κατεβαίνουν οι πέντε λίστες', array() === array_diff( array( 'dc_aws', 'dc_gcp', 'dc_oracle', 'dc_digitalocean', 'dc_linode' ), PNCP_Ip::needed_lists() ) );
+$pncp_runs = array(
+	'198.18.250.10'     => array( 200, 200, 429, 429 ),
+	'2001:db8:dc:7::1'  => array( 200, 200, 429, 429 ),
+	'192.0.2.240'       => array( 200, 200, 200, 200 ),
+);
+foreach ( $pncp_runs as $pncp_ip => $pncp_expect ) {
+	$codes = array();
+	for ( $i = 0; $i < 4; $i++ ) {
+		$codes[] = req( $url, browser( $pncp_ip ) )[0];
+	}
+	t( "data centers: $pncp_ip → " . implode( ',', $pncp_expect ), $pncp_expect === $codes, implode( ',', $codes ) );
+}
+t( 'data centers: στο αρχείο ως «Pages per minute from data centers»', in_array( 'rate_datacenter', log_reasons(), true ) );
+$codes = array();
+for ( $i = 0; $i < 4; $i++ ) {
+	$codes[] = req( $url, array( 'X-Test-IP' => '198.18.250.11', 'User-Agent' => 'Mozilla/5.0 (compatible; UptimeRobot/2.0)' ) )[0];
+}
+t( 'data centers: τα «πάντα επιτρεπτά» (monitoring) κρατούν το κανονικό όριο', array( 200, 200, 200, 200 ) === $codes, implode( ',', $codes ) );
+t( 'data centers: Emergency Mode → 5, και όταν είναι κλειστό', 5 === PNCP_Options::emergency_overlay( array_merge( PNCP_Options::stored(), array( 'rate_limit_datacenter' => 0 ) ) )['rate_limit_datacenter'] && 2 === PNCP_Options::emergency_overlay( PNCP_Options::stored() )['rate_limit_datacenter'] );
+t( 'data centers: νέα εγκατάσταση 15, υπάρχον site κλειστό', 15 === PNCP_Options::defaults()['rate_limit_datacenter'] && 0 === PNCP_Options::new_in_300()['rate_limit_datacenter'] );
+settings( array( 'rate_limit' => 0, 'rate_limit_datacenter' => 0 ) );
+foreach ( array( 'dc_aws', 'dc_digitalocean' ) as $pncp_list ) {
+	delete_option( PNCP_Ip::LISTS_OPTION . '_' . $pncp_list );
+}
+PNCP_Ip::reset();
+PNCP_Ip::build_datacenter_index();
+t( 'data centers: χωρίς λίστες, καμία ομάδα', '' === PNCP_Ip::datacenter( '198.18.250.77' ) && array() === get_option( 'pncp_dc_groups' ) );
+
 echo $fails ? "\n$fails FAIL\n" : "\nΟΛΑ PASS\n";
 exit( $fails ? 1 : 0 );

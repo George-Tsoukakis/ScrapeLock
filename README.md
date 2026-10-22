@@ -17,6 +17,7 @@ Most content protection plugins disable right click in the browser. Scrapers and
 - **Real search engines vs. fakes.** Googlebot, Bingbot, Applebot and Yandex are verified against their official IP lists and with reverse + forward DNS. Real crawlers are never limited; impostors get a 403.
 - **AI training vs. AI search.** Training crawlers (GPTBot, ClaudeBot, CCBot, Google-Extended, Bytespider…) are blocked; AI search assistants (OAI-SearchBot, ChatGPT-User, PerplexityBot…) can be allowed with one option and verified against their official IP lists.
 - **Per-IP limits** for pages, searches, REST / GraphQL, 404s and sitemaps (IPv6: per /64, optionally also per /56), with temporary blocks for repeat offenders and an invisible bot trap.
+- **Stricter limit for data centers:** visitors from the published addresses of AWS, Google Cloud, Oracle Cloud, DigitalOcean and Akamai / Linode (where scrapers run, people rarely browse) get a lower page limit.
 - **Human check** without a captcha: a light proof-of-work after the first real interaction; visitors without it get a stricter limit, not a block.
 - **Headless and fake browsers** that reveal themselves in their headers are blocked.
 - **Country rules** from Cloudflare's or Bunny CDN's country header, or the free DB-IP Lite database.

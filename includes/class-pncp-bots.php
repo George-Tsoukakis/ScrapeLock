@@ -425,6 +425,11 @@ final class PNCP_Bots {
 			if ( '' !== $country && (int) $s['rate_limit_country'] > 0 && in_array( $country, PNCP_Options::parse_countries( $s['countries_strict'] ), true ) ) {
 				$stricter['rate_country'] = (int) $s['rate_limit_country'];
 			}
+			// Data centers (AWS, Google Cloud, Oracle, DigitalOcean, Linode): people rarely browse from a server,
+			// scrapers very often run on one. Not for the always-allowed User-Agents (monitoring, price platforms).
+			if ( ! $allowed_ua && (int) $s['rate_limit_datacenter'] > 0 && '' !== PNCP_Ip::datacenter( $ip ) ) {
+				$stricter['rate_datacenter'] = (int) $s['rate_limit_datacenter'];
+			}
 			foreach ( $stricter as $bucket => $limit ) {
 				$current = self::hit( $ip, $bucket );
 				if ( $current > $limit ) {

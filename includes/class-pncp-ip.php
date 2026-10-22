@@ -93,7 +93,102 @@ final class PNCP_Ip {
 			'perplexity_user' => array( 'https://www.perplexity.com/perplexity-user.json' ),
 			// Anthropic (Claude-SearchBot, Claude-User), since 2.6.2.
 			'anthropic'       => array( 'https://claude.com/crawling/bots.json' ),
+			// Data centers that publish their addresses (since 3.0), for the stricter page limit. AWS: only the
+			// servers (EC2), not CloudFront or the other services. Azure publishes its list at an address that
+			// changes every week, so it is not included.
+			'dc_aws'          => array( 'https://ip-ranges.amazonaws.com/ip-ranges.json' ),
+			'dc_gcp'          => array( 'https://www.gstatic.com/ipranges/cloud.json' ),
+			'dc_oracle'       => array( 'https://docs.oracle.com/en-us/iaas/tools/public_ip_ranges.json' ),
+			'dc_digitalocean' => array( 'https://digitalocean.com/geo/google.csv' ),
+			'dc_linode'       => array( 'https://geoip.linode.com/' ),
 		);
+	}
+
+	/**
+	 * The data center lists and their names.
+	 *
+	 * @return array<string, string>
+	 */
+	public static function datacenters() {
+		return array(
+			'dc_aws'          => 'AWS',
+			'dc_gcp'          => 'Google Cloud',
+			'dc_oracle'       => 'Oracle Cloud',
+			'dc_digitalocean' => 'DigitalOcean',
+			'dc_linode'       => 'Akamai / Linode',
+		);
+	}
+
+	/**
+	 * Which data center the IP belongs to ('' = none known). Thousands of ranges cannot be checked one by one on
+	 * every page, so they are kept in small groups by their first byte (IPv4) or first two bytes (IPv6): one
+	 * small option is read per request, and only its ranges are compared.
+	 *
+	 * @param string $ip IP.
+	 * @return string The provider's name, or ''.
+	 */
+	public static function datacenter( $ip ) {
+		$bin = @inet_pton( (string) $ip ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged -- Invalid value = false.
+		if ( false === $bin ) {
+			return '';
+		}
+		if ( 16 === strlen( $bin ) && 0 === strpos( $bin, str_repeat( "\0", 10 ) . "\xff\xff" ) ) {
+			$bin = substr( $bin, 12 ); // IPv4-mapped IPv6.
+		}
+		$hex   = bin2hex( $bin );
+		$group = get_option( self::dc_group_name( $bin ), array() );
+		foreach ( is_array( $group ) ? $group : array() as $row ) {
+			if ( strcmp( $hex, $row[0] ) >= 0 && strcmp( $hex, $row[1] ) <= 0 ) {
+				$names = self::datacenters();
+				return isset( $names[ $row[2] ] ) ? $names[ $row[2] ] : (string) $row[2];
+			}
+		}
+		return '';
+	}
+
+	/**
+	 * The option that holds the group of an address.
+	 *
+	 * @param string $bin Packed address (4 or 16 bytes).
+	 * @return string
+	 */
+	private static function dc_group_name( $bin ) {
+		return 4 === strlen( $bin ) ? 'pncp_dc_4_' . ord( $bin[0] ) : 'pncp_dc_6_' . bin2hex( substr( $bin, 0, 2 ) );
+	}
+
+	/**
+	 * Rebuilds the groups from the downloaded data center lists: each range as its first and last address (hex,
+	 * so they compare as text), in the group of its first byte(s). Lists are at least /8 (IPv4) and /16 (IPv6)
+	 * (sane_ranges()), so a range never spans two groups.
+	 */
+	public static function build_datacenter_index() {
+		$groups = array();
+		foreach ( array_keys( self::datacenters() ) as $name ) {
+			foreach ( self::list_of( $name ) as $range ) {
+				$parts = explode( '/', (string) $range, 2 );
+				$start = @inet_pton( $parts[0] ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged -- Validated when stored.
+				if ( false === $start ) {
+					continue;
+				}
+				$bits = isset( $parts[1] ) ? (int) $parts[1] : strlen( $start ) * 8;
+				$end  = $start;
+				for ( $i = 0, $len = strlen( $start ); $i < $len; $i++ ) {
+					$keep        = max( 0, min( 8, $bits - $i * 8 ) );
+					$mask        = ( 0xFF << ( 8 - $keep ) ) & 0xFF;
+					$start[ $i ] = chr( ord( $start[ $i ] ) & $mask );
+					$end[ $i ]   = chr( ord( $start[ $i ] ) | ( ~$mask & 0xFF ) );
+				}
+				$groups[ self::dc_group_name( $start ) ][] = array( bin2hex( $start ), bin2hex( $end ), $name );
+			}
+		}
+		$old = get_option( 'pncp_dc_groups', array() );
+		foreach ( array_diff( is_array( $old ) ? $old : array(), array_keys( $groups ) ) as $gone ) {
+			delete_option( $gone );
+		}
+		foreach ( $groups as $option => $rows ) {
+			update_option( $option, $rows, false );
+		}
+		update_option( 'pncp_dc_groups', array_keys( $groups ), false );
 	}
 
 	/**
@@ -163,6 +258,9 @@ final class PNCP_Ip {
 		update_option( self::LISTS_OPTION . '_updated', $updated, false );
 		unset( self::$lists[ $name ] );
 		self::$bunny = null;
+		if ( isset( self::datacenters()[ $name ] ) ) {
+			self::build_datacenter_index();
+		}
 	}
 
 	/**
@@ -232,6 +330,9 @@ final class PNCP_Ip {
 		}
 		if ( ! empty( $s['enabled'] ) && ! empty( $s['allow_ai_search'] ) && ! empty( $s['verify_ai_bots'] ) ) {
 			$needed = array_merge( $needed, array_values( PNCP_Bots::ai_bot_lists() ) );
+		}
+		if ( ! empty( $s['enabled'] ) && (int) $s['rate_limit_datacenter'] > 0 ) {
+			$needed = array_merge( $needed, array_keys( self::datacenters() ) );
 		}
 		return $needed;
 	}
@@ -370,6 +471,32 @@ final class PNCP_Ip {
 			}
 			return $out;
 		}
+		// AWS (ip-ranges.json): only the servers (EC2), not CloudFront and the other services.
+		if ( is_array( $json ) && isset( $json['prefixes'][0]['ip_prefix'] ) ) {
+			$keys = array(
+				'prefixes'      => 'ip_prefix',
+				'ipv6_prefixes' => 'ipv6_prefix',
+			);
+			foreach ( $keys as $list => $key ) {
+				foreach ( isset( $json[ $list ] ) && is_array( $json[ $list ] ) ? $json[ $list ] : array() as $prefix ) {
+					if ( isset( $prefix['service'], $prefix[ $key ] ) && 'EC2' === $prefix['service'] && self::valid_range( (string) $prefix[ $key ] ) ) {
+						$out[] = (string) $prefix[ $key ];
+					}
+				}
+			}
+			return $out;
+		}
+		// Oracle Cloud (public_ip_ranges.json): regions → cidrs.
+		if ( is_array( $json ) && isset( $json['regions'] ) && is_array( $json['regions'] ) ) {
+			foreach ( $json['regions'] as $region ) {
+				foreach ( isset( $region['cidrs'] ) && is_array( $region['cidrs'] ) ? $region['cidrs'] : array() as $cidr ) {
+					if ( isset( $cidr['cidr'] ) && self::valid_range( (string) $cidr['cidr'] ) ) {
+						$out[] = (string) $cidr['cidr'];
+					}
+				}
+			}
+			return $out;
+		}
 		if ( is_array( $json ) && isset( $json['prefixes'] ) && is_array( $json['prefixes'] ) ) {
 			foreach ( $json['prefixes'] as $prefix ) {
 				foreach ( array( 'ipv4Prefix', 'ipv6Prefix' ) as $key ) {
@@ -388,8 +515,10 @@ final class PNCP_Ip {
 			}
 			return $out;
 		}
-		// Plain text, one per line, or the values of an XML list.
-		foreach ( preg_split( '/[\s<>]+/', trim( $body ) ) as $line ) {
+		// Plain text, one per line, the values of an XML list, or a geofeed CSV (DigitalOcean, Linode: the range
+		// is the first field; comment lines start with #).
+		$body = (string) preg_replace( '/^#.*$/m', '', $body );
+		foreach ( preg_split( '/[\s<>,]+/', trim( $body ) ) as $line ) {
 			if ( self::valid_range( $line ) ) {
 				$out[] = $line;
 			}

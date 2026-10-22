@@ -53,9 +53,11 @@ function pncp_uninstall_site() {
 	$wpdb->query( $wpdb->prepare( 'DROP TABLE IF EXISTS %i', $wpdb->prefix . 'pncp_bans' ) );
 	$wpdb->query(
 		$wpdb->prepare(
-			"DELETE FROM {$wpdb->options} WHERE option_name LIKE %s OR option_name LIKE %s",
+			"DELETE FROM {$wpdb->options} WHERE option_name LIKE %s OR option_name LIKE %s OR option_name LIKE %s OR option_name LIKE %s",
 			$wpdb->esc_like( '_transient_pncp_' ) . '%',
-			$wpdb->esc_like( '_transient_timeout_pncp_' ) . '%'
+			$wpdb->esc_like( '_transient_timeout_pncp_' ) . '%',
+			$wpdb->esc_like( 'pncp_dc_' ) . '%',
+			$wpdb->esc_like( 'pncp_ip_lists_dc_' ) . '%'
 		)
 	);
 	// phpcs:enable

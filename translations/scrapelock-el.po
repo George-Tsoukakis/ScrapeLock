@@ -3245,3 +3245,15 @@ msgstr "Το Emergency Mode ξεκίνησε αυτόματα"
 #, php-format
 msgid "The site received %1$d pages per minute, above the %2$d that count as an attack, for %3$d minutes in a row. ScrapeLock started Emergency Mode for %4$d hour(s): stricter limits and checks for everyone except verified search engines and exempt staff. It ends by itself; you can end it sooner from the ScrapeLock page."
 msgstr "Το site δέχτηκε %1$d σελίδες το λεπτό, πάνω από τις %2$d που θεωρούνται επίθεση, για %3$d λεπτά στη σειρά. Το ScrapeLock ξεκίνησε το Emergency Mode για %4$d ώρα(ες): αυστηρότερα όρια και έλεγχοι για όλους εκτός από τις επαληθευμένες μηχανές αναζήτησης και το προσωπικό που εξαιρείται. Λήγει μόνο του· μπορείτε να το σταματήσετε νωρίτερα από τη σελίδα του ScrapeLock."
+
+#: includes/class-pncp-admin.php:766
+msgid "Pages per minute from data centers (0 = off):"
+msgstr "Σελίδες ανά λεπτό από data centers (0 = κλειστό):"
+
+#: includes/class-pncp-admin.php:766
+msgid "People rarely browse from a server; scrapers very often run on one. Visitors from the published addresses of AWS, Google Cloud, Oracle Cloud, DigitalOcean and Akamai / Linode get this stricter limit instead of the normal one. The lists are downloaded from the providers once a day. Some VPNs use these providers, so their users get this limit too: it is meant for reading, not for blocking. The always-allowed User-Agents (monitoring, price platforms) and verified search engines are not affected. Starting value: 15. 5 in Emergency Mode."
+msgstr "Οι άνθρωποι σπάνια σερφάρουν από έναν server· οι scrapers πολύ συχνά τρέχουν σε έναν. Οι επισκέπτες από τις δημοσιευμένες διευθύνσεις των AWS, Google Cloud, Oracle Cloud, DigitalOcean και Akamai / Linode παίρνουν αυτό το αυστηρότερο όριο αντί για το κανονικό. Οι λίστες κατεβαίνουν από τους παρόχους μία φορά την ημέρα. Κάποια VPN χρησιμοποιούν αυτούς τους παρόχους, οπότε και οι χρήστες τους παίρνουν αυτό το όριο: είναι φτιαγμένο για ανάγνωση, όχι για αποκλεισμό. Τα «πάντα επιτρεπτά» User-Agents (monitoring, πλατφόρμες τιμών) και οι επαληθευμένες μηχανές αναζήτησης δεν επηρεάζονται. Αρχική τιμή: 15. 5 στο Emergency Mode."
+
+#: includes/class-pncp-log.php:156
+msgid "Pages per minute from data centers"
+msgstr "Σελίδες ανά λεπτό από data centers"
