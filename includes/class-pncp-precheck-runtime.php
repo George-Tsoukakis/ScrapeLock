@@ -96,15 +96,26 @@ final class PNCP_Precheck_Runtime {
 		if ( self::banned( $dir, $bankey, $now ) ) {
 			return array( 403, 'banned', $ip );
 		}
-		// Up to here (always-blocked IPs and temporary bans) every request is checked, even a prefetch or a
-		// POST: otherwise a cached page could be served to an IP that is already blocked or banned. Only the
-		// rate limit below is for genuine, countable views.
+		// Up to here (always-blocked IPs and temporary bans) every request is checked, even a POST: otherwise
+		// a cached page could be served to an IP that is already blocked or banned. The rate limit below
+		// counts the GET / HEAD views; the normal check counts the rest.
 		if ( ! self::countable() ) {
 			return null;
 		}
 		$limit = (int) $c['limit'];
 		if ( $limit < 1 ) {
 			return null;
+		}
+		// Prefetch: its own limit, three times the page limit, never a violation (as in the normal check).
+		if ( self::is_prefetch() ) {
+			return self::hit( $c, $bankey . '|prefetch', $now ) > 3 * $limit ? array( 429, 'rate_prefetch', $ip ) : null;
+		}
+		// IPv6: also the /56, at four times the limit, without a violation (as in the normal check).
+		if ( ! empty( $c['v6_wide'] ) && false !== strpos( $ip, ':' ) && (int) $c['v6_prefix'] > 56 ) {
+			$wide = self::limit_key( $ip, 56 );
+			if ( false !== strpos( $wide, '/56' ) && self::hit( $c, $wide . '|56', $now ) > 4 * $limit ) {
+				return array( 429, 'rate_page56', $ip );
+			}
 		}
 		$count = self::hit( $c, $bankey, $now );
 		if ( $count <= $limit ) {
@@ -128,8 +139,8 @@ final class PNCP_Precheck_Runtime {
 	}
 
 	/**
-	 * Is this a page request the check is for? Not: forms (anything but GET / HEAD), prefetch, logged-in
-	 * users, wp-admin, login, cron, REST, XML-RPC, AJAX and the trap; those go to the normal check anyway.
+	 * Is this a page request the check is for? Not: forms (anything but GET / HEAD, counted by the normal
+	 * check), logged-in users, wp-admin, login, cron, REST, XML-RPC, AJAX and the trap; those go to the normal check anyway.
 	 *
 	 * @param array<string, mixed> $c Configuration.
 	 * @return bool
@@ -159,25 +170,33 @@ final class PNCP_Precheck_Runtime {
 	}
 
 	/**
-	 * Does this request count toward the page limit? Only a real GET/HEAD view. A form (POST etc.) and a
-	 * genuine browser prefetch do not, but a bare "prefetch" header from a script (without the browser's
-	 * Sec-Fetch-Dest signal) is counted, so it cannot be used to scrape a cached page without limit. The
-	 * always-blocked list and the temporary bans in verdict() run regardless of this.
+	 * Does this request count toward the page limit here? Every GET/HEAD view; a prefetch toward its own,
+	 * larger limit (verdict()). The prefetch headers (Sec-Fetch-Dest, Sec-Purpose) can be sent by any script,
+	 * so not counting them let a single IP scrape cached pages without limit (2.8.2 and earlier). A form
+	 * (POST etc.) is never served from the cache: the normal check counts it. The always-blocked list and the temporary bans in verdict() run
+	 * regardless of this.
 	 *
 	 * @return bool
 	 */
 	public static function countable() {
-		if ( ! in_array( self::method(), array( 'GET', 'HEAD' ), true ) ) {
+		return in_array( self::method(), array( 'GET', 'HEAD' ), true );
+	}
+
+	/**
+	 * Prefetch / prerender, as PNCP_Bots::is_prefetch() sees it.
+	 *
+	 * @return bool
+	 */
+	public static function is_prefetch() {
+		if ( empty( $_SERVER['HTTP_SEC_FETCH_DEST'] ) ) {
 			return false;
 		}
-		if ( ! empty( $_SERVER['HTTP_SEC_FETCH_DEST'] ) ) {
-			foreach ( array( 'HTTP_SEC_PURPOSE', 'HTTP_PURPOSE', 'HTTP_X_MOZ', 'HTTP_X_PURPOSE' ) as $header ) {
-				if ( isset( $_SERVER[ $header ] ) && false !== stripos( (string) $_SERVER[ $header ], 'prefetch' ) ) {
-					return false;
-				}
+		foreach ( array( 'HTTP_SEC_PURPOSE', 'HTTP_PURPOSE', 'HTTP_X_MOZ', 'HTTP_X_PURPOSE' ) as $header ) {
+			if ( isset( $_SERVER[ $header ] ) && ( false !== stripos( (string) $_SERVER[ $header ], 'prefetch' ) || ( 'HTTP_SEC_PURPOSE' === $header && false !== stripos( (string) $_SERVER[ $header ], 'prerender' ) ) ) ) {
+				return true;
 			}
 		}
-		return true;
+		return false;
 	}
 
 	/**

@@ -48,12 +48,31 @@ final class PNCP_Rules {
 	}
 
 	/**
-	 * The User-Agents of the bot list.
+	 * The User-Agents of the bot list, with the AI crawlers built into the plugin (Nginx and Apache: one regex,
+	 * no length limit). Cloudflare gets only the editable list: its own "AI Crawler" category rule covers the rest.
 	 *
+	 * @param bool $builtin Whether to add the built-in AI crawlers.
 	 * @return string[]
 	 */
-	private static function bots() {
-		return PNCP_Options::parse_list( PNCP_Options::get()['bot_list'] );
+	private static function bots( $builtin = true ) {
+		$s = PNCP_Options::get();
+		return $builtin ? PNCP_Options::blocked_agents( $s ) : PNCP_Options::parse_list( $s['bot_list'] );
+	}
+
+	/**
+	 * Files that give the version of WordPress or of a plugin / theme away ("Hide versions"): readme.html and
+	 * license.txt in the WordPress folder, and readme / changelog files of plugins and themes. Static files:
+	 * WordPress never sees the request, so only the server can refuse them.
+	 *
+	 * @return string[] Regexes of the request path (with the leading slash).
+	 */
+	private static function version_regexes() {
+		$core    = untrailingslashit( (string) wp_parse_url( site_url( '/' ), PHP_URL_PATH ) );
+		$content = untrailingslashit( (string) wp_parse_url( content_url(), PHP_URL_PATH ) );
+		return array(
+			'^' . preg_quote( $core, '#' ) . '/(?:readme\.html|license\.txt)$',
+			'^' . preg_quote( $content, '#' ) . '/(?:plugins|themes|mu-plugins)/.*/(?:readme|changelog|changes|history|upgrade)(?:\.(?:txt|md|html?))?$',
+		);
 	}
 
 	/**
@@ -100,7 +119,8 @@ final class PNCP_Rules {
 	private static function alternation( $words ) {
 		$quoted = array();
 		foreach ( $words as $word ) {
-			$quoted[] = str_replace( array( ' ', '"' ), array( '\\s', '' ), preg_quote( $word, '#' ) );
+			$exact    = '=' === substr( $word, 0, 1 ); // "=node": the whole User-Agent.
+			$quoted[] = ( $exact ? '^' : '' ) . str_replace( array( ' ', '"' ), array( '\\s', '' ), preg_quote( $exact ? substr( $word, 1 ) : $word, '#' ) ) . ( $exact ? '$' : '' );
 		}
 		return '(' . implode( '|', $quoted ) . ')';
 	}
@@ -328,6 +348,13 @@ final class PNCP_Rules {
 			$lines[] = 'location ^~ ' . $uploads . '/' . $backup . '/ { deny all; return 404; }';
 			$lines[] = '';
 		}
+		if ( $s['hide_versions'] ) {
+			$lines[] = '# Hide versions: readme / changelog files that give the version of WordPress, plugins and themes away (404).';
+			foreach ( self::version_regexes() as $regex ) {
+				$lines[] = 'location ~* ' . $regex . ' { return 404; }';
+			}
+			$lines[] = '';
+		}
 		$lines[] = '# Hotlink: images load only from your site and from search engines / price comparison platforms.';
 		$lines[] = '# (If a location for images already exists, e.g. for expires, put the two lines inside it.)';
 		$lines[] = 'location ~* ^' . preg_quote( $uploads, '#' ) . '/.*\.(jpe?g|png|webp|gif|avif)$ {';
@@ -426,6 +453,12 @@ final class PNCP_Rules {
 			$lines[] = '# Clean originals: never public (there is also an .htaccess inside the folder).';
 			$lines[] = 'RewriteRule ^' . preg_quote( $uploads . '/' . $backup, '#' ) . '/ - [F,L]';
 		}
+		if ( $s['hide_versions'] ) {
+			$lines[] = '# Hide versions: readme / changelog files that give the version of WordPress, plugins and themes away (404).';
+			foreach ( self::version_regexes() as $regex ) {
+				$lines[] = 'RewriteRule ' . str_replace( '^/', '^', $regex ) . ' - [R=404,NC,L]';
+			}
+		}
 		$lines[] = '# Image hotlinking.';
 		$lines[] = 'RewriteCond %{HTTP_REFERER} !^$';
 		$lines[] = 'RewriteCond %{HTTP_REFERER} !^https?://([^/]+\.)?' . preg_quote( $host, '#' ) . '/ [NC]';
@@ -494,14 +527,16 @@ final class PNCP_Rules {
 			),
 		);
 
-		$bots = self::bots();
+		$bots = self::bots( false );
 		if ( $s['block_bots'] && $bots ) {
 			// The allowed AI search bots are left out of the list instead of being excluded again after it: shorter.
 			$search = array_map( 'strtolower', PNCP_Options::allowed_ai_search() );
 			$parts  = array();
 			foreach ( $bots as $bot ) {
 				$bot = strtolower( str_replace( '"', '', $bot ) );
-				if ( ! in_array( $bot, $search, true ) ) {
+				if ( '=' === substr( $bot, 0, 1 ) ) {
+					$parts[] = 'lower(http.user_agent) eq "' . substr( $bot, 1 ) . '"'; // "=node": the whole User-Agent.
+				} elseif ( ! in_array( $bot, $search, true ) ) {
 					$parts[] = 'lower(http.user_agent) contains "' . $bot . '"';
 				}
 			}

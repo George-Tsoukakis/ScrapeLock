@@ -16,7 +16,7 @@ Most content protection plugins disable right click in the browser. Scrapers and
 ### Bots and limits
 - **Real search engines vs. fakes.** Googlebot, Bingbot, Applebot and Yandex are verified against their official IP lists and with reverse + forward DNS. Real crawlers are never limited; impostors get a 403.
 - **AI training vs. AI search.** Training crawlers (GPTBot, ClaudeBot, CCBot, Google-Extended, Bytespider…) are blocked; AI search assistants (OAI-SearchBot, ChatGPT-User, PerplexityBot…) can be allowed with one option and verified against their official IP lists.
-- **Per-IP limits** for pages, searches, REST / GraphQL, 404s and sitemaps (IPv6: per /64), with temporary blocks for repeat offenders and an invisible bot trap.
+- **Per-IP limits** for pages, searches, REST / GraphQL, 404s and sitemaps (IPv6: per /64, optionally also per /56), with temporary blocks for repeat offenders and an invisible bot trap.
 - **Human check** without a captcha: a light proof-of-work after the first real interaction; visitors without it get a stricter limit, not a block.
 - **Headless and fake browsers** that reveal themselves in their headers are blocked.
 - **Country rules** from Cloudflare's or Bunny CDN's country header, or the free DB-IP Lite database.
@@ -26,6 +26,8 @@ Most content protection plugins disable right click in the browser. Scrapers and
 - **Text hidden from the REST API, WPGraphQL and full-text RSS** for visitors.
 - **Private XML feeds** (price comparison sites, Google Merchant, ERP) protected with a token in a header or the URL. Only the token hash is stored; rotation with a grace period.
 - Optional: hide the REST API index from visitors, turn off pingbacks, and see which REST routes anyone can call.
+- **Hide versions** of WordPress, PHP and the plugins (generator tags, `?ver=`, X-Powered-By, and readme / changelog files through the server rules), so scanners cannot match them against lists of known vulnerabilities.
+- Optional: excerpts instead of the full text on lists of articles (home, categories, search), and blocking of web archives (Wayback Machine).
 - Usernames hidden from `?author=N`, the users endpoint, the sitemap and oEmbed.
 
 ### On the page and images

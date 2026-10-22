@@ -247,7 +247,8 @@ final class PNCP_Bots {
 	 * The main check.
 	 *
 	 * Bots, fake search engines and blocks apply to every method (a page can also be served via
-	 * POST). Limits count only views (GET/HEAD, not prefetch), so that forms and checkout do not count.
+	 * POST), and so do the limits. WooCommerce AJAX and the cart / checkout pages do not count; a prefetch has
+	 * a larger limit of its own.
 	 *
 	 * @param string $context page | search | rest | graphql | sitemap.
 	 * @param bool   $count   Whether to count toward the limit.
@@ -272,14 +273,10 @@ final class PNCP_Bots {
 		if ( in_array( $context, array( 'page', 'search' ), true ) && self::is_open_path() ) {
 			return null;
 		}
-		$method = isset( $_SERVER['REQUEST_METHOD'] ) ? strtoupper( sanitize_key( wp_unslash( $_SERVER['REQUEST_METHOD'] ) ) ) : 'GET';
-		// Only genuine views count toward the limit. A real browser prefetch and a visitor's own form
-		// submission do not; but an anonymous POST and a script that merely sends a "prefetch" header
-		// (without the browser's fetch-metadata signal) are counted, so neither can be used to bypass
-		// the limit and, with it, the strikes and temporary bans.
-		if ( 'graphql' !== $context && ( self::is_form_submission( $method ) || self::is_prefetch() ) ) {
-			$count = false;
-		}
+		// Every request that gets a page counts, whatever its method and cookies: a "wordpress_logged_in_" or
+		// "woocommerce_" cookie name is sent by any script, so an exemption based on it let a single IP scrape
+		// without limit (2.8.2 and earlier). Logged-in staff are exempt above, by their verified role. A prefetch
+		// has its own, larger limit below.
 		// WooCommerce AJAX (cart, checkout): does not count toward the page limit, but bots, fake crawlers and
 		// blocks are checked as usual. Only for actions registered by WooCommerce (or an extension of it).
 		if ( self::is_wc_ajax() || ( 'page' === $context && self::is_shop_transaction_page() ) ) {
@@ -355,7 +352,7 @@ final class PNCP_Bots {
 			if ( '' === trim( $ua ) && ! empty( $s['block_empty_ua'] ) ) {
 				return self::verdict( 403, 'empty_ua', $ip );
 			}
-			if ( '' !== $ua && self::ua_in_list( $ua, PNCP_Options::parse_list( $s['bot_list'] ) ) ) {
+			if ( '' !== $ua && self::ua_in_list( $ua, PNCP_Options::blocked_agents( $s ) ) ) {
 				return self::verdict( 403, 'bot_ua', $ip );
 			}
 		}
@@ -396,6 +393,19 @@ final class PNCP_Bots {
 			'graphql' => array( 'rate_limit_rest', 'rate_rest' ),
 			'sitemap' => array( 'rate_limit_sitemap', 'rate_sitemap' ),
 		);
+		// Prefetch / prerender: a limit of its own, three times the page limit, never a violation. Speed plugins
+		// (Flying Pages, instant.page, speculative loading) prefetch many links of each page a visitor reads, so
+		// with the page limit a real visitor could be stopped and even banned. Its headers are sent by any script
+		// too, so it is not free either (up to 2.8.2 it was not counted at all): a script that sends them gets at
+		// most three times the page limit per minute, and the trap and the other checks still apply to it.
+		if ( $count && 'page' === $context && self::is_prefetch() ) {
+			$limit = 3 * (int) $s['rate_limit'];
+			if ( $limit > 0 && self::hit( $ip, 'rate_prefetch' ) > $limit ) {
+				return self::verdict( 429, 'rate_prefetch', $ip );
+			}
+			return null;
+		}
+
 		// Stricter page limits: visitors without the human-check cookie, and countries in the "stricter" list.
 		if ( $count && 'page' === $context ) {
 			$stricter = array();
@@ -428,6 +438,15 @@ final class PNCP_Bots {
 					PNCP_Log::strike( $ip, 'rate_404' );
 				}
 				return self::verdict( 429, 'rate_404', $ip );
+			}
+		}
+		// IPv6: also the /56 the /64 belongs to, at four times the page limit. One connection or server usually has a
+		// whole /56 or /48, so a new /64 for every request would otherwise get past the per-/64 limit. No violation:
+		// bans are per /64, and neighbouring phones of a mobile network may share a /56.
+		if ( $count && 'page' === $context && ! empty( $s['ipv6_wide'] ) && (int) $s['rate_limit'] > 0 && false !== strpos( $ip, ':' ) ) {
+			$wide = PNCP_Ip::limit_key( $ip, 56 );
+			if ( PNCP_Ip::limit_key( $ip ) !== $wide && false !== strpos( $wide, '/56' ) && self::hit( $ip, 'rate_page56', $wide ) > 4 * (int) $s['rate_limit'] ) {
+				return self::verdict( 429, 'rate_page56', $ip );
 			}
 		}
 		if ( $count && isset( $limits[ $context ] ) ) {
@@ -654,14 +673,13 @@ final class PNCP_Bots {
 	}
 
 	/**
-	 * Prefetch / prerender (browser, extension or speculative loading): not a view.
+	 * Prefetch / prerender (browser, extension or speculative loading). It has its own page limit (check())
+	 * and does not get a visitor banned by the trap. Every header here can be sent by a script, so it is never
+	 * a reason to skip the limits altogether.
 	 *
 	 * @return bool
 	 */
 	public static function is_prefetch() {
-		// A real speculative navigation always carries the browser's own fetch-metadata header
-		// (Sec-Fetch-Dest). A script can set "Sec-Purpose: prefetch" by hand but not forge that signal,
-		// so without it the request is treated as a normal view and counts toward the limit.
 		if ( empty( $_SERVER['HTTP_SEC_FETCH_DEST'] ) ) {
 			return false;
 		}
@@ -671,31 +689,6 @@ final class PNCP_Bots {
 			}
 		}
 		return ! empty( $_SERVER['HTTP_SEC_PURPOSE'] ) && false !== stripos( sanitize_text_field( wp_unslash( $_SERVER['HTTP_SEC_PURPOSE'] ) ), 'prerender' );
-	}
-
-	/**
-	 * A visitor's own form submission (not a GET/HEAD view): a POST/PUT/… that carries a WordPress login
-	 * or a WooCommerce session cookie. These do not count toward the page limit, because a logged-in user
-	 * or a shopper legitimately posts forms. An anonymous POST carries no such cookie, so it is counted
-	 * like a view and cannot be used to scrape past the limit on uncached pages.
-	 *
-	 * @param string $method Request method (upper-case).
-	 * @return bool
-	 */
-	public static function is_form_submission( $method ) {
-		if ( in_array( $method, array( 'GET', 'HEAD' ), true ) ) {
-			return false;
-		}
-		if ( self::is_wc_ajax() ) {
-			return true;
-		}
-		foreach ( array_keys( $_COOKIE ) as $name ) {
-			$name = (string) $name;
-			if ( 0 === strpos( $name, 'wordpress_logged_in_' ) || 0 === strpos( $name, 'woocommerce_' ) || 0 === strpos( $name, 'wp_woocommerce_session_' ) ) {
-				return true;
-			}
-		}
-		return false;
 	}
 
 	/**
@@ -738,7 +731,9 @@ final class PNCP_Bots {
 	}
 
 	/**
-	 * Does the User-Agent match any item in the list? (substring, case-insensitive)
+	 * Does the User-Agent match any item in the list? (substring, case-insensitive). An item that starts with
+	 * "=" must be the whole User-Agent: "=node" is what Node.js fetch() sends, but "node" alone would also match
+	 * longer names.
 	 *
 	 * @param string   $ua   User-Agent.
 	 * @param string[] $needles List.
@@ -746,7 +741,11 @@ final class PNCP_Bots {
 	 */
 	public static function ua_in_list( $ua, $needles ) {
 		foreach ( $needles as $needle ) {
-			if ( '' !== $needle && false !== stripos( $ua, $needle ) ) {
+			$needle = (string) $needle;
+			if ( '' === $needle || '=' === $needle ) {
+				continue;
+			}
+			if ( '=' === $needle[0] ? 0 === strcasecmp( trim( $ua ), substr( $needle, 1 ) ) : false !== stripos( $ua, $needle ) ) {
 				return true;
 			}
 		}
@@ -923,12 +922,13 @@ final class PNCP_Bots {
 	 * Counts the IP's requests in the current minute, per type (IPv6: per /64, see PNCP_Ip::limit_key()).
 	 * Object cache if available, otherwise a transient.
 	 *
-	 * @param string $ip     IP.
-	 * @param string $bucket Type (rate_page, rate_search, rate_rest).
+	 * @param string      $ip     IP.
+	 * @param string      $bucket Type (rate_page, rate_search, rate_rest).
+	 * @param string|null $net    Key to count under instead of the IP's own (e.g. its IPv6 /56).
 	 * @return int
 	 */
-	private static function hit( $ip, $bucket ) {
-		$key = 'pncp_rl_' . md5( $bucket . '|' . PNCP_Ip::limit_key( $ip ) ) . '_' . (int) floor( time() / MINUTE_IN_SECONDS );
+	private static function hit( $ip, $bucket, $net = null ) {
+		$key = 'pncp_rl_' . md5( $bucket . '|' . ( null === $net ? PNCP_Ip::limit_key( $ip ) : $net ) ) . '_' . (int) floor( time() / MINUTE_IN_SECONDS );
 		if ( wp_using_ext_object_cache() ) {
 			wp_cache_add( $key, 0, 'pncp', 2 * MINUTE_IN_SECONDS );
 			return (int) wp_cache_incr( $key, 1, 'pncp' );
@@ -1205,9 +1205,159 @@ final class PNCP_Bots {
 	 * @return string[]
 	 */
 	public static function robots_agents() {
+		$agents = array_merge(
+			array( 'GPTBot', 'ChatGPT-User', 'OAI-SearchBot', 'CCBot', 'ClaudeBot', 'Claude-User', 'Claude-SearchBot', 'anthropic-ai', 'PerplexityBot', 'Perplexity-User', 'Bytespider', 'Google-Extended', 'Google-CloudVertexBot', 'Applebot-Extended', 'meta-externalagent', 'meta-externalfetcher', 'FacebookBot', 'Amazonbot', 'Diffbot', 'cohere-ai', 'cohere-training-data-crawler', 'AI2Bot', 'Ai2Bot-Dolma', 'YouBot', 'DuckAssistBot', 'MistralAI-User', 'PanguBot', 'Timpibot', 'omgili', 'Webzio-Extended', 'ImagesiftBot', 'img2dataset', 'TikTokSpider' ),
+			self::known_ai_agents(),
+			// Asked in robots.txt only, not blocked: names too generic to match a User-Agent safely, and bots
+			// that act for the site's own visitors or tools (shopping agents, link previews in Jira /
+			// Confluence, social publishing, a search engine).
+			array( 'PetalBot', 'AmazonBuyForMe', 'atlassian-bot', 'EchoboxBot', 'Google-Firebase', 'Operator', 'Devin', 'Cursor', 'Codex' )
+		);
+		$out = array();
+		foreach ( $agents as $agent ) {
+			$out[ strtolower( $agent ) ] = $agent;
+		}
+		return (array) apply_filters( 'pncp_robots_ai_agents', array_values( $out ) );
+	}
+
+	/**
+	 * Web archive crawlers (the Internet Archive's Wayback Machine). What they store is public for good and can be
+	 * copied from the archive without ever reaching the site, so "Block web archives" blocks them and asks them in
+	 * robots.txt. Off by default: many sites want to be archived. Filter `pncp_archive_agents`.
+	 *
+	 * @return string[]
+	 */
+	public static function archive_agents() {
+		return (array) apply_filters( 'pncp_archive_agents', array( 'ia_archiver', 'archive.org_bot', 'heritrix' ) );
+	}
+
+	/**
+	 * AI crawlers, data scrapers and agents blocked by name (when "Block bots" is on), in addition to the editable
+	 * bot list. Built into the plugin and updated with each version, so the settings list keeps its 200 lines
+	 * for the site's own entries. Sources: ai.robots.txt and the operators' own pages; only names that appear in
+	 * the User-Agent and are specific enough not to match a browser or a tool the site uses. An entry in the
+	 * "always allowed" list, or an allowed AI search bot, still passes. Filter `pncp_known_ai_agents`.
+	 *
+	 * @return string[]
+	 */
+	public static function known_ai_agents() {
 		return (array) apply_filters(
-			'pncp_robots_ai_agents',
-			array( 'GPTBot', 'ChatGPT-User', 'OAI-SearchBot', 'CCBot', 'ClaudeBot', 'Claude-User', 'Claude-SearchBot', 'anthropic-ai', 'PerplexityBot', 'Perplexity-User', 'Bytespider', 'Google-Extended', 'Google-CloudVertexBot', 'Applebot-Extended', 'meta-externalagent', 'meta-externalfetcher', 'FacebookBot', 'Amazonbot', 'Diffbot', 'cohere-ai', 'cohere-training-data-crawler', 'AI2Bot', 'Ai2Bot-Dolma', 'YouBot', 'DuckAssistBot', 'MistralAI-User', 'PanguBot', 'Timpibot', 'omgili', 'Webzio-Extended', 'ImagesiftBot', 'img2dataset', 'TikTokSpider' )
+			'pncp_known_ai_agents',
+			array(
+				// AI search crawlers and assistants (blocked unless "Allow AI search" lists them).
+				'AddSearchBot',
+				'AIWebIndex',
+				'Amzn-SearchBot',
+				'Amzn-User',
+				'AzureAI-SearchBot',
+				'Channel3Bot',
+				'ExaSearchBot',
+				'ExaUser',
+				'GrokBot',
+				'Grok Bot',
+				'GrokAppAndroid',
+				'xAI-Grok',
+				'KeenableBot',
+				'Kimi-SearchBot',
+				'Kimi-User',
+				'Kimi-Agent',
+				'LinkupBot',
+				'ZanistaBot',
+				'Andibot',
+				'Aranet-SearchBot',
+				'iAskBot',
+				'Gemini-Deep-Research',
+				'Google-NotebookLM',
+				'NotebookLM',
+				'GoogleAgent-URLContext',
+				'GoogleAgent-Mariner',
+				'Google-Agent',
+				'kagi-fetcher',
+				'meta-webindexer',
+				'PhindBot',
+				'Poggio-Citations',
+				'Shap-User',
+				'TongyiBot',
+				'YiyanBot',
+				'LinerBot',
+				'GeistHaus-PageFetcher',
+				'bigsur.ai',
+				'Manus-User',
+				'NovaAct',
+				'TwinAgent',
+				'MistralAI-Index',
+				'Anomura',
+				'Cloudflare-AutoRAG',
+				'amazon-kendra',
+				'amazon-QBusiness',
+				'BuddyBot',
+				'Querit-SearchBot',
+				'QueritBot',
+				'KlaviyoAIBot',
+				'UseAI',
+				// Training crawlers and AI data providers.
+				'DeepSeekBot',
+				'QwenBot',
+				'DoubaoBot',
+				'ERNIEBot',
+				'Hunyuan',
+				'KimiBot',
+				'MoonshotBot',
+				'ChatGLM-Spider',
+				'MistralAI-Training',
+				'YandexAdditional',
+				'Cotoyogi',
+				'SBIntuitionsBot',
+				'YiBot',
+				'CloudVertexBot',
+				'laion-huggingface-processor',
+				'LAIONDownloader',
+				'FriendlyCrawler',
+				'Factset_spyderbot',
+				'ISSCyberRiskCrawler',
+				'Poseidon Research Crawler',
+				'MyCentralAIScraperBot',
+				'NagetBot',
+				'newsai',
+				'aiHitBot',
+				'AgentDataBot',
+				'BixelBot',
+				'Bravebot',
+				'CloudflareBrowserRenderingCrawler',
+				'CragCrawler',
+				'Crawlspace',
+				'HenkBot',
+				'Mozilla-Tabstack',
+				'ShapBot',
+				'TavilyBot',
+				'TerraCotta',
+				'Terra Cotta',
+				'ExaBot',
+				'Awario',
+				'Datenbank Crawler',
+				'Echobot Bot',
+				'imageSpider',
+				'KunatoCrawler',
+				'Reflectionbot',
+				'WRTNBot',
+				'netEstate Imprint Crawler',
+				'WARDBot',
+				'bedrockbot',
+				'Panscient',
+				'Thinkbot',
+				'AgentTimes',
+				'Linguee Bot',
+				'QuillBot',
+				'SemrushBot-OCOB',
+				'SemrushBot-SWA',
+				'OAI-AdsBot',
+				'Lightpanda',
+				// AI coding agents that fetch pages.
+				'Claude-Code',
+				'Google-Gemini-CLI',
+				'opencode',
+				'qodercli',
+			)
 		);
 	}
 
@@ -1246,6 +1396,13 @@ final class PNCP_Bots {
 				if ( in_array( strtolower( $agent ), $search, true ) ) {
 					continue; // AI search allowed: no Disallow is added.
 				}
+				$block .= 'User-agent: ' . $agent . "\n";
+			}
+			$output = rtrim( $output ) . "\n" . $block . "Disallow: /\n";
+		}
+		if ( ! empty( $s['block_archivers'] ) ) {
+			$block = "\n# ScrapeLock: web archives\n";
+			foreach ( self::archive_agents() as $agent ) {
 				$block .= 'User-agent: ' . $agent . "\n";
 			}
 			$output = rtrim( $output ) . "\n" . $block . "Disallow: /\n";
@@ -1319,11 +1476,12 @@ final class PNCP_Bots {
 			return $uas;
 		}
 		$search = array_map( 'strtolower', PNCP_Options::allowed_ai_search() );
-		foreach ( PNCP_Options::parse_list( $s['bot_list'] ) as $needle ) {
+		foreach ( PNCP_Options::blocked_agents( $s ) as $needle ) {
 			if ( in_array( strtolower( $needle ), $search, true ) ) {
 				continue;
 			}
-			$uas[] = preg_quote( $needle, '#' );
+			// "=node" (the whole User-Agent) as an anchored pattern.
+			$uas[] = '=' === $needle[0] ? '^' . preg_quote( substr( $needle, 1 ), '#' ) . '$' : preg_quote( $needle, '#' );
 		}
 		return $uas;
 	}

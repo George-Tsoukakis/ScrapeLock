@@ -93,6 +93,10 @@ final class PNCP_Options {
 			'precheck',
 			'disable_pingback',
 			'hide_rest_discovery',
+			'hide_versions',
+			'list_excerpts',
+			'ipv6_wide',
+			'block_archivers',
 		);
 	}
 
@@ -147,8 +151,8 @@ final class PNCP_Options {
 	public static function sections() {
 		return array(
 			'general' => array( 'enabled', 'scope_posts', 'scope_pages', 'scope_home', 'scope_products', 'skip_woo_pages', 'excluded_ids', 'block_selection', 'block_context_menu', 'block_shortcuts', 'block_devtools', 'block_image_drag', 'block_text_drag', 'blur_on_capture', 'copy_mode', 'attribution_min_chars', 'print_mode', 'exempt_cap', 'show_message', 'message', 'block_framing', 'tdm_reservation', 'tdm_policy_url' ),
-			'bots'    => array( 'block_bots', 'block_empty_ua', 'block_fake_crawlers', 'require_browser_headers', 'block_headless', 'trap_enabled', 'bot_list', 'allow_list', 'allow_ips', 'allow_ai_search', 'verify_ai_bots', 'robots_ai_block', 'content_signal', 'block_ips', 'block_referrers', 'block_user_enum', 'rate_limit', 'rate_limit_search', 'rate_limit_rest', 'rate_limit_404', 'rate_limit_sitemap', 'human_check', 'rate_limit_unverified', 'geo_db', 'countries_block', 'countries_strict', 'rate_limit_country', 'ban_strikes', 'ban_minutes', 'early_mode', 'precheck', 'log_retention', 'content_paths', 'ip_header', 'trust_cloudflare', 'trust_bunny', 'trust_any_proxy', 'trusted_proxies', 'cdn_secret' ),
-			'content' => array( 'rest_hide_content', 'hide_rest_discovery', 'graphql_hide_content', 'feed_mode', 'feed_source_link', 'private_paths', 'private_ips', 'disable_pingback' ),
+			'bots'    => array( 'block_bots', 'block_empty_ua', 'block_fake_crawlers', 'require_browser_headers', 'block_headless', 'trap_enabled', 'block_archivers', 'ipv6_wide', 'bot_list', 'allow_list', 'allow_ips', 'allow_ai_search', 'verify_ai_bots', 'robots_ai_block', 'content_signal', 'block_ips', 'block_referrers', 'block_user_enum', 'rate_limit', 'rate_limit_search', 'rate_limit_rest', 'rate_limit_404', 'rate_limit_sitemap', 'human_check', 'rate_limit_unverified', 'geo_db', 'countries_block', 'countries_strict', 'rate_limit_country', 'ban_strikes', 'ban_minutes', 'early_mode', 'precheck', 'log_retention', 'content_paths', 'ip_header', 'trust_cloudflare', 'trust_bunny', 'trust_any_proxy', 'trusted_proxies', 'cdn_secret' ),
+			'content' => array( 'rest_hide_content', 'hide_rest_discovery', 'graphql_hide_content', 'feed_mode', 'feed_source_link', 'list_excerpts', 'private_paths', 'private_ips', 'disable_pingback', 'hide_versions' ),
 			'images'  => array( 'watermark_enabled', 'watermark_full', 'watermark_products', 'watermark_image_id', 'watermark_opacity', 'watermark_size', 'watermark_position', 'watermark_min_width' ),
 		);
 	}
@@ -221,7 +225,8 @@ final class PNCP_Options {
 				'httpx',
 				'colly',
 				'Nutch',
-			)
+			),
+			self::new_bots_in_283()
 		);
 	}
 
@@ -280,6 +285,35 @@ final class PNCP_Options {
 	 */
 	public static function default_bot_list() {
 		return implode( "\n", self::default_bot_entries() );
+	}
+
+	/**
+	 * The User-Agents blocked when "Block bots" is on: the editable bot list, the AI crawlers built into the
+	 * plugin (PNCP_Bots::known_ai_agents()) and, with "Block web archives", the archive crawlers; no duplicates.
+	 *
+	 * @param array<string, mixed> $s Settings.
+	 * @return string[]
+	 */
+	public static function blocked_agents( $s ) {
+		$out = array();
+		foreach ( array_merge( self::parse_list( $s['bot_list'] ), PNCP_Bots::known_ai_agents(), empty( $s['block_archivers'] ) ? array() : PNCP_Bots::archive_agents() ) as $agent ) {
+			$agent = trim( (string) $agent );
+			if ( '' !== $agent && '=' !== $agent ) {
+				$out[ strtolower( $agent ) ] = $agent;
+			}
+		}
+		return array_values( $out );
+	}
+
+	/**
+	 * HTTP libraries added to the bot list in 2.8.3: the User-Agent each one sends by default (measured, not
+	 * guessed). "=" = the whole User-Agent, for names too short to match safely anywhere in it. Existing sites
+	 * get them on upgrade (pncp_upgrade()).
+	 *
+	 * @return string[]
+	 */
+	public static function new_bots_in_283() {
+		return array( '=node', 'undici', '=Ruby', 'Java-http-client', 'Apache-HttpClient', 'GuzzleHttp', 'Bun/', 'Deno/', 'Dart/', 'HTTP-Tiny', 'PowerShell/', 'Faraday v', 'Mechanize' );
 	}
 
 	/**
@@ -387,6 +421,27 @@ final class PNCP_Options {
 			// Since 2.8. Off on new and existing sites: they change what other services may rely on.
 			'disable_pingback'        => 0,
 			'hide_rest_discovery'     => 0,
+			// Since 2.9. Existing sites get the values of new_in_290() on upgrade (off).
+			'hide_versions'           => 1,
+			// Off on new sites too: excerpts change how the site looks; the /56 count could reach visitors of a
+			// mobile network that gives neighbouring phones addresses of the same /56. Both on in Emergency Mode.
+			'list_excerpts'           => 0,
+			'ipv6_wide'               => 0,
+			'block_archivers'         => 0,
+		);
+	}
+
+	/**
+	 * The settings added in 2.9, with the values existing sites get on upgrade: everything off.
+	 *
+	 * @return array<string, int>
+	 */
+	public static function new_in_290() {
+		return array(
+			'hide_versions'   => 0,
+			'list_excerpts'   => 0,
+			'ipv6_wide'       => 0,
+			'block_archivers' => 0,
 		);
 	}
 
@@ -629,6 +684,8 @@ final class PNCP_Options {
 			'block_user_enum'         => 1,
 			'ban_strikes'             => 2,
 			'ban_minutes'             => max( (int) $s['ban_minutes'], 360 ),
+			'list_excerpts'           => 1,
+			'ipv6_wide'               => 1,
 		);
 	}
 

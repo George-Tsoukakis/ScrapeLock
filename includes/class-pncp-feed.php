@@ -1,6 +1,7 @@
 <?php
 /**
- * RSS/Atom: full text, excerpt only with a link, or no feeds at all.
+ * RSS/Atom: full text, excerpt only with a link, or no feeds at all. And, optionally, excerpts instead of the
+ * full text on the site's own lists of articles (home, categories, archives, search).
  *
  * @package ScrapeLock
  */
@@ -26,6 +27,9 @@ final class PNCP_Feed {
 		$s = PNCP_Options::get();
 		if ( empty( $s['enabled'] ) ) {
 			return;
+		}
+		if ( ! empty( $s['list_excerpts'] ) && ! is_admin() ) {
+			add_filter( 'the_content', array( __CLASS__, 'list_excerpt' ), 999 );
 		}
 		if ( 'full' === $s['feed_mode'] ) {
 			// Full text: a source line at the end, so that a site that republishes the feed links back to the original.
@@ -143,6 +147,26 @@ final class PNCP_Feed {
 				)
 			)
 		);
+	}
+
+	/**
+	 * Lists of articles (home, categories, tags, archives, search) show an excerpt and a link instead of the full
+	 * text of each article, for visitors. Many themes print the whole text of every article there, so a single
+	 * request gives a scraper ten articles; with excerpts it has to open each one, and each one counts toward the
+	 * page limit. The article page itself, feeds, the REST API and the staff in "Who is exempt" are not affected.
+	 *
+	 * @param string $content Content.
+	 * @return string
+	 */
+	public static function list_excerpt( $content ) {
+		if ( is_singular() || is_feed() || is_admin() || wp_doing_ajax() || ( defined( 'REST_REQUEST' ) && REST_REQUEST ) || ! get_post() ) {
+			return $content;
+		}
+		// A password-protected article shows only its form: its excerpt must not give the text away.
+		if ( post_password_required() || PNCP_Options::user_is_exempt( PNCP_Options::get() ) ) {
+			return $content;
+		}
+		return wpautop( esc_html( self::excerpt_text() ) ) . '<p class="pncp-read-more">' . self::link_html() . '</p>';
 	}
 
 	/**

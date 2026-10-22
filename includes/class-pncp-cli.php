@@ -262,7 +262,7 @@ final class PNCP_Cli {
 					'ip'     => (string) $row['ip'],
 					'reason' => (string) $row['reason'],
 					'hits'   => (int) $row['hits'],
-					'path'   => isset( $row['path'] ) ? (string) $row['path'] : '',
+					'path'   => isset( $row['path'] ) ? PNCP_Log::display_path( (string) $row['path'] ) : '',
 					'ua'     => isset( $row['ua'] ) ? (string) $row['ua'] : '',
 				);
 			}
@@ -290,7 +290,7 @@ final class PNCP_Cli {
 			foreach ( $paths as $path ) {
 				$items[] = array(
 					'group' => 'path:' . $group,
-					'value' => $path['path'],
+					'value' => PNCP_Log::display_path( $path['path'] ),
 					'hits'  => $path['hits'],
 				);
 			}

@@ -665,6 +665,12 @@ msgstr "Λίστα User-Agents που μπλοκάρονται (ένα ανά γ
 msgid "It contains two AI categories: training crawlers (GPTBot, ClaudeBot, CCBot, Google-Extended etc.) and AI search / assistants (OAI-SearchBot, ChatGPT-User, Claude-SearchBot, PerplexityBot etc.). You can allow the second one in the next section."
 msgstr "Περιέχει δύο κατηγορίες AI: crawlers εκπαίδευσης (GPTBot, ClaudeBot, CCBot, Google-Extended κ.ά.) και AI αναζήτηση / βοηθούς (OAI-SearchBot, ChatGPT-User, Claude-SearchBot, PerplexityBot κ.ά.). Τη δεύτερη μπορείτε να την επιτρέψετε στην επόμενη ενότητα."
 
+#: includes/class-pncp-admin.php:714
+#. translators: %s: number of AI crawlers
+#, php-format
+msgid "In addition, %s more AI crawlers and agents (DeepSeek, Grok, Qwen, Mistral, NotebookLM and others) are blocked by name: that list is built into ScrapeLock and updated with each version, so it is not shown here. A line that starts with “=” must be the whole User-Agent, e.g. “=node”."
+msgstr "Επιπλέον, %s ακόμη AI crawlers και agents (DeepSeek, Grok, Qwen, Mistral, NotebookLM κ.ά.) μπλοκάρονται με το όνομά τους: αυτή η λίστα είναι ενσωματωμένη στο ScrapeLock και ενημερώνεται με κάθε έκδοση, γι' αυτό δεν φαίνεται εδώ. Μια γραμμή που ξεκινά με «=» πρέπει να είναι ολόκληρο το User-Agent, π.χ. «=node»."
+
 #: includes/class-pncp-admin.php:717
 msgid "AI search and training"
 msgstr "AI αναζήτηση και εκπαίδευση"
@@ -2686,6 +2692,10 @@ msgid "Pages per minute"
 msgstr "Σελίδες ανά λεπτό"
 
 #: includes/class-pncp-log.php:154
+msgid "Prefetches per minute"
+msgstr "Prefetch ανά λεπτό"
+
+#: includes/class-pncp-log.php:154
 msgid "Searches per minute"
 msgstr "Αναζητήσεις ανά λεπτό"
 
@@ -2912,3 +2922,59 @@ msgstr "Προστασία: OFF"
 #: includes/class-pncp-status.php:374
 msgid "End Emergency Mode"
 msgstr "Τέλος Emergency Mode"
+
+#: includes/class-pncp-admin.php
+msgid "Block web archives (Wayback Machine)"
+msgstr "Μπλοκάρισμα των web archives (Wayback Machine)"
+
+#: includes/class-pncp-admin.php
+msgid "The Internet Archive keeps a public copy of every page it visits, and that copy can be scraped without ever reaching your site. This blocks its crawlers (ia_archiver, archive.org_bot, heritrix) and asks them in robots.txt. Copies already in the archive stay there. Leave it off if you want your site to be archived."
+msgstr "Το Internet Archive κρατά δημόσιο αντίγραφο κάθε σελίδας που επισκέπτεται, και από εκεί μπορεί κάποιος να το αντιγράψει χωρίς να φτάσει ποτέ στο site σας. Αυτό μπλοκάρει τους crawlers του (ia_archiver, archive.org_bot, heritrix) και τους το ζητά στο robots.txt. Τα αντίγραφα που ήδη υπάρχουν στο αρχείο μένουν εκεί. Αφήστε το κλειστό αν θέλετε το site σας να αρχειοθετείται."
+
+#: includes/class-pncp-admin.php
+msgid "IPv6: also limit the whole /56 network (four times the page limit)"
+msgstr "IPv6: όριο και για όλο το δίκτυο /56 (τετραπλάσιο του ορίου σελίδων)"
+
+#: includes/class-pncp-admin.php
+msgid "Pages are counted per /64, because one connection usually gets a whole /64. A server or a home connection often has a /56 or more, so a scraper can take a new /64 for every request. This also counts the /56 the /64 belongs to, up to four times the page limit (429 above it, without a block). Some mobile networks give neighbouring phones addresses of the same /56: on a site with many visitors from them, keep it off. Always on in Emergency Mode."
+msgstr "Οι σελίδες μετρώνται ανά /64, γιατί μία σύνδεση συνήθως παίρνει ολόκληρο /64. Ένας server ή μια σύνδεση σπιτιού έχει συχνά /56 ή περισσότερο, οπότε ένας scraper μπορεί να παίρνει νέο /64 σε κάθε αίτημα. Αυτό μετρά και το /56 στο οποίο ανήκει το /64, μέχρι τετραπλάσιο του ορίου σελίδων (429 από εκεί και πάνω, χωρίς αποκλεισμό). Κάποια δίκτυα κινητής δίνουν σε γειτονικά κινητά διευθύνσεις από το ίδιο /56: σε site με πολλούς επισκέπτες από αυτά, αφήστε το κλειστό. Πάντα ανοιχτό στο Emergency Mode."
+
+#: includes/class-pncp-admin.php
+msgid "Lists of articles: an excerpt and a link instead of the full text"
+msgstr "Λίστες άρθρων: απόσπασμα και σύνδεσμος αντί για το πλήρες κείμενο"
+
+#: includes/class-pncp-admin.php
+msgid "Many themes print the whole text of every article on the home page, in categories, archives and search, so one request gives a scraper ten articles. With this on, visitors see an excerpt and a “Read the full article” link there, and each article has to be opened (and counted toward the page limit) on its own. The article pages do not change; the staff in “Who is exempt” see the full text. Changes how your lists look, so check them after turning it on. Always on in Emergency Mode."
+msgstr "Πολλά themes τυπώνουν ολόκληρο το κείμενο κάθε άρθρου στην αρχική, στις κατηγορίες, στα αρχεία και στην αναζήτηση, οπότε ένα αίτημα δίνει σε έναν scraper δέκα άρθρα. Με αυτό ανοιχτό, οι επισκέπτες βλέπουν εκεί απόσπασμα και σύνδεσμο «Διαβάστε ολόκληρο το άρθρο», και κάθε άρθρο πρέπει να ανοιχτεί (και να μετρήσει στο όριο σελίδων) χωριστά. Οι σελίδες των άρθρων δεν αλλάζουν· όσοι είναι στο «Ποιος εξαιρείται» βλέπουν το πλήρες κείμενο. Αλλάζει την εμφάνιση των λιστών σας, οπότε ελέγξτε τες αφού το ανοίξετε. Πάντα ανοιχτό στο Emergency Mode."
+
+#: includes/class-pncp-admin.php
+msgid "Versions"
+msgstr "Εκδόσεις"
+
+#: includes/class-pncp-admin.php
+msgid "Hide the versions of WordPress, PHP and the plugins"
+msgstr "Απόκρυψη των εκδόσεων του WordPress, της PHP και των plugins"
+
+#: includes/class-pncp-admin.php
+msgid "Scanners read these versions and look them up in lists of known vulnerabilities. This removes the “generator” tag from the page head and the feeds, the X-Powered-By header with the PHP version, and replaces “?ver=7.1.3” on CSS and JS files with a code that changes when the version changes, so caches still work. The readme and changelog files of WordPress and the plugins are static files: the Nginx and Apache rules in the “Server rules” tab refuse them. It does not fix any vulnerability: keep WordPress and the plugins updated."
+msgstr "Τα εργαλεία σάρωσης διαβάζουν αυτές τις εκδόσεις και τις ψάχνουν σε λίστες γνωστών ευπαθειών. Αυτό βγάζει το «generator» από την κεφαλίδα της σελίδας και τα feeds, το header X-Powered-By με την έκδοση της PHP, και αντικαθιστά το «?ver=7.1.3» στα αρχεία CSS και JS με έναν κωδικό που αλλάζει όταν αλλάζει η έκδοση, ώστε οι caches να δουλεύουν. Τα αρχεία readme και changelog του WordPress και των plugins είναι στατικά: τα αρνούνται οι κανόνες Nginx και Apache της καρτέλας «Κανόνες server». Δεν διορθώνει καμία ευπάθεια: κρατάτε το WordPress και τα plugins ενημερωμένα."
+
+#: includes/class-pncp-log.php
+msgid "Pages per minute for the IPv6 network (/56)"
+msgstr "Σελίδες ανά λεπτό για το δίκτυο IPv6 (/56)"
+
+#: includes/class-pncp-health.php
+msgid "Versions hidden"
+msgstr "Εκδόσεις κρυφές"
+
+#: includes/class-pncp-health.php
+msgid "Excerpts in lists of articles"
+msgstr "Αποσπάσματα στις λίστες άρθρων"
+
+#: includes/class-pncp-health.php
+msgid "IPv6 /56 limit"
+msgstr "Όριο IPv6 /56"
+
+#: includes/class-pncp-health.php
+msgid "Web archives blocked"
+msgstr "Web archives μπλοκαρισμένα"
