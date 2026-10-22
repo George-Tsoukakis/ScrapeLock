@@ -7,6 +7,7 @@
  * - X-Test-Bunny-List: η λίστα edge servers του Bunny (JSON) αντί για το δίκτυο.
  * - Κανένα αίτημα HTTP προς wordpress.org (update checks).
  * - Post type «product» όπως του WooCommerce, για τα tests εικόνων προϊόντων.
+ * - Ψεύτικο API της Cloudflare και του Bunny (αποκλεισμός στο CDN), όσο υπάρχει η επιλογή pncp_test_cdn.
  */
 
 add_filter(
@@ -36,6 +37,10 @@ add_filter(
 	static function ( $pre, $args, $url ) {
 		if ( false !== strpos( $url, 'wordpress.org' ) ) {
 			return new WP_Error( 'test', 'no network in tests' );
+		}
+		// Ψεύτικο API CDN: η κατάσταση ζει στην επιλογή pncp_test_cdn (ίδια για τα tests και τον server).
+		if ( ( 0 === strpos( $url, 'https://api.cloudflare.com/' ) || 0 === strpos( $url, 'https://api.bunny.net/' ) ) && is_array( get_option( 'pncp_test_cdn' ) ) ) {
+			return pncp_test_cdn( $args, $url );
 		}
 		// X-Test-Bunny-List: η «επίσημη» λίστα του Bunny (JSON), χωρίς δίκτυο.
 		if ( false !== strpos( $url, 'bunnycdn.com' ) && isset( $_SERVER['HTTP_X_TEST_BUNNY_LIST'] ) ) {
@@ -122,4 +127,72 @@ if ( isset( $_SERVER['HTTP_X_TEST_ROCKET'] ) && ! function_exists( 'rocket_gener
 			}
 		}
 	);
+}
+
+/**
+ * Ψεύτικη Cloudflare (IP Access rules) και Bunny (BlockedIps) για τα tests του αποκλεισμού στο CDN.
+ * pncp_test_cdn: cf => [id => [value, target, notes]], bunny => [ip...], calls => [...], fail => 0 | 429 | 500.
+ */
+function pncp_test_cdn( $args, $url ) {
+	$db      = get_option( 'pncp_test_cdn' );
+	$db     += array( 'cf' => array(), 'bunny' => array(), 'calls' => array(), 'fail' => 0, 'next' => 1, 'refuse' => '' );
+	$method  = isset( $args['method'] ) ? $args['method'] : 'GET';
+	$headers = isset( $args['headers'] ) ? $args['headers'] : array();
+	$body    = isset( $args['body'] ) ? json_decode( $args['body'], true ) : null;
+	$db['calls'][] = $method . ' ' . $url;
+	$reply   = static function ( $code, $data ) use ( &$db ) {
+		update_option( 'pncp_test_cdn', $db, false );
+		return array( 'headers' => array(), 'body' => wp_json_encode( $data ), 'response' => array( 'code' => $code, 'message' => '' ), 'cookies' => array(), 'filename' => null );
+	};
+	if ( $db['fail'] ) {
+		return $reply( (int) $db['fail'], array( 'success' => false, 'errors' => array( array( 'code' => 1, 'message' => 'test failure' ) ) ) );
+	}
+	if ( 0 === strpos( $url, 'https://api.cloudflare.com/client/v4/zones/0123456789abcdef0123456789abcdef/firewall/access_rules/rules' ) ) {
+		if ( ! isset( $headers['Authorization'] ) || 'Bearer cf-good-token-1234567890' !== $headers['Authorization'] ) {
+			return $reply( 403, array( 'success' => false, 'errors' => array( array( 'code' => 10000, 'message' => 'Authentication error' ) ) ) );
+		}
+		$rest = (string) substr( $url, strlen( 'https://api.cloudflare.com/client/v4/zones/0123456789abcdef0123456789abcdef/firewall/access_rules/rules' ) );
+		if ( 'GET' === $method ) {
+			return $reply( 200, array( 'success' => true, 'errors' => array(), 'result' => array() ) );
+		}
+		if ( 'POST' === $method && '' === $rest ) {
+			$value = $body['configuration']['value'];
+			if ( $db['refuse'] === $value ) {
+				return $reply( 400, array( 'success' => false, 'errors' => array( array( 'code' => 10014, 'message' => 'invalid value' ) ) ) );
+			}
+			foreach ( $db['cf'] as $rule ) {
+				if ( $rule['value'] === $value ) {
+					return $reply( 400, array( 'success' => false, 'errors' => array( array( 'code' => 10009, 'message' => 'firewallaccessrules.api.duplicate_of_existing' ) ) ) );
+				}
+			}
+			$id                = 'r' . $db['next']++;
+			$db['cf'][ $id ] = array( 'value' => $value, 'target' => $body['configuration']['target'], 'mode' => $body['mode'], 'notes' => $body['notes'] );
+			return $reply( 200, array( 'success' => true, 'errors' => array(), 'result' => array( 'id' => $id ) ) );
+		}
+		if ( 'DELETE' === $method && preg_match( '#^/([A-Za-z0-9]+)$#', $rest, $m ) ) {
+			if ( ! isset( $db['cf'][ $m[1] ] ) ) {
+				return $reply( 404, array( 'success' => false, 'errors' => array( array( 'code' => 10001, 'message' => 'not found' ) ) ) );
+			}
+			unset( $db['cf'][ $m[1] ] );
+			return $reply( 200, array( 'success' => true, 'errors' => array(), 'result' => array( 'id' => $m[1] ) ) );
+		}
+	}
+	if ( 0 === strpos( $url, 'https://api.bunny.net/pullzone/12345' ) ) {
+		if ( ! isset( $headers['AccessKey'] ) || 'bunny-good-key-1234567890' !== $headers['AccessKey'] ) {
+			return $reply( 401, array( 'ErrorKey' => 'unauthorized', 'Message' => 'Unauthorized' ) );
+		}
+		$rest = (string) substr( $url, strlen( 'https://api.bunny.net/pullzone/12345' ) );
+		if ( 'GET' === $method && '' === $rest ) {
+			return $reply( 200, array( 'Id' => 12345, 'BlockedIps' => array_values( $db['bunny'] ) ) );
+		}
+		if ( 'POST' === $method && '/addBlockedIp' === $rest ) {
+			$db['bunny'][] = $body['BlockedIp'];
+			return $reply( 204, array() );
+		}
+		if ( 'POST' === $method && '/removeBlockedIp' === $rest ) {
+			$db['bunny'] = array_values( array_diff( $db['bunny'], array( $body['BlockedIp'] ) ) );
+			return $reply( 204, array() );
+		}
+	}
+	return $reply( 404, array( 'success' => false, 'errors' => array( array( 'code' => 7003, 'message' => 'Could not route' ) ), 'Message' => 'Not found' ) );
 }

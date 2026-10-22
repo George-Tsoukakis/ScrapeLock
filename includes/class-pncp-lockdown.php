@@ -410,7 +410,7 @@ final class PNCP_Lockdown {
 	 */
 	private static function protected_options() {
 		global $wpdb;
-		return array( 'active_plugins', 'template', 'stylesheet', 'siteurl', 'home', 'admin_email', 'new_admin_email', 'users_can_register', 'default_role', $wpdb->get_blog_prefix() . 'user_roles', PNCP_OPTION, self::OPTION );
+		return array( 'active_plugins', 'template', 'stylesheet', 'siteurl', 'home', 'admin_email', 'new_admin_email', 'users_can_register', 'default_role', $wpdb->get_blog_prefix() . 'user_roles', PNCP_OPTION, PNCP_Edge::CONFIG, self::OPTION );
 	}
 
 	/**

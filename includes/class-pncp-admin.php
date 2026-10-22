@@ -29,6 +29,7 @@ final class PNCP_Admin {
 		add_action( 'admin_post_pncp_log', array( __CLASS__, 'handle_log' ) );
 		add_action( 'admin_post_pncp_cf_ip', array( __CLASS__, 'handle_cf_ip' ) );
 		add_action( 'admin_post_pncp_bunny_ip', array( __CLASS__, 'handle_bunny_ip' ) );
+		add_action( 'admin_post_pncp_edge', array( __CLASS__, 'handle_edge' ) );
 		add_action( 'wp_ajax_pncp_wm_batch', array( __CLASS__, 'ajax_wm_batch' ) );
 		add_action( 'admin_notices', array( __CLASS__, 'upgrade_notices' ) );
 	}
@@ -717,6 +718,7 @@ final class PNCP_Admin {
 				'countries' => __( 'Countries', 'scrapelock' ),
 				'ban'       => __( 'Temporary block', 'scrapelock' ),
 				'ip'        => __( 'Real visitor IP', 'scrapelock' ),
+				'edge'      => __( 'Blocking at the CDN', 'scrapelock' ),
 				'lists'     => __( 'IP lists', 'scrapelock' ),
 			)
 		);
@@ -861,7 +863,86 @@ final class PNCP_Admin {
 		</tr>
 		<?php
 		self::form_close();
+		self::render_edge( $s );
 		self::render_ip_lists();
+	}
+
+	/**
+	 * Blocking at the CDN: its own form (the token never goes through the settings form, and is never shown).
+	 *
+	 * @param array<string, mixed> $s Settings.
+	 */
+	private static function render_edge( $s ) {
+		$c      = PNCP_Edge::config();
+		$state  = PNCP_Edge::state();
+		$locked = PNCP_Lockdown::is_locked();
+		?>
+		<h2 id="pncp-sec-edge"><?php esc_html_e( 'Blocking at the CDN', 'scrapelock' ); ?></h2>
+		<p class="description pncp-edge-intro"><?php esc_html_e( 'The IPs ScrapeLock blocks temporarily are also blocked by your CDN, with your own account. A scraper that keeps going is then stopped at the CDN, before its requests reach your server: no PHP, no database, no bandwidth. Each block is removed when the temporary block ends. Only the blocked addresses are sent, with the reason and the end time; nothing about your visitors or content.', 'scrapelock' ); ?></p>
+		<?php
+		if ( $locked ) {
+			echo '<p class="description">' . esc_html__( 'The site is locked: this setting cannot be changed until it is unlocked.', 'scrapelock' ) . '</p>';
+		}
+		if ( ! empty( $s['trust_any_proxy'] ) && PNCP_Edge::usable() ) {
+			echo '<div class="pncp-inline-warning"><p>' . esc_html__( 'Paused: the real visitor IP is read from a header without checking the proxy, so anyone could get any address blocked. Turn off “Trust every request” under “Real visitor IP” first.', 'scrapelock' ) . '</p></div>';
+		}
+		self::action_form_open( 'pncp_edge', 'pncp_edge', 'pncp-edge-form' );
+		?>
+			<table class="form-table" role="presentation">
+				<tr>
+					<th scope="row"><label for="pncp-edge-provider"><?php esc_html_e( 'CDN', 'scrapelock' ); ?></label></th>
+					<td>
+						<select id="pncp-edge-provider" name="provider"<?php disabled( $locked ); ?>>
+							<option value=""<?php selected( '', $c['provider'] ); ?>><?php esc_html_e( 'Off', 'scrapelock' ); ?></option>
+							<?php foreach ( PNCP_Edge::providers() as $key => $label ) : ?>
+								<option value="<?php echo esc_attr( $key ); ?>"<?php selected( $key, $c['provider'] ); ?>><?php echo esc_html( $label ); ?></option>
+							<?php endforeach; ?>
+						</select>
+					</td>
+				</tr>
+				<tr>
+					<th scope="row"><label for="pncp-edge-zone"><?php esc_html_e( 'Zone ID', 'scrapelock' ); ?></label></th>
+					<td>
+						<input type="text" class="regular-text code" id="pncp-edge-zone" name="zone" value="<?php echo esc_attr( $c['zone'] ); ?>" autocomplete="off" spellcheck="false" aria-describedby="pncp-edge-zone-help"<?php disabled( $locked ); ?>>
+						<p class="description" id="pncp-edge-zone-help"><?php esc_html_e( 'Cloudflare: the Zone ID on the Overview page of your site (32 characters). Bunny CDN: the ID of the Pull Zone that serves this site (a number, in the address of its page in the bunny.net dashboard).', 'scrapelock' ); ?></p>
+					</td>
+				</tr>
+				<tr>
+					<th scope="row"><label for="pncp-edge-token"><?php esc_html_e( 'API token', 'scrapelock' ); ?></label></th>
+					<td>
+						<?php if ( PNCP_Edge::token_from_config() ) : ?>
+							<p><?php esc_html_e( 'Set in wp-config.php (SCRAPELOCK_EDGE_TOKEN).', 'scrapelock' ); ?></p>
+						<?php else : ?>
+							<input type="password" class="regular-text" id="pncp-edge-token" name="token" value="" autocomplete="new-password" spellcheck="false" placeholder="<?php echo esc_attr( '' !== $c['token'] ? __( 'Saved. Leave empty to keep it.', 'scrapelock' ) : '' ); ?>" aria-describedby="pncp-edge-token-help"<?php disabled( $locked ); ?>>
+						<?php endif; ?>
+						<p class="description" id="pncp-edge-token-help"><?php esc_html_e( 'Cloudflare: create an API token (My Profile → API Tokens → Create Token → Custom token) with the single permission Zone → Firewall Services → Edit, for this zone only. Bunny CDN: the API key of your account (Account settings → API); it gives access to the whole account. The token is stored in the database and never shown again; to keep it out of the database, add define( \'SCRAPELOCK_EDGE_TOKEN\', \'…\' ); to wp-config.php instead.', 'scrapelock' ); ?></p>
+					</td>
+				</tr>
+			</table>
+			<?php if ( ! $locked ) : ?>
+				<p><?php submit_button( __( 'Save and test the connection', 'scrapelock' ), 'secondary', 'submit', false ); ?></p>
+			<?php endif; ?>
+		</form>
+		<?php
+		if ( ! PNCP_Edge::usable() ) {
+			return;
+		}
+		echo '<ul class="pncp-list-status pncp-edge-status">';
+		/* translators: 1: number of addresses, 2: CDN name */
+		echo '<li>' . esc_html( sprintf( _n( '%1$s address blocked at %2$s now.', '%1$s addresses blocked at %2$s now.', PNCP_Edge::count(), 'scrapelock' ), number_format_i18n( PNCP_Edge::count() ), PNCP_Edge::providers()[ $c['provider'] ] ) ) . '</li>';
+		if ( $state['time'] ) {
+			/* translators: %s: date and time */
+			echo '<li>' . esc_html( sprintf( __( 'Last update: %s', 'scrapelock' ), wp_date( get_option( 'date_format' ) . ' ' . get_option( 'time_format' ), $state['time'] ) ) ) . '</li>';
+		}
+		if ( '' !== $state['error'] ) {
+			/* translators: 1: date and time, 2: error message */
+			echo '<li class="pncp-edge-error"><strong>' . esc_html( sprintf( __( 'Last error (%1$s): %2$s', 'scrapelock' ), wp_date( get_option( 'date_format' ) . ' ' . get_option( 'time_format' ), $state['error_time'] ), $state['error'] ) ) . '</strong></li>';
+		}
+		if ( 'bunny' === $c['provider'] ) {
+			echo '<li>' . esc_html__( 'Bunny CDN blocks single addresses: a blocked IPv6 network (/64) stays blocked by ScrapeLock only.', 'scrapelock' ) . '</li>';
+		}
+		echo '<li>' . esc_html__( 'Never blocked at the CDN: the IPs administrators used in the last 30 days (a block at the CDN also covers wp-admin), search engines, AI search services and the CDN\'s own servers.', 'scrapelock' ) . '</li>';
+		echo '</ul>';
 	}
 
 	/**
@@ -2004,6 +2085,55 @@ final class PNCP_Admin {
 	}
 
 	/**
+	 * Blocking at the CDN: saves the configuration and tests it with one read-only request. An empty token
+	 * keeps the saved one. Not while the site is locked.
+	 */
+	public static function handle_edge() {
+		// phpcs:disable WordPress.Security.NonceVerification.Missing -- The nonce is checked in verify().
+		self::verify( 'pncp_edge' );
+		if ( PNCP_Lockdown::is_locked() ) {
+			self::back( 'bots', 'error' );
+		}
+		$old      = PNCP_Edge::config();
+		$provider = isset( $_POST['provider'] ) ? sanitize_key( wp_unslash( $_POST['provider'] ) ) : '';
+		$provider = isset( PNCP_Edge::providers()[ $provider ] ) ? $provider : '';
+		$raw_zone = isset( $_POST['zone'] ) ? sanitize_text_field( wp_unslash( $_POST['zone'] ) ) : '';
+		$raw      = isset( $_POST['token'] ) ? sanitize_text_field( wp_unslash( $_POST['token'] ) ) : '';
+		// phpcs:enable
+		if ( '' === $provider ) {
+			PNCP_Edge::save_config(
+				array(
+					'provider' => '',
+					'zone'     => '',
+					'token'    => '',
+				)
+			);
+			self::back( 'bots', 'edge_off' );
+		}
+		$zone  = PNCP_Edge::clean_zone( $provider, $raw_zone );
+		$token = '' === trim( $raw ) ? ( $old['provider'] === $provider ? $old['token'] : '' ) : PNCP_Edge::clean_token( $raw );
+		if ( PNCP_Edge::token_from_config() ) {
+			$token = PNCP_Edge::config()['token'];
+		}
+		if ( '' === $zone || '' === $token ) {
+			self::back( 'bots', '' === $zone ? 'edge_zone' : 'edge_token' );
+		}
+		$new   = array(
+			'provider' => $provider,
+			'zone'     => $zone,
+			'token'    => $token,
+		);
+		$error = PNCP_Edge::test( $new );
+		if ( '' !== $error ) {
+			// Not saved: a wrong token or zone would only fill the log with errors.
+			set_transient( 'pncp_edge_test_' . get_current_user_id(), $error, 2 * MINUTE_IN_SECONDS );
+			self::back( 'bots', 'edge_failed' );
+		}
+		PNCP_Edge::save_config( $new );
+		self::back( 'bots', 'edge_ok' );
+	}
+
+	/**
 	 * Notices after actions, and upgrade notices from 1.4.
 	 */
 	public static function upgrade_notices() {
@@ -2032,10 +2162,21 @@ final class PNCP_Admin {
 			'bunny_ip'        => array( 'success', __( 'The real visitor IP is now read from X-Real-IP, only for requests from Bunny CDN.', 'scrapelock' ) ),
 			'bunny_ip_failed' => array( 'warning', __( 'X-Real-IP is selected for Bunny CDN, but the list of Bunny addresses could not be downloaded. Until it is, the header is not trusted. It will try again tomorrow, or use “Refresh now” under “Official IP lists”.', 'scrapelock' ) ),
 			'lists_partial'   => array( 'warning', __( 'Some IP lists could not be downloaded; their previous version was kept. It will try again tomorrow.', 'scrapelock' ) ),
+			'edge_ok'         => array( 'success', __( 'Connected to the CDN. From now on the IPs ScrapeLock blocks temporarily are also blocked there (within a minute or two).', 'scrapelock' ) ),
+			'edge_off'        => array( 'success', __( 'Blocking at the CDN is off. The blocks ScrapeLock made there are being removed in the background.', 'scrapelock' ) ),
+			'edge_zone'       => array( 'error', __( 'The zone ID is not valid: Cloudflare uses 32 letters and digits (0–9, a–f), Bunny CDN a number. Nothing was saved.', 'scrapelock' ) ),
+			'edge_token'      => array( 'error', __( 'Enter the API token (letters, digits, “-” and “_”). Nothing was saved.', 'scrapelock' ) ),
+			'edge_failed'     => array( 'error', __( 'The connection test failed, so nothing was saved.', 'scrapelock' ) ),
 			'error'           => array( 'error', __( 'The action was not completed.', 'scrapelock' ) ),
 		);
 		if ( isset( $texts[ $message ] ) ) {
-			printf( '<div class="notice notice-%1$s is-dismissible"><p>%2$s</p></div>', esc_attr( $texts[ $message ][0] ), esc_html( $texts[ $message ][1] ) );
+			$text = $texts[ $message ][1];
+			if ( 'edge_failed' === $message ) {
+				$detail = get_transient( 'pncp_edge_test_' . get_current_user_id() );
+				delete_transient( 'pncp_edge_test_' . get_current_user_id() );
+				$text .= is_string( $detail ) && '' !== $detail ? ' ' . $detail : '';
+			}
+			printf( '<div class="notice notice-%1$s is-dismissible"><p>%2$s</p></div>', esc_attr( $texts[ $message ][0] ), esc_html( $text ) );
 		}
 
 		// The 1.x token is still valid but exists only as a hash: it cannot be shown.

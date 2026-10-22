@@ -38,6 +38,7 @@ Most content protection plugins disable right click in the browser. Scrapers and
 
 ### Server and CDN
 - Ready-made **Nginx, Apache and Cloudflare rules** generated for your own site and settings.
+- Optional **blocking at the CDN** (3.1): the IPs ScrapeLock blocks temporarily are also blocked by **Cloudflare** or **Bunny CDN** with your own account, and removed there when the block ends, so a persistent scraper is stopped before it reaches your server.
 - Optional **early check** (mu-plugin) and **pre-cache check** (one line in `wp-config.php`) so pages served from a page cache are protected too.
 - **Emergency Mode:** one click for stricter limits during an attack, for 1 hour to 3 days, or **automatically** when the whole site gets five times its usual pages per minute for 3 minutes in a row (a scraper spread over many IPs).
 

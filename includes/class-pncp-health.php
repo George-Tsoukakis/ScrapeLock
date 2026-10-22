@@ -237,6 +237,16 @@ final class PNCP_Health {
 		} else {
 			$lock = __( 'Not locked', 'scrapelock' );
 		}
+		$edge = __( 'Off', 'scrapelock' );
+		if ( PNCP_Edge::usable() ) {
+			$state = PNCP_Edge::state();
+			/* translators: 1: CDN name, 2: number of addresses */
+			$edge = sprintf( __( '%1$s, %2$d addresses blocked', 'scrapelock' ), PNCP_Edge::providers()[ PNCP_Edge::config()['provider'] ], PNCP_Edge::count() );
+			if ( '' !== $state['error'] ) {
+				/* translators: %s: error message */
+				$edge .= '; ' . sprintf( __( 'last error: %s', 'scrapelock' ), $state['error'] );
+			}
+		}
 		$fields = array(
 			'version'        => array( __( 'Version', 'scrapelock' ), PNCP_VERSION ),
 			'enabled'        => array( __( 'Protection', 'scrapelock' ), $flag( 'enabled' ) ),
@@ -255,6 +265,7 @@ final class PNCP_Health {
 			'archives'       => array( __( 'Web archives blocked', 'scrapelock' ), $flag( 'block_archivers' ) ),
 			'upload_php'     => array( __( 'No PHP in the uploads folder', 'scrapelock' ), $flag( 'block_upload_php' ) ),
 			'auto_emergency' => array( __( 'Automatic Emergency Mode', 'scrapelock' ), $flag( 'auto_emergency' ) ),
+			'edge'           => array( __( 'Blocking at the CDN', 'scrapelock' ), $edge ),
 			'integrity'      => array( __( 'File integrity fingerprint', 'scrapelock' ), PNCP_Integrity::baseline()['time'] ? wp_date( 'Y-m-d H:i', PNCP_Integrity::baseline()['time'] ) : '-' ),
 			'lockdown'       => array( __( 'Lockdown', 'scrapelock' ), $lock ),
 			'lockdown_roles' => array( __( 'Roles frozen while locked', 'scrapelock' ), implode( ', ', PNCP_Lockdown::frozen_roles() ) ),
