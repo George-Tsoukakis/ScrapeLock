@@ -2978,3 +2978,282 @@ msgstr "Όριο IPv6 /56"
 #: includes/class-pncp-health.php
 msgid "Web archives blocked"
 msgstr "Web archives μπλοκαρισμένα"
+
+#: includes/class-pncp-admin.php:1072
+msgid "Uploads"
+msgstr "Uploads"
+
+#: includes/class-pncp-admin.php:1074
+#: includes/class-pncp-health.php:256
+msgid "No PHP in the uploads folder"
+msgstr "Χωρίς PHP στον φάκελο uploads"
+
+#: includes/class-pncp-admin.php:1074
+msgid "Files uploaded to the site (images, documents) never need to run as code. A backdoor uploaded through a vulnerable plugin usually lands in the uploads folder, so this refuses every PHP file there. On Apache it is written into the .htaccess of the uploads folder at once; on Nginx add the rule from the “Server rules” tab. If a plugin of yours really runs PHP from the uploads folder (rare), leave it off."
+msgstr "Τα αρχεία που ανεβαίνουν στο site (εικόνες, έγγραφα) δεν χρειάζεται ποτέ να εκτελούνται ως κώδικας. Ένα backdoor που ανεβαίνει μέσα από ευάλωτο plugin καταλήγει συνήθως στον φάκελο uploads, οπότε αυτό αρνείται κάθε αρχείο PHP εκεί. Σε Apache γράφεται αμέσως στο .htaccess του φακέλου uploads· σε Nginx προσθέστε τον κανόνα της καρτέλας «Κανόνες server». Αν κάποιο plugin σας εκτελεί πράγματι PHP από τον φάκελο uploads (σπάνιο), αφήστε το κλειστό."
+
+#: includes/class-pncp-health.php:37
+msgid "ScrapeLock file integrity"
+msgstr "ScrapeLock: ακεραιότητα αρχείων"
+
+#. translators: %d: number of files.
+#: includes/class-pncp-health.php:173
+#, php-format
+msgid "ScrapeLock found %d changed code file"
+msgid_plural "ScrapeLock found %d changed code files"
+msgstr[0] "Το ScrapeLock βρήκε %d αλλαγμένο αρχείο κώδικα"
+msgstr[1] "Το ScrapeLock βρήκε %d αλλαγμένα αρχεία κώδικα"
+
+#: includes/class-pncp-health.php:174
+msgid "Code files were added or changed while the site was locked, or differ from the official copies on WordPress.org. Nobody can install or update anything while the site is locked, so a file you do not recognise is often a backdoor uploaded through a vulnerable plugin. The list is on the Lockdown tab."
+msgstr "Αρχεία κώδικα προστέθηκαν ή άλλαξαν όσο το site ήταν κλειδωμένο, ή διαφέρουν από τα επίσημα αντίγραφα του WordPress.org. Όσο είναι κλειδωμένο κανείς δεν μπορεί να εγκαταστήσει ή να ενημερώσει κάτι, οπότε ένα αρχείο που δεν αναγνωρίζετε είναι συχνά backdoor που ανέβηκε μέσα από ευάλωτο plugin. Η λίστα είναι στην καρτέλα Lockdown."
+
+#: includes/class-pncp-health.php:179
+msgid "ScrapeLock file integrity is not active"
+msgstr "Η ακεραιότητα αρχείων του ScrapeLock δεν είναι ενεργή"
+
+#: includes/class-pncp-health.php:179
+msgid "The fingerprint of the code files is taken when the site is locked with Lockdown, and checked every hour while it stays locked."
+msgstr "Το αποτύπωμα των αρχείων κώδικα παίρνεται όταν κλειδώνετε το site με το Lockdown, και ελέγχεται κάθε ώρα όσο μένει κλειδωμένο."
+
+#: includes/class-pncp-health.php:181
+msgid "No changed code files"
+msgstr "Κανένα αλλαγμένο αρχείο κώδικα"
+
+#: includes/class-pncp-health.php:181
+msgid "No code file was added or changed since the site was locked, and WordPress and its plugins from WordPress.org match their official copies."
+msgstr "Κανένα αρχείο κώδικα δεν προστέθηκε ή άλλαξε από τότε που κλειδώθηκε το site, και το WordPress και τα plugins του από το WordPress.org ταιριάζουν με τα επίσημα αντίγραφα."
+
+#: includes/class-pncp-health.php:257
+msgid "File integrity fingerprint"
+msgstr "Αποτύπωμα ακεραιότητας αρχείων"
+
+#. translators: %d: number of files
+#: includes/class-pncp-integrity.php:399
+#, php-format
+msgid "… and %d more."
+msgstr "… και %d ακόμη."
+
+#: includes/class-pncp-integrity.php:406
+#: includes/class-pncp-lockdown.php:1475
+msgid "Changed files found"
+msgstr "Βρέθηκαν αλλαγμένα αρχεία"
+
+#: includes/class-pncp-integrity.php:407
+msgid "ScrapeLock found code files that were added or changed while the site was locked, or that differ from the official copies on WordPress.org. Nobody can install or update anything while the site is locked, so check them: a file you do not recognise is often a backdoor uploaded through a vulnerable plugin."
+msgstr "Το ScrapeLock βρήκε αρχεία κώδικα που προστέθηκαν ή άλλαξαν όσο το site ήταν κλειδωμένο, ή που διαφέρουν από τα επίσημα αντίγραφα του WordPress.org. Όσο είναι κλειδωμένο κανείς δεν μπορεί να εγκαταστήσει ή να ενημερώσει κάτι, οπότε ελέγξτε τα: ένα αρχείο που δεν αναγνωρίζετε είναι συχνά backdoor που ανέβηκε μέσα από ευάλωτο plugin."
+
+#: includes/class-pncp-integrity.php:420
+msgid "New while locked"
+msgstr "Νέο όσο ήταν κλειδωμένο"
+
+#: includes/class-pncp-integrity.php:421
+msgid "Changed while locked"
+msgstr "Άλλαξε όσο ήταν κλειδωμένο"
+
+#: includes/class-pncp-integrity.php:422
+msgid "Removed while locked"
+msgstr "Σβήστηκε όσο ήταν κλειδωμένο"
+
+#: includes/class-pncp-integrity.php:423
+msgid "Differs from WordPress.org"
+msgstr "Διαφέρει από το WordPress.org"
+
+#: includes/class-pncp-integrity.php:424
+msgid "Not part of the WordPress.org copy"
+msgstr "Δεν υπάρχει στο αντίγραφο του WordPress.org"
+
+#. translators: %s: file
+#: includes/class-pncp-integrity.php:591
+#, php-format
+msgid "Renamed %s"
+msgstr "Μετονομάστηκε το %s"
+
+#. translators: %s: plugin file
+#: includes/class-pncp-integrity.php:606
+#, php-format
+msgid "Deactivated %s"
+msgstr "Απενεργοποιήθηκε το %s"
+
+#: includes/class-pncp-integrity.php:646
+msgid "ScrapeLock found changed code files."
+msgstr "Το ScrapeLock βρήκε αλλαγμένα αρχεία κώδικα."
+
+#. translators: %d: number of files
+#: includes/class-pncp-integrity.php:648
+#, php-format
+msgid "%d file was added or changed while the site was locked, or differs from WordPress.org."
+msgid_plural "%d files were added or changed while the site was locked, or differ from WordPress.org."
+msgstr[0] "%d αρχείο προστέθηκε ή άλλαξε όσο το site ήταν κλειδωμένο, ή διαφέρει από το WordPress.org."
+msgstr[1] "%d αρχεία προστέθηκαν ή άλλαξαν όσο το site ήταν κλειδωμένο, ή διαφέρουν από το WordPress.org."
+
+#: includes/class-pncp-integrity.php:649
+msgid "See the files"
+msgstr "Δείτε τα αρχεία"
+
+#: includes/class-pncp-integrity.php:664
+msgid "File integrity"
+msgstr "Ακεραιότητα αρχείων"
+
+#: includes/class-pncp-integrity.php:665
+msgid "While the site is locked nobody can install or update anything, so a new or changed code file means that something wrote it by itself, usually through a vulnerable plugin. ScrapeLock keeps a fingerprint of every PHP, .htaccess and .user.ini file when you lock the site (and again after a temporary unlock), checks it every hour and emails the administration address about anything new. WordPress and the plugins from WordPress.org are also compared with their official copies, which finds a change made before you locked. Caches and the updater's folders are left out."
+msgstr "Όσο το site είναι κλειδωμένο κανείς δεν μπορεί να εγκαταστήσει ή να ενημερώσει κάτι, οπότε ένα νέο ή αλλαγμένο αρχείο κώδικα σημαίνει ότι κάτι το έγραψε μόνο του, συνήθως μέσα από ευάλωτο plugin. Το ScrapeLock κρατά αποτύπωμα κάθε αρχείου PHP, .htaccess και .user.ini όταν κλειδώνετε το site (και ξανά μετά από προσωρινό ξεκλείδωμα), το ελέγχει κάθε ώρα και στέλνει email στη διεύθυνση διαχείρισης για ό,τι νέο βρει. Το WordPress και τα plugins από το WordPress.org συγκρίνονται επίσης με τα επίσημα αντίγραφά τους, ώστε να βρεθεί και αλλαγή που έγινε πριν το κλειδώσετε. Οι caches και οι φάκελοι του updater δεν ελέγχονται."
+
+#. translators: 1: date, 2: number of files
+#: includes/class-pncp-integrity.php:670
+#, php-format
+msgid "Fingerprint: %1$s, %2$d files."
+msgstr "Αποτύπωμα: %1$s, %2$d αρχεία."
+
+#: includes/class-pncp-integrity.php:672
+msgid "No fingerprint yet: it is taken when you lock the site."
+msgstr "Δεν υπάρχει ακόμη αποτύπωμα: παίρνεται όταν κλειδώνετε το site."
+
+#. translators: %s: date
+#: includes/class-pncp-integrity.php:676
+#, php-format
+msgid "Last check: %s."
+msgstr "Τελευταίος έλεγχος: %s."
+
+#: includes/class-pncp-integrity.php:679
+msgid "The last pass stopped early (very many files): it is not complete."
+msgstr "Ο τελευταίος έλεγχος σταμάτησε νωρίς (πάρα πολλά αρχεία): δεν είναι πλήρης."
+
+#: includes/class-pncp-integrity.php:684
+msgid "Check these files. Nobody should have changed code while the site was locked; a file you do not recognise is often a backdoor."
+msgstr "Ελέγξτε αυτά τα αρχεία. Κανείς δεν έπρεπε να αλλάξει κώδικα όσο το site ήταν κλειδωμένο· ένα αρχείο που δεν αναγνωρίζετε είναι συχνά backdoor."
+
+#: includes/class-pncp-integrity.php:686
+msgid "File"
+msgstr "Αρχείο"
+
+#: includes/class-pncp-integrity.php:686
+msgid "What"
+msgstr "Τι"
+
+#: includes/class-pncp-integrity.php:694
+msgid "No changed files."
+msgstr "Κανένα αλλαγμένο αρχείο."
+
+#: includes/class-pncp-integrity.php:697
+msgid "Quarantine:"
+msgstr "Καραντίνα:"
+
+#: includes/class-pncp-integrity.php:702
+msgid "WordPress was compared with its official checksums."
+msgstr "Το WordPress συγκρίθηκε με τα επίσημα checksums του."
+
+#: includes/class-pncp-integrity.php:702
+msgid "The official WordPress checksums could not be downloaded."
+msgstr "Τα επίσημα checksums του WordPress δεν μπόρεσαν να κατέβουν."
+
+#. translators: %s: list of plugins
+#: includes/class-pncp-integrity.php:705
+#, php-format
+msgid "Plugins that cannot be compared (not on WordPress.org, or no answer): %s."
+msgstr "Plugins που δεν μπορούν να συγκριθούν (δεν είναι στο WordPress.org, ή δεν υπήρξε απάντηση): %s."
+
+#: includes/class-pncp-integrity.php:713
+msgid "Check now"
+msgstr "Έλεγχος τώρα"
+
+#: includes/class-pncp-integrity.php:713
+msgid "Take a new fingerprint"
+msgstr "Νέο αποτύπωμα"
+
+#: includes/class-pncp-lockdown.php:1110
+msgid "The file integrity check is done."
+msgstr "Ο έλεγχος ακεραιότητας αρχείων ολοκληρώθηκε."
+
+#: includes/class-pncp-lockdown.php:1111
+msgid "The quarantine setting was saved."
+msgstr "Η ρύθμιση καραντίνας αποθηκεύτηκε."
+
+#: includes/class-pncp-lockdown.php:1441
+#: includes/class-pncp-lockdown.php:1476
+msgid "Quarantine"
+msgstr "Καραντίνα"
+
+#: includes/class-pncp-lockdown.php:1443
+msgid "When files change while the site is locked: deactivate the plugin they belong to, and rename new PHP files in the uploads folder so they no longer run"
+msgstr "Όταν αλλάζουν αρχεία όσο το site είναι κλειδωμένο: απενεργοποίηση του plugin στο οποίο ανήκουν, και μετονομασία των νέων αρχείων PHP στον φάκελο uploads ώστε να μην εκτελούνται πια"
+
+#: includes/class-pncp-lockdown.php:1444
+msgid "Nothing is deleted. A deactivated plugin may be one your site needs (for example the shop or the forms), so it stays off until you check it, unlock and activate it again. ScrapeLock itself is never deactivated. Off by default: you are emailed either way."
+msgstr "Τίποτα δεν σβήνεται. Ένα plugin που απενεργοποιείται μπορεί να είναι απαραίτητο για το site (π.χ. το κατάστημα ή οι φόρμες), οπότε μένει κλειστό μέχρι να το ελέγξετε, να ξεκλειδώσετε και να το ενεργοποιήσετε ξανά. Το ίδιο το ScrapeLock δεν απενεργοποιείται ποτέ. Κλειστό από προεπιλογή: το email σας έρχεται έτσι κι αλλιώς."
+
+#: includes/class-pncp-lockdown.php:1447
+msgid "Save quarantine"
+msgstr "Αποθήκευση καραντίνας"
+
+#: includes/class-pncp-lockdown.php:1477
+msgid "Quarantine setting"
+msgstr "Ρύθμιση καραντίνας"
+
+#: includes/class-pncp-lockdown.php:1639
+msgid "on"
+msgstr "ανοιχτή"
+
+#: includes/class-pncp-lockdown.php:1639
+msgid "off"
+msgstr "κλειστή"
+
+#. translators: 1: pages per minute, 2: threshold
+#: includes/class-pncp-admin.php:668
+#, php-format
+msgid "Started automatically: %1$d pages per minute, above %2$d."
+msgstr "Ξεκίνησε αυτόματα: %1$d σελίδες το λεπτό, πάνω από %2$d."
+
+#. translators: 1: usual pages per minute, 2: threshold
+#: includes/class-pncp-admin.php:678
+#, php-format
+msgid "Automatic start: on. Usually %1$s pages per minute; it starts above %2$d."
+msgstr "Αυτόματη έναρξη: ανοιχτή. Συνήθως %1$s σελίδες το λεπτό· ξεκινά πάνω από %2$d."
+
+#. translators: %d: threshold
+#: includes/class-pncp-admin.php:680
+#, php-format
+msgid "Automatic start: on, still learning the usual rate; until then it starts above %d pages per minute."
+msgstr "Αυτόματη έναρξη: ανοιχτή, μαθαίνει ακόμη τον συνηθισμένο ρυθμό· μέχρι τότε ξεκινά πάνω από %d σελίδες το λεπτό."
+
+#: includes/class-pncp-admin.php:766
+msgid "Start Emergency Mode automatically during an attack"
+msgstr "Αυτόματη έναρξη του Emergency Mode σε επίθεση"
+
+#: includes/class-pncp-admin.php:766
+msgid "The limits per IP cannot see a scraper that spreads its requests over hundreds of IPs. The whole site can: ScrapeLock learns how many pages per minute your site usually serves, and when that is exceeded five times over for 3 minutes in a row (and never below the minimum below), it starts Emergency Mode for 1 hour and emails you. Verified search engines and exempt staff are not counted. Pages served from a page cache without reaching WordPress are not counted either."
+msgstr "Τα όρια ανά IP δεν βλέπουν έναν scraper που μοιράζει τα αιτήματά του σε εκατοντάδες IP. Όλο το site τον βλέπει: το ScrapeLock μαθαίνει πόσες σελίδες το λεπτό σερβίρει συνήθως το site σας, και όταν αυτό ξεπεραστεί πέντε φορές για 3 λεπτά στη σειρά (και ποτέ κάτω από το ελάχιστο παρακάτω), ξεκινά το Emergency Mode για 1 ώρα και σας στέλνει email. Οι επαληθευμένες μηχανές αναζήτησης και το προσωπικό που εξαιρείται δεν μετρώνται. Ούτε οι σελίδες που σερβίρονται από page cache χωρίς να φτάσουν στο WordPress."
+
+#: includes/class-pncp-admin.php:767
+msgid "Minimum pages per minute for the automatic start:"
+msgstr "Ελάχιστες σελίδες το λεπτό για την αυτόματη έναρξη:"
+
+#: includes/class-pncp-admin.php:767
+msgid "Below this the site is never considered under attack, however quiet it usually is. Starting value: 300 (5 pages per second)."
+msgstr "Κάτω από αυτό το site δεν θεωρείται ποτέ υπό επίθεση, όσο ήσυχο κι αν είναι συνήθως. Αρχική τιμή: 300 (5 σελίδες το δευτερόλεπτο)."
+
+#: includes/class-pncp-health.php:257
+msgid "Automatic Emergency Mode"
+msgstr "Αυτόματο Emergency Mode"
+
+#: includes/class-pncp-surge.php:129
+msgid "Emergency Mode started automatically"
+msgstr "Το Emergency Mode ξεκίνησε αυτόματα"
+
+#. translators: 1: pages per minute, 2: threshold, 3: minutes in a row, 4: hours
+#: includes/class-pncp-surge.php:132
+#, php-format
+msgid "The site received %1$d pages per minute, above the %2$d that count as an attack, for %3$d minutes in a row. ScrapeLock started Emergency Mode for %4$d hour(s): stricter limits and checks for everyone except verified search engines and exempt staff. It ends by itself; you can end it sooner from the ScrapeLock page."
+msgstr "Το site δέχτηκε %1$d σελίδες το λεπτό, πάνω από τις %2$d που θεωρούνται επίθεση, για %3$d λεπτά στη σειρά. Το ScrapeLock ξεκίνησε το Emergency Mode για %4$d ώρα(ες): αυστηρότερα όρια και έλεγχοι για όλους εκτός από τις επαληθευμένες μηχανές αναζήτησης και το προσωπικό που εξαιρείται. Λήγει μόνο του· μπορείτε να το σταματήσετε νωρίτερα από τη σελίδα του ScrapeLock."
+
+#: includes/class-pncp-admin.php:766
+msgid "Pages per minute from data centers (0 = off):"
+msgstr "Σελίδες ανά λεπτό από data centers (0 = κλειστό):"
+
+#: includes/class-pncp-admin.php:766
+msgid "People rarely browse from a server; scrapers very often run on one. Visitors from the published addresses of AWS, Google Cloud, Oracle Cloud, DigitalOcean and Akamai / Linode get this stricter limit instead of the normal one. The lists are downloaded from the providers once a day. Some VPNs use these providers, so their users get this limit too: it is meant for reading, not for blocking. The always-allowed User-Agents (monitoring, price platforms) and verified search engines are not affected. Starting value: 15. 5 in Emergency Mode."
+msgstr "Οι άνθρωποι σπάνια σερφάρουν από έναν server· οι scrapers πολύ συχνά τρέχουν σε έναν. Οι επισκέπτες από τις δημοσιευμένες διευθύνσεις των AWS, Google Cloud, Oracle Cloud, DigitalOcean και Akamai / Linode παίρνουν αυτό το αυστηρότερο όριο αντί για το κανονικό. Οι λίστες κατεβαίνουν από τους παρόχους μία φορά την ημέρα. Κάποια VPN χρησιμοποιούν αυτούς τους παρόχους, οπότε και οι χρήστες τους παίρνουν αυτό το όριο: είναι φτιαγμένο για ανάγνωση, όχι για αποκλεισμό. Τα «πάντα επιτρεπτά» User-Agents (monitoring, πλατφόρμες τιμών) και οι επαληθευμένες μηχανές αναζήτησης δεν επηρεάζονται. Αρχική τιμή: 15. 5 στο Emergency Mode."
+
+#: includes/class-pncp-log.php:156
+msgid "Pages per minute from data centers"
+msgstr "Σελίδες ανά λεπτό από data centers"

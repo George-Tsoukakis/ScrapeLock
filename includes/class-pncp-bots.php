@@ -328,6 +328,13 @@ final class PNCP_Bots {
 			return null; // Verified AI search bots, as above.
 		}
 
+		// With the automatic Emergency Mode on, every page that reaches this point counts toward the site's pages
+		// per minute (verified search engines and exempt staff do not), blocked or not: what matters is how hard
+		// the site is being hit. One counter write per page, so only when the option is on.
+		if ( $count && in_array( $context, array( 'page', 'search' ), true ) && ! empty( $s['auto_emergency'] ) ) {
+			self::surge( $s );
+		}
+
 		if ( PNCP_Log::is_banned( $ip ) ) {
 			return self::verdict( 403, 'banned', $ip );
 		}
@@ -417,6 +424,11 @@ final class PNCP_Bots {
 			}
 			if ( '' !== $country && (int) $s['rate_limit_country'] > 0 && in_array( $country, PNCP_Options::parse_countries( $s['countries_strict'] ), true ) ) {
 				$stricter['rate_country'] = (int) $s['rate_limit_country'];
+			}
+			// Data centers (AWS, Google Cloud, Oracle, DigitalOcean, Linode): people rarely browse from a server,
+			// scrapers very often run on one. Not for the always-allowed User-Agents (monitoring, price platforms).
+			if ( ! $allowed_ua && (int) $s['rate_limit_datacenter'] > 0 && '' !== PNCP_Ip::datacenter( $ip ) ) {
+				$stricter['rate_datacenter'] = (int) $s['rate_limit_datacenter'];
 			}
 			foreach ( $stricter as $bucket => $limit ) {
 				$current = self::hit( $ip, $bucket );
@@ -928,7 +940,7 @@ final class PNCP_Bots {
 	 * @return int
 	 */
 	private static function hit( $ip, $bucket, $net = null ) {
-		$key = 'pncp_rl_' . md5( $bucket . '|' . ( null === $net ? PNCP_Ip::limit_key( $ip ) : $net ) ) . '_' . (int) floor( time() / MINUTE_IN_SECONDS );
+		$key = self::counter_key( $bucket, null === $net ? PNCP_Ip::limit_key( $ip ) : $net, (int) floor( time() / MINUTE_IN_SECONDS ) );
 		if ( wp_using_ext_object_cache() ) {
 			wp_cache_add( $key, 0, 'pncp', 2 * MINUTE_IN_SECONDS );
 			return (int) wp_cache_incr( $key, 1, 'pncp' );
@@ -941,6 +953,44 @@ final class PNCP_Bots {
 		$count = (int) get_transient( $key ) + 1;
 		set_transient( $key, $count, 2 * MINUTE_IN_SECONDS );
 		return $count;
+	}
+
+	/**
+	 * The storage key of a per-minute counter.
+	 *
+	 * @param string $bucket Type.
+	 * @param string $net    What is counted (an IP key, or "site").
+	 * @param int    $minute Minute (Unix time / 60).
+	 * @return string
+	 */
+	private static function counter_key( $bucket, $net, $minute ) {
+		return 'pncp_rl_' . md5( $bucket . '|' . $net ) . '_' . (int) $minute;
+	}
+
+	/**
+	 * Reads a per-minute counter without adding to it (0 if there is none, or it has expired).
+	 *
+	 * @param string $bucket Type.
+	 * @param string $net    What is counted.
+	 * @param int    $minute Minute.
+	 * @return int
+	 */
+	private static function peek( $bucket, $net, $minute ) {
+		$key = self::counter_key( $bucket, $net, $minute );
+		return (int) ( wp_using_ext_object_cache() ? wp_cache_get( $key, 'pncp' ) : get_transient( $key ) );
+	}
+
+	/**
+	 * Pages per minute of the whole site, for the automatic Emergency Mode (PNCP_Surge).
+	 *
+	 * @param array<string, mixed> $s Settings.
+	 */
+	private static function surge( $s ) {
+		$minute = (int) floor( time() / MINUTE_IN_SECONDS );
+		$count  = self::hit( '', 'surge', 'site' );
+		if ( 1 === $count ) {
+			PNCP_Surge::observe( $count, $minute, self::peek( 'surge', 'site', $minute - 1 ), $s );
+		}
 	}
 
 	/**

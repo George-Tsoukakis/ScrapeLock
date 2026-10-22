@@ -76,6 +76,55 @@ final class PNCP_Rules {
 	}
 
 	/**
+	 * PHP in the uploads folder: files people and plugins upload must never run. A backdoor uploaded through a
+	 * vulnerable plugin usually lands there.
+	 *
+	 * @return string Regex of the request path (with the leading slash).
+	 */
+	private static function upload_php_regex() {
+		return '^' . preg_quote( self::uploads_path(), '#' ) . '/.*\.(?:php[0-9]?|phtml|phar)$';
+	}
+
+	/**
+	 * Apache reads an .htaccess inside the uploads folder by itself: ScrapeLock writes its block there ("No PHP
+	 * in the uploads folder"), between its own markers, so whatever other plugins wrote there stays. Nginx
+	 * ignores the file: it needs the rule of the "Server rules" tab.
+	 *
+	 * @param bool|null $on Whether the block should be there (null = the setting).
+	 */
+	public static function sync_uploads_htaccess( $on = null ) {
+		$on   = null === $on ? ! empty( PNCP_Options::get()['enabled'] ) && ! empty( PNCP_Options::get()['block_upload_php'] ) : (bool) $on;
+		$dir  = wp_get_upload_dir()['basedir'];
+		$file = trailingslashit( $dir ) . '.htaccess';
+		if ( ! is_dir( $dir ) || ( ! $on && ! file_exists( $file ) ) ) {
+			return;
+		}
+		if ( ! function_exists( 'insert_with_markers' ) ) {
+			require_once ABSPATH . 'wp-admin/includes/misc.php';
+		}
+		$lines = $on ? array(
+			'# No PHP in the uploads folder: a file uploaded here never runs as code.',
+			'<FilesMatch "\.(?i:php[0-9]?|phtml|phar)$">',
+			'	<IfModule mod_authz_core.c>',
+			'		Require all denied',
+			'	</IfModule>',
+			'	<IfModule !mod_authz_core.c>',
+			'		Order allow,deny',
+			'		Deny from all',
+			'	</IfModule>',
+			'</FilesMatch>',
+		) : array();
+		insert_with_markers( $file, 'ScrapeLock', $lines );
+	}
+
+	/**
+	 * After the settings are saved (hook update_option_pncp_settings, whose arguments are not used).
+	 */
+	public static function settings_saved() {
+		self::sync_uploads_htaccess();
+	}
+
+	/**
 	 * The always-allowed User-Agents.
 	 *
 	 * @return string[]
@@ -355,6 +404,12 @@ final class PNCP_Rules {
 			}
 			$lines[] = '';
 		}
+		if ( $s['block_upload_php'] ) {
+			$lines[] = '# No PHP in the uploads folder. Put it ABOVE the location that passes .php files to PHP: Nginx uses the';
+			$lines[] = '# first regex location that matches.';
+			$lines[] = 'location ~* ' . self::upload_php_regex() . ' { deny all; }';
+			$lines[] = '';
+		}
 		$lines[] = '# Hotlink: images load only from your site and from search engines / price comparison platforms.';
 		$lines[] = '# (If a location for images already exists, e.g. for expires, put the two lines inside it.)';
 		$lines[] = 'location ~* ^' . preg_quote( $uploads, '#' ) . '/.*\.(jpe?g|png|webp|gif|avif)$ {';
@@ -458,6 +513,10 @@ final class PNCP_Rules {
 			foreach ( self::version_regexes() as $regex ) {
 				$lines[] = 'RewriteRule ' . str_replace( '^/', '^', $regex ) . ' - [R=404,NC,L]';
 			}
+		}
+		if ( $s['block_upload_php'] ) {
+			$lines[] = '# No PHP in the uploads folder (ScrapeLock also writes this into the .htaccess of the uploads folder).';
+			$lines[] = 'RewriteRule ' . str_replace( '^/', '^', self::upload_php_regex() ) . ' - [F,NC,L]';
 		}
 		$lines[] = '# Image hotlinking.';
 		$lines[] = 'RewriteCond %{HTTP_REFERER} !^$';

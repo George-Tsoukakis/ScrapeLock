@@ -153,6 +153,7 @@ final class PNCP_Log {
 			'rate_page'       => __( 'Pages per minute', 'scrapelock' ),
 			'rate_prefetch'   => __( 'Prefetches per minute', 'scrapelock' ),
 			'rate_page56'     => __( 'Pages per minute for the IPv6 network (/56)', 'scrapelock' ),
+			'rate_datacenter' => __( 'Pages per minute from data centers', 'scrapelock' ),
 			'rate_search'     => __( 'Searches per minute', 'scrapelock' ),
 			'rate_rest'       => __( 'REST / GraphQL requests per minute', 'scrapelock' ),
 			'rate_sitemap'    => __( 'Sitemaps per minute', 'scrapelock' ),

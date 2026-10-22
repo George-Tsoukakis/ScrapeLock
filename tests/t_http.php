@@ -1480,5 +1480,129 @@ update_option( PNCP_OPTION, $pncp_before );
 update_option( 'pncp_version', PNCP_VERSION );
 PNCP_Options::flush();
 
+/* ---------- 3.0: αυτόματο Emergency Mode ---------- */
+fresh();
+update_option( PNCP_Options::EMERGENCY_OPTION, 0 );
+delete_option( PNCP_Surge::STATE );
+delete_option( PNCP_Surge::LAST );
+$pncp_s = array_merge( PNCP_Options::stored(), array( 'auto_emergency' => 1, 'auto_emergency_min' => 100 ) );
+// Ο συνηθισμένος ρυθμός: δύο ώρες με 15–24 σελίδες το λεπτό.
+$pncp_st = array( 'minute' => 0, 'avg' => 0.0, 'samples' => 0, 'streak' => 0 );
+$pncp_m  = 1000;
+for ( $i = 0; $i < 120; $i++ ) {
+	$pncp_st = PNCP_Surge::close( $pncp_st, $pncp_m++, 15 + ( $i % 10 ), $pncp_s );
+}
+t( 'αυτόματο Emergency: μαθαίνει τον συνηθισμένο ρυθμό (~20/λεπτό), το όριο δεν πέφτει κάτω από το ελάχιστο', $pncp_st['avg'] > 15 && $pncp_st['avg'] < 25 && 100 === PNCP_Surge::threshold( $pncp_st, $pncp_s ) && 0 === $pncp_st['streak'], wp_json_encode( $pncp_st ) );
+$pncp_streaks = array();
+foreach ( array( 60, 90, 400, 600, 700 ) as $pncp_c ) {
+	$pncp_st         = PNCP_Surge::close( $pncp_st, $pncp_m++, $pncp_c, $pncp_s );
+	$pncp_streaks[] = $pncp_st['streak'];
+}
+t( 'αυτόματο Emergency: μικρή άνοδος όχι, επίθεση 3 λεπτά στη σειρά ναι', array( 0, 0, 1, 2, 3 ) === $pncp_streaks, implode( ',', $pncp_streaks ) );
+t( 'αυτόματο Emergency: η επίθεση δεν «διδάσκει» τον μέσο όρο', $pncp_st['avg'] < 25, (string) $pncp_st['avg'] );
+$pncp_busy = array( 'minute' => 1, 'avg' => 200.0, 'samples' => 500, 'streak' => 0 );
+t( 'αυτόματο Emergency: σε μεγάλο site το όριο είναι 5 × ο μέσος όρος', 1000 === PNCP_Surge::threshold( $pncp_busy, $pncp_s ) );
+$pncp_idle = PNCP_Surge::close( $pncp_st, $pncp_m + 600, 20, $pncp_s );
+t( 'αυτόματο Emergency: λεπτά χωρίς κίνηση μετρούν ως ήσυχα', $pncp_idle['avg'] < $pncp_st['avg'] && 0 === $pncp_idle['streak'] );
+// Ενεργοποίηση: το πρώτο αίτημα του λεπτού κλείνει το προηγούμενο· το τρίτο συνεχόμενο πάνω από το όριο την ξεκινά.
+$pncp_mails = array();
+add_filter(
+	'pre_wp_mail',
+	static function ( $r, $atts ) use ( &$pncp_mails ) {
+		$pncp_mails[] = $atts;
+		return true;
+	},
+	10,
+	2
+);
+$pncp_now = (int) floor( time() / 60 );
+update_option( PNCP_Surge::STATE, array( 'minute' => $pncp_now - 3, 'avg' => 20.0, 'samples' => 500, 'streak' => 2 ) );
+PNCP_Surge::observe( 1, $pncp_now, 500, array_merge( $pncp_s, array( 'auto_emergency' => 0 ) ) );
+t( 'αυτόματο Emergency κλειστό: μετρά, αλλά δεν ξεκινά', ! PNCP_Options::emergency_until() && array() === $pncp_mails );
+update_option( PNCP_Surge::STATE, array( 'minute' => $pncp_now - 2, 'avg' => 20.0, 'samples' => 500, 'streak' => 2 ) );
+PNCP_Surge::observe( 1, $pncp_now, 500, $pncp_s );
+$pncp_last = PNCP_Surge::last();
+t( 'αυτόματο Emergency: ξεκινά για 1 ώρα, με email και καταγραφή', PNCP_Options::emergency_until() > time() + 3500 && PNCP_Options::emergency_until() <= time() + 3600 && 1 === count( $pncp_mails ) && false !== strpos( $pncp_mails[0]['message'], '500' ) && 500 === $pncp_last[0]['count'] && $pncp_last[0]['threshold'] >= 100 && $pncp_last[0]['threshold'] < 500, wp_json_encode( $pncp_last ) );
+PNCP_Surge::observe( 1, $pncp_now, 500, $pncp_s );
+t( 'αυτόματο Emergency: το ίδιο λεπτό δεύτερη φορά δεν μετρά ξανά', 1 === count( $pncp_mails ) && 1 === count( PNCP_Surge::last() ) );
+update_option( PNCP_Options::EMERGENCY_OPTION, 0 );
+PNCP_Options::flush();
+remove_all_filters( 'pre_wp_mail' );
+// Μέσα από HTTP: οι σελίδες του site μετρώνται (όχι το προσωπικό), μόνο με την επιλογή ανοιχτή.
+fresh();
+delete_option( PNCP_Surge::STATE );
+$pncp_peek = static function ( $minute ) {
+	return ( function ( $minute ) {
+		return self::peek( 'surge', 'site', $minute );
+	} )->bindTo( null, 'PNCP_Bots' )( $minute );
+};
+settings( array( 'auto_emergency' => 0, 'rate_limit' => 0 ) );
+same_minute();
+$pncp_min = (int) floor( time() / 60 );
+req( $url, browser( '192.0.2.230' ) );
+t( 'αυτόματο Emergency κλειστό: καμία μέτρηση (κανένα επιπλέον γράψιμο)', 0 === $pncp_peek( $pncp_min ) );
+settings( array( 'auto_emergency' => 1, 'auto_emergency_min' => 100000 ) );
+same_minute();
+$pncp_min = (int) floor( time() / 60 );
+foreach ( array( '192.0.2.231', '192.0.2.232', '192.0.2.233' ) as $pncp_ip ) {
+	req( $url, browser( $pncp_ip ) );
+}
+req( $url, browser( '192.0.2.234', array( 'Cookie' => login_cookie( test_user( 'pncp_editor', 'editor' ) ) ) ) );
+wp_cache_flush();
+t( 'αυτόματο Emergency: 3 σελίδες από 3 IP μετρώνται για όλο το site, όχι το προσωπικό', 3 === $pncp_peek( $pncp_min ), (string) $pncp_peek( $pncp_min ) );
+settings( array( 'auto_emergency' => 0 ) );
+t( 'αυτόματο Emergency: νέα εγκατάσταση ανοιχτό, υπάρχον site κλειστό', 1 === PNCP_Options::defaults()['auto_emergency'] && 0 === PNCP_Options::new_in_300()['auto_emergency'] );
+
+/* ---------- 3.0: αυστηρότερο όριο για data centers ---------- */
+fresh();
+// Οι μορφές των επίσημων λιστών (μικρά δείγματα με τη δομή τους).
+$pncp_aws = wp_json_encode(
+	array(
+		'prefixes'      => array( array( 'ip_prefix' => '198.18.250.0/24', 'service' => 'AMAZON' ), array( 'ip_prefix' => '198.18.250.0/24', 'service' => 'EC2' ), array( 'ip_prefix' => '198.18.251.0/24', 'service' => 'CLOUDFRONT' ) ),
+		'ipv6_prefixes' => array( array( 'ipv6_prefix' => '2001:db8:dc::/48', 'service' => 'EC2' ), array( 'ipv6_prefix' => '2001:db8:cf::/48', 'service' => 'CLOUDFRONT' ) ),
+	)
+);
+t( 'data centers: AWS μόνο οι servers (EC2), όχι το CloudFront', array( '198.18.250.0/24', '2001:db8:dc::/48' ) === PNCP_Ip::parse_ranges( $pncp_aws ) );
+t( 'data centers: Oracle Cloud (regions → cidrs)', array( '198.18.252.0/23' ) === PNCP_Ip::parse_ranges( wp_json_encode( array( 'regions' => array( array( 'region' => 'eu', 'cidrs' => array( array( 'cidr' => '198.18.252.0/23', 'tags' => array( 'OCI' ) ) ) ) ) ) ) ) );
+t( 'data centers: Google Cloud (prefixes → ipv4Prefix / ipv6Prefix)', array( '198.18.253.0/24', '2001:db8:6c::/48' ) === PNCP_Ip::parse_ranges( wp_json_encode( array( 'prefixes' => array( array( 'ipv4Prefix' => '198.18.253.0/24' ), array( 'ipv6Prefix' => '2001:db8:6c::/48' ) ) ) ) ) );
+t( 'data centers: geofeed CSV (DigitalOcean, Linode), με σχόλια', array( '198.18.254.0/24', '2001:db8:d0::/48' ) === PNCP_Ip::parse_ranges( "# geofeed\n198.18.254.0/24,US,US-NY,New York,10001\n2001:db8:d0::/48,NL,NL-NH,Amsterdam,\n" ) );
+PNCP_Ip::store_list( 'dc_aws', array( '198.18.250.0/24', '2001:db8:dc::/48' ) );
+PNCP_Ip::store_list( 'dc_digitalocean', array( '198.18.254.0/24' ) );
+t( 'data centers: αναγνώριση IPv4, IPv6, IPv4 μέσα σε IPv6, και ποιος πάροχος', 'AWS' === PNCP_Ip::datacenter( '198.18.250.77' ) && 'AWS' === PNCP_Ip::datacenter( '2001:db8:dc:5::1' ) && 'AWS' === PNCP_Ip::datacenter( '::ffff:198.18.250.77' ) && 'DigitalOcean' === PNCP_Ip::datacenter( '198.18.254.1' ) );
+t( 'data centers: άλλες διευθύνσεις όχι (ούτε η διπλανή, ούτε άκυρες)', '' === PNCP_Ip::datacenter( '198.18.249.255' ) && '' === PNCP_Ip::datacenter( '198.18.251.1' ) && '' === PNCP_Ip::datacenter( '2001:db8:dd::1' ) && '' === PNCP_Ip::datacenter( 'nonsense' ) );
+settings( array( 'rate_limit_datacenter' => 0 ) );
+PNCP_Ip::reset();
+t( 'data centers κλειστό: οι λίστες δεν κατεβαίνουν', ! in_array( 'dc_aws', PNCP_Ip::needed_lists(), true ) );
+settings( array( 'rate_limit' => 10, 'rate_limit_datacenter' => 2, 'ban_strikes' => 0, 'human_check' => 0, 'require_browser_headers' => 0, 'block_headless' => 0 ) );
+PNCP_Ip::reset();
+t( 'data centers ανοιχτό: κατεβαίνουν οι πέντε λίστες', array() === array_diff( array( 'dc_aws', 'dc_gcp', 'dc_oracle', 'dc_digitalocean', 'dc_linode' ), PNCP_Ip::needed_lists() ) );
+$pncp_runs = array(
+	'198.18.250.10'     => array( 200, 200, 429, 429 ),
+	'2001:db8:dc:7::1'  => array( 200, 200, 429, 429 ),
+	'192.0.2.240'       => array( 200, 200, 200, 200 ),
+);
+foreach ( $pncp_runs as $pncp_ip => $pncp_expect ) {
+	$codes = array();
+	for ( $i = 0; $i < 4; $i++ ) {
+		$codes[] = req( $url, browser( $pncp_ip ) )[0];
+	}
+	t( "data centers: $pncp_ip → " . implode( ',', $pncp_expect ), $pncp_expect === $codes, implode( ',', $codes ) );
+}
+t( 'data centers: στο αρχείο ως «Pages per minute from data centers»', in_array( 'rate_datacenter', log_reasons(), true ) );
+$codes = array();
+for ( $i = 0; $i < 4; $i++ ) {
+	$codes[] = req( $url, array( 'X-Test-IP' => '198.18.250.11', 'User-Agent' => 'Mozilla/5.0 (compatible; UptimeRobot/2.0)' ) )[0];
+}
+t( 'data centers: τα «πάντα επιτρεπτά» (monitoring) κρατούν το κανονικό όριο', array( 200, 200, 200, 200 ) === $codes, implode( ',', $codes ) );
+t( 'data centers: Emergency Mode → 5, και όταν είναι κλειστό', 5 === PNCP_Options::emergency_overlay( array_merge( PNCP_Options::stored(), array( 'rate_limit_datacenter' => 0 ) ) )['rate_limit_datacenter'] && 2 === PNCP_Options::emergency_overlay( PNCP_Options::stored() )['rate_limit_datacenter'] );
+t( 'data centers: νέα εγκατάσταση 15, υπάρχον site κλειστό', 15 === PNCP_Options::defaults()['rate_limit_datacenter'] && 0 === PNCP_Options::new_in_300()['rate_limit_datacenter'] );
+settings( array( 'rate_limit' => 0, 'rate_limit_datacenter' => 0 ) );
+foreach ( array( 'dc_aws', 'dc_digitalocean' ) as $pncp_list ) {
+	delete_option( PNCP_Ip::LISTS_OPTION . '_' . $pncp_list );
+}
+PNCP_Ip::reset();
+PNCP_Ip::build_datacenter_index();
+t( 'data centers: χωρίς λίστες, καμία ομάδα', '' === PNCP_Ip::datacenter( '198.18.250.77' ) && array() === get_option( 'pncp_dc_groups' ) );
+
 echo $fails ? "\n$fails FAIL\n" : "\nΟΛΑ PASS\n";
 exit( $fails ? 1 : 0 );

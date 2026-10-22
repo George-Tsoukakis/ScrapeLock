@@ -121,6 +121,15 @@ function reset_fails( $ids ) {
 	delete_site_transient( 'pncp_ld_fail_all' );
 }
 
+/* ---------- Ο server απαντά; ---------- */
+// Χωρίς server κανένα κλείδωμα δεν γίνεται, και οι δοκιμές «από τον κώδικα» θα άλλαζαν στ' αλήθεια το WordPress των
+// δοκιμών (ενεργά plugins, ρόλος και email του διαχειριστή, ρυθμίσεις). Σταματάμε πριν από οτιδήποτε.
+$cookies = array(); // Χωρίς σύνδεση ακόμη.
+if ( 0 === http( '/' )[0] ) {
+	echo "FAIL ο server των δοκιμών δεν απαντά ($base): καμία δοκιμή δεν έτρεξε\n";
+	exit( 1 );
+}
+
 /* ---------- Καθαρή αρχή ---------- */
 delete_site_option( PNCP_Lockdown::OPTION );
 delete_site_option( PNCP_Lockdown::LOG_OPTION );
@@ -406,6 +415,142 @@ t( 'ρόλοι: ξεκλείδωμα και επιστροφή στην προε
 t( 'νέοι κωδικοί ανάκτησης με τον κωδικό της εφαρμογής', 'codes' === ld( 'codes', array( 'code' => app_code( $secret ) ) ) && 10 === count( PNCP_Lockdown::state()['codes'] ) );
 list( , $body ) = http( $page );
 t( 'αρχείο: συμβάντα στη σελίδα (κλείδωμα, κωδικός ανάκτησης, λάθος, άρνηση αλλαγής)', false !== strpos( $body, 'Recovery code used' ) && false !== strpos( $body, 'Wrong code' ) && false !== strpos( $body, 'Change refused' ) && ! php_errors( $body ) );
+
+/* ---------- 3.0: έλεγχος ακεραιότητας αρχείων ---------- */
+// Ένα «plugin» για τη δοκιμή, ένα email που δεν φεύγει (καταγράφεται), και οι επίσημες λίστες του WordPress.org
+// από τη δοκιμή (χωρίς δίκτυο): ο πυρήνας με ένα αρχείο «αλλαγμένο», το plugin με ένα αρχείο του.
+$pncp_pdir = WP_PLUGIN_DIR . '/pncp-dummy';
+$pncp_up   = wp_get_upload_dir()['basedir'];
+// Ό,τι μπορεί να άφησε μια εκτέλεση που διακόπηκε: πρέπει να μην υπάρχει πριν από το κλείδωμα.
+foreach ( array( '/2026/pncp-test-shell.php', '/2026/pncp-test-shell.php.pncp-quarantine', '/.user.ini' ) as $pncp_f ) {
+	@unlink( $pncp_up . $pncp_f );
+}
+delete_option( 'pncp_integrity_alerted' );
+wp_mkdir_p( $pncp_pdir );
+file_put_contents( $pncp_pdir . '/pncp-dummy.php', "<?php\n/**\n * Plugin Name: PNCP Dummy\n * Version: 1.0\n */\n" );
+file_put_contents( $pncp_pdir . '/extra.php', "<?php // original\n" );
+activate_plugin( 'pncp-dummy/pncp-dummy.php' );
+$pncp_mails = array();
+add_filter(
+	'pre_wp_mail',
+	static function ( $r, $atts ) use ( &$pncp_mails ) {
+		$pncp_mails[] = $atts;
+		return true;
+	},
+	10,
+	2
+);
+$pncp_core_file = 'wp-includes/version.php';
+// Η επίσημη λίστα του πυρήνα: όλα τα αρχεία του, με ένα «αλλαγμένο».
+$pncp_core_sums = array();
+foreach ( array_keys( PNCP_Integrity::collect()['files'] ) as $pncp_f ) {
+	$pncp_rel = PNCP_Integrity::relative( $pncp_f );
+	if ( preg_match( '#^(?:wp-admin/|wp-includes/|[^/]+\.php$)#', $pncp_rel ) && 'wp-config.php' !== $pncp_rel ) {
+		$pncp_core_sums[ $pncp_rel ] = md5_file( $pncp_f );
+	}
+}
+$pncp_core_sums[ $pncp_core_file ] = md5( 'not the real file' );
+add_filter(
+	'pre_http_request',
+	static function ( $pre, $args, $url ) use ( $pncp_core_sums, $pncp_pdir ) {
+		if ( false !== strpos( $url, 'api.wordpress.org/core/checksums' ) ) {
+			return array( 'response' => array( 'code' => 200 ), 'body' => wp_json_encode( array( 'checksums' => $pncp_core_sums ) ) );
+		}
+		if ( false !== strpos( $url, 'plugin-checksums/pncp-dummy/1.0.json' ) ) {
+			return array( 'response' => array( 'code' => 200 ), 'body' => wp_json_encode( array( 'files' => array( 'pncp-dummy.php' => array( 'md5' => md5_file( $pncp_pdir . '/pncp-dummy.php' ) ) ) ) ) );
+		}
+		if ( false !== strpos( $url, 'plugin-checksums/' ) ) {
+			return array( 'response' => array( 'code' => 404 ), 'body' => '' );
+		}
+		return $pre;
+	},
+	20,
+	3
+);
+reset_fails( array( 1 ) );
+t( 'ακεραιότητα: καραντίνα αποθηκεύεται με τον κωδικό, μόνο ξεκλείδωτο', 'wrong' === ld( 'quarantine', array( 'quarantine' => 1, 'code' => '' ) ) && ( reset_fails( array( 1 ) ) || true ) && 'quarantine' === ld( 'quarantine', array( 'quarantine' => 1, 'code' => app_code( $secret ) ) ) && PNCP_Lockdown::quarantine_on() );
+t( 'ακεραιότητα: κλείδωμα → αποτύπωμα (WordPress, plugins, wp-config.php, uploads)', 'locked' === ld( 'lock', array( 'code' => app_code( $secret ) ) ) && ( function () use ( $pncp_pdir ) {
+	wp_cache_flush();
+	$b = PNCP_Integrity::baseline();
+	$f = $b['files'];
+	return $b['time'] > time() - 120 && ! $b['stale'] && isset( $f[ wp_normalize_path( ABSPATH . 'wp-includes/version.php' ) ] ) && isset( $f[ wp_normalize_path( $pncp_pdir . '/extra.php' ) ] ) && isset( $f[ wp_normalize_path( WP_PLUGIN_DIR . '/' . plugin_basename( PNCP_FILE ) ) ] ) && ( isset( $f[ wp_normalize_path( ABSPATH . 'wp-config.php' ) ] ) || isset( $f[ wp_normalize_path( dirname( ABSPATH ) . '/wp-config.php' ) ] ) );
+} )() );
+t( 'ακεραιότητα: αμέσως μετά το κλείδωμα τίποτα αλλαγμένο', array() === array_intersect( PNCP_Integrity::findings( PNCP_Integrity::check() ), array( 'added', 'changed', 'removed' ) ) );
+t( 'ακεραιότητα: φάκελοι cache εκτός', ( function () {
+	wp_mkdir_p( WP_CONTENT_DIR . '/cache/pncp' );
+	file_put_contents( WP_CONTENT_DIR . '/cache/pncp/page.php', '<?php // cache' );
+	$c = PNCP_Integrity::collect();
+	return ! isset( $c['files'][ wp_normalize_path( WP_CONTENT_DIR . '/cache/pncp/page.php' ) ] );
+} )() );
+// Ό,τι κάνει ένα ευάλωτο plugin: backdoor στα uploads, αλλαγή σε αρχείο plugin, .user.ini.
+$pncp_shell  = wp_normalize_path( $pncp_up . '/2026/pncp-test-shell.php' );
+wp_mkdir_p( dirname( $pncp_shell ) );
+file_put_contents( $pncp_shell, '<?php // test' );
+file_put_contents( $pncp_up . '/.user.ini', 'auto_prepend_file=x' );
+file_put_contents( $pncp_pdir . '/extra.php', "<?php // changed\n" );
+$pncp_mails = array();
+// Οι επίσημες λίστες ελέγχονται μία φορά την ημέρα: εδώ ξανά, με τις λίστες της δοκιμής.
+update_option( PNCP_Integrity::REPORT, array_merge( PNCP_Integrity::report(), array( 'official' => array() ) ), false );
+$pncp_rep   = PNCP_Integrity::check();
+$pncp_found = PNCP_Integrity::findings( $pncp_rep );
+t( 'ακεραιότητα: νέο PHP στα uploads, .user.ini και αλλαγμένο αρχείο plugin', isset( $pncp_found[ $pncp_shell ] ) && 'added' === $pncp_found[ $pncp_shell ] && 'added' === $pncp_found[ wp_normalize_path( $pncp_up . '/.user.ini' ) ] && 'changed' === $pncp_found[ wp_normalize_path( $pncp_pdir . '/extra.php' ) ], wp_json_encode( array_map( array( 'PNCP_Integrity', 'relative' ), array_keys( $pncp_found ) ) ) );
+t( 'ακεραιότητα: email στη διεύθυνση διαχείρισης, με τα αρχεία', 1 === count( $pncp_mails ) && false !== strpos( $pncp_mails[0]['message'], 'pncp-test-shell.php' ) && get_option( 'admin_email' ) === $pncp_mails[0]['to'] );
+$pncp_mails = array();
+PNCP_Integrity::check();
+t( 'ακεραιότητα: ίδια ευρήματα → όχι δεύτερο email', array() === $pncp_mails );
+wp_cache_flush();
+t( 'ακεραιότητα: καραντίνα → το plugin απενεργοποιήθηκε (και κλειδωμένο), το PHP των uploads μετονομάστηκε', ! is_plugin_active( 'pncp-dummy/pncp-dummy.php' ) && ! file_exists( $pncp_shell ) && file_exists( $pncp_shell . '.pncp-quarantine' ) && is_plugin_active( plugin_basename( PNCP_FILE ) ) );
+$pncp_off = PNCP_Integrity::report()['official'];
+t( 'ακεραιότητα: επίσημες λίστες: αλλαγμένο αρχείο πυρήνα και αρχείο που δεν είναι στην επίσημη έκδοση του plugin', 'official_modified' === ( PNCP_Integrity::findings( PNCP_Integrity::report() )[ wp_normalize_path( ABSPATH . $pncp_core_file ) ] ?? '' ) && array( wp_normalize_path( ABSPATH . $pncp_core_file ) ) === $pncp_off['modified'] && array( wp_normalize_path( $pncp_pdir . '/extra.php' ) ) === $pncp_off['unknown'] && in_array( 'akismet', $pncp_off['unverified'], true ), wp_json_encode( array_map( array( 'PNCP_Integrity', 'relative' ), array_merge( $pncp_off['modified'], $pncp_off['unknown'] ) ) ) );
+$pncp_hh = PNCP_Health::test_integrity();
+t( 'ακεραιότητα: Site Health → critical', 'critical' === $pncp_hh['status'] && 'scrapelock_integrity' === $pncp_hh['test'] );
+list( , $body ) = http( $page );
+t( 'ακεραιότητα: η καρτέλα Lockdown δείχνει τα αρχεία, χωρίς PHP warnings', false !== strpos( $body, 'id="pncp-integrity"' ) && false !== strpos( $body, 'pncp-test-shell.php' ) && false !== strpos( $body, 'Check now' ) && ! php_errors( $body ) );
+list( , $body ) = http( '/wp-admin/index.php' );
+t( 'ακεραιότητα: ειδοποίηση στον πίνακα ελέγχου', false !== strpos( $body, 'ScrapeLock found changed code files.' ) );
+$pncp_log_events = wp_list_pluck( (array) get_site_option( PNCP_Lockdown::LOG_OPTION ), 'event' );
+t( 'ακεραιότητα: στο αρχείο του Κλειδώματος (ευρήματα, καραντίνα)', in_array( 'integrity', $pncp_log_events, true ) && in_array( 'quarantine', $pncp_log_events, true ) );
+// Προσωρινό ξεκλείδωμα: οι ενημερώσεις επιτρέπονται, άρα νέο αποτύπωμα στον επόμενο έλεγχο, όχι συναγερμός.
+reset_fails( array( 1 ) );
+t( 'ακεραιότητα: ξεκλείδωμα → το αποτύπωμα σημειώνεται παλιό', 'unlocked' === ld( 'unlock', array( 'code' => app_code( $secret ), 'minutes' => 15 ) ) && ( wp_cache_flush() || true ) && PNCP_Integrity::baseline()['stale'] );
+@unlink( $pncp_shell . '.pncp-quarantine' );
+@unlink( $pncp_up . '/.user.ini' );
+file_put_contents( $pncp_pdir . '/extra.php', "<?php // updated while open\n" );
+state_set( array( 'until' => time() - 1 ) );
+remove_all_filters( 'pre_http_request' );
+add_filter( 'pre_http_request', static function () {
+	return new WP_Error( 'test', 'offline' );
+} );
+$pncp_rep = PNCP_Integrity::check();
+t( 'ακεραιότητα: μετά το ξεκλείδωμα νέο αποτύπωμα, χωρίς ευρήματα (και χωρίς δίκτυο)', PNCP_Lockdown::is_locked() && array() === PNCP_Integrity::findings( $pncp_rep ) && ! PNCP_Integrity::baseline()['stale'] && false === $pncp_rep['official']['core'] );
+$pncp_hh = PNCP_Health::test_integrity();
+t( 'ακεραιότητα: Site Health → good', 'good' === $pncp_hh['status'] );
+// Χωρίς PHP στα uploads: το .htaccess του φακέλου (Apache) και οι κανόνες Nginx / Apache.
+$pncp_ht = $pncp_up . '/.htaccess';
+$pncp_s  = PNCP_Options::stored();
+reset_fails( array( 1 ) );
+ld( 'unlock', array( 'code' => app_code( $secret ), 'minutes' => 0 ) );
+update_option( PNCP_OPTION, array_merge( $pncp_s, array( 'block_upload_php' => 1 ) ) );
+t( 'uploads: .htaccess με το μπλοκ του ScrapeLock', file_exists( $pncp_ht ) && false !== strpos( (string) file_get_contents( $pncp_ht ), '# BEGIN ScrapeLock' ) && false !== strpos( (string) file_get_contents( $pncp_ht ), 'Require all denied' ) );
+t( 'uploads: κανόνες Nginx / Apache', false !== strpos( PNCP_Rules::nginx_server(), '/.*\.(?:php[0-9]?|phtml|phar)$ { deny all; }' ) && false !== strpos( PNCP_Rules::apache(), '\.(?:php[0-9]?|phtml|phar)$ - [F,NC,L]' ) );
+file_put_contents( $pncp_ht, "# other plugin\n" . file_get_contents( $pncp_ht ) );
+update_option( PNCP_OPTION, array_merge( $pncp_s, array( 'block_upload_php' => 0 ) ) );
+t( 'uploads: κλειστό → το μπλοκ φεύγει, τα υπόλοιπα του αρχείου μένουν', false === strpos( (string) file_get_contents( $pncp_ht ), 'Require all denied' ) && false !== strpos( (string) file_get_contents( $pncp_ht ), '# other plugin' ) && false === strpos( PNCP_Rules::nginx_server(), 'deny all; }' ) );
+@unlink( $pncp_ht );
+update_option( PNCP_OPTION, $pncp_s );
+// Καθάρισμα της δοκιμής.
+deactivate_plugins( 'pncp-dummy/pncp-dummy.php', true );
+foreach ( array( '/extra.php', '/pncp-dummy.php' ) as $pncp_f ) {
+	@unlink( $pncp_pdir . $pncp_f );
+}
+@rmdir( $pncp_pdir );
+@unlink( WP_CONTENT_DIR . '/cache/pncp/page.php' );
+@rmdir( WP_CONTENT_DIR . '/cache/pncp' );
+delete_option( PNCP_Integrity::BASELINE );
+delete_option( PNCP_Integrity::REPORT );
+delete_option( 'pncp_integrity_alerted' );
+state_set( array( 'quarantine' => false ) );
+remove_all_filters( 'pre_wp_mail' ); // pre_http_request: μένει «χωρίς δίκτυο», όπως με το mu-plugin των δοκιμών.
 
 /* ---------- Αφαίρεση εφαρμογής ---------- */
 t( 'αφαίρεση χωρίς κωδικό: όχι', 'wrong' === ld( 'remove', array( 'code' => '' ) ) && PNCP_Lockdown::configured() );
