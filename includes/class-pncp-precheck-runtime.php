@@ -110,6 +110,13 @@ final class PNCP_Precheck_Runtime {
 		if ( self::is_prefetch() ) {
 			return self::hit( $c, $bankey . '|prefetch', $now ) > 3 * $limit ? array( 429, 'rate_prefetch', $ip ) : null;
 		}
+		// IPv6: also the /56, at four times the limit, without a violation (as in the normal check).
+		if ( ! empty( $c['v6_wide'] ) && false !== strpos( $ip, ':' ) && (int) $c['v6_prefix'] > 56 ) {
+			$wide = self::limit_key( $ip, 56 );
+			if ( false !== strpos( $wide, '/56' ) && self::hit( $c, $wide . '|56', $now ) > 4 * $limit ) {
+				return array( 429, 'rate_page56', $ip );
+			}
+		}
 		$count = self::hit( $c, $bankey, $now );
 		if ( $count <= $limit ) {
 			return null;

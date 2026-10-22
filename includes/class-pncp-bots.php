@@ -440,6 +440,15 @@ final class PNCP_Bots {
 				return self::verdict( 429, 'rate_404', $ip );
 			}
 		}
+		// IPv6: also the /56 the /64 belongs to, at four times the page limit. One connection or server usually has a
+		// whole /56 or /48, so a new /64 for every request would otherwise get past the per-/64 limit. No violation:
+		// bans are per /64, and neighbouring phones of a mobile network may share a /56.
+		if ( $count && 'page' === $context && ! empty( $s['ipv6_wide'] ) && (int) $s['rate_limit'] > 0 && false !== strpos( $ip, ':' ) ) {
+			$wide = PNCP_Ip::limit_key( $ip, 56 );
+			if ( PNCP_Ip::limit_key( $ip ) !== $wide && false !== strpos( $wide, '/56' ) && self::hit( $ip, 'rate_page56', $wide ) > 4 * (int) $s['rate_limit'] ) {
+				return self::verdict( 429, 'rate_page56', $ip );
+			}
+		}
 		if ( $count && isset( $limits[ $context ] ) ) {
 			$limit = (int) $s[ $limits[ $context ][0] ];
 			if ( $limit > 0 ) {
@@ -913,12 +922,13 @@ final class PNCP_Bots {
 	 * Counts the IP's requests in the current minute, per type (IPv6: per /64, see PNCP_Ip::limit_key()).
 	 * Object cache if available, otherwise a transient.
 	 *
-	 * @param string $ip     IP.
-	 * @param string $bucket Type (rate_page, rate_search, rate_rest).
+	 * @param string      $ip     IP.
+	 * @param string      $bucket Type (rate_page, rate_search, rate_rest).
+	 * @param string|null $net    Key to count under instead of the IP's own (e.g. its IPv6 /56).
 	 * @return int
 	 */
-	private static function hit( $ip, $bucket ) {
-		$key = 'pncp_rl_' . md5( $bucket . '|' . PNCP_Ip::limit_key( $ip ) ) . '_' . (int) floor( time() / MINUTE_IN_SECONDS );
+	private static function hit( $ip, $bucket, $net = null ) {
+		$key = 'pncp_rl_' . md5( $bucket . '|' . ( null === $net ? PNCP_Ip::limit_key( $ip ) : $net ) ) . '_' . (int) floor( time() / MINUTE_IN_SECONDS );
 		if ( wp_using_ext_object_cache() ) {
 			wp_cache_add( $key, 0, 'pncp', 2 * MINUTE_IN_SECONDS );
 			return (int) wp_cache_incr( $key, 1, 'pncp' );
@@ -1211,6 +1221,17 @@ final class PNCP_Bots {
 	}
 
 	/**
+	 * Web archive crawlers (the Internet Archive's Wayback Machine). What they store is public for good and can be
+	 * copied from the archive without ever reaching the site, so "Block web archives" blocks them and asks them in
+	 * robots.txt. Off by default: many sites want to be archived. Filter `pncp_archive_agents`.
+	 *
+	 * @return string[]
+	 */
+	public static function archive_agents() {
+		return (array) apply_filters( 'pncp_archive_agents', array( 'ia_archiver', 'archive.org_bot', 'heritrix' ) );
+	}
+
+	/**
 	 * AI crawlers, data scrapers and agents blocked by name (when "Block bots" is on), in addition to the editable
 	 * bot list. Built into the plugin and updated with each version, so the settings list keeps its 200 lines
 	 * for the site's own entries. Sources: ai.robots.txt and the operators' own pages; only names that appear in
@@ -1375,6 +1396,13 @@ final class PNCP_Bots {
 				if ( in_array( strtolower( $agent ), $search, true ) ) {
 					continue; // AI search allowed: no Disallow is added.
 				}
+				$block .= 'User-agent: ' . $agent . "\n";
+			}
+			$output = rtrim( $output ) . "\n" . $block . "Disallow: /\n";
+		}
+		if ( ! empty( $s['block_archivers'] ) ) {
+			$block = "\n# ScrapeLock: web archives\n";
+			foreach ( self::archive_agents() as $agent ) {
 				$block .= 'User-agent: ' . $agent . "\n";
 			}
 			$output = rtrim( $output ) . "\n" . $block . "Disallow: /\n";

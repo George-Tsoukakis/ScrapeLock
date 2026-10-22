@@ -1,7 +1,8 @@
 <?php
 /**
  * What WordPress shows to everyone about itself: pingbacks over XML-RPC, the REST API map and the links
- * that point to it. Both options are off by default; the audit of public REST routes is only a report.
+ * that point to it, and the versions of WordPress, PHP and the plugins. Pingbacks and the REST map are off by
+ * default; the audit of public REST routes is only a report.
  *
  * @package ScrapeLock
  */
@@ -23,6 +24,10 @@ final class PNCP_Surface {
 		add_action( 'init', array( __CLASS__, 'discovery_links' ), 20 );
 		add_filter( 'rest_index', array( __CLASS__, 'rest_index' ), 99 );
 		add_filter( 'rest_namespace_index', array( __CLASS__, 'rest_index' ), 99 );
+		add_filter( 'the_generator', array( __CLASS__, 'generator' ), 99 );
+		add_filter( 'style_loader_src', array( __CLASS__, 'asset_version' ), 99 );
+		add_filter( 'script_loader_src', array( __CLASS__, 'asset_version' ), 99 );
+		add_action( 'init', array( __CLASS__, 'powered_by' ) );
 	}
 
 	/**
@@ -111,6 +116,54 @@ final class PNCP_Surface {
 			$response->set_data( $data );
 		}
 		return $response;
+	}
+
+	/* ---------- Versions ---------- */
+
+	/**
+	 * Scanners read the version of WordPress and of each plugin and look it up in the lists of known
+	 * vulnerabilities. Without "generator" (page head, feeds, and the tags of plugins that use it, e.g.
+	 * WooCommerce) the version is not given away.
+	 *
+	 * @param string $tag Generator tag.
+	 * @return string
+	 */
+	public static function generator( $tag ) {
+		return self::on( 'hide_versions' ) ? '' : $tag;
+	}
+
+	/**
+	 * "?ver=7.1.3" on the site's own CSS and JS gives the version of WordPress or of the plugin away. It is
+	 * replaced with a hash of it, tied to this site's keys: the same version keeps the same address, so browser
+	 * and CDN caches work and a new version still loads fresh files. Addresses of other sites are not changed.
+	 *
+	 * @param string $src Address of the file.
+	 * @return string
+	 */
+	public static function asset_version( $src ) {
+		if ( ! self::on( 'hide_versions' ) || is_admin() || ! is_string( $src ) || false === strpos( $src, 'ver=' ) ) {
+			return $src;
+		}
+		$host = wp_parse_url( $src, PHP_URL_HOST );
+		if ( $host && strtolower( (string) $host ) !== strtolower( (string) wp_parse_url( home_url(), PHP_URL_HOST ) ) ) {
+			return $src;
+		}
+		$query = (string) wp_parse_url( $src, PHP_URL_QUERY );
+		parse_str( $query, $args );
+		if ( ! isset( $args['ver'] ) || '' === (string) $args['ver'] ) {
+			return $src;
+		}
+		return add_query_arg( 'ver', substr( wp_hash( 'pncp-ver|' . $args['ver'] ), 0, 10 ), $src );
+	}
+
+	/**
+	 * "X-Powered-By: PHP/8.x" gives the PHP version away (expose_php in php.ini). Removed when the versions
+	 * are hidden.
+	 */
+	public static function powered_by() {
+		if ( self::on( 'hide_versions' ) && ! headers_sent() ) {
+			header_remove( 'X-Powered-By' );
+		}
 	}
 
 	/* ---------- Public REST routes ---------- */

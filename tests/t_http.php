@@ -1394,5 +1394,91 @@ update_option( PNCP_OPTION, $pncp_before );
 update_option( 'pncp_version', PNCP_VERSION );
 PNCP_Options::flush();
 
+/* ---------- 2.9.0: απόκρυψη εκδόσεων, αποσπάσματα στις λίστες, IPv6 /56, web archives ---------- */
+fresh();
+settings( array( 'block_bots' => 1, 'rate_limit' => 0, 'ban_strikes' => 0, 'hide_versions' => 1, 'list_excerpts' => 0, 'ipv6_wide' => 0, 'block_archivers' => 0, 'require_browser_headers' => 0, 'human_check' => 0 ) );
+$pncp_wpv = get_bloginfo( 'version' );
+list( $code, $hdr, $body ) = req( '/', browser( '192.0.2.210' ) );
+t( '2.9.0 εκδόσεις κρυφές: η έκδοση του WordPress / ScrapeLock πουθενά στη σελίδα, χωρίς generator και X-Powered-By', 200 === $code && false === strpos( $body, 'ver=' . $pncp_wpv ) && false === strpos( $body, 'ver=' . PNCP_VERSION ) && false === stripos( $body, 'name="generator"' ) && false === strpos( $hdr, 'x-powered-by:' ), (string) $code );
+preg_match( '#protect\.js\?ver=([a-f0-9]+)#', $body, $pncp_m1 );
+list( , , $body2 ) = req( '/', browser( '192.0.2.211' ) );
+preg_match( '#protect\.js\?ver=([a-f0-9]+)#', $body2, $pncp_m2 );
+t( '2.9.0 ?ver= σταθερό ανάμεσα στα αιτήματα (cache)', ! empty( $pncp_m1[1] ) && 10 === strlen( $pncp_m1[1] ) && isset( $pncp_m2[1] ) && $pncp_m1[1] === $pncp_m2[1] );
+t( '2.9.0 ?ver= άλλου site δεν αλλάζει, νέα έκδοση = νέος κωδικός', 'https://cdn.example.net/a.js?ver=1.2' === PNCP_Surface::asset_version( 'https://cdn.example.net/a.js?ver=1.2' ) && PNCP_Surface::asset_version( home_url( '/a.js?ver=1.2' ) ) !== PNCP_Surface::asset_version( home_url( '/a.js?ver=1.3' ) ) );
+list( , , $body ) = req( '/feed/', browser( '192.0.2.212' ) );
+t( '2.9.0 feed χωρίς <generator>', false === strpos( $body, '<generator>' ) );
+t( '2.9.0 κανόνες Nginx / Apache: readme / changelog → 404', false !== strpos( PNCP_Rules::nginx_server(), 'readme\.html|license\.txt' ) && false !== strpos( PNCP_Rules::apache(), '(?:readme|changelog|changes|history|upgrade)' ) );
+settings( array( 'hide_versions' => 0 ) );
+list( $code, $hdr, $body ) = req( '/', browser( '192.0.2.213' ) );
+t( '2.9.0 εκδόσεις ορατές όταν είναι κλειστό (όπως πριν)', false !== strpos( $body, 'ver=' . $pncp_wpv ) && false !== stripos( $body, 'name="generator"' ) && false === strpos( PNCP_Rules::nginx_server(), 'readme\.html' ) );
+
+// Αποσπάσματα στις λίστες άρθρων.
+$pncp_lp  = wp_insert_post( array( 'post_title' => 'Λίστα δοκιμής', 'post_status' => 'publish', 'post_content' => '<p>LISTHEAD ' . str_repeat( 'λέξη ', 120 ) . 'LISTTAIL</p>' ) );
+$pncp_pw  = wp_insert_post( array( 'post_title' => 'Με κωδικό', 'post_status' => 'publish', 'post_password' => 'pw', 'post_content' => '<p>PWSECRET κείμενο</p>' ) );
+$pncp_lpu = wp_parse_url( get_permalink( $pncp_lp ), PHP_URL_PATH );
+list( , , $body ) = req( '/', browser( '192.0.2.214' ) );
+t( '2.9.0 λίστες κλειστό: πλήρες κείμενο στην αρχική (όπως πριν)', false !== strpos( $body, 'LISTTAIL' ) );
+settings( array( 'list_excerpts' => 1 ) );
+list( , , $body ) = req( '/', browser( '192.0.2.215' ) );
+t( '2.9.0 λίστες: απόσπασμα και σύνδεσμος στην αρχική, όχι το πλήρες κείμενο', false !== strpos( $body, 'LISTHEAD' ) && false === strpos( $body, 'LISTTAIL' ) && false !== strpos( $body, 'pncp-read-more' ) );
+t( '2.9.0 λίστες: άρθρο με κωδικό δεν δίνει το κείμενό του', false === strpos( $body, 'PWSECRET' ) );
+list( , , $body ) = req( $pncp_lpu, browser( '192.0.2.216' ) );
+t( '2.9.0 λίστες: η σελίδα του άρθρου μένει πλήρης', false !== strpos( $body, 'LISTTAIL' ) && false === strpos( $body, 'pncp-read-more' ) );
+list( , , $body ) = req( '/?s=LISTHEAD', browser( '192.0.2.217' ) );
+t( '2.9.0 λίστες: και στην αναζήτηση', false === strpos( $body, 'LISTTAIL' ) );
+$pncp_editor = test_user( 'pncp_editor', 'editor' );
+list( , , $body ) = req( '/', browser( '192.0.2.218', array( 'Cookie' => login_cookie( $pncp_editor ) ) ) );
+t( '2.9.0 λίστες: το προσωπικό («Ποιος εξαιρείται») βλέπει το πλήρες κείμενο', false !== strpos( $body, 'LISTTAIL' ) );
+wp_delete_post( $pncp_lp, true );
+wp_delete_post( $pncp_pw, true );
+settings( array( 'list_excerpts' => 0 ) );
+
+// IPv6 /56: όριο 2 ανά /64, 8 ανά /56· κάθε αίτημα από νέο /64.
+fresh();
+settings( array( 'rate_limit' => 2, 'ban_strikes' => 1, 'ipv6_wide' => 0 ) );
+$codes = array();
+for ( $i = 1; $i <= 10; $i++ ) {
+	$codes[] = req( $url, browser( sprintf( '2001:db8:56:%x::1', $i ) ) )[0];
+}
+t( '2.9.0 IPv6 /56 κλειστό: νέο /64 σε κάθε αίτημα περνά (όπως πριν)', array_fill( 0, 10, 200 ) === $codes, implode( ',', $codes ) );
+settings( array( 'ipv6_wide' => 1 ) );
+$codes = array();
+for ( $i = 1; $i <= 10; $i++ ) {
+	$codes[] = req( $url, browser( sprintf( '2001:db8:57:%x::1', $i ) ) )[0];
+}
+wp_cache_flush(); PNCP_Log::reset_cache();
+t( '2.9.0 IPv6 /56: 4 × το όριο σελίδων, μετά 429, χωρίς αποκλεισμό', array_merge( array_fill( 0, 8, 200 ), array( 429, 429 ) ) === $codes && in_array( 'rate_page56', log_reasons(), true ) && ! PNCP_Log::is_banned( '2001:db8:57:1::1' ), implode( ',', $codes ) );
+list( $code ) = req( $url, browser( '2001:db8:58:1::1' ) );
+t( '2.9.0 IPv6 /56: άλλο /56 δεν επηρεάζεται', 200 === $code, (string) $code );
+settings( array( 'rate_limit' => 0, 'ban_strikes' => 0, 'ipv6_wide' => 0 ) );
+
+// Web archives.
+fresh();
+list( $code ) = req( $url, array( 'X-Test-IP' => '192.0.2.220', 'User-Agent' => 'ia_archiver' ) );
+t( '2.9.0 web archives κλειστό: ia_archiver περνά (όπως πριν)', 200 === $code, (string) $code );
+settings( array( 'block_archivers' => 1 ) );
+list( $code ) = req( $url, array( 'X-Test-IP' => '192.0.2.221', 'User-Agent' => 'Mozilla/5.0 (compatible; archive.org_bot +http://archive.org/details/archive.org_bot)' ) );
+list( , , $body ) = req( '/robots.txt', browser( '192.0.2.222' ) );
+t( '2.9.0 web archives: archive.org_bot 403 και Disallow στο robots.txt', 403 === $code && false !== strpos( $body, "User-agent: ia_archiver\nUser-agent: archive.org_bot\nUser-agent: heritrix\nDisallow: /" ), (string) $code );
+settings( array( 'block_archivers' => 0 ) );
+
+t( '2.9.0 Emergency Mode: αποσπάσματα στις λίστες και IPv6 /56', 1 === PNCP_Options::emergency_overlay( PNCP_Options::stored() )['list_excerpts'] && 1 === PNCP_Options::emergency_overlay( PNCP_Options::stored() )['ipv6_wide'] );
+t( '2.9.0 νέα εγκατάσταση: απόκρυψη εκδόσεων ανοιχτή, τα υπόλοιπα κλειστά', 1 === PNCP_Options::defaults()['hide_versions'] && 0 === PNCP_Options::defaults()['list_excerpts'] && 0 === PNCP_Options::defaults()['ipv6_wide'] && 0 === PNCP_Options::defaults()['block_archivers'] );
+// Αναβάθμιση 2.8.3 → 2.9.0: σε υπάρχον site όλα κλειστά, ώστε να μην αλλάξει τίποτα χωρίς τον διαχειριστή.
+$pncp_before = PNCP_Options::stored();
+$pncp_old    = array_diff_key( $pncp_before, PNCP_Options::new_in_290() );
+update_option( PNCP_OPTION, $pncp_old );
+update_option( 'pncp_version', '2.8.3' );
+PNCP_Options::flush();
+$pncp_er = error_reporting( error_reporting() & ~E_DEPRECATED ); // db.php του SQLite, όπως παραπάνω.
+pncp_upgrade();
+error_reporting( $pncp_er );
+PNCP_Options::flush();
+$pncp_after = PNCP_Options::stored();
+t( 'αναβάθμιση 2.9.0: οι νέες ρυθμίσεις κλειστές σε υπάρχον site', 0 === $pncp_after['hide_versions'] && 0 === $pncp_after['list_excerpts'] && 0 === $pncp_after['ipv6_wide'] && 0 === $pncp_after['block_archivers'] );
+update_option( PNCP_OPTION, $pncp_before );
+update_option( 'pncp_version', PNCP_VERSION );
+PNCP_Options::flush();
+
 echo $fails ? "\n$fails FAIL\n" : "\nΟΛΑ PASS\n";
 exit( $fails ? 1 : 0 );

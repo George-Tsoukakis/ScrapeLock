@@ -4,7 +4,7 @@ Tags: anti-scraping, ai bots, bot protection, rate limit, content protection
 Requires at least: 6.2
 Tested up to: 7.2
 Requires PHP: 7.4
-Stable tag: 2.8.3
+Stable tag: 2.9.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -54,6 +54,8 @@ Nothing can stop a determined human: whatever a visitor sees has already reached
 * RSS with a short excerpt only, or disabled. With full text, an optional "The post … first appeared on …" line links republished copies back to the original.
 * Private XML feeds (Skroutz, BestPrice, Google Merchant, ERP) protected with a token in a header or URL. Only the token hash is stored. Token rotation with a grace period and per-feed statistics.
 * Optional: hide the REST API map (/wp-json/ and the links to it) from visitors, and turn off pingbacks over XML-RPC. A list shows the REST routes on your site that anyone can call without logging in.
+* Hide the versions of WordPress, PHP and the plugins: no generator tags, no X-Powered-By, a code instead of "?ver=7.1.3", and readme / changelog files refused by the server rules.
+* Optional: excerpts instead of the full text on lists of articles, an IPv6 limit per /56 network, and blocking of web archives (Wayback Machine).
 * With "Hide usernames" on, oEmbed shows the site's name and address instead of the author's username.
 
 = Site Health, WP-CLI and AI agents =
@@ -194,6 +196,15 @@ No. A small script waits for the first real interaction (scroll, tap, key or mou
 6. Dashboard widget with the protection status and the last 24 hours.
 
 == Changelog ==
+
+= 2.9.0 =
+* New: "Hide the versions of WordPress, PHP and the plugins" (Feeds and API tab). Removes the generator tags (page head, feeds, and plugins that use them, e.g. WooCommerce) and the X-Powered-By header, and replaces "?ver=7.1.3" on the site's own CSS and JS with a code tied to the site that changes with the version, so caches keep working. The Nginx and Apache rules now refuse readme.html, license.txt and the readme / changelog files of plugins and themes (404). On for new installs.
+* New: "Lists of articles: an excerpt and a link instead of the full text". Many themes print every article in full on the home page, categories, archives and search, so one request gave a scraper ten articles. Article pages, feeds and exempt staff are not affected; password-protected articles never show their text. Off by default.
+* New: "IPv6: also limit the whole /56 network". A new /64 for every request no longer gets past the page limit: the /56 is limited to four times the page limit, with a 429 and no block. Off by default (mobile networks may share a /56).
+* New: "Block web archives (Wayback Machine)": blocks ia_archiver, archive.org_bot and heritrix and asks them in robots.txt. Off by default.
+* Emergency Mode now also turns on the excerpts in lists and the IPv6 /56 limit.
+* Site Health: the new settings appear in the ScrapeLock section of the Info tab.
+* Existing sites: the new settings stay off until you turn them on.
 
 = 2.8.3 =
 * Security fix: the per-minute page limit could be bypassed from a single IP, with no strike and no ban, by sending the browser's prefetch headers (Sec-Fetch-Dest with Sec-Purpose or Purpose: prefetch) or by a POST with a cookie named wordpress_logged_in_… or woocommerce_… Any script can send these. Now every page request counts, in the normal check and in the pre-cache check. A prefetch has a limit of its own, three times the page limit and never a strike, so speed plugins that prefetch links (Flying Pages, instant.page, speculative loading) do not stop real visitors. WooCommerce AJAX, cart and checkout still do not count, and logged-in staff are still exempt by their role.

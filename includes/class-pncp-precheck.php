@@ -209,6 +209,7 @@ final class PNCP_Precheck {
 			'ban_strikes' => (int) $s['ban_strikes'],
 			'ban_minutes' => (int) $s['ban_minutes'],
 			'v6_prefix'   => (int) apply_filters( 'pncp_ipv6_prefix', 64 ),
+			'v6_wide'     => ! empty( $s['ipv6_wide'] ),
 			'header'      => isset( $headers[ $setting ] ) ? $headers[ $setting ] : '',
 			'private'     => in_array( $setting, array( 'x_real_ip', 'x_forwarded_for' ), true ),
 			'trust_any'   => ! empty( $s['trust_any_proxy'] ),

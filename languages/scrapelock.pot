@@ -2923,3 +2923,59 @@ msgstr ""
 #: includes/class-pncp-status.php:374
 msgid "End Emergency Mode"
 msgstr ""
+
+#: includes/class-pncp-admin.php
+msgid "Block web archives (Wayback Machine)"
+msgstr ""
+
+#: includes/class-pncp-admin.php
+msgid "The Internet Archive keeps a public copy of every page it visits, and that copy can be scraped without ever reaching your site. This blocks its crawlers (ia_archiver, archive.org_bot, heritrix) and asks them in robots.txt. Copies already in the archive stay there. Leave it off if you want your site to be archived."
+msgstr ""
+
+#: includes/class-pncp-admin.php
+msgid "IPv6: also limit the whole /56 network (four times the page limit)"
+msgstr ""
+
+#: includes/class-pncp-admin.php
+msgid "Pages are counted per /64, because one connection usually gets a whole /64. A server or a home connection often has a /56 or more, so a scraper can take a new /64 for every request. This also counts the /56 the /64 belongs to, up to four times the page limit (429 above it, without a block). Some mobile networks give neighbouring phones addresses of the same /56: on a site with many visitors from them, keep it off. Always on in Emergency Mode."
+msgstr ""
+
+#: includes/class-pncp-admin.php
+msgid "Lists of articles: an excerpt and a link instead of the full text"
+msgstr ""
+
+#: includes/class-pncp-admin.php
+msgid "Many themes print the whole text of every article on the home page, in categories, archives and search, so one request gives a scraper ten articles. With this on, visitors see an excerpt and a “Read the full article” link there, and each article has to be opened (and counted toward the page limit) on its own. The article pages do not change; the staff in “Who is exempt” see the full text. Changes how your lists look, so check them after turning it on. Always on in Emergency Mode."
+msgstr ""
+
+#: includes/class-pncp-admin.php
+msgid "Versions"
+msgstr ""
+
+#: includes/class-pncp-admin.php
+msgid "Hide the versions of WordPress, PHP and the plugins"
+msgstr ""
+
+#: includes/class-pncp-admin.php
+msgid "Scanners read these versions and look them up in lists of known vulnerabilities. This removes the “generator” tag from the page head and the feeds, the X-Powered-By header with the PHP version, and replaces “?ver=7.1.3” on CSS and JS files with a code that changes when the version changes, so caches still work. The readme and changelog files of WordPress and the plugins are static files: the Nginx and Apache rules in the “Server rules” tab refuse them. It does not fix any vulnerability: keep WordPress and the plugins updated."
+msgstr ""
+
+#: includes/class-pncp-log.php
+msgid "Pages per minute for the IPv6 network (/56)"
+msgstr ""
+
+#: includes/class-pncp-health.php
+msgid "Versions hidden"
+msgstr ""
+
+#: includes/class-pncp-health.php
+msgid "Excerpts in lists of articles"
+msgstr ""
+
+#: includes/class-pncp-health.php
+msgid "IPv6 /56 limit"
+msgstr ""
+
+#: includes/class-pncp-health.php
+msgid "Web archives blocked"
+msgstr ""

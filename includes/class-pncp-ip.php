@@ -659,10 +659,11 @@ final class PNCP_Ip {
 	 * An IPv4-mapped IPv6 address (::ffff:203.0.113.5) counts as the IPv4 address.
 	 * Filter `pncp_ipv6_prefix` (48–128, 128 = per address).
 	 *
-	 * @param string $ip IP.
+	 * @param string   $ip     IP.
+	 * @param int|null $prefix IPv6 network size (null = the filter, /64 by default).
 	 * @return string e.g. 203.0.113.5 or 2001:db8:1:2::/64
 	 */
-	public static function limit_key( $ip ) {
+	public static function limit_key( $ip, $prefix = null ) {
 		$bin = @inet_pton( (string) $ip ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged -- Invalid value = false.
 		if ( false === $bin || 16 !== strlen( $bin ) ) {
 			return (string) $ip;
@@ -670,7 +671,7 @@ final class PNCP_Ip {
 		if ( 0 === strpos( $bin, str_repeat( "\0", 10 ) . "\xff\xff" ) ) {
 			return (string) inet_ntop( substr( $bin, 12 ) );
 		}
-		$prefix = max( 48, min( 128, (int) apply_filters( 'pncp_ipv6_prefix', 64 ) ) );
+		$prefix = max( 48, min( 128, null === $prefix ? (int) apply_filters( 'pncp_ipv6_prefix', 64 ) : (int) $prefix ) );
 		if ( 128 === $prefix ) {
 			return (string) inet_ntop( $bin );
 		}

@@ -60,6 +60,22 @@ final class PNCP_Rules {
 	}
 
 	/**
+	 * Files that give the version of WordPress or of a plugin / theme away ("Hide versions"): readme.html and
+	 * license.txt in the WordPress folder, and readme / changelog files of plugins and themes. Static files:
+	 * WordPress never sees the request, so only the server can refuse them.
+	 *
+	 * @return string[] Regexes of the request path (with the leading slash).
+	 */
+	private static function version_regexes() {
+		$core    = untrailingslashit( (string) wp_parse_url( site_url( '/' ), PHP_URL_PATH ) );
+		$content = untrailingslashit( (string) wp_parse_url( content_url(), PHP_URL_PATH ) );
+		return array(
+			'^' . preg_quote( $core, '#' ) . '/(?:readme\.html|license\.txt)$',
+			'^' . preg_quote( $content, '#' ) . '/(?:plugins|themes|mu-plugins)/.*/(?:readme|changelog|changes|history|upgrade)(?:\.(?:txt|md|html?))?$',
+		);
+	}
+
+	/**
 	 * The always-allowed User-Agents.
 	 *
 	 * @return string[]
@@ -332,6 +348,13 @@ final class PNCP_Rules {
 			$lines[] = 'location ^~ ' . $uploads . '/' . $backup . '/ { deny all; return 404; }';
 			$lines[] = '';
 		}
+		if ( $s['hide_versions'] ) {
+			$lines[] = '# Hide versions: readme / changelog files that give the version of WordPress, plugins and themes away (404).';
+			foreach ( self::version_regexes() as $regex ) {
+				$lines[] = 'location ~* ' . $regex . ' { return 404; }';
+			}
+			$lines[] = '';
+		}
 		$lines[] = '# Hotlink: images load only from your site and from search engines / price comparison platforms.';
 		$lines[] = '# (If a location for images already exists, e.g. for expires, put the two lines inside it.)';
 		$lines[] = 'location ~* ^' . preg_quote( $uploads, '#' ) . '/.*\.(jpe?g|png|webp|gif|avif)$ {';
@@ -429,6 +452,12 @@ final class PNCP_Rules {
 		if ( '' !== $backup ) {
 			$lines[] = '# Clean originals: never public (there is also an .htaccess inside the folder).';
 			$lines[] = 'RewriteRule ^' . preg_quote( $uploads . '/' . $backup, '#' ) . '/ - [F,L]';
+		}
+		if ( $s['hide_versions'] ) {
+			$lines[] = '# Hide versions: readme / changelog files that give the version of WordPress, plugins and themes away (404).';
+			foreach ( self::version_regexes() as $regex ) {
+				$lines[] = 'RewriteRule ' . str_replace( '^/', '^', $regex ) . ' - [R=404,NC,L]';
+			}
 		}
 		$lines[] = '# Image hotlinking.';
 		$lines[] = 'RewriteCond %{HTTP_REFERER} !^$';
