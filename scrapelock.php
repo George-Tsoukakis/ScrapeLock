@@ -33,6 +33,7 @@ require_once PNCP_DIR . 'includes/class-pncp-rest.php';
 require_once PNCP_DIR . 'includes/class-pncp-graphql.php';
 require_once PNCP_DIR . 'includes/class-pncp-feed.php';
 require_once PNCP_DIR . 'includes/class-pncp-bots.php';
+require_once PNCP_DIR . 'includes/class-pncp-surge.php';
 require_once PNCP_DIR . 'includes/class-pncp-watermark.php';
 require_once PNCP_DIR . 'includes/class-pncp-private-urls.php';
 require_once PNCP_DIR . 'includes/class-pncp-rules.php';

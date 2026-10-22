@@ -38,7 +38,7 @@ Most content protection plugins disable right click in the browser. Scrapers and
 ### Server and CDN
 - Ready-made **Nginx, Apache and Cloudflare rules** generated for your own site and settings.
 - Optional **early check** (mu-plugin) and **pre-cache check** (one line in `wp-config.php`) so pages served from a page cache are protected too.
-- **Emergency Mode:** one click for stricter limits during an attack, for 1 hour to 3 days.
+- **Emergency Mode:** one click for stricter limits during an attack, for 1 hour to 3 days, or **automatically** when the whole site gets five times its usual pages per minute for 3 minutes in a row (a scraper spread over many IPs).
 
 ### Lockdown
 Freeze the whole site with one click and a code from your authenticator app (Google Authenticator, Microsoft Authenticator, Authy…).

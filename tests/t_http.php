@@ -1480,5 +1480,78 @@ update_option( PNCP_OPTION, $pncp_before );
 update_option( 'pncp_version', PNCP_VERSION );
 PNCP_Options::flush();
 
+/* ---------- 3.0: αυτόματο Emergency Mode ---------- */
+fresh();
+update_option( PNCP_Options::EMERGENCY_OPTION, 0 );
+delete_option( PNCP_Surge::STATE );
+delete_option( PNCP_Surge::LAST );
+$pncp_s = array_merge( PNCP_Options::stored(), array( 'auto_emergency' => 1, 'auto_emergency_min' => 100 ) );
+// Ο συνηθισμένος ρυθμός: δύο ώρες με 15–24 σελίδες το λεπτό.
+$pncp_st = array( 'minute' => 0, 'avg' => 0.0, 'samples' => 0, 'streak' => 0 );
+$pncp_m  = 1000;
+for ( $i = 0; $i < 120; $i++ ) {
+	$pncp_st = PNCP_Surge::close( $pncp_st, $pncp_m++, 15 + ( $i % 10 ), $pncp_s );
+}
+t( 'αυτόματο Emergency: μαθαίνει τον συνηθισμένο ρυθμό (~20/λεπτό), το όριο δεν πέφτει κάτω από το ελάχιστο', $pncp_st['avg'] > 15 && $pncp_st['avg'] < 25 && 100 === PNCP_Surge::threshold( $pncp_st, $pncp_s ) && 0 === $pncp_st['streak'], wp_json_encode( $pncp_st ) );
+$pncp_streaks = array();
+foreach ( array( 60, 90, 400, 600, 700 ) as $pncp_c ) {
+	$pncp_st         = PNCP_Surge::close( $pncp_st, $pncp_m++, $pncp_c, $pncp_s );
+	$pncp_streaks[] = $pncp_st['streak'];
+}
+t( 'αυτόματο Emergency: μικρή άνοδος όχι, επίθεση 3 λεπτά στη σειρά ναι', array( 0, 0, 1, 2, 3 ) === $pncp_streaks, implode( ',', $pncp_streaks ) );
+t( 'αυτόματο Emergency: η επίθεση δεν «διδάσκει» τον μέσο όρο', $pncp_st['avg'] < 25, (string) $pncp_st['avg'] );
+$pncp_busy = array( 'minute' => 1, 'avg' => 200.0, 'samples' => 500, 'streak' => 0 );
+t( 'αυτόματο Emergency: σε μεγάλο site το όριο είναι 5 × ο μέσος όρος', 1000 === PNCP_Surge::threshold( $pncp_busy, $pncp_s ) );
+$pncp_idle = PNCP_Surge::close( $pncp_st, $pncp_m + 600, 20, $pncp_s );
+t( 'αυτόματο Emergency: λεπτά χωρίς κίνηση μετρούν ως ήσυχα', $pncp_idle['avg'] < $pncp_st['avg'] && 0 === $pncp_idle['streak'] );
+// Ενεργοποίηση: το πρώτο αίτημα του λεπτού κλείνει το προηγούμενο· το τρίτο συνεχόμενο πάνω από το όριο την ξεκινά.
+$pncp_mails = array();
+add_filter(
+	'pre_wp_mail',
+	static function ( $r, $atts ) use ( &$pncp_mails ) {
+		$pncp_mails[] = $atts;
+		return true;
+	},
+	10,
+	2
+);
+$pncp_now = (int) floor( time() / 60 );
+update_option( PNCP_Surge::STATE, array( 'minute' => $pncp_now - 3, 'avg' => 20.0, 'samples' => 500, 'streak' => 2 ) );
+PNCP_Surge::observe( 1, $pncp_now, 500, array_merge( $pncp_s, array( 'auto_emergency' => 0 ) ) );
+t( 'αυτόματο Emergency κλειστό: μετρά, αλλά δεν ξεκινά', ! PNCP_Options::emergency_until() && array() === $pncp_mails );
+update_option( PNCP_Surge::STATE, array( 'minute' => $pncp_now - 2, 'avg' => 20.0, 'samples' => 500, 'streak' => 2 ) );
+PNCP_Surge::observe( 1, $pncp_now, 500, $pncp_s );
+$pncp_last = PNCP_Surge::last();
+t( 'αυτόματο Emergency: ξεκινά για 1 ώρα, με email και καταγραφή', PNCP_Options::emergency_until() > time() + 3500 && PNCP_Options::emergency_until() <= time() + 3600 && 1 === count( $pncp_mails ) && false !== strpos( $pncp_mails[0]['message'], '500' ) && 500 === $pncp_last[0]['count'] && $pncp_last[0]['threshold'] >= 100 && $pncp_last[0]['threshold'] < 500, wp_json_encode( $pncp_last ) );
+PNCP_Surge::observe( 1, $pncp_now, 500, $pncp_s );
+t( 'αυτόματο Emergency: το ίδιο λεπτό δεύτερη φορά δεν μετρά ξανά', 1 === count( $pncp_mails ) && 1 === count( PNCP_Surge::last() ) );
+update_option( PNCP_Options::EMERGENCY_OPTION, 0 );
+PNCP_Options::flush();
+remove_all_filters( 'pre_wp_mail' );
+// Μέσα από HTTP: οι σελίδες του site μετρώνται (όχι το προσωπικό), μόνο με την επιλογή ανοιχτή.
+fresh();
+delete_option( PNCP_Surge::STATE );
+$pncp_peek = static function ( $minute ) {
+	return ( function ( $minute ) {
+		return self::peek( 'surge', 'site', $minute );
+	} )->bindTo( null, 'PNCP_Bots' )( $minute );
+};
+settings( array( 'auto_emergency' => 0, 'rate_limit' => 0 ) );
+same_minute();
+$pncp_min = (int) floor( time() / 60 );
+req( $url, browser( '192.0.2.230' ) );
+t( 'αυτόματο Emergency κλειστό: καμία μέτρηση (κανένα επιπλέον γράψιμο)', 0 === $pncp_peek( $pncp_min ) );
+settings( array( 'auto_emergency' => 1, 'auto_emergency_min' => 100000 ) );
+same_minute();
+$pncp_min = (int) floor( time() / 60 );
+foreach ( array( '192.0.2.231', '192.0.2.232', '192.0.2.233' ) as $pncp_ip ) {
+	req( $url, browser( $pncp_ip ) );
+}
+req( $url, browser( '192.0.2.234', array( 'Cookie' => login_cookie( test_user( 'pncp_editor', 'editor' ) ) ) ) );
+wp_cache_flush();
+t( 'αυτόματο Emergency: 3 σελίδες από 3 IP μετρώνται για όλο το site, όχι το προσωπικό', 3 === $pncp_peek( $pncp_min ), (string) $pncp_peek( $pncp_min ) );
+settings( array( 'auto_emergency' => 0 ) );
+t( 'αυτόματο Emergency: νέα εγκατάσταση ανοιχτό, υπάρχον site κλειστό', 1 === PNCP_Options::defaults()['auto_emergency'] && 0 === PNCP_Options::new_in_300()['auto_emergency'] );
+
 echo $fails ? "\n$fails FAIL\n" : "\nΟΛΑ PASS\n";
 exit( $fails ? 1 : 0 );

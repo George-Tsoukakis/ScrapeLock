@@ -3197,3 +3197,51 @@ msgstr "ανοιχτή"
 #: includes/class-pncp-lockdown.php:1639
 msgid "off"
 msgstr "κλειστή"
+
+#. translators: 1: pages per minute, 2: threshold
+#: includes/class-pncp-admin.php:668
+#, php-format
+msgid "Started automatically: %1$d pages per minute, above %2$d."
+msgstr "Ξεκίνησε αυτόματα: %1$d σελίδες το λεπτό, πάνω από %2$d."
+
+#. translators: 1: usual pages per minute, 2: threshold
+#: includes/class-pncp-admin.php:678
+#, php-format
+msgid "Automatic start: on. Usually %1$s pages per minute; it starts above %2$d."
+msgstr "Αυτόματη έναρξη: ανοιχτή. Συνήθως %1$s σελίδες το λεπτό· ξεκινά πάνω από %2$d."
+
+#. translators: %d: threshold
+#: includes/class-pncp-admin.php:680
+#, php-format
+msgid "Automatic start: on, still learning the usual rate; until then it starts above %d pages per minute."
+msgstr "Αυτόματη έναρξη: ανοιχτή, μαθαίνει ακόμη τον συνηθισμένο ρυθμό· μέχρι τότε ξεκινά πάνω από %d σελίδες το λεπτό."
+
+#: includes/class-pncp-admin.php:766
+msgid "Start Emergency Mode automatically during an attack"
+msgstr "Αυτόματη έναρξη του Emergency Mode σε επίθεση"
+
+#: includes/class-pncp-admin.php:766
+msgid "The limits per IP cannot see a scraper that spreads its requests over hundreds of IPs. The whole site can: ScrapeLock learns how many pages per minute your site usually serves, and when that is exceeded five times over for 3 minutes in a row (and never below the minimum below), it starts Emergency Mode for 1 hour and emails you. Verified search engines and exempt staff are not counted. Pages served from a page cache without reaching WordPress are not counted either."
+msgstr "Τα όρια ανά IP δεν βλέπουν έναν scraper που μοιράζει τα αιτήματά του σε εκατοντάδες IP. Όλο το site τον βλέπει: το ScrapeLock μαθαίνει πόσες σελίδες το λεπτό σερβίρει συνήθως το site σας, και όταν αυτό ξεπεραστεί πέντε φορές για 3 λεπτά στη σειρά (και ποτέ κάτω από το ελάχιστο παρακάτω), ξεκινά το Emergency Mode για 1 ώρα και σας στέλνει email. Οι επαληθευμένες μηχανές αναζήτησης και το προσωπικό που εξαιρείται δεν μετρώνται. Ούτε οι σελίδες που σερβίρονται από page cache χωρίς να φτάσουν στο WordPress."
+
+#: includes/class-pncp-admin.php:767
+msgid "Minimum pages per minute for the automatic start:"
+msgstr "Ελάχιστες σελίδες το λεπτό για την αυτόματη έναρξη:"
+
+#: includes/class-pncp-admin.php:767
+msgid "Below this the site is never considered under attack, however quiet it usually is. Starting value: 300 (5 pages per second)."
+msgstr "Κάτω από αυτό το site δεν θεωρείται ποτέ υπό επίθεση, όσο ήσυχο κι αν είναι συνήθως. Αρχική τιμή: 300 (5 σελίδες το δευτερόλεπτο)."
+
+#: includes/class-pncp-health.php:257
+msgid "Automatic Emergency Mode"
+msgstr "Αυτόματο Emergency Mode"
+
+#: includes/class-pncp-surge.php:129
+msgid "Emergency Mode started automatically"
+msgstr "Το Emergency Mode ξεκίνησε αυτόματα"
+
+#. translators: 1: pages per minute, 2: threshold, 3: minutes in a row, 4: hours
+#: includes/class-pncp-surge.php:132
+#, php-format
+msgid "The site received %1$d pages per minute, above the %2$d that count as an attack, for %3$d minutes in a row. ScrapeLock started Emergency Mode for %4$d hour(s): stricter limits and checks for everyone except verified search engines and exempt staff. It ends by itself; you can end it sooner from the ScrapeLock page."
+msgstr "Το site δέχτηκε %1$d σελίδες το λεπτό, πάνω από τις %2$d που θεωρούνται επίθεση, για %3$d λεπτά στη σειρά. Το ScrapeLock ξεκίνησε το Emergency Mode για %4$d ώρα(ες): αυστηρότερα όρια και έλεγχοι για όλους εκτός από τις επαληθευμένες μηχανές αναζήτησης και το προσωπικό που εξαιρείται. Λήγει μόνο του· μπορείτε να το σταματήσετε νωρίτερα από τη σελίδα του ScrapeLock."
