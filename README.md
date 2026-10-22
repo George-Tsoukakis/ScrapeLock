@@ -11,6 +11,8 @@ Most content protection plugins disable right click in the browser. Scrapers and
 - **Text hidden from the REST API, WPGraphQL and full-text RSS** for visitors.
 - **Ready-made Nginx, Apache and Cloudflare rules** for your own site.
 - **Emergency Mode**, watermarks, copy-with-source, a block log and a TDM rights reservation.
+- **Lockdown:** freezes changes to plugins, themes, users and settings until you unlock with a code from your authenticator app.
+- **Site Health tests, WP-CLI commands** (`wp scrapelock …`) and **Abilities API** for administrators. None of them can unlock Lockdown.
 
 The full description for the WordPress.org directory is in [`readme.txt`](readme.txt). A user guide in Greek is in [`docs/user-guide-el.md`](docs/user-guide-el.md).
 
