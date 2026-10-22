@@ -239,6 +239,8 @@ $before = get_option( PNCP_OPTION );
 update_option( PNCP_OPTION, array_merge( $before, array( 'enabled' => 0 ) ) );
 wp_cache_flush();
 t( 'κώδικας: οι ρυθμίσεις του ScrapeLock δεν αλλάζουν', get_option( PNCP_OPTION ) == $before );
+update_option( PNCP_Edge::CONFIG, array( 'provider' => 'bunny', 'zone' => '1', 'token' => 'evil-key-12345678901234' ), false );
+t( 'κώδικας: ο αποκλεισμός στο CDN δεν αλλάζει (3.1)', ! is_array( get_option( PNCP_Edge::CONFIG ) ) || 'evil-key-12345678901234' !== get_option( PNCP_Edge::CONFIG )['token'] );
 $lock = get_site_option( PNCP_Lockdown::OPTION );
 update_site_option( PNCP_Lockdown::OPTION, array_merge( $lock, array( 'locked' => false ) ) );
 fresh();

@@ -794,6 +794,13 @@ final class PNCP_Log {
 			wp_cache_set( 'pncp_ban_' . md5( $ip ), $until, 'pncp', max( 1, $until - time() ) );
 		}
 		PNCP_Precheck::mirror_ban( $ip, $until );
+		/**
+		 * A ban was added or renewed (blocking at the CDN follows it).
+		 *
+		 * @param string $ip    Ban key (IPv6: the /64).
+		 * @param int    $until Expiry.
+		 */
+		do_action( 'pncp_bans_changed', $ip, $until );
 	}
 
 	/**
@@ -829,6 +836,8 @@ final class PNCP_Log {
 		PNCP_Precheck::forget_ban( $ip );
 		// phpcs:ignore WordPress.DB.DirectDatabaseQuery -- Plugin table.
 		$wpdb->delete( self::bans_table(), array( 'ip' => $ip ), array( '%s' ) );
+		/** This action is documented in includes/class-pncp-log.php */
+		do_action( 'pncp_bans_changed', $ip, 0 );
 	}
 
 	/**
@@ -846,6 +855,8 @@ final class PNCP_Log {
 		PNCP_Precheck::forget_all_bans();
 		// phpcs:ignore WordPress.DB.DirectDatabaseQuery -- Plugin table.
 		$wpdb->query( $wpdb->prepare( 'DELETE FROM %i', self::bans_table() ) );
+		/** This action is documented in includes/class-pncp-log.php */
+		do_action( 'pncp_bans_changed', '', 0 );
 	}
 
 	/**
