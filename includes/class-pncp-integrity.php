@@ -585,9 +585,8 @@ final class PNCP_Integrity {
 			if ( 0 === strpos( $path, $plugins ) ) {
 				$slugs[ strtok( substr( $path, strlen( $plugins ) ), '/' ) ] = true;
 			} elseif ( 0 === strpos( $path, $uploads ) && in_array( $path, (array) $report['added'], true ) && file_exists( $path ) && preg_match( '/\.(?:php[0-9]?|phtml|phar)$/i', $path ) ) {
-				$target = $path . '.pncp-quarantine';
-				// phpcs:ignore WordPress.WP.AlternativeFunctions.rename_rename -- Runs from cron, without WP_Filesystem credentials.
-				if ( @rename( $path, $target ) ) { // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged -- A failure is reported below.
+				$fs = self::filesystem( dirname( $path ) );
+				if ( $fs && $fs->move( $path, $path . '.pncp-quarantine' ) ) {
 					$handled[] = sprintf( /* translators: %s: file */ __( 'Renamed %s', 'scrapelock' ), self::relative( $path ) );
 				}
 			}
@@ -611,6 +610,23 @@ final class PNCP_Integrity {
 			self::put( self::REPORT, $report );
 			PNCP_Lockdown::record( 'quarantine', implode( ', ', array_slice( $report['handled'], 0, 5 ) ) );
 		}
+	}
+
+	/**
+	 * WP_Filesystem with direct access (cron cannot ask for FTP credentials), or null.
+	 *
+	 * @param string $dir Folder it will write to.
+	 * @return WP_Filesystem_Base|null
+	 */
+	private static function filesystem( $dir ) {
+		if ( ! function_exists( 'get_filesystem_method' ) ) {
+			require_once ABSPATH . 'wp-admin/includes/file.php';
+		}
+		if ( 'direct' !== get_filesystem_method( array(), $dir ) || ! WP_Filesystem() ) {
+			return null;
+		}
+		global $wp_filesystem;
+		return $wp_filesystem instanceof WP_Filesystem_Base ? $wp_filesystem : null;
 	}
 
 	/* ---------- wp-admin ---------- */

@@ -1,7 +1,9 @@
 # ScrapeLock: builds scrapelock.zip and publishes it as a GitHub Release, free to download. The zip has
 # the scrapelock/ folder, ready for Plugins → Add New → Upload Plugin.
 # Two ways to start it: push a version tag (e.g. v2.2.2), or Actions → Release → Run workflow on main,
-# which creates the tag v<Version> itself.
+# which creates the tag v<Version> itself. "Replace the zip" rebuilds the zip of a release that already exists
+# (same version, e.g. a fix during the WordPress.org review): it moves the tag to this commit and replaces the
+# files, and keeps the release notes as they are.
 name: Release
 
 on:
@@ -9,6 +11,11 @@ on:
     tags:
       - 'v*'
   workflow_dispatch:
+    inputs:
+      replace:
+        description: 'Replace the zip of an existing release (same version, notes kept)'
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -30,7 +37,10 @@ jobs:
           if [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ]; then
             if [ "$GITHUB_REF" != "refs/heads/main" ]; then echo "::error::Run the release from main"; exit 1; fi
             tag="v$version"
-            if gh release view "$tag" > /dev/null 2>&1; then echo "::error::Release $tag already exists"; exit 1; fi
+            if gh release view "$tag" > /dev/null 2>&1; then
+              if [ "${{ inputs.replace }}" != "true" ]; then echo "::error::Release $tag already exists (choose \"Replace the zip\" to rebuild it)"; exit 1; fi
+              echo "REPLACE=1" >> "$GITHUB_ENV"
+            fi
           else
             tag="$GITHUB_REF_NAME"
           fi
@@ -61,5 +71,11 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          if [ -n "$REPLACE" ]; then
+            # Same version rebuilt: the tag moves to this commit, the files are replaced, the notes stay.
+            gh api -X PATCH "repos/$GITHUB_REPOSITORY/git/refs/tags/$TAG" -f sha="$GITHUB_SHA" -F force=true > /dev/null
+            gh release upload "$TAG" scrapelock.zip "scrapelock-$VERSION.zip" --clobber
+            exit 0
+          fi
           # From a tag push the tag exists; from Run workflow the release creates it on this commit.
           gh release create "$TAG" scrapelock.zip "scrapelock-$VERSION.zip" --title "ScrapeLock $VERSION" --notes-file notes.md --target "$GITHUB_SHA" --latest

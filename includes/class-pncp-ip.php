@@ -96,8 +96,8 @@ final class PNCP_Ip {
 			// Data centers that publish their addresses (since 3.0), for the stricter page limit. AWS: only the
 			// servers (EC2), not CloudFront or the other services. Azure publishes its list at an address that
 			// changes every week, so it is not included.
-			'dc_aws'          => array( 'https://ip-ranges.amazonaws.com/ip-ranges.json' ),
-			'dc_gcp'          => array( 'https://www.gstatic.com/ipranges/cloud.json' ),
+			'dc_aws'          => array( 'https://ip-ranges.amazonaws.com/ip-ranges.json' ), // phpcs:ignore PluginCheck.CodeAnalysis.Offloading.OffloadedContent -- A list of IP ranges downloaded as data, not an asset loaded by the site.
+			'dc_gcp'          => array( 'https://www.gstatic.com/ipranges/cloud.json' ), // phpcs:ignore PluginCheck.CodeAnalysis.Offloading.OffloadedContent -- A list of IP ranges downloaded as data, not an asset loaded by the site.
 			'dc_oracle'       => array( 'https://docs.oracle.com/en-us/iaas/tools/public_ip_ranges.json' ),
 			'dc_digitalocean' => array( 'https://digitalocean.com/geo/google.csv' ),
 			'dc_linode'       => array( 'https://geoip.linode.com/' ),
