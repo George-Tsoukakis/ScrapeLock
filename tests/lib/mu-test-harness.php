@@ -47,6 +47,11 @@ add_filter(
 			$body = false !== stripos( $url, 'ipv6' ) ? '["2400:52e0:1a00::1"]' : wp_unslash( $_SERVER['HTTP_X_TEST_BUNNY_LIST'] );
 			return array( 'headers' => array(), 'body' => $body, 'response' => array( 'code' => 200, 'message' => 'OK' ), 'cookies' => array(), 'filename' => null );
 		}
+		// Χωρίς X-Test-Bunny-List, καμία πραγματική λήψη της λίστας του Bunny: το cron του WordPress (αίτημα χωρίς
+		// τις κεφαλίδες της δοκιμής) έγραφε την πραγματική λίστα πάνω στη λίστα της δοκιμής, όπου υπάρχει δίκτυο (CI).
+		if ( false !== strpos( $url, 'bunnycdn.com' ) ) {
+			return new WP_Error( 'test', 'no network in tests' );
+		}
 		return $pre;
 	},
 	10,
