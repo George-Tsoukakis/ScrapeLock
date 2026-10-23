@@ -47,11 +47,12 @@ Most content protection plugins disable right click in the browser. Scrapers and
 Freeze the whole site with one click and a code from your authenticator app (Google Authenticator, Microsoft Authenticator, Authy…).
 
 - While locked, users with a frozen role keep only `read`: nobody can install, update or activate plugins and themes, run updates, use the file editor, add users or administrators, change roles, staff emails or passwords, settings or content, from wp-admin, the REST API or XML-RPC.
-- Enforced against code too: protected options (active plugins, theme, site address, admin email, registration, default role, user roles), role changes, staff email and password changes, password resets and new application passwords are refused while locked.
+- Enforced against code too: protected options (active plugins, theme, site address, admin email, registration, default role, user roles, uploads folder, search engine visibility), role changes, staff email and password changes, password resets and new application passwords are refused while locked.
 - Visitors, customers, orders, payments, webhooks, cron jobs and members who post their own content keep working.
 - TOTP (RFC 6238), each code accepted once even under concurrent requests (database compare-and-set), the secret encrypted with libsodium using the keys in `wp-config.php`, ten one-time recovery codes stored only as hashes, wrong-code limits and an email on every unlock.
 - Temporary unlock (15 minutes to 2 hours, then it locks again by itself). A clear "The site is locked" page with an unlock button for administrators.
 - No WP-CLI command and no ability can unlock it.
+- **Sealed against database tampering (3.3):** the lock and the file fingerprint are signed (HMAC-SHA256, key derived from `AUTH_KEY`/`AUTH_SALT` in `wp-config.php`), and a must-use plugin (`scrapelock-lockdown-guard.php`) keeps a signed copy of the lock outside the database. SQL injection in another plugin cannot unlock the site: protected options changed in the database are put back, and accounts made administrator behind WordPress's back cannot sign in. A temporary unlock gives the rights back only to the administrator who unlocked.
 - **File integrity:** a fingerprint of every PHP, `.htaccess` and `.user.ini` file is taken when you lock and checked every hour; WordPress and the plugins from WordPress.org are also compared with their official checksums. A new or changed file (usually a backdoor uploaded through a vulnerable plugin) is emailed to you; optional quarantine deactivates the plugin and renames new PHP files in the uploads folder.
 - **No PHP in the uploads folder:** `.htaccess` for Apache and a rule for Nginx.
 

@@ -138,6 +138,15 @@ final class PNCP_Health {
 		if ( PNCP_Lockdown::server_unlocked() ) {
 			return self::result( 'lockdown', 'critical', __( 'ScrapeLock Lockdown is off from the server', 'scrapelock' ), __( 'SCRAPELOCK_UNLOCK is set in wp-config.php, so the lock is not applied. Connect the authenticator app again, then remove that line.', 'scrapelock' ), 'lockdown' );
 		}
+		if ( '' !== PNCP_Lockdown::tampered() ) {
+			return self::result( 'lockdown', 'critical', __( 'ScrapeLock Lockdown data was changed outside WordPress', 'scrapelock' ), __( 'The lock state in the database no longer matches its signature or the guard file. If you did not change the keys in wp-config.php, someone changed the database directly; while the guard file says the site is locked, it stays locked. Check the site with a security scanner and change the database password.', 'scrapelock' ), 'lockdown' );
+		}
+		if ( PNCP_Lockdown::configured() && ! PNCP_Seal::keys_in_config() ) {
+			return self::result( 'lockdown', 'recommended', __( 'ScrapeLock Lockdown: the security keys are not in wp-config.php', 'scrapelock' ), __( 'AUTH_KEY and AUTH_SALT are not defined in wp-config.php, so WordPress keeps them in the database. Lockdown encrypts and signs its data with them: someone who can change the database could then also read them. Add the keys to wp-config.php (from https://api.wordpress.org/secret-key/1.1/salt/) and connect the authenticator app again.', 'scrapelock' ), 'lockdown' );
+		}
+		if ( PNCP_Lockdown::is_locked() && ! is_multisite() && ! PNCP_Seal::guard_installed() ) {
+			return self::result( 'lockdown', 'recommended', __( 'ScrapeLock Lockdown works without its guard file', 'scrapelock' ), __( 'The file wp-content/mu-plugins/scrapelock-lockdown-guard.php could not be written. The lock works, but someone who can change the database directly could open it. Let the web server write to wp-content/mu-plugins, then lock the site again.', 'scrapelock' ), 'lockdown' );
+		}
 		if ( ! PNCP_Lockdown::configured() ) {
 			return self::result( 'lockdown', 'good', __( 'ScrapeLock Lockdown is not set up', 'scrapelock' ), __( 'Lockdown is optional: it freezes changes to plugins, themes, users and settings until it is unlocked with an authenticator app.', 'scrapelock' ) );
 		}
@@ -164,7 +173,16 @@ final class PNCP_Health {
 	 * @return array<string, mixed>
 	 */
 	public static function test_integrity() {
-		$found = PNCP_Integrity::findings( PNCP_Integrity::report() );
+		$report = PNCP_Integrity::report();
+		if ( ! empty( $report['tampered'] ) || ( PNCP_Lockdown::is_locked() && PNCP_Integrity::baseline()['tampered'] ) ) {
+			return self::result( 'integrity', 'critical', __( 'The ScrapeLock file fingerprint was changed outside WordPress', 'scrapelock' ), __( 'The fingerprint of the code files was changed or removed in the database while the site was locked, so new or changed files might have been hidden. Check the files with a security scanner; a new fingerprint is taken the next time you lock the site.', 'scrapelock' ), 'lockdown' );
+		}
+		// The hourly check runs on WordPress's cron: if it stopped (DISABLE_WP_CRON without a real cron job, or
+		// the event was removed), a quiet report must not look like a clean site.
+		if ( PNCP_Lockdown::is_locked() && PNCP_Integrity::baseline()['time'] && (int) $report['time'] < time() - 3 * HOUR_IN_SECONDS ) {
+			return self::result( 'integrity', 'recommended', __( 'The ScrapeLock file check has not run for more than 3 hours', 'scrapelock' ), __( 'The file check runs every hour through WordPress\'s scheduled tasks (cron). If DISABLE_WP_CRON is set in wp-config.php, add a real cron job that calls wp-cron.php, or run "wp cron event run --due-now" regularly.', 'scrapelock' ), 'lockdown' );
+		}
+		$found = PNCP_Integrity::findings( $report );
 		if ( $found ) {
 			return self::result(
 				'integrity',

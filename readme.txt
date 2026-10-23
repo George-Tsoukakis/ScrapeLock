@@ -4,7 +4,7 @@ Tags: anti-scraping, ai bots, bot protection, rate limit, content protection
 Requires at least: 6.2
 Tested up to: 7.2
 Requires PHP: 7.4
-Stable tag: 3.2.0
+Stable tag: 3.3.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -90,7 +90,8 @@ Generated Nginx, Apache and Cloudflare rules for your own site, so cached pages 
 * Also enforced against code: if another plugin is exploited, it cannot activate plugins, change the site address or the admin email, add an administrator or unlock the lock.
 * Visitors and customers are not affected: they browse, order, pay, register as customers and comment as usual.
 * File integrity: when you lock, ScrapeLock keeps a fingerprint of every PHP, .htaccess and .user.ini file (WordPress, plugins, themes, uploads, wp-config.php) and checks it every hour. A new or changed file while locked (usually a backdoor uploaded through a vulnerable plugin) is emailed to you, logged and shown in Site Health. WordPress and the plugins from WordPress.org are also compared with their official checksums, which finds changes made before you locked. Optional quarantine deactivates the affected plugin and renames new PHP files in the uploads folder.
-* Unlock for 15 minutes to 2 hours (it locks again by itself) or until you lock it again. Locking and unlocking are logged and emailed to the site's admin address.
+* Sealed: the lock is signed with the keys in wp-config.php and copied into a must-use plugin, so SQL injection in another plugin cannot unlock the site. Settings changed in the database are put back.
+* Unlock for 15 minutes to 2 hours, for yourself only (it locks again by itself) or until you lock it again. Locking and unlocking are logged and emailed to the site's admin address.
 * Lost your phone: ten one-time recovery codes, or `define( 'SCRAPELOCK_UNLOCK', true );` in wp-config.php as a last resort.
 * The QR code is drawn in your browser and the secret is stored encrypted with the keys in wp-config.php: it is never sent anywhere.
 * A Lockdown tab in Settings → ScrapeLock, with a full report of what is frozen, what keeps working and which accounts it applies to.
@@ -194,7 +195,7 @@ Type one of your recovery codes in the unlock field instead of an app code. If y
 
 = Can someone with access to my server bypass Lockdown? =
 
-Yes. Lockdown protects the site against changes through WordPress (wp-admin, the REST API, XML-RPC and code running inside WordPress). Whoever can edit files or the database on your server controls the site anyway, which is also why the server line is the last-resort unlock. The file integrity check is there for that case: a file written behind WordPress' back is found within the hour and emailed to you. Code that already runs on the server could also stop ScrapeLock itself, so "No PHP in the uploads folder" (a server rule) is what stops most backdoors from running in the first place.
+Yes. Lockdown protects the site against changes through WordPress (wp-admin, the REST API, XML-RPC and code running inside WordPress). Someone who can only write to the database (for example through SQL injection in another plugin) cannot unlock it: the lock is signed with the keys in wp-config.php and copied into a must-use plugin file, changed protected settings are put back, and new administrators cannot sign in. Whoever can edit files on your server controls the site anyway, which is also why the server line is the last-resort unlock. The file integrity check is there for that case: a file written behind WordPress' back is found within the hour and emailed to you. Code that already runs on the server could also stop ScrapeLock itself, so "No PHP in the uploads folder" (a server rule) is what stops most backdoors from running in the first place.
 
 = Can I unlock Lockdown from WP-CLI or with an AI agent? =
 
@@ -214,6 +215,15 @@ No. A small script waits for the first real interaction (scroll, tap, key or mou
 6. Dashboard widget with the protection status and the last 24 hours.
 
 == Changelog ==
+
+= 3.3.0 =
+* New: Lockdown seal. The lock state and the file fingerprint are signed (HMAC-SHA256) with a key derived from the keys in wp-config.php, which are not in the database. A must-use plugin, scrapelock-lockdown-guard.php, holds a signed copy of the lock while the site is locked and keeps ScrapeLock active if it is removed from the active plugins in the database. Deleting or changing the lock in the database, or putting back an older copy, leaves the site locked, and the unlock page refuses to work with forged data. The guard is removed when you unlock fully or deactivate ScrapeLock.
+* New: when you lock, the protected settings (active plugins, theme, site address, admin email, registration, default role, user roles, uploads folder, search engine visibility, ScrapeLock's own settings) and the list of administrators are saved, signed. A protected setting changed directly in the database is put back on the next request; an account given administrator rights that way cannot sign in while the site is locked and is reported by the hourly check. Each kind of finding is logged and emailed at most once an hour.
+* New: a temporary unlock gives the rights back only to the administrator who unlocked. Other staff stay frozen until the site is locked again or unlocked fully.
+* New: protected while locked: the uploads folder and its address, and "Discourage search engines".
+* Integrity: a fingerprint that was changed, deleted or replaced with an older one in the database is reported as tampered (critical in Site Health) and is never silently replaced while locked.
+* Site Health: a recommendation when AUTH_KEY / AUTH_SALT are not set in wp-config.php (the signatures rely on them), when the guard is missing while locked, or when the hourly file check has not run for three hours.
+* Upgrade: data saved by earlier versions is signed on the upgrade to 3.3.0; changing the keys in wp-config.php is reported but never locks you out on its own.
 
 = 3.2.0 =
 * New: "Only through the CDN" (Bots and limits → Real visitor IP). Requests without the CDN shared secret in the header X-ScrapeLock-CDN, which went straight to the server around the CDN, get a 403, also pages from the page cache when the pre-cache check is on. It can only be turned on from a request that brings the secret; the server itself, WordPress's cron and WP-CLI are not affected; `define( 'SCRAPELOCK_CDN_ONLY', false );` in wp-config.php turns it off. Off by default. New log reason "Not through the CDN".
