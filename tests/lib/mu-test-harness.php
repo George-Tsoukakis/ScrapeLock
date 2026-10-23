@@ -153,7 +153,15 @@ function pncp_test_cdn( $args, $url ) {
 		}
 		$rest = (string) substr( $url, strlen( 'https://api.cloudflare.com/client/v4/zones/0123456789abcdef0123456789abcdef/firewall/access_rules/rules' ) );
 		if ( 'GET' === $method ) {
-			return $reply( 200, array( 'success' => true, 'errors' => array(), 'result' => array() ) );
+			// ?configuration.value=… → the rules for that address (the test button looks itself up).
+			parse_str( (string) parse_url( $url, PHP_URL_QUERY ), $q );
+			$out = array();
+			foreach ( $db['cf'] as $id => $rule ) {
+				if ( isset( $q['configuration_value'] ) && $q['configuration_value'] === $rule['value'] ) {
+					$out[] = array( 'id' => $id, 'mode' => $rule['mode'], 'configuration' => array( 'target' => $rule['target'], 'value' => $rule['value'] ) );
+				}
+			}
+			return $reply( 200, array( 'success' => true, 'errors' => array(), 'result' => $out ) );
 		}
 		if ( 'POST' === $method && '' === $rest ) {
 			$value = $body['configuration']['value'];

@@ -266,6 +266,7 @@ final class PNCP_Health {
 			'upload_php'     => array( __( 'No PHP in the uploads folder', 'scrapelock' ), $flag( 'block_upload_php' ) ),
 			'auto_emergency' => array( __( 'Automatic Emergency Mode', 'scrapelock' ), $flag( 'auto_emergency' ) ),
 			'edge'           => array( __( 'Blocking at the CDN', 'scrapelock' ), $edge ),
+			'cdn_only'       => array( __( 'Only through the CDN', 'scrapelock' ), PNCP_Origin::active( $s ) ? $yes : $no ),
 			'integrity'      => array( __( 'File integrity fingerprint', 'scrapelock' ), PNCP_Integrity::baseline()['time'] ? wp_date( 'Y-m-d H:i', PNCP_Integrity::baseline()['time'] ) : '-' ),
 			'lockdown'       => array( __( 'Lockdown', 'scrapelock' ), $lock ),
 			'lockdown_roles' => array( __( 'Roles frozen while locked', 'scrapelock' ), implode( ', ', PNCP_Lockdown::frozen_roles() ) ),

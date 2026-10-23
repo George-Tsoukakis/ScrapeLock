@@ -218,6 +218,8 @@ final class PNCP_Precheck {
 			// request does not carry it, so a spoofed CDN edge IP is not trusted for the real-IP header.
 			'proxies_base' => self::set( PNCP_Options::parse_list( $s['trusted_proxies'] ) ),
 			'cdn_secret'   => isset( $s['cdn_secret'] ) ? (string) $s['cdn_secret'] : '',
+			// "Only through the CDN": cached pages are refused here too, before the page cache serves them.
+			'cdn_only'     => PNCP_Origin::active( $s ),
 			'cdn'         => self::set( array_merge( PNCP_Ip::list_of( 'cloudflare' ), PNCP_Ip::list_of( 'bunny' ) ) ),
 			'allow'       => self::set( PNCP_Options::parse_list( $s['allow_ips'] ) ),
 			'block'       => self::set( PNCP_Options::parse_list( $s['block_ips'] ) ),

@@ -4,7 +4,7 @@ Tags: anti-scraping, ai bots, bot protection, rate limit, content protection
 Requires at least: 6.2
 Tested up to: 7.2
 Requires PHP: 7.4
-Stable tag: 3.1.0
+Stable tag: 3.2.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -34,7 +34,7 @@ Nothing can stop a determined human: whatever a visitor sees has already reached
 * Invisible bot trap link, disallowed in robots.txt.
 * Optional blocking of headless browsers that reveal themselves in their headers, and of scripts that copy a browser's User-Agent but not the headers a real browser sends. A carefully disguised automated browser is not detected this way; the page limits, the human check and the bot trap still apply to it.
 * Per-IP limits for pages, searches and REST / GraphQL (IPv6: per /64 network), with temporary blocks after repeated violations.
-* Optional blocking at the CDN: temporary blocks are also applied by Cloudflare or Bunny CDN, so a persistent scraper never reaches your server.
+* Optional blocking at the CDN: temporary blocks are also applied by Cloudflare or Bunny CDN, so a persistent scraper never reaches your server. Optionally, only requests that come through the CDN are answered.
 * A separate limit for "page not found" (404) requests, for scrapers that guess URLs. Missing images, CSS and scripts do not count.
 * Optional human check: visitors who have not interacted with the page (scroll, tap, key) get a stricter page limit. No captcha, nothing to click; it works with page caches.
 * Optional sitemap limit (WordPress, Rank Math, Yoast and similar sitemaps), never for verified search engines.
@@ -162,6 +162,10 @@ In "Bots and limits", set "Real visitor IP" to CF-Connecting-IP and keep "Trust 
 
 Yes, since 3.1. In "Bots and limits" → "Blocking at the CDN", choose Cloudflare or Bunny CDN and enter the zone ID and a token. For Cloudflare, create an API token with the single permission Zone → Firewall Services → Edit, for this zone only; for Bunny CDN, use your account's API key. You can put the token in `wp-config.php` instead (`define( 'SCRAPELOCK_EDGE_TOKEN', '…' );`), so it is not stored in the database. From then on, every IP ScrapeLock blocks temporarily is also blocked at the CDN within a minute or two, and the block is removed there when it ends. The site must be served through that CDN (for Cloudflare: proxied, orange cloud). Rules you made yourself are never changed. Administrators' IPs from the last 30 days, search engines, AI search services and the CDN's own addresses are never blocked there. Bunny CDN blocks single addresses only, so a blocked IPv6 network stays blocked by ScrapeLock itself. Turning the setting off or deactivating the plugin removes the blocks ScrapeLock made.
 
+= Can someone go around my CDN? =
+
+If they find your server's own address, yes: then nothing the CDN blocks applies. Since 3.2, "Only through the CDN" (Bots and limits → Real visitor IP) refuses every request that does not bring a secret your CDN adds as the header `X-ScrapeLock-CDN` (Bunny CDN: an Edge Rule "Set Request Header"; Cloudflare: a Transform Rule "Modify Request Header"). It can only be turned on from a request that brings the secret, so a missing rule cannot lock you out. If the CDN ever stops sending it, add `define( 'SCRAPELOCK_CDN_ONLY', false );` to wp-config.php.
+
 = What is the early check? =
 
 An optional setting in "Bots and limits". ScrapeLock writes the small file `wp-content/mu-plugins/scrapelock-early.php`, which runs before the theme and the other plugins and stops blocked IPs and referrers, temporarily blocked IPs and User-Agents from the bot list, with less server load. Search engines, logged-in users, forms and private feeds are left to the normal check. The file is removed when you turn the setting off, deactivate or delete the plugin. If the server does not allow direct file writes, the setting shows a notice and everything else works as before.
@@ -210,6 +214,12 @@ No. A small script waits for the first real interaction (scroll, tap, key or mou
 6. Dashboard widget with the protection status and the last 24 hours.
 
 == Changelog ==
+
+= 3.2.0 =
+* New: "Only through the CDN" (Bots and limits → Real visitor IP). Requests without the CDN shared secret in the header X-ScrapeLock-CDN, which went straight to the server around the CDN, get a 403, also pages from the page cache when the pre-cache check is on. It can only be turned on from a request that brings the secret; the server itself, WordPress's cron and WP-CLI are not affected; `define( 'SCRAPELOCK_CDN_ONLY', false );` in wp-config.php turns it off. Off by default. New log reason "Not through the CDN".
+* New: "Test blocking at the CDN" button. Blocks an address reserved for documentation (203.0.113.x) at the CDN, checks that the CDN lists it and removes it again, so the setup can be checked without changing any limit or blocking a visitor.
+* Blocking at the CDN (3.1) has now been confirmed on a live site with Bunny CDN: blocks are added within a minute or two and removed when the block is lifted.
+* Site Health: "Only through the CDN" in the ScrapeLock section of the Info tab.
 
 = 3.1.0 =
 * New: blocking at the CDN (Bots and limits tab, "Blocking at the CDN"). The IPs ScrapeLock blocks temporarily are also blocked by Cloudflare (IP Access rules) or Bunny CDN (blocked IPs of the Pull Zone), with your own account, so a scraper that keeps going is stopped at the CDN before its requests reach your server. Blocks are added and removed in the background by WordPress's cron (at most 25 API calls per run, the newest 500 blocks, filter `pncp_edge_max`), never while a visitor waits, and removed when the temporary block ends, when you turn the setting off or change the zone, and when the plugin is deactivated. Rules you made yourself at the CDN are never changed. Never blocked at the CDN: the IPs administrators used in wp-admin in the last 30 days (a block at the CDN also covers wp-admin), search engines, AI search services and the CDN's own addresses. Paused while "Trust every request" is on, since anyone could then get any address blocked. The token is tested when saved, never shown again, can be kept in wp-config.php (SCRAPELOCK_EDGE_TOKEN) and cannot be changed while the site is locked. Off by default.

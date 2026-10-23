@@ -23,7 +23,8 @@ ScrapeLock — δοκιμές σε πραγματικό WordPress (όχι stubs)
                     άλλες, προφίλ, token μία φορά, αρχείο/διατήρηση, λίστες IP, εργαλείο εικόνων, κανόνες, GraphQL
   t_precheck.php    έλεγχος πριν από το cache (wp-config.php, loader, όρια, αποκλεισμοί)
   t_lockdown.php    Κλείδωμα: εφαρμογή authenticator, κάθε οθόνη, REST, κώδικας, ρόλοι, Abilities, Site Health
-  t_edge.php        αποκλεισμός στο CDN (Cloudflare, Bunny) με ψεύτικο API: προσθήκη, λήξη, σφάλματα, όρια, εναλλαγή, φόρμα
+  t_edge.php        αποκλεισμός στο CDN (Cloudflare, Bunny) με ψεύτικο API: προσθήκη, λήξη, σφάλματα, όρια, εναλλαγή, φόρμα,
+                    κουμπί δοκιμής, «μόνο μέσω CDN» (WordPress και πριν από την cache)
   t_cli.php         wp scrapelock … μέσα από το πραγματικό wp (χρειάζεται WP_CLI, αλλιώς SKIP)
   browser/          protect.js σε Chromium: δεξί κλικ/αντιγραφή/επιλογή/σύρσιμο ακόμη και με «εχθρικό» script,
                     αντιγραφή με πηγή, .pncp-allow, πεδία φόρμας, ελληνική διάταξη, θόλωμα (npm install && npm test)

@@ -64,6 +64,10 @@ final class PNCP_Precheck_Runtime {
 		if ( 'cli' === PHP_SAPI || ! self::applies( $c ) ) {
 			return null;
 		}
+		$direct = self::not_via_cdn( $c );
+		if ( '' !== $direct ) {
+			return array( 403, 'not_via_cdn', $direct );
+		}
 		$ip = self::client_ip( $c, $reliable );
 		if ( '' === $ip || self::is_local( $ip ) ) {
 			return null;
@@ -127,6 +131,20 @@ final class PNCP_Precheck_Runtime {
 			self::event( $c, 403, 'ban', $ip ); // The event keeps the exact IP for the log.
 		}
 		return array( 429, 'rate_page', $ip );
+	}
+
+	/**
+	 * "Only through the CDN": a page request without the CDN's secret went straight to the server.
+	 *
+	 * @param array<string, mixed> $c Configuration.
+	 * @return string The address it came from, or '' when it may pass.
+	 */
+	public static function not_via_cdn( $c ) {
+		if ( empty( $c['cdn_only'] ) || self::cdn_trust_ok( $c ) ) {
+			return '';
+		}
+		$remote = isset( $_SERVER['REMOTE_ADDR'] ) ? trim( (string) $_SERVER['REMOTE_ADDR'] ) : '';
+		return filter_var( $remote, FILTER_VALIDATE_IP ) && ! self::is_local( $remote ) ? $remote : '';
 	}
 
 	/**
