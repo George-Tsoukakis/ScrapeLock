@@ -168,6 +168,7 @@ final class PNCP_Log {
 			'manual'          => __( 'Blocked by hand', 'scrapelock' ),
 			'banned'          => __( 'Request from a blocked IP', 'scrapelock' ),
 			'feed_denied'     => __( 'Private URL without token', 'scrapelock' ),
+			'not_via_cdn'     => __( 'Not through the CDN (straight to the server)', 'scrapelock' ),
 		);
 	}
 

@@ -99,6 +99,7 @@ final class PNCP_Options {
 			'block_archivers',
 			'block_upload_php',
 			'auto_emergency',
+			'cdn_only',
 		);
 	}
 
@@ -155,7 +156,7 @@ final class PNCP_Options {
 	public static function sections() {
 		return array(
 			'general' => array( 'enabled', 'scope_posts', 'scope_pages', 'scope_home', 'scope_products', 'skip_woo_pages', 'excluded_ids', 'block_selection', 'block_context_menu', 'block_shortcuts', 'block_devtools', 'block_image_drag', 'block_text_drag', 'blur_on_capture', 'copy_mode', 'attribution_min_chars', 'print_mode', 'exempt_cap', 'show_message', 'message', 'block_framing', 'tdm_reservation', 'tdm_policy_url' ),
-			'bots'    => array( 'block_bots', 'block_empty_ua', 'block_fake_crawlers', 'require_browser_headers', 'block_headless', 'trap_enabled', 'block_archivers', 'ipv6_wide', 'bot_list', 'allow_list', 'allow_ips', 'allow_ai_search', 'verify_ai_bots', 'robots_ai_block', 'content_signal', 'block_ips', 'block_referrers', 'block_user_enum', 'rate_limit', 'rate_limit_search', 'rate_limit_rest', 'rate_limit_404', 'rate_limit_sitemap', 'human_check', 'rate_limit_unverified', 'geo_db', 'countries_block', 'countries_strict', 'rate_limit_country', 'rate_limit_datacenter', 'ban_strikes', 'ban_minutes', 'auto_emergency', 'auto_emergency_min', 'early_mode', 'precheck', 'log_retention', 'content_paths', 'ip_header', 'trust_cloudflare', 'trust_bunny', 'trust_any_proxy', 'trusted_proxies', 'cdn_secret' ),
+			'bots'    => array( 'block_bots', 'block_empty_ua', 'block_fake_crawlers', 'require_browser_headers', 'block_headless', 'trap_enabled', 'block_archivers', 'ipv6_wide', 'bot_list', 'allow_list', 'allow_ips', 'allow_ai_search', 'verify_ai_bots', 'robots_ai_block', 'content_signal', 'block_ips', 'block_referrers', 'block_user_enum', 'rate_limit', 'rate_limit_search', 'rate_limit_rest', 'rate_limit_404', 'rate_limit_sitemap', 'human_check', 'rate_limit_unverified', 'geo_db', 'countries_block', 'countries_strict', 'rate_limit_country', 'rate_limit_datacenter', 'ban_strikes', 'ban_minutes', 'auto_emergency', 'auto_emergency_min', 'early_mode', 'precheck', 'log_retention', 'content_paths', 'ip_header', 'trust_cloudflare', 'trust_bunny', 'trust_any_proxy', 'trusted_proxies', 'cdn_secret', 'cdn_only' ),
 			'content' => array( 'rest_hide_content', 'hide_rest_discovery', 'graphql_hide_content', 'feed_mode', 'feed_source_link', 'list_excerpts', 'private_paths', 'private_ips', 'disable_pingback', 'hide_versions', 'block_upload_php' ),
 			'images'  => array( 'watermark_enabled', 'watermark_full', 'watermark_products', 'watermark_image_id', 'watermark_opacity', 'watermark_size', 'watermark_position', 'watermark_min_width' ),
 		);
@@ -439,6 +440,8 @@ final class PNCP_Options {
 			'auto_emergency_min'      => 300,
 			// Pages per minute from data center addresses (0 = off). Existing sites: off.
 			'rate_limit_datacenter'   => 15,
+			// Since 3.2. Off everywhere: it needs a rule at the CDN first.
+			'cdn_only'                => 0,
 		);
 	}
 
@@ -820,10 +823,20 @@ final class PNCP_Options {
 		$clean['tdm_policy_url'] = (string) $policy;
 
 		// A shared secret for the CDN (header value): only safe characters, kept short.
-		$secret               = isset( $input['cdn_secret'] ) ? (string) preg_replace( '/[^A-Za-z0-9._\-]/', '', (string) $input['cdn_secret'] ) : '';
-		$clean['cdn_secret']  = substr( $secret, 0, 100 );
+		$secret              = isset( $input['cdn_secret'] ) ? (string) preg_replace( '/[^A-Za-z0-9._\-]/', '', (string) $input['cdn_secret'] ) : '';
+		$clean['cdn_secret'] = substr( $secret, 0, 100 );
 
 		$stored = self::stored();
+
+		// "Only through the CDN" is turned on (or its secret changed) only from a request that brought the secret:
+		// that proves the CDN sends it. Otherwise the next request, and the administrator, would get a 403.
+		$was = ! empty( $stored['cdn_only'] ) ? (string) $stored['cdn_secret'] : '';
+		if ( ! empty( $clean['cdn_only'] ) && ( '' === $clean['cdn_secret'] || ( $was !== $clean['cdn_secret'] && ! empty( $input['_sections'] ) && ! PNCP_Origin::has_secret( $clean['cdn_secret'] ) ) ) ) {
+			$clean['cdn_only'] = 0;
+			if ( function_exists( 'add_settings_error' ) ) {
+				add_settings_error( PNCP_OPTION, 'pncp_cdn_only', '' === $clean['cdn_secret'] ? __( '“Only through the CDN” was not turned on: set a CDN shared secret first.', 'scrapelock' ) : __( '“Only through the CDN” was not turned on: this request did not bring the secret in the X-ScrapeLock-CDN header, so the CDN does not send it yet (or you opened the site around the CDN). Add the header at the CDN, reload this page and try again.', 'scrapelock' ) );
+			}
+		}
 
 		// The "trust every proxy" option remains only for those who already had it (upgrade from 1.4).
 		// The form can only turn it off, not on (the upgrade turns it on in code).

@@ -845,6 +845,13 @@ final class PNCP_Admin {
 				}
 				self::textarea( $s, 'trusted_proxies', __( 'Other trusted proxies / load balancers (IP or CIDR, one per line):', 'scrapelock' ), '', 3 );
 				self::password( $s, 'cdn_secret', __( 'CDN shared secret (optional):', 'scrapelock' ), __( 'Only when "Real visitor IP" is a CDN header (CF-Connecting-IP, X-Real-IP, X-Forwarded-For). A CDN (Bunny, Cloudflare) is multi-tenant: its edge IPs are shared, so by default anyone could point their own CDN zone at your origin and set the real-IP header. Set a secret here and configure your CDN to send it on every request as the header “X-ScrapeLock-CDN”; the CDN’s real-IP header is then trusted only when the secret matches. Leave empty to keep the current behaviour. For best effect, also restrict your origin so it is reachable only through the CDN.', 'scrapelock' ) );
+				self::checkbox( $s, 'cdn_only', __( 'Only through the CDN: refuse (403) requests that do not bring the secret', 'scrapelock' ), __( 'Someone who finds your server\'s own address can go around the CDN and everything it blocks. With this on, every request without the secret in the X-ScrapeLock-CDN header gets a 403, also pages from the page cache when the pre-cache check is on. First make the CDN add the header to every request: in Bunny CDN, an Edge Rule with the action “Set Request Header” (X-ScrapeLock-CDN = your secret) for all requests; in Cloudflare, Rules → Transform Rules → “Modify Request Header”, set static. It can only be turned on from a request that brings the secret, so you cannot lock yourself out by mistake. Not affected: the server itself (cron, cache preload), WP-CLI. Files the web server sends without WordPress (images, CSS, JS) are not covered. If the CDN ever stops sending the header, add define( \'SCRAPELOCK_CDN_ONLY\', false ); to wp-config.php.', 'scrapelock' ) );
+				if ( '' !== trim( (string) $s['cdn_secret'] ) ) {
+					echo '<p class="description pncp-cdn-only-status">' . esc_html( PNCP_Origin::has_secret( (string) $s['cdn_secret'] ) ? __( 'This request brought the secret: the CDN sends it.', 'scrapelock' ) : __( 'This request did not bring the secret: the CDN does not send it yet, or you opened the site around the CDN.', 'scrapelock' ) ) . '</p>';
+				}
+				if ( defined( 'SCRAPELOCK_CDN_ONLY' ) && ! SCRAPELOCK_CDN_ONLY ) {
+					echo '<p class="description">' . esc_html__( 'Turned off in wp-config.php (SCRAPELOCK_CDN_ONLY).', 'scrapelock' ) . '</p>';
+				}
 				?>
 				<p class="description">
 					<?php
@@ -926,6 +933,13 @@ final class PNCP_Admin {
 		<?php
 		if ( ! PNCP_Edge::usable() ) {
 			return;
+		}
+		if ( ! $locked ) {
+			self::action_form_open( 'pncp_edge', 'pncp_edge', 'pncp-edge-test' );
+			echo '<input type="hidden" name="op" value="test_block">';
+			echo '<p>';
+			submit_button( __( 'Test blocking at the CDN', 'scrapelock' ), 'secondary', 'submit', false );
+			echo '</p><p class="description">' . esc_html__( 'Blocks the address 203.0.113.x (reserved for documentation, it belongs to nobody) at the CDN, checks that the CDN lists it and removes it again. No setting changes and no visitor is affected.', 'scrapelock' ) . '</p></form>';
 		}
 		echo '<ul class="pncp-list-status pncp-edge-status">';
 		/* translators: 1: number of addresses, 2: CDN name */
@@ -2094,6 +2108,11 @@ final class PNCP_Admin {
 		if ( PNCP_Lockdown::is_locked() ) {
 			self::back( 'bots', 'error' );
 		}
+		if ( isset( $_POST['op'] ) && 'test_block' === sanitize_key( wp_unslash( $_POST['op'] ) ) ) {
+			$result = PNCP_Edge::test_block( PNCP_Edge::config() );
+			set_transient( 'pncp_edge_test_' . get_current_user_id(), $result['message'], 2 * MINUTE_IN_SECONDS );
+			self::back( 'bots', $result['ok'] ? 'edge_test_ok' : 'edge_test_failed' );
+		}
 		$old      = PNCP_Edge::config();
 		$provider = isset( $_POST['provider'] ) ? sanitize_key( wp_unslash( $_POST['provider'] ) ) : '';
 		$provider = isset( PNCP_Edge::providers()[ $provider ] ) ? $provider : '';
@@ -2146,37 +2165,41 @@ final class PNCP_Admin {
 		// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Only displays a notice.
 		$message = $ours && isset( $_GET['pncp_message'] ) ? sanitize_key( wp_unslash( $_GET['pncp_message'] ) ) : '';
 		$texts   = array(
-			'profile'         => array( 'success', __( 'Preset applied.', 'scrapelock' ) ),
-			'token'           => array( 'success', __( 'New token created.', 'scrapelock' ) ),
-			'revoked'         => array( 'success', __( 'Previous token revoked.', 'scrapelock' ) ),
-			'unbanned'        => array( 'success', __( 'Block lifted.', 'scrapelock' ) ),
-			'cleared'         => array( 'success', __( 'Log deleted.', 'scrapelock' ) ),
-			'perm_added'      => array( 'success', __( 'The IP was added to the always-blocked IPs (“Bots and limits” → “Always blocked”). You can remove it there.', 'scrapelock' ) ),
-			'perm_exists'     => array( 'info', __( 'The IP is already in the always-blocked IPs.', 'scrapelock' ) ),
-			'perm_full'       => array( 'error', __( 'The always-blocked IPs already have 200 lines. Combine addresses into CIDR ranges there first.', 'scrapelock' ) ),
-			'perm_refused'    => array( 'error', __( 'This IP cannot be blocked permanently: it is the server itself, your own IP, a private address, an always-allowed IP or an address in an official list (Google, Bing, AI search services, Cloudflare, Bunny CDN).', 'scrapelock' ) ),
-			'lists'           => array( 'success', __( 'IP lists refreshed.', 'scrapelock' ) ),
-			'geo'             => array( 'success', __( 'Country database downloaded.', 'scrapelock' ) ),
-			'geo_failed'      => array( 'error', __( 'The country database could not be downloaded or read; the previous one (if any) was kept. It will try again tomorrow.', 'scrapelock' ) ),
-			'cf_ip'           => array( 'success', __( 'The real visitor IP is now read from CF-Connecting-IP, only for requests from Cloudflare.', 'scrapelock' ) ),
-			'bunny_ip'        => array( 'success', __( 'The real visitor IP is now read from X-Real-IP, only for requests from Bunny CDN.', 'scrapelock' ) ),
-			'bunny_ip_failed' => array( 'warning', __( 'X-Real-IP is selected for Bunny CDN, but the list of Bunny addresses could not be downloaded. Until it is, the header is not trusted. It will try again tomorrow, or use “Refresh now” under “Official IP lists”.', 'scrapelock' ) ),
-			'lists_partial'   => array( 'warning', __( 'Some IP lists could not be downloaded; their previous version was kept. It will try again tomorrow.', 'scrapelock' ) ),
-			'edge_ok'         => array( 'success', __( 'Connected to the CDN. From now on the IPs ScrapeLock blocks temporarily are also blocked there (within a minute or two).', 'scrapelock' ) ),
-			'edge_off'        => array( 'success', __( 'Blocking at the CDN is off. The blocks ScrapeLock made there are being removed in the background.', 'scrapelock' ) ),
-			'edge_zone'       => array( 'error', __( 'The zone ID is not valid: Cloudflare uses 32 letters and digits (0–9, a–f), Bunny CDN a number. Nothing was saved.', 'scrapelock' ) ),
-			'edge_token'      => array( 'error', __( 'Enter the API token (letters, digits, “-” and “_”). Nothing was saved.', 'scrapelock' ) ),
-			'edge_failed'     => array( 'error', __( 'The connection test failed, so nothing was saved.', 'scrapelock' ) ),
-			'error'           => array( 'error', __( 'The action was not completed.', 'scrapelock' ) ),
+			'profile'          => array( 'success', __( 'Preset applied.', 'scrapelock' ) ),
+			'token'            => array( 'success', __( 'New token created.', 'scrapelock' ) ),
+			'revoked'          => array( 'success', __( 'Previous token revoked.', 'scrapelock' ) ),
+			'unbanned'         => array( 'success', __( 'Block lifted.', 'scrapelock' ) ),
+			'cleared'          => array( 'success', __( 'Log deleted.', 'scrapelock' ) ),
+			'perm_added'       => array( 'success', __( 'The IP was added to the always-blocked IPs (“Bots and limits” → “Always blocked”). You can remove it there.', 'scrapelock' ) ),
+			'perm_exists'      => array( 'info', __( 'The IP is already in the always-blocked IPs.', 'scrapelock' ) ),
+			'perm_full'        => array( 'error', __( 'The always-blocked IPs already have 200 lines. Combine addresses into CIDR ranges there first.', 'scrapelock' ) ),
+			'perm_refused'     => array( 'error', __( 'This IP cannot be blocked permanently: it is the server itself, your own IP, a private address, an always-allowed IP or an address in an official list (Google, Bing, AI search services, Cloudflare, Bunny CDN).', 'scrapelock' ) ),
+			'lists'            => array( 'success', __( 'IP lists refreshed.', 'scrapelock' ) ),
+			'geo'              => array( 'success', __( 'Country database downloaded.', 'scrapelock' ) ),
+			'geo_failed'       => array( 'error', __( 'The country database could not be downloaded or read; the previous one (if any) was kept. It will try again tomorrow.', 'scrapelock' ) ),
+			'cf_ip'            => array( 'success', __( 'The real visitor IP is now read from CF-Connecting-IP, only for requests from Cloudflare.', 'scrapelock' ) ),
+			'bunny_ip'         => array( 'success', __( 'The real visitor IP is now read from X-Real-IP, only for requests from Bunny CDN.', 'scrapelock' ) ),
+			'bunny_ip_failed'  => array( 'warning', __( 'X-Real-IP is selected for Bunny CDN, but the list of Bunny addresses could not be downloaded. Until it is, the header is not trusted. It will try again tomorrow, or use “Refresh now” under “Official IP lists”.', 'scrapelock' ) ),
+			'lists_partial'    => array( 'warning', __( 'Some IP lists could not be downloaded; their previous version was kept. It will try again tomorrow.', 'scrapelock' ) ),
+			'edge_ok'          => array( 'success', __( 'Connected to the CDN. From now on the IPs ScrapeLock blocks temporarily are also blocked there (within a minute or two).', 'scrapelock' ) ),
+			'edge_off'         => array( 'success', __( 'Blocking at the CDN is off. The blocks ScrapeLock made there are being removed in the background.', 'scrapelock' ) ),
+			'edge_zone'        => array( 'error', __( 'The zone ID is not valid: Cloudflare uses 32 letters and digits (0–9, a–f), Bunny CDN a number. Nothing was saved.', 'scrapelock' ) ),
+			'edge_token'       => array( 'error', __( 'Enter the API token (letters, digits, “-” and “_”). Nothing was saved.', 'scrapelock' ) ),
+			'edge_failed'      => array( 'error', __( 'The connection test failed, so nothing was saved.', 'scrapelock' ) ),
+			'edge_test_ok'     => array( 'success', '' ),
+			'edge_test_failed' => array( 'error', '' ),
+			'error'            => array( 'error', __( 'The action was not completed.', 'scrapelock' ) ),
 		);
 		if ( isset( $texts[ $message ] ) ) {
 			$text = $texts[ $message ][1];
-			if ( 'edge_failed' === $message ) {
+			if ( in_array( $message, array( 'edge_failed', 'edge_test_ok', 'edge_test_failed' ), true ) ) {
 				$detail = get_transient( 'pncp_edge_test_' . get_current_user_id() );
 				delete_transient( 'pncp_edge_test_' . get_current_user_id() );
-				$text .= is_string( $detail ) && '' !== $detail ? ' ' . $detail : '';
+				$text = trim( $text . ( is_string( $detail ) && '' !== $detail ? ' ' . $detail : '' ) );
 			}
-			printf( '<div class="notice notice-%1$s is-dismissible"><p>%2$s</p></div>', esc_attr( $texts[ $message ][0] ), esc_html( $text ) );
+			if ( '' !== $text ) {
+				printf( '<div class="notice notice-%1$s is-dismissible"><p>%2$s</p></div>', esc_attr( $texts[ $message ][0] ), esc_html( $text ) );
+			}
 		}
 
 		// The 1.x token is still valid but exists only as a hash: it cannot be shown.

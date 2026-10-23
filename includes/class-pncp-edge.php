@@ -732,6 +732,90 @@ final class PNCP_Edge {
 	}
 
 	/**
+	 * Tests the whole path with an address that belongs to nobody (203.0.113.0/24, reserved for
+	 * documentation): blocks it at the CDN, checks that the CDN lists it, removes it and checks that it is
+	 * gone. No setting changes and no visitor is affected.
+	 *
+	 * @param array{provider:string, zone:string, token:string} $c Configuration.
+	 * @return array{ok:bool, message:string}
+	 */
+	public static function test_block( $c ) {
+		$fail = static function ( $step, $message ) {
+			return array(
+				'ok'      => false,
+				/* translators: 1: the step that failed, 2: what the CDN answered */
+				'message' => sprintf( __( '%1$s failed: %2$s', 'scrapelock' ), $step, $message ),
+			);
+		};
+		if ( ! self::usable( $c ) ) {
+			return $fail( __( 'Connection', 'scrapelock' ), __( 'Fill in the zone ID and the token.', 'scrapelock' ) );
+		}
+		$ip  = '203.0.113.' . wp_rand( 200, 254 );
+		$ban = array(
+			'until'  => time() + MINUTE_IN_SECONDS,
+			'reason' => 'test',
+		);
+		$before = self::listed( $c, $ip );
+		if ( is_string( $before ) ) {
+			return $fail( __( 'Connection', 'scrapelock' ), $before );
+		}
+		if ( true === $before ) {
+			return $fail( __( 'Connection', 'scrapelock' ), __( 'The test address is already blocked at the CDN; try again.', 'scrapelock' ) );
+		}
+		$add = self::add( $c, $ip, $ban );
+		if ( 'ok' !== $add['status'] ) {
+			return $fail( __( 'Adding the test block', 'scrapelock' ), $add['message'] );
+		}
+		$rule   = array(
+			'id'  => $add['id'],
+			'own' => true,
+		);
+		$listed = self::listed( $c, $ip );
+		$remove = self::remove( $c, $ip, $rule );
+		if ( true !== $listed ) {
+			return $fail( __( 'Finding the test block at the CDN', 'scrapelock' ), is_string( $listed ) ? $listed : __( 'The CDN accepted the block but does not list it.', 'scrapelock' ) );
+		}
+		if ( 'ok' !== $remove['status'] ) {
+			/* translators: %s: test IP address */
+			return $fail( __( 'Removing the test block', 'scrapelock' ), $remove['message'] . ' ' . sprintf( __( 'Remove %s by hand at the CDN.', 'scrapelock' ), $ip ) );
+		}
+		$gone = self::listed( $c, $ip );
+		if ( false !== $gone ) {
+			/* translators: %s: test IP address */
+			return $fail( __( 'Removing the test block', 'scrapelock' ), ( is_string( $gone ) ? $gone : __( 'The CDN still lists it.', 'scrapelock' ) ) . ' ' . sprintf( __( 'Remove %s by hand at the CDN.', 'scrapelock' ), $ip ) );
+		}
+		return array(
+			'ok'      => true,
+			/* translators: 1: test IP address, 2: CDN name */
+			'message' => sprintf( __( 'The test address %1$s was blocked at %2$s, found there and removed again. Blocking at the CDN works.', 'scrapelock' ), $ip, self::providers()[ $c['provider'] ] ),
+		);
+	}
+
+	/**
+	 * Does the CDN list a block for this exact address?
+	 *
+	 * @param array{provider:string, zone:string, token:string} $c  Configuration.
+	 * @param string                                            $ip IP.
+	 * @return bool|string True / false, or what went wrong.
+	 */
+	private static function listed( $c, $ip ) {
+		if ( 'bunny' === $c['provider'] ) {
+			$res = self::bunny_blocked( $c );
+			return is_array( $res['list'] ) ? in_array( $ip, $res['list'], true ) : $res['message'];
+		}
+		$res = self::request( $c, 'GET', self::CLOUDFLARE_API . '/zones/' . rawurlencode( $c['zone'] ) . '/firewall/access_rules/rules?' . http_build_query( array( 'configuration.value' => $ip ) ) );
+		if ( 'ok' !== $res['status'] ) {
+			return $res['message'];
+		}
+		foreach ( isset( $res['json']['result'] ) && is_array( $res['json']['result'] ) ? $res['json']['result'] : array() as $rule ) {
+			if ( isset( $rule['configuration']['value'] ) && $ip === $rule['configuration']['value'] ) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	/**
 	 * One request to the CDN's API, with the site owner's token.
 	 *
 	 * @param array{provider:string, zone:string, token:string} $c      Configuration.

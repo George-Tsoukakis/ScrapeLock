@@ -244,6 +244,9 @@ if ( 0 === http( '/' )[0] ) {
 	list( , $pncp_body ) = http( '/wp-admin/options-general.php?page=scrapelock&tab=bots&pncp_message=edge_failed' );
 	t( 'φόρμα: το μήνυμα λέει γιατί (μία φορά)', false !== strpos( $pncp_body, 'The connection test failed' ) && false !== strpos( $pncp_body, 'refused the token' ) );
 	t( 'φόρμα: σωστά στοιχεία → «edge_ok», αποθηκεύεται', 'edge_ok' === form( array( 'provider' => 'cloudflare', 'zone' => CF_ZONE, 'token' => CF_TOKEN ) ) && $cf === PNCP_Edge::config() );
+	t( 'κουμπί «Test blocking at the CDN» (3.2): «edge_test_ok», τίποτα δεν μένει στην Cloudflare', 'edge_test_ok' === form( array( 'op' => 'test_block' ) ) && ! preg_grep( '/^203\.0\.113\./', cf_values() ) && 1 === preg_match( '#^POST https://api\.cloudflare\.com/.*/rules$#m', implode( "\n", cdn()['calls'] ) ), implode( ',', cf_values() ) );
+	list( , $pncp_body ) = http( '/wp-admin/options-general.php?page=scrapelock&tab=bots&pncp_message=edge_test_ok' );
+	t( 'κουμπί δοκιμής: το μήνυμα λέει τι έγινε, το κουμπί φαίνεται', 1 === preg_match( '/The test address 203\.0\.113\.\d+ was blocked at Cloudflare, found there and removed again\./', $pncp_body ) && false !== strpos( $pncp_body, 'Test blocking at the CDN' ) );
 	t( 'φόρμα: κενό token, ίδιο CDN → κρατά το αποθηκευμένο', 'edge_ok' === form( array( 'provider' => 'cloudflare', 'zone' => CF_ZONE, 'token' => '' ) ) && CF_TOKEN === PNCP_Edge::config()['token'] );
 	t( 'φόρμα: «Off» → κλειστό', 'edge_off' === form( array( 'provider' => '' ) ) && ! PNCP_Edge::usable() );
 	$pncp_ed = wp_insert_user( array( 'user_login' => 'edge_editor', 'user_pass' => wp_generate_password(), 'user_email' => 'edge_editor@example.com', 'role' => 'editor' ) );
@@ -255,6 +258,81 @@ if ( 0 === http( '/' )[0] ) {
 	require_once ABSPATH . 'wp-admin/includes/user.php';
 	wp_delete_user( $pncp_ed );
 }
+
+/* ---------- Δοκιμή αποκλεισμού στο CDN (3.2) ---------- */
+cdn_set( array( 'cf' => array(), 'bunny' => array( '5.6.9.2' ), 'fail' => 0, 'refuse' => '' ) );
+$pncp_r = PNCP_Edge::test_block( $cf );
+t( 'δοκιμή Cloudflare: προστέθηκε, βρέθηκε, αφαιρέθηκε', $pncp_r['ok'] && array() === cf_values() && 1 === preg_match( '#^DELETE https://api\.cloudflare\.com/.*/rules/r\d+$#m', implode( "\n", cdn()['calls'] ) ), $pncp_r['message'] . ' | ' . implode( ',', cf_values() ) );
+$pncp_r = PNCP_Edge::test_block( array( 'provider' => 'bunny', 'zone' => BN_ZONE, 'token' => BN_KEY ) );
+t( 'δοκιμή Bunny: προστέθηκε, βρέθηκε, αφαιρέθηκε· η IP του ιδιοκτήτη μένει', $pncp_r['ok'] && array( '5.6.9.2' ) === cdn()['bunny'], $pncp_r['message'] );
+$pncp_r = PNCP_Edge::test_block( $bad );
+t( 'δοκιμή με λάθος token: αποτυχία, λέει σε ποιο βήμα και γιατί', ! $pncp_r['ok'] && false !== strpos( $pncp_r['message'], 'refused the token' ) && array() === cf_values(), $pncp_r['message'] );
+cdn_set( array( 'fail' => 500 ) );
+$pncp_r = PNCP_Edge::test_block( $cf );
+cdn_set( array( 'fail' => 0 ) );
+t( 'δοκιμή με σφάλμα του CDN (500): αποτυχία με «HTTP 500»', ! $pncp_r['ok'] && false !== strpos( $pncp_r['message'], 'HTTP 500' ), $pncp_r['message'] );
+t( 'δοκιμή: καμία αλλαγή στην κατάσταση του αποκλεισμού στο CDN', 0 === PNCP_Edge::count() );
+
+/* ---------- Μόνο μέσω CDN (3.2) ---------- */
+$pncp_sec = 'test-secret-1234';
+$pncp_form = array_merge( PNCP_Options::stored(), array( 'cdn_only' => 1, 'cdn_secret' => $pncp_sec, '_sections' => array( 'bots' ) ) );
+unset( $_SERVER['HTTP_X_SCRAPELOCK_CDN'] );
+t( 'ενεργοποίηση από αίτημα χωρίς το μυστικό: δεν ανάβει', 0 === PNCP_Options::sanitize( $pncp_form )['cdn_only'] );
+t( 'ενεργοποίηση χωρίς μυστικό: δεν ανάβει', 0 === PNCP_Options::sanitize( array_merge( $pncp_form, array( 'cdn_secret' => '' ) ) )['cdn_only'] );
+$_SERVER['HTTP_X_SCRAPELOCK_CDN'] = 'wrong-secret-0000';
+t( 'ενεργοποίηση με λάθος μυστικό: δεν ανάβει', 0 === PNCP_Options::sanitize( $pncp_form )['cdn_only'] );
+$_SERVER['HTTP_X_SCRAPELOCK_CDN'] = $pncp_sec;
+t( 'ενεργοποίηση από αίτημα που έφερε το μυστικό: ανάβει', 1 === PNCP_Options::sanitize( $pncp_form )['cdn_only'] );
+settings( array( 'cdn_only' => 1, 'cdn_secret' => $pncp_sec ) );
+unset( $_SERVER['HTTP_X_SCRAPELOCK_CDN'] );
+t( 'αποθηκευμένο και ενεργό', PNCP_Origin::active() );
+t( 'άλλη καρτέλα αποθηκεύεται χωρίς το μυστικό: μένει ενεργό', 1 === PNCP_Options::sanitize( array_merge( PNCP_Options::stored(), array( '_sections' => array( 'content' ) ) ) )['cdn_only'] );
+function raw( $path, $headers ) {
+	global $base;
+	$ch = curl_init( $base . $path );
+	curl_setopt_array( $ch, array( CURLOPT_RETURNTRANSFER => true, CURLOPT_HTTPHEADER => array_merge( array( 'User-Agent: Mozilla/5.0 Chrome/141', 'Accept-Language: el' ), $headers ), CURLOPT_TIMEOUT => 60 ) );
+	$body = (string) curl_exec( $ch );
+	$code = (int) curl_getinfo( $ch, CURLINFO_HTTP_CODE );
+	curl_close( $ch );
+	return array( $code, $body );
+}
+if ( 0 !== raw( '/', array() )[0] ) {
+	list( $pncp_code, $pncp_body ) = raw( '/', array( 'X-Test-Remote-Addr: 5.6.20.1', 'X-Test-IP: 5.6.20.1' ) );
+	t( 'κατευθείαν στον server (χωρίς μυστικό): 403 «Access denied.»', 403 === $pncp_code && 'Access denied.' === $pncp_body, $pncp_code . ' ' . substr( $pncp_body, 0, 80 ) );
+	t( 'κατευθείαν στον server: και το wp-login.php και το REST', 403 === raw( '/wp-login.php', array( 'X-Test-Remote-Addr: 5.6.20.1' ) )[0] && 403 === raw( '/wp-json/', array( 'X-Test-Remote-Addr: 5.6.20.1' ) )[0] );
+	t( 'κατευθείαν στον server με λάθος μυστικό: 403', 403 === raw( '/', array( 'X-Test-Remote-Addr: 5.6.20.1', 'X-ScrapeLock-CDN: wrong-secret-0000' ) )[0] );
+	t( 'μέσω CDN (με το μυστικό): 200', 200 === raw( '/', array( 'X-Test-Remote-Addr: 5.6.20.1', 'X-Test-IP: 5.6.20.1', 'X-ScrapeLock-CDN: ' . $pncp_sec ) )[0] );
+	t( 'ο ίδιος ο server (127.0.0.1, cron, preload): 200 χωρίς μυστικό', 200 === raw( '/', array() )[0] );
+	t( 'στο Αρχείο: «Not through the CDN»', (bool) $GLOBALS['wpdb']->get_var( $GLOBALS['wpdb']->prepare( 'SELECT COUNT(*) FROM %i WHERE reason = %s AND ip = %s', PNCP_Log::table(), 'not_via_cdn', '5.6.20.1' ) ) );
+} else {
+	t( 'μόνο μέσω CDN: ο server των δοκιμών απαντά', false, $base );
+}
+// Πριν από την cache: ο έλεγχος που τρέχει από το wp-config.php, με τις ίδιες ρυθμίσεις.
+require_once PNCP_DIR . 'includes/class-pncp-precheck-runtime.php';
+$pncp_c                 = PNCP_Precheck::config();
+$pncp_server            = $_SERVER;
+$pncp_cookie            = $_COOKIE;
+$_COOKIE                = array(); // Επισκέπτης, όχι συνδεδεμένος διαχειριστής.
+$_SERVER['REMOTE_ADDR'] = '5.6.20.3';
+$_SERVER['REQUEST_URI'] = '/cached-page/';
+$_SERVER['REQUEST_METHOD'] = 'GET';
+// Το verdict() δεν τρέχει από τη γραμμή εντολών (PHP_SAPI cli): ελέγχονται τα δύο κομμάτια του με τη σειρά τους.
+$pncp_v = function () use ( $pncp_c ) {
+	return PNCP_Precheck_Runtime::applies( $pncp_c ) ? PNCP_Precheck_Runtime::not_via_cdn( $pncp_c ) : 'skip';
+};
+t( 'πριν από την cache: σελίδα χωρίς μυστικό → 403 «not_via_cdn»', ! empty( $pncp_c['cdn_only'] ) && '5.6.20.3' === $pncp_v(), (string) $pncp_v() );
+$_SERVER['HTTP_X_SCRAPELOCK_CDN'] = $pncp_sec;
+t( 'πριν από την cache: με το μυστικό → περνά', '' === $pncp_v() );
+unset( $_SERVER['HTTP_X_SCRAPELOCK_CDN'] );
+$_SERVER['REMOTE_ADDR'] = '127.0.0.1';
+t( 'πριν από την cache: ο ίδιος ο server → περνά', '' === $pncp_v() );
+$_SERVER['REMOTE_ADDR'] = '5.6.20.3';
+$_SERVER['REQUEST_URI'] = '/wp-admin/';
+t( 'πριν από την cache: το wp-admin το αφήνει (ο έλεγχος του WordPress αποφασίζει, με το SCRAPELOCK_CDN_ONLY)', 'skip' === $pncp_v() );
+$_SERVER = $pncp_server;
+$_COOKIE = $pncp_cookie;
+settings( array( 'cdn_only' => 0, 'cdn_secret' => '' ) );
+t( 'κλειστό: ο έλεγχος πριν από την cache δεν το έχει', empty( PNCP_Precheck::config()['cdn_only'] ) && ! PNCP_Origin::active() );
 
 /* ---------- Τέλος ---------- */
 PNCP_Edge::remove_all( 5 );
