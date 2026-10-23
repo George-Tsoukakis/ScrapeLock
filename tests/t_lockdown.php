@@ -20,6 +20,20 @@ function t( $label, $ok, $extra = '' ) {
 	echo ( $ok ? 'PASS ' : 'FAIL ' ) . $label . ( $extra && ! $ok ? "  [$extra]" : '' ) . "\n";
 }
 
+// Ο φύλακας (3.3) και η κατάσταση από προηγούμενη εκτέλεση θα κρατούσαν το site κλειδωμένο (και οι ρόλοι της
+// δοκιμής δεν θα γράφονταν): σβήνονται πρώτα απ' όλα.
+PNCP_Seal::remove_guard();
+delete_option( PNCP_Seal::SNAP );
+delete_site_option( PNCP_Lockdown::OPTION );
+( function () {
+	self::$state   = null;
+	self::$tamper  = '';
+	self::$sig_ok  = true;
+} )->bindTo( null, 'PNCP_Lockdown' )();
+( function () {
+	self::$current = array( 'locked' => false, 'until' => 0 );
+} )->bindTo( null, 'PNCP_Seal' )();
+
 /* ---------- Χρήστες και συνδέσεις ---------- */
 foreach ( array( 'ld_editor', 'ld_customer', 'ld_newadmin', 'ld_shopper', 'ld_member', 'ld_member2' ) as $login ) {
 	$old = get_user_by( 'login', $login );
@@ -97,6 +111,17 @@ function fresh() {
 		self::$state = null;
 		self::$staff = array();
 	} )->bindTo( null, 'PNCP_Lockdown' )();
+	// Ο φύλακας (3.3): η διεργασία των δοκιμών ζει πολύ (σε ένα πραγματικό αίτημα ο φύλακας διαβάζεται στην
+	// αρχή του), οπότε διαβάζεται ξανά από το αρχείο, όπως είναι τώρα.
+	$record = array( 'locked' => false, 'until' => 0 );
+	$guard  = is_readable( PNCP_Seal::path() ) ? (string) file_get_contents( PNCP_Seal::path() ) : '';
+	if ( preg_match( "/define\\( 'PNCP_LOCKDOWN_BEACON', '([^']+)' \\)/", $guard, $m ) ) {
+		$data   = json_decode( $m[1], true );
+		$record = array( 'locked' => ! empty( $data['locked'] ), 'until' => (int) $data['until'] );
+	}
+	( function ( $record ) {
+		self::$current = $record;
+	} )->bindTo( null, 'PNCP_Seal' )( $record );
 }
 
 /** Αλλάζει την κατάσταση από το test (π.χ. «το προηγούμενο βήμα του κωδικού δεν χρησιμοποιήθηκε»). */
@@ -106,6 +131,24 @@ function state_set( $changes ) {
 		self::save( array_merge( self::state(), $changes ) );
 	} )->bindTo( null, 'PNCP_Lockdown' )( $changes );
 	fresh();
+}
+
+/** Γράφει μια επιλογή κατευθείαν στη βάση, όπως ένα SQL injection σε άλλο plugin (χωρίς τα φίλτρα του WordPress). */
+function raw_set( $option, $value ) {
+	global $wpdb;
+	if ( null === $value ) {
+		$wpdb->delete( $wpdb->options, array( 'option_name' => $option ) );
+	} elseif ( ! $wpdb->update( $wpdb->options, array( 'option_value' => maybe_serialize( $value ) ), array( 'option_name' => $option ) ) ) {
+		$wpdb->insert( $wpdb->options, array( 'option_name' => $option, 'option_value' => maybe_serialize( $value ), 'autoload' => 'off' ) );
+	}
+	fresh();
+}
+
+/** Η επιλογή όπως είναι στη βάση. */
+function raw_get( $option ) {
+	global $wpdb;
+	$v = $wpdb->get_var( $wpdb->prepare( "SELECT option_value FROM {$wpdb->options} WHERE option_name = %s", $option ) );
+	return null === $v ? null : maybe_unserialize( $v );
 }
 
 /** Ο τρέχων κωδικός της εφαρμογής, για νέο βήμα κάθε φορά (το test δεν περιμένει 30″). */
@@ -329,12 +372,79 @@ reset_fails( array( 1 ) );
 t( 'ξεκλείδωμα με λάθος κωδικό: όχι', 'wrong' === ld( 'unlock', array( 'code' => '123456', 'minutes' => 15 ) ) && PNCP_Lockdown::is_locked() );
 t( 'ξεκλείδωμα με κωδικό ανάκτησης για 15 λεπτά', 'unlocked' === ld( 'unlock', array( 'code' => strtoupper( $recovery[0] ), 'minutes' => 15 ) ) && ! PNCP_Lockdown::is_locked() && PNCP_Lockdown::unlocked_until() > time() + 14 * 60 );
 t( '… ο κωδικός ανάκτησης χρησιμοποιείται μία φορά (9 μένουν)', 9 === count( PNCP_Lockdown::state()['codes'] ) );
+t( '3.3: το προσωρινό ξεκλείδωμα σημειώνει ποιος ξεκλείδωσε', 1 === (int) PNCP_Lockdown::state()['unlocked_by'] );
 list( $code ) = http( '/wp-admin/plugins.php' );
 t( 'ξεκλείδωτο: τα plugins ανοίγουν', 200 === $code, (string) $code );
 t( 'ξανά κλείδωμα αμέσως, χωρίς κωδικό', 'locked' === ld( 'relock' ) && PNCP_Lockdown::is_locked() );
 t( 'ο ίδιος κωδικός ανάκτησης δεύτερη φορά: όχι', 'wrong' === ld( 'unlock', array( 'code' => $recovery[0] ) ) && PNCP_Lockdown::is_locked() );
 state_set( array( 'until' => time() - 1 ) );
 t( 'το προσωρινό ξεκλείδωμα λήγει και ξανακλειδώνει μόνο του', PNCP_Lockdown::is_locked() );
+
+/* ---------- 3.3: σφραγίδα (υπογραφές, φύλακας, αντίγραφο ρυθμίσεων) ---------- */
+// Κάποιος που γράφει στη βάση (όχι στα αρχεία) δεν ξεκλειδώνει το site ούτε αλλάζει ρυθμίσεις.
+foreach ( array( 'state', 'snapshot', 'options', 'admin' ) as $pncp_k ) {
+	delete_site_transient( 'pncp_ld_tamper_' . $pncp_k );
+}
+add_filter( 'pre_wp_mail', '__return_false' );
+$pncp_guard = (string) @file_get_contents( PNCP_Seal::path() );
+t( 'σφραγίδα: κλειδωμένο → ο φύλακας (mu-plugin) υπάρχει, υπογεγραμμένος', PNCP_Seal::guard_installed() && false !== strpos( $pncp_guard, 'PNCP_LOCKDOWN_BEACON' ) && false !== strpos( $pncp_guard, 'option_active_plugins' ) && '' === PNCP_Lockdown::tampered() );
+t( 'σφραγίδα: η κατάσταση στη βάση έχει υπογραφή', 64 === strlen( (string) ( raw_get( PNCP_Lockdown::OPTION )['sig'] ?? '' ) ) );
+t( 'σφραγίδα: αντίγραφο των προστατευμένων ρυθμίσεων και των διαχειριστών', is_array( PNCP_Seal::snapshot() ) && in_array( 1, PNCP_Seal::snapshot()['admins'], true ) && array_key_exists( 'admin_email', PNCP_Seal::snapshot()['values'] ) );
+$pncp_raw = raw_get( PNCP_Lockdown::OPTION );
+raw_set( PNCP_Lockdown::OPTION, array_merge( $pncp_raw, array( 'locked' => false ) ) );
+t( 'σφραγίδα: «ξεκλείδωμα» από τη βάση (χωρίς σωστή υπογραφή) → μένει κλειδωμένο', PNCP_Lockdown::is_locked() && 'replay' === PNCP_Lockdown::tampered() );
+t( '… και ειδοποίηση στο ημερολόγιο', false !== strpos( wp_json_encode( get_site_option( PNCP_Lockdown::LOG_OPTION ) ), 'tampered' ) );
+as_user( 1 );
+reset_fails( array( 1 ) );
+t( 'σφραγίδα: ξεκλείδωμα από τη σελίδα όσο η βάση είναι πλαστή: όχι', 'tampered' === ( $pncp_r = ld( 'unlock', array( 'code' => PNCP_Totp::code( $secret, PNCP_Totp::step() ), 'minutes' => 15 ) ) ) && PNCP_Lockdown::is_locked(), $pncp_r );
+raw_set( PNCP_Lockdown::OPTION, null );
+t( 'σφραγίδα: σβήσιμο της κατάστασης από τη βάση → μένει κλειδωμένο', PNCP_Lockdown::is_locked() && 'replay' === PNCP_Lockdown::tampered() );
+// Παλιό αντίγραφο της βάσης (σωστή υπογραφή) με «ξεκλείδωτο για ώρες»: ο φύλακας λέει κλειδωμένο.
+$pncp_old          = $pncp_raw;
+unset( $pncp_old['sig'] );
+$pncp_old['until'] = time() + 3 * HOUR_IN_SECONDS;
+$pncp_old['sig']   = PNCP_Seal::sign( $pncp_old );
+raw_set( PNCP_Lockdown::OPTION, $pncp_old );
+t( 'σφραγίδα: παλιό υπογεγραμμένο αντίγραφο με «ξεκλείδωτο» → μένει κλειδωμένο', PNCP_Lockdown::is_locked() && 'replay' === PNCP_Lockdown::tampered() && 0 === PNCP_Lockdown::unlocked_until() );
+raw_set( PNCP_Lockdown::OPTION, $pncp_raw );
+t( 'σφραγίδα: η σωστή κατάσταση πίσω → όλα κανονικά', PNCP_Lockdown::is_locked() && '' === PNCP_Lockdown::tampered() );
+// Ρυθμίσεις που αλλάζουν κατευθείαν στη βάση επιστρέφουν.
+$pncp_mail = get_option( 'admin_email' );
+raw_set( 'admin_email', 'attacker@example.com' );
+raw_set( 'users_can_register', '1' === (string) get_option( 'users_can_register' ) ? '0' : '1' );
+$pncp_reg = raw_get( 'users_can_register' );
+PNCP_Seal::verify_options();
+fresh();
+t( 'σφραγίδα: email διαχειριστή και εγγραφές αλλαγμένα στη βάση → επιστρέφουν', $pncp_mail === raw_get( 'admin_email' ) && $pncp_reg !== raw_get( 'users_can_register' ) );
+// Λογαριασμός που έγινε διαχειριστής πίσω από την πλάτη του WordPress δεν συνδέεται.
+global $wpdb;
+$pncp_pw   = wp_generate_password();
+$pncp_evil = wp_insert_user( array( 'user_login' => 'ld_evil', 'user_pass' => $pncp_pw, 'user_email' => 'ld_evil@example.com', 'role' => 'subscriber' ) );
+$wpdb->update( $wpdb->usermeta, array( 'meta_value' => serialize( array( 'administrator' => true ) ) ), array( 'user_id' => $pncp_evil, 'meta_key' => $wpdb->get_blog_prefix() . 'capabilities' ) );
+clean_user_cache( $pncp_evil );
+fresh();
+$pncp_auth = wp_authenticate( 'ld_evil', $pncp_pw );
+t( 'σφραγίδα: νέος διαχειριστής από τη βάση → δεν συνδέεται', is_wp_error( $pncp_auth ) && 'pncp_locked' === $pncp_auth->get_error_code() );
+delete_site_transient( 'pncp_ld_tamper_admin' );
+PNCP_Seal::check_admins();
+t( '… και αναφέρεται στον ωριαίο έλεγχο', false !== strpos( wp_json_encode( get_site_option( PNCP_Lockdown::LOG_OPTION ) ), 'ld_evil' ) );
+$pncp_auth = wp_authenticate( 'ld_editor', 'wrong-password' );
+t( 'σφραγίδα: οι υπόλοιποι λογαριασμοί δεν επηρεάζονται', is_wp_error( $pncp_auth ) && 'pncp_locked' !== $pncp_auth->get_error_code() );
+require_once ABSPATH . 'wp-admin/includes/user.php';
+wp_delete_user( $pncp_evil );
+// Αλλοιωμένο αντίγραφο: ειδοποίηση, όχι «επαναφορά» από αυτό.
+$pncp_snap = raw_get( PNCP_Seal::SNAP );
+$pncp_bad  = $pncp_snap;
+$pncp_bad['values']['admin_email'] = 'attacker@example.com';
+raw_set( PNCP_Seal::SNAP, $pncp_bad );
+PNCP_Seal::verify_options();
+fresh();
+t( 'σφραγίδα: πλαστό αντίγραφο ρυθμίσεων → αγνοείται', null === PNCP_Seal::snapshot() && $pncp_mail === raw_get( 'admin_email' ) );
+raw_set( PNCP_Seal::SNAP, $pncp_snap );
+remove_filter( 'pre_wp_mail', '__return_false' );
+foreach ( array( 'state', 'snapshot', 'options', 'admin' ) as $pncp_k ) {
+	delete_site_transient( 'pncp_ld_tamper_' . $pncp_k );
+}
 
 /* ---------- Ταυτόχρονα αιτήματα με τον ίδιο κωδικό ---------- */
 // Το αίτημα Α έχει ήδη διαβάσει την κατάσταση· στο μεταξύ το αίτημα Β (server) χρησιμοποιεί τον κωδικό· μετά το Α
@@ -527,6 +637,17 @@ $pncp_rep = PNCP_Integrity::check();
 t( 'ακεραιότητα: μετά το ξεκλείδωμα νέο αποτύπωμα, χωρίς ευρήματα (και χωρίς δίκτυο)', PNCP_Lockdown::is_locked() && array() === PNCP_Integrity::findings( $pncp_rep ) && ! PNCP_Integrity::baseline()['stale'] && false === $pncp_rep['official']['core'] );
 $pncp_hh = PNCP_Health::test_integrity();
 t( 'ακεραιότητα: Site Health → good', 'good' === $pncp_hh['status'] );
+// 3.3: το αποτύπωμα είναι υπογεγραμμένο και η ώρα του σημειώνεται στην (υπογεγραμμένη) κατάσταση.
+$pncp_fp  = raw_get( PNCP_Integrity::BASELINE );
+$pncp_fp2 = $pncp_fp;
+$pncp_fp2['files'] = base64_encode( gzcompress( '{}' ) );
+raw_set( PNCP_Integrity::BASELINE, $pncp_fp2 );
+t( 'ακεραιότητα (3.3): αποτύπωμα αλλαγμένο στη βάση → παραποιημένο', true === PNCP_Integrity::baseline()['tampered'] );
+raw_set( PNCP_Integrity::BASELINE, null );
+t( 'ακεραιότητα (3.3): σβησμένο αποτύπωμα → παραποιημένο', true === PNCP_Integrity::baseline()['tampered'] );
+t( '… Site Health → critical', 'critical' === PNCP_Health::test_integrity()['status'] );
+raw_set( PNCP_Integrity::BASELINE, $pncp_fp );
+t( 'ακεραιότητα (3.3): το σωστό αποτύπωμα πίσω → εντάξει', false === PNCP_Integrity::baseline()['tampered'] );
 // Χωρίς PHP στα uploads: το .htaccess του φακέλου (Apache) και οι κανόνες Nginx / Apache.
 $pncp_ht = $pncp_up . '/.htaccess';
 $pncp_s  = PNCP_Options::stored();
@@ -606,7 +727,22 @@ t( 'SCRAPELOCK_UNLOCK: το κλείδωμα δεν εφαρμόζεται', ! P
 $pncp_h = PNCP_Health::test_lockdown();
 t( 'Site Health: SCRAPELOCK_UNLOCK → critical', 'critical' === $pncp_h['status'] && 'red' === $pncp_h['badge']['color'] );
 
+/* ---------- 3.3: αναβάθμιση από παλιότερη έκδοση (χωρίς υπογραφές) ---------- */
+$pncp_ver = get_option( 'pncp_version' );
+raw_set( PNCP_Lockdown::OPTION, array( 'secret' => 'p:' . $secret, 'locked' => true, 'until' => 0, 'codes' => array() ) );
+update_option( 'pncp_version', '3.2.0' );
+fresh();
+t( 'αναβάθμιση: η κατάσταση χωρίς υπογραφή γίνεται δεκτή πριν την αναβάθμιση', '' === PNCP_Lockdown::tampered() );
+PNCP_Lockdown::upgrade_seal();
+update_option( 'pncp_version', $pncp_ver );
+fresh();
+t( 'αναβάθμιση: υπογράφεται, φύλακας και αντίγραφο ρυθμίσεων', 64 === strlen( (string) ( raw_get( PNCP_Lockdown::OPTION )['sig'] ?? '' ) ) && '' === PNCP_Lockdown::tampered() && ( PNCP_Lockdown::server_unlocked() || PNCP_Seal::guard_installed() ) && is_array( PNCP_Seal::snapshot() ) );
+raw_set( PNCP_Lockdown::OPTION, array( 'secret' => 'p:' . $secret, 'locked' => true, 'until' => 0, 'codes' => array() ) );
+t( 'μετά την αναβάθμιση: κατάσταση χωρίς υπογραφή → παραποιημένη', '' !== PNCP_Lockdown::tampered() );
+
 /* ---------- Καθάρισμα ---------- */
+PNCP_Seal::remove_guard();
+delete_option( PNCP_Seal::SNAP );
 delete_site_option( PNCP_Lockdown::OPTION );
 delete_site_option( PNCP_Lockdown::LOG_OPTION );
 delete_site_option( PNCP_Lockdown::MUTEX );

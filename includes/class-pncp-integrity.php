@@ -37,6 +37,7 @@ final class PNCP_Integrity {
 	 */
 	public static function init() {
 		add_action( PNCP_Log::CRON, array( __CLASS__, 'cron' ), 20 );
+		add_action( 'init', array( __CLASS__, 'ensure_cron' ) );
 		if ( is_admin() ) {
 			add_action( 'admin_post_' . self::ACTION, array( __CLASS__, 'handle' ) );
 			add_action( 'admin_notices', array( __CLASS__, 'notice' ) );
@@ -221,8 +222,20 @@ final class PNCP_Integrity {
 	 * @return array{time:int, files:array<string,string>, complete:bool, stale:bool}
 	 */
 	public static function baseline() {
-		$stored = self::get( self::BASELINE );
-		$files  = array();
+		$stored   = self::get( self::BASELINE );
+		$files    = array();
+		$tampered = false;
+		if ( is_array( $stored ) && $stored ) {
+			$sig = isset( $stored['sig'] ) ? $stored['sig'] : null;
+			unset( $stored['sig'] );
+			$tampered = null === $sig ? ! PNCP_Seal::legacy() : ! PNCP_Seal::valid( $stored, $sig );
+		}
+		// The signed lock state notes the time of the fingerprint: a fingerprint that was removed, or put back
+		// from an older copy, no longer matches it.
+		$fp = (int) PNCP_Lockdown::state()['fp'];
+		if ( $fp > 0 && ( ! is_array( $stored ) || ! isset( $stored['time'] ) || (int) $stored['time'] !== $fp ) ) {
+			$tampered = true;
+		}
 		if ( is_array( $stored ) && ! empty( $stored['files'] ) ) {
 			$raw   = base64_decode( (string) $stored['files'], true ); // phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.obfuscation_base64_decode -- Our own compressed list of file hashes.
 			$json  = false !== $raw ? @gzuncompress( $raw ) : false; // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged -- Damaged data = no fingerprint.
@@ -233,7 +246,33 @@ final class PNCP_Integrity {
 			'files'    => is_array( $files ) ? $files : array(),
 			'complete' => ! is_array( $stored ) || ! isset( $stored['complete'] ) || ! empty( $stored['complete'] ),
 			'stale'    => is_array( $stored ) && ! empty( $stored['stale'] ),
+			'tampered' => $tampered,
 		);
+	}
+
+	/**
+	 * Stores the fingerprint with its signature.
+	 *
+	 * @param array<string, mixed> $value Fingerprint.
+	 */
+	private static function put_baseline( $value ) {
+		unset( $value['sig'] );
+		$value['sig'] = PNCP_Seal::sign( $value );
+		self::put( self::BASELINE, $value );
+	}
+
+	/**
+	 * The upgrade to 3.3: signs a fingerprint stored before signatures existed.
+	 *
+	 * @return int Its time (0 = none).
+	 */
+	public static function resign() {
+		$stored = self::get( self::BASELINE );
+		if ( ! is_array( $stored ) || empty( $stored['time'] ) ) {
+			return 0;
+		}
+		self::put_baseline( $stored );
+		return (int) $stored['time'];
 	}
 
 	/**
@@ -252,6 +291,7 @@ final class PNCP_Integrity {
 				'complete' => true,
 				'official' => array(),
 				'handled'  => array(),
+				'tampered' => false,
 			),
 			is_array( $report ) ? $report : array()
 		);
@@ -263,17 +303,19 @@ final class PNCP_Integrity {
 	 */
 	public static function snapshot() {
 		$now = self::collect();
-		$raw = gzcompress( (string) wp_json_encode( $now['files'] ), 6 );
-		self::put(
-			self::BASELINE,
+		$raw  = gzcompress( (string) wp_json_encode( $now['files'] ), 6 );
+		$time = time();
+		self::put_baseline(
 			array(
-				'time'     => time(),
+				'time'     => $time,
 				'files'    => base64_encode( (string) $raw ), // phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.obfuscation_base64_encode -- Compressed list of file hashes, stored as text.
 				'complete' => $now['complete'],
 				'stale'    => false,
 			)
 		);
+		PNCP_Lockdown::note_fingerprint( $time );
 		$report             = self::report();
+		$report['tampered'] = false;
 		$report['time']     = time();
 		$report['added']    = array();
 		$report['changed']  = array();
@@ -292,9 +334,9 @@ final class PNCP_Integrity {
 	 */
 	public static function mark_stale() {
 		$stored = self::get( self::BASELINE );
-		if ( is_array( $stored ) && $stored ) {
+		if ( is_array( $stored ) && $stored && ! self::baseline()['tampered'] ) {
 			$stored['stale'] = true;
-			self::put( self::BASELINE, $stored );
+			self::put_baseline( $stored );
 		}
 	}
 
@@ -306,6 +348,17 @@ final class PNCP_Integrity {
 	public static function cron() {
 		if ( PNCP_Lockdown::is_locked() ) {
 			self::check();
+			PNCP_Seal::check_admins();
+		}
+	}
+
+	/**
+	 * While locked, the hourly check must keep running: if its scheduled event is gone (removed by other code,
+	 * or lost), it is scheduled again.
+	 */
+	public static function ensure_cron() {
+		if ( PNCP_Lockdown::is_locked() && ! wp_next_scheduled( PNCP_Log::CRON ) ) {
+			wp_schedule_event( time() + 5 * MINUTE_IN_SECONDS, 'hourly', PNCP_Log::CRON );
 		}
 	}
 
@@ -316,6 +369,16 @@ final class PNCP_Integrity {
 	 */
 	public static function check() {
 		$base = self::baseline();
+		if ( $base['tampered'] ) {
+			// Never a new fingerprint here: it would accept whatever was hidden. Reported until the site is
+			// locked again (which takes a new one).
+			$report             = self::report();
+			$report['time']     = time();
+			$report['tampered'] = true;
+			self::put( self::REPORT, $report );
+			PNCP_Lockdown::tamper_alert( 'fingerprint' );
+			return self::report();
+		}
 		if ( ! $base['time'] || $base['stale'] ) {
 			self::snapshot();
 			return self::report();
@@ -655,7 +718,11 @@ final class PNCP_Integrity {
 		if ( ! PNCP_Lockdown::is_owner( get_current_user_id() ) || PNCP_Lockdown::on_tab() ) {
 			return;
 		}
-		$found = self::findings( self::report() );
+		$report = self::report();
+		if ( ! empty( $report['tampered'] ) ) {
+			echo '<div class="notice notice-error"><p><strong>' . esc_html__( 'ScrapeLock: the fingerprint of the code files was changed outside WordPress.', 'scrapelock' ) . '</strong> ' . esc_html__( 'New or changed files might have been hidden. Check the site with a security scanner; a new fingerprint is taken the next time you lock the site.', 'scrapelock' ) . ' <a href="' . esc_url( PNCP_Lockdown::page_url() . '#pncp-integrity' ) . '">' . esc_html__( 'Lockdown', 'scrapelock' ) . '</a></p></div>';
+		}
+		$found = self::findings( $report );
 		if ( ! $found ) {
 			return;
 		}
@@ -696,6 +763,9 @@ final class PNCP_Integrity {
 				}
 				?>
 			</p>
+			<?php if ( $base['tampered'] ) : ?>
+				<div class="notice notice-error inline"><p><strong><?php esc_html_e( 'The fingerprint was changed or removed outside WordPress: new or changed files might have been hidden.', 'scrapelock' ); ?></strong> <?php esc_html_e( 'Check the site with a security scanner. A new fingerprint is taken the next time you lock the site (unlock for a while, then lock again).', 'scrapelock' ); ?></p></div>
+			<?php endif; ?>
 			<?php if ( $found ) : ?>
 				<div class="notice notice-error inline"><p><strong><?php esc_html_e( 'Check these files. Nobody should have changed code while the site was locked; a file you do not recognise is often a backdoor.', 'scrapelock' ); ?></strong></p></div>
 				<table class="widefat striped">
