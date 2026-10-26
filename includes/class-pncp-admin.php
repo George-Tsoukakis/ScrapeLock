@@ -796,7 +796,7 @@ final class PNCP_Admin {
 					echo '<p class="pncp-inline-warning">' . esc_html__( 'The file could not be created (the server does not allow direct file writes to wp-content/mu-plugins). The normal check works as before.', 'scrapelock' ) . '</p>';
 				}
 				if ( ! is_multisite() ) {
-					self::checkbox( $s, 'precheck', __( 'Pre-cache check: apply the page limit and blocks also to pages served from the page cache', 'scrapelock' ), __( 'Page caches such as WP Rocket serve stored pages before any plugin loads, so a bot that looks like a browser could read them without a limit. This adds one line at the top of wp-config.php that loads a small check before the cache: always-blocked IPs, temporarily blocked IPs and the “Pages per minute” limit. Counters are kept in APCu or in wp-content/scrapelock-precheck. Search engines, logged-in users, forms, wp-admin and the REST API are left to the normal check. The line and the files are removed when you turn this off or deactivate the plugin.', 'scrapelock' ) );
+					self::checkbox( $s, 'precheck', __( 'Pre-cache check: apply the page limit and blocks also to pages served from the page cache', 'scrapelock' ), __( 'Page caches such as WP Rocket serve stored pages before any plugin loads, so a bot that looks like a browser could read them without a limit. This adds one line at the top of wp-config.php that loads a small check before the cache: always-blocked IPs, temporarily blocked IPs and the “Pages per minute” limit. Counters are kept in APCu or in a folder of the uploads directory (uploads/scrapelock). Search engines, logged-in users, forms, wp-admin and the REST API are left to the normal check. The line and the files are removed when you turn this off or deactivate the plugin.', 'scrapelock' ) );
 					self::render_precheck_status( $s );
 				}
 				?>
@@ -996,14 +996,14 @@ final class PNCP_Admin {
 		}
 		if ( PNCP_Precheck::active() ) {
 			echo '<p class="description pncp-precheck-status">' . esc_html__( 'Running: wp-config.php loads the check before the page cache.', 'scrapelock' ) . ' ';
-			echo esc_html( function_exists( 'apcu_enabled' ) && apcu_enabled() ? __( 'Counters: APCu.', 'scrapelock' ) : __( 'Counters: files in wp-content/scrapelock-precheck.', 'scrapelock' ) );
+			echo esc_html( function_exists( 'apcu_enabled' ) && apcu_enabled() ? __( 'Counters: APCu.', 'scrapelock' ) : __( 'Counters: files in uploads/scrapelock.', 'scrapelock' ) );
 			echo '</p>';
 			return;
 		}
 		$status = (string) get_option( PNCP_Precheck::STATUS, '' );
 		echo '<div class="pncp-inline-warning pncp-precheck-status"><p>';
 		if ( 'no_files' === $status ) {
-			esc_html_e( 'Not running: the folder wp-content/scrapelock-precheck could not be created (the server does not allow direct file writes). The normal check works as before.', 'scrapelock' );
+			esc_html_e( 'Not running: the folder uploads/scrapelock could not be created (the server does not allow direct file writes). The normal check works as before.', 'scrapelock' );
 		} else {
 			esc_html_e( 'Not running yet: wp-config.php could not be changed (not writable, or it does not start with “<?php” on its own line). Add these lines right after the first line (<?php) of wp-config.php, then reload this page:', 'scrapelock' );
 			echo '</p>';

@@ -238,6 +238,7 @@ foreach ( array( 'plugins.php', 'plugin-install.php', 'update-core.php', 'theme-
 }
 list( $code, $body ) = http( '/wp-admin/profile.php' );
 t( 'κλειδωμένο (2.8.1): αντί για «not allowed», σελίδα «The site is locked» με κουμπί ξεκλειδώματος', 403 === $code && false !== strpos( $body, '<title>The site is locked</title>' ) && false !== strpos( $body, 'class="pncp-locked"' ) && 1 === preg_match( '/<a class="pncp-locked-btn" href="[^"]*page=scrapelock(&#038;|&amp;|&)tab=lockdown"/', $body ) && false !== strpos( $body, 'Back to the Dashboard' ) && ! php_errors( $body ), (string) $code );
+t( 'κλειδωμένο (3.3.1): το στυλ της σελίδας από το καταχωρημένο assets/css/locked.css, όχι από <style> του plugin', 1 === preg_match( '#<link rel=.stylesheet. id=.pncp-locked-css. href=.[^\'"]*assets/css/locked\.css#', $body ) && false === strpos( $body, '.pncp-locked{' ) );
 t( 'κλειδωμένο (2.8.1): το μήνυμα του WordPress μόνο στην «Technical detail»', 1 === preg_match( '#<details><summary>Technical detail</summary><p>[^<]*not allowed to edit this user#', $body ) && 1 === substr_count( $body, 'not allowed to edit this user' ) );
 list( $code, $body ) = http( '/wp-admin/plugin-install.php' );
 t( 'κλειδωμένο (2.8.1): και σε άλλη σελίδα «not allowed» (plugin-install.php)', false !== strpos( $body, 'class="pncp-locked"' ) && false !== strpos( $body, 'tab=lockdown' ), (string) $code );

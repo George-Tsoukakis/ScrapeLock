@@ -1,12 +1,14 @@
 <?php
 /**
- * Pre-cache check: the setting, the generated loader, the line in wp-config.php and the import of its
- * events into the log. The check itself is in includes/class-pncp-precheck-runtime.php.
+ * Pre-cache check: the setting, its data folder, the line in wp-config.php and the import of its events
+ * into the log. The check itself is in includes/class-pncp-precheck-runtime.php.
  *
  * Page caches such as WP Rocket serve stored pages before any plugin loads, so the normal check never sees
  * those requests: a bot that looks like a browser could read cached pages without a limit. With this setting
- * on, one line at the top of wp-config.php loads a small check (always-blocked IPs, bans, page limit per IP)
- * that runs before the cache. Off by default; turned off, the line and the files are removed.
+ * on, one line at the top of wp-config.php loads the check from the plugin folder (always-blocked IPs, bans,
+ * page limit per IP), before the cache. Its configuration, counters and events are data files (no PHP) in
+ * a folder of the uploads directory, uploads/scrapelock/precheck-RANDOM. Off by default; turned off, the
+ * line and the files are removed.
  *
  * @package ScrapeLock
  */
@@ -18,10 +20,16 @@ defined( 'ABSPATH' ) || exit;
  */
 final class PNCP_Precheck {
 
-	const DIR    = 'scrapelock-precheck';
+	const DIR    = 'scrapelock';
 	const BEGIN  = '// BEGIN ScrapeLock pre-cache check';
 	const END    = '// END ScrapeLock pre-cache check';
 	const STATUS = 'pncp_precheck_status';
+	const KEY    = 'pncp_precheck_key';
+
+	/**
+	 * Version of the configuration file; the runtime ignores any other.
+	 */
+	const FORMAT = 2;
 
 	/**
 	 * Registers the hooks.
@@ -45,21 +53,59 @@ final class PNCP_Precheck {
 	}
 
 	/**
-	 * The data folder (counters, bans, events, the loader).
+	 * The data folder (configuration, counters, bans, events): uploads/scrapelock/precheck-RANDOM. The
+	 * random part keeps it from being guessed on servers that ignore .htaccess (Nginx). '' when the
+	 * uploads directory is not available.
 	 *
 	 * @return string
 	 */
 	public static function dir() {
-		return untrailingslashit( WP_CONTENT_DIR ) . '/' . self::DIR;
+		$uploads = wp_upload_dir( null, false );
+		if ( ! empty( $uploads['error'] ) || empty( $uploads['basedir'] ) ) {
+			return '';
+		}
+		return untrailingslashit( $uploads['basedir'] ) . '/' . self::DIR . '/precheck-' . self::key();
 	}
 
 	/**
-	 * The generated loader that wp-config.php includes.
+	 * The random part of the folder name (created once).
 	 *
 	 * @return string
 	 */
-	public static function loader() {
-		return self::dir() . '/run.php';
+	private static function key() {
+		$key = (string) get_option( self::KEY, '' );
+		if ( ! preg_match( '/^[a-z0-9]{20}$/', $key ) ) {
+			$key = strtolower( wp_generate_password( 20, false, false ) );
+			update_option( self::KEY, $key, false );
+		}
+		return $key;
+	}
+
+	/**
+	 * Has the check ever had a data folder? (Bans and their removal touch the files only then.)
+	 *
+	 * @return bool
+	 */
+	private static function has_dir() {
+		return '' !== (string) get_option( self::KEY, '' ) && '' !== self::dir() && is_dir( self::dir() );
+	}
+
+	/**
+	 * The configuration file that the check reads.
+	 *
+	 * @return string
+	 */
+	public static function config_file() {
+		return self::dir() . '/config.json';
+	}
+
+	/**
+	 * The check itself, in the plugin folder: the line in wp-config.php includes it.
+	 *
+	 * @return string
+	 */
+	public static function runtime_file() {
+		return plugin_dir_path( PNCP_FILE ) . 'includes/class-pncp-precheck-runtime.php';
 	}
 
 	/**
@@ -91,9 +137,10 @@ final class PNCP_Precheck {
 	 * @return string
 	 */
 	public static function block() {
-		$loader = var_export( self::loader(), true ); // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_var_export -- Writes the path as PHP code.
+		$runtime = var_export( self::runtime_file(), true ); // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_var_export -- Writes the path as PHP code.
+		$data    = var_export( self::dir(), true ); // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_var_export -- Writes the path as PHP code.
 		return self::BEGIN . " (added and removed by the plugin's \"Pre-cache check\" setting)\n"
-			. 'if ( is_file( ' . $loader . ' ) ) { include_once ' . $loader . "; }\n"
+			. 'if ( is_file( ' . $runtime . ' ) ) { include_once ' . $runtime . '; PNCP_Precheck_Runtime::boot( ' . $data . " ); }\n"
 			. self::END . "\n";
 	}
 
@@ -111,12 +158,12 @@ final class PNCP_Precheck {
 	}
 
 	/**
-	 * Is the check running, i.e. the loader is current and wp-config.php includes it?
+	 * Is the check running, i.e. its configuration is current and wp-config.php includes it?
 	 *
 	 * @return bool
 	 */
 	public static function active() {
-		return is_readable( self::loader() ) && self::loader_code() === (string) file_get_contents( self::loader() ) && self::in_config(); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Local file.
+		return is_readable( self::config_file() ) && self::config_json() === (string) file_get_contents( self::config_file() ) && self::in_config(); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Local file.
 	}
 
 	/**
@@ -126,6 +173,7 @@ final class PNCP_Precheck {
 	 * @return string
 	 */
 	public static function sync() {
+		self::remove_legacy();
 		if ( ! self::wanted() ) {
 			self::remove();
 			update_option( self::STATUS, 'off', false );
@@ -137,10 +185,10 @@ final class PNCP_Precheck {
 	}
 
 	/**
-	 * Rewrites the loader when the lists change (daily), so that it has the current Google / Bing / CDN lists.
+	 * Rewrites the configuration when the lists change (daily), so that it has the current Google / Bing / CDN lists.
 	 */
 	public static function refresh() {
-		if ( self::wanted() && is_readable( self::loader() ) ) {
+		if ( self::wanted() && is_readable( self::config_file() ) ) {
 			self::write_files();
 		}
 	}
@@ -151,29 +199,56 @@ final class PNCP_Precheck {
 	 * @param bool $import Move the remaining events into the log first (not on uninstall: the log goes too).
 	 */
 	public static function remove( $import = true ) {
+		self::remove_legacy( $import );
 		self::remove_from_config();
+		if ( '' === (string) get_option( self::KEY, '' ) ) {
+			return;
+		}
 		$dir = self::dir();
-		if ( ! is_dir( $dir ) ) {
+		if ( '' === $dir || ! is_dir( $dir ) ) {
 			return;
 		}
 		if ( $import ) {
 			self::import_events();
 		}
-		foreach ( array( 'hits', 'strikes', 'bans' ) as $sub ) {
-			self::delete_tree( $dir . '/' . $sub );
-		}
-		foreach ( array( 'run.php', 'events.php', 'index.php', '.htaccess' ) as $file ) {
-			if ( file_exists( $dir . '/' . $file ) ) {
-				wp_delete_file( $dir . '/' . $file );
-			}
-		}
-		$filesystem = self::filesystem();
-		if ( $filesystem ) {
-			$filesystem->rmdir( $dir );
+		self::delete_folder( $dir, $dir );
+		// uploads/scrapelock goes too when nothing else is left in it.
+		$parent = dirname( $dir );
+		$left   = array_diff( (array) scandir( $parent ), array( '.', '..', 'index.html', '.htaccess' ) );
+		if ( ! $left ) {
+			self::delete_folder( $parent, $parent );
 		}
 	}
 
-	/* ---------- Configuration and loader ---------- */
+	/**
+	 * Before 3.3.1 the check kept a generated run.php and its data in a folder of its own next to the
+	 * plugins (scrapelock-precheck). Its events are moved into the log and the folder is deleted. The folder
+	 * is the one the old line in wp-config.php names, and only if it holds ScrapeLock's run.php. The old line
+	 * itself is replaced by sync() (or stays harmless: it includes a file that no longer exists).
+	 *
+	 * @param bool $import Move its events into the log first.
+	 */
+	private static function remove_legacy( $import = true ) {
+		$path = self::config_path();
+		if ( '' === $path || ! is_readable( $path ) ) {
+			return;
+		}
+		$code = (string) file_get_contents( $path ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Local file.
+		if ( ! preg_match( "#include_once '([^']+)/scrapelock-precheck/run\\.php'#", $code, $m ) ) {
+			return;
+		}
+		$dir = $m[1] . '/scrapelock-precheck';
+		$run = $dir . '/run.php';
+		if ( ! is_file( $run ) || false === strpos( (string) file_get_contents( $run, false, null, 0, 300 ), 'ScrapeLock pre-cache check' ) ) { // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Local file.
+			return;
+		}
+		if ( $import ) {
+			self::import_events( $dir . '/events.php' );
+		}
+		self::delete_folder( $dir, $dir );
+	}
+
+	/* ---------- Configuration ---------- */
 
 	/**
 	 * The configuration of the check, from the current settings and lists.
@@ -201,33 +276,35 @@ final class PNCP_Precheck {
 			);
 		}
 		$home   = rtrim( (string) wp_parse_url( home_url( '/' ), PHP_URL_PATH ), '/' );
+		$secret = isset( $s['cdn_secret'] ) ? trim( (string) $s['cdn_secret'] ) : '';
 		$config = array(
-			'v'           => PNCP_VERSION,
-			'dir'         => self::dir(),
-			'home'        => $home,
-			'limit'       => (int) $s['rate_limit'],
-			'ban_strikes' => (int) $s['ban_strikes'],
-			'ban_minutes' => (int) $s['ban_minutes'],
-			'v6_prefix'   => (int) apply_filters( 'pncp_ipv6_prefix', 64 ),
-			'v6_wide'     => ! empty( $s['ipv6_wide'] ),
-			'header'      => isset( $headers[ $setting ] ) ? $headers[ $setting ] : '',
-			'private'     => in_array( $setting, array( 'x_real_ip', 'x_forwarded_for' ), true ),
-			'trust_any'   => ! empty( $s['trust_any_proxy'] ),
-			'proxies'     => self::set( $proxies ),
+			'format'          => self::FORMAT,
+			'v'               => PNCP_VERSION,
+			'home'            => $home,
+			'limit'           => (int) $s['rate_limit'],
+			'ban_strikes'     => (int) $s['ban_strikes'],
+			'ban_minutes'     => (int) $s['ban_minutes'],
+			'v6_prefix'       => (int) apply_filters( 'pncp_ipv6_prefix', 64 ),
+			'v6_wide'         => ! empty( $s['ipv6_wide'] ),
+			'header'          => isset( $headers[ $setting ] ) ? $headers[ $setting ] : '',
+			'private'         => in_array( $setting, array( 'x_real_ip', 'x_forwarded_for' ), true ),
+			'trust_any'       => ! empty( $s['trust_any_proxy'] ),
+			'proxies'         => self::set( $proxies ),
 			// Explicit "Trusted proxies" only (no CDN edge lists): used when a CDN secret is set but the
 			// request does not carry it, so a spoofed CDN edge IP is not trusted for the real-IP header.
-			'proxies_base' => self::set( PNCP_Options::parse_list( $s['trusted_proxies'] ) ),
-			'cdn_secret'   => isset( $s['cdn_secret'] ) ? (string) $s['cdn_secret'] : '',
+			'proxies_base'    => self::set( PNCP_Options::parse_list( $s['trusted_proxies'] ) ),
+			// Only a hash of the CDN secret is written to the file.
+			'cdn_secret_hash' => '' !== $secret ? hash( 'sha256', $secret ) : '',
 			// "Only through the CDN": cached pages are refused here too, before the page cache serves them.
-			'cdn_only'     => PNCP_Origin::active( $s ),
-			'cdn'         => self::set( array_merge( PNCP_Ip::list_of( 'cloudflare' ), PNCP_Ip::list_of( 'bunny' ) ) ),
-			'allow'       => self::set( PNCP_Options::parse_list( $s['allow_ips'] ) ),
-			'block'       => self::set( PNCP_Options::parse_list( $s['block_ips'] ) ),
-			'crawlers'    => $crawlers,
-			'apcu'        => (bool) apply_filters( 'pncp_precheck_apcu', true ),
+			'cdn_only'        => PNCP_Origin::active( $s ),
+			'cdn'             => self::set( array_merge( PNCP_Ip::list_of( 'cloudflare' ), PNCP_Ip::list_of( 'bunny' ) ) ),
+			'allow'           => self::set( PNCP_Options::parse_list( $s['allow_ips'] ) ),
+			'block'           => self::set( PNCP_Options::parse_list( $s['block_ips'] ) ),
+			'crawlers'        => $crawlers,
+			'apcu'            => (bool) apply_filters( 'pncp_precheck_apcu', true ),
 		);
 		/**
-		 * Filters the configuration of the pre-cache check before it is written to the loader.
+		 * Filters the configuration of the pre-cache check before it is written to config.json.
 		 *
 		 * @param array<string, mixed> $config Configuration.
 		 */
@@ -258,45 +335,45 @@ final class PNCP_Precheck {
 	}
 
 	/**
-	 * The loader: refuses to run when opened from the web, then runs the check with the configuration.
-	 * If the plugin folder disappears, it does nothing.
+	 * The configuration as it is written to config.json.
 	 *
 	 * @return string
 	 */
-	public static function loader_code() {
-		$runtime = var_export( trailingslashit( PNCP_DIR ) . 'includes/class-pncp-precheck-runtime.php', true ); // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_var_export -- Writes the path as PHP code.
-		$config  = var_export( self::config(), true ); // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_var_export -- Writes the configuration as PHP code.
-		return "<?php\n"
-			. "// ScrapeLock pre-cache check: written by the plugin, do not edit. Removed when the setting is turned off.\n"
-			. "if ( isset( \$_SERVER['SCRIPT_FILENAME'] ) && realpath( (string) \$_SERVER['SCRIPT_FILENAME'] ) === __FILE__ ) {\n\texit;\n}\n"
-			. 'if ( ! class_exists( \'PNCP_Precheck_Runtime\', false ) && is_file( ' . $runtime . " ) ) {\n"
-			. "\trequire_once " . $runtime . ";\n"
-			. "\tPNCP_Precheck_Runtime::run( " . $config . " );\n"
-			. "}\n";
+	public static function config_json() {
+		return (string) wp_json_encode( self::config(), JSON_UNESCAPED_SLASHES ) . "\n";
 	}
 
 	/**
-	 * Writes the folder (with protection for Apache) and the loader.
+	 * Writes the folder (protected from direct access) and the configuration. The folder holds data only:
+	 * the check is the plugin's own file.
 	 *
 	 * @return bool
 	 */
 	private static function write_files() {
 		$filesystem = self::filesystem();
 		$dir        = self::dir();
-		if ( ! $filesystem || ( ! is_dir( $dir ) && ! wp_mkdir_p( $dir ) ) ) {
+		if ( ! $filesystem || '' === $dir || ( ! is_dir( $dir ) && ! wp_mkdir_p( $dir ) ) ) {
 			return false;
 		}
-		if ( ! $filesystem->exists( $dir . '/index.php' ) ) {
-			$filesystem->put_contents( $dir . '/index.php', "<?php\n// Silence is golden.\n", FS_CHMOD_FILE );
-			$filesystem->put_contents( $dir . '/.htaccess', "Require all denied\n", FS_CHMOD_FILE );
+		// Apache: no access at all. Elsewhere the random folder name and the empty index keep it hidden.
+		$deny = "Require all denied\n<IfModule !mod_authz_core.c>\nDeny from all\n</IfModule>\n";
+		foreach ( array( dirname( $dir ), $dir ) as $folder ) {
+			if ( ! $filesystem->exists( $folder . '/index.html' ) ) {
+				$filesystem->put_contents( $folder . '/index.html', '', FS_CHMOD_FILE );
+			}
+			if ( ! $filesystem->exists( $folder . '/.htaccess' ) ) {
+				$filesystem->put_contents( $folder . '/.htaccess', $deny, FS_CHMOD_FILE );
+			}
 		}
-		$code = self::loader_code();
-		if ( is_readable( self::loader() ) && (string) file_get_contents( self::loader() ) === $code ) { // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Local file.
+		$json = self::config_json();
+		if ( "\n" === $json ) {
+			return false;
+		}
+		$file = self::config_file();
+		if ( is_readable( $file ) && (string) file_get_contents( $file ) === $json ) { // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Local file.
 			return true;
 		}
-		$ok = (bool) $filesystem->put_contents( self::loader(), $code, FS_CHMOD_FILE );
-		self::opcache_forget( self::loader() );
-		return $ok;
+		return (bool) $filesystem->put_contents( $file, $json, FS_CHMOD_FILE );
 	}
 
 	/**
@@ -422,7 +499,7 @@ final class PNCP_Precheck {
 	 * @param int    $until Expiry.
 	 */
 	public static function mirror_ban( $ip, $until ) {
-		if ( ! is_dir( self::dir() ) ) {
+		if ( ! self::has_dir() ) {
 			return;
 		}
 		$filesystem = self::filesystem();
@@ -437,6 +514,9 @@ final class PNCP_Precheck {
 	 * @param string $ip IP.
 	 */
 	public static function forget_ban( $ip ) {
+		if ( ! self::has_dir() ) {
+			return;
+		}
 		$file = self::dir() . '/bans/' . md5( $ip );
 		if ( file_exists( $file ) ) {
 			wp_delete_file( $file );
@@ -447,7 +527,9 @@ final class PNCP_Precheck {
 	 * Lifts every ban before the cache.
 	 */
 	public static function forget_all_bans() {
-		self::delete_tree( self::dir() . '/bans' );
+		if ( self::has_dir() ) {
+			self::delete_folder( self::dir() . '/bans', self::dir() );
+		}
 	}
 
 	/**
@@ -455,27 +537,45 @@ final class PNCP_Precheck {
 	 * reason and minute become one row with a counter; a ban it decided becomes a ban in the database too,
 	 * so that it shows under "Blocked IPs" and can be lifted there.
 	 *
+	 * @param string $file An events file of the folder used before 3.3.1 ('' = the current one).
 	 * @return int Number of events imported.
 	 */
-	public static function import_events() {
-		$file = self::dir() . '/events.php';
+	public static function import_events( $file = '' ) {
+		if ( '' !== $file ) {
+			// The old folder, about to be deleted: read in place.
+			$lines = is_file( $file ) ? (array) file( $file, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES ) : array();
+			return self::import_lines( $lines );
+		}
+		if ( ! self::has_dir() ) {
+			return 0;
+		}
+		$file = self::dir() . '/events.log';
 		if ( ! is_file( $file ) ) {
 			return 0;
 		}
 		// Renamed first: the check keeps writing to a new file meanwhile.
 		$work = self::dir() . '/events-' . wp_generate_password( 8, false ) . '.tmp';
-		if ( ! @rename( $file, $work ) ) { // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged, WordPress.WP.AlternativeFunctions.rename_rename -- Atomic move in our own folder.
+		if ( ! @rename( $file, $work ) ) { // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged, WordPress.WP.AlternativeFunctions.rename_rename -- Atomic move inside the plugin's folder in uploads.
 			return 0;
 		}
 		$lines = (array) file( $work, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES );
 		wp_delete_file( $work );
+		return self::import_lines( $lines );
+	}
 
+	/**
+	 * Writes event lines (time, code, reason, IP, path, User-Agent, tab-separated) into the log.
+	 *
+	 * @param string[] $lines Lines.
+	 * @return int Number of lines.
+	 */
+	private static function import_lines( $lines ) {
 		$rows = array();
 		$bans = array();
 		foreach ( $lines as $line ) {
 			$parts = explode( "\t", (string) $line );
 			if ( count( $parts ) < 6 || ! ctype_digit( $parts[0] ) || ! filter_var( $parts[3], FILTER_VALIDATE_IP ) ) {
-				continue; // The "<?php exit;" line and anything damaged.
+				continue; // Anything damaged (and the first line of the files written before 3.3.1).
 			}
 			list( $time, $code, $reason, $ip, $path, $ua ) = $parts;
 			if ( ! isset( PNCP_Log::reasons()[ $reason ] ) ) {
@@ -516,12 +616,13 @@ final class PNCP_Precheck {
 	/* ---------- Files ---------- */
 
 	/**
-	 * Deletes a folder with its files and folders (only inside ours).
+	 * Deletes a folder with its files and folders, only inside the given base folder.
 	 *
 	 * @param string $path Folder.
+	 * @param string $base The folder it must be in (or be).
 	 */
-	private static function delete_tree( $path ) {
-		if ( 0 !== strpos( $path, self::dir() . '/' ) || ! is_dir( $path ) ) {
+	private static function delete_folder( $path, $base ) {
+		if ( '' === $base || ( $path !== $base && 0 !== strpos( $path, $base . '/' ) ) || ! is_dir( $path ) ) {
 			return;
 		}
 		$filesystem = self::filesystem();
@@ -540,7 +641,10 @@ final class PNCP_Precheck {
 		if ( ! function_exists( 'get_filesystem_method' ) ) {
 			require_once ABSPATH . 'wp-admin/includes/file.php';
 		}
-		if ( 'direct' !== get_filesystem_method( array(), '' !== $context ? $context : WP_CONTENT_DIR ) || ! WP_Filesystem() ) {
+		if ( '' === $context ) {
+			$context = (string) wp_upload_dir( null, false )['basedir'];
+		}
+		if ( 'direct' !== get_filesystem_method( array(), $context ) || ! WP_Filesystem() ) {
 			return null;
 		}
 		global $wp_filesystem;

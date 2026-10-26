@@ -70,31 +70,70 @@ final class PNCP_Integrity {
 		return (array) apply_filters(
 			'pncp_integrity_exclude',
 			array(
-				'paths' => array( 'upgrade', 'upgrade-temp-backup', 'wflogs', 'scrapelock-precheck', 'et-cache', 'litespeed', 'w3tc-config' ),
+				'paths' => array( 'upgrade', 'upgrade-temp-backup', 'wflogs', 'et-cache', 'litespeed', 'w3tc-config' ),
 				'names' => array( 'cache', '.git', 'node_modules' ),
 			)
 		);
 	}
 
 	/**
-	 * The folders read: the WordPress root (only its own files), wp-admin, wp-includes, wp-content (all of it,
+	 * Where this site keeps its files, all resolved in this one place. A file integrity check has to read
+	 * the WordPress folder itself, wp-content and the plugin and must-use plugin folders wherever the site
+	 * keeps them (wp-config.php can move each of them). For those WordPress offers no function, only its
+	 * path constants, which already hold any custom location; the uploads folder, the theme folders and
+	 * wp-config.php come from WordPress' functions. Nothing is ever written to these folders by this check:
+	 * they are only read (the optional quarantine renames a new PHP file in uploads).
+	 *
+	 * @return array{core:string, content:string, plugins:string, mu_plugins:string, uploads:string, themes:string[], config:string}
+	 */
+	public static function locations() {
+		$uploads = wp_get_upload_dir();
+		$themes  = array();
+		foreach ( (array) search_theme_directories() as $theme ) {
+			if ( ! empty( $theme['theme_root'] ) ) {
+				$themes[ self::path( $theme['theme_root'] ) ] = true;
+			}
+		}
+		$themes[ self::path( get_theme_root() ) ] = true;
+		$config                                   = PNCP_Precheck::config_path();
+		return array(
+			'core'       => self::path( ABSPATH ),
+			'content'    => self::path( WP_CONTENT_DIR ),
+			'plugins'    => self::path( WP_PLUGIN_DIR ),
+			'mu_plugins' => self::path( WPMU_PLUGIN_DIR ),
+			'uploads'    => ! empty( $uploads['basedir'] ) ? self::path( $uploads['basedir'] ) : '',
+			'themes'     => array_keys( $themes ),
+			'config'     => '' !== $config ? self::path( $config ) : '',
+		);
+	}
+
+	/**
+	 * A path with forward slashes and without a trailing slash.
+	 *
+	 * @param string $path Path.
+	 * @return string
+	 */
+	private static function path( $path ) {
+		return untrailingslashit( wp_normalize_path( (string) $path ) );
+	}
+
+	/**
+	 * The folders read: the WordPress folder (only its own files), wp-admin, wp-includes, wp-content (all of it,
 	 * uploads included: a PHP file there is the first thing to look for) and, when they live elsewhere, the
-	 * plugin and must-use plugin folders. wp-config.php also when it sits one level above WordPress.
+	 * plugin, must-use plugin, theme and uploads folders.
 	 *
 	 * @return array<int, array{0:string, 1:bool}> Folder => read subfolders.
 	 */
 	private static function roots() {
-		$abspath = untrailingslashit( wp_normalize_path( ABSPATH ) );
-		$content = untrailingslashit( wp_normalize_path( WP_CONTENT_DIR ) );
-		$roots   = array(
-			array( $abspath, false ),
-			array( $abspath . '/wp-admin', true ),
-			array( $abspath . '/wp-includes', true ),
-			array( $content, true ),
+		$where = self::locations();
+		$roots = array(
+			array( $where['core'], false ),
+			array( $where['core'] . '/wp-admin', true ),
+			array( $where['core'] . '/' . WPINC, true ),
+			array( $where['content'], true ),
 		);
-		foreach ( array( WP_PLUGIN_DIR, WPMU_PLUGIN_DIR ) as $dir ) {
-			$dir = untrailingslashit( wp_normalize_path( $dir ) );
-			if ( 0 !== strpos( $dir . '/', $content . '/' ) ) {
+		foreach ( array_merge( array( $where['plugins'], $where['mu_plugins'], $where['uploads'] ), $where['themes'] ) as $dir ) {
+			if ( '' !== $dir && 0 !== strpos( $dir . '/', $where['content'] . '/' ) ) {
 				$roots[] = array( $dir, true );
 			}
 		}
@@ -111,7 +150,8 @@ final class PNCP_Integrity {
 		$files    = array();
 		$complete = true;
 		$seen     = array();
-		$content  = untrailingslashit( wp_normalize_path( WP_CONTENT_DIR ) );
+		$where    = self::locations();
+		$content  = $where['content'];
 		$skip     = self::excluded();
 		$paths    = array();
 		foreach ( (array) $skip['paths'] as $path ) {
@@ -119,9 +159,10 @@ final class PNCP_Integrity {
 		}
 		$names = array_map( 'strtolower', (array) $skip['names'] );
 
-		$config = dirname( untrailingslashit( ABSPATH ) ) . '/wp-config.php';
-		if ( ! file_exists( untrailingslashit( ABSPATH ) . '/wp-config.php' ) && is_readable( $config ) ) {
-			$files[ wp_normalize_path( $config ) ] = (string) hash_file( 'sha256', $config );
+		// wp-config.php one level above the WordPress folder is not in any folder that is read.
+		$config = $where['config'];
+		if ( '' !== $config && dirname( $config ) !== $where['core'] && is_readable( $config ) ) {
+			$files[ $config ] = (string) hash_file( 'sha256', $config );
 		}
 
 		foreach ( self::roots() as list( $root, $deep ) ) {
@@ -302,7 +343,7 @@ final class PNCP_Integrity {
 	 * official checksums.
 	 */
 	public static function snapshot() {
-		$now = self::collect();
+		$now  = self::collect();
 		$raw  = gzcompress( (string) wp_json_encode( $now['files'] ), 6 );
 		$time = time();
 		self::put_baseline(
@@ -496,7 +537,7 @@ final class PNCP_Integrity {
 	 * @return string
 	 */
 	public static function relative( $path ) {
-		$base = trailingslashit( wp_normalize_path( ABSPATH ) );
+		$base = trailingslashit( self::locations()['core'] );
 		$path = wp_normalize_path( (string) $path );
 		return 0 === strpos( $path, $base ) ? substr( $path, strlen( $base ) ) : $path;
 	}
@@ -512,14 +553,15 @@ final class PNCP_Integrity {
 	 * @return array{time:int, modified:string[], unknown:string[], unverified:string[], core:bool}
 	 */
 	public static function official( $files ) {
-		$out  = array(
+		$out   = array(
 			'time'       => time(),
 			'modified'   => array(),
 			'unknown'    => array(),
 			'unverified' => array(),
 			'core'       => false,
 		);
-		$base = trailingslashit( wp_normalize_path( ABSPATH ) );
+		$where = self::locations();
+		$base  = trailingslashit( $where['core'] );
 
 		// WordPress itself: wp-admin, wp-includes and the files in its root folder.
 		$core = self::core_checksums( get_bloginfo( 'version' ), get_locale() );
@@ -548,7 +590,7 @@ final class PNCP_Integrity {
 		if ( ! function_exists( 'get_plugins' ) ) {
 			require_once ABSPATH . 'wp-admin/includes/plugin.php';
 		}
-		$plugin_dir = trailingslashit( wp_normalize_path( WP_PLUGIN_DIR ) );
+		$plugin_dir = trailingslashit( $where['plugins'] );
 		foreach ( get_plugins() as $file => $data ) {
 			$slug = dirname( $file );
 			if ( '.' === $slug || empty( $data['Version'] ) ) {
@@ -640,14 +682,15 @@ final class PNCP_Integrity {
 	private static function quarantine() {
 		$report  = self::report();
 		$handled = (array) $report['handled'];
-		$plugins = trailingslashit( wp_normalize_path( WP_PLUGIN_DIR ) );
-		$uploads = trailingslashit( wp_normalize_path( wp_get_upload_dir()['basedir'] ) );
+		$where   = self::locations();
+		$plugins = trailingslashit( $where['plugins'] );
+		$uploads = trailingslashit( $where['uploads'] );
 		$slugs   = array();
 		foreach ( array_merge( (array) $report['added'], (array) $report['changed'] ) as $path ) {
 			$path = wp_normalize_path( (string) $path );
 			if ( 0 === strpos( $path, $plugins ) ) {
 				$slugs[ strtok( substr( $path, strlen( $plugins ) ), '/' ) ] = true;
-			} elseif ( 0 === strpos( $path, $uploads ) && in_array( $path, (array) $report['added'], true ) && file_exists( $path ) && preg_match( '/\.(?:php[0-9]?|phtml|phar)$/i', $path ) ) {
+			} elseif ( '/' !== $uploads && 0 === strpos( $path, $uploads ) && in_array( $path, (array) $report['added'], true ) && file_exists( $path ) && preg_match( '/\.(?:php[0-9]?|phtml|phar)$/i', $path ) ) {
 				$fs = self::filesystem( dirname( $path ) );
 				if ( $fs && $fs->move( $path, $path . '.pncp-quarantine' ) ) {
 					$handled[] = sprintf( /* translators: %s: file */ __( 'Renamed %s', 'scrapelock' ), self::relative( $path ) );

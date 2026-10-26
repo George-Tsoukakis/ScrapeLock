@@ -378,9 +378,9 @@ final class PNCP_Geo {
 			return false;
 		}
 		global $wp_filesystem;
-		if ( ! $wp_filesystem->exists( $dir . '/index.php' ) ) {
-			$wp_filesystem->put_contents( $dir . '/index.php', "<?php\n// Silence is golden.\n", FS_CHMOD_FILE );
-			$wp_filesystem->put_contents( $dir . '/.htaccess', "Require all denied\n", FS_CHMOD_FILE );
+		if ( ! $wp_filesystem->exists( $dir . '/index.html' ) ) {
+			$wp_filesystem->put_contents( $dir . '/index.html', '', FS_CHMOD_FILE );
+			$wp_filesystem->put_contents( $dir . '/.htaccess', "Require all denied\n<IfModule !mod_authz_core.c>\nDeny from all\n</IfModule>\n", FS_CHMOD_FILE );
 		}
 		return (bool) $wp_filesystem->put_contents( $dir . '/' . $name, $contents, FS_CHMOD_FILE );
 	}
@@ -389,7 +389,7 @@ final class PNCP_Geo {
 	 * Removes the files and the folder (uninstall).
 	 */
 	public static function remove_files() {
-		foreach ( array( 'v4.bin', 'v6.bin', 'index.php', '.htaccess' ) as $name ) {
+		foreach ( array( 'v4.bin', 'v6.bin', 'index.html', 'index.php', '.htaccess' ) as $name ) {
 			$file = self::dir() . '/' . $name;
 			if ( file_exists( $file ) ) {
 				wp_delete_file( $file );

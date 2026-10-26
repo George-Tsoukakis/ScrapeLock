@@ -6,11 +6,12 @@
  * It only does what can be decided cheaply: always-blocked IPs, active bans and the page limit per IP.
  * Everything else (bots, verification of search engines, countries, the trap, logged-in users) stays with
  * the normal check, which runs for every request that is not served from the cache. Counters live in APCu
- * when available, otherwise in small files in the plugin's data folder. When in doubt, the request passes:
- * any error here must never take the site down.
+ * when available, otherwise in small files in the plugin's data folder (uploads/scrapelock/precheck-RANDOM).
+ * When in doubt, the request passes: any error here must never take the site down.
  *
- * The configuration is written by PNCP_Precheck (includes/class-pncp-precheck.php) into the generated
- * run.php, which calls PNCP_Precheck_Runtime::run().
+ * The line in wp-config.php includes this file and calls PNCP_Precheck_Runtime::boot() with the data folder;
+ * the configuration is read from config.json there, written by PNCP_Precheck (includes/class-pncp-precheck.php).
+ * This file only defines the class: opened directly, it does nothing.
  *
  * @package ScrapeLock
  */
@@ -23,11 +24,67 @@
 final class PNCP_Precheck_Runtime {
 
 	/**
+	 * Called by the line in wp-config.php: reads the configuration from the data folder and runs the check.
+	 *
+	 * @param string $dir The data folder.
+	 */
+	public static function boot( $dir ) {
+		try {
+			$c = self::load( (string) $dir );
+		} catch ( Throwable $e ) {
+			return;
+		}
+		if ( null !== $c ) {
+			self::run( $c );
+		}
+	}
+
+	/**
+	 * The configuration in config.json, or null. With APCu it is decoded once per change of the file.
+	 *
+	 * @param string $dir The data folder.
+	 * @return array<string, mixed>|null
+	 */
+	public static function load( $dir ) {
+		if ( '' === $dir ) {
+			return null;
+		}
+		$file = $dir . '/config.json';
+		$stat = @stat( $file );
+		if ( false === $stat ) {
+			return null;
+		}
+		$apcu    = function_exists( 'apcu_enabled' ) && apcu_enabled();
+		$name    = 'pncp_pc_cfg_' . md5( $file );
+		$version = $stat['mtime'] . '|' . $stat['size'] . '|' . $stat['ino'];
+		if ( $apcu ) {
+			$cached = apcu_fetch( $name );
+			if ( is_array( $cached ) && isset( $cached[0], $cached[1] ) && $version === $cached[0] ) {
+				return $cached[1];
+			}
+		}
+		$c = json_decode( (string) @file_get_contents( $file ), true );
+		if ( ! is_array( $c ) || ! isset( $c['format'] ) || 2 !== $c['format'] ) {
+			return null;
+		}
+		$c['dir'] = $dir;
+		if ( $apcu && ! empty( $c['apcu'] ) ) {
+			apcu_store( $name, array( $version, $c ), 3600 );
+		}
+		return $c;
+	}
+
+	/**
 	 * Runs the check. Ends the request with 403 / 429 when it must be refused, otherwise returns.
 	 *
 	 * @param array<string, mixed> $c Configuration (see PNCP_Precheck::config()).
 	 */
 	public static function run( $c ) {
+		// A run.php written before 3.3.1 passes its own configuration: it does nothing until wp-admin
+		// replaces its line in wp-config.php.
+		if ( ! is_array( $c ) || ! isset( $c['format'] ) || 2 !== $c['format'] ) {
+			return;
+		}
 		try {
 			$verdict = self::verdict( $c, time() );
 		} catch ( Throwable $e ) {
@@ -279,12 +336,12 @@ final class PNCP_Precheck_Runtime {
 	 * @return bool
 	 */
 	public static function cdn_trust_ok( $c ) {
-		$secret = isset( $c['cdn_secret'] ) ? trim( (string) $c['cdn_secret'] ) : '';
-		if ( '' === $secret ) {
+		$hash = isset( $c['cdn_secret_hash'] ) ? (string) $c['cdn_secret_hash'] : '';
+		if ( '' === $hash ) {
 			return true;
 		}
 		$sent = isset( $_SERVER['HTTP_X_SCRAPELOCK_CDN'] ) ? trim( (string) $_SERVER['HTTP_X_SCRAPELOCK_CDN'] ) : '';
-		return '' !== $sent && hash_equals( $secret, $sent );
+		return '' !== $sent && hash_equals( $hash, hash( 'sha256', $sent ) );
 	}
 
 	/**
@@ -519,8 +576,8 @@ final class PNCP_Precheck_Runtime {
 	}
 
 	/**
-	 * Appends an event for the plugin's log (imported into the database by WordPress later). The file starts
-	 * with "<?php exit;" so that it shows nothing if someone opens it from the web. Capped at 2 MB.
+	 * Appends an event for the plugin's log (imported into the database by WordPress later): one line of
+	 * tab-separated text in events.log. Capped at 2 MB.
 	 *
 	 * @param array<string, mixed> $c      Configuration.
 	 * @param int                  $code   HTTP status code.
@@ -528,34 +585,16 @@ final class PNCP_Precheck_Runtime {
 	 * @param string               $ip     IP.
 	 */
 	public static function event( $c, $code, $reason, $ip ) {
-		$file = $c['dir'] . '/events.php';
+		$file = $c['dir'] . '/events.log';
 		if ( is_file( $file ) && filesize( $file ) > 2 * 1024 * 1024 ) {
 			return;
 		}
 		$clean = static function ( $value, $max ) {
-			// Also removes < > ? so a logged value (path, User-Agent) can never form a PHP open tag,
-			// even if the file were ever served or included without its "<?php exit;" guard.
-			return substr( (string) preg_replace( '/[\x00-\x1F\x7F<>?]+/', ' ', (string) $value ), 0, $max );
+			return substr( (string) preg_replace( '/[\x00-\x1F\x7F<>]+/', ' ', (string) $value ), 0, $max );
 		};
 		$uri   = isset( $_SERVER['REQUEST_URI'] ) ? (string) parse_url( (string) $_SERVER['REQUEST_URI'], PHP_URL_PATH ) : '';
 		$ua    = isset( $_SERVER['HTTP_USER_AGENT'] ) ? (string) $_SERVER['HTTP_USER_AGENT'] : '';
 		$line  = implode( "\t", array( time(), (int) $code, $clean( $reason, 20 ), $clean( $ip, 45 ), $clean( $uri, 255 ), $clean( $ua, 255 ) ) ) . "\n";
-		// The "<?php exit;" guard and the first line are written under one lock, checking the size while
-		// holding it. So even if import_events() renames the file away between two writers, the next writer
-		// finds an empty file and writes the guard again: a guard-less events.php can never be created.
-		$handle = @fopen( $file, 'a' ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged, WordPress.WP.AlternativeFunctions.file_system_operations_fopen -- Runs before WordPress; no WP_Filesystem.
-		if ( ! $handle ) {
-			return;
-		}
-		if ( flock( $handle, LOCK_EX ) ) {
-			$stat = fstat( $handle );
-			if ( is_array( $stat ) && isset( $stat['size'] ) && 0 === (int) $stat['size'] ) {
-				fwrite( $handle, "<?php exit; ?>\n" );
-			}
-			fwrite( $handle, $line );
-			fflush( $handle );
-			flock( $handle, LOCK_UN );
-		}
-		fclose( $handle ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fclose -- Runs before WordPress; no WP_Filesystem.
+		@file_put_contents( $file, $line, FILE_APPEND | LOCK_EX );
 	}
 }
