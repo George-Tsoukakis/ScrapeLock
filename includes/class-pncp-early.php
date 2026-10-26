@@ -153,7 +153,7 @@ final class PNCP_Early {
 	 * @return string
 	 */
 	public static function path() {
-		return trailingslashit( WPMU_PLUGIN_DIR ) . self::FILE;
+		return PNCP_Paths::mu_plugins() . '/' . self::FILE;
 	}
 
 	/**
@@ -222,7 +222,7 @@ final class PNCP_Early {
 		if ( ! $filesystem ) {
 			return false;
 		}
-		$dir = trailingslashit( WPMU_PLUGIN_DIR );
+		$dir = PNCP_Paths::mu_plugins();
 		if ( ! $filesystem->is_dir( $dir ) && ! wp_mkdir_p( $dir ) ) {
 			return false;
 		}
@@ -266,7 +266,7 @@ final class PNCP_Early {
 		if ( ! function_exists( 'get_filesystem_method' ) ) {
 			require_once ABSPATH . 'wp-admin/includes/file.php';
 		}
-		if ( 'direct' !== get_filesystem_method( array(), WPMU_PLUGIN_DIR ) || ! WP_Filesystem() ) {
+		if ( 'direct' !== get_filesystem_method( array(), PNCP_Paths::mu_plugins() ) || ! WP_Filesystem() ) {
 			return null;
 		}
 		global $wp_filesystem;

@@ -1151,19 +1151,11 @@ final class PNCP_Lockdown {
 	 */
 	private static function locked_page( $owner, $detail ) {
 		$lock  = '<svg viewBox="0 0 24 24" width="40" height="40" aria-hidden="true" focusable="false"><path fill="currentColor" d="M12 2a5 5 0 0 0-5 5v3H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8a2 2 0 0 0-2-2h-1V7a5 5 0 0 0-5-5zm-3 5a3 3 0 1 1 6 0v3H9V7zm3 7a1.5 1.5 0 0 1 .75 2.8V18a.75.75 0 0 1-1.5 0v-1.2A1.5 1.5 0 0 1 12 14z"/></svg>';
-		$style = '<style>'
-			. '.pncp-locked{text-align:center;padding:8px 0 4px}'
-			. '.pncp-locked-icon{display:inline-flex;align-items:center;justify-content:center;width:72px;height:72px;border-radius:50%;background:#fcf0e3;color:#b26200;margin-bottom:4px}'
-			. '#error-page .pncp-locked h1{border:0;margin:12px 0 0;padding:0;font-size:22px;line-height:1.3;color:#1d2327}'
-			. '#error-page .pncp-locked p{margin:12px auto;max-width:520px;font-size:14px;line-height:1.6;color:#3c434a}'
-			. '#error-page .pncp-locked .pncp-locked-actions{margin-top:24px}'
-			. '.pncp-locked-btn{display:inline-block;background:#2271b1;color:#fff!important;border-radius:4px;padding:10px 22px;font-size:14px;font-weight:600;text-decoration:none;margin:0 6px 8px}'
-			. '.pncp-locked-btn:hover,.pncp-locked-btn:focus{background:#135e96}'
-			. '.pncp-locked-link{display:inline-block;margin:0 6px 8px;padding:10px 4px;font-size:14px;color:#2271b1}'
-			. '.pncp-locked details{margin:20px auto 0;max-width:520px;text-align:left;font-size:12px;color:#646970}'
-			. '.pncp-locked summary{cursor:pointer}'
-			. '#error-page .pncp-locked details p{font-size:12px;margin:8px 0 0;color:#646970}'
-			. '</style>';
+		// WordPress' error page prints no enqueued styles: the registered stylesheet is printed with the page.
+		wp_register_style( 'pncp-locked', PNCP_URL . 'assets/css/locked.css', array(), PNCP_VERSION );
+		ob_start();
+		wp_print_styles( 'pncp-locked' );
+		$style = (string) ob_get_clean();
 		$html  = $style . '<div class="pncp-locked">'
 			. '<div class="pncp-locked-icon">' . $lock . '</div>'
 			. '<h1>' . esc_html__( 'The site is locked', 'scrapelock' ) . '</h1>'

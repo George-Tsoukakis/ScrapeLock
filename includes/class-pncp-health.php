@@ -126,7 +126,7 @@ final class PNCP_Health {
 		if ( PNCP_Precheck::active() ) {
 			return self::result( 'precheck', 'good', __( 'The ScrapeLock pre-cache check is running', 'scrapelock' ), __( 'wp-config.php loads the check before the page cache.', 'scrapelock' ) );
 		}
-		return self::result( 'precheck', 'recommended', __( 'The ScrapeLock pre-cache check is on but not running', 'scrapelock' ), __( 'wp-config.php does not load it (it could not be changed, or the folder wp-content/scrapelock-precheck could not be created). The normal check works as before; the Bots tab shows the lines to add by hand.', 'scrapelock' ), 'bots' );
+		return self::result( 'precheck', 'recommended', __( 'The ScrapeLock pre-cache check is on but not running', 'scrapelock' ), __( 'wp-config.php does not load it (it could not be changed, or the folder uploads/scrapelock could not be created). The normal check works as before; the Bots tab shows the lines to add by hand.', 'scrapelock' ), 'bots' );
 	}
 
 	/**

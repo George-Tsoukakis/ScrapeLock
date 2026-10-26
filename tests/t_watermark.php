@@ -123,7 +123,7 @@ t( 'rebuild με watermark_full: το πλήρες μέγεθος έχει υδ�
 t( 'rebuild: το medium ίδιο με πριν (όχι διπλό)', md5_file( size_path( $a ) ) === $m1 );
 $backup = PNCP_Watermark::backup_path( get_attached_file( $a ) );
 t( 'το καθαρό πρωτότυπο φυλάχτηκε', is_file( $backup ) && md5_file( $backup ) === $c_full );
-t( 'ο φάκελος αντιγράφων έχει .htaccess και index.php', is_file( dirname( $backup, 3 ) . '/.htaccess' ) && is_file( dirname( $backup, 3 ) . '/index.php' ), dirname( $backup, 3 ) );
+t( 'ο φάκελος αντιγράφων έχει .htaccess και index.html (κανένα αρχείο PHP στο uploads)', is_file( dirname( $backup, 3 ) . '/.htaccess' ) && is_file( dirname( $backup, 3 ) . '/index.html' ), dirname( $backup, 3 ) );
 t( 'το όνομα του φακέλου δεν μαντεύεται', (bool) preg_match( '/pncp-originals-[a-z0-9]{12}/', $backup ) );
 PNCP_Watermark::rebuild( $a, true );
 t( 'rebuild δεύτερη φορά (διακοπή και ξανά): όχι διπλό', md5_file( get_attached_file( $a ) ) === $f1 && md5_file( size_path( $a ) ) === $m1 );

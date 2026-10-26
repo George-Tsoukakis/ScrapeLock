@@ -38,13 +38,23 @@ final class PNCP_Rules {
 	}
 
 	/**
+	 * The path of a URL of this site, without a trailing slash (e.g. /wp-content for content_url()).
+	 *
+	 * @param string $url URL.
+	 * @return string
+	 */
+	private static function url_path( $url ) {
+		return untrailingslashit( (string) wp_parse_url( $url, PHP_URL_PATH ) );
+	}
+
+	/**
 	 * The uploads path within the site (e.g. /wp-content/uploads).
 	 *
 	 * @return string
 	 */
 	private static function uploads_path() {
 		$path = (string) wp_parse_url( wp_get_upload_dir()['baseurl'], PHP_URL_PATH );
-		return '' === $path ? '/wp-content/uploads' : untrailingslashit( $path );
+		return untrailingslashit( $path );
 	}
 
 	/**
@@ -661,7 +671,7 @@ final class PNCP_Rules {
 			'action'     => __( 'Block · period 1 minute (on the free plan: 10 sec, with limit / 6)', 'scrapelock' ),
 			// Pages only: not files (CSS, JS, images, fonts), not wp-admin / wp-includes / wp-content,
 			// not cart AJAX (wc-ajax, Store API) and not logged-in users.
-			'expression' => '(http.host eq "' . $host . '") and not cf.client.bot and http.request.uri.path.extension in {"" "php" "html" "xml"} and not starts_with(http.request.uri.path, "/wp-admin") and not starts_with(http.request.uri.path, "/wp-includes/") and not starts_with(http.request.uri.path, "/wp-content/") and not starts_with(http.request.uri.path, "/wp-json/wc/store") and not http.request.uri.query contains "wc-ajax=" and not http.cookie contains "wordpress_logged_in_"',
+			'expression' => '(http.host eq "' . $host . '") and not cf.client.bot and http.request.uri.path.extension in {"" "php" "html" "xml"} and not starts_with(http.request.uri.path, "' . self::url_path( admin_url() ) . '") and not starts_with(http.request.uri.path, "' . self::url_path( includes_url() ) . '/") and not starts_with(http.request.uri.path, "' . self::url_path( content_url() ) . '/") and not starts_with(http.request.uri.path, "/wp-json/wc/store") and not http.request.uri.query contains "wc-ajax=" and not http.cookie contains "wordpress_logged_in_"',
 		);
 		// With "Allow AI search engines and assistants" only the training crawlers: the AI search bots are allowed here too.
 		$categories  = empty( $s['allow_ai_search'] ) ? '"AI Crawler" "AI Assistant" "AI Search"' : '"AI Crawler"';

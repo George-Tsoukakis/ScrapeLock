@@ -96,13 +96,13 @@ wp scrapelock log --top --hours=168
 
 ```php
 // BEGIN ScrapeLock pre-cache check (added and removed by the plugin's "Pre-cache check" setting)
-if ( is_file( '/…/wp-content/scrapelock-precheck/run.php' ) ) { include_once '/…/wp-content/scrapelock-precheck/run.php'; }
+if ( is_file( '/…/wp-content/plugins/scrapelock/includes/class-pncp-precheck-runtime.php' ) ) { include_once '/…/wp-content/plugins/scrapelock/includes/class-pncp-precheck-runtime.php'; PNCP_Precheck_Runtime::boot( '/…/wp-content/uploads/scrapelock/precheck-…' ); }
 // END ScrapeLock pre-cache check
 ```
 
 - Τρέχει πριν από το cache και το WordPress, χωρίς βάση δεδομένων. Σταματά μόνο τις πάντα αποκλεισμένες IP, τους προσωρινούς αποκλεισμούς και όσους ξεπερνούν το «Pages per minute».
 - Οι παραβάσεις φέρνουν αποκλεισμό όπως στον κανονικό έλεγχο. Οι αποκλεισμοί και η άρση τους ισχύουν και στις δύο πλευρές. Τα συμβάντα εμφανίζονται στο Αρχείο.
-- Μετρητές στο APCu ή σε αρχεία στο `wp-content/scrapelock-precheck`.
+- Ρυθμίσεις, μετρητές και συμβάντα ως απλά αρχεία δεδομένων (όχι PHP) σε προστατευμένο φάκελο με τυχαίο όνομα στο `uploads/scrapelock/` (οι μετρητές στο APCu, αν υπάρχει).
 - Δεν μετρά: συνδεδεμένους χρήστες, φόρμες, prefetch, wp-admin, wp-login, REST, cron, τον ίδιο τον server, τις πάντα επιτρεπτές IP, το Google και το Bing από τις επίσημες διευθύνσεις τους. Το Applebot και το YandexBot αφήνονται στον κανονικό έλεγχο, και το WP Rocket δεν τους δίνει σελίδες από το cache.
 - Δεν εφαρμόζει τα αυστηρότερα όρια (επαλήθευση ανθρώπου, χώρες) και το Emergency Mode: αυτά ισχύουν για τις σελίδες εκτός cache.
 - Αν το `wp-config.php` δεν γράφεται, η ρύθμιση δείχνει τις γραμμές για να τις βάλετε με το χέρι. Όλα αφαιρούνται όταν κλείνει η ρύθμιση ή απενεργοποιείται το plugin. Όχι σε multisite.

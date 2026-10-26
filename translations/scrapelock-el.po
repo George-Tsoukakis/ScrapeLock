@@ -933,8 +933,8 @@ msgid "Pre-cache check: apply the page limit and blocks also to pages served fro
 msgstr "Έλεγχος πριν από το cache: το όριο σελίδων και οι αποκλεισμοί ισχύουν και για τις σελίδες από το cache σελίδων"
 
 #: includes/class-pncp-admin.php:799
-msgid "Page caches such as WP Rocket serve stored pages before any plugin loads, so a bot that looks like a browser could read them without a limit. This adds one line at the top of wp-config.php that loads a small check before the cache: always-blocked IPs, temporarily blocked IPs and the “Pages per minute” limit. Counters are kept in APCu or in wp-content/scrapelock-precheck. Search engines, logged-in users, forms, wp-admin and the REST API are left to the normal check. The line and the files are removed when you turn this off or deactivate the plugin."
-msgstr "Τα cache σελίδων, όπως του WP Rocket, σερβίρουν τις αποθηκευμένες σελίδες πριν φορτώσει οποιοδήποτε plugin, οπότε ένα bot που μοιάζει με browser μπορούσε να τις διαβάζει χωρίς όριο. Αυτή η ρύθμιση προσθέτει μία γραμμή στην κορυφή του wp-config.php, που φορτώνει έναν μικρό έλεγχο πριν από το cache: πάντα αποκλεισμένες IP, προσωρινά αποκλεισμένες IP και το όριο «Σελίδες ανά λεπτό». Οι μετρητές κρατιούνται στο APCu ή στο wp-content/scrapelock-precheck. Οι μηχανές αναζήτησης, οι συνδεδεμένοι χρήστες, οι φόρμες, το wp-admin και το REST API μένουν στον κανονικό έλεγχο. Η γραμμή και τα αρχεία αφαιρούνται όταν το απενεργοποιήσετε ή απενεργοποιήσετε το plugin."
+msgid "Page caches such as WP Rocket serve stored pages before any plugin loads, so a bot that looks like a browser could read them without a limit. This adds one line at the top of wp-config.php that loads a small check before the cache: always-blocked IPs, temporarily blocked IPs and the “Pages per minute” limit. Counters are kept in APCu or in a folder of the uploads directory (uploads/scrapelock). Search engines, logged-in users, forms, wp-admin and the REST API are left to the normal check. The line and the files are removed when you turn this off or deactivate the plugin."
+msgstr "Τα cache σελίδων, όπως του WP Rocket, σερβίρουν τις αποθηκευμένες σελίδες πριν φορτώσει οποιοδήποτε plugin, οπότε ένα bot που μοιάζει με browser μπορούσε να τις διαβάζει χωρίς όριο. Αυτή η ρύθμιση προσθέτει μία γραμμή στην κορυφή του wp-config.php, που φορτώνει έναν μικρό έλεγχο πριν από το cache: πάντα αποκλεισμένες IP, προσωρινά αποκλεισμένες IP και το όριο «Σελίδες ανά λεπτό». Οι μετρητές κρατιούνται στο APCu ή σε φάκελο του φακέλου uploads (uploads/scrapelock). Οι μηχανές αναζήτησης, οι συνδεδεμένοι χρήστες, οι φόρμες, το wp-admin και το REST API μένουν στον κανονικό έλεγχο. Η γραμμή και τα αρχεία αφαιρούνται όταν το απενεργοποιήσετε ή απενεργοποιήσετε το plugin."
 
 #: includes/class-pncp-admin.php:803
 msgid "Keep the block log for:"
@@ -1169,12 +1169,12 @@ msgid "Counters: APCu."
 msgstr "Μετρητές: APCu."
 
 #: includes/class-pncp-admin.php:999
-msgid "Counters: files in wp-content/scrapelock-precheck."
-msgstr "Μετρητές: αρχεία στο wp-content/scrapelock-precheck."
+msgid "Counters: files in uploads/scrapelock."
+msgstr "Μετρητές: αρχεία στο uploads/scrapelock."
 
 #: includes/class-pncp-admin.php:1006
-msgid "Not running: the folder wp-content/scrapelock-precheck could not be created (the server does not allow direct file writes). The normal check works as before."
-msgstr "Δεν λειτουργεί: ο φάκελος wp-content/scrapelock-precheck δεν μπόρεσε να δημιουργηθεί (ο server δεν επιτρέπει απευθείας εγγραφή αρχείων). Ο κανονικός έλεγχος λειτουργεί όπως πριν."
+msgid "Not running: the folder uploads/scrapelock could not be created (the server does not allow direct file writes). The normal check works as before."
+msgstr "Δεν λειτουργεί: ο φάκελος uploads/scrapelock δεν μπόρεσε να δημιουργηθεί (ο server δεν επιτρέπει απευθείας εγγραφή αρχείων). Ο κανονικός έλεγχος λειτουργεί όπως πριν."
 
 #: includes/class-pncp-admin.php:1008
 msgid "Not running yet: wp-config.php could not be changed (not writable, or it does not start with “<?php” on its own line). Add these lines right after the first line (<?php) of wp-config.php, then reload this page:"
@@ -2317,8 +2317,8 @@ msgid "The ScrapeLock pre-cache check is on but not running"
 msgstr "Ο έλεγχος πριν από το cache του ScrapeLock είναι ανοιχτός αλλά δεν τρέχει"
 
 #: includes/class-pncp-health.php:129
-msgid "wp-config.php does not load it (it could not be changed, or the folder wp-content/scrapelock-precheck could not be created). The normal check works as before; the Bots tab shows the lines to add by hand."
-msgstr "Το wp-config.php δεν τον φορτώνει (δεν άλλαξε, ή δεν φτιάχτηκε ο φάκελος wp-content/scrapelock-precheck). Ο κανονικός έλεγχος δουλεύει όπως πριν· η καρτέλα Bots δείχνει τις γραμμές που προσθέτετε με το χέρι."
+msgid "wp-config.php does not load it (it could not be changed, or the folder uploads/scrapelock could not be created). The normal check works as before; the Bots tab shows the lines to add by hand."
+msgstr "Το wp-config.php δεν τον φορτώνει (δεν άλλαξε, ή δεν φτιάχτηκε ο φάκελος uploads/scrapelock). Ο κανονικός έλεγχος δουλεύει όπως πριν· η καρτέλα Bots δείχνει τις γραμμές που προσθέτετε με το χέρι."
 
 #: includes/class-pncp-health.php:139
 msgid "ScrapeLock Lockdown is off from the server"

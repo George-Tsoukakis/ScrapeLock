@@ -494,7 +494,7 @@ final class PNCP_Watermark {
 
 	/**
 	 * The hidden backup folder, inside uploads, with a random name (not guessable).
-	 * Contains .htaccess (Apache) and index.php; for Nginx see the server rules.
+	 * Contains .htaccess (Apache) and an empty index.html; for Nginx see the server rules.
 	 *
 	 * @return string Path with a trailing / ('' if it could not be created).
 	 */
@@ -516,7 +516,7 @@ final class PNCP_Watermark {
 			// phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_file_put_contents -- Small configuration file.
 			file_put_contents( $dir . '.htaccess', "Require all denied\n<IfModule !mod_authz_core.c>\nDeny from all\n</IfModule>\n" );
 			// phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_file_put_contents
-			file_put_contents( $dir . 'index.php', "<?php\n// Silence is golden.\n" );
+			file_put_contents( $dir . 'index.html', '' );
 		}
 		return $dir;
 	}

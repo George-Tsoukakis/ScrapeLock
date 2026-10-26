@@ -718,5 +718,18 @@ $pncp_info = PNCP_Health::info( array() );
 t( 'Site Health Info: έκδοση και ρύθμιση IP, χωρίς το μυστικό του CDN', PNCP_VERSION === $pncp_info['scrapelock']['fields']['version']['value'] && 'remote_addr' === $pncp_info['scrapelock']['fields']['ip_header']['value'] && false === strpos( wp_json_encode( $pncp_info ), 'pncp-secret-4f9a2c' ) );
 settings( array( 'cdn_secret' => $pncp_cdn ) );
 
+/* ---------- Φάκελοι με τις συναρτήσεις του WordPress (3.3.1) ---------- */
+// Στο WordPress των δοκιμών οι φάκελοι είναι στις συνηθισμένες θέσεις: οι συναρτήσεις πρέπει να δίνουν ό,τι και οι σταθερές.
+$pncp_n = static function ( $p ) {
+	return untrailingslashit( wp_normalize_path( $p ) );
+};
+t( 'PNCP_Paths::core() = ο φάκελος του WordPress', $pncp_n( ABSPATH ) === PNCP_Paths::core(), PNCP_Paths::core() );
+t( 'PNCP_Paths::content() = wp-content', $pncp_n( WP_CONTENT_DIR ) === PNCP_Paths::content(), PNCP_Paths::content() );
+t( 'PNCP_Paths::plugins() = ο φάκελος των plugins (και με symlink)', $pncp_n( WP_PLUGIN_DIR ) === PNCP_Paths::plugins(), PNCP_Paths::plugins() );
+t( 'PNCP_Paths::mu_plugins() = ο φάκελος των mu-plugins', $pncp_n( WPMU_PLUGIN_DIR ) === PNCP_Paths::mu_plugins(), PNCP_Paths::mu_plugins() );
+t( 'PNCP_Paths::config() = το wp-config.php που φορτώνεται', is_file( PNCP_Paths::config() ) && in_array( PNCP_Paths::config(), array( $pncp_n( ABSPATH ) . '/wp-config.php', dirname( $pncp_n( ABSPATH ) ) . '/wp-config.php' ), true ), PNCP_Paths::config() );
+$pncp_cf = print_r( PNCP_Rules::cloudflare(), true ); // phpcs:ignore
+t( 'κανόνας Cloudflare: οι διαδρομές από admin_url / includes_url / content_url', false !== strpos( $pncp_cf, 'starts_with(http.request.uri.path, "/wp-admin")' ) && false !== strpos( $pncp_cf, 'starts_with(http.request.uri.path, "/wp-includes/")' ) && false !== strpos( $pncp_cf, 'starts_with(http.request.uri.path, "/wp-content/")' ), substr( $pncp_cf, 0, 200 ) );
+
 echo $fails ? "\n$fails FAIL\n" : "\nΟΛΑ PASS\n";
 exit( $fails ? 1 : 0 );
