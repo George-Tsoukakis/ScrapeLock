@@ -226,7 +226,7 @@ No. A small script waits for the first real interaction (scroll, tap, key or mou
 * Pre-cache check: its data (settings, counters, events) now lives in a protected folder with a random name inside the uploads directory, uploads/scrapelock/, as plain data files: no PHP file is generated any more. The line in wp-config.php loads the check from the plugin's own folder. The old wp-content/scrapelock-precheck folder is removed on upgrade and its events are moved into the log; the check resumes as soon as an administrator opens wp-admin.
 * Pre-cache check: only a hash of the CDN shared secret is written to its settings file.
 * Lockdown: the "site is locked" page loads its styles from a registered stylesheet (assets/css/locked.css) instead of an inline style block.
-* File integrity: the folders that are read are resolved in one place, with WordPress' functions for uploads, themes and wp-config.php.
+* File locations: every folder ScrapeLock reads or writes (the WordPress folder, wp-content, plugins, must-use plugins, uploads, themes, wp-config.php) is now found with WordPress' functions (get_home_path(), get_theme_root(), plugin_dir_path(), wp_get_mu_plugins(), wp_upload_dir()) in one place, instead of WordPress' internal path constants. The generated Cloudflare rule takes the wp-admin, wp-includes and wp-content paths from admin_url(), includes_url() and content_url().
 * The country database and the folder of clean image originals get an empty index.html instead of an index.php: ScrapeLock writes no PHP file in the uploads folder.
 * readme: each data center list is described as its own external service, and the Akamai Cloud (Linode) terms link points to the current page.
 

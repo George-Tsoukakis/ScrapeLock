@@ -124,11 +124,7 @@ final class PNCP_Precheck {
 	 * @return string
 	 */
 	public static function config_path() {
-		if ( file_exists( ABSPATH . 'wp-config.php' ) ) {
-			return ABSPATH . 'wp-config.php';
-		}
-		$up = dirname( ABSPATH ) . '/wp-config.php';
-		return file_exists( $up ) && ! file_exists( dirname( ABSPATH ) . '/wp-settings.php' ) ? $up : '';
+		return PNCP_Paths::config();
 	}
 
 	/**

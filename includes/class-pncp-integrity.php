@@ -77,12 +77,9 @@ final class PNCP_Integrity {
 	}
 
 	/**
-	 * Where this site keeps its files, all resolved in this one place. A file integrity check has to read
-	 * the WordPress folder itself, wp-content and the plugin and must-use plugin folders wherever the site
-	 * keeps them (wp-config.php can move each of them). For those WordPress offers no function, only its
-	 * path constants, which already hold any custom location; the uploads folder, the theme folders and
-	 * wp-config.php come from WordPress' functions. Nothing is ever written to these folders by this check:
-	 * they are only read (the optional quarantine renames a new PHP file in uploads).
+	 * Where this site keeps its files, found with WordPress' functions (PNCP_Paths, wp_get_upload_dir(),
+	 * search_theme_directories()). The check reads them only (the optional quarantine renames a new PHP file
+	 * in uploads).
 	 *
 	 * @return array{core:string, content:string, plugins:string, mu_plugins:string, uploads:string, themes:string[], config:string}
 	 */
@@ -95,12 +92,12 @@ final class PNCP_Integrity {
 			}
 		}
 		$themes[ self::path( get_theme_root() ) ] = true;
-		$config                                   = PNCP_Precheck::config_path();
+		$config                                   = PNCP_Paths::config();
 		return array(
-			'core'       => self::path( ABSPATH ),
-			'content'    => self::path( WP_CONTENT_DIR ),
-			'plugins'    => self::path( WP_PLUGIN_DIR ),
-			'mu_plugins' => self::path( WPMU_PLUGIN_DIR ),
+			'core'       => PNCP_Paths::core(),
+			'content'    => PNCP_Paths::content(),
+			'plugins'    => PNCP_Paths::plugins(),
+			'mu_plugins' => PNCP_Paths::mu_plugins(),
 			'uploads'    => ! empty( $uploads['basedir'] ) ? self::path( $uploads['basedir'] ) : '',
 			'themes'     => array_keys( $themes ),
 			'config'     => '' !== $config ? self::path( $config ) : '',

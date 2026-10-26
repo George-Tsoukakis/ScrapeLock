@@ -25,6 +25,7 @@ define( 'PNCP_DIR', plugin_dir_path( __FILE__ ) );
 define( 'PNCP_URL', plugin_dir_url( __FILE__ ) );
 defined( 'PNCP_OPTION' ) || define( 'PNCP_OPTION', 'pncp_settings' ); // Also defined by the early check (mu-plugin).
 
+require_once PNCP_DIR . 'includes/class-pncp-paths.php';
 require_once PNCP_DIR . 'includes/class-pncp-options.php';
 require_once PNCP_DIR . 'includes/class-pncp-ip.php';
 require_once PNCP_DIR . 'includes/class-pncp-log.php';

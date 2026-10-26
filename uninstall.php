@@ -10,6 +10,8 @@
 
 defined( 'WP_UNINSTALL_PLUGIN' ) || exit;
 
+require_once __DIR__ . '/includes/class-pncp-paths.php';
+
 /**
  * Cleans up a single site.
  */
@@ -24,7 +26,7 @@ function pncp_uninstall_site() {
 	wp_clear_scheduled_hook( 'pncp_wm_unmark' );
 	wp_clear_scheduled_hook( 'pncp_edge_sync' );
 	// The Lockdown guard (must-use plugin), only if it is ours.
-	$pncp_guard = trailingslashit( WPMU_PLUGIN_DIR ) . 'scrapelock-lockdown-guard.php';
+	$pncp_guard = PNCP_Paths::mu_plugins() . '/scrapelock-lockdown-guard.php';
 	if ( is_readable( $pncp_guard ) && false !== strpos( (string) file_get_contents( $pncp_guard, false, null, 0, 200 ), 'Plugin Name: ScrapeLock Lockdown guard' ) ) { // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Local file.
 		wp_delete_file( $pncp_guard );
 	}
@@ -76,7 +78,7 @@ if ( ! is_multisite() ) {
 }
 
 // The early check (mu-plugin, shared by all sites of a network): removed only if ScrapeLock wrote it.
-$pncp_early = trailingslashit( WPMU_PLUGIN_DIR ) . 'scrapelock-early.php';
+$pncp_early = PNCP_Paths::mu_plugins() . '/scrapelock-early.php';
 if ( is_readable( $pncp_early ) && false !== strpos( (string) file_get_contents( $pncp_early, false, null, 0, 200 ), 'Plugin Name: ScrapeLock early check' ) ) { // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Local file.
 	wp_delete_file( $pncp_early );
 }
