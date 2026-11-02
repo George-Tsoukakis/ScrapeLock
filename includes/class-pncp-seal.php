@@ -74,6 +74,26 @@ final class PNCP_Seal {
 	const COPY = 'PNCP_LOCKDOWN_SNAP_COPY';
 
 	/**
+	 * 3.4.1: the lock file, written when the guard cannot be (the owner locked with "Lock without the guard
+	 * file"): a signed copy of the lock outside the database, in the first of these folders of wp-content that
+	 * PHP can write to (BEACON_DIRS). It starts with BEACON_HEAD (a web request to it shows nothing), then the
+	 * JSON; it is read as data, never run. Its name is made from the keys, so it cannot be guessed.
+	 */
+	const BEACON_DIRS = array( 'uploads/scrapelock-lockdown', 'scrapelock-lockdown' );
+	const BEACON_HEAD = "<?php exit; ?>\n";
+
+	/**
+	 * The index.php and .htaccess of the lock file's folder (no listing, and no access on Apache).
+	 */
+	const BEACON_INDEX    = "<?php\n// Silence is golden.\n";
+	const BEACON_HTACCESS = "# ScrapeLock Lockdown\n<IfModule mod_authz_core.c>\n\tRequire all denied\n</IfModule>\n<IfModule !mod_authz_core.c>\n\tOrder allow,deny\n\tDeny from all\n</IfModule>\n";
+
+	/**
+	 * The lock file keeps the signed copy of the snapshot (as the guard does) only up to this size.
+	 */
+	const BEACON_MAX_COPY = 1048576;
+
+	/**
 	 * 3.4, multisite: the snapshot of the whole network, taken when the network is locked (a network option,
 	 * signed, not read on every request): the network options below, the super admins, the application
 	 * passwords, and for every site where ScrapeLock is active the fingerprints of its protected options, its
@@ -132,6 +152,20 @@ final class PNCP_Seal {
 	 * @var bool
 	 */
 	private static $from_copy = false;
+
+	/**
+	 * 3.4.1: the lock file as read on this request (see beacon_file()): null = not read yet, false = none.
+	 *
+	 * @var array<string, mixed>|false|null
+	 */
+	private static $file = null;
+
+	/**
+	 * 3.4.1: was there a lock file when it was first read on this request?
+	 *
+	 * @var bool
+	 */
+	private static $file_at_start = false;
 
 	/**
 	 * Registers the hooks.
@@ -248,8 +282,8 @@ final class PNCP_Seal {
 	public static function legacy() {
 		// The guard file only exists since 3.3: with it in place, unsigned data is never accepted, whatever the
 		// version stored in the database says.
-		if ( self::guard_installed() ) {
-			return false;
+		if ( self::guard_installed() || '' !== self::beacon_path() ) {
+			return false; // 3.4.1: the same for the lock file written when the guard could not be.
 		}
 		$from = (string) get_option( 'pncp_version', '' );
 		if ( '' === $from || version_compare( $from, '3.3.0', '>=' ) ) {
@@ -411,7 +445,9 @@ final class PNCP_Seal {
 			return self::$current['locked'] ? self::$current : null;
 		}
 		if ( ! defined( 'PNCP_LOCKDOWN_BEACON' ) ) {
-			return null;
+			// 3.4.1: no guard file. The lock file, if the guard could not be written (see write_beacon()).
+			$file = self::beacon_file();
+			return null === $file ? null : $file['record'];
 		}
 		$data = json_decode( (string) PNCP_LOCKDOWN_BEACON, true );
 		if ( ! is_array( $data ) || ! isset( $data['locked'], $data['until'], $data['sig'] ) ) {
@@ -430,38 +466,111 @@ final class PNCP_Seal {
 	 * @return bool Whether the guard changed since the start of the request.
 	 */
 	public static function refresh_beacon() {
-		if ( null !== self::$current || ! defined( 'PNCP_LOCKDOWN_BEACON' ) ) {
-			return false; // Written on this request (so it is current), or there was no guard at the start.
+		if ( null !== self::$current ) {
+			return false; // Written on this request (so it is current).
+		}
+		if ( ! defined( 'PNCP_LOCKDOWN_BEACON' ) ) {
+			return self::refresh_beacon_file();
 		}
 		clearstatcache( true, self::path() );
 		if ( ! self::ours( self::path() ) ) {
 			self::$current = self::record( false, 0 );
 			return true;
 		}
-		$code = (string) file_get_contents( self::path() ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Local file.
-		if ( ! preg_match( "/define\\( 'PNCP_LOCKDOWN_BEACON', '((?:[^'\\\\]|\\\\.)*)' \\);/", $code, $match ) ) {
+		$json = self::guard_json();
+		if ( null === $json || (string) PNCP_LOCKDOWN_BEACON === $json ) {
 			return false;
 		}
-		$json = strtr(
+		$record = self::guard_record( $json );
+		if ( null === $record ) {
+			return false;
+		}
+		self::$current = $record;
+		return true;
+	}
+
+	/**
+	 * The signed text the guard file on disk defines as PNCP_LOCKDOWN_BEACON now, or null.
+	 *
+	 * @return string|null
+	 */
+	private static function guard_json() {
+		$code = (string) file_get_contents( self::path() ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Local file.
+		if ( ! preg_match( "/define\\( 'PNCP_LOCKDOWN_BEACON', '((?:[^'\\\\]|\\\\.)*)' \\);/", $code, $match ) ) {
+			return null;
+		}
+		return strtr(
 			$match[1],
 			array(
 				'\\\\' => '\\',
 				"\\'"  => "'",
 			)
 		); // How var_export() wrote the text.
-		if ( (string) PNCP_LOCKDOWN_BEACON === $json ) {
-			return false;
-		}
+	}
+
+	/**
+	 * The record in a guard's signed text, if it matches its signature (otherwise null).
+	 *
+	 * @param string $json The signed text.
+	 * @return array{locked:bool, until:int, gen?:int, snap?:int}|null
+	 */
+	private static function guard_record( $json ) {
 		$data = json_decode( $json, true );
 		if ( ! is_array( $data ) || ! isset( $data['locked'], $data['until'], $data['sig'] ) ) {
-			return false;
+			return null;
 		}
 		$record = self::record( $data['locked'], $data['until'], isset( $data['gen'] ) ? $data['gen'] : null, isset( $data['snap'] ) ? $data['snap'] : null );
-		if ( ! self::valid( $record, $data['sig'] ) ) {
-			return false;
+		return self::valid( $record, $data['sig'] ) ? $record : null;
+	}
+
+	/**
+	 * 3.4.1: removes a guard file and a lock file that are older than the last unlock for good (put back from a
+	 * backup, see PNCP_Lockdown::seal_check()). Each is read again from disk first and only removed while it
+	 * still names a generation lower than that unlock: a file written by a lock since then stays.
+	 *
+	 * @param int $gen   The generation of the old file found on this request.
+	 * @param int $freed The generation of the unlock for good (signed in the state).
+	 * @return string[] The files removed.
+	 */
+	public static function remove_stale( $gen, $freed ) {
+		$removed = array();
+		if ( (int) $gen >= (int) $freed ) {
+			return $removed;
 		}
-		self::$current = $record;
-		return true;
+		$path = self::path();
+		clearstatcache( true, $path );
+		if ( self::ours( $path ) ) {
+			$json   = self::guard_json();
+			$record = null === $json ? null : self::guard_record( $json );
+			if ( null !== $record && $record['locked'] && isset( $record['gen'] ) && $record['gen'] < (int) $freed ) {
+				PNCP_Lockdown::fails_remove(); // The copy of the counters goes with the guard.
+				wp_delete_file( $path );
+				if ( function_exists( 'opcache_invalidate' ) ) {
+					opcache_invalidate( $path, true );
+				}
+				clearstatcache( true, $path );
+				if ( ! file_exists( $path ) ) {
+					$removed[] = $path;
+				}
+			}
+		}
+		foreach ( self::beacon_dirs() as $dir ) {
+			clearstatcache( true, $dir . '/' . self::beacon_name() );
+		}
+		$file = self::read_beacon_file();
+		if ( false !== $file && $file['record']['locked'] && isset( $file['record']['gen'] ) && $file['record']['gen'] < (int) $freed ) {
+			self::remove_beacon();
+			$removed[] = $file['path'];
+		}
+		self::$file          = null;
+		self::$file_at_start = false;
+		self::beacon_file();
+		if ( $removed && ! self::ours( $path ) ) {
+			self::$copy    = false;
+			self::$current = self::record( false, 0 );
+			self::guard_now( false, 0 );
+		}
+		return $removed;
 	}
 
 	/**
@@ -771,8 +880,14 @@ final class PNCP_Seal {
 	private static function guard_copy() {
 		if ( null === self::$copy ) {
 			self::$copy = false;
-			if ( defined( self::COPY ) ) {
-				$raw        = base64_decode( (string) constant( self::COPY ), true ); // phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.obfuscation_base64_decode -- See code().
+			$encoded    = defined( self::COPY ) ? (string) constant( self::COPY ) : '';
+			if ( '' === $encoded && ! defined( 'PNCP_LOCKDOWN_BEACON' ) ) {
+				// 3.4.1: no guard file: the copy in the lock file, if there is one (see write_beacon()).
+				$file    = self::beacon_file();
+				$encoded = null === $file ? '' : $file['copy'];
+			}
+			if ( '' !== $encoded ) {
+				$raw        = base64_decode( $encoded, true ); // phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.obfuscation_base64_decode -- See code().
 				$data       = is_string( $raw ) ? @unserialize( $raw, array( 'allowed_classes' => false ) ) : false; // phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.serialize_unserialize, WordPress.PHP.NoSilencedErrors.Discouraged -- Our own signed data, no objects.
 				self::$copy = is_array( $data ) ? $data : false;
 			}
@@ -848,8 +963,8 @@ final class PNCP_Seal {
 	 */
 	public static function write_guard( $locked, $until, $gen = null, $snap = null ) {
 		if ( ! $locked ) {
-			self::remove_guard();
-			$ok = ! file_exists( self::path() );
+			self::remove_guard(); // With the lock file (3.4.1), if there is one.
+			$ok = ! file_exists( self::path() ) && '' === self::beacon_path();
 			if ( $ok ) {
 				self::$copy    = false;
 				self::$current = array(
@@ -926,10 +1041,8 @@ final class PNCP_Seal {
 	 * Removes the guard, only if it is ours.
 	 */
 	public static function remove_guard() {
-		$fails = PNCP_Lockdown::fails_file();
-		if ( file_exists( $fails ) ) {
-			wp_delete_file( $fails ); // The copy of the wrong-code counters goes with the guard.
-		}
+		PNCP_Lockdown::fails_remove(); // The copy of the wrong-code counters (file and folder) goes with the guard.
+		self::remove_beacon(); // 3.4.1: and the lock file written when the guard could not be.
 		$path = self::path();
 		if ( file_exists( $path ) && self::ours( $path ) ) {
 			wp_delete_file( $path );
@@ -1002,6 +1115,478 @@ final class PNCP_Seal {
 		}
 		$head = (string) file_get_contents( $path, false, null, 0, 200 ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Local file.
 		return false !== strpos( $head, 'Plugin Name: ' . self::MARKER );
+	}
+
+	/* ---------- 3.4.1: the lock file, when the guard cannot be written ---------- */
+
+	/**
+	 * Writes the guard for this state or, when the guard cannot be written (and is not there), the lock file
+	 * (write_beacon()). The guard, once written, replaces a lock file.
+	 *
+	 * @param bool     $locked Locked.
+	 * @param int      $until  Until.
+	 * @param int|null $gen    Generation of the state (null: the one stored now).
+	 * @param int|null $snap   Generation of the snapshot (null: the one stored now).
+	 * @return bool Whether the guard, or else the lock file, is now as it should be.
+	 */
+	public static function write_lock_files( $locked, $until, $gen = null, $snap = null ) {
+		if ( self::write_guard( $locked, $until, $gen, $snap ) ) {
+			if ( $locked && '' !== self::beacon_path() ) {
+				self::remove_beacon();
+			}
+			return true;
+		}
+		if ( ! $locked || self::guard_installed() ) {
+			return false;
+		}
+		return self::write_beacon( true, $until, $gen, $snap );
+	}
+
+	/**
+	 * The folders the lock file may be written to, in order: wp-content/uploads/scrapelock-lockdown, then
+	 * wp-content/scrapelock-lockdown. Always from WP_CONTENT_DIR (wp-config.php), never from a setting in the
+	 * database (such as the uploads path), so the database cannot make ScrapeLock look elsewhere.
+	 *
+	 * @return string[] Without a trailing slash.
+	 */
+	public static function beacon_dirs() {
+		$content = untrailingslashit( wp_normalize_path( WP_CONTENT_DIR ) );
+		$dirs    = array();
+		foreach ( self::BEACON_DIRS as $dir ) {
+			$dirs[] = $content . '/' . $dir;
+		}
+		return $dirs;
+	}
+
+	/**
+	 * A path as shown to the owner: relative to the WordPress folder when it is inside it.
+	 *
+	 * @param string $path Path.
+	 * @return string
+	 */
+	public static function short_path( $path ) {
+		$path = wp_normalize_path( (string) $path );
+		$core = trailingslashit( wp_normalize_path( ABSPATH ) );
+		return 0 === strpos( $path, $core ) ? substr( $path, strlen( $core ) ) : $path;
+	}
+
+	/**
+	 * The name of the lock file: made from the keys, so it cannot be guessed (on a server that would show the
+	 * file's text instead of running it, nobody finds it).
+	 *
+	 * @return string
+	 */
+	private static function beacon_name() {
+		return 'lock-' . substr( hash_hmac( 'sha256', 'pncp_lockdown_beacon_name', self::key() ), 0, 20 ) . '.php';
+	}
+
+	/**
+	 * 3.4.1: the name of the copy of the wrong-code counters kept next to the lock file (see
+	 * PNCP_Lockdown::fails_read()). Made from the keys too, so it cannot be guessed.
+	 *
+	 * @return string
+	 */
+	private static function beacon_fails_name() {
+		return 'fails-' . substr( hash_hmac( 'sha256', 'pncp_lockdown_beacon_fails', self::key() ), 0, 20 ) . '.php';
+	}
+
+	/**
+	 * 3.4.1: where the copy of the wrong-code counters goes while the lock is kept by the lock file instead of
+	 * the guard: next to the lock file ('' when there is no lock file).
+	 *
+	 * @return string
+	 */
+	public static function beacon_fails_path() {
+		$path = self::beacon_path();
+		return '' === $path ? '' : dirname( $path ) . '/' . self::beacon_fails_name();
+	}
+
+	/**
+	 * 3.4.1: every place a copy of the counters next to a lock file may be (one per folder of beacon_dirs()).
+	 *
+	 * @return string[]
+	 */
+	public static function beacon_fails_paths() {
+		$name  = self::beacon_fails_name();
+		$paths = array();
+		foreach ( self::beacon_dirs() as $dir ) {
+			$paths[] = $dir . '/' . $name;
+		}
+		return $paths;
+	}
+
+	/**
+	 * The folder the lock file can be written to now ('' when none can): the first of beacon_dirs() that PHP can
+	 * write to directly, or create.
+	 *
+	 * @return string
+	 */
+	public static function beacon_writable_dir() {
+		foreach ( self::beacon_dirs() as $dir ) {
+			if ( is_dir( $dir ) ) {
+				if ( wp_is_writable( $dir ) ) {
+					return $dir;
+				}
+				continue;
+			}
+			if ( file_exists( $dir ) ) {
+				continue; // A file of that name: not ours, never replaced.
+			}
+			$parent = dirname( $dir );
+			if ( is_dir( $parent ) && wp_is_writable( $parent ) ) {
+				return $dir;
+			}
+		}
+		return '';
+	}
+
+	/**
+	 * The lock file as read on this request (only read the first time it is needed, on a site without the
+	 * guard file: one check per folder while there is none), or null when there is none or it does not match
+	 * its signature.
+	 *
+	 * @return array{record: array{locked:bool, until:int, gen?:int, snap?:int}, mail: string, since: int, copy: string, path: string}|null
+	 */
+	private static function beacon_file() {
+		if ( null === self::$file ) {
+			self::$file          = self::read_beacon_file();
+			self::$file_at_start = false !== self::$file;
+		}
+		return false === self::$file ? null : self::$file;
+	}
+
+	/**
+	 * Path of the lock file that is there now and matches its signature ('' when none is).
+	 *
+	 * @return string
+	 */
+	public static function beacon_path() {
+		$file = self::beacon_file();
+		return null === $file ? '' : $file['path'];
+	}
+
+	/**
+	 * Reads the lock file from the first folder that has a genuine one.
+	 *
+	 * @return array<string, mixed>|false
+	 */
+	private static function read_beacon_file() {
+		$name = self::beacon_name();
+		foreach ( self::beacon_dirs() as $dir ) {
+			$path = $dir . '/' . $name;
+			if ( ! is_file( $path ) ) {
+				continue;
+			}
+			$data = self::parse_beacon( $path );
+			if ( null !== $data ) {
+				return $data;
+			}
+		}
+		return false;
+	}
+
+	/**
+	 * The signed content of a lock file, or null.
+	 *
+	 * @param string $path File.
+	 * @return array<string, mixed>|null
+	 */
+	private static function parse_beacon( $path ) {
+		// phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged, WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Local file; unreadable = none.
+		$text = @file_get_contents( $path, false, null, 0, 2 * self::BEACON_MAX_COPY );
+		if ( ! is_string( $text ) || 0 !== strpos( $text, self::BEACON_HEAD ) ) {
+			return null;
+		}
+		$data = json_decode( substr( $text, strlen( self::BEACON_HEAD ) ), true );
+		if ( ! is_array( $data ) || ! isset( $data['beacon'], $data['mail'], $data['since'], $data['xsig'] ) || ! is_string( $data['beacon'] ) ) {
+			return null;
+		}
+		$beacon = json_decode( $data['beacon'], true );
+		if ( ! is_array( $beacon ) || ! isset( $beacon['locked'], $beacon['until'], $beacon['sig'] ) ) {
+			return null;
+		}
+		$record = self::record( $beacon['locked'], $beacon['until'], isset( $beacon['gen'] ) ? $beacon['gen'] : null, isset( $beacon['snap'] ) ? $beacon['snap'] : null );
+		$mail   = (string) $data['mail'];
+		$since  = (int) $data['since'];
+		if ( ! self::valid( $record, $beacon['sig'] ) || ! self::valid( array( 'pncp_lockdown_beacon', $record, $mail, $since ), $data['xsig'] ) ) {
+			return null;
+		}
+		return array(
+			'record' => $record,
+			'mail'   => $mail,
+			'since'  => $since,
+			'copy'   => isset( $data['copy'] ) && is_string( $data['copy'] ) ? $data['copy'] : '',
+			'path'   => $path,
+		);
+	}
+
+	/**
+	 * Reads the lock file again (see refresh_beacon()): another request may have written it since the start
+	 * of this one. A lock file that is gone now counts as "not locked", since only ScrapeLock removes it.
+	 *
+	 * @return bool Whether it changed since it was first read on this request.
+	 */
+	private static function refresh_beacon_file() {
+		if ( ! self::$file_at_start ) {
+			return false; // There was none when this request first looked.
+		}
+		$before = self::beacon_file();
+		foreach ( self::beacon_dirs() as $dir ) {
+			clearstatcache( true, $dir . '/' . self::beacon_name() );
+		}
+		$now        = self::read_beacon_file();
+		self::$file = $now;
+		self::$copy = null;
+		$record     = false === $now ? self::record( false, 0 ) : $now['record'];
+		if ( null !== $before && $before['record'] === $record ) {
+			return false;
+		}
+		self::$current = $record;
+		return true;
+	}
+
+	/**
+	 * The administration address the lock file signs: alerts go there while locked. When the site is locked
+	 * now, the one signed when it was locked (snapshot, its copy, the lock file or the state); only the address
+	 * stored now when the site is being locked.
+	 *
+	 * @return string
+	 */
+	private static function beacon_mail() {
+		$state  = PNCP_Lockdown::state();
+		$tamper = PNCP_Lockdown::tampered();
+		if ( '' === $tamper && empty( $state['locked'] ) ) {
+			$mail = (string) ( is_multisite() ? get_site_option( 'admin_email' ) : get_option( 'admin_email' ) );
+		} else {
+			$mail = self::alert_address();
+			if ( '' === $mail && '' === $tamper && is_email( $state['mail'] ) ) {
+				$mail = (string) $state['mail'];
+			}
+		}
+		return is_email( $mail ) ? $mail : '';
+	}
+
+	/**
+	 * Writes the lock file (removes it when not locked): used when the guard file cannot be written (the owner
+	 * locked with "Lock without the guard file"). A signed copy of the lock outside the database: the lock
+	 * flag, the generation of the state and of the snapshot, the lock time, the address alerts go to and, when
+	 * it is not too large, the signed copy of the snapshot (as in the guard file). While it is there, a site
+	 * whose Lockdown data was deleted or changed in the database stays locked, and its protected settings are
+	 * put back from the copy. Written directly by PHP (not through WP_Filesystem, which may need FTP), to a
+	 * temporary file first and then renamed, so a request never reads half a file.
+	 *
+	 * @param bool     $locked Locked.
+	 * @param int      $until  Until.
+	 * @param int|null $gen    Generation of the state (null: the one stored now).
+	 * @param int|null $snap   Generation of the snapshot (null: the one stored now).
+	 * @return bool Whether the lock file is now as it should be.
+	 */
+	public static function write_beacon( $locked, $until, $gen = null, $snap = null ) {
+		if ( ! $locked ) {
+			self::remove_beacon();
+			return '' === self::beacon_path();
+		}
+		$state = PNCP_Lockdown::state();
+		$gen   = null === $gen ? (int) $state['gen'] : (int) $gen;
+		$snap  = null === $snap ? (int) $state['snap'] : (int) $snap;
+		$old   = self::beacon_file();
+		$since = '' === PNCP_Lockdown::tampered() ? (int) $state['since'] : ( null === $old ? 0 : (int) $old['since'] );
+		$mail  = self::beacon_mail();
+		$rec   = self::record( true, $until, $gen, $snap );
+		$data  = array(
+			'beacon' => (string) wp_json_encode( array_merge( $rec, array( 'sig' => self::sign( $rec ) ) ) ),
+			'mail'   => $mail,
+			'since'  => $since,
+			'xsig'   => self::sign( array( 'pncp_lockdown_beacon', $rec, $mail, $since ) ),
+		);
+		$copy  = is_multisite() ? null : self::snapshot_source( $snap );
+		if ( null !== $copy ) {
+			$encoded = base64_encode( serialize( $copy ) ); // phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.serialize_serialize, WordPress.PHP.DiscouragedPHPFunctions.obfuscation_base64_encode -- As in the guard (code()): our own signed data, read back with allowed_classes off.
+			if ( strlen( $encoded ) <= self::BEACON_MAX_COPY ) {
+				$data['copy'] = $encoded;
+			} else {
+				$copy = null;
+			}
+		}
+		// "<" and ">" escaped: nothing after the first line can open PHP again (see beacon_inert()).
+		$json = wp_json_encode( $data, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT );
+		if ( ! is_string( $json ) ) {
+			return false;
+		}
+		$text    = self::BEACON_HEAD . $json;
+		$name    = self::beacon_name();
+		$written = '';
+		foreach ( self::beacon_dirs() as $dir ) {
+			if ( self::beacon_put( $dir, $name, $text ) ) {
+				$written = $dir . '/' . $name;
+				break;
+			}
+		}
+		if ( '' === $written ) {
+			return false;
+		}
+		foreach ( self::beacon_dirs() as $dir ) {
+			if ( $dir . '/' . $name !== $written ) {
+				self::remove_beacon_in( $dir ); // Only the file just written counts.
+			}
+		}
+		self::$file          = array(
+			'record' => $rec,
+			'mail'   => $mail,
+			'since'  => $since,
+			'copy'   => isset( $data['copy'] ) ? $data['copy'] : '',
+			'path'   => $written,
+		);
+		self::$file_at_start = true;
+		self::$copy          = null === $copy ? false : $copy;
+		self::$current       = $rec;
+		return true;
+	}
+
+	/**
+	 * Writes the lock file into one folder (created with an index.php and an .htaccess that denies access).
+	 *
+	 * @param string $dir  Folder.
+	 * @param string $name File name.
+	 * @param string $text Content.
+	 * @return bool Whether the file holds exactly this content now.
+	 */
+	private static function beacon_put( $dir, $name, $text ) {
+		// phpcs:disable WordPress.PHP.NoSilencedErrors.Discouraged, WordPress.WP.AlternativeFunctions -- Direct writes on purpose (WP_Filesystem may need FTP here); a failure means "try the next folder".
+		if ( file_exists( $dir ) && ! is_dir( $dir ) ) {
+			return false;
+		}
+		if ( ! is_dir( $dir ) ) {
+			$parent = dirname( $dir );
+			if ( ! is_dir( $parent ) || ! wp_is_writable( $parent ) || ! @mkdir( $dir, 0755 ) ) {
+				return false;
+			}
+		}
+		if ( ! wp_is_writable( $dir ) ) {
+			return false;
+		}
+		$path = $dir . '/' . $name;
+		if ( is_file( $path ) && (string) @file_get_contents( $path ) === $text ) {
+			return true;
+		}
+		foreach ( array(
+			'index.php' => self::BEACON_INDEX,
+			'.htaccess' => self::BEACON_HTACCESS,
+		) as $file => $content ) {
+			if ( ! file_exists( $dir . '/' . $file ) ) {
+				@file_put_contents( $dir . '/' . $file, $content );
+			}
+		}
+		$tmp = $dir . '/.' . $name . '.' . wp_generate_password( 12, false ) . '.tmp';
+		if ( strlen( $text ) !== @file_put_contents( $tmp, $text, LOCK_EX ) ) {
+			@unlink( $tmp );
+			return false;
+		}
+		@chmod( $tmp, 0644 );
+		if ( ! @rename( $tmp, $path ) ) {
+			@unlink( $tmp );
+			return false;
+		}
+		// phpcs:enable
+		clearstatcache( true, $path );
+		return (string) @file_get_contents( $path ) === $text; // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged, WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Local file.
+	}
+
+	/**
+	 * Removes the lock file from every folder (on a full unlock, when the app is removed, on deactivation and
+	 * when the guard replaces it).
+	 */
+	public static function remove_beacon() {
+		foreach ( self::beacon_dirs() as $dir ) {
+			self::remove_beacon_in( $dir );
+		}
+		self::$file          = null;
+		self::$file_at_start = false;
+		self::beacon_file();
+	}
+
+	/**
+	 * Removes ScrapeLock's lock files from one folder (also ones written with other keys), its index.php and
+	 * .htaccess when they are exactly ScrapeLock's, and the folder when it is empty then.
+	 *
+	 * @param string $dir Folder.
+	 */
+	private static function remove_beacon_in( $dir ) {
+		if ( ! is_dir( $dir ) ) {
+			return;
+		}
+		foreach ( (array) glob( $dir . '/lock-*.php' ) as $file ) {
+			if ( is_string( $file ) && self::beacon_ours( $file ) ) {
+				wp_delete_file( $file );
+			}
+		}
+		foreach ( (array) glob( $dir . '/.lock-*.tmp' ) as $file ) {
+			if ( is_string( $file ) ) {
+				wp_delete_file( $file );
+			}
+		}
+		// 3.4.1: the copy of the wrong-code counters kept next to the lock file goes with it.
+		foreach ( (array) glob( $dir . '/fails-*.php' ) as $file ) {
+			if ( is_string( $file ) && 0 === strpos( (string) @file_get_contents( $file, false, null, 0, 64 ), self::BEACON_HEAD . '{"rows":' ) ) { // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged, WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Local file.
+				wp_delete_file( $file );
+			}
+		}
+		foreach ( array(
+			'index.php' => self::BEACON_INDEX,
+			'.htaccess' => self::BEACON_HTACCESS,
+		) as $file => $content ) {
+			// phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged, WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Local file.
+			if ( is_file( $dir . '/' . $file ) && @file_get_contents( $dir . '/' . $file ) === $content ) {
+				wp_delete_file( $dir . '/' . $file );
+			}
+		}
+		@rmdir( $dir ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged, WordPress.WP.AlternativeFunctions.file_system_operations_rmdir -- Only succeeds when empty (nothing of someone else is removed).
+		clearstatcache();
+	}
+
+	/**
+	 * Was this file written by ScrapeLock as a lock file (whatever the keys)?
+	 *
+	 * @param string $path File.
+	 * @return bool
+	 */
+	private static function beacon_ours( $path ) {
+		$head = (string) @file_get_contents( $path, false, null, 0, 64 ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged, WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Local file.
+		return 0 === strpos( $head, self::BEACON_HEAD . '{"beacon":' );
+	}
+
+	/**
+	 * Is this a file of the lock file's folder exactly as ScrapeLock writes it, which cannot run any code? Its
+	 * index.php and .htaccess, or a lock file: BEACON_HEAD and then text without "<". The file integrity check
+	 * does not note them (the lock file changes with every change of the lock); a file there with anything
+	 * else in it is checked like any other.
+	 *
+	 * @param string $path File.
+	 * @return bool
+	 */
+	public static function beacon_inert( $path ) {
+		$path = wp_normalize_path( (string) $path );
+		if ( ! in_array( dirname( $path ), self::beacon_dirs(), true ) || ! is_readable( $path ) ) {
+			return false;
+		}
+		$name = basename( $path );
+		clearstatcache( true, $path );
+		$size = @filesize( $path ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged -- Unreadable = checked.
+		if ( false === $size || $size > 3 * self::BEACON_MAX_COPY ) {
+			return false;
+		}
+		$data = @file_get_contents( $path ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged, WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Local file; unreadable = checked.
+		if ( ! is_string( $data ) ) {
+			return false;
+		}
+		if ( 'index.php' === $name ) {
+			return self::BEACON_INDEX === $data;
+		}
+		if ( '.htaccess' === $name ) {
+			return self::BEACON_HTACCESS === $data;
+		}
+		// 3.4.1: also the copy of the wrong-code counters next to the lock file (the same first line, then JSON).
+		return (bool) preg_match( '/^(?:lock|fails)-[0-9a-f]{20}\.php$/', $name ) && 0 === strpos( $data, self::BEACON_HEAD ) && false === strpos( substr( $data, strlen( self::BEACON_HEAD ) ), '<' );
 	}
 
 	/**
@@ -1930,6 +2515,7 @@ final class PNCP_Seal {
 				'total'  => (int) get_sites(
 					array(
 						'count'      => true,
+						'orderby'    => 'none',
 						'network_id' => get_current_network_id(),
 					)
 				),
@@ -2103,6 +2689,11 @@ final class PNCP_Seal {
 		} else {
 			$snap = self::snapshot();
 			$mail = null !== $snap && isset( $snap['values']['admin_email'] ) ? $snap['values']['admin_email'] : '';
+		}
+		if ( ! is_string( $mail ) || ! is_email( $mail ) ) {
+			// 3.4.1: without a snapshot (or its copy), the address signed in the lock file, if there is one.
+			$file = defined( 'PNCP_LOCKDOWN_BEACON' ) ? null : self::beacon_file();
+			$mail = null === $file ? '' : $file['mail'];
 		}
 		return is_string( $mail ) && is_email( $mail ) ? $mail : '';
 	}

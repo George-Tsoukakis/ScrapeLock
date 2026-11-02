@@ -72,6 +72,39 @@ final class PNCP_Edge {
 	const TRIES = 3;
 
 	/**
+	 * 3.4.1: no API call before this time (an option holding a Unix time). Set when the CDN asked to slow down or
+	 * refused the token; a ban that comes in meanwhile no longer starts a run early.
+	 */
+	const NOT_BEFORE = 'pncp_edge_not_before';
+
+	/**
+	 * 3.4.1: the API calls of the last 5 minutes (an option: [window start, calls]). Cloudflare allows 1200 calls
+	 * per 5 minutes for the whole account, shared with the dashboard and other tools: ScrapeLock makes at most
+	 * CALL_BUDGET of them.
+	 */
+	const CALLS = 'pncp_edge_calls';
+
+	/**
+	 * 3.4.1: API calls in 5 minutes at most.
+	 */
+	const CALL_BUDGET = 300;
+
+	/**
+	 * Seconds the CDN asked to wait (Retry-After) in the last answer of this request.
+	 *
+	 * @var int
+	 */
+	private static $retry_after = 0;
+
+	/**
+	 * Whether this request removes everything (deactivation, uninstall): those calls are neither held to nor
+	 * counted in CALL_BUDGET, since there may be no later run to finish them (a 429 from the CDN still stops them).
+	 *
+	 * @var bool
+	 */
+	private static $removing_all = false;
+
+	/**
 	 * The lock value of this request while it holds the lock.
 	 *
 	 * @var string
@@ -207,6 +240,10 @@ final class PNCP_Edge {
 			add_option( self::CONFIG, $stored, '', false );
 		} else {
 			update_option( self::CONFIG, $stored, false );
+		}
+		// 3.4.1: new credentials (or another zone) need not wait for what the CDN answered the old ones.
+		if ( $old['provider'] !== $config['provider'] || $old['zone'] !== $config['zone'] || $old['token'] !== $config['token'] ) {
+			delete_option( self::NOT_BEFORE );
 		}
 		self::soon();
 	}
@@ -628,14 +665,26 @@ final class PNCP_Edge {
 			return;
 		}
 		update_option( self::DIRTY, uniqid( '', true ), false );
+		// 3.4.1: while the CDN asked to wait (or refused the token), a new ban does not start a run any earlier.
+		$when = max( time(), self::not_before() );
 		$next = wp_next_scheduled( self::CRON );
-		if ( $next && $next <= time() + 30 ) {
+		if ( $next && $next <= $when + 30 ) {
 			return;
 		}
 		if ( $next ) {
 			wp_unschedule_event( $next, self::CRON );
 		}
-		wp_schedule_single_event( time(), self::CRON );
+		wp_schedule_single_event( $when, self::CRON );
+	}
+
+	/**
+	 * 3.4.1: the time before which no API call is made (0 = none), as it is in the database now.
+	 *
+	 * @return int
+	 */
+	private static function not_before() {
+		$time = (int) self::fresh_option_raw( self::NOT_BEFORE );
+		return $time > time() + DAY_IN_SECONDS ? 0 : $time; // A value from far in the future is not ours.
 	}
 
 	/**
@@ -757,7 +806,7 @@ final class PNCP_Edge {
 			}
 			$key  = (string) $key;
 			$base = false === strpos( $key, '/' ) ? $key : strstr( $key, '/', true );
-			if ( isset( $staff[ $key ] ) || ! filter_var( $base, FILTER_VALIDATE_IP ) || PNCP_Ip::is_local( $base ) || PNCP_Ip::is_private( $base ) || '' !== PNCP_Ip::official_owner( $base ) ) {
+			if ( isset( $staff[ $key ] ) || ! filter_var( $base, FILTER_VALIDATE_IP ) || PNCP_Ip::is_local( $base ) || PNCP_Ip::is_private( $base ) || '' !== PNCP_Ip::official_owner( $base ) || PNCP_Options::crawler_fallback_ip( $base ) ) {
 				continue;
 			}
 			if ( 'bunny' === $provider && $base !== $key ) {
@@ -825,10 +874,15 @@ final class PNCP_Edge {
 				}
 				$next = $next ? max( $next, time() + MINUTE_IN_SECONDS ) : 0;
 			}
-			// A ban or a setting changed while this run was busy: what it changed may not be done yet.
-			if ( self::fresh_option_raw( self::DIRTY ) !== $dirty ) {
-				$next = $wait ? min( $next, time() + MINUTE_IN_SECONDS ) : time();
-				$wait = 0;
+			// A ban or a setting changed while this run was busy: what it changed may not be done yet. 3.4.1: not
+			// when the CDN asked to wait or refused the token; then the next run waits as it asked.
+			if ( ! $wait && self::fresh_option_raw( self::DIRTY ) !== $dirty ) {
+				$next = time();
+			}
+			if ( $wait ) {
+				update_option( self::NOT_BEFORE, $next, false );
+			} elseif ( self::fresh_option_raw( self::NOT_BEFORE ) ) {
+				delete_option( self::NOT_BEFORE );
 			}
 		} finally {
 			self::unlock();
@@ -875,7 +929,7 @@ final class PNCP_Edge {
 				if ( 'ok' === $res['status'] ) {
 					self::commit_queue_item( $id, $key, null );
 				} elseif ( 'wait' === $res['status'] ) {
-					$wait = 5 * MINUTE_IN_SECONDS;
+					$wait = self::wait_for( $res['status'] );
 					break 2;
 				} elseif ( 'denied' === $res['status'] ) {
 					// The old credentials no longer work: nothing more can be done with them.
@@ -991,7 +1045,7 @@ final class PNCP_Edge {
 					$list = self::bunny_blocked( $c );
 					if ( ! is_array( $list['list'] ) ) {
 						$error = $list['message'];
-						$wait  = 'denied' === $list['status'] ? HOUR_IN_SECONDS : 5 * MINUTE_IN_SECONDS;
+						$wait  = self::wait_for( $list['status'] );
 						break;
 					}
 					$existing = $list['list'];
@@ -1085,7 +1139,7 @@ final class PNCP_Edge {
 			// Wrong token or zone: no point retrying every few minutes. Rate limit, network or server error:
 			// a few minutes. A pending add stays pending: the next run checks whether it arrived.
 			$error = $res['message'];
-			$wait  = 'denied' === $res['status'] ? HOUR_IN_SECONDS : 5 * MINUTE_IN_SECONDS;
+			$wait  = self::wait_for( $res['status'] );
 			break;
 		}
 		return array(
@@ -1093,6 +1147,20 @@ final class PNCP_Edge {
 			'wait'  => $wait,
 			'error' => $error,
 		);
+	}
+
+	/**
+	 * Seconds to wait before the next run after an answer of this status: an hour for a refused token, otherwise
+	 * 5 minutes (Cloudflare blocks every call for 5 minutes after its limit), or longer if the CDN asked so.
+	 *
+	 * @param string $status Status of the answer (denied | wait | error | …).
+	 * @return int
+	 */
+	private static function wait_for( $status ) {
+		if ( 'denied' === $status ) {
+			return HOUR_IN_SECONDS;
+		}
+		return max( 5 * MINUTE_IN_SECONDS, min( HOUR_IN_SECONDS, self::$retry_after ) );
 	}
 
 	/**
@@ -1109,7 +1177,8 @@ final class PNCP_Edge {
 		$deadline = time() + max( 1, (int) $seconds );
 		// A run that is busy right now removes the same blocks; a block removed twice is "not found" the second
 		// time, which counts as done. So this goes on even without the lock.
-		$locked = self::lock();
+		$locked             = self::lock();
+		self::$removing_all = true;
 		try {
 			while ( self::retire_queue( true ) && time() < $deadline ) {
 				$calls = 0;
@@ -1120,6 +1189,7 @@ final class PNCP_Edge {
 				}
 			}
 		} finally {
+			self::$removing_all = false;
 			if ( $locked ) {
 				self::unlock();
 			}
@@ -1140,7 +1210,8 @@ final class PNCP_Edge {
 	 */
 	private static function add( $c, $key, $ban ) {
 		if ( 'cloudflare' === $c['provider'] ) {
-			$target = false !== strpos( $key, '/' ) ? 'ip_range' : ( false !== strpos( $key, ':' ) ? 'ip6' : 'ip' );
+			$value  = self::cloudflare_value( $key );
+			$target = false !== strpos( $value, '/' ) ? 'ip_range' : ( false !== strpos( $value, ':' ) ? 'ip6' : 'ip' );
 			$res    = self::request(
 				$c,
 				'POST',
@@ -1149,7 +1220,7 @@ final class PNCP_Edge {
 					'mode'          => 'block',
 					'configuration' => array(
 						'target' => $target,
-						'value'  => $key,
+						'value'  => $value,
 					),
 					'notes'         => 'ScrapeLock: ' . $ban['reason'] . ', until ' . gmdate( 'Y-m-d H:i', $ban['until'] ) . ' UTC',
 				)
@@ -1210,7 +1281,8 @@ final class PNCP_Edge {
 				);
 			}
 			++$calls;
-			$res = self::request( $c, 'DELETE', self::CLOUDFLARE_API . '/zones/' . rawurlencode( $c['zone'] ) . '/firewall/access_rules/rules/' . $id );
+			// 3.4.1: with an empty JSON object as the body, which Cloudflare's API description marks as required.
+			$res = self::request( $c, 'DELETE', self::CLOUDFLARE_API . '/zones/' . rawurlencode( $c['zone'] ) . '/firewall/access_rules/rules/' . $id, (object) array() );
 		} else {
 			++$calls;
 			$res = self::request( $c, 'POST', self::BUNNY_API . '/pullzone/' . rawurlencode( $c['zone'] ) . '/removeBlockedIp', array( 'BlockedIp' => $key ) );
@@ -1235,32 +1307,116 @@ final class PNCP_Edge {
 	 * @return array{status:string, id:string, ours:bool, message:string} id is empty when there is no rule.
 	 */
 	private static function cloudflare_find( $c, $key, &$calls ) {
-		++$calls;
-		$res = self::request( $c, 'GET', self::CLOUDFLARE_API . '/zones/' . rawurlencode( $c['zone'] ) . '/firewall/access_rules/rules?' . http_build_query( array( 'configuration.value' => $key ) ) );
-		$out = array(
-			'status'  => $res['status'],
+		$value = self::cloudflare_value( $key );
+		$want  = self::same_value( $value );
+		$out   = array(
+			'status'  => 'ok',
 			'id'      => '',
 			'ours'    => false,
-			'message' => $res['message'],
+			'message' => '',
 		);
-		if ( 'ok' !== $res['status'] ) {
-			return $out;
+		// 3.4.1: the value is compared as an address (Cloudflare may write IPv6 in another spelling), and up to
+		// three pages are read (a search that ignores the value lists every rule, newest first). For IPv6, when
+		// the search by value finds nothing, ScrapeLock's own rules (note "ScrapeLock") are searched as well.
+		$target   = false !== strpos( $value, '/' ) ? 'ip_range' : ( false !== strpos( $value, ':' ) ? 'ip6' : 'ip' );
+		$searches = array( array( 'configuration.value' => $value ) );
+		if ( false !== strpos( $value, ':' ) ) {
+			$searches[] = array( 'notes' => 'ScrapeLock' );
 		}
-		foreach ( isset( $res['json']['result'] ) && is_array( $res['json']['result'] ) ? $res['json']['result'] : array() as $rule ) {
-			if ( ! is_array( $rule ) || ! isset( $rule['configuration']['value'], $rule['id'] ) || $key !== (string) $rule['configuration']['value'] ) {
-				continue;
-			}
-			$id   = (string) $rule['id'];
-			$ours = isset( $rule['notes'] ) && 0 === strpos( (string) $rule['notes'], 'ScrapeLock' ) && ( ! isset( $rule['mode'] ) || 'block' === $rule['mode'] );
-			if ( '' === $out['id'] || $ours ) {
-				$out['id']   = $id;
-				$out['ours'] = $ours;
-			}
-			if ( $ours ) {
-				break;
+		foreach ( $searches as $search ) {
+			$found = self::cloudflare_search( $c, $target, $search, $want, $calls, $out );
+			if ( 'ok' !== $out['status'] || $found ) {
+				return $out;
 			}
 		}
 		return $out;
+	}
+
+	/**
+	 * One search of cloudflare_find(): up to three pages. Fills $out with the rule found (ScrapeLock's first).
+	 *
+	 * @param array{provider:string, zone:string, token:string}          $c      Configuration.
+	 * @param string                                                     $target ip | ip6 | ip_range.
+	 * @param array<string, string>                                      $search Search arguments.
+	 * @param string                                                     $want   The value, in the spelling of same_value().
+	 * @param int                                                        $calls  API calls made so far (updated).
+	 * @param array{status:string, id:string, ours:bool, message:string} $out    The result (updated).
+	 * @return bool Whether a rule for the value was found.
+	 */
+	private static function cloudflare_search( $c, $target, $search, $want, &$calls, &$out ) {
+		for ( $page = 1; $page <= 3; $page++ ) {
+			++$calls;
+			$args = array_merge(
+				array( 'configuration.target' => $target ),
+				$search,
+				array(
+					'per_page' => 50,
+					'page'     => $page,
+				)
+			);
+			$res  = self::request( $c, 'GET', self::CLOUDFLARE_API . '/zones/' . rawurlencode( $c['zone'] ) . '/firewall/access_rules/rules?' . http_build_query( $args ) );
+			if ( 'ok' !== $res['status'] ) {
+				$out['status']  = $res['status'];
+				$out['message'] = $res['message'];
+				return false;
+			}
+			$rules = isset( $res['json']['result'] ) && is_array( $res['json']['result'] ) ? $res['json']['result'] : array();
+			foreach ( $rules as $rule ) {
+				if ( ! is_array( $rule ) || ! isset( $rule['configuration']['value'], $rule['id'] ) || self::same_value( (string) $rule['configuration']['value'] ) !== $want ) {
+					continue;
+				}
+				$id   = (string) $rule['id'];
+				$ours = isset( $rule['notes'] ) && 0 === strpos( (string) $rule['notes'], 'ScrapeLock' ) && ( ! isset( $rule['mode'] ) || 'block' === $rule['mode'] );
+				if ( '' === $out['id'] || $ours ) {
+					$out['id']   = $id;
+					$out['ours'] = $ours;
+				}
+				if ( $ours ) {
+					return true;
+				}
+			}
+			$pages = isset( $res['json']['result_info']['total_pages'] ) ? (int) $res['json']['result_info']['total_pages'] : 1;
+			if ( '' !== $out['id'] || $page >= $pages || count( $rules ) < 50 ) {
+				break;
+			}
+		}
+		return '' !== $out['id'];
+	}
+
+	/**
+	 * 3.4.1: the value sent to Cloudflare for a ban key. Cloudflare accepts IPv6 ranges of /32, /48 and /64 only:
+	 * a ban of a /49 to /63 (filter pncp_ipv6_prefix) is blocked as its /48, one of a /65 to /127 as its /64.
+	 *
+	 * @param string $key Ban key.
+	 * @return string
+	 */
+	private static function cloudflare_value( $key ) {
+		if ( ! preg_match( '#^([0-9a-f:]+)/(\d{1,3})$#i', $key, $m ) ) {
+			return $key;
+		}
+		$bits = (int) $m[2];
+		if ( in_array( $bits, array( 32, 48, 64 ), true ) ) {
+			return $key;
+		}
+		$to = $bits < 48 ? 32 : ( $bits < 64 ? 48 : 64 );
+		return PNCP_Ip::limit_key( $m[1], $to );
+	}
+
+	/**
+	 * One spelling of an address or range for comparing (IPv6 upper or lower case, long or short).
+	 *
+	 * @param string $value Address or range.
+	 * @return string
+	 */
+	private static function same_value( $value ) {
+		$value = strtolower( trim( (string) $value ) );
+		$bits  = '';
+		if ( false !== strpos( $value, '/' ) ) {
+			list( $value, $bits ) = explode( '/', $value, 2 );
+			$bits                 = '/' . $bits;
+		}
+		$bin = @inet_pton( $value ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged -- Invalid value = false.
+		return ( false === $bin ? $value : (string) inet_ntop( $bin ) ) . $bits;
 	}
 
 	/**
@@ -1288,7 +1444,8 @@ final class PNCP_Edge {
 	}
 
 	/**
-	 * Checks the configuration with one read-only request: the token, its permissions and the zone.
+	 * Checks the configuration: the token, its permissions and the zone. Cloudflare: one read, then one test
+	 * block (test_block()), so a token that can only read is refused when the settings are saved.
 	 *
 	 * @param array{provider:string, zone:string, token:string} $c Configuration.
 	 * @return string Empty if it works, otherwise what went wrong.
@@ -1299,9 +1456,15 @@ final class PNCP_Edge {
 		}
 		if ( 'cloudflare' === $c['provider'] ) {
 			$res = self::request( $c, 'GET', self::CLOUDFLARE_API . '/zones/' . rawurlencode( $c['zone'] ) . '/firewall/access_rules/rules?per_page=5' );
-		} else {
-			$res = self::request( $c, 'GET', self::BUNNY_API . '/pullzone/' . rawurlencode( $c['zone'] ) );
+			if ( 'ok' !== $res['status'] ) {
+				return $res['message'];
+			}
+			// 3.4.1: a token that can only read passes the read above; the first real block would then be
+			// refused. One test block (added, found and removed again) shows that the token can edit the rules.
+			$block = self::test_block( $c );
+			return $block['ok'] ? '' : $block['message'] . ' ' . __( 'The token needs the permission Zone > Firewall Services > Edit.', 'scrapelock' );
 		}
+		$res = self::request( $c, 'GET', self::BUNNY_API . '/pullzone/' . rawurlencode( $c['zone'] ) );
 		return 'ok' === $res['status'] ? '' : $res['message'];
 	}
 
@@ -1384,15 +1547,71 @@ final class PNCP_Edge {
 	}
 
 	/**
+	 * 3.4.1: does a Cloudflare error answer say the token itself is wrong (malformed, mistyped, a Global API Key
+	 * in the token field)? Cloudflare answers those with HTTP 400, not 401 / 403: they must stop the run like a
+	 * refused token, not write off the one address that was being blocked.
+	 *
+	 * @param array<string, mixed> $json The answer.
+	 * @return bool
+	 */
+	private static function token_error( $json ) {
+		$codes = array();
+		$walk  = static function ( $errors ) use ( &$walk, &$codes ) {
+			foreach ( is_array( $errors ) ? $errors : array() as $error ) {
+				if ( is_array( $error ) ) {
+					if ( isset( $error['code'] ) ) {
+						$codes[] = (int) $error['code'];
+					}
+					if ( isset( $error['error_chain'] ) ) {
+						$walk( $error['error_chain'] );
+					}
+				}
+			}
+		};
+		$walk( isset( $json['errors'] ) ? $json['errors'] : array() );
+		foreach ( $codes as $code ) {
+			if ( ( $code >= 6100 && $code <= 6112 ) || in_array( $code, array( 1000, 6003, 9103, 9106, 9109, 10000 ), true ) ) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	/**
 	 * One request to the CDN's API, with the site owner's token.
 	 *
 	 * @param array{provider:string, zone:string, token:string} $c      Configuration.
 	 * @param string                                            $method Method.
 	 * @param string                                            $url    URL.
-	 * @param array<string, mixed>|null                         $body   JSON body.
+	 * @param array<string, mixed>|object|null                  $body   JSON body.
 	 * @return array{status:string, code:int, json:array<string, mixed>, message:string}
 	 */
 	private static function request( $c, $method, $url, $body = null ) {
+		self::$retry_after = 0;
+		// 3.4.1: at most CALL_BUDGET calls in 5 minutes, whatever starts them (runs, deactivation, the tests).
+		$now    = time();
+		$window = get_option( self::CALLS, array() );
+		$window = is_array( $window ) && isset( $window[0], $window[1] ) && (int) $window[0] > $now - 5 * MINUTE_IN_SECONDS && (int) $window[0] <= $now ? array( (int) $window[0], (int) $window[1] ) : array( $now, 0 );
+		/**
+		 * Filters the most API calls ScrapeLock makes to the CDN in 5 minutes (300 by default; Cloudflare allows
+		 * 1200 for the whole account).
+		 *
+		 * @param int $budget Calls.
+		 */
+		$budget = max( 30, (int) apply_filters( 'pncp_edge_call_budget', self::CALL_BUDGET ) );
+		if ( ! self::$removing_all && $window[1] >= $budget ) {
+			self::$retry_after = $window[0] + 5 * MINUTE_IN_SECONDS - $now;
+			return array(
+				'status'  => 'wait',
+				'code'    => 0,
+				'json'    => array(),
+				'message' => __( 'ScrapeLock made many calls to the CDN in the last 5 minutes; it will continue in a few minutes.', 'scrapelock' ),
+			);
+		}
+		if ( ! self::$removing_all ) {
+			++$window[1];
+			update_option( self::CALLS, $window, false );
+		}
 		$headers = array(
 			'Accept'       => 'application/json',
 			'Content-Type' => 'application/json',
@@ -1406,7 +1625,8 @@ final class PNCP_Edge {
 			'method'      => $method,
 			'timeout'     => 10,
 			'redirection' => 0,
-			'user-agent'  => 'ScrapeLock/' . PNCP_VERSION,
+			// PNCP_VERSION is not defined while uninstall.php runs (the plugin itself is not loaded then).
+			'user-agent'  => 'ScrapeLock/' . ( defined( 'PNCP_VERSION' ) ? PNCP_VERSION : '' ),
 			'headers'     => $headers,
 		);
 		if ( null !== $body ) {
@@ -1422,7 +1642,12 @@ final class PNCP_Edge {
 				'message' => sprintf( __( 'The CDN could not be reached: %s', 'scrapelock' ), $response->get_error_message() ),
 			);
 		}
-		$code = (int) wp_remote_retrieve_response_code( $response );
+		$code  = (int) wp_remote_retrieve_response_code( $response );
+		$retry = trim( (string) wp_remote_retrieve_header( $response, 'retry-after' ) );
+		if ( '' !== $retry ) {
+			$retry             = ctype_digit( $retry ) ? (int) $retry : (int) strtotime( $retry ) - time();
+			self::$retry_after = max( 0, min( DAY_IN_SECONDS, $retry ) );
+		}
 		$json = json_decode( (string) wp_remote_retrieve_body( $response ), true );
 		$json = is_array( $json ) ? $json : array();
 		if ( $code >= 200 && $code < 300 && ( 'cloudflare' !== $c['provider'] || ! empty( $json['success'] ) ) ) {
@@ -1440,7 +1665,7 @@ final class PNCP_Edge {
 			$detail = (string) $json['Message']; // Bunny.
 		}
 		$detail = substr( sanitize_text_field( $detail ), 0, 200 );
-		if ( 401 === $code || 403 === $code ) {
+		if ( 401 === $code || 403 === $code || ( $code >= 400 && $code < 500 && self::token_error( $json ) ) ) {
 			$status  = 'denied';
 			$message = __( 'The CDN refused the token: check that it is correct, that it belongs to this zone and that it has the permission described under “API token”.', 'scrapelock' );
 		} elseif ( 429 === $code ) {
@@ -1457,6 +1682,9 @@ final class PNCP_Edge {
 			if ( 404 === $code ) {
 				$message = __( 'The CDN does not know this zone ID.', 'scrapelock' );
 			}
+		}
+		if ( 'denied' === $status && 'cloudflare' === $c['provider'] && preg_match( '/^[0-9a-f]{37}$/i', (string) $c['token'] ) ) {
+			$message .= ' ' . __( 'This looks like a Global API Key: ScrapeLock needs an API token (My Profile > API Tokens), not the Global API Key.', 'scrapelock' );
 		}
 		return array(
 			'status'  => $status,

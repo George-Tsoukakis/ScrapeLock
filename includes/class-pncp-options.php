@@ -721,12 +721,13 @@ final class PNCP_Options {
 	/**
 	 * 3.4: is the IP in the main, long-standing ranges of Googlebot or Bingbot, while the official list of that
 	 * crawler is not downloaded yet (a new install without internet access, or a failed download)? Only for
-	 * refusing a manual block: the full lists decide everything else once they are there.
+	 * refusing a manual block and for blocking at the CDN (3.4.1): the full lists decide everything else once
+	 * they are there.
 	 *
 	 * @param string $ip IP.
 	 * @return bool
 	 */
-	private static function crawler_fallback_ip( $ip ) {
+	public static function crawler_fallback_ip( $ip ) {
 		$fallback = array(
 			'google' => array( '66.249.64.0/19', '2001:4860:4801::/48' ),
 			'bing'   => array( '157.55.39.0/24', '207.46.13.0/24', '40.77.167.0/24' ),

@@ -300,6 +300,9 @@ final class PNCP_Precheck {
 				'cf'    => ! empty( $s['trust_cloudflare'] ) && in_array( $setting, array( 'cf_connecting_ip', 'x_forwarded_for' ), true ),
 				'bunny' => ! empty( $s['trust_bunny'] ) && in_array( $setting, array( 'x_real_ip', 'x_forwarded_for' ), true ),
 			),
+			// 3.4.1: "Real visitor IP" at the default (REMOTE_ADDR) with Cloudflare trusted: CF-Connecting-IP from a
+			// Cloudflare edge is the visitor, as in PNCP_Ip::client_ip().
+			'cf_auto'         => ! empty( $s['trust_cloudflare'] ) && 'remote_addr' === $setting,
 			// Only a hash of the CDN secret is written to the file.
 			'cdn_secret_hash' => '' !== $secret ? hash( 'sha256', $secret ) : '',
 			// "Only through the CDN": cached pages are refused here too, before the page cache serves them.
@@ -318,6 +321,9 @@ final class PNCP_Precheck {
 			// time without the file being written again.
 			'emergency_until' => PNCP_Options::emergency_until(),
 			'emergency'       => self::emergency_limits( $s ),
+			// 3.4.1: WooCommerce cart, checkout and My account (with their endpoints below them): never counted,
+			// as in the normal check (PNCP_Bots::is_shop_transaction_page()). Bans and the block list still apply.
+			'shop'            => self::shop_pages( $home ),
 		);
 		/**
 		 * Filters the configuration of the pre-cache check before it is written to config.json.
@@ -325,6 +331,40 @@ final class PNCP_Precheck {
 		 * @param array<string, mixed> $config Configuration.
 		 */
 		return (array) apply_filters( 'pncp_precheck_config', $config );
+	}
+
+	/**
+	 * The WooCommerce cart, checkout and My account pages: their paths below the home path (lowercase, without
+	 * the trailing slash) and their page IDs (for ?page_id= without pretty permalinks). Never the home page itself.
+	 *
+	 * @param string $home The home path, without the trailing slash.
+	 * @return array{paths:string[], ids:int[]}
+	 */
+	private static function shop_pages( $home ) {
+		$out = array(
+			'paths' => array(),
+			'ids'   => array(),
+		);
+		if ( ! function_exists( 'wc_get_page_id' ) ) {
+			return $out;
+		}
+		$front = 'page' === get_option( 'show_on_front' ) ? (int) get_option( 'page_on_front' ) : 0;
+		foreach ( array( 'cart', 'checkout', 'myaccount' ) as $name ) {
+			$id = (int) wc_get_page_id( $name );
+			if ( $id < 1 || $id === $front || 'publish' !== get_post_status( $id ) ) {
+				continue;
+			}
+			$out['ids'][] = $id;
+			$path         = rawurldecode( (string) wp_parse_url( (string) get_permalink( $id ), PHP_URL_PATH ) );
+			if ( '' !== $home && ( 0 === strcasecmp( $path, $home ) || 0 === stripos( $path, $home . '/' ) ) ) {
+				$path = substr( $path, strlen( $home ) );
+			}
+			$path = strtolower( rtrim( '/' . ltrim( $path, '/' ), '/' ) );
+			if ( '' !== $path && '/index.php' !== $path ) {
+				$out['paths'][] = $path;
+			}
+		}
+		return $out;
 	}
 
 	/**

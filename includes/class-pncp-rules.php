@@ -148,7 +148,19 @@ final class PNCP_Rules {
 		if ( false === strpos( $text, '# BEGIN ScrapeLock' ) ) {
 			return;
 		}
-		$clean = (string) preg_replace( '/^# BEGIN ScrapeLock\R.*?^# END ScrapeLock\R?/ms', '', $text );
+		// insert_with_markers() joins the lines before the block, the block and the lines after it with line
+		// breaks, so it adds one line break before "# BEGIN ScrapeLock" (a blank line when the file ended with
+		// one). That line break goes with the block, so the file is byte for byte what it was before the block
+		// was added, and turning the setting on and off again does not leave one more blank line each time.
+		// A block at the very start of the file has no line break before it: the one after it goes instead.
+		$clean = (string) preg_replace(
+			array(
+				'/\R^# BEGIN ScrapeLock\R.*?^# END ScrapeLock(?=\R|\z)/ms',
+				'/\A# BEGIN ScrapeLock\R.*?^# END ScrapeLock(?:\R|\z)/ms',
+			),
+			'',
+			$text
+		);
 		if ( $clean !== $text ) {
 			file_put_contents( $file, $clean, LOCK_EX ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_file_put_contents -- Same file, same owner.
 		}
@@ -619,11 +631,65 @@ final class PNCP_Rules {
 	 * @return string
 	 */
 	private static function cf_allowed() {
+		$parts = self::cf_allowed_parts();
+		return $parts ? ' and not (' . implode( ' or ', $parts ) . ')' : '';
+	}
+
+	/**
+	 * The always-allowed User-Agents as Cloudflare conditions.
+	 *
+	 * @return string[]
+	 */
+	private static function cf_allowed_parts() {
 		$parts = array();
 		foreach ( self::allowed() as $ua ) {
-			$parts[] = 'lower(http.user_agent) contains "' . strtolower( str_replace( '"', '', $ua ) ) . '"';
+			$ua = strtolower( trim( (string) $ua ) );
+			if ( '' !== $ua ) {
+				$parts[] = 'lower(http.user_agent) contains ' . self::cf_string( $ua );
+			}
 		}
-		return $parts ? ' and not (' . implode( ' or ', $parts ) . ')' : '';
+		return array_values( array_unique( $parts ) );
+	}
+
+	/**
+	 * 3.4.1: a quoted string for a Cloudflare expression. Cloudflare only knows the escapes \\" and \\\\, so a
+	 * backslash or a quote typed in a list no longer makes the expression invalid.
+	 *
+	 * @param string $value Value.
+	 * @return string
+	 */
+	private static function cf_string( $value ) {
+		return '"' . str_replace( array( '\\', '"' ), array( '\\\\', '\\"' ), (string) $value ) . '"';
+	}
+
+	/**
+	 * 3.4.1: conditions joined with " or " into as few expressions as possible, each at most $max characters
+	 * with its head and tail. A condition that does not fit even alone is left out (never an expression over the
+	 * limit, which Cloudflare refuses).
+	 *
+	 * @param string[] $parts Conditions.
+	 * @param string   $head  Text before them.
+	 * @param string   $tail  Text after them.
+	 * @param int      $max   Most characters.
+	 * @return string[] The expressions.
+	 */
+	private static function cf_chunks( $parts, $head, $tail, $max = 4090 ) {
+		$chunks = array();
+		$chunk  = array();
+		foreach ( $parts as $part ) {
+			if ( strlen( $head . $part . $tail ) > $max ) {
+				continue;
+			}
+			if ( $chunk && strlen( $head . implode( ' or ', array_merge( $chunk, array( $part ) ) ) . $tail ) > $max ) {
+				$chunks[] = $head . implode( ' or ', $chunk ) . $tail;
+				$chunk    = array();
+			}
+			$chunk[] = $part;
+		}
+		if ( $chunk ) {
+			$chunks[] = $head . implode( ' or ', $chunk ) . $tail;
+		}
+		return $chunks;
 	}
 
 	/**
@@ -637,11 +703,12 @@ final class PNCP_Rules {
 		$uploads = self::uploads_path();
 		// First rule: robots.txt and llms.txt skip the others, so every bot can read them. A separate rule keeps
 		// the long bot expression under Cloudflare's 4096-character limit.
+		$qhost = self::cf_string( $host );
 		$rules = array(
 			'open' => array(
 				'title'      => __( 'First: robots.txt and llms.txt open for every bot (put this rule at the top)', 'scrapelock' ),
 				'action'     => __( 'Skip · all remaining custom rules', 'scrapelock' ),
-				'expression' => '(http.host eq "' . $host . '") and http.request.uri.path in {"/robots.txt" "/llms.txt" "/llms-full.txt" "/.well-known/tdmrep.json"}',
+				'expression' => '(http.host eq ' . $qhost . ') and http.request.uri.path in {"/robots.txt" "/llms.txt" "/llms-full.txt" "/.well-known/tdmrep.json"}',
 			),
 		);
 
@@ -651,28 +718,34 @@ final class PNCP_Rules {
 			$search = array_map( 'strtolower', PNCP_Options::allowed_ai_search() );
 			$parts  = array();
 			foreach ( $bots as $bot ) {
-				$bot = strtolower( str_replace( '"', '', $bot ) );
+				$bot = strtolower( trim( (string) $bot ) );
 				if ( '=' === substr( $bot, 0, 1 ) ) {
-					$parts[] = 'lower(http.user_agent) eq "' . substr( $bot, 1 ) . '"'; // "=node": the whole User-Agent.
-				} elseif ( ! in_array( $bot, $search, true ) ) {
-					$parts[] = 'lower(http.user_agent) contains "' . $bot . '"';
+					$parts[] = 'lower(http.user_agent) eq ' . self::cf_string( substr( $bot, 1 ) ); // "=node": the whole User-Agent.
+				} elseif ( '' !== $bot && ! in_array( $bot, $search, true ) ) {
+					$parts[] = 'lower(http.user_agent) contains ' . self::cf_string( $bot );
 				}
 			}
 			if ( $s['block_empty_ua'] ) {
 				$parts[] = 'http.user_agent eq ""';
 			}
-			// Cloudflare accepts expressions up to 4096 characters: a long list becomes two or more rules.
-			$head   = '(http.host eq "' . $host . '") and not cf.client.bot and (';
-			$tail   = ')' . self::cf_allowed();
-			$chunks = array( array() );
-			foreach ( $parts as $part ) {
-				$current = end( $chunks );
-				if ( $current && strlen( $head . implode( ' or ', array_merge( $current, array( $part ) ) ) . $tail ) > 4090 ) {
-					$chunks[] = array();
+			// Cloudflare accepts expressions up to 4096 characters: a long list becomes two or more rules. 3.4.1: a
+			// long list of always-allowed User-Agents (repeated in every part) becomes a Skip rule of its own instead,
+			// placed before the bot rules.
+			$head  = '(http.host eq ' . $qhost . ') and not cf.client.bot and (';
+			$tail  = ')' . self::cf_allowed();
+			$allow = self::cf_allowed_parts();
+			if ( strlen( $tail ) > 1000 ) {
+				$tail = ')';
+				foreach ( self::cf_chunks( $allow, '(http.host eq ' . $qhost . ') and (', ')' ) as $i => $expression ) {
+					$rules[ 0 === $i ? 'allowed' : 'allowed_' . ( $i + 1 ) ] = array(
+						'title'      => __( 'Always-allowed User-Agents (the list is too long to repeat in every bot rule: keep this rule and the bot rules last, in this order)', 'scrapelock' ),
+						'action'     => __( 'Skip · all remaining custom rules', 'scrapelock' ),
+						'expression' => $expression,
+					);
 				}
-				$chunks[ count( $chunks ) - 1 ][] = $part;
 			}
-			foreach ( $chunks as $i => $chunk ) {
+			$chunks = self::cf_chunks( $parts, $head, $tail );
+			foreach ( $chunks as $i => $expression ) {
 				$rules[ 0 === $i ? 'bots' : 'bots_' . ( $i + 1 ) ] = array(
 					'title'      => 0 === $i ? __( 'Scrapers and AI bots', 'scrapelock' ) : sprintf(
 						/* translators: %d: part number */
@@ -680,7 +753,7 @@ final class PNCP_Rules {
 						$i + 1
 					),
 					'action'     => 'Block',
-					'expression' => $head . implode( ' or ', $chunk ) . $tail,
+					'expression' => $expression,
 				);
 			}
 		}
@@ -688,7 +761,7 @@ final class PNCP_Rules {
 		$rules['fake'] = array(
 			'title'      => __( 'Fake Googlebot / Bingbot (not a verified Cloudflare bot)', 'scrapelock' ),
 			'action'     => 'Block',
-			'expression' => '(http.host eq "' . $host . '") and not cf.client.bot and (lower(http.user_agent) contains "googlebot" or lower(http.user_agent) contains "bingbot" or lower(http.user_agent) contains "applebot")',
+			'expression' => '(http.host eq ' . $qhost . ') and not cf.client.bot and (lower(http.user_agent) contains "googlebot" or lower(http.user_agent) contains "bingbot" or lower(http.user_agent) contains "applebot")',
 		);
 
 		// starts_with() on the whole address (available on every Cloudflare plan, unlike regex): the allowed site
@@ -699,30 +772,35 @@ final class PNCP_Rules {
 		$hosts = array_unique( array( $host, $bare, 'www.' . $bare ) );
 		foreach ( array( 'https://', 'http://' ) as $scheme ) {
 			foreach ( $hosts as $own ) {
-				$referers[] = 'starts_with(http.referer, "' . $scheme . $own . '/")';
-				$referers[] = 'starts_with(http.referer, "' . $scheme . $own . ':")';
+				$referers[] = 'starts_with(http.referer, ' . self::cf_string( $scheme . $own . '/' ) . ')';
+				$referers[] = 'starts_with(http.referer, ' . self::cf_string( $scheme . $own . ':' ) . ')';
 			}
 		}
-		$own = $referers;
+		$own  = $referers;
+		$head = '(http.host eq ' . $qhost . ') and starts_with(http.request.uri.path, ' . self::cf_string( $uploads . '/' ) . ') and http.request.uri.path.extension in {"jpg" "jpeg" "png" "webp" "gif" "avif"} and not (';
 		// Cloudflare refuses an expression over 4096 characters: with a long list of allowed sites (filter
-		// pncp_hotlink_allowed) only the site itself and its www. are listed.
-		foreach ( array( array( '', 'www.', 'm.', 'l.', 'lm.', 'images.' ), array( '', 'www.' ) ) as $subs ) {
+		// pncp_hotlink_allowed) fewer subdomains are listed, and with a very long one only the site itself.
+		foreach ( array( array( '', 'www.', 'm.', 'l.', 'lm.', 'images.' ), array( '', 'www.' ), array( '' ), array() ) as $subs ) {
 			$referers = $own;
-			foreach ( self::hotlink_allowed() as $domain ) {
-				$domain = strtolower( trim( (string) $domain ) );
-				$end    = '.' === substr( $domain, -1 ) ? '' : '/';
+			foreach ( $subs ? self::hotlink_allowed() : array() as $domain ) {
+				// A domain is letters, digits, dots and hyphens: anything else (a quote, a backslash) is dropped.
+				$domain = strtolower( (string) preg_replace( '/[^a-z0-9.\-]/i', '', (string) $domain ) );
+				if ( '' === trim( $domain, '.' ) ) {
+					continue;
+				}
+				$end = '.' === substr( $domain, -1 ) ? '' : '/';
 				foreach ( $subs as $sub ) {
-					$referers[] = 'starts_with(http.referer, "https://' . $sub . $domain . $end . '")';
+					$referers[] = 'starts_with(http.referer, ' . self::cf_string( 'https://' . $sub . $domain . $end ) . ')';
 				}
 			}
-			if ( strlen( implode( ' or ', $referers ) ) < 3600 ) {
+			if ( strlen( $head . implode( ' or ', $referers ) . ')' ) <= 4090 ) {
 				break;
 			}
 		}
 		$rules['hotlink'] = array(
 			'title'      => __( 'Image hotlinking', 'scrapelock' ),
 			'action'     => 'Block',
-			'expression' => '(http.host eq "' . $host . '") and starts_with(http.request.uri.path, "' . $uploads . '/") and http.request.uri.path.extension in {"jpg" "jpeg" "png" "webp" "gif" "avif"} and not (' . implode( ' or ', $referers ) . ')',
+			'expression' => $head . implode( ' or ', $referers ) . ')',
 		);
 
 		$backup = (string) get_option( 'pncp_backup_dir' );
@@ -730,29 +808,62 @@ final class PNCP_Rules {
 			$rules['originals'] = array(
 				'title'      => __( 'Clean originals folder', 'scrapelock' ),
 				'action'     => 'Block',
-				'expression' => '(http.host eq "' . $host . '") and starts_with(http.request.uri.path, "' . $uploads . '/' . $backup . '/")',
+				'expression' => '(http.host eq ' . $qhost . ') and starts_with(http.request.uri.path, ' . self::cf_string( $uploads . '/' . $backup . '/' ) . ')',
 			);
 		}
 
-		$rate          = (int) $s['rate_limit'] > 0 ? (int) $s['rate_limit'] : 60;
+		$rate = (int) $s['rate_limit'] > 0 ? (int) $s['rate_limit'] : 60;
+		// Pages only: not files (CSS, JS, images, fonts), not wp-admin / wp-includes / wp-content and not the
+		// Store API. 3.4.1: one rule per plan, because Cloudflare allows fewer fields in rate limiting rules on the
+		// smaller plans (Free: the path and verified bots; Pro and Business: also the host and the query; the
+		// cookie, which keeps logged-in users out, only on Enterprise).
+		$paths = 'not cf.client.bot and http.request.uri.path.extension in {"" "php" "html" "xml"} and not starts_with(http.request.uri.path, ' . self::cf_string( self::url_path( admin_url() ) ) . ') and not starts_with(http.request.uri.path, ' . self::cf_string( self::url_path( includes_url() ) . '/' ) . ') and not starts_with(http.request.uri.path, ' . self::cf_string( self::url_path( content_url() ) . '/' ) . ') and not starts_with(http.request.uri.path, "/wp-json/wc/store")';
 		$rules['rate'] = array(
 			'title'      => sprintf(
 				/* translators: %d: pages per minute */
-				__( 'Rate limiting: %d requests per minute per IP (Rate limiting rules, characteristic: IP)', 'scrapelock' ),
+				__( 'Rate limiting, Free plan: %d requests per minute per IP (Rate limiting rules, characteristic: IP)', 'scrapelock' ),
 				$rate
 			),
-			'action'     => __( 'Block · period 1 minute (on the free plan: 10 sec, with limit / 6)', 'scrapelock' ),
-			// Pages only: not files (CSS, JS, images, fonts), not wp-admin / wp-includes / wp-content,
-			// not cart AJAX (wc-ajax, Store API) and not logged-in users.
-			'expression' => '(http.host eq "' . $host . '") and not cf.client.bot and http.request.uri.path.extension in {"" "php" "html" "xml"} and not starts_with(http.request.uri.path, "' . self::url_path( admin_url() ) . '") and not starts_with(http.request.uri.path, "' . self::url_path( includes_url() ) . '/") and not starts_with(http.request.uri.path, "' . self::url_path( content_url() ) . '/") and not starts_with(http.request.uri.path, "/wp-json/wc/store") and not http.request.uri.query contains "wc-ajax=" and not http.cookie contains "wordpress_logged_in_"',
+			'action'     => __( 'Block · period 10 seconds, with the limit divided by 6 (the only period on the Free plan)', 'scrapelock' ),
+			'expression' => $paths,
+		);
+		$rules['rate_pro'] = array(
+			'title'      => sprintf(
+				/* translators: %d: pages per minute */
+				__( 'Rate limiting, Pro and Business plans: %d requests per minute per IP (use this one instead of the Free plan rule)', 'scrapelock' ),
+				$rate
+			),
+			'action'     => __( 'Block · period 1 minute', 'scrapelock' ),
+			'expression' => '(http.host eq ' . $qhost . ') and ' . $paths . ' and not http.request.uri.query contains "wc-ajax="',
+		);
+		$rules['rate_enterprise'] = array(
+			'title'      => sprintf(
+				/* translators: %d: pages per minute */
+				__( 'Rate limiting, Enterprise plan: %d requests per minute per IP, logged-in users not counted (use this one instead of the others)', 'scrapelock' ),
+				$rate
+			),
+			'action'     => __( 'Block · period 1 minute', 'scrapelock' ),
+			'expression' => '(http.host eq ' . $qhost . ') and ' . $paths . ' and not http.request.uri.query contains "wc-ajax=" and not http.cookie contains "wordpress_logged_in_"',
 		);
 		// With "Allow AI search engines and assistants" only the training crawlers: the AI search bots are allowed here too.
 		$categories  = empty( $s['allow_ai_search'] ) ? '"AI Crawler" "AI Assistant" "AI Search"' : '"AI Crawler"';
 		$rules['ai'] = array(
 			'title'      => empty( $s['allow_ai_search'] ) ? __( 'AI crawlers, assistants and AI search declared by Cloudflare', 'scrapelock' ) : __( 'AI training crawlers declared by Cloudflare (category “AI Crawler”; AI search and assistants are allowed)', 'scrapelock' ),
 			'action'     => 'Block',
-			'expression' => '(http.host eq "' . $host . '") and cf.verified_bot_category in {' . $categories . '}',
+			'expression' => '(http.host eq ' . $qhost . ') and cf.verified_bot_category in {' . $categories . '}',
 		);
+		if ( isset( $rules['allowed'] ) ) {
+			// The Skip rule skips every custom rule after it: it and the bot rules go last, so the always-allowed
+			// User-Agents skip only the bot rules. The rate limiting rules are in a phase of their own.
+			$last = array();
+			foreach ( array_keys( $rules ) as $key ) {
+				if ( 0 === strpos( $key, 'allowed' ) || 0 === strpos( $key, 'bots' ) ) {
+					$last[ $key ] = $rules[ $key ];
+					unset( $rules[ $key ] );
+				}
+			}
+			$rules = array_merge( $rules, $last );
+		}
 		return $rules;
 	}
 }

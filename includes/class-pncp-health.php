@@ -295,7 +295,18 @@ final class PNCP_Health {
 			return self::result( 'lockdown', 'recommended', __( 'ScrapeLock Lockdown: the security keys are not in wp-config.php', 'scrapelock' ), __( 'AUTH_KEY and AUTH_SALT are not defined in wp-config.php, so WordPress keeps them in the database. Lockdown encrypts and signs its data with them: someone who can change the database could then also read them. Add the keys to wp-config.php (from https://api.wordpress.org/secret-key/1.1/salt/) and connect the authenticator app again.', 'scrapelock' ), 'lockdown' );
 		}
 		if ( PNCP_Lockdown::is_locked() && ! PNCP_Seal::guard_installed() ) {
-			return self::result( 'lockdown', 'recommended', __( 'ScrapeLock Lockdown works without its guard file', 'scrapelock' ), __( 'The file wp-content/mu-plugins/scrapelock-lockdown-guard.php could not be written. The lock works, but someone who can change the database directly could open it. Let the web server write to wp-content/mu-plugins, then lock the site again.', 'scrapelock' ), 'lockdown' );
+			if ( '' !== PNCP_Seal::beacon_path() ) {
+				/* translators: %s: folder of the lock file */
+				$text = sprintf( __( 'The file wp-content/mu-plugins/scrapelock-lockdown-guard.php could not be written, so the lock is kept by a signed lock file in %s. If the Lockdown data in the database is deleted or changed the site stays locked, but someone who can change the database directly could still deactivate ScrapeLock itself, and the active plugins and the theme are not kept from the start of every request. Let the web server write to wp-content/mu-plugins, then lock the site again.', 'scrapelock' ), PNCP_Seal::short_path( dirname( PNCP_Seal::beacon_path() ) ) );
+			} elseif ( '' !== PNCP_Seal::beacon_writable_dir() ) {
+				// 3.4.1: a folder can be written now (for example a site locked without the guard by 3.4.0): the lock
+				// file is written by the hourly check, or when the site is locked again.
+				/* translators: %s: folder of the lock file */
+				$text = sprintf( __( 'The file wp-content/mu-plugins/scrapelock-lockdown-guard.php could not be written, and the signed lock file is not written yet, although %s can be written: for now everything about the lock is in the database only. ScrapeLock writes the lock file in its hourly check; to write it now, unlock and lock the site again.', 'scrapelock' ), PNCP_Seal::short_path( PNCP_Seal::beacon_writable_dir() ) );
+			} else {
+				$text = __( 'The file wp-content/mu-plugins/scrapelock-lockdown-guard.php could not be written, and no other folder of wp-content either: everything about the lock is in the database only. Someone who can change the database directly could delete it and open the lock without it being noticed. Let the web server write to wp-content/mu-plugins, then lock the site again.', 'scrapelock' );
+			}
+			return self::result( 'lockdown', 'recommended', __( 'ScrapeLock Lockdown works without its guard file', 'scrapelock' ), $text, 'lockdown' );
 		}
 		if ( ! PNCP_Lockdown::configured() ) {
 			return self::result( 'lockdown', 'good', __( 'ScrapeLock Lockdown is not set up', 'scrapelock' ), __( 'Lockdown is optional: it freezes changes to plugins, themes, users and settings until it is unlocked with an authenticator app.', 'scrapelock' ) );

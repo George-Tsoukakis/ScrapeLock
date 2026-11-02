@@ -79,6 +79,15 @@ final class PNCP_Lockdown {
 	private static $older = false;
 
 	/**
+	 * 3.4.1: the generation of a guard file or lock file found on this request that is older than the unlock
+	 * for good the stored state signs (put back from a backup taken while locked): it no longer counts, and it
+	 * is removed once the state is read (0: none was found).
+	 *
+	 * @var int
+	 */
+	private static $stale = 0;
+
+	/**
 	 * Staff or not, per user.
 	 *
 	 * @var array<int, bool>
@@ -120,6 +129,22 @@ final class PNCP_Lockdown {
 	 * @var string
 	 */
 	private static $mutex = '';
+
+	/**
+	 * The open lock file this request holds an exclusive lock on while it holds the code-check lock (see
+	 * local_lock()), or null.
+	 *
+	 * @var resource|null
+	 */
+	private static $local = null;
+
+	/**
+	 * The name of the lock file this request holds (see local_lock()): written in the values it puts in the
+	 * code-check lock. '' when it holds none.
+	 *
+	 * @var string
+	 */
+	private static $local_id = '';
 
 	/**
 	 * Is the stored state being read and checked right now (state())?
@@ -182,6 +207,7 @@ final class PNCP_Lockdown {
 		add_action( 'added_user_meta', array( __CLASS__, 'note_role' ), 10, 4 );
 		add_action( 'plugins_loaded', array( __CLASS__, 'expire_window' ), 0 );
 		add_action( PNCP_Log::CRON, array( __CLASS__, 'expire_window' ), 5 );
+		add_action( PNCP_Log::CRON, array( __CLASS__, 'maintain_files' ), 6 );
 		if ( is_admin() ) {
 			add_action( 'admin_post_' . self::ACTION, array( __CLASS__, 'handle' ) );
 			add_action( 'admin_notices', array( __CLASS__, 'notices' ) );
@@ -241,9 +267,20 @@ final class PNCP_Lockdown {
 					// go there while locked, not to an address someone changed in the database.
 					'snapped'        => 0,
 					'mail'           => '',
+					// 3.4.1: the generation of the unlock for good that removed the guard file or the lock file. A
+					// file of the lock from before it (lower generation), put back from a backup, no longer counts.
+					'freed'          => 0,
 				),
 				$stored
 			);
+		}
+		if ( self::$stale && ! self::$reading ) {
+			$stale       = self::$stale;
+			self::$stale = 0;
+			$removed     = PNCP_Seal::remove_stale( $stale, (int) self::$state['freed'] );
+			if ( $removed ) {
+				self::event( 'stale_file', implode( ', ', array_map( array( 'PNCP_Seal', 'short_path' ), $removed ) ) );
+			}
 		}
 		// Alerts found while reading the state are sent now: where they go depends on the state.
 		$alerts       = self::$queued;
@@ -305,7 +342,16 @@ final class PNCP_Lockdown {
 		self::$sig_ok = $empty || ( null === $sig ? PNCP_Seal::legacy() : PNCP_Seal::valid( $stored, $sig ) );
 		self::$tamper = '';
 		self::$older  = false;
+		self::$stale  = 0;
 		$beacon       = PNCP_Seal::beacon();
+		if ( $beacon && $beacon['locked'] && self::$sig_ok && ! $empty && empty( $stored['locked'] ) && isset( $beacon['gen'], $stored['freed'] ) && (int) $beacon['gen'] < (int) $stored['freed'] ) {
+			// 3.4.1: the guard file or the lock file is older than the unlock for good the signed state names (the
+			// unlock removed it; it was put back, for example with a backup of wp-content/uploads or mu-plugins
+			// taken while the site was locked). Only an unlock with the app (or a recovery code) signs that, so
+			// the database alone cannot make a file of the current lock look old. It no longer counts.
+			self::$stale = (int) $beacon['gen'];
+			return;
+		}
 		if ( $beacon && $beacon['locked'] ) {
 			// The guard (a file) says the site is locked: a database that says otherwise was changed behind
 			// WordPress's back, or put back from an older copy. The site stays locked. 3.4: a signed state from
@@ -352,9 +398,11 @@ final class PNCP_Lockdown {
 	 * Saves the state.
 	 *
 	 * @param array<string, mixed> $state State.
+	 * @param bool                 $free  3.4.1: an unlock for good. A guard file or lock file that still says
+	 *                                    "locked" is removed too, also when the stored state does not say so.
 	 * @return bool False when the guard file could not be changed (the state was not changed either).
 	 */
-	private static function save( $state ) {
+	private static function save( $state, $free = false ) {
 		unset( $state['sig'] );
 		$prev = null === self::$state ? self::state() : self::$state;
 		// 3.4: the stored state is forged, or an older copy, while the guard says locked: saving it would sign
@@ -370,12 +418,22 @@ final class PNCP_Lockdown {
 		// again with it, so no copy of the state saved before this one is accepted any more.
 		$state['gen']  = self::next_generation( $state );
 		$state['snap'] = isset( $state['snap'] ) ? (int) $state['snap'] : 0;
-		$guard         = $was || $locked;
+		// 3.4.1: on an unlock for good, also a file that says "locked" while the stored state does not (a file put
+		// back from a backup, or a lock whose state could not be saved) is removed.
+		$beacon = $free && ! $locked ? PNCP_Seal::beacon() : null;
+		$file   = $beacon && $beacon['locked'];
+		$guard  = $was || $locked || $file;
 		// Less locked (unlocked, or open for longer): the guard first, so it never says "locked" while the
-		// database says otherwise. If the guard cannot be changed, the state is not either.
-		$less = ( ! $locked && ! empty( $prev['locked'] ) ) || ( $locked && $until > (int) $prev['until'] );
-		if ( $guard && $less && ! PNCP_Seal::write_guard( $locked, $until, $state['gen'], $state['snap'] ) && PNCP_Seal::guard_installed() ) {
+		// database says otherwise. If the guard cannot be changed, the state is not either. 3.4.1: the same for
+		// the lock file written instead of the guard when the guard cannot be written (PNCP_Seal::write_beacon()).
+		$less = ( ! $locked && ( $was || $file ) ) || ( $locked && $until > (int) $prev['until'] );
+		if ( $guard && $less && ! PNCP_Seal::write_lock_files( $locked, $until, $state['gen'], $state['snap'] ) && ( PNCP_Seal::guard_installed() || '' !== PNCP_Seal::beacon_path() ) ) {
 			return false;
+		}
+		// 3.4.1: unlocked for good, and no file says "locked" any more: a file of this lock or an earlier one
+		// (a lower generation) that is put back later no longer counts (see seal_check()).
+		if ( ! $locked && ( $was || $file ) && $guard && $less ) {
+			$state['freed'] = $state['gen'];
 		}
 		$state['sealed'] = PNCP_VERSION;
 		$stored          = $state;
@@ -383,10 +441,10 @@ final class PNCP_Lockdown {
 		self::$writing   = true;
 		$saved           = update_site_option( self::OPTION, $stored );
 		self::$writing   = false;
-		if ( ! $saved && $guard && $less && $was ) {
+		if ( ! $saved && $guard && $less && ( $was || $file ) ) {
 			// The database refused the write after the guard was changed: the guard goes back to the state that
 			// is still stored, or every request would see the stored state as an older copy.
-			PNCP_Seal::write_guard( true, (int) $prev['until'], (int) $prev['gen'], (int) $prev['snap'] );
+			PNCP_Seal::write_lock_files( true, (int) $prev['until'], (int) $prev['gen'], (int) $prev['snap'] );
 			return false;
 		}
 		self::$state      = $state;
@@ -396,7 +454,7 @@ final class PNCP_Lockdown {
 		self::$older      = false;
 		// More locked, or as locked as before: the database first, then the guard.
 		if ( $guard && ! $less ) {
-			PNCP_Seal::write_guard( $locked, $until, $state['gen'], $state['snap'] );
+			PNCP_Seal::write_lock_files( $locked, $until, $state['gen'], $state['snap'] );
 		}
 		return true;
 	}
@@ -481,7 +539,7 @@ final class PNCP_Lockdown {
 		if ( ! PNCP_Seal::legacy() ) {
 			// The stored version says "before 3.3" but a newer version already signed the data (or the guard is
 			// there): the version was set back in the database. Nothing is signed again; the owner is told.
-			if ( '' !== $from && version_compare( $from, '3.3.0', '<' ) && ( PNCP_Seal::guard_installed() || PNCP_Seal::sealed_before() ) ) {
+			if ( '' !== $from && version_compare( $from, '3.3.0', '<' ) && ( PNCP_Seal::guard_installed() || '' !== PNCP_Seal::beacon_path() || PNCP_Seal::sealed_before() ) ) {
 				self::tamper_alert( 'version', $from );
 			}
 			return;
@@ -521,17 +579,29 @@ final class PNCP_Lockdown {
 	 */
 	public static function write_protected( $option, $value ) {
 		self::$writing = true;
+		// 3.4.1: WordPress would email the address being replaced (the one planted in the database) that the
+		// administration address "was changed", naming the genuine one. Not for a value put back.
+		$notify = 'admin_email' === $option && false !== has_action( 'update_option_admin_email', 'wp_site_admin_email_change_notification' );
+		if ( $notify ) {
+			remove_action( 'update_option_admin_email', 'wp_site_admin_email_change_notification', 10 );
+		}
 		// Without the values the guard keeps on this request: update_option() compares with the stored value.
-		PNCP_Seal::unguarded(
-			static function () use ( $option, $value ) {
-				if ( false === $value ) {
-					delete_option( $option );
-				} else {
-					update_option( $option, $value );
+		try {
+			PNCP_Seal::unguarded(
+				static function () use ( $option, $value ) {
+					if ( false === $value ) {
+						delete_option( $option );
+					} else {
+						update_option( $option, $value );
+					}
 				}
+			);
+		} finally {
+			if ( $notify ) {
+				add_action( 'update_option_admin_email', 'wp_site_admin_email_change_notification', 10, 3 );
 			}
-		);
-		self::$writing = false;
+			self::$writing = false;
+		}
 	}
 
 	/**
@@ -543,16 +613,26 @@ final class PNCP_Lockdown {
 	 */
 	public static function write_protected_site( $option, $value ) {
 		self::$writing = true;
-		PNCP_Seal::unguarded(
-			static function () use ( $option, $value ) {
-				if ( false === $value ) {
-					delete_site_option( $option );
-				} else {
-					update_site_option( $option, $value );
+		$notify = 'admin_email' === $option && false !== has_action( 'update_site_option_admin_email', 'wp_network_admin_email_change_notification' );
+		if ( $notify ) {
+			remove_action( 'update_site_option_admin_email', 'wp_network_admin_email_change_notification', 10 );
+		}
+		try {
+			PNCP_Seal::unguarded(
+				static function () use ( $option, $value ) {
+					if ( false === $value ) {
+						delete_site_option( $option );
+					} else {
+						update_site_option( $option, $value );
+					}
 				}
+			);
+		} finally {
+			if ( $notify ) {
+				add_action( 'update_site_option_admin_email', 'wp_network_admin_email_change_notification', 10, 4 );
 			}
-		);
-		self::$writing = false;
+			self::$writing = false;
+		}
 	}
 
 	/**
@@ -600,7 +680,7 @@ final class PNCP_Lockdown {
 			'snapshot'      => __( 'The saved copy of the protected settings no longer matches its signature, so changed settings cannot be put back. If you did not change the keys in wp-config.php, someone changed the database directly.', 'scrapelock' ),
 			'snapshot_copy' => __( 'The saved copy of the protected settings was deleted or changed in the database while the site was locked. It was put back from the guard file, and changed settings are put back from it. Someone changed the database directly: check the site with a security scanner and change the database password.', 'scrapelock' ),
 			'login'         => __( 'The password of an administrator account was changed directly in the database while the site was locked. The account cannot sign in with it while the site stays locked; unlock with SCRAPELOCK_UNLOCK in wp-config.php or a recovery code from a session that is still signed in, then set a new password. Account:', 'scrapelock' ),
-			'fails'         => __( 'The counters of wrong Lockdown codes were deleted or set back in the database while the site was locked. The copy next to the guard file still counts. Someone changed the database directly: check the site with a security scanner and change the database password.', 'scrapelock' ),
+			'fails'         => __( 'The counters of wrong Lockdown codes were deleted or set back in the database while the site was locked. The copy next to the guard file or the lock file still counts. Someone changed the database directly: check the site with a security scanner and change the database password.', 'scrapelock' ),
 			'options'       => __( 'Protected settings were changed directly in the database while the site was locked, and have been put back:', 'scrapelock' ),
 			'admin'         => __( 'Accounts were given administrator rights behind WordPress\'s back after the site was locked. They cannot sign in while it stays locked; check and remove them before you unlock:', 'scrapelock' ),
 			'fingerprint'   => __( 'The fingerprint of the code files was changed or removed in the database while the site was locked, so new or changed files might have been hidden. Check the files with a security scanner; a new fingerprint is taken the next time you lock the site.', 'scrapelock' ),
@@ -1556,8 +1636,9 @@ final class PNCP_Lockdown {
 		$db   = self::fails_db();
 		$file = self::fails_file_read();
 		// 3.4: while the guard is in place, the counters are also kept in a file next to it, and every save counts
-		// one up in both. Counters deleted in the database, or set back to an older copy, would otherwise start
-		// again from nothing: a file further on than the database counts instead, and the owner is alerted.
+		// one up in both (3.4.1: with the lock file instead of the guard, the weaker lock, next to the lock file).
+		// Counters deleted in the database, or set back to an older copy, would otherwise start again from
+		// nothing: a file further on than the database counts instead, and the owner is alerted.
 		if ( $file['seq'] > $db['seq'] ) {
 			self::tamper_alert( 'fails' );
 			return $file['rows'];
@@ -1595,32 +1676,93 @@ final class PNCP_Lockdown {
 	}
 
 	/**
-	 * The file with the copy of the wrong-code counters (next to the guard, see fails_read()). Not PHP: it is
-	 * never run, and the folder of must-use plugins only loads PHP files.
+	 * The first line of the file with the copy of the wrong-code counters: PHP that stops at once, so a web
+	 * request to the file shows nothing (a .json file is shown as it is by the web server).
+	 */
+	const FAILS_HEAD = "<?php exit; ?>\n";
+
+	/**
+	 * The index.php of the folder of that file: no folder listing on servers that would show one.
+	 */
+	const FAILS_INDEX = "<?php\n// Silence is golden.\n";
+
+	/**
+	 * The folder of the copy of the wrong-code counters: a sub-folder of the must-use plugins folder, whose
+	 * files WordPress never loads (it only loads the PHP files directly in that folder).
+	 *
+	 * @return string
+	 */
+	public static function fails_dir() {
+		return PNCP_Paths::mu_plugins() . '/scrapelock-lockdown-data';
+	}
+
+	/**
+	 * The file with the copy of the wrong-code counters (next to the guard, see fails_read()). 3.4.1: a PHP file
+	 * that starts with FAILS_HEAD, then the JSON, so the web server never shows its content.
 	 *
 	 * @return string
 	 */
 	public static function fails_file() {
+		return self::fails_dir() . '/fails.php';
+	}
+
+	/**
+	 * Where 3.4.0 kept that copy (a .json file the web server shows to anyone). Read once more and deleted
+	 * (fails_file_read()).
+	 *
+	 * @return string
+	 */
+	public static function fails_file_legacy() {
 		return PNCP_Paths::mu_plugins() . '/scrapelock-lockdown-fails.json';
 	}
 
 	/**
-	 * The counters in the file, if it matches its signature (otherwise none): rows and the number of their save.
+	 * Is this a file of the counters' folder exactly as ScrapeLock writes it, which cannot run any code? Its
+	 * index.php, or the counters file: FAILS_HEAD and then text without "<" (the JSON is written with "<" and
+	 * ">" escaped), so nothing after the first line can open PHP again. The file integrity check does not note
+	 * them (they change on every wrong code); a file there with anything else in it is checked like any other.
 	 *
-	 * @return array{rows: array<string, mixed>, seq: int}
+	 * @param string $path File.
+	 * @return bool
 	 */
-	private static function fails_file_read() {
+	public static function fails_inert( $path ) {
+		$path = wp_normalize_path( (string) $path );
+		if ( wp_normalize_path( dirname( $path ) ) !== wp_normalize_path( self::fails_dir() ) || ! is_readable( $path ) ) {
+			return false;
+		}
+		$name = basename( $path );
+		if ( 'index.php' !== $name && 'fails.php' !== $name ) {
+			return false;
+		}
+		clearstatcache( true, $path );
+		$size = @filesize( $path ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged -- Unreadable = checked.
+		if ( false === $size || $size > 2097152 ) {
+			return false; // Far more than 1000 counters: not what ScrapeLock writes.
+		}
+		$data = @file_get_contents( $path ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged, WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Local file; unreadable = checked.
+		if ( ! is_string( $data ) ) {
+			return false;
+		}
+		if ( 'index.php' === $name ) {
+			return self::FAILS_INDEX === $data;
+		}
+		return 0 === strpos( $data, self::FAILS_HEAD ) && false === strpos( substr( $data, strlen( self::FAILS_HEAD ) ), '<' );
+	}
+
+	/**
+	 * The signed counters in a file's content (otherwise none): rows and the number of their save.
+	 *
+	 * @param string|false $text The JSON.
+	 * @return array{rows: array<string, mixed>, seq: int, raw: array<string, mixed>|null}
+	 */
+	private static function fails_parse( $text ) {
 		$none = array(
 			'rows' => array(),
 			'seq'  => 0,
+			'raw'  => null,
 		);
-		$path = self::fails_file();
-		if ( ! is_readable( $path ) ) {
-			return $none;
-		}
-		clearstatcache( true, $path );
-		$data = json_decode( (string) file_get_contents( $path ), true ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Local file.
-		if ( ! is_array( $data ) || ! isset( $data['rows'], $data['seq'], $data['sig'] ) || ! is_array( $data['rows'] ) ) {
+		$data = is_string( $text ) ? json_decode( $text, true ) : null;
+		if ( ! is_array( $data ) || ! isset( $data['rows'], $data['seq'], $data['sig'] ) || ! is_array( $data['rows'] ) || ! is_string( $data['sig'] ) ) {
 			return $none;
 		}
 		$signed = array(
@@ -1633,7 +1775,177 @@ final class PNCP_Lockdown {
 		return array(
 			'rows' => $data['rows'],
 			'seq'  => (int) $data['seq'],
+			'raw'  => array(
+				'rows' => $data['rows'],
+				'seq'  => (int) $data['seq'],
+				'sig'  => $data['sig'],
+			),
 		);
+	}
+
+	/**
+	 * The counters in the file, if it matches its signature (otherwise none): rows and the number of their save.
+	 * 3.4.1: a .json file left by 3.4.0 still counts (so the upgrade does not set the counters back): it is moved
+	 * into the new file, then deleted. Also the copy next to the lock file (the weaker lock), whichever of them
+	 * is furthest on.
+	 *
+	 * @return array{rows: array<string, mixed>, seq: int}
+	 */
+	private static function fails_file_read() {
+		$file = array(
+			'rows' => array(),
+			'seq'  => 0,
+			'raw'  => null,
+		);
+		foreach ( array_merge( array( self::fails_file() ), PNCP_Seal::beacon_fails_paths() ) as $path ) {
+			if ( ! is_readable( $path ) ) {
+				continue;
+			}
+			clearstatcache( true, $path );
+			$text = (string) file_get_contents( $path ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Local file.
+			if ( 0 === strpos( $text, self::FAILS_HEAD ) ) {
+				$one = self::fails_parse( substr( $text, strlen( self::FAILS_HEAD ) ) );
+				if ( $one['seq'] > $file['seq'] ) {
+					$file = $one;
+				}
+			}
+		}
+		$legacy = self::fails_file_legacy();
+		if ( file_exists( $legacy ) ) {
+			$old = self::fails_parse( is_readable( $legacy ) ? file_get_contents( $legacy ) : false ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Local file.
+			$to  = self::fails_target();
+			if ( $old['seq'] > $file['seq'] && '' !== $to ) {
+				// Moved only when written (otherwise it stays, and still counts, until it can be).
+				$moved = self::fails_file_put( $old['raw'], $to );
+				$file  = $old;
+			} else {
+				// Not further on than the new file (or not genuine): nothing in it counts. Without a guard or a lock
+				// file there is nothing to keep it next to (it went with the guard in 3.4.0).
+				$moved = true;
+			}
+			if ( $moved ) {
+				wp_delete_file( $legacy );
+			}
+		}
+		return array(
+			'rows' => $file['rows'],
+			'seq'  => $file['seq'],
+		);
+	}
+
+	/**
+	 * 3.4.1: moves the counters of a .json file left by 3.4.0 (shown by the web server to anyone) into the new
+	 * file and deletes it, on the upgrade and in the hourly check, so it does not wait until a code is checked.
+	 */
+	public static function fails_migrate() {
+		if ( file_exists( self::fails_file_legacy() ) ) {
+			self::fails_file_read();
+		}
+	}
+
+	/**
+	 * 3.4.1: the files of the lock outside the database, on the upgrade and in the hourly check: a .json file of
+	 * counters left by 3.4.0 is moved (see fails_migrate()), and a site locked without the guard file and
+	 * without any signed copy outside the database (locked by 3.4.0 without the guard, or while no folder could
+	 * be written) gets its signed lock file as soon as a folder can be written. Until then, deleting the Lockdown
+	 * data in the database would open the lock without it being noticed.
+	 */
+	public static function maintain_files() {
+		self::fails_migrate();
+		if ( self::server_unlocked() || '' !== self::tampered() ) {
+			return;
+		}
+		$state = self::state();
+		if ( empty( $state['locked'] ) || PNCP_Seal::guard_installed() || '' !== PNCP_Seal::beacon_path() ) {
+			return;
+		}
+		if ( ! PNCP_Seal::can_write_guard() && '' === PNCP_Seal::beacon_writable_dir() ) {
+			return;
+		}
+		// With the generations of the state stored now: an unlock that runs meanwhile removes the files first and
+		// signs a higher generation, so a file written here a moment later no longer counts (seal_check()).
+		if ( PNCP_Seal::write_lock_files( true, (int) $state['until'], (int) $state['gen'], (int) $state['snap'] ) ) {
+			$path = PNCP_Seal::guard_installed() ? PNCP_Seal::path() : PNCP_Seal::beacon_path();
+			self::event( 'lock_file', PNCP_Seal::short_path( $path ) );
+		}
+	}
+
+	/**
+	 * 3.4.1: the file the copy of the counters is written to: next to the guard while it is there, otherwise
+	 * next to the lock file ('' when there is neither).
+	 *
+	 * @return string
+	 */
+	private static function fails_target() {
+		if ( PNCP_Seal::guard_installed() ) {
+			return self::fails_file();
+		}
+		return PNCP_Seal::beacon_fails_path();
+	}
+
+	/**
+	 * Writes the counters file (and its folder with an index.php), unless the file already holds a later save.
+	 * The file is locked while it is read and written, so an older copy never overwrites a newer one.
+	 *
+	 * @param array<string, mixed> $stored Rows, seq and signature.
+	 * @param string               $path   3.4.1: the file (see fails_target()). The folder of the lock file is
+	 *                                     never created here: it is there with the lock file.
+	 * @return bool Whether the file holds this save (or a later one) now.
+	 */
+	private static function fails_file_put( $stored, $path ) {
+		$dir = dirname( $path );
+		// phpcs:disable WordPress.WP.AlternativeFunctions -- Small data files of the guard; flock() needs a handle from fopen().
+		if ( self::fails_file() === $path ) {
+			if ( ! is_dir( $dir ) ) {
+				if ( ! wp_is_writable( dirname( $dir ) ) || ! wp_mkdir_p( $dir ) ) {
+					return false;
+				}
+			}
+			if ( ! file_exists( $dir . '/index.php' ) ) {
+				@file_put_contents( $dir . '/index.php', self::FAILS_INDEX ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged -- Only keeps folder listings away.
+			}
+		} elseif ( ! is_dir( $dir ) ) {
+			return false;
+		}
+		$json = wp_json_encode( $stored, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT );
+		if ( ! is_string( $json ) ) {
+			return false;
+		}
+		$handle = @fopen( $path, 'c+' ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged -- Not writable: no copy.
+		if ( false === $handle ) {
+			return false;
+		}
+		$ok = false;
+		if ( flock( $handle, LOCK_EX ) ) {
+			$text = (string) stream_get_contents( $handle, -1, 0 );
+			$now  = 0 === strpos( $text, self::FAILS_HEAD ) ? self::fails_parse( substr( $text, strlen( self::FAILS_HEAD ) ) ) : array( 'seq' => 0 );
+			if ( $now['seq'] >= (int) $stored['seq'] ) {
+				$ok = true;
+			} elseif ( ftruncate( $handle, 0 ) && rewind( $handle ) ) {
+				$ok = false !== fwrite( $handle, self::FAILS_HEAD . $json );
+				fflush( $handle );
+			}
+			flock( $handle, LOCK_UN );
+		}
+		fclose( $handle );
+		// phpcs:enable WordPress.WP.AlternativeFunctions
+		return $ok;
+	}
+
+	/**
+	 * Removes the counters file, its folder and a .json file left by 3.4.0 (with the guard, on deactivation and
+	 * on uninstall). 3.4.1: and the copy next to the lock file.
+	 */
+	public static function fails_remove() {
+		$dir = self::fails_dir();
+		foreach ( array_merge( array( self::fails_file_legacy(), $dir . '/fails.php', $dir . '/index.php' ), PNCP_Seal::beacon_fails_paths() ) as $file ) {
+			if ( file_exists( $file ) ) {
+				wp_delete_file( $file );
+			}
+		}
+		if ( is_dir( $dir ) ) {
+			@rmdir( $dir ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged, WordPress.WP.AlternativeFunctions.file_system_operations_rmdir -- Only succeeds when empty (nothing of someone else is removed).
+		}
 	}
 
 	/**
@@ -1681,10 +1993,11 @@ final class PNCP_Lockdown {
 			update_option( self::FAILS_OPTION, $stored, false ); // Not autoloaded: only read on the Lockdown page.
 		}
 		// 3.4: the copy in the file next to the guard (after the database: a file newer than the database means
-		// the database was changed). Only while the guard is there; the file goes with it.
-		$path = self::fails_file();
-		if ( PNCP_Seal::guard_installed() && wp_is_writable( dirname( $path ) ) ) {
-			$json = (string) wp_json_encode(
+		// the database was changed). Only while the guard is there; the file goes with it. 3.4.1: without the
+		// guard, next to the lock file (the weaker lock), and it goes with that.
+		$to = self::fails_target();
+		if ( '' !== $to ) {
+			self::fails_file_put(
 				array(
 					'rows' => $keep,
 					'seq'  => $seq,
@@ -1694,9 +2007,9 @@ final class PNCP_Lockdown {
 							'seq'        => $seq,
 						)
 					),
-				)
+				),
+				$to
 			);
-			file_put_contents( $path, $json, LOCK_EX ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_file_put_contents -- A small data file next to the guard, written inside the code-check lock.
 		}
 	}
 
@@ -1934,10 +2247,23 @@ final class PNCP_Lockdown {
 		global $wpdb;
 		// phpcs:disable WordPress.DB.DirectDatabaseQuery -- Compare-and-set on our own row needs the value as it is now.
 		$value = is_multisite()
-			? $wpdb->get_var( $wpdb->prepare( 'SELECT meta_value FROM %i WHERE meta_key = %s AND site_id = %d LIMIT 1', $wpdb->sitemeta, self::MUTEX, get_current_network_id() ) )
+			? $wpdb->get_var( $wpdb->prepare( 'SELECT meta_value FROM %i WHERE meta_id = %d', $wpdb->sitemeta, self::mutex_meta_id() ) )
 			: $wpdb->get_var( $wpdb->prepare( 'SELECT option_value FROM %i WHERE option_name = %s LIMIT 1', $wpdb->options, self::MUTEX ) );
 		// phpcs:enable
 		return null === $value ? null : (string) $value;
+	}
+
+	/**
+	 * Multisite: the one row of wp_sitemeta that holds the lock, the oldest if two requests (or someone with
+	 * database access) added more than one. wp_sitemeta has no unique key, and an UPDATE on the meta_key alone
+	 * would change every copy, so no request could ever take the lock again.
+	 *
+	 * @return int 0 when there is none.
+	 */
+	private static function mutex_meta_id() {
+		global $wpdb;
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery -- Our own row, read from the database itself.
+		return (int) $wpdb->get_var( $wpdb->prepare( 'SELECT MIN(meta_id) FROM %i WHERE meta_key = %s AND site_id = %d', $wpdb->sitemeta, self::MUTEX, get_current_network_id() ) );
 	}
 
 	/**
@@ -1952,7 +2278,7 @@ final class PNCP_Lockdown {
 		global $wpdb;
 		// phpcs:disable WordPress.DB.DirectDatabaseQuery -- An atomic compare-and-set on our own row; no cache to update.
 		$rows = is_multisite()
-			? $wpdb->query( $wpdb->prepare( 'UPDATE %i SET meta_value = %s WHERE meta_key = %s AND site_id = %d AND meta_value = %s', $wpdb->sitemeta, $value, self::MUTEX, get_current_network_id(), $old ) )
+			? $wpdb->query( $wpdb->prepare( 'UPDATE %i SET meta_value = %s WHERE meta_id = %d AND meta_value = %s', $wpdb->sitemeta, $value, self::mutex_meta_id(), $old ) )
 			: $wpdb->query( $wpdb->prepare( 'UPDATE %i SET option_value = %s WHERE option_name = %s AND option_value = %s', $wpdb->options, $value, self::MUTEX, $old ) );
 		// phpcs:enable
 		return (int) $rows;
@@ -1960,12 +2286,13 @@ final class PNCP_Lockdown {
 
 	/**
 	 * A new value for the row that holds the lock: until when it is held, a random token and a signature.
+	 * The token ends with the name of the lock file this request holds (see local_lock()), if any.
 	 *
 	 * @param int $until Until when.
 	 * @return string
 	 */
 	private static function mutex_value( $until ) {
-		$token = wp_generate_password( 16, false );
+		$token = wp_generate_password( 16, false ) . ( '' !== self::$local_id ? '-' . self::$local_id : '' );
 		return (int) $until . ':' . $token . ':' . PNCP_Seal::sign( array( 'mutex', (int) $until, $token ) );
 	}
 
@@ -1975,6 +2302,11 @@ final class PNCP_Lockdown {
 	 * one that ends more than 6 seconds from now (3.4: a lock is only ever taken for 5 seconds; a code check
 	 * takes a fraction of a second).
 	 *
+	 * A value that names the lock file this request holds now is free too. Every request that writes such
+	 * a value holds that file's lock until it has freed the row again, and only one request can hold it: so the
+	 * request that wrote the value is done (or ended), and the value is left over, or was copied and written
+	 * back in the database to keep the owner's codes "busy".
+	 *
 	 * @param string|null $value Value of the row.
 	 * @param int         $now   Time.
 	 * @return bool
@@ -1982,6 +2314,9 @@ final class PNCP_Lockdown {
 	private static function mutex_held( $value, $now ) {
 		$parts = explode( ':', (string) $value, 3 );
 		if ( 3 !== count( $parts ) || ! ctype_digit( $parts[0] ) ) {
+			return false;
+		}
+		if ( '' !== self::$local_id && null !== self::$local && substr( $parts[1], -17 ) === '-' . self::$local_id ) {
 			return false;
 		}
 		$until = (int) $parts[0];
@@ -2043,17 +2378,29 @@ final class PNCP_Lockdown {
 	 * most (so a request that dies never leaves it held). Waits up to 5 seconds for it: parallel requests wait
 	 * in turn.
 	 *
+	 * First the lock of a file on this server (local_lock()), then the row in the database. Requests on
+	 * this server wait for each other on the file, which the database cannot change: a value copied from the
+	 * row while held and written back after it was freed no longer keeps the owner's correct code "busy". The
+	 * row still makes requests on other servers (with another lock file) wait.
+	 *
 	 * @return bool
 	 */
 	private static function lock() {
+		$end = microtime( true ) + 5;
+		if ( ! self::local_lock( $end ) ) {
+			return false;
+		}
 		$seen = array();
-		for ( $i = 0; $i < 50; $i++ ) {
+		while ( true ) {
 			if ( self::mutex_take( $seen ) ) {
 				return true;
 			}
+			if ( microtime( true ) + 0.1 > $end ) {
+				self::local_unlock();
+				return false;
+			}
 			usleep( 100000 );
 		}
-		return false;
 	}
 
 	/**
@@ -2062,18 +2409,102 @@ final class PNCP_Lockdown {
 	 * @return bool
 	 */
 	private static function try_lock() {
-		return self::mutex_take();
+		if ( ! self::local_lock( 0 ) ) {
+			return false;
+		}
+		if ( self::mutex_take() ) {
+			return true;
+		}
+		self::local_unlock();
+		return false;
 	}
 
 	/**
 	 * Releases the lock, only if it is still the one this request took (after more than MUTEX_TTL seconds another
-	 * request may hold it now).
+	 * request may hold it now). The row first, then the file.
 	 */
 	private static function release() {
 		if ( '' !== self::$mutex ) {
 			self::mutex_swap( self::$mutex, '0' );
 			self::$mutex = '';
 		}
+		self::local_unlock();
+	}
+
+	/**
+	 * The lock file on this server: next to the guard in the must-use plugins folder, or in wp-content when that
+	 * folder cannot be written. It only holds a random name (nothing secret).
+	 *
+	 * @return string
+	 */
+	public static function local_lock_file() {
+		$dir = PNCP_Paths::mu_plugins();
+		if ( ! is_dir( $dir ) || ! wp_is_writable( $dir ) ) {
+			$dir = PNCP_Paths::content();
+		}
+		return $dir . '/scrapelock-lockdown.lock';
+	}
+
+	/**
+	 * Takes the exclusive lock of the lock file, waiting until $end (polling every 10 ms). Only
+	 * the requests on this server (that share this file) wait for each other here; the database row then
+	 * covers the others (lock()). When the file cannot be opened, there is no file lock and only the row counts,
+	 * as before.
+	 *
+	 * The file's name, written in the row's value, comes from a random name kept in the file, the name of this
+	 * server and the file's inode, so a copy of the file on another server does not have the same name.
+	 *
+	 * @param float $end Until when to wait (0: do not wait).
+	 * @return bool False when the file is locked by another request until then.
+	 */
+	private static function local_lock( $end ) {
+		self::local_unlock();
+		$path = self::local_lock_file();
+		// phpcs:disable WordPress.WP.AlternativeFunctions -- A lock file: flock() needs a handle from fopen().
+		$handle = @fopen( $path, 'c+' ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged -- Not writable: try read only, then no file lock.
+		if ( false === $handle ) {
+			$handle = @fopen( $path, 'r' ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged -- Missing and not creatable: no file lock.
+		}
+		if ( false === $handle ) {
+			return true;
+		}
+		while ( ! flock( $handle, LOCK_EX | LOCK_NB ) ) {
+			if ( microtime( true ) + 0.01 > $end ) {
+				fclose( $handle );
+				return false;
+			}
+			usleep( 10000 );
+		}
+		$name = trim( (string) stream_get_contents( $handle, 64, 0 ) );
+		if ( ! preg_match( '/^[A-Za-z0-9]{32}$/', $name ) ) {
+			$name = wp_generate_password( 32, false );
+			if ( ! ftruncate( $handle, 0 ) || false === fwrite( $handle, $name ) ) {
+				$name = '';
+			}
+			fflush( $handle );
+		}
+		// phpcs:enable
+		$stat = fstat( $handle );
+		if ( '' === $name || ! is_array( $stat ) ) {
+			flock( $handle, LOCK_UN );
+			fclose( $handle ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fclose -- The lock file.
+			return true;
+		}
+		self::$local    = $handle;
+		self::$local_id = substr( hash( 'sha256', $name . '|' . php_uname( 'n' ) . '|' . $stat['dev'] . '|' . $stat['ino'] ), 0, 16 );
+		return true;
+	}
+
+	/**
+	 * Releases the lock of the lock file, if this request holds it.
+	 */
+	private static function local_unlock() {
+		if ( null !== self::$local ) {
+			flock( self::$local, LOCK_UN );
+			fclose( self::$local ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fclose -- The lock file.
+		}
+		self::$local    = null;
+		self::$local_id = '';
 	}
 
 	/**
@@ -2874,7 +3305,15 @@ final class PNCP_Lockdown {
 					echo '<p><label><input type="checkbox" name="ack" value="1" required> ' . esc_html__( 'I have printed or saved my recovery codes, and I understand that only the app, a recovery code or access to the server files can unlock the site.', 'scrapelock' ) . '</label></p>';
 				}
 				if ( ! PNCP_Seal::can_write_guard() ) {
-					echo '<div class="notice notice-warning inline"><p>' . esc_html__( 'WordPress cannot write the guard file to wp-content/mu-plugins on this server. The guard keeps a signed copy of the lock outside the database: without it, someone who can change the database directly could unlock the site. Let the web server write to that folder (create it if it is missing), then reload this page.', 'scrapelock' ) . '</p></div>';
+					$beacon = PNCP_Seal::beacon_writable_dir();
+					echo '<div class="notice notice-warning inline"><p>' . esc_html__( 'WordPress cannot write the guard file to wp-content/mu-plugins on this server. The guard keeps a signed copy of the lock outside the database, keeps the active plugins and the theme as they were from the start of every request and keeps ScrapeLock active. Let the web server write to that folder (create it if it is missing), then reload this page.', 'scrapelock' ) . '</p><p>';
+					if ( '' !== $beacon ) {
+						/* translators: %s: folder */
+						echo esc_html( sprintf( __( 'With the weaker lock, ScrapeLock writes a signed lock file to %s instead: if someone deletes or changes the Lockdown data in the database, the site stays locked, protected settings are put back and the alert goes to the address signed when you locked. It does not keep the active plugins and the theme from the start of every request, and someone who can change the database directly could still deactivate ScrapeLock itself.', 'scrapelock' ), PNCP_Seal::short_path( $beacon ) ) );
+					} else {
+						echo esc_html__( 'No other folder of wp-content can be written either, so with the weaker lock everything about the lock is kept in the database only: someone who can change the database directly can delete all of it, and the site then looks as if it had never been locked. This cannot be noticed or reported.', 'scrapelock' );
+					}
+					echo '</p></div>';
 					echo '<p><label><input type="checkbox" name="weak" value="1"> ' . esc_html__( 'Lock without the guard file (weaker)', 'scrapelock' ) . '</label></p>';
 				}
 				submit_button( __( 'Lock the site', 'scrapelock' ), 'primary', 'submit', false );
@@ -3029,6 +3468,8 @@ final class PNCP_Lockdown {
 			'sealed'        => __( 'Lockdown data signed', 'scrapelock' ),
 			'lockout'       => __( 'Codes refused after too many wrong ones', 'scrapelock' ),
 			'sessions'      => __( 'Other sessions signed out', 'scrapelock' ),
+			'stale_file'    => __( 'Old lock file from before the last unlock removed', 'scrapelock' ),
+			'lock_file'     => __( 'Signed copy of the lock written outside the database', 'scrapelock' ),
 		);
 		?>
 		<h2><?php esc_html_e( 'Recent lockdown events', 'scrapelock' ); ?></h2>
@@ -3163,6 +3604,15 @@ final class PNCP_Lockdown {
 			if ( 'app' !== $how ) {
 				self::back( self::code_message( $how ) );
 			}
+			if ( in_array( self::tampered(), array( 'replay', 'forged' ), true ) ) {
+				// Only with SCRAPELOCK_UNLOCK (checked above): the guard file or the lock file still says "locked"
+				// while the state was deleted or changed. A new app starts unlocked, so they go first; otherwise the
+				// new app could not be saved (save() keeps an untrusted state from being signed).
+				PNCP_Seal::write_guard( false, 0 );
+				PNCP_Seal::forget_snapshots();
+				PNCP_Integrity::forget();
+				self::reload();
+			}
 			$state = self::state();
 			$codes = self::new_codes();
 			self::save(
@@ -3242,8 +3692,12 @@ final class PNCP_Lockdown {
 		if ( 'lock' === $op ) {
 			// The guard first: if it cannot be written after all, the site is not locked (unless the owner chose
 			// the weaker lock). If the state cannot be saved after it, the guard keeps the site locked.
-			if ( ! PNCP_Seal::write_guard( true, 0 ) && ! $weak ) {
-				self::back( 'noguard' );
+			if ( ! PNCP_Seal::write_guard( true, 0 ) ) {
+				if ( ! $weak ) {
+					self::back( 'noguard' );
+				}
+				// 3.4.1: the weaker lock: the signed lock file outside the database instead, where PHP can write it.
+				PNCP_Seal::write_beacon( true, 0 );
 			}
 			$state['locked']      = true;
 			$state['until']       = 0;
@@ -3252,7 +3706,15 @@ final class PNCP_Lockdown {
 			$state['unlocked_by'] = 0;
 			$state['unlock_session'] = '';
 			self::save( $state );
-			self::event( 'locked', PNCP_Seal::guard_installed() ? '' : __( 'without the guard file', 'scrapelock' ) );
+			if ( PNCP_Seal::guard_installed() ) {
+				$how = '';
+			} elseif ( '' !== PNCP_Seal::beacon_path() ) {
+				/* translators: %s: folder of the lock file */
+				$how = sprintf( __( 'without the guard file, with the signed lock file in %s', 'scrapelock' ), PNCP_Seal::short_path( dirname( PNCP_Seal::beacon_path() ) ) );
+			} else {
+				$how = __( 'without the guard file, without any signed copy outside the database', 'scrapelock' );
+			}
+			self::event( 'locked', $how );
 			// The snapshot of the protected options first: the file fingerprint starts a background request
 			// (the official checksums), which must find the snapshot of this lock already there.
 			PNCP_Seal::take_snapshot();
@@ -3275,7 +3737,7 @@ final class PNCP_Lockdown {
 			}
 			// A new unlock starts with nothing noted (a record of an earlier unlock no longer matches anyway).
 			PNCP_Seal::forget_window();
-			if ( ! self::save( $state ) ) {
+			if ( ! self::save( $state, 0 === $mins ) ) {
 				self::back( 'guard' );
 			}
 			$unknown = array();
@@ -3344,6 +3806,11 @@ final class PNCP_Lockdown {
 		$state['fp']        = 0;
 		$state['net']       = 0;
 		if ( ! self::save( $state ) ) {
+			self::back( 'guard' );
+		}
+		// The lock is off: also when the stored state had been deleted (so save() saw nothing locked), the guard
+		// file or the lock file must not keep saying "locked" (with SCRAPELOCK_UNLOCK, after such an attack).
+		if ( ! PNCP_Seal::write_guard( false, 0 ) ) {
 			self::back( 'guard' );
 		}
 		PNCP_Seal::check_apps_all(); // As for a full unlock (also with SCRAPELOCK_UNLOCK).

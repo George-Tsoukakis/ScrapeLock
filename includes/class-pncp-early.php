@@ -95,7 +95,9 @@ final class PNCP_Early {
 		// block would hit every visitor that comes through the same Cloudflare server. 3.4: not when a CDN
 		// shared secret is set and the request does not carry it: then it did not come through this site's
 		// own CDN account, and the address is limited like any other (see PNCP_Ip::is_cdn_edge()).
-		$per_ip = ! ( PNCP_Ip::in_any( $ip, PNCP_Ip::list_of( 'cloudflare' ) ) && PNCP_Ip::cdn_secret_ok( $s ) );
+		// 3.4.1: only the edge that connected (REMOTE_ADDR); a Cloudflare address from the real-IP header is a
+		// client of its own (a Cloudflare Worker, which a scraper can rent).
+		$per_ip = ! ( PNCP_Ip::remote_addr() === $ip && PNCP_Ip::in_any( $ip, PNCP_Ip::list_of( 'cloudflare' ) ) && PNCP_Ip::cdn_secret_ok( $s ) );
 
 		if ( $per_ip && PNCP_Ip::in_any( $ip, PNCP_Options::parse_list( $s['block_ips'] ) ) ) {
 			return array( 403, 'blocked_ip', $ip );

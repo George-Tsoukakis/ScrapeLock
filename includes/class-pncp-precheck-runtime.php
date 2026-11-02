@@ -157,7 +157,9 @@ final class PNCP_Precheck_Runtime {
 		// A CDN address means "Real visitor IP" is not set: then one decision would hit many visitors at once.
 		// 3.4: not without the CDN shared secret, when one is set: such a request came through someone else's
 		// account at the CDN, and is limited like any other address.
-		if ( self::is_cdn( $ip, $c ) && self::cdn_trust_ok( $c ) ) {
+		// 3.4.1: only the edge that connected (REMOTE_ADDR). A Cloudflare address from the real-IP header is a client of
+		// its own (a Cloudflare Worker, which a scraper can rent), as in PNCP_Ip::is_cdn_edge().
+		if ( self::is_cdn( $ip, $c ) && self::cdn_trust_ok( $c ) && self::normalize_ip( isset( $_SERVER['REMOTE_ADDR'] ) ? (string) $_SERVER['REMOTE_ADDR'] : '' ) === $ip ) {
 			return null;
 		}
 		if ( self::in_any( $ip, $c['block'] ) ) {
@@ -185,7 +187,7 @@ final class PNCP_Precheck_Runtime {
 		// Up to here (always-blocked IPs and temporary bans) every request is checked, even a POST: otherwise
 		// a cached page could be served to an IP that is already blocked or banned. The rate limit below
 		// counts the GET / HEAD views; the normal check counts the rest.
-		if ( ! self::countable() ) {
+		if ( ! self::countable() || self::shop_page( $c ) ) {
 			return null;
 		}
 		$limit = (int) $c['limit'];
@@ -325,6 +327,40 @@ final class PNCP_Precheck_Runtime {
 	}
 
 	/**
+	 * 3.4.1: a WooCommerce cart, checkout or My account page (or an endpoint below it, such as the order received
+	 * page or My account > Orders)? These never count toward the page limit, as in the normal check: a shopper
+	 * reloads them many times. The paths and page IDs come from the configuration (PNCP_Precheck::config()).
+	 *
+	 * @param array<string, mixed> $c Configuration.
+	 * @return bool
+	 */
+	public static function shop_page( $c ) {
+		if ( empty( $c['shop'] ) || ! is_array( $c['shop'] ) ) {
+			return false;
+		}
+		$uri  = isset( $_SERVER['REQUEST_URI'] ) ? (string) $_SERVER['REQUEST_URI'] : '/';
+		$ids  = isset( $c['shop']['ids'] ) ? array_map( 'intval', (array) $c['shop']['ids'] ) : array();
+		$args = array();
+		parse_str( (string) parse_url( $uri, PHP_URL_QUERY ), $args );
+		if ( isset( $args['page_id'] ) && is_scalar( $args['page_id'] ) && in_array( (int) $args['page_id'], $ids, true ) ) {
+			return true;
+		}
+		$path = '/' . ltrim( rawurldecode( (string) parse_url( $uri, PHP_URL_PATH ) ), '/' );
+		$home = (string) $c['home'];
+		if ( '' !== $home && ( 0 === strcasecmp( $path, $home ) || 0 === stripos( $path, $home . '/' ) ) ) {
+			$path = '/' . ltrim( substr( $path, strlen( $home ) ), '/' );
+		}
+		$path = strtolower( (string) preg_replace( '#^/index\.php(?=/)#i', '', $path ) );
+		foreach ( isset( $c['shop']['paths'] ) ? (array) $c['shop']['paths'] : array() as $shop ) {
+			$shop = (string) $shop;
+			if ( '' !== $shop && '/' !== $shop && ( rtrim( $path, '/' ) === $shop || 0 === strpos( $path, $shop . '/' ) ) ) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	/**
 	 * Prefetch / prerender, as PNCP_Bots::is_prefetch() sees it.
 	 *
 	 * @return bool
@@ -372,8 +408,31 @@ final class PNCP_Precheck_Runtime {
 					$reliable = false;
 				}
 			}
+		} elseif ( '' === $header && ! empty( $c['cf_auto'] ) && ! empty( $_SERVER['HTTP_CF_CONNECTING_IP'] ) && self::cf_edge( $remote, $c ) ) {
+			// 3.4.1: "Real visitor IP" left at the default, but the request comes from a Cloudflare edge: Cloudflare
+			// always writes CF-Connecting-IP itself, so it is the visitor (as in PNCP_Ip::client_ip()). Otherwise
+			// every visitor, banned or not, would pass here as the shared edge address.
+			$candidate = self::normalize_ip( (string) $_SERVER['HTTP_CF_CONNECTING_IP'] );
+			if ( '' !== $candidate ) {
+				$ip = $candidate;
+			}
 		}
 		return $ip;
+	}
+
+	/**
+	 * May this address set CF-Connecting-IP (PNCP_Ip::is_trusted_proxy() for that header)? An explicit trusted proxy,
+	 * or a Cloudflare edge when the CDN secret, if one is set, is on the request.
+	 *
+	 * @param string               $ip IP.
+	 * @param array<string, mixed> $c  Configuration.
+	 * @return bool
+	 */
+	public static function cf_edge( $ip, $c ) {
+		if ( '' === $ip || 3 !== $c['format'] ) {
+			return false;
+		}
+		return self::in_any( $ip, $c['proxies'] ) || ( self::cdn_trust_ok( $c ) && self::in_any( $ip, $c['cdn_cf'] ) );
 	}
 
 	/**

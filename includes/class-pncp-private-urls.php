@@ -341,6 +341,8 @@ final class PNCP_Private_Urls {
 		// WordPress also accepts the /index.php/path form.
 		if ( 0 === stripos( $path, '/index.php/' ) ) {
 			$path = substr( $path, strlen( '/index.php' ) );
+		} elseif ( 0 === strcasecmp( $path, '/index.php' ) ) {
+			$path = '/'; // 3.4.1: /index.php?feed=x is the homepage with that query.
 		}
 		return $path;
 	}
@@ -432,12 +434,19 @@ final class PNCP_Private_Urls {
 	 * skroutz_feed=1), so that the same feed asked for as /?skroutz_feed=1 is protected too. Only for
 	 * patterns without * and without a query of their own.
 	 *
+	 * 3.4.1: a pattern that is only a query on the homepage (https://site/?feed=skroutz) resolves to that query
+	 * itself, so the same feed at its pretty addresses (/feed/skroutz/, /shop/feed/skroutz/, …) is protected
+	 * too. A value of * then means any value.
+	 *
 	 * @param string $pattern Pattern.
 	 * @return array<string, string>
 	 */
 	private static function resolved_vars( $pattern ) {
 		global $wp_rewrite;
 		$parsed = self::parse_pattern( $pattern );
+		if ( null !== $parsed && $parsed['query'] && '/' === $parsed['path'] ) {
+			return $parsed['query'];
+		}
 		if ( null === $parsed || $parsed['query'] || false !== strpos( $parsed['path'], '*' ) || ! $wp_rewrite instanceof WP_Rewrite ) {
 			return array();
 		}
@@ -484,7 +493,7 @@ final class PNCP_Private_Urls {
 				continue;
 			}
 			foreach ( $want as $key => $value ) {
-				if ( ! isset( $vars[ $key ] ) || ! is_scalar( $vars[ $key ] ) || (string) $vars[ $key ] !== $value ) {
+				if ( ! isset( $vars[ $key ] ) || ! is_scalar( $vars[ $key ] ) || ( '*' !== $value && (string) $vars[ $key ] !== $value ) ) {
 					continue 2;
 				}
 			}

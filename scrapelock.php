@@ -2,7 +2,7 @@
 /**
  * Plugin Name:       ScrapeLock – Content & AI Bot Protection
  * Description:       Protects your content: makes copying text and images harder, hides the text in the REST API, GraphQL and RSS, blocks scrapers, AI bots and fake Googlebots, temporarily blocks persistent IPs, protects XML feeds with a token and adds an optional watermark. Lockdown freezes every change to the site until it is unlocked with an authenticator app. Forms, cart, checkout and search engines are not affected.
- * Version:           3.4.0
+ * Version:           3.4.1
  * Requires at least: 6.2
  * Requires PHP:      7.4
  * Author:            CodeBunny
@@ -19,7 +19,7 @@ if ( defined( 'PNCP_VERSION' ) ) {
 	return;
 }
 
-define( 'PNCP_VERSION', '3.4.0' );
+define( 'PNCP_VERSION', '3.4.1' );
 define( 'PNCP_FILE', __FILE__ );
 define( 'PNCP_DIR', plugin_dir_path( __FILE__ ) );
 define( 'PNCP_URL', plugin_dir_url( __FILE__ ) );
@@ -119,6 +119,14 @@ register_deactivation_hook( PNCP_FILE, 'pncp_deactivate' );
  * @param bool $network_wide Deactivation across the whole network (multisite).
  */
 function pncp_deactivate( $network_wide = false ) {
+	// 3.4.1: while Lockdown keeps the site locked, the deactivation is refused (the list of active plugins keeps
+	// ScrapeLock, see PNCP_Lockdown::keep_option()), but WordPress runs this hook before it tries to save that
+	// list, and WP-CLI does not stop at the rights wp-admin checks. Nothing is cleaned up then: the guard, the
+	// counters' copy, the early check, the pre-cache check and the scheduled events all stay, or the site could
+	// be opened afterwards by deleting the Lockdown data in the database.
+	if ( class_exists( 'PNCP_Lockdown' ) && PNCP_Lockdown::is_locked() ) {
+		return;
+	}
 	if ( is_multisite() && $network_wide ) {
 		foreach ( get_sites(
 			array(
@@ -314,6 +322,9 @@ function pncp_upgrade_files() {
 	// The pre-cache check: the loader is written again (new version, new plugin folder) or removed.
 	PNCP_Precheck::sync();
 	PNCP_Rules::sync_uploads_htaccess();
+	// 3.4.1: the 3.4.0 copy of the wrong-code counters (a .json file the web server shows) is moved now, and a
+	// site locked without the guard file gets the signed lock file (PNCP_Lockdown::maintain_files()).
+	PNCP_Lockdown::maintain_files();
 	// A list that is new in this version (e.g. Anthropic in 2.6.2) is downloaded now, not with the daily refresh.
 	PNCP_Ip::forget_missing_try();
 	PNCP_Ip::fetch_missing();
@@ -407,7 +418,7 @@ function pncp_maybe_upgrade() {
 	if ( get_option( 'pncp_version' ) === PNCP_VERSION ) {
 		return;
 	}
-	// One request runs the upgrade; concurrent ones do not rerun it (60 s lock, add_option is atomic).
+	// One request runs the upgrade; concurrent ones do not rerun it (60 s lock; the version is read again once the lock is won).
 	$lock = (int) get_option( 'pncp_upgrade_lock', 0 );
 	if ( $lock > time() - MINUTE_IN_SECONDS ) {
 		return;
@@ -416,6 +427,14 @@ function pncp_maybe_upgrade() {
 		delete_option( 'pncp_upgrade_lock' );
 	}
 	if ( ! add_option( 'pncp_upgrade_lock', time(), '', false ) ) {
+		return;
+	}
+	// This request's autoloaded options may predate another request's finished upgrade: read the version again.
+	global $wpdb;
+	// phpcs:ignore WordPress.DB.DirectDatabaseQuery -- The value as it is now in the database, not the cached one.
+	if ( PNCP_VERSION === $wpdb->get_var( $wpdb->prepare( 'SELECT option_value FROM %i WHERE option_name = %s', $wpdb->options, 'pncp_version' ) ) ) {
+		delete_option( 'pncp_upgrade_lock' );
+		wp_cache_delete( 'alloptions', 'options' );
 		return;
 	}
 	pncp_upgrade();

@@ -54,8 +54,9 @@ final class PNCP_Rest {
 			add_filter( 'rest_prepare_' . $type, array( __CLASS__, 'strip' ), 99, 3 );
 		}
 		// WooCommerce's public Store API serves product descriptions without login, in /products, in the cart
-		// line items and in /batch. The long description is stripped for visitors; the rest is left.
-		add_filter( 'rest_post_dispatch', array( __CLASS__, 'strip_store_api' ), 99, 3 );
+		// line items and in /batch. The long description is stripped for visitors; the rest is left. Priority 5:
+		// before core's ?_fields= filter (10) removes the "prices" that marks a product object.
+		add_filter( 'rest_post_dispatch', array( __CLASS__, 'strip_store_api' ), 5, 3 );
 	}
 
 	/**
@@ -72,7 +73,7 @@ final class PNCP_Rest {
 	 */
 	public static function strip_store_api( $result, $server, $request ) {
 		$route = (string) $request->get_route();
-		if ( ! $result instanceof WP_HTTP_Response || ! preg_match( '#^/wc/store(/v\d+)?/(products|cart|batch)#', $route, $m ) ) {
+		if ( ! $result instanceof WP_HTTP_Response || ! preg_match( '#^/wc/store(/v\d+)?/(products|cart|batch)#i', $route, $m ) ) {
 			return $result;
 		}
 		if ( PNCP_Lockdown::can( 'edit_posts' ) || PNCP_Options::user_is_exempt( PNCP_Options::get() ) ) {
@@ -85,7 +86,8 @@ final class PNCP_Rest {
 		if ( ! is_array( $data ) ) {
 			return $result;
 		}
-		if ( 'batch' === $m[2] ) {
+		// WordPress matches REST routes without regard to case: so does this.
+		if ( 'batch' === strtolower( $m[2] ) ) {
 			// { responses: [ { body: … }, … ] }: each answer as if it had been asked for on its own.
 			if ( isset( $data['responses'] ) && is_array( $data['responses'] ) ) {
 				foreach ( $data['responses'] as $i => $response ) {

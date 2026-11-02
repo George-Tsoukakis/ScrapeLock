@@ -225,15 +225,22 @@ final class PNCP_Bots {
 		if ( self::blocks_user_enum() && preg_match( '#^/wp/v2/users(?:/|$)#i', (string) $request->get_route() ) ) {
 			return new WP_Error( 'rest_user_cannot_view', __( 'Sorry, you are not allowed to list users.', 'scrapelock' ), array( 'status' => rest_authorization_required_code() ) );
 		}
-		// Read-only: cart, checkout, forms and payment webhooks (POST) are not checked.
+		$route = (string) $request->get_route();
+		// Writes (forms, payment webhooks, other plugins' callbacks) are not checked: they come from servers
+		// that send no browser headers. The WooCommerce Store API is the exception: only the shop's own pages
+		// call it, and its cart answers carry the product data, so an always-blocked IP, a banned IP or a
+		// blocked bot must not add items and read them back with POST. Its writes never count toward a limit.
 		if ( ! in_array( strtoupper( (string) $request->get_method() ), array( 'GET', 'HEAD' ), true ) ) {
-			return $result;
+			if ( ! preg_match( '#^/wc/store(?:/v\d+)?/#i', $route ) ) {
+				return $result;
+			}
+			$count = false;
+		} else {
+			// Only the transactional Store API routes (cart, checkout, batch) are called from every page and are
+			// exempt from the limit. The product catalogue (/wc/store/.../products) is scrapable data and counts
+			// toward the REST limit like any other read.
+			$count = ! preg_match( '#^/wc/store(?:/v\d+)?/(?:cart|checkout|batch)(?:/|$)#i', $route );
 		}
-		// Only the transactional Store API routes (cart, checkout, batch) are called from every page and are
-		// exempt from the limit. The product catalogue (/wc/store/.../products) is scrapable data and counts
-		// toward the REST limit like any other read.
-		$route   = (string) $request->get_route();
-		$count   = ! preg_match( '#^/wc/store(?:/v\d+)?/(?:cart|checkout|batch)(?:/|$)#i', $route );
 		$verdict = self::check( 'rest', $count );
 		if ( ! $verdict ) {
 			return $result;

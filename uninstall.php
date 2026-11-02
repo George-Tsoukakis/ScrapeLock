@@ -37,7 +37,7 @@ function pncp_uninstall_site() {
 	}
 	unset( $pncp_retire, $pncp_config );
 
-	foreach ( array( 'pncp_settings', 'pncp_version', 'pncp_db_version', 'pncp_emergency_until', 'pncp_ip_lists', 'pncp_ip_lists_cloudflare', 'pncp_ip_lists_bunny', 'pncp_ip_lists_google', 'pncp_ip_lists_bing', 'pncp_ip_lists_openai_search', 'pncp_ip_lists_openai_user', 'pncp_ip_lists_perplexity_bot', 'pncp_ip_lists_perplexity_user', 'pncp_ip_lists_anthropic', 'pncp_ip_lists_updated', 'pncp_bans', 'pncp_feed_token', 'pncp_feed_stats', 'pncp_legacy_token_notice', 'pncp_legacy_token_migrated', 'pncp_wm_cursor_apply', 'pncp_wm_cursor_remove', 'pncp_upgrade_lock', 'pncp_geo', 'pncp_origin_proxy', 'pncp_precheck_status', 'pncp_precheck_key', 'pncp_log_uas', 'pncp_lockdown', 'pncp_lockdown_log', 'pncp_integrity', 'pncp_integrity_report', 'pncp_integrity_alerted', 'pncp_surge', 'pncp_surge_last', 'pncp_surge_alert', 'pncp_edge', 'pncp_edge_state', 'pncp_edge_retire', 'pncp_edge_staff', 'pncp_edge_lock', 'pncp_edge_dirty', 'pncp_lockdown_snap', 'pncp_lockdown_digests', 'pncp_lockdown_window', 'pncp_lockdown_mutex', 'pncp_lockdown_fails', 'pncp_integrity_stat', 'pncp_upgrade_files', 'pncp_log_cleaned', 'pncp_bans_until', 'pncp_monitor_ended', 'pncp_settings_backups' ) as $pncp_option ) {
+	foreach ( array( 'pncp_settings', 'pncp_version', 'pncp_db_version', 'pncp_emergency_until', 'pncp_ip_lists', 'pncp_ip_lists_cloudflare', 'pncp_ip_lists_bunny', 'pncp_ip_lists_google', 'pncp_ip_lists_bing', 'pncp_ip_lists_openai_search', 'pncp_ip_lists_openai_user', 'pncp_ip_lists_perplexity_bot', 'pncp_ip_lists_perplexity_user', 'pncp_ip_lists_anthropic', 'pncp_ip_lists_updated', 'pncp_bans', 'pncp_feed_token', 'pncp_feed_stats', 'pncp_legacy_token_notice', 'pncp_legacy_token_migrated', 'pncp_wm_cursor_apply', 'pncp_wm_cursor_remove', 'pncp_upgrade_lock', 'pncp_geo', 'pncp_origin_proxy', 'pncp_precheck_status', 'pncp_precheck_key', 'pncp_log_uas', 'pncp_lockdown', 'pncp_lockdown_log', 'pncp_integrity', 'pncp_integrity_report', 'pncp_integrity_alerted', 'pncp_surge', 'pncp_surge_last', 'pncp_surge_alert', 'pncp_edge', 'pncp_edge_state', 'pncp_edge_retire', 'pncp_edge_staff', 'pncp_edge_lock', 'pncp_edge_dirty', 'pncp_edge_not_before', 'pncp_edge_calls', 'pncp_lockdown_snap', 'pncp_lockdown_digests', 'pncp_lockdown_window', 'pncp_lockdown_mutex', 'pncp_lockdown_fails', 'pncp_integrity_stat', 'pncp_upgrade_files', 'pncp_log_cleaned', 'pncp_bans_until', 'pncp_monitor_ended', 'pncp_settings_backups' ) as $pncp_option ) {
 		delete_option( $pncp_option );
 	}
 	// Every event of each hook, whatever its arguments (wp_clear_scheduled_hook() only removes the ones without).
@@ -49,9 +49,50 @@ function pncp_uninstall_site() {
 	if ( is_readable( $pncp_guard ) && false !== strpos( (string) file_get_contents( $pncp_guard, false, null, 0, 200 ), 'Plugin Name: ScrapeLock Lockdown guard' ) ) { // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Local file.
 		wp_delete_file( $pncp_guard );
 	}
-	// 3.4: the copy of the wrong-code counters next to the guard.
-	if ( file_exists( PNCP_Paths::mu_plugins() . '/scrapelock-lockdown-fails.json' ) ) {
-		wp_delete_file( PNCP_Paths::mu_plugins() . '/scrapelock-lockdown-fails.json' );
+	// 3.4: the copy of the wrong-code counters next to the guard (3.4.1: in its own folder; 3.4.0: a .json file).
+	$pncp_fails_dir = PNCP_Paths::mu_plugins() . '/scrapelock-lockdown-data';
+	foreach ( array( PNCP_Paths::mu_plugins() . '/scrapelock-lockdown-fails.json', $pncp_fails_dir . '/fails.php', $pncp_fails_dir . '/index.php' ) as $pncp_fails_file ) {
+		if ( file_exists( $pncp_fails_file ) ) {
+			wp_delete_file( $pncp_fails_file );
+		}
+	}
+	if ( is_dir( $pncp_fails_dir ) ) {
+		@rmdir( $pncp_fails_dir ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged, WordPress.WP.AlternativeFunctions.file_system_operations_rmdir -- Only succeeds when empty.
+	}
+	unset( $pncp_fails_dir, $pncp_fails_file );
+	// 3.4.1: the signed lock file written when the guard could not be (wp-content/uploads/scrapelock-lockdown or
+	// wp-content/scrapelock-lockdown), only ScrapeLock's files, and the folder when it is empty then.
+	foreach ( array( WP_CONTENT_DIR . '/uploads/scrapelock-lockdown', WP_CONTENT_DIR . '/scrapelock-lockdown' ) as $pncp_dir ) {
+		if ( ! is_dir( $pncp_dir ) ) {
+			continue;
+		}
+		foreach ( array_merge( (array) glob( $pncp_dir . '/lock-*.php' ), (array) glob( $pncp_dir . '/.lock-*.tmp' ) ) as $pncp_file ) {
+			if ( is_string( $pncp_file ) && ( '.tmp' === substr( $pncp_file, -4 ) || 0 === strpos( (string) file_get_contents( $pncp_file, false, null, 0, 64 ), "<?php exit; ?>\n{\"beacon\":" ) ) ) { // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Local file.
+				wp_delete_file( $pncp_file );
+			}
+		}
+		// The copy of the wrong-code counters next to the lock file.
+		foreach ( (array) glob( $pncp_dir . '/fails-*.php' ) as $pncp_file ) {
+			if ( is_string( $pncp_file ) && 0 === strpos( (string) file_get_contents( $pncp_file, false, null, 0, 64 ), "<?php exit; ?>\n{\"rows\":" ) ) { // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Local file.
+				wp_delete_file( $pncp_file );
+			}
+		}
+		foreach ( array(
+			'index.php' => "<?php\n// Silence is golden.\n",
+			'.htaccess' => "# ScrapeLock Lockdown\n<IfModule mod_authz_core.c>\n\tRequire all denied\n</IfModule>\n<IfModule !mod_authz_core.c>\n\tOrder allow,deny\n\tDeny from all\n</IfModule>\n",
+		) as $pncp_name => $pncp_content ) {
+			if ( is_file( $pncp_dir . '/' . $pncp_name ) && file_get_contents( $pncp_dir . '/' . $pncp_name ) === $pncp_content ) { // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Local file.
+				wp_delete_file( $pncp_dir . '/' . $pncp_name );
+			}
+		}
+		@rmdir( $pncp_dir ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged, WordPress.WP.AlternativeFunctions.file_system_operations_rmdir -- Only succeeds when empty.
+	}
+	unset( $pncp_dir, $pncp_file, $pncp_name, $pncp_content );
+	// The lock file of the code checks (in the must-use plugins folder, or in wp-content).
+	foreach ( array( PNCP_Paths::mu_plugins(), PNCP_Paths::content() ) as $pncp_dir ) {
+		if ( file_exists( $pncp_dir . '/scrapelock-lockdown.lock' ) ) {
+			wp_delete_file( $pncp_dir . '/scrapelock-lockdown.lock' );
+		}
 	}
 
 	// The per-attachment "already watermarked" record (_pncp_wm) and pncp_backup_dir are kept on purpose: they

@@ -227,6 +227,8 @@ final class PNCP_Integrity {
 		// state). When it is exactly what ScrapeLock writes for the current lock it counts as unchanged; anything
 		// else in it (changed by hand, or code added) shows as a changed file.
 		$guard = PNCP_Paths::clean( PNCP_Seal::path() );
+		$fails = wp_normalize_path( PNCP_Lockdown::fails_dir() );
+		$beacon = PNCP_Seal::beacon_dirs();
 
 		// wp-config.php one level above the WordPress folder is not in any folder that is read.
 		$config = $where['config'];
@@ -267,6 +269,16 @@ final class PNCP_Integrity {
 						continue;
 					}
 					if ( ! self::is_code( $entry ) || ! is_readable( $path ) ) {
+						continue;
+					}
+					// 3.4.1: the copy of the wrong-code counters next to the guard changes on every wrong code. Exactly
+					// as ScrapeLock writes it, it cannot run (see PNCP_Lockdown::fails_inert()) and is not noted;
+					// with anything else in it, it is checked like any other file.
+					if ( wp_normalize_path( $dir ) === $fails && PNCP_Lockdown::fails_inert( $path ) ) {
+						continue;
+					}
+					// 3.4.1: the lock file written when the guard cannot be (and its index.php and .htaccess): the same.
+					if ( in_array( wp_normalize_path( $dir ), $beacon, true ) && PNCP_Seal::beacon_inert( $path ) ) {
 						continue;
 					}
 					if ( PNCP_Paths::clean( $path ) === $guard && PNCP_Seal::guard_genuine() ) {
