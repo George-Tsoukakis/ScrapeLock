@@ -22,20 +22,33 @@ function t( $label, $ok, $extra = '' ) {
 
 // Ο φύλακας (3.3) και η κατάσταση από προηγούμενη εκτέλεση θα κρατούσαν το site κλειδωμένο (και οι ρόλοι της
 // δοκιμής δεν θα γράφονταν): σβήνονται πρώτα απ' όλα.
+// 3.4.1: και το υπογεγραμμένο αρχείο κλειδώματος (χωρίς φύλακα), το αντίγραφο των μετρητών λάθος κωδικών στο
+// mu-plugins/scrapelock-lockdown-data/ και οι μετρητές / τα κλειδώματα ελέγχου κωδικού στη βάση.
 PNCP_Seal::remove_guard();
-delete_option( PNCP_Seal::SNAP );
-delete_site_option( PNCP_Lockdown::OPTION );
+PNCP_Seal::remove_beacon();
+PNCP_Lockdown::fails_remove();
+foreach ( array( PNCP_Seal::SNAP, PNCP_Seal::DIGESTS, PNCP_Seal::WINDOW ) as $pncp_o ) {
+	delete_option( $pncp_o );
+}
+foreach ( array( PNCP_Lockdown::OPTION, PNCP_Lockdown::FAILS_OPTION, PNCP_Lockdown::MUTEX, PNCP_Lockdown::MUTEX_PRI, PNCP_Lockdown::DB_FOREIGN ) as $pncp_o ) {
+	delete_site_option( $pncp_o );
+}
 ( function () {
 	self::$state   = null;
 	self::$tamper  = '';
 	self::$sig_ok  = true;
 } )->bindTo( null, 'PNCP_Lockdown' )();
 ( function () {
-	self::$current = array( 'locked' => false, 'until' => 0 );
+	self::$current = self::record( false, 0 );
+	self::$copy    = false;
 } )->bindTo( null, 'PNCP_Seal' )();
+// 3.4: νέα εγκατάσταση = «Μόνο παρακολούθηση» για 7 ημέρες (η μπάρα γράφει «MONITOR ONLY»): κλειστό, όπως σε site
+// που ήδη υπήρχε.
+update_option( PNCP_OPTION, array_merge( PNCP_Options::stored(), array( 'monitor_mode' => 0, 'monitor_until' => 0 ) ) );
+PNCP_Options::flush();
 
 /* ---------- Χρήστες και συνδέσεις ---------- */
-foreach ( array( 'ld_editor', 'ld_customer', 'ld_newadmin', 'ld_shopper', 'ld_member', 'ld_member2' ) as $login ) {
+foreach ( array( 'ld_editor', 'ld_customer', 'ld_newadmin', 'ld_shopper', 'ld_member', 'ld_member2', 'ld_shop', 'ld_evil' ) as $login ) {
 	$old = get_user_by( 'login', $login );
 	if ( $old ) {
 		require_once ABSPATH . 'wp-admin/includes/user.php';
@@ -108,20 +121,40 @@ function ld( $op, $fields = array() ) {
 function fresh() {
 	wp_cache_flush();
 	( function () {
-		self::$state = null;
-		self::$staff = array();
+		self::$state        = null;
+		self::$staff        = array();
+		self::$limited_caps = null; // 3.4.2
+		self::$session_ok   = array();
 	} )->bindTo( null, 'PNCP_Lockdown' )();
 	// Ο φύλακας (3.3): η διεργασία των δοκιμών ζει πολύ (σε ένα πραγματικό αίτημα ο φύλακας διαβάζεται στην
-	// αρχή του), οπότε διαβάζεται ξανά από το αρχείο, όπως είναι τώρα.
-	$record = array( 'locked' => false, 'until' => 0 );
-	$guard  = is_readable( PNCP_Seal::path() ) ? (string) file_get_contents( PNCP_Seal::path() ) : '';
-	if ( preg_match( "/define\\( 'PNCP_LOCKDOWN_BEACON', '([^']+)' \\)/", $guard, $m ) ) {
-		$data   = json_decode( $m[1], true );
-		$record = array( 'locked' => ! empty( $data['locked'] ), 'until' => (int) $data['until'] );
-	}
-	( function ( $record ) {
-		self::$current = $record;
-	} )->bindTo( null, 'PNCP_Seal' )( $record );
+	// αρχή του), οπότε διαβάζεται ξανά από το αρχείο, όπως είναι τώρα: 3.4 με τις γενιές (gen, snap) και το
+	// υπογεγραμμένο αντίγραφο των προστατευμένων ρυθμίσεων (PNCP_LOCKDOWN_SNAP_COPY). 3.4.1: χωρίς φύλακα, το
+	// υπογεγραμμένο αρχείο κλειδώματος διαβάζεται ξανά.
+	clearstatcache();
+	( function () {
+		$guard = is_readable( self::path() ) ? (string) file_get_contents( self::path() ) : '';
+		$json  = '' !== $guard ? self::guard_json() : null;
+		if ( null !== $json ) {
+			$record        = self::guard_record( $json );
+			self::$current = null !== $record ? $record : self::record( false, 0 );
+			self::$copy    = false;
+			if ( preg_match( "/define\\( '" . self::COPY . "', '([A-Za-z0-9+\\/=]+)' \\)/", $guard, $m ) ) {
+				$data       = @unserialize( (string) base64_decode( $m[1], true ), array( 'allowed_classes' => false ) );
+				self::$copy = is_array( $data ) ? $data : false;
+			}
+		} elseif ( defined( 'PNCP_LOCKDOWN_BEACON' ) ) {
+			// Ο φύλακας υπήρχε όταν ξεκίνησε η δοκιμή και σβήστηκε: όπως ένα αίτημα χωρίς φύλακα που δεν βρίσκει αρχείο.
+			self::$current = self::record( false, 0 );
+			self::$copy    = false;
+		} else {
+			self::$current = null;
+			self::$copy    = null;
+		}
+		self::$file          = null;
+		self::$file_at_start = false;
+		self::$config        = null;
+		self::$net_digests   = null;
+	} )->bindTo( null, 'PNCP_Seal' )();
 }
 
 /** Αλλάζει την κατάσταση από το test (π.χ. «το προηγούμενο βήμα του κωδικού δεν χρησιμοποιήθηκε»). */
@@ -157,11 +190,35 @@ function app_code( $secret ) {
 	return PNCP_Totp::code( $secret, PNCP_Totp::step() );
 }
 
+/**
+ * Μηδενίζει τους μετρητές λάθος κωδικών. 3.4: υπογεγραμμένη επιλογή (FAILS_OPTION) αντί για transients, και όσο
+ * υπάρχει ο φύλακας ένα αντίγραφο στο mu-plugins/scrapelock-lockdown-data/ (3.4.1), που μετρά αν είναι πιο μπροστά.
+ */
+/**
+ * 3.4.2: οι επίσημες λίστες (checksums) του WordPress.org μένουν υπογεγραμμένες σε site transients (μια εβδομάδα, μια
+ * μέρα μια αποτυχία). Η σύγκριση μετά το κλείδωμα τρέχει στον server από το cron (χωρίς τις λίστες της δοκιμής): ό,τι
+ * κράτησε εκεί σβήνεται, ώστε η δοκιμή να ρωτήσει ξανά.
+ */
+function forget_checksums() {
+	global $wpdb;
+	$wpdb->query( $wpdb->prepare( "DELETE FROM {$wpdb->options} WHERE option_name LIKE %s OR option_name LIKE %s", $wpdb->esc_like( '_site_transient_pncp_cs_' ) . '%', $wpdb->esc_like( '_site_transient_timeout_pncp_cs_' ) . '%' ) );
+	wp_cache_flush();
+}
+
+/** Οι ειδοποιήσεις «άλλαξε έξω από το WordPress» στέλνονται μία φορά την ώρα ανά είδος (3.4: υπογεγραμμένο transient). */
+function forget_alerts() {
+	global $wpdb;
+	$wpdb->query( $wpdb->prepare( "DELETE FROM {$wpdb->options} WHERE option_name LIKE %s OR option_name LIKE %s", $wpdb->esc_like( '_site_transient_pncp_ld_tamper_' ) . '%', $wpdb->esc_like( '_site_transient_timeout_pncp_ld_tamper_' ) . '%' ) );
+	wp_cache_flush();
+}
+
 function reset_fails( $ids ) {
 	foreach ( $ids as $id ) {
 		delete_site_transient( 'pncp_ld_fail_' . $id );
 	}
 	delete_site_transient( 'pncp_ld_fail_all' );
+	PNCP_Lockdown::fails_remove();
+	delete_site_option( PNCP_Lockdown::FAILS_OPTION );
 }
 
 /* ---------- Ο server απαντά; ---------- */
@@ -174,6 +231,7 @@ if ( 0 === http( '/' )[0] ) {
 }
 
 /* ---------- Καθαρή αρχή ---------- */
+forget_alerts();
 delete_site_option( PNCP_Lockdown::OPTION );
 delete_site_option( PNCP_Lockdown::LOG_OPTION );
 delete_metadata( 'user', 0, PNCP_Lockdown::PENDING_META, '', true );
@@ -388,7 +446,12 @@ foreach ( array( 'state', 'snapshot', 'options', 'admin' ) as $pncp_k ) {
 }
 add_filter( 'pre_wp_mail', '__return_false' );
 $pncp_guard = (string) @file_get_contents( PNCP_Seal::path() );
-t( 'σφραγίδα: κλειδωμένο → ο φύλακας (mu-plugin) υπάρχει, υπογεγραμμένος', PNCP_Seal::guard_installed() && false !== strpos( $pncp_guard, 'PNCP_LOCKDOWN_BEACON' ) && false !== strpos( $pncp_guard, 'option_active_plugins' ) && '' === PNCP_Lockdown::tampered() );
+// 3.4: ο φύλακας κρατά τα ενεργά plugins και το θέμα με ένα φίλτρο για τις τρεις επιλογές ('option_' . $option) και έχει
+// και υπογεγραμμένο αντίγραφο των προστατευμένων ρυθμίσεων (PNCP_LOCKDOWN_SNAP_COPY).
+t( 'σφραγίδα: κλειδωμένο → ο φύλακας (mu-plugin) υπάρχει, υπογεγραμμένος, κρατά plugins και θέμα (3.4)', PNCP_Seal::guard_installed() && false !== strpos( $pncp_guard, 'PNCP_LOCKDOWN_BEACON' ) && false !== strpos( $pncp_guard, "add_filter( 'option_' . \$option" ) && false !== strpos( $pncp_guard, "foreach ( array( 'active_plugins', 'template', 'stylesheet' ) as \$option )" ) && '' === PNCP_Lockdown::tampered(), PNCP_Lockdown::tampered() );
+t( 'σφραγίδα (3.4): ο φύλακας έχει υπογεγραμμένο αντίγραφο των προστατευμένων ρυθμίσεων', false !== strpos( $pncp_guard, "define( 'PNCP_LOCKDOWN_SNAP_COPY'" ) && ( function () {
+	return null !== self::guard_copy();
+} )->bindTo( null, 'PNCP_Seal' )() );
 t( 'σφραγίδα: η κατάσταση στη βάση έχει υπογραφή', 64 === strlen( (string) ( raw_get( PNCP_Lockdown::OPTION )['sig'] ?? '' ) ) );
 t( 'σφραγίδα: αντίγραφο των προστατευμένων ρυθμίσεων και των διαχειριστών', is_array( PNCP_Seal::snapshot() ) && in_array( 1, PNCP_Seal::snapshot()['admins'], true ) && array_key_exists( 'admin_email', PNCP_Seal::snapshot()['values'] ) );
 $pncp_raw = raw_get( PNCP_Lockdown::OPTION );
@@ -440,7 +503,8 @@ $pncp_bad['values']['admin_email'] = 'attacker@example.com';
 raw_set( PNCP_Seal::SNAP, $pncp_bad );
 PNCP_Seal::verify_options();
 fresh();
-t( 'σφραγίδα: πλαστό αντίγραφο ρυθμίσεων → αγνοείται', null === PNCP_Seal::snapshot() && $pncp_mail === raw_get( 'admin_email' ) );
+// 3.4: το υπογεγραμμένο αντίγραφο του φύλακα ισχύει αντί για το πλαστό (πριν: κανένα αντίγραφο, snapshot() = null).
+t( 'σφραγίδα: πλαστό αντίγραφο ρυθμίσεων → αγνοείται· ισχύει το αντίγραφο του φύλακα (3.4)', is_array( PNCP_Seal::snapshot() ) && $pncp_mail === PNCP_Seal::snapshot()['values']['admin_email'] && $pncp_mail === raw_get( 'admin_email' ), wp_json_encode( PNCP_Seal::snapshot()['values']['admin_email'] ?? null ) );
 raw_set( PNCP_Seal::SNAP, $pncp_snap );
 remove_filter( 'pre_wp_mail', '__return_false' );
 foreach ( array( 'state', 'snapshot', 'options', 'admin' ) as $pncp_k ) {
@@ -450,8 +514,14 @@ foreach ( array( 'state', 'snapshot', 'options', 'admin' ) as $pncp_k ) {
 /* ---------- Ταυτόχρονα αιτήματα με τον ίδιο κωδικό ---------- */
 // Το αίτημα Α έχει ήδη διαβάσει την κατάσταση· στο μεταξύ το αίτημα Β (server) χρησιμοποιεί τον κωδικό· μετά το Α
 // δοκιμάζει τον ίδιο κωδικό με ό,τι είχε διαβάσει. Πρέπει να απορριφθεί.
+// 3.4: το check_code() έγινε attempt() (κλείδωμα ελέγχου, μετρητές λάθος κωδικών) + check_code_locked().
 $check = function ( $code, $recovery ) {
-	return self::check_code( $code, $recovery );
+	return self::attempt(
+		static function () use ( $code, $recovery ) {
+			return self::check_code_locked( $code, $recovery );
+		},
+		$recovery
+	);
 };
 $check = $check->bindTo( null, 'PNCP_Lockdown' );
 reset_fails( array( 1 ) );
@@ -482,14 +552,28 @@ $release = ( function () {
 	self::release();
 } )->bindTo( null, 'PNCP_Lockdown' );
 t( 'κλείδωμα ελέγχου: ένα αίτημα το παίρνει', $lock() );
+// 3.4.2: σε MySQL / MariaDB το κλείδωμα του server της βάσης (GET_LOCK)· αλλιώς (SQLite) ένα αρχείο κλειδώματος
+// (mu-plugins/scrapelock-lockdown.lock, flock) και η υπογεγραμμένη γραμμή στη βάση.
+if ( PNCP_Lockdown::db_lock_usable() ) {
+	t( 'κλείδωμα ελέγχου (3.4.2): GET_LOCK του server της βάσης', null !== $wpdb->get_var( $wpdb->prepare( 'SELECT IS_USED_LOCK(%s)', PNCP_Lockdown::db_lock_name() ) ) );
+} else {
+	$pncp_row = (string) $wpdb->get_var( $wpdb->prepare( "SELECT option_value FROM {$wpdb->options} WHERE option_name = %s", PNCP_Lockdown::MUTEX ) );
+	t( 'κλείδωμα ελέγχου (3.4.2, χωρίς GET_LOCK): αρχείο κλειδώματος στο mu-plugins και υπογεγραμμένη γραμμή στη βάση', is_file( PNCP_Lockdown::local_lock_file() ) && wp_normalize_path( WPMU_PLUGIN_DIR . '/scrapelock-lockdown.lock' ) === wp_normalize_path( PNCP_Lockdown::local_lock_file() ) && 1 === preg_match( '/^\d+:[A-Za-z0-9-]+:[0-9a-f]{64}$/', $pncp_row ), $pncp_row );
+}
 $t0 = microtime( true );
-t( 'κλείδωμα ελέγχου: το δεύτερο δεν ελέγχει τον κωδικό όσο κρατιέται', 'error' === ld( 'unlock', array( 'code' => app_code( $secret ) ) ) && PNCP_Lockdown::is_locked(), round( microtime( true ) - $t0, 1 ) . 's' );
+// 3.4: απάντηση «busy» (πριν «error»)· 3.4.2: ένας σωστός κωδικός περιμένει έως PRI_TTL − 1 = 8″ πριν απαντήσει.
+t( 'κλείδωμα ελέγχου: το δεύτερο δεν ελέγχει τον κωδικό όσο κρατιέται («busy», 3.4)', 'busy' === ( $pncp_r = ld( 'unlock', array( 'code' => app_code( $secret ) ) ) ) && PNCP_Lockdown::is_locked(), $pncp_r . ' ' . round( microtime( true ) - $t0, 1 ) . 's' );
 $release();
 t( 'κλείδωμα ελέγχου: μετά ξανά κανονικά', 'unlocked' === ld( 'unlock', array( 'code' => app_code( $secret ), 'minutes' => 15 ) ) );
 state_set( array( 'until' => 0 ) );
 global $wpdb;
-$wpdb->query( $wpdb->prepare( "UPDATE {$wpdb->options} SET option_value = %s WHERE option_name = %s", (string) ( time() - 1 ), 'pncp_lockdown_mutex' ) );
-t( 'κλείδωμα ελέγχου: ένα αίτημα που «πέθανε» κρατώντας το δεν το μπλοκάρει για πάντα (λήγει σε 10″)', $lock() );
+$pncp_until = time() - 1;
+$wpdb->query( $wpdb->prepare( "UPDATE {$wpdb->options} SET option_value = %s WHERE option_name = %s", $pncp_until . ':deadrequest1234:' . PNCP_Seal::sign( array( 'mutex', $pncp_until, 'deadrequest1234' ) ), PNCP_Lockdown::MUTEX ) );
+t( 'κλείδωμα ελέγχου: ένα αίτημα που «πέθανε» κρατώντας το δεν το μπλοκάρει για πάντα (3.4: λήγει σε 5″, ήταν 10″)', 5 === PNCP_Lockdown::MUTEX_TTL && $lock() );
+$release();
+// 3.4: η γραμμή είναι υπογεγραμμένη: μια τιμή γραμμένη στη βάση (π.χ. «κρατημένο για χρόνια») δεν κρατά κανέναν.
+$wpdb->query( $wpdb->prepare( "UPDATE {$wpdb->options} SET option_value = %s WHERE option_name = %s", (string) ( time() + YEAR_IN_SECONDS ), PNCP_Lockdown::MUTEX ) );
+t( 'κλείδωμα ελέγχου (3.4): τιμή γραμμένη στη βάση χωρίς υπογραφή δεν το κρατά', $lock() );
 $release();
 
 /* ---------- Όριο λάθος κωδικών ---------- */
@@ -498,6 +582,14 @@ for ( $i = 0; $i < PNCP_Lockdown::MAX_FAILS; $i++ ) {
 	ld( 'unlock', array( 'code' => '000000' ) );
 }
 t( 'μετά από 5 λάθος κωδικούς, ούτε ο σωστός (15 λεπτά αναμονή)', 'wait' === ld( 'unlock', array( 'code' => app_code( $secret ) ) ) && PNCP_Lockdown::is_locked() );
+// 3.4: οι μετρητές είναι υπογεγραμμένοι, με αντίγραφο δίπλα στον φύλακα: 3.4.1 αρχείο PHP που σταματά στην πρώτη
+// γραμμή, στον δικό του φάκελο mu-plugins/scrapelock-lockdown-data/ (με index.php), όχι .json που σερβίρεται.
+$pncp_ff = PNCP_Lockdown::fails_file();
+t( 'μετρητές (3.4): υπογεγραμμένοι στη βάση', is_array( get_site_option( PNCP_Lockdown::FAILS_OPTION ) ) && isset( get_site_option( PNCP_Lockdown::FAILS_OPTION )['sig'] ) );
+t( 'μετρητές (3.4.1): αντίγραφο στο mu-plugins/scrapelock-lockdown-data/fails.php, που σταματά στην πρώτη γραμμή', wp_normalize_path( WPMU_PLUGIN_DIR . '/scrapelock-lockdown-data/fails.php' ) === wp_normalize_path( $pncp_ff ) && is_file( $pncp_ff ) && 0 === strpos( (string) file_get_contents( $pncp_ff ), "<?php exit; ?>\n" ) && is_file( dirname( $pncp_ff ) . '/index.php' ) && ! file_exists( PNCP_Lockdown::fails_file_legacy() ) );
+delete_site_option( PNCP_Lockdown::FAILS_OPTION );
+fresh();
+t( 'μετρητές (3.4): σβησμένοι στη βάση → μετρά το αντίγραφο, η αναμονή συνεχίζεται', 'wait' === ld( 'unlock', array( 'code' => app_code( $secret ) ) ) && PNCP_Lockdown::is_locked() && false !== strpos( wp_json_encode( get_site_option( PNCP_Lockdown::LOG_OPTION ) ), 'fails' ) );
 reset_fails( array( 1 ) );
 
 t( 'ξεκλείδωμα «μέχρι να το κλειδώσω ξανά»', 'unlocked' === ld( 'unlock', array( 'code' => app_code( $secret ), 'minutes' => 0 ) ) && ! PNCP_Lockdown::is_locked() && ! PNCP_Lockdown::unlocked_until() );
@@ -516,15 +608,39 @@ t( 'ξεκλείδωτο: οι ρυθμίσεις αλλάζουν', 'Test' === 
 t( 'ρόλοι: αποθήκευση χωρίς κωδικό: όχι', 'wrong' === ld( 'roles', array( 'roles' => array( 'editor', 'ld_member' ), 'code' => '' ) ) );
 reset_fails( array( 1 ) );
 t( 'ρόλοι: το μέλος παγώνει όταν το τσεκάρετε (και ο διαχειριστής μένει, ας μην τσεκαρίστηκε)', 'roles' === ld( 'roles', array( 'roles' => array( 'editor', 'ld_member' ), 'code' => app_code( $secret ) ) ) && in_array( 'ld_member', PNCP_Lockdown::frozen_roles(), true ) && in_array( 'administrator', PNCP_Lockdown::frozen_roles(), true ) && ! in_array( 'author', PNCP_Lockdown::frozen_roles(), true ) );
+// 3.4.2: ρόλος καταστήματος (όπως ο shop manager του WooCommerce, με edit_theme_options) που δεν τσεκαρίστηκε: κρατά
+// τη δουλειά του (παραγγελίες, προϊόντα, περιεχόμενο) χωρίς ό,τι παίρνει το site (θέματα, ρυθμίσεις, HTML με scripts).
+// Φτιάχνεται πριν από το κλείδωμα (όσο είναι κλειδωμένο δεν γίνεται νέο «προσωπικό»).
+remove_role( 'ld_shop' );
+add_role( 'ld_shop', 'LD Shop', array( 'read' => true, 'edit_posts' => true, 'edit_others_posts' => true, 'upload_files' => true, 'edit_theme_options' => true, 'unfiltered_html' => true, 'manage_woocommerce' => true, 'edit_shop_orders' => true, 'edit_others_shop_orders' => true, 'edit_products' => true, 'view_woocommerce_reports' => true ) );
+$pncp_shop = wp_insert_user( array( 'user_login' => 'ld_shop', 'user_pass' => wp_generate_password(), 'user_email' => 'ld_shop@example.com', 'role' => 'ld_shop' ) );
+fresh();
+t( 'ρόλοι (3.4.2): ο ρόλος καταστήματος δεν τσεκάρεται από προεπιλογή, κρατά τη δουλειά του', ! in_array( 'ld_shop', PNCP_Lockdown::frozen_roles(), true ) && in_array( 'ld_shop', PNCP_Lockdown::limited_roles(), true ) && ! in_array( 'author', PNCP_Lockdown::limited_roles(), true ) );
 t( 'ρόλοι: κλειδωμένο → το μέλος κρατά μόνο read', 'locked' === ld( 'lock', array( 'code' => app_code( $secret ) ) ) && PNCP_Lockdown::is_staff( $member_id ) && ( function () use ( $member_id ) {
 	wp_set_current_user( $member_id );
 	$ok = current_user_can( 'read' ) && ! current_user_can( 'edit_posts' );
 	wp_set_current_user( 1 );
 	return $ok;
 } )() );
+fresh();
+t( 'ρόλοι (3.4.2): κλειδωμένο → ο ρόλος καταστήματος είναι «προσωπικό» που κρατά τη δουλειά του (επίπεδο 1)', PNCP_Lockdown::is_staff( $pncp_shop ) && 1 === PNCP_Lockdown::staff_level( $pncp_shop ) && 2 === PNCP_Lockdown::staff_level( $editor_id ) );
+t( 'ρόλοι (3.4.2): κλειδωμένο → παραγγελίες, προϊόντα, περιεχόμενο ναι· θέματα / μενού, ρυθμίσεις WooCommerce, HTML με scripts όχι', ( function () use ( $pncp_shop ) {
+	wp_set_current_user( $pncp_shop );
+	$ok = current_user_can( 'edit_posts' ) && current_user_can( 'edit_shop_orders' ) && current_user_can( 'edit_products' ) && current_user_can( 'upload_files' ) && ! current_user_can( 'edit_theme_options' ) && ! current_user_can( 'manage_woocommerce' ) && ! current_user_can( 'unfiltered_html' ) && ! current_user_can( 'customize' );
+	wp_set_current_user( 1 );
+	return $ok;
+} )() );
+add_filter( 'pre_wp_mail', '__return_false' );
+wp_update_user( array( 'ID' => $pncp_shop, 'user_email' => 'evil3@example.com' ) );
+remove_filter( 'pre_wp_mail', '__return_false' );
+wp_cache_flush();
+t( 'ρόλοι (3.4.2): κλειδωμένο → το email του λογαριασμού καταστήματος δεν αλλάζει (όπως του προσωπικού)', 'ld_shop@example.com' === get_userdata( $pncp_shop )->user_email );
 t( 'ρόλοι: όσο είναι κλειδωμένο δεν αλλάζουν', 'error' === ld( 'roles', array( 'roles' => array(), 'code' => app_code( $secret ) ) ) && in_array( 'ld_member', PNCP_Lockdown::frozen_roles(), true ) );
 reset_fails( array( 1 ) );
 t( 'ρόλοι: ξεκλείδωμα και επιστροφή στην προεπιλογή', 'unlocked' === ld( 'unlock', array( 'code' => app_code( $secret ), 'minutes' => 0 ) ) && 'roles' === ld( 'roles', array( 'roles' => array( 'editor', 'author', 'contributor' ), 'code' => app_code( $secret ) ) ) && ! PNCP_Lockdown::is_staff( $member_id ) );
+require_once ABSPATH . 'wp-admin/includes/user.php';
+wp_delete_user( $pncp_shop );
+remove_role( 'ld_shop' );
 t( 'νέοι κωδικοί ανάκτησης με τον κωδικό της εφαρμογής', 'codes' === ld( 'codes', array( 'code' => app_code( $secret ) ) ) && 10 === count( PNCP_Lockdown::state()['codes'] ) );
 list( , $body ) = http( $page );
 t( 'αρχείο: συμβάντα στη σελίδα (κλείδωμα, κωδικός ανάκτησης, λάθος, άρνηση αλλαγής)', false !== strpos( $body, 'Recovery code used' ) && false !== strpos( $body, 'Wrong code' ) && false !== strpos( $body, 'Change refused' ) && ! php_errors( $body ) );
@@ -589,11 +705,15 @@ t( 'ακεραιότητα: κλείδωμα → αποτύπωμα (WordPress, 
 	return $b['time'] > time() - 120 && ! $b['stale'] && isset( $f[ wp_normalize_path( ABSPATH . 'wp-includes/version.php' ) ] ) && isset( $f[ wp_normalize_path( $pncp_pdir . '/extra.php' ) ] ) && isset( $f[ wp_normalize_path( WP_PLUGIN_DIR . '/' . plugin_basename( PNCP_FILE ) ) ] ) && ( isset( $f[ wp_normalize_path( ABSPATH . 'wp-config.php' ) ] ) || isset( $f[ wp_normalize_path( dirname( ABSPATH ) . '/wp-config.php' ) ] ) );
 } )() );
 t( 'ακεραιότητα: αμέσως μετά το κλείδωμα τίποτα αλλαγμένο', array() === array_intersect( PNCP_Integrity::findings( PNCP_Integrity::check() ), array( 'added', 'changed', 'removed' ) ) );
-t( 'ακεραιότητα: φάκελοι cache εκτός', ( function () {
+// 3.4: οι φάκελοι cache διαβάζονται: ένα αρχείο δεδομένων της cache που σταματά στην πρώτη γραμμή (exit) δεν
+// σημειώνεται, ένα νέο αρχείο κώδικα σημειώνεται (ως «αλλάζει μόνο του»: αναφέρεται όταν είναι καινούργιο).
+t( 'ακεραιότητα: φάκελοι cache: τα αρχεία δεδομένων τους εκτός, νέος κώδικας μέσα μετρά (3.4)', ( function () {
 	wp_mkdir_p( WP_CONTENT_DIR . '/cache/pncp' );
-	file_put_contents( WP_CONTENT_DIR . '/cache/pncp/page.php', '<?php // cache' );
+	file_put_contents( WP_CONTENT_DIR . '/cache/pncp/page.php', '<?php exit; // cache' );
+	file_put_contents( WP_CONTENT_DIR . '/cache/pncp/code.php', '<?php // cache' );
 	$c = PNCP_Integrity::collect();
-	return ! isset( $c['files'][ wp_normalize_path( WP_CONTENT_DIR . '/cache/pncp/page.php' ) ] );
+	unlink( WP_CONTENT_DIR . '/cache/pncp/code.php' );
+	return ! isset( $c['files'][ wp_normalize_path( WP_CONTENT_DIR . '/cache/pncp/page.php' ) ] ) && isset( $c['files'][ wp_normalize_path( WP_CONTENT_DIR . '/cache/pncp/code.php' ) ] );
 } )() );
 // Ό,τι κάνει ένα ευάλωτο plugin: backdoor στα uploads, αλλαγή σε αρχείο plugin, .user.ini.
 $pncp_shell  = wp_normalize_path( $pncp_up . '/2026/pncp-test-shell.php' );
@@ -604,6 +724,7 @@ file_put_contents( $pncp_pdir . '/extra.php', "<?php // changed\n" );
 $pncp_mails = array();
 // Οι επίσημες λίστες ελέγχονται μία φορά την ημέρα: εδώ ξανά, με τις λίστες της δοκιμής.
 update_option( PNCP_Integrity::REPORT, array_merge( PNCP_Integrity::report(), array( 'official' => array() ) ), false );
+forget_checksums();
 $pncp_rep   = PNCP_Integrity::check();
 $pncp_found = PNCP_Integrity::findings( $pncp_rep );
 t( 'ακεραιότητα: νέο PHP στα uploads, .user.ini και αλλαγμένο αρχείο plugin', isset( $pncp_found[ $pncp_shell ] ) && 'added' === $pncp_found[ $pncp_shell ] && 'added' === $pncp_found[ wp_normalize_path( $pncp_up . '/.user.ini' ) ] && 'changed' === $pncp_found[ wp_normalize_path( $pncp_pdir . '/extra.php' ) ], wp_json_encode( array_map( array( 'PNCP_Integrity', 'relative' ), array_keys( $pncp_found ) ) ) );
@@ -614,7 +735,7 @@ t( 'ακεραιότητα: ίδια ευρήματα → όχι δεύτερο 
 wp_cache_flush();
 t( 'ακεραιότητα: καραντίνα → το plugin απενεργοποιήθηκε (και κλειδωμένο), το PHP των uploads μετονομάστηκε', ! is_plugin_active( 'pncp-dummy/pncp-dummy.php' ) && ! file_exists( $pncp_shell ) && file_exists( $pncp_shell . '.pncp-quarantine' ) && is_plugin_active( plugin_basename( PNCP_FILE ) ) );
 $pncp_off = PNCP_Integrity::report()['official'];
-t( 'ακεραιότητα: επίσημες λίστες: αλλαγμένο αρχείο πυρήνα και αρχείο που δεν είναι στην επίσημη έκδοση του plugin', 'official_modified' === ( PNCP_Integrity::findings( PNCP_Integrity::report() )[ wp_normalize_path( ABSPATH . $pncp_core_file ) ] ?? '' ) && array( wp_normalize_path( ABSPATH . $pncp_core_file ) ) === $pncp_off['modified'] && array( wp_normalize_path( $pncp_pdir . '/extra.php' ) ) === $pncp_off['unknown'] && in_array( 'akismet', $pncp_off['unverified'], true ), wp_json_encode( array_map( array( 'PNCP_Integrity', 'relative' ), array_merge( $pncp_off['modified'], $pncp_off['unknown'] ) ) ) );
+t( 'ακεραιότητα: επίσημες λίστες: αλλαγμένο αρχείο πυρήνα και αρχείο που δεν είναι στην επίσημη έκδοση του plugin', 'official_modified' === ( PNCP_Integrity::findings( PNCP_Integrity::report() )[ wp_normalize_path( ABSPATH . $pncp_core_file ) ] ?? '' ) && array( wp_normalize_path( ABSPATH . $pncp_core_file ) ) === $pncp_off['modified'] && array( wp_normalize_path( $pncp_pdir . '/extra.php' ) ) === $pncp_off['unknown'] && in_array( 'akismet', $pncp_off['unverified'], true ), wp_json_encode( $pncp_off ) );
 $pncp_hh = PNCP_Health::test_integrity();
 t( 'ακεραιότητα: Site Health → critical', 'critical' === $pncp_hh['status'] && 'scrapelock_integrity' === $pncp_hh['test'] );
 list( , $body ) = http( $page );
@@ -635,7 +756,12 @@ add_filter( 'pre_http_request', static function () {
 	return new WP_Error( 'test', 'offline' );
 } );
 $pncp_rep = PNCP_Integrity::check();
-t( 'ακεραιότητα: μετά το ξεκλείδωμα νέο αποτύπωμα, χωρίς ευρήματα (και χωρίς δίκτυο)', PNCP_Lockdown::is_locked() && array() === PNCP_Integrity::findings( $pncp_rep ) && ! PNCP_Integrity::baseline()['stale'] && false === $pncp_rep['official']['core'] );
+// 3.4: η σύγκριση με τις επίσημες λίστες γίνεται αμέσως μετά, από προγραμματισμένη εκτέλεση («pending» ως τότε).
+t( 'ακεραιότητα: μετά το ξεκλείδωμα νέο αποτύπωμα, χωρίς ευρήματα, επίσημες λίστες σε αναμονή (3.4)', PNCP_Lockdown::is_locked() && array() === PNCP_Integrity::findings( $pncp_rep ) && ! PNCP_Integrity::baseline()['stale'] && ! empty( $pncp_rep['official']['pending'] ) && wp_next_scheduled( PNCP_Integrity::OFFICIAL ), wp_json_encode( $pncp_rep['official'] ) );
+forget_checksums();
+PNCP_Integrity::run_official();
+$pncp_rep = PNCP_Integrity::report();
+t( '… η προγραμματισμένη σύγκριση χωρίς δίκτυο: τίποτα συγκρίσιμο, κανένα εύρημα', array() === PNCP_Integrity::findings( $pncp_rep ) && false === $pncp_rep['official']['core'] && empty( $pncp_rep['official']['pending'] ), wp_json_encode( $pncp_rep['official'] ) );
 $pncp_hh = PNCP_Health::test_integrity();
 t( 'ακεραιότητα: Site Health → good', 'good' === $pncp_hh['status'] );
 // 3.3: το αποτύπωμα είναι υπογεγραμμένο και η ώρα του σημειώνεται στην (υπογεγραμμένη) κατάσταση.
@@ -675,6 +801,86 @@ delete_option( PNCP_Integrity::REPORT );
 delete_option( 'pncp_integrity_alerted' );
 state_set( array( 'quarantine' => false ) );
 remove_all_filters( 'pre_wp_mail' ); // pre_http_request: μένει «χωρίς δίκτυο», όπως με το mu-plugin των δοκιμών.
+
+/* ---------- 3.3 / 3.4.1 / 3.4.2: χωρίς εγγράψιμο φάκελο για τον φύλακα ---------- */
+// Η ενέργεια της σελίδας μέσα στη διεργασία της δοκιμής, με τα φίλτρα της δοκιμής (εδώ: WordPress χωρίς άμεση
+// εγγραφή αρχείων, FS_METHOD ≠ direct): η ανακατεύθυνση στο τέλος γίνεται εξαίρεση. Κανένα αίτημα HTTP σε αυτό το
+// κομμάτι: ο server γράφει κανονικά αρχεία.
+function ld_here( $op, $fields = array() ) {
+	$_POST    = array_merge( array( 'action' => 'pncp_lockdown', 'op' => $op, '_wpnonce' => wp_create_nonce( 'pncp_lockdown' ) ), $fields );
+	$_REQUEST = $_POST;
+	$stop     = static function ( $location ) {
+		throw new RuntimeException( (string) $location );
+	};
+	add_filter( 'wp_redirect', $stop, 1 );
+	$out = 'none';
+	try {
+		PNCP_Lockdown::handle();
+	} catch ( RuntimeException $e ) {
+		$out = preg_match( '/pncp_ld=(\w+)/', $e->getMessage(), $m ) ? $m[1] : $e->getMessage();
+	}
+	remove_filter( 'wp_redirect', $stop, 1 );
+	$_POST    = array();
+	$_REQUEST = array();
+	fresh();
+	return $out;
+}
+if ( defined( 'PNCP_LOCKDOWN_BEACON' ) ) {
+	// Ο φύλακας υπήρχε όταν ξεκίνησε η διεργασία: δεν μπορεί να δει το αρχείο κλειδώματος όπως ένα νέο αίτημα.
+	t( 'χωρίς φύλακα: η διεργασία της δοκιμής ξεκίνησε χωρίς φύλακα', false );
+} else {
+	as_user( 1 );
+	reset_fails( array( 1 ) );
+	add_filter( 'pre_wp_mail', '__return_false' );
+	$pncp_fs = static function () {
+		return 'ftpext';
+	};
+	add_filter( 'filesystem_method', $pncp_fs );
+	t( 'χωρίς άμεση εγγραφή αρχείων: ο φύλακας δεν γράφεται', ! PNCP_Lockdown::is_locked() && ! PNCP_Seal::can_write_guard() );
+	t( 'κλείδωμα χωρίς φύλακα και χωρίς το κουτάκι «weaker»: όχι («noguard»)', 'noguard' === ( $pncp_r = ld_here( 'lock', array( 'code' => app_code( $secret ) ) ) ) && ! PNCP_Lockdown::is_locked(), $pncp_r );
+	reset_fails( array( 1 ) );
+	t( 'κλείδωμα χωρίς φύλακα με το κουτάκι (3.4.1): υπογεγραμμένο αρχείο κλειδώματος στο uploads/scrapelock-lockdown/', 'locked' === ( $pncp_r = ld_here( 'lock', array( 'code' => app_code( $secret ), 'weak' => 1 ) ) ) && PNCP_Lockdown::is_locked() && ! PNCP_Seal::guard_installed() && 0 === strpos( PNCP_Seal::beacon_path(), untrailingslashit( wp_normalize_path( WP_CONTENT_DIR ) ) . '/uploads/scrapelock-lockdown/' ), $pncp_r . ' ' . PNCP_Seal::beacon_path() );
+	$pncp_bp = PNCP_Seal::beacon_path();
+	t( 'αρχείο κλειδώματος (3.4.1): σταματά στην πρώτη γραμμή, ο φάκελος με index.php και .htaccess που αρνείται', '' !== $pncp_bp && 0 === strpos( (string) file_get_contents( $pncp_bp ), "<?php exit; ?>\n" ) && is_file( dirname( $pncp_bp ) . '/index.php' ) && false !== strpos( (string) @file_get_contents( dirname( $pncp_bp ) . '/.htaccess' ), 'Require all denied' ) );
+	t( 'αρχείο κλειδώματος (3.4.1): στο αρχείο του Κλειδώματος «without the guard file, with the signed lock file»', false !== strpos( wp_json_encode( get_site_option( PNCP_Lockdown::LOG_OPTION ) ), 'with the signed lock file' ) );
+	$pncp_ld = raw_get( PNCP_Lockdown::OPTION );
+	raw_set( PNCP_Lockdown::OPTION, null );
+	t( 'χωρίς φύλακα (3.4.1): σβήσιμο της κατάστασης από τη βάση → το αρχείο κλειδώματος το κρατά κλειδωμένο', PNCP_Lockdown::is_locked() && 'replay' === PNCP_Lockdown::tampered() );
+	raw_set( PNCP_Lockdown::OPTION, $pncp_ld );
+	t( '… η σωστή κατάσταση πίσω → όλα κανονικά', PNCP_Lockdown::is_locked() && '' === PNCP_Lockdown::tampered() );
+	// Μετρητές λάθος κωδικών: αντίγραφο δίπλα στο αρχείο κλειδώματος (3.4.1).
+	ld_here( 'unlock', array( 'code' => '000000', 'minutes' => 0 ) );
+	t( 'χωρίς φύλακα (3.4.1): οι μετρητές λάθος κωδικών έχουν αντίγραφο δίπλα στο αρχείο κλειδώματος', '' !== PNCP_Seal::beacon_fails_path() && is_file( PNCP_Seal::beacon_fails_path() ) && 0 === strpos( (string) file_get_contents( PNCP_Seal::beacon_fails_path() ), "<?php exit; ?>\n" ) );
+	reset_fails( array( 1 ) );
+	t( 'χωρίς φύλακα: ξεκλείδωμα «μέχρι να το κλειδώσω ξανά» → το αρχείο κλειδώματος φεύγει', 'unlocked' === ( $pncp_r = ld_here( 'unlock', array( 'code' => app_code( $secret ), 'minutes' => 0 ) ) ) && ! PNCP_Lockdown::is_locked() && '' === PNCP_Seal::beacon_path() && ! file_exists( $pncp_bp ), $pncp_r );
+	// 3.4.2: κανένας φάκελος για το αρχείο κλειδώματος (εδώ: αρχεία κάποιου άλλου με το όνομα των φακέλων).
+	$pncp_dirs = PNCP_Seal::beacon_dirs();
+	foreach ( $pncp_dirs as $pncp_d ) {
+		if ( ! file_exists( $pncp_d ) ) {
+			file_put_contents( $pncp_d, 'not a folder' );
+		}
+	}
+	reset_fails( array( 1 ) );
+	t( 'κανένας εγγράψιμος φάκελος: κλείδωμα με το κουτάκι, μόνο στη βάση ως τη γραμμή του wp-config.php (3.4.2)', '' === PNCP_Seal::beacon_writable_dir() && 'locked' === ( $pncp_r = ld_here( 'lock', array( 'code' => app_code( $secret ), 'weak' => 1 ) ) ) && PNCP_Lockdown::is_locked() && PNCP_Seal::needs_config() && false !== strpos( wp_json_encode( get_site_option( PNCP_Lockdown::LOG_OPTION ) ), 'SCRAPELOCK_LOCKED' ), $pncp_r );
+	$pncp_line = PNCP_Seal::current_config_line();
+	ob_start();
+	( function () {
+		self::render_config();
+	} )->bindTo( null, 'PNCP_Lockdown' )();
+	$pncp_html = (string) ob_get_clean();
+	t( 'γραμμή SCRAPELOCK_LOCKED (3.4.2): υπογεγραμμένη, στη σελίδα με κουμπί αντιγραφής', 1 === preg_match( "/^define\\( 'SCRAPELOCK_LOCKED', 'sl1[^']+' \\);$/", $pncp_line ) && false !== strpos( $pncp_html, 'add this line to wp-config.php' ) && false !== strpos( $pncp_html, esc_textarea( $pncp_line ) ) && false !== strpos( $pncp_html, 'pncp-copy' ), $pncp_line );
+	reset_fails( array( 1 ) );
+	t( 'κανένας εγγράψιμος φάκελος: ξεκλείδωμα «μέχρι να το κλειδώσω ξανά»', 'unlocked' === ( $pncp_r = ld_here( 'unlock', array( 'code' => app_code( $secret ), 'minutes' => 0 ) ) ) && ! PNCP_Lockdown::is_locked(), $pncp_r );
+	foreach ( $pncp_dirs as $pncp_d ) {
+		if ( is_file( $pncp_d ) && 'not a folder' === file_get_contents( $pncp_d ) ) {
+			unlink( $pncp_d );
+		}
+	}
+	remove_filter( 'filesystem_method', $pncp_fs );
+	remove_filter( 'pre_wp_mail', '__return_false' );
+	reset_fails( array( 1 ) );
+	fresh();
+}
 
 /* ---------- Αφαίρεση εφαρμογής ---------- */
 t( 'αφαίρεση χωρίς κωδικό: όχι', 'wrong' === ld( 'remove', array( 'code' => '' ) ) && PNCP_Lockdown::configured() );
@@ -729,9 +935,19 @@ $pncp_h = PNCP_Health::test_lockdown();
 t( 'Site Health: SCRAPELOCK_UNLOCK → critical', 'critical' === $pncp_h['status'] && 'red' === $pncp_h['badge']['color'] );
 
 /* ---------- 3.3: αναβάθμιση από παλιότερη έκδοση (χωρίς υπογραφές) ---------- */
+add_filter( 'pre_wp_mail', '__return_false' ); // Οι ειδοποιήσεις «άλλαξε έξω από το WordPress» δεν φεύγουν.
 $pncp_ver = get_option( 'pncp_version' );
 raw_set( PNCP_Lockdown::OPTION, array( 'secret' => 'p:' . $secret, 'locked' => true, 'until' => 0, 'codes' => array() ) );
 update_option( 'pncp_version', '3.2.0' );
+fresh();
+// 3.4: η έκδοση στη βάση δεν αρκεί: όσο υπάρχει κάτι που γράφει μόνο η 3.3 και μετά (φύλακας, αντίγραφο ρυθμίσεων,
+// υπογεγραμμένο αποτύπωμα), η έκδοση γυρίστηκε πίσω στη βάση και η κατάσταση χωρίς υπογραφή δεν γίνεται δεκτή.
+t( 'αναβάθμιση (3.4): έκδοση «3.2.0» με τον φύλακα στη θέση του → η κατάσταση χωρίς υπογραφή δεν γίνεται δεκτή', PNCP_Seal::guard_installed() && '' !== PNCP_Lockdown::tampered() );
+// Ένα πραγματικό site πριν από την 3.3: χωρίς φύλακα, αντίγραφο ρυθμίσεων ή υπογεγραμμένα αποτυπώματα.
+PNCP_Seal::remove_guard();
+foreach ( array( PNCP_Seal::SNAP, PNCP_Seal::DIGESTS, PNCP_Integrity::BASELINE ) as $pncp_o ) {
+	delete_option( $pncp_o );
+}
 fresh();
 t( 'αναβάθμιση: η κατάσταση χωρίς υπογραφή γίνεται δεκτή πριν την αναβάθμιση', '' === PNCP_Lockdown::tampered() );
 PNCP_Lockdown::upgrade_seal();
@@ -742,11 +958,18 @@ raw_set( PNCP_Lockdown::OPTION, array( 'secret' => 'p:' . $secret, 'locked' => t
 t( 'μετά την αναβάθμιση: κατάσταση χωρίς υπογραφή → παραποιημένη', '' !== PNCP_Lockdown::tampered() );
 
 /* ---------- Καθάρισμα ---------- */
-PNCP_Seal::remove_guard();
-delete_option( PNCP_Seal::SNAP );
-delete_site_option( PNCP_Lockdown::OPTION );
-delete_site_option( PNCP_Lockdown::LOG_OPTION );
-delete_site_option( PNCP_Lockdown::MUTEX );
+remove_filter( 'pre_wp_mail', '__return_false' );
+PNCP_Seal::remove_guard(); // 3.4.1: με το αρχείο κλειδώματος και το αντίγραφο των μετρητών.
+PNCP_Lockdown::fails_remove();
+foreach ( array( PNCP_Seal::SNAP, PNCP_Seal::DIGESTS, PNCP_Seal::WINDOW ) as $pncp_o ) {
+	delete_option( $pncp_o );
+}
+foreach ( array( PNCP_Lockdown::OPTION, PNCP_Lockdown::LOG_OPTION, PNCP_Lockdown::MUTEX, PNCP_Lockdown::MUTEX_PRI, PNCP_Lockdown::FAILS_OPTION, PNCP_Lockdown::DB_FOREIGN ) as $pncp_o ) {
+	delete_site_option( $pncp_o );
+}
+wp_clear_scheduled_hook( PNCP_Integrity::OFFICIAL ); // 3.4: η σύγκριση με τις επίσημες λίστες μετά από κάθε αποτύπωμα.
+forget_checksums();
+forget_alerts();
 fresh();
 require_once ABSPATH . 'wp-admin/includes/user.php';
 foreach ( array( $editor_id, $customer_id, $new, $shopper, $member_id, $member2 ) as $id ) {

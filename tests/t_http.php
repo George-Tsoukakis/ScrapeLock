@@ -91,6 +91,11 @@ function fresh() {
 	wp_cache_flush(); PNCP_Log::reset_cache();
 }
 
+/** Το script της προστασίας στη σελίδα: inline από την 3.4.0 (pncp-protect-js-after), αρχείο με SCRIPT_DEBUG. */
+function has_protect( $body ) {
+	return false !== strpos( $body, 'id="pncp-protect-js-after"' ) || false !== strpos( $body, 'assets/js/protect.js' );
+}
+
 function log_reasons() {
 	global $wpdb;
 	return $wpdb->get_col( "SELECT reason FROM {$wpdb->prefix}pncp_log ORDER BY id" );
@@ -110,6 +115,9 @@ settings(
 		'ip_header'               => 'remote_addr',
 		'private_paths'           => '/skroutz.xml',
 		'allow_ips'               => '',
+		// 3.4.0: νέα εγκατάσταση ξεκινά σε «Μόνο παρακολούθηση» για 7 ημέρες· εδώ όπως ένα υπάρχον site.
+		'monitor_mode'            => 0,
+		'monitor_until'           => 0,
 	)
 );
 fresh();
@@ -128,10 +136,13 @@ t( 'browser: tdm-reservation header', false !== strpos( $hdr, 'tdm-reservation: 
 t( 'browser: meta tdm-reservation', false !== strpos( $body, '<meta name="tdm-reservation" content="1">' ) );
 t( 'browser: robots noai', (bool) preg_match( '/<meta name=.robots.[^>]*noai/', $body ) );
 $head = (string) strstr( $body, '</head>', true );
-t( 'browser: protect.js μέσα στο <head>', false !== strpos( $head, 'assets/js/protect.js' ) );
-$first_src = preg_match( '/<script[^>]*\bsrc=[\'"]([^\'"]+)/', $head, $m ) ? $m[1] : '';
-t( 'browser: protect.js είναι το πρώτο εξωτερικό script', false !== strpos( $first_src, 'protect.js' ), $first_src );
-t( 'browser: data-cfasync=false (Rocket Loader)', (bool) preg_match( '/<script[^>]*data-cfasync="false"[^>]*protect\.js/', $head ) || (bool) preg_match( '/<script[^>]*protect\.js[^>]*data-cfasync="false"/', $head ) );
+// 3.4.0: το protect.js και τα styles τυπώνονται inline (minified, ~6 KB), χωρίς δικό τους αίτημα· αρχείο μόνο με SCRIPT_DEBUG.
+$pncp_min_js = trim( (string) file_get_contents( PNCP_DIR . 'assets/js/protect.min.js' ) );
+t( 'browser: protect.js inline μέσα στο <head> (3.4.0)', '' !== $pncp_min_js && false !== strpos( $head, $pncp_min_js ) && false !== strpos( $head, 'id="pncp-protect-js-after"' ) && false === strpos( $body, 'assets/js/protect.js' ) );
+t( 'browser: styles της προστασίας inline στο <head> (3.4.0)', false !== strpos( $head, 'id="pncp-protect-inline-css"' ) && false === strpos( $body, 'assets/css/protect.css' ) );
+$first_id = preg_match( '/<script\b[^>]*\bid=[\'"]([^\'"]+)/', $head, $m ) ? $m[1] : '';
+t( 'browser: το script της προστασίας είναι το πρώτο script στο <head> (3.4.0: inline)', 0 === strpos( $first_id, 'pncp-protect-js' ), $first_id );
+t( 'browser: data-cfasync=false (Rocket Loader) και στα δύο inline scripts (3.4.0)', (bool) preg_match( '/<script[^>]*data-cfasync="false"[^>]*id="pncp-protect-js-before"/', $head ) && (bool) preg_match( '/<script[^>]*data-cfasync="false"[^>]*id="pncp-protect-js-after"/', $head ) );
 t( 'browser: παγίδα στη σελίδα με aria-hidden', false !== strpos( $body, PNCP_Bots::trap_path() ) && false !== strpos( $body, 'aria-hidden="true"' ) );
 t( 'browser: η παγίδα κρύβεται με CSS στο <head>, χωρίς inline style', false !== strpos( $head, '.pncp-hp{position:absolute' ) && ! preg_match( '/class="pncp-hp"[^>]*style=/', $body ) );
 t( 'browser: τίποτα στο αρχείο', array() === log_reasons(), implode( ',', log_reasons() ) );
@@ -330,22 +341,27 @@ list( $code ) = req( $url . '?wc-ajax=' . $wc_action, array( 'X-Test-IP' => '198
 t( 'δηλωμένο wc-ajax από bot: 403', 403 === $code, (string) $code );
 settings( array( 'rate_limit' => 0, 'ban_strikes' => 3 ) );
 list( , , $body ) = req( $url . '?elementor-preview=1', browser( '203.0.113.76' ) );
-t( '?elementor-preview=1 από επισκέπτη: η προστασία φορτώνεται κανονικά', false !== strpos( $body, 'assets/js/protect.js' ) );
+t( '?elementor-preview=1 από επισκέπτη: η προστασία φορτώνεται κανονικά', has_protect( $body ) );
 list( , , $body ) = req( $url . '?fl_builder', browser( '203.0.113.77', array( 'Cookie' => login_cookie( $customer ) ) ) );
-t( 'builder flag από πελάτη χωρίς δικαίωμα επεξεργασίας: η προστασία φορτώνεται', false !== strpos( $body, 'assets/js/protect.js' ) );
+t( 'builder flag από πελάτη χωρίς δικαίωμα επεξεργασίας: η προστασία φορτώνεται', has_protect( $body ) );
 settings( array( 'exempt_cap' => 'none' ) );
 list( , , $body ) = req( $url, browser( '203.0.113.78', array( 'Cookie' => login_cookie( $editor ) ) ) );
-$base_ok = false !== strpos( $body, 'assets/js/protect.js' );
+$base_ok = has_protect( $body );
 list( , , $body ) = req( $url . '?elementor-preview=1', browser( '203.0.113.78', array( 'Cookie' => login_cookie( $editor ) ) ) );
-t( '?elementor-preview=1 από συντάκτη: χωρίς την προστασία (λειτουργεί ο builder)', $base_ok && false === strpos( $body, 'assets/js/protect.js' ) );
+t( '?elementor-preview=1 από συντάκτη: χωρίς την προστασία (λειτουργεί ο builder)', $base_ok && ! has_protect( $body ) );
 settings( array( 'exempt_cap' => 'edit_posts' ) );
 
 /* ---------- REST χωρίς κείμενο ---------- */
 list( $code, , $body ) = req( '/wp-json/wp/v2/posts/' . $post->ID, browser( '203.0.113.24' ) );
 $json = json_decode( $body, true );
 t( 'REST: content.rendered κενό για επισκέπτη', 200 === $code && isset( $json['content']['rendered'] ) && '' === $json['content']['rendered'], substr( $body, 0, 120 ) );
+// 3.4.0: οι γενικές βιβλιοθήκες HTTP (python-requests κ.λπ.) μπλοκάρονται μόνο με «Also block generic HTTP libraries».
 list( $code ) = req( '/wp-json/wp/v2/posts', array( 'X-Test-IP' => '198.51.100.9', 'User-Agent' => 'python-requests/2.32' ) );
-t( 'REST: python-requests 403 (στην 1.4 περνούσε)', 403 === $code, (string) $code );
+t( 'REST: python-requests 200 με τις προεπιλογές (3.4.0: βιβλιοθήκες HTTP όχι πια στη λίστα bots)', 200 === $code, (string) $code );
+settings( array( 'block_http_libs' => 1 ) );
+list( $code ) = req( '/wp-json/wp/v2/posts', array( 'X-Test-IP' => '198.51.100.8', 'User-Agent' => 'python-requests/2.32' ) );
+t( 'REST: python-requests 403 με block_http_libs (στην 1.4 περνούσε)', 403 === $code, (string) $code );
+settings( array( 'block_http_libs' => 0 ) );
 
 /* ---------- Παγίδα ---------- */
 fresh();
@@ -744,7 +760,15 @@ list( $code ) = req( $url, array( 'X-Test-IP' => '198.51.100.201', 'User-Agent' 
 t( 'ChatGPT-User από IP του OAI-SearchBot (όχι της δικής του λίστας): 403', 403 === $code, (string) $code );
 req( $url, array( 'X-Test-IP' => '203.0.113.77', 'User-Agent' => $oai ) );
 wp_cache_flush(); PNCP_Log::reset_cache();
-t( 'ψεύτικο AI bot: μετρά ως παράβαση (αποκλεισμός μετά από 2)', PNCP_Log::is_banned( '203.0.113.77' ) );
+t( 'ψεύτικο AI bot: η παράβαση μετρά μία φορά το λεπτό (3.3.2), όχι αποκλεισμός με 2 αιτήματα στο ίδιο λεπτό', ! PNCP_Log::is_banned( '203.0.113.77' ) );
+// Το επόμενο λεπτό: σβήνεται το σημάδι «ήδη μετρήθηκε σε αυτό το λεπτό».
+$pncp_min = (int) floor( time() / MINUTE_IN_SECONDS );
+foreach ( array( $pncp_min - 1, $pncp_min ) as $pncp_m ) {
+	PNCP_Log::cache_delete( 'pncp_sk_' . md5( 'fake_ai_bot|' . PNCP_Ip::limit_key( '203.0.113.77' ) . '|' . $pncp_m ) );
+}
+req( $url, array( 'X-Test-IP' => '203.0.113.77', 'User-Agent' => $oai ) );
+wp_cache_flush(); PNCP_Log::reset_cache();
+t( 'ψεύτικο AI bot: μετρά ως παράβαση (αποκλεισμός μετά από 2, σε διαφορετικά λεπτά)', PNCP_Log::is_banned( '203.0.113.77' ) );
 PNCP_Log::ban( '198.51.100.202', 10, 'trap' );
 list( $code ) = req( $url, array( 'X-Test-IP' => '198.51.100.202', 'User-Agent' => $oai ) );
 t( 'πραγματικό OAI-SearchBot περνά και από αποκλεισμένη IP (όπως το Googlebot)', 200 === $code, (string) $code );
@@ -889,7 +913,11 @@ t( 'Anthropic: χωρίς λίστα ακόμη, τίποτα δεν αλλάζ�
 // Κανόνες server: AI search δεν μπλοκάρεται από κανένα επίπεδο.
 $cf = PNCP_Rules::cloudflare();
 t( 'Cloudflare: με AI search επιτρεπτό, μόνο η κατηγορία «AI Crawler»', false !== strpos( $cf['ai']['expression'], '{"AI Crawler"}' ) && false === strpos( $cf['ai']['expression'], 'AI Search' ) );
-t( 'Cloudflare: τα AI search bots εξαιρούνται από τον κανόνα bots', false !== strpos( $cf['bots']['expression'], 'not (' ) && false !== strpos( $cf['bots']['expression'], 'claude-user' ) );
+// 3.4.1: μια μεγάλη λίστα «Πάντα επιτρεπτά» (εδώ με τα AI search bots) γίνεται δικός της κανόνας Skip πριν από τους κανόνες bots.
+$pncp_keys = array_keys( $cf );
+$pncp_skip = isset( $cf['allowed'] ) && 0 === strpos( $cf['allowed']['action'], 'Skip' ) && false !== strpos( $cf['allowed']['expression'], '"claude-user"' ) && array_search( 'allowed', $pncp_keys, true ) < array_search( 'bots', $pncp_keys, true );
+$pncp_not  = false !== strpos( $cf['bots']['expression'], 'not (' ) && false !== strpos( $cf['bots']['expression'], 'claude-user' );
+t( 'Cloudflare: τα AI search bots εξαιρούνται από τον κανόνα bots (3.4.1: με κανόνα Skip πριν από αυτόν, όταν η λίστα είναι μεγάλη)', $pncp_skip || $pncp_not );
 t( 'Cloudflare: πρώτος κανόνας Skip για robots.txt / llms.txt', 'open' === array_key_first( $cf ) && false !== strpos( $cf['open']['expression'], 'http.request.uri.path in {"/robots.txt" "/llms.txt" "/llms-full.txt" "/.well-known/tdmrep.json"}' ) && 0 === strpos( $cf['open']['action'], 'Skip' ) );
 $ng = PNCP_Rules::nginx();
 t( 'Nginx: map για robots / llms και ενιαίο $pncp_block', false !== strpos( $ng, 'map $uri $pncp_open_path' ) && false !== strpos( $ng, 'if ($pncp_block_' . PNCP_Rules::nginx_id() . ') { return 403; }' ) && false === strpos( $ng, 'if ($pncp_bad_bot' ) );
@@ -1082,6 +1110,8 @@ t( 'ανενεργό: όπως πριν', array( 200, 200, 200 ) === $codes, imp
 settings( array( 'rate_limit_unverified' => 20 ) );
 
 /* ---------- 2.6: χώρες ---------- */
+// 3.4.0: η βάση χωρών χρησιμοποιείται μόνο με ενεργό το «Download the country database» (geo_db)· όταν σβήνει, σβήνονται τα αρχεία.
+settings( array( 'geo_db' => 1 ) );
 $pncp_geo_csv = sys_get_temp_dir() . '/pncp-geo-test.csv';
 file_put_contents( $pncp_geo_csv, "198.51.100.0,198.51.100.255,CN\n198.51.101.0,198.51.101.255,CN\n203.0.113.0,203.0.113.255,GR\n2001:db8:c::,2001:db8:c:ffff:ffff:ffff:ffff:ffff,RU\n" );
 t( 'βάση χωρών: χαλασμένη / μικρή λήψη δεν αντικαθιστά τίποτα', false === PNCP_Geo::import( $pncp_geo_csv, '2026-10' ) && 0 === PNCP_Geo::status()['updated'] );
@@ -1129,7 +1159,7 @@ PNCP_Geo::remove_files();
 delete_option( PNCP_Geo::OPTION );
 PNCP_Geo::reset();
 wp_delete_file( $pncp_geo_csv );
-settings( array( 'countries_strict' => '', 'countries_block' => '', 'rate_limit_country' => 10 ) );
+settings( array( 'countries_strict' => '', 'countries_block' => '', 'rate_limit_country' => 10, 'geo_db' => 0 ) );
 t( 'βάση χωρών: χωρίς αρχεία, καμία χώρα (τίποτα δεν μπλοκάρεται)', '' === PNCP_Geo::lookup( '198.51.100.7' ) );
 
 /* ---------- 2.6: αναφορά «τι προσπαθούν να αντιγράψουν» ---------- */
@@ -1225,7 +1255,13 @@ update_option( 'pncp_version', '2.3.0' );
 $pncp_upgrade();
 $after = get_option( PNCP_OPTION );
 t( 'αναβάθμιση από 2.3.0: τα νέα μένουν ανενεργά', 0 === $after['rate_limit_404'] && 0 === $after['block_user_enum'] && 0 === $after['feed_source_link'] && 0 === $after['content_signal'] && 0 === $after['early_mode'], wp_json_encode( array_intersect_key( $after, array_flip( $new_240 ) ) ) );
-t( 'αναβάθμιση από 2.3.0: οι υπόλοιπες ρυθμίσεις δεν άλλαξαν', array_diff_key( $after, array_flip( $new_240 ) ) == array_diff_key( $keep, array_flip( $new_240 ) ) );
+// 3.4.0: οι βιβλιοθήκες HTTP δεν είναι πια στην προεπιλεγμένη λίστα bots, οπότε ένα site κάτω από την 2.8.3 τις παίρνει
+// στην αναβάθμιση (βήμα 2.8.3), όπως τότε. Η λίστα bots ελέγχεται χωριστά.
+$pncp_bl_keep  = PNCP_Options::parse_list( $keep['bot_list'] );
+$pncp_bl_after = PNCP_Options::parse_list( $after['bot_list'] );
+$pncp_bl_new   = array_values( array_udiff( PNCP_Options::new_bots_in_283(), $pncp_bl_keep, 'strcasecmp' ) );
+t( 'αναβάθμιση από 2.3.0: η λίστα bots κρατά όλες τις εγγραφές και παίρνει μόνο τις βιβλιοθήκες HTTP της 2.8.3 (3.4.0)', array_slice( $pncp_bl_after, 0, count( $pncp_bl_keep ) ) === $pncp_bl_keep && array_slice( $pncp_bl_after, count( $pncp_bl_keep ) ) === $pncp_bl_new, wp_json_encode( array_slice( $pncp_bl_after, count( $pncp_bl_keep ) ) ) );
+t( 'αναβάθμιση από 2.3.0: οι υπόλοιπες ρυθμίσεις δεν άλλαξαν (εκτός από τη λίστα bots, 3.4.0)', array_diff_key( $after, array_flip( $new_240 ), array( 'bot_list' => 1 ) ) == array_diff_key( $keep, array_flip( $new_240 ), array( 'bot_list' => 1 ) ) );
 update_option( PNCP_OPTION, array_merge( $after, array( 'block_user_enum' => 1 ) ) );
 update_option( 'pncp_version', '2.3.0' );
 $pncp_upgrade();
@@ -1234,7 +1270,7 @@ update_option( PNCP_OPTION, array_diff_key( $keep, array( 'verify_ai_bots' => 1,
 update_option( 'pncp_version', '2.4.0' );
 $pncp_upgrade();
 $after = get_option( PNCP_OPTION );
-t( 'αναβάθμιση από 2.4.0: τα νέα της 2.5 μένουν ανενεργά, τα υπόλοιπα ίδια', 0 === $after['verify_ai_bots'] && 0 === $after['block_headless'] && array_diff_key( $after, array( 'verify_ai_bots' => 1, 'block_headless' => 1 ) ) == array_diff_key( $keep, array( 'verify_ai_bots' => 1, 'block_headless' => 1 ) ) );
+t( 'αναβάθμιση από 2.4.0: τα νέα της 2.5 μένουν ανενεργά, τα υπόλοιπα ίδια (εκτός από τη λίστα bots, 3.4.0)', 0 === $after['verify_ai_bots'] && 0 === $after['block_headless'] && array_diff_key( $after, array( 'verify_ai_bots' => 1, 'block_headless' => 1, 'bot_list' => 1 ) ) == array_diff_key( $keep, array( 'verify_ai_bots' => 1, 'block_headless' => 1, 'bot_list' => 1 ) ) );
 update_option( PNCP_OPTION, array_diff_key( $keep, array_flip( $new_240 ), array( 'verify_ai_bots' => 1 ) ) );
 update_option( 'pncp_version', '2.3.0' );
 $pncp_upgrade();
@@ -1246,7 +1282,7 @@ update_option( 'pncp_version', '2.5.0' );
 $pncp_upgrade();
 $after = get_option( PNCP_OPTION );
 t( 'αναβάθμιση από 2.5.0: τα νέα της 2.6 ανενεργά (επαλήθευση ανθρώπου, sitemap 0, βάση χωρών, χωρίς χώρες)', 0 === $after['human_check'] && 0 === $after['rate_limit_sitemap'] && 0 === $after['geo_db'] && '' === $after['countries_block'] && '' === $after['countries_strict'] );
-t( 'αναβάθμιση από 2.5.0: οι υπόλοιπες ρυθμίσεις ίδιες', array_diff_key( $after, array_flip( $new_260 ) ) == array_diff_key( $keep, array_flip( $new_260 ) ) );
+t( 'αναβάθμιση από 2.5.0: οι υπόλοιπες ρυθμίσεις ίδιες (εκτός από τη λίστα bots, 3.4.0)', array_diff_key( $after, array_flip( $new_260 ), array( 'bot_list' => 1 ) ) == array_diff_key( $keep, array_flip( $new_260 ), array( 'bot_list' => 1 ) ) );
 delete_option( PNCP_OPTION );
 $pncp_upgrade();
 $fresh = PNCP_Options::stored();
@@ -1328,9 +1364,20 @@ settings( array( 'hide_rest_discovery' => 0 ) );
 fresh();
 settings( array( 'block_bots' => 1, 'bot_list' => PNCP_Options::default_bot_list(), 'allow_list' => PNCP_Options::default_allow_list(), 'allow_ai_search' => 0, 'rate_limit' => 0, 'ban_strikes' => 0, 'require_browser_headers' => 0, 'block_headless' => 0, 'human_check' => 0 ) );
 $pncp_n = 0;
-foreach ( array( 'Mozilla/5.0 (compatible; DeepSeekBot/1.0)', 'GrokBot/1.0', 'Mozilla/5.0 (compatible; meta-webindexer/1.1)', 'Mozilla/5.0 (compatible; QwenBot/1.0)', 'MistralAI-Training/1.0', 'Mozilla/5.0 Gemini-Deep-Research', 'node', 'NODE', 'Ruby', 'Java-http-client/21.0.12', 'Bun/1.4.2', 'HTTP-Tiny/0.086', 'GuzzleHttp/7', 'Deno/2.1', 'Dart/3.5 (dart:io)', 'Mozilla/5.0 (Windows NT; Windows NT 10.0; en-US) WindowsPowerShell/5.1' ) as $pncp_ua ) {
+foreach ( array( 'Mozilla/5.0 (compatible; DeepSeekBot/1.0)', 'GrokBot/1.0', 'Mozilla/5.0 (compatible; meta-webindexer/1.1)', 'Mozilla/5.0 (compatible; QwenBot/1.0)', 'MistralAI-Training/1.0', 'Mozilla/5.0 Gemini-Deep-Research' ) as $pncp_ua ) {
 	list( $code ) = req( $url, array( 'X-Test-IP' => '192.0.2.' . ( 10 + ++$pncp_n ), 'User-Agent' => $pncp_ua ) );
 	t( "2.8.3 μπλοκάρεται: $pncp_ua", 403 === $code, (string) $code );
+}
+// 3.4.0: οι γενικές βιβλιοθήκες HTTP μπλοκάρονται μόνο με «Also block generic HTTP libraries» (block_http_libs).
+$pncp_libs = array( 'node', 'NODE', 'Ruby', 'Java-http-client/21.0.12', 'Bun/1.4.2', 'HTTP-Tiny/0.086', 'GuzzleHttp/7', 'Deno/2.1', 'Dart/3.5 (dart:io)', 'Mozilla/5.0 (Windows NT; Windows NT 10.0; en-US) WindowsPowerShell/5.1' );
+foreach ( $pncp_libs as $pncp_ua ) {
+	list( $code ) = req( $url, array( 'X-Test-IP' => '192.0.2.' . ( 10 + ++$pncp_n ), 'User-Agent' => $pncp_ua ) );
+	t( "3.4.0 περνά με τις προεπιλογές (βιβλιοθήκη HTTP): $pncp_ua", 200 === $code, (string) $code );
+}
+settings( array( 'block_http_libs' => 1 ) );
+foreach ( $pncp_libs as $pncp_ua ) {
+	list( $code ) = req( $url, array( 'X-Test-IP' => '192.0.2.' . ( 10 + ++$pncp_n ), 'User-Agent' => $pncp_ua ) );
+	t( "2.8.3 μπλοκάρεται (3.4.0: με block_http_libs): $pncp_ua", 403 === $code, (string) $code );
 }
 // Ποτέ λάθος αποκλεισμός: browsers, in-app browsers, link previews, τιμές, monitoring, άλλο WordPress, ονόματα που περιέχουν «node» / «Ruby».
 foreach ( array(
@@ -1361,7 +1408,10 @@ list( $code ) = req( $url, array( 'X-Test-IP' => '192.0.2.201', 'User-Agent' => 
 t( '2.8.3: ενσωματωμένος crawler στη λίστα «πάντα επιτρεπτά»: περνά', 200 === $code, (string) $code );
 settings( array( 'allow_list' => PNCP_Options::default_allow_list() ) );
 $pncp_nginx = PNCP_Rules::nginx();
-t( '2.8.3: κανόνες Nginx με τους ενσωματωμένους crawlers και «^node$»', false !== strpos( $pncp_nginx, 'DeepSeekBot' ) && false !== strpos( $pncp_nginx, '|^node$|' ) );
+t( '2.8.3: κανόνες Nginx με τους ενσωματωμένους crawlers και «^node$» (3.4.0: με block_http_libs)', false !== strpos( $pncp_nginx, 'DeepSeekBot' ) && false !== strpos( $pncp_nginx, '|^node$|' ) );
+settings( array( 'block_http_libs' => 0 ) );
+$pncp_nginx = PNCP_Rules::nginx();
+t( '3.4.0: χωρίς block_http_libs, οι κανόνες Nginx χωρίς «^node$», με τους AI crawlers', false !== strpos( $pncp_nginx, 'DeepSeekBot' ) && false === strpos( $pncp_nginx, '^node$' ) );
 // Ελληνική διεύθυνση στο αρχείο: όπως τη στέλνει ο browser (κωδικοποιημένη), όχι «/-8/».
 $pncp_gr = get_page_by_path( 'ελληνικό-άρθρο-δοκιμής', OBJECT, 'post' );
 $pncp_gr = $pncp_gr ? $pncp_gr->ID : wp_insert_post( array( 'post_title' => 'Ελληνικό άρθρο δοκιμής', 'post_name' => 'ελληνικό-άρθρο-δοκιμής', 'post_status' => 'publish', 'post_content' => 'Κείμενο.' ) );
@@ -1400,10 +1450,11 @@ settings( array( 'block_bots' => 1, 'rate_limit' => 0, 'ban_strikes' => 0, 'hide
 $pncp_wpv = get_bloginfo( 'version' );
 list( $code, $hdr, $body ) = req( '/', browser( '192.0.2.210' ) );
 t( '2.9.0 εκδόσεις κρυφές: η έκδοση του WordPress / ScrapeLock πουθενά στη σελίδα, χωρίς generator και X-Powered-By', 200 === $code && false === strpos( $body, 'ver=' . $pncp_wpv ) && false === strpos( $body, 'ver=' . PNCP_VERSION ) && false === stripos( $body, 'name="generator"' ) && false === strpos( $hdr, 'x-powered-by:' ), (string) $code );
-preg_match( '#protect\.js\?ver=([a-f0-9]+)#', $body, $pncp_m1 );
+// 3.4.0: το protect.js είναι inline (χωρίς ?ver=)· ελέγχεται το πρώτο αρχείο JS / CSS με κωδικό στη θέση της έκδοσης.
+preg_match( '#\.(?:js|css)\?ver=([a-f0-9]{10})(?![a-f0-9])#', $body, $pncp_m1 );
 list( , , $body2 ) = req( '/', browser( '192.0.2.211' ) );
-preg_match( '#protect\.js\?ver=([a-f0-9]+)#', $body2, $pncp_m2 );
-t( '2.9.0 ?ver= σταθερό ανάμεσα στα αιτήματα (cache)', ! empty( $pncp_m1[1] ) && 10 === strlen( $pncp_m1[1] ) && isset( $pncp_m2[1] ) && $pncp_m1[1] === $pncp_m2[1] );
+preg_match( '#\.(?:js|css)\?ver=([a-f0-9]{10})(?![a-f0-9])#', $body2, $pncp_m2 );
+t( '2.9.0 ?ver= σταθερό ανάμεσα στα αιτήματα (cache· 3.4.0: σε αρχείο του WordPress, το protect.js είναι inline)', ! empty( $pncp_m1[1] ) && 10 === strlen( $pncp_m1[1] ) && isset( $pncp_m2[1] ) && $pncp_m1[1] === $pncp_m2[1] );
 t( '2.9.0 ?ver= άλλου site δεν αλλάζει, νέα έκδοση = νέος κωδικός', 'https://cdn.example.net/a.js?ver=1.2' === PNCP_Surface::asset_version( 'https://cdn.example.net/a.js?ver=1.2' ) && PNCP_Surface::asset_version( home_url( '/a.js?ver=1.2' ) ) !== PNCP_Surface::asset_version( home_url( '/a.js?ver=1.3' ) ) );
 list( , , $body ) = req( '/feed/', browser( '192.0.2.212' ) );
 t( '2.9.0 feed χωρίς <generator>', false === strpos( $body, '<generator>' ) );
@@ -1485,7 +1536,8 @@ fresh();
 update_option( PNCP_Options::EMERGENCY_OPTION, 0 );
 delete_option( PNCP_Surge::STATE );
 delete_option( PNCP_Surge::LAST );
-$pncp_s = array_merge( PNCP_Options::stored(), array( 'auto_emergency' => 1, 'auto_emergency_min' => 100 ) );
+// 3.4.0: «When it happens»: «start» ξεκινά μόνο του (η παλιά συμπεριφορά), «notify» (νέες εγκαταστάσεις) μόνο ειδοποιεί.
+$pncp_s = array_merge( PNCP_Options::stored(), array( 'auto_emergency' => 1, 'auto_emergency_min' => 100, 'auto_emergency_mode' => 'start' ) );
 // Ο συνηθισμένος ρυθμός: δύο ώρες με 15–24 σελίδες το λεπτό.
 $pncp_st = array( 'minute' => 0, 'avg' => 0.0, 'samples' => 0, 'streak' => 0 );
 $pncp_m  = 1000;
@@ -1515,17 +1567,46 @@ add_filter(
 	10,
 	2
 );
+// 3.3.2: το email φεύγει από προγραμματισμένο event σε αίτημα στο παρασκήνιο (spawn_cron), όχι μέσα στο αίτημα του
+// επισκέπτη. Εδώ το loopback στο wp-cron.php δεν γίνεται, και το event τρέχει με το χέρι.
+$pncp_spawned = 0;
+$pncp_no_loop = static function ( $r, $args, $u ) use ( &$pncp_spawned ) {
+	if ( false !== strpos( (string) $u, 'wp-cron.php' ) ) {
+		++$pncp_spawned;
+		return array( 'headers' => array(), 'body' => '', 'response' => array( 'code' => 200, 'message' => 'OK' ), 'cookies' => array(), 'filename' => null );
+	}
+	return $r;
+};
+add_filter( 'pre_http_request', $pncp_no_loop, 10, 3 );
+delete_transient( 'doing_cron' );
+wp_clear_scheduled_hook( PNCP_Surge::MAIL );
+wp_clear_scheduled_hook( PNCP_Surge::MAIL_ALERT );
+delete_option( PNCP_Surge::ALERT );
 $pncp_now = (int) floor( time() / 60 );
 update_option( PNCP_Surge::STATE, array( 'minute' => $pncp_now - 3, 'avg' => 20.0, 'samples' => 500, 'streak' => 2 ) );
 PNCP_Surge::observe( 1, $pncp_now, 500, array_merge( $pncp_s, array( 'auto_emergency' => 0 ) ) );
-t( 'αυτόματο Emergency κλειστό: μετρά, αλλά δεν ξεκινά', ! PNCP_Options::emergency_until() && array() === $pncp_mails );
+t( 'αυτόματο Emergency κλειστό: μετρά, αλλά δεν ξεκινά', ! PNCP_Options::emergency_until() && array() === $pncp_mails && ! wp_next_scheduled( PNCP_Surge::MAIL, array( 500, 100, 1 ) ) );
 update_option( PNCP_Surge::STATE, array( 'minute' => $pncp_now - 2, 'avg' => 20.0, 'samples' => 500, 'streak' => 2 ) );
 PNCP_Surge::observe( 1, $pncp_now, 500, $pncp_s );
 $pncp_last = PNCP_Surge::last();
-t( 'αυτόματο Emergency: ξεκινά για 1 ώρα, με email και καταγραφή', PNCP_Options::emergency_until() > time() + 3500 && PNCP_Options::emergency_until() <= time() + 3600 && 1 === count( $pncp_mails ) && false !== strpos( $pncp_mails[0]['message'], '500' ) && 500 === $pncp_last[0]['count'] && $pncp_last[0]['threshold'] >= 100 && $pncp_last[0]['threshold'] < 500, wp_json_encode( $pncp_last ) );
+$pncp_args = array( 500, isset( $pncp_last[0]['threshold'] ) ? $pncp_last[0]['threshold'] : 0, 1 );
+t( 'αυτόματο Emergency: ξεκινά για 1 ώρα, με καταγραφή και email σε event στο παρασκήνιο (3.3.2)', PNCP_Options::emergency_until() > time() + 3500 && PNCP_Options::emergency_until() <= time() + 3600 && array() === $pncp_mails && (bool) wp_next_scheduled( PNCP_Surge::MAIL, $pncp_args ) && $pncp_spawned > 0 && 500 === $pncp_last[0]['count'] && $pncp_last[0]['threshold'] >= 100 && $pncp_last[0]['threshold'] < 500, wp_json_encode( $pncp_last ) );
+do_action_ref_array( PNCP_Surge::MAIL, $pncp_args );
+wp_clear_scheduled_hook( PNCP_Surge::MAIL, $pncp_args );
+t( 'αυτόματο Emergency: το email του event, με τις σελίδες του λεπτού', 1 === count( $pncp_mails ) && false !== strpos( $pncp_mails[0]['message'], '500' ) );
 PNCP_Surge::observe( 1, $pncp_now, 500, $pncp_s );
-t( 'αυτόματο Emergency: το ίδιο λεπτό δεύτερη φορά δεν μετρά ξανά', 1 === count( $pncp_mails ) && 1 === count( PNCP_Surge::last() ) );
+t( 'αυτόματο Emergency: το ίδιο λεπτό δεύτερη φορά δεν μετρά ξανά', 1 === count( $pncp_mails ) && 1 === count( PNCP_Surge::last() ) && ! wp_next_scheduled( PNCP_Surge::MAIL, $pncp_args ) );
 update_option( PNCP_Options::EMERGENCY_OPTION, 0 );
+PNCP_Options::flush();
+// 3.4.0: «notify»: δεν ξεκινά, μόνο ειδοποίηση στο wp-admin και email (επίσης από event).
+delete_option( PNCP_Surge::LAST );
+update_option( PNCP_Surge::STATE, array( 'minute' => $pncp_now - 2, 'avg' => 20.0, 'samples' => 500, 'streak' => 2 ) );
+PNCP_Surge::observe( 1, $pncp_now, 500, array_merge( $pncp_s, array( 'auto_emergency_mode' => 'notify' ) ) );
+$pncp_alert = PNCP_Surge::alert_state();
+t( 'αυτόματο Emergency «notify» (3.4.0): δεν ξεκινά, ειδοποίηση και email σε event', ! PNCP_Options::emergency_until() && array() === PNCP_Surge::last() && null !== $pncp_alert && 500 === $pncp_alert['count'] && (bool) wp_next_scheduled( PNCP_Surge::MAIL_ALERT, array( 500, $pncp_alert['threshold'] ) ), wp_json_encode( $pncp_alert ) );
+wp_clear_scheduled_hook( PNCP_Surge::MAIL_ALERT, array( 500, null !== $pncp_alert ? $pncp_alert['threshold'] : 0 ) );
+delete_option( PNCP_Surge::ALERT );
+remove_filter( 'pre_http_request', $pncp_no_loop, 10 );
 PNCP_Options::flush();
 remove_all_filters( 'pre_wp_mail' );
 // Μέσα από HTTP: οι σελίδες του site μετρώνται (όχι το προσωπικό), μόνο με την επιλογή ανοιχτή.
@@ -1593,7 +1674,16 @@ $codes = array();
 for ( $i = 0; $i < 4; $i++ ) {
 	$codes[] = req( $url, array( 'X-Test-IP' => '198.18.250.11', 'User-Agent' => 'Mozilla/5.0 (compatible; UptimeRobot/2.0)' ) )[0];
 }
-t( 'data centers: τα «πάντα επιτρεπτά» (monitoring) κρατούν το κανονικό όριο', array( 200, 200, 200, 200 ) === $codes, implode( ',', $codes ) );
+// 3.3.2: ένα «πάντα επιτρεπτό» μόνο με User-Agent αντιγράφεται εύκολα· από data center εξαιρείται μόνο δεμένο σε IP (UA@CIDR).
+t( 'data centers: «πάντα επιτρεπτό» μόνο με User-Agent (monitoring): το όριο των data centers (3.3.2)', array( 200, 200, 429, 429 ) === $codes, implode( ',', $codes ) );
+$pncp_allow_list = PNCP_Options::stored()['allow_list'];
+settings( array( 'allow_list' => $pncp_allow_list . "\nUptimeRobot@198.18.250.0/24" ) );
+$codes = array();
+for ( $i = 0; $i < 4; $i++ ) {
+	$codes[] = req( $url, array( 'X-Test-IP' => '198.18.250.12', 'User-Agent' => 'Mozilla/5.0 (compatible; UptimeRobot/2.0)' ) )[0];
+}
+t( 'data centers: τα «πάντα επιτρεπτά» δεμένα σε IP (UptimeRobot@CIDR) κρατούν το κανονικό όριο', array( 200, 200, 200, 200 ) === $codes, implode( ',', $codes ) );
+settings( array( 'allow_list' => $pncp_allow_list ) );
 t( 'data centers: Emergency Mode → 5, και όταν είναι κλειστό', 5 === PNCP_Options::emergency_overlay( array_merge( PNCP_Options::stored(), array( 'rate_limit_datacenter' => 0 ) ) )['rate_limit_datacenter'] && 2 === PNCP_Options::emergency_overlay( PNCP_Options::stored() )['rate_limit_datacenter'] );
 t( 'data centers: νέα εγκατάσταση 15, υπάρχον site κλειστό', 15 === PNCP_Options::defaults()['rate_limit_datacenter'] && 0 === PNCP_Options::new_in_300()['rate_limit_datacenter'] );
 settings( array( 'rate_limit' => 0, 'rate_limit_datacenter' => 0 ) );

@@ -124,8 +124,13 @@ sleep( 3 );
 global $wpdb;
 PNCP_Log::unban_all();
 PNCP_Log::clear();
+// 3.4: ο έλεγχος ακολουθεί και το «Monitor only» (νέα εγκατάσταση: 7 ημέρες) και το Emergency Mode.
+// Οι δοκιμές ξεκινούν όπως ένα υπάρχον site: μπλοκάρει, χωρίς Emergency Mode.
+update_option( PNCP_Options::EMERGENCY_OPTION, 0 );
 settings(
 	array(
+		'monitor_mode'            => 0,
+		'monitor_until'           => 0,
 		'enabled'                 => 1,
 		'precheck'                => 0,
 		'rate_limit'              => 5,
@@ -178,6 +183,20 @@ list( $code ) = req( '/cached-page/', visitor( '203.0.113.12' ) );
 t( 'cache: άλλη IP δεν επηρεάζεται', 200 === $code );
 list( $code, $h ) = req( '/cached-page/', visitor( '203.0.113.11' ), 'HEAD' );
 t( 'cache: HEAD μετράει και αυτό, χωρίς σώμα', 429 === $code );
+
+/* ---------- 3.4: «Monitor only» και Emergency Mode και πριν από το cache ---------- */
+settings( array( 'monitor_mode' => 1, 'monitor_until' => 0 ) );
+same_minute();
+$c = codes( '/cached-page/', visitor( '203.0.113.13' ), 7 );
+t( 'Monitor only (3.4): πάνω από το όριο, όλα 200 (τίποτα δεν μπλοκάρεται)', array_fill( 0, 7, 200 ) === $c, implode( ',', $c ) );
+t( 'Monitor only (3.4): καταγράφεται ως «would block» (κωδικός 0)', false !== strpos( (string) @file_get_contents( PNCP_Precheck::dir() . '/events.log' ), "\t0\trate_page\t203.0.113.13\t" ) );
+PNCP_Options::set_emergency( 1, false );
+sleep( 3 ); // OPcache / νέο config.json.
+$c = codes( '/cached-page/', visitor( '203.0.113.14' ), 6 );
+t( 'Emergency Mode με Monitor only (3.4): μπλοκάρει κανονικά, 429 πάνω από το όριο', array( 200, 200, 200, 200, 200, 429 ) === $c, implode( ',', $c ) );
+PNCP_Options::set_emergency( 0, false );
+settings( array( 'monitor_mode' => 0, 'monitor_until' => 0 ) );
+PNCP_Log::unban_all();
 
 /* ---------- Τι δεν μετράει ---------- */
 same_minute();

@@ -71,7 +71,8 @@ function php_errors( $body ) {
 	return preg_match( '/(Warning|Notice|Deprecated|Fatal error)<\/b>:|PHP (Warning|Notice|Deprecated)/', $body );
 }
 
-settings( array( 'enabled' => 1, 'private_paths' => '/skroutz.xml' ) );
+// 3.4: μια νέα εγκατάσταση ξεκινά σε «Monitor only» για 7 ημέρες· οι δοκιμές μπλοκάρουν όπως ένα υπάρχον site.
+settings( array( 'enabled' => 1, 'private_paths' => '/skroutz.xml', 'monitor_mode' => 0, 'monitor_until' => 0 ) );
 update_option( 'pncp_emergency_until', 0 );
 
 /* ---------- Όλες οι καρτέλες ---------- */
@@ -138,7 +139,11 @@ $all = array();
 foreach ( PNCP_Options::sections() as $keys ) {
 	$all = array_merge( $all, $keys );
 }
-t( 'κάθε ρύθμιση ανήκει σε μία καρτέλα', array() === array_diff( array_keys( PNCP_Options::defaults() ), $all ) && count( $all ) === count( array_unique( $all ) ), implode( ',', array_diff( array_keys( PNCP_Options::defaults() ), $all ) ) );
+// 3.4: το monitor_until (τέλος της πρώτης εβδομάδας «Monitor only») δεν είναι πεδίο φόρμας, σκόπιμα (βλ. PNCP_Options::defaults()).
+$pncp_not_form = array( 'monitor_until' );
+t( 'κάθε ρύθμιση ανήκει σε μία καρτέλα, εκτός από το monitor_until (3.4)', array() === array_diff( array_keys( PNCP_Options::defaults() ), $all, $pncp_not_form ) && count( $all ) === count( array_unique( $all ) ), implode( ',', array_diff( array_keys( PNCP_Options::defaults() ), $all, $pncp_not_form ) ) );
+$pncp_mon = PNCP_Options::sanitize( array( '_sections' => array( 'bots' ), 'monitor_mode' => '1', 'monitor_until' => '123' ) );
+t( 'monitor_until: σε καμία καρτέλα, η φόρμα δεν το ορίζει (3.4)', ! in_array( 'monitor_until', $all, true ) && 0 === $pncp_mon['monitor_until'], wp_json_encode( $pncp_mon['monitor_until'] ) );
 $bad = PNCP_Options::sanitize(
 	array(
 		'_sections'       => array( 'bots' ),
@@ -253,9 +258,19 @@ $cf    = PNCP_Rules::cloudflare();
 t( 'Nginx: map για bots και limit_req_zone', false !== strpos( $nginx, 'map $http_user_agent $pncp_bad_bot' ) && false !== strpos( $nginx, 'limit_req_zone' ) );
 t( 'Nginx: μπλοκάρει τον φάκελο πρωτοτύπων', false !== strpos( $nginx, (string) get_option( 'pncp_backup_dir' ) ) );
 t( 'Nginx: hotlink με skroutz', false !== strpos( $nginx, 'valid_referers' ) && false !== strpos( $nginx, 'skroutz\.gr' ) );
-t( 'Cloudflare rate limit: μόνο σελίδες, όχι αρχεία / καλάθι', false !== strpos( $cf['rate']['expression'], 'http.request.uri.path.extension in {"" "php" "html" "xml"}' ) && false !== strpos( $cf['rate']['expression'], 'wc-ajax=' ) );
+// 3.4.1: ο κανόνας rate limit σε τρεις παραλλαγές (Free / Pro-Business / Enterprise), γιατί το Free δεν δέχεται query και cookie.
+$pncp_pages = 'http.request.uri.path.extension in {"" "php" "html" "xml"}';
+t( 'Cloudflare rate limit (3.4.1): τρεις παραλλαγές, όλες μόνο σελίδες, όχι αρχεία / Store API', isset( $cf['rate'], $cf['rate_pro'], $cf['rate_enterprise'] ) && false !== strpos( $cf['rate']['expression'], $pncp_pages ) && false !== strpos( $cf['rate_pro']['expression'], $pncp_pages ) && false !== strpos( $cf['rate_enterprise']['expression'], $pncp_pages ) && false !== strpos( $cf['rate']['expression'], '/wp-json/wc/store' ) );
+t( 'Cloudflare rate limit Free (3.4.1): χωρίς query / cookie (δεν επιτρέπονται στο Free)', false === strpos( $cf['rate']['expression'], 'http.request.uri.query' ) && false === strpos( $cf['rate']['expression'], 'http.cookie' ), $cf['rate']['expression'] );
+t( 'Cloudflare rate limit Pro-Business (3.4.1): όχι καλάθι (wc-ajax)', false !== strpos( $cf['rate_pro']['expression'], 'wc-ajax=' ) && false === strpos( $cf['rate_pro']['expression'], 'http.cookie' ) );
+t( 'Cloudflare rate limit Enterprise (3.4.1): όχι καλάθι, όχι συνδεδεμένοι', false !== strpos( $cf['rate_enterprise']['expression'], 'wc-ajax=' ) && false !== strpos( $cf['rate_enterprise']['expression'], 'wordpress_logged_in_' ) );
 t( 'Nginx: τα πάντα επιτρεπτά (previews) πριν από τη λίστα bots', strpos( $nginx, 'facebookexternalhit' ) < strpos( $nginx, 'GPTBot' ) );
-t( 'Nginx: «curl/» με την κάθετο (ίδιο με το PHP)', false !== strpos( $nginx, 'curl/' ) );
+// 3.4: η προεπιλεγμένη λίστα bots δεν μπλοκάρει πια τις βιβλιοθήκες HTTP (curl κ.λπ.)· μόνο με «block_http_libs».
+t( 'Nginx (3.4): χωρίς «Also block generic HTTP libraries» το curl δεν μπλοκάρεται', false === strpos( $nginx, 'curl' ) || false !== stripos( PNCP_Options::stored()['bot_list'], 'curl' ) );
+settings( array( 'block_http_libs' => 1 ) );
+$pncp_nginx_libs = PNCP_Rules::nginx();
+settings( array( 'block_http_libs' => 0 ) );
+t( 'Nginx: με block_http_libs (3.4) «curl/» με την κάθετο (ίδιο με το PHP)', false !== strpos( $pncp_nginx_libs, 'curl/' ) );
 t( 'Cloudflare: εξαιρεί τα επαληθευμένα bots', false !== strpos( $cf['bots']['expression'], 'not cf.client.bot' ) );
 t( 'Cloudflare: έκφραση κάτω από 4096 χαρακτήρες', strlen( $cf['bots']['expression'] ) < 4096, (string) strlen( $cf['bots']['expression'] ) );
 t( 'Cloudflare: δεν υπάρχει πουθενά token', false === strpos( wp_json_encode( $cf ) . $nginx . PNCP_Rules::apache(), $shown ) );
