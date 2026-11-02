@@ -55,16 +55,20 @@ Freeze the whole site with one click and a code from your authenticator app (Goo
 - **Sealed against database tampering (3.3):** the lock and the file fingerprint are signed (HMAC-SHA256, key derived from `AUTH_KEY`/`AUTH_SALT` in `wp-config.php`), and a must-use plugin (`scrapelock-lockdown-guard.php`) keeps a signed copy of the lock outside the database. SQL injection in another plugin cannot unlock the site: protected options changed in the database are put back, and accounts made administrator behind WordPress's back cannot sign in. A temporary unlock gives the rights back only to the administrator who unlocked.
 - **File integrity:** a fingerprint of every PHP, `.htaccess` and `.user.ini` file is taken when you lock and checked every hour; WordPress and the plugins from WordPress.org are also compared with their official checksums. A new or changed file (usually a backdoor uploaded through a vulnerable plugin) is emailed to you; optional quarantine deactivates the plugin and renames new PHP files in the uploads folder.
 - **No PHP in the uploads folder:** `.htaccess` for Apache and a rule for Nginx.
+- **Several web servers, one database (3.4.2):** on MySQL / MariaDB the code check uses a lock of the database server (`GET_LOCK`), so the owner's correct code is never kept "busy" and a crashed request frees the lock at once.
+- **No writable folder (3.4.2):** a signed `SCRAPELOCK_LOCKED` line for `wp-config.php` keeps the site locked even if all Lockdown data is wiped from the database.
+- **Shops keep working (3.4.2):** while locked, shop managers still process orders, refunds, products, coupons and customers; only what can take over the site (plugins, themes, users, settings) stays frozen.
 
 Lockdown complements a firewall such as Wordfence: the firewall and two-factor login guard the door, Lockdown guards what happens after someone is inside, for example with a stolen session cookie.
 
 ### Tools
 - **Site Health** tests and a ScrapeLock section on the Info tab.
-- **WP-CLI:** `wp scrapelock status | block | unblock | blocked | emergency | log`.
+- **WP-CLI:** `wp scrapelock status | block | unblock | blocked | emergency | log | settings | lockdown status`.
+- **Cloudflare "Test connection" (3.4.2):** checks the token, zone, plan, permissions (with a test block) and API headroom in one click, with "Copy diagnostics" for support.
 - **Abilities API** (WordPress 6.9+): `scrapelock/get-summary`, `block-ip`, `unblock-ip`, `emergency-mode`, for administrators only.
 - Block log with a 24-hour summary, top IPs, User-Agents and the pages scrapers were after.
 
-Forms, cart, checkout, the WooCommerce Store API and payment webhooks are never affected.
+Forms, checkout and payment webhooks are never blocked for real shoppers. Since 3.4.2 the WooCommerce cart and coupon actions have their own per-IP limit (60 cart actions and 10 coupon codes a minute by default), so bots cannot flood carts or guess coupons.
 
 ## Screenshots
 

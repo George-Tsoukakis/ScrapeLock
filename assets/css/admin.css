@@ -812,3 +812,42 @@
 .pncp-reset-tab {
 	margin-top: -8px;
 }
+
+/* ---------- 3.4.2: CDN connection check ---------- */
+
+.pncp-edge-checks {
+	margin-left: 0;
+}
+
+.pncp-edge-check {
+	padding: 4px 0 4px 10px;
+	border-left: 4px solid var(--pncp-border, #dcdcde);
+}
+
+.pncp-edge-check__status {
+	display: inline-block;
+	min-width: 6.5em;
+	font-weight: 600;
+}
+
+.pncp-edge-check--ok {
+	border-left-color: #00733f;
+}
+
+.pncp-edge-check--warn {
+	border-left-color: #996800;
+}
+
+.pncp-edge-check--fail {
+	border-left-color: #d63638;
+}
+
+.pncp-edge-check--skip {
+	color: #50575e;
+}
+
+.pncp-edge-check__fix {
+	display: inline-block;
+	margin-top: 2px;
+	color: #50575e;
+}

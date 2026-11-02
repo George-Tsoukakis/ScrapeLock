@@ -136,6 +136,8 @@ final class PNCP_Options {
 			'rate_limit_country'    => array( 0, 10000 ),
 			'auto_emergency_min'    => array( 10, 1000000 ),
 			'rate_limit_datacenter' => array( 0, 10000 ),
+			'rate_limit_cart'       => array( 0, 10000 ),
+			'rate_limit_coupon'     => array( 0, 10000 ),
 			'ban_strikes'           => array( 0, 20 ),
 			'ban_minutes'           => array( 1, 10080 ),
 			'watermark_image_id'    => array( 0, PHP_INT_MAX ),
@@ -172,7 +174,7 @@ final class PNCP_Options {
 	public static function sections() {
 		return array(
 			'general' => array( 'enabled', 'scope_posts', 'scope_pages', 'scope_home', 'scope_products', 'skip_woo_pages', 'excluded_ids', 'block_selection', 'block_context_menu', 'block_shortcuts', 'block_devtools', 'block_image_drag', 'block_text_drag', 'blur_on_capture', 'copy_mode', 'attribution_min_chars', 'print_mode', 'exempt_cap', 'show_message', 'message', 'block_framing', 'tdm_reservation', 'tdm_policy_url' ),
-			'bots'    => array( 'monitor_mode', 'block_bots', 'block_empty_ua', 'block_fake_crawlers', 'require_browser_headers', 'block_headless', 'trap_enabled', 'block_http_libs', 'block_archivers', 'ipv6_wide', 'bot_list', 'allow_list', 'allow_ips', 'allow_ai_search', 'verify_ai_bots', 'robots_ai_block', 'content_signal', 'block_ips', 'block_referrers', 'block_user_enum', 'rate_limit', 'rate_limit_search', 'rate_limit_rest', 'rate_limit_404', 'rate_limit_sitemap', 'human_check', 'rate_limit_unverified', 'geo_db', 'countries_block', 'countries_strict', 'rate_limit_country', 'rate_limit_datacenter', 'ban_strikes', 'ban_minutes', 'auto_emergency', 'auto_emergency_mode', 'auto_emergency_min', 'early_mode', 'precheck', 'ip_header', 'trust_cloudflare', 'trust_bunny', 'trust_any_proxy', 'trusted_proxies', 'cdn_secret', 'cdn_only' ),
+			'bots'    => array( 'monitor_mode', 'block_bots', 'block_empty_ua', 'block_fake_crawlers', 'require_browser_headers', 'block_headless', 'trap_enabled', 'block_http_libs', 'block_archivers', 'ipv6_wide', 'bot_list', 'allow_list', 'allow_ips', 'allow_ai_search', 'verify_ai_bots', 'robots_ai_block', 'content_signal', 'block_ips', 'block_referrers', 'block_user_enum', 'rate_limit', 'rate_limit_search', 'rate_limit_rest', 'rate_limit_404', 'rate_limit_sitemap', 'human_check', 'rate_limit_unverified', 'geo_db', 'countries_block', 'countries_strict', 'rate_limit_country', 'rate_limit_datacenter', 'rate_limit_cart', 'rate_limit_coupon', 'ban_strikes', 'ban_minutes', 'auto_emergency', 'auto_emergency_mode', 'auto_emergency_min', 'early_mode', 'precheck', 'ip_header', 'trust_cloudflare', 'trust_bunny', 'trust_any_proxy', 'trusted_proxies', 'cdn_secret', 'cdn_only' ),
 			'content' => array( 'rest_hide_content', 'hide_rest_discovery', 'graphql_hide_content', 'feed_mode', 'feed_source_link', 'list_excerpts', 'private_paths', 'private_ips', 'disable_pingback', 'hide_versions', 'block_upload_php' ),
 			'images'  => array( 'watermark_enabled', 'watermark_full', 'watermark_products', 'watermark_image_id', 'watermark_opacity', 'watermark_size', 'watermark_position', 'watermark_min_width' ),
 			// Log tab: how long the log is kept, and the addresses that count as "Pages" in it (until 3.3 on the
@@ -542,6 +544,11 @@ final class PNCP_Options {
 			'auto_emergency_mode'     => 'notify',
 			// Pages per minute from data center addresses (0 = off). Existing sites: off.
 			'rate_limit_datacenter'   => 15,
+			// WooCommerce cart and checkout writes per minute per IP (Store API, wc-ajax and the classic forms), and
+			// coupon attempts among them. Far above what a shopper does, so on for new and existing sites alike:
+			// they only slow down cart spam, card testing and coupon guessing. 0 = off.
+			'rate_limit_cart'         => 60,
+			'rate_limit_coupon'       => 10,
 			// Since 3.2. Off everywhere: it needs a rule at the CDN first.
 			'cdn_only'                => 0,
 			// Since 3.4. "Monitor only": log what would be blocked, block nothing. Off here (existing sites and
@@ -1069,6 +1076,9 @@ final class PNCP_Options {
 			'list_excerpts'           => 1,
 			'ipv6_wide'               => 1,
 			'rate_limit_datacenter'   => $min( $s['rate_limit_datacenter'], 5 ),
+			// Still several times what a shopper does in a minute (WooCommerce only).
+			'rate_limit_cart'         => $min( $s['rate_limit_cart'], 30 ),
+			'rate_limit_coupon'       => $min( $s['rate_limit_coupon'], 5 ),
 		);
 	}
 
@@ -1090,6 +1100,9 @@ final class PNCP_Options {
 			}
 			if ( 'monitor_mode' === $key && ! self::monitoring( $s ) ) {
 				continue; // "Monitor only" is on in the settings but has already ended (the first week is over).
+			}
+			if ( in_array( $key, array( 'rate_limit_cart', 'rate_limit_coupon' ), true ) && ! class_exists( 'WooCommerce' ) ) {
+				continue; // Without WooCommerce there is no cart to limit.
 			}
 			$lines[] = self::emergency_label( $key, $value );
 		}
@@ -1163,6 +1176,12 @@ final class PNCP_Options {
 				return __( 'Lists of articles (home page, categories, archives, search) show an excerpt and a link instead of the full text', 'scrapelock' );
 			case 'ipv6_wide':
 				return __( 'IPv6: the whole /56 network is limited too', 'scrapelock' );
+			case 'rate_limit_cart':
+				/* translators: %d: number of requests */
+				return sprintf( _n( 'WooCommerce: at most %d cart or checkout action per minute per IP', 'WooCommerce: at most %d cart or checkout actions per minute per IP', $n, 'scrapelock' ), $n );
+			case 'rate_limit_coupon':
+				/* translators: %d: number of attempts */
+				return sprintf( _n( 'WooCommerce: at most %d coupon attempt per minute per IP', 'WooCommerce: at most %d coupon attempts per minute per IP', $n, 'scrapelock' ), $n );
 			case 'rate_limit_datacenter':
 				/* translators: %d: number of pages */
 				return sprintf( _n( 'At most %d page per minute from data centers (also services in “Always allowed” that are not pinned to their IPs)', 'At most %d pages per minute from data centers (also services in “Always allowed” that are not pinned to their IPs)', $n, 'scrapelock' ), $n );

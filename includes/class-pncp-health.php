@@ -186,7 +186,7 @@ final class PNCP_Health {
 			/* translators: %s: list names, e.g. "Google, Bing" */
 			$parts[] = sprintf( __( 'Not refreshed for more than 3 days: %s.', 'scrapelock' ), implode( ', ', $stale ) );
 		}
-		$parts[] = __( 'Until they are, real search engines are verified with slower DNS lookups only, and the Cloudflare addresses come from the list built into the plugin. The lists are refreshed once a day through WordPress\'s scheduled tasks (cron): check that cron runs and that the server can reach google.com, bing.com and cloudflare.com, or use “Refresh lists now”.', 'scrapelock' );
+		$parts[] = __( 'Until they are, real search engines are verified with slower DNS lookups only, and the Cloudflare addresses come from the list built into the plugin. The lists are refreshed once a day through WordPress\'s scheduled tasks (cron): check that cron runs and that the server can reach the Google, Bing and Cloudflare websites, or use “Refresh lists now”.', 'scrapelock' );
 		return self::result( 'ip_lists', 'recommended', __( 'ScrapeLock official IP lists are missing or out of date', 'scrapelock' ), implode( ' ', $parts ), 'bots', 'pncp-sec-lists' );
 	}
 
@@ -293,6 +293,16 @@ final class PNCP_Health {
 		}
 		if ( PNCP_Lockdown::configured() && ! PNCP_Seal::keys_in_config() ) {
 			return self::result( 'lockdown', 'recommended', __( 'ScrapeLock Lockdown: the security keys are not in wp-config.php', 'scrapelock' ), __( 'AUTH_KEY and AUTH_SALT are not defined in wp-config.php, so WordPress keeps them in the database. Lockdown encrypts and signs its data with them: someone who can change the database could then also read them. Add the keys to wp-config.php (from https://api.wordpress.org/secret-key/1.1/salt/) and connect the authenticator app again.', 'scrapelock' ), 'lockdown' );
+		}
+		if ( ( PNCP_Lockdown::is_locked() || PNCP_Lockdown::unlocked_until() ) && PNCP_Seal::needs_config() && '' === PNCP_Seal::beacon_writable_dir() ) {
+			// 3.4.2: no folder can be written: the lock line in wp-config.php is the only copy outside the database.
+			if ( 'current' === PNCP_Seal::config_status() ) {
+				return self::result( 'lockdown', 'recommended', __( 'ScrapeLock Lockdown is kept by the line in wp-config.php', 'scrapelock' ), __( 'WordPress cannot write to wp-content/mu-plugins or any other folder of wp-content, so the lock is kept outside the database by the line SCRAPELOCK_LOCKED in wp-config.php: if the Lockdown data in the database is deleted or changed, the site stays locked. Someone who can change the database directly could still deactivate ScrapeLock itself, and the active plugins and the theme are not kept from the start of every request. Let the web server write to wp-content/mu-plugins, then lock the site again.', 'scrapelock' ), 'lockdown' );
+			}
+			return self::result( 'lockdown', 'critical', __( 'ScrapeLock Lockdown is not protected yet', 'scrapelock' ), __( 'The site is locked, but WordPress cannot write to any folder of wp-content, and the lock line SCRAPELOCK_LOCKED for this lock is not in wp-config.php (it is missing, from an earlier lock, or not valid for this site): everything about the lock is in the database only, and someone who can change the database directly could delete it so that the site looks as if it had never been locked. Add the line shown on the Lockdown page to wp-config.php.', 'scrapelock' ), 'lockdown' );
+		}
+		if ( ! PNCP_Lockdown::is_locked() && ! PNCP_Lockdown::unlocked_until() && ! PNCP_Lockdown::server_unlocked() && 'stale' === PNCP_Seal::config_status() ) {
+			return self::result( 'lockdown', 'recommended', __( 'ScrapeLock Lockdown: remove the lock line from wp-config.php', 'scrapelock' ), __( 'The site is unlocked, but wp-config.php still has the line SCRAPELOCK_LOCKED of the lock that has ended. Remove it: while it is there, if the Lockdown data is deleted from the database, the site locks again.', 'scrapelock' ), 'lockdown' );
 		}
 		if ( PNCP_Lockdown::is_locked() && ! PNCP_Seal::guard_installed() ) {
 			if ( '' !== PNCP_Seal::beacon_path() ) {
@@ -442,6 +452,7 @@ final class PNCP_Health {
 			'human_check'    => array( __( 'Human check', 'scrapelock' ), empty( $s['human_check'] ) ? $no : $per_min( 'rate_limit_unverified' ) ),
 			'rate_limits'    => array( __( 'Limits per minute (pages, search, REST, 404, sitemaps)', 'scrapelock' ), implode( ', ', array_map( $per_min, array( 'rate_limit', 'rate_limit_search', 'rate_limit_rest', 'rate_limit_404', 'rate_limit_sitemap' ) ) ) ),
 			'datacenter'     => array( __( 'Limit for data centers', 'scrapelock' ), $per_min( 'rate_limit_datacenter' ) ),
+			'cart_limits'    => array( __( 'WooCommerce limits per minute (cart / checkout, coupons)', 'scrapelock' ), $per_min( 'rate_limit_cart' ) . ', ' . $per_min( 'rate_limit_coupon' ) ),
 			'countries'      => array( __( 'Blocked countries', 'scrapelock' ), '' !== trim( (string) $s['countries_block'] ) ? implode( ', ', PNCP_Options::parse_countries( (string) $s['countries_block'] ) ) : '-' ),
 			'countries_lim'  => array( __( 'Countries with a stricter limit', 'scrapelock' ), '' !== trim( (string) $s['countries_strict'] ) ? implode( ', ', PNCP_Options::parse_countries( (string) $s['countries_strict'] ) ) . ' (' . $per_min( 'rate_limit_country' ) . ')' : '-' ),
 			'exempt_cap'     => array( __( 'Who is exempt', 'scrapelock' ), (string) $s['exempt_cap'] ),
@@ -465,7 +476,11 @@ final class PNCP_Health {
 			'integrity'      => array( __( 'File integrity fingerprint', 'scrapelock' ), PNCP_Integrity::baseline()['time'] ? wp_date( 'Y-m-d H:i', PNCP_Integrity::baseline()['time'] ) : '-' ),
 			'lockdown'       => array( __( 'Lockdown', 'scrapelock' ), $lock ),
 			'lockdown_roles' => array( __( 'Roles frozen while locked', 'scrapelock' ), implode( ', ', PNCP_Lockdown::frozen_roles() ) ),
+			'lockdown_work'  => array( __( 'Roles that keep their work while locked', 'scrapelock' ), implode( ', ', PNCP_Lockdown::limited_roles() ) ),
 		);
+		if ( ! class_exists( 'WooCommerce' ) ) {
+			unset( $fields['cart_limits'] );
+		}
 		$section = array(
 			'label'  => 'ScrapeLock',
 			'fields' => array(),

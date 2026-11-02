@@ -626,7 +626,7 @@ final class PNCP_Ip {
 	 */
 	public static function is_cdn_edge( $ip ) {
 		$ip = (string) $ip;
-		return '' !== $ip && $ip === self::remote_addr() && self::is_cdn( $ip ) && self::cdn_secret_ok( PNCP_Options::get() );
+		return '' !== $ip && self::remote_addr() === $ip && self::is_cdn( $ip ) && self::cdn_secret_ok( PNCP_Options::get() );
 	}
 
 	/**

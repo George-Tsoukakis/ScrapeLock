@@ -244,6 +244,8 @@ final class PNCP_Log {
 			'country'         => __( 'Blocked country', 'scrapelock' ),
 			'rate_country'    => __( 'Pages per minute for the stricter countries', 'scrapelock' ),
 			'rate_404'        => __( '“Page not found” (404) per minute', 'scrapelock' ),
+			'rate_cart'       => __( 'WooCommerce cart / checkout actions per minute', 'scrapelock' ),
+			'rate_coupon'     => __( 'WooCommerce coupon attempts per minute', 'scrapelock' ),
 			'blocked_ip'      => __( 'IP in the always-blocked list', 'scrapelock' ),
 			'blocked_ref'     => __( 'Referrer in the always-blocked list', 'scrapelock' ),
 			'trap'            => __( 'Bot trap', 'scrapelock' ),

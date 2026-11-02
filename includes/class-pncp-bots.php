@@ -81,6 +81,8 @@ final class PNCP_Bots {
 		add_action( 'init', array( __CLASS__, 'trap_guard' ), 0 );
 		add_action( 'init', array( __CLASS__, 'sitemap_guard' ), 1 );
 		add_action( 'template_redirect', array( __CLASS__, 'page_guard' ), 0 );
+		// Before WooCommerce handles the classic cart forms (wp_loaded, 20) and wc-ajax (template_redirect).
+		add_action( 'wp_loaded', array( __CLASS__, 'cart_guard' ), 0 );
 		add_filter( 'rest_pre_dispatch', array( __CLASS__, 'rest_guard' ), 0, 3 );
 		add_action( 'wp_enqueue_scripts', array( __CLASS__, 'trap_style' ) );
 		add_action( 'wp_footer', array( __CLASS__, 'trap_link' ), 99 );
@@ -223,39 +225,203 @@ final class PNCP_Bots {
 			return $result;
 		}
 		if ( self::blocks_user_enum() && preg_match( '#^/wp/v2/users(?:/|$)#i', (string) $request->get_route() ) ) {
-			return new WP_Error( 'rest_user_cannot_view', __( 'Sorry, you are not allowed to list users.', 'scrapelock' ), array( 'status' => rest_authorization_required_code() ) );
+			return self::rest_error( new WP_Error( 'rest_user_cannot_view', __( 'Sorry, you are not allowed to list users.', 'scrapelock' ), array( 'status' => rest_authorization_required_code() ) ) );
 		}
 		$route = (string) $request->get_route();
 		// Writes (forms, payment webhooks, other plugins' callbacks) are not checked: they come from servers
 		// that send no browser headers. The WooCommerce Store API is the exception: only the shop's own pages
 		// call it, and its cart answers carry the product data, so an always-blocked IP, a banned IP or a
 		// blocked bot must not add items and read them back with POST. Its writes never count toward a limit.
+		$cart = '';
 		if ( ! in_array( strtoupper( (string) $request->get_method() ), array( 'GET', 'HEAD' ), true ) ) {
 			if ( ! preg_match( '#^/wc/store(?:/v\d+)?/#i', $route ) ) {
 				return $result;
 			}
 			$count = false;
+			// Cart and checkout writes have a limit of their own (each one inside a Store API batch is checked
+			// on its own too, since WordPress runs this filter for every request of a batch).
+			$cart = self::store_api_cart_kind( (string) $request->get_method(), $route );
 		} else {
 			// Only the transactional Store API routes (cart, checkout, batch) are called from every page and are
 			// exempt from the limit. The product catalogue (/wc/store/.../products) is scrapable data and counts
 			// toward the REST limit like any other read.
 			$count = ! preg_match( '#^/wc/store(?:/v\d+)?/(?:cart|checkout|batch)(?:/|$)#i', $route );
 		}
-		$verdict = self::check( 'rest', $count );
+		$verdict = self::check( 'rest', $count, $cart );
 		if ( ! $verdict ) {
 			return $result;
 		}
 		// The 403 / 429 must not end up in a REST cache (e.g. LiteSpeed Cache).
 		self::no_cache();
 		do_action( 'litespeed_control_set_nocache', 'scrapelock' ); // phpcs:ignore WordPress.NamingConventions.PrefixAllGlobals.NonPrefixedHooknameFound -- LiteSpeed Cache hook.
+		$cart_limit = in_array( $verdict['reason'], array( 'rate_cart', 'rate_coupon' ), true );
+		$retry      = $cart_limit ? (string) self::retry_after() : '60';
 		if ( 429 === $verdict['code'] ) {
-			$server->send_header( 'Retry-After', '60' );
+			$server->send_header( 'Retry-After', $retry );
 		}
-		return new WP_Error(
-			429 === $verdict['code'] ? 'pncp_rate_limited' : 'pncp_forbidden',
-			429 === $verdict['code'] ? __( 'Too many requests. Please try again in a minute.', 'scrapelock' ) : __( 'Access denied.', 'scrapelock' ),
-			array( 'status' => $verdict['code'] )
+		if ( $cart_limit ) {
+			$error = new WP_Error( 'pncp_rate_limited', self::cart_message( $verdict['reason'] ), array( 'status' => 429 ) );
+		} else {
+			$error = new WP_Error(
+				429 === $verdict['code'] ? 'pncp_rate_limited' : 'pncp_forbidden',
+				429 === $verdict['code'] ? __( 'Too many requests. Please try again in a minute.', 'scrapelock' ) : __( 'Access denied.', 'scrapelock' ),
+				array( 'status' => $verdict['code'] )
+			);
+		}
+		$response = self::rest_error( $error );
+		if ( 429 === $verdict['code'] ) {
+			$response->header( 'Retry-After', $retry );
+		}
+		return $response;
+	}
+
+	/**
+	 * A REST error as a response object, with the same JSON body and status as the WP_Error. Inside a batch
+	 * (Store API /wc/store/v1/batch, /batch/v1) WordPress hands what rest_pre_dispatch returns, unconverted, to
+	 * rest_post_dispatch, whose callbacks may only accept a WP_REST_Response: WordPress 7's own connectors
+	 * callback stopped such a batch with a fatal error (HTTP 500) when it got a WP_Error.
+	 *
+	 * @param WP_Error $error Error.
+	 * @return WP_REST_Response
+	 */
+	private static function rest_error( $error ) {
+		return rest_convert_error_to_response( $error );
+	}
+
+	/**
+	 * Which cart limit a write to the WooCommerce Store API counts toward: 'coupon' (a coupon code tried, which
+	 * also counts as a cart action), 'cart' (an item added, changed or removed, a coupon removed, an order placed
+	 * or paid) or '' (not limited: the customer's address, the shipping rate, extensions' data, the outer batch,
+	 * whose requests are checked one by one). The block checkout updates the address and shipping rate as the
+	 * shopper types, so those never count.
+	 *
+	 * @param string $method HTTP method.
+	 * @param string $route  REST route, e.g. /wc/store/v1/cart/add-item.
+	 * @return string cart | coupon | ''
+	 */
+	public static function store_api_cart_kind( $method, $route ) {
+		$method = strtoupper( (string) $method );
+		if ( in_array( $method, array( 'GET', 'HEAD', 'OPTIONS' ), true ) || ! preg_match( '#^/wc/store(?:/v\d+)?/(.+)$#i', (string) $route, $m ) ) {
+			return '';
+		}
+		$path = strtolower( trim( $m[1], '/' ) );
+		if ( 'cart/apply-coupon' === $path || ( 'cart/coupons' === $path && 'POST' === $method ) ) {
+			return 'coupon';
+		}
+		if ( in_array( $path, array( 'cart/add-item', 'cart/update-item', 'cart/remove-item', 'cart/remove-coupon' ), true ) || preg_match( '#^cart/(?:items|coupons)(?:/|$)#', $path ) ) {
+			return 'cart';
+		}
+		// Placing the order (POST /checkout) and paying for an existing one (POST /checkout/{id}). PUT /checkout
+		// only saves fields while the shopper types: not counted.
+		if ( 'POST' === $method && preg_match( '#^checkout(?:/\d+)?$#', $path ) ) {
+			return 'cart';
+		}
+		return '';
+	}
+
+	/**
+	 * Which cart limit this front-end request counts toward (see store_api_cart_kind()): the wc-ajax cart actions
+	 * (add to cart, remove, coupon, place the order) and the classic forms WooCommerce handles on every page
+	 * (?add-to-cart=, the cart page coupon form, removing an item, the checkout form sent without JavaScript).
+	 * Not the requests a page makes on its own (cart fragments, order review, shipping method).
+	 *
+	 * @return string cart | coupon | ''
+	 */
+	public static function front_cart_kind() {
+		if ( ! class_exists( 'WooCommerce' ) ) {
+			return '';
+		}
+		$actions = array(
+			'add_to_cart'      => 'cart',
+			'remove_from_cart' => 'cart',
+			'apply_coupon'     => 'coupon',
+			'remove_coupon'    => 'cart',
+			'checkout'         => 'cart',
 		);
+		// 3.4.2: the same actions through admin-ajax.php (action=woocommerce_apply_coupon and so on), which
+		// WooCommerce still answers for visitors too: a bot that switched to it was not limited at all.
+		$admin = self::wc_admin_ajax_action();
+		if ( '' !== $admin ) {
+			$admin = substr( $admin, strlen( 'woocommerce_' ) );
+			return isset( $actions[ $admin ] ) ? $actions[ $admin ] : '';
+		}
+		// phpcs:disable WordPress.Security.NonceVerification -- Only reads which action this is; WooCommerce checks the nonces.
+		$ajax = isset( $_GET['wc-ajax'] ) ? sanitize_key( wp_unslash( $_GET['wc-ajax'] ) ) : '';
+		if ( '' !== $ajax ) {
+			return isset( $actions[ $ajax ] ) && self::is_wc_ajax() ? $actions[ $ajax ] : '';
+		}
+		$post = isset( $_SERVER['REQUEST_METHOD'] ) && 'POST' === strtoupper( sanitize_key( wp_unslash( $_SERVER['REQUEST_METHOD'] ) ) );
+		// 3.4.2: only the form's "Apply coupon" button tries a code (WooCommerce applies one only then). The cart
+		// page's script reloads the cart form right after wc-ajax=apply_coupon with the typed code still in it;
+		// that reload (and "Update cart") is not a second coupon attempt.
+		if ( $post && isset( $_POST['apply_coupon'] ) ) {
+			$kind = 'coupon';
+		} elseif ( ! empty( $_REQUEST['add-to-cart'] ) || ! empty( $_GET['remove_item'] ) || ( $post && ( isset( $_POST['update_cart'] ) || isset( $_POST['woocommerce-process-checkout-nonce'] ) ) ) ) {
+			$kind = 'cart';
+		} else {
+			$kind = '';
+		}
+		// phpcs:enable
+		return $kind;
+	}
+
+	/**
+	 * The cart limits, before WooCommerce adds anything to the cart (its forms run on wp_loaded, wc-ajax on
+	 * template_redirect). Every other check runs here as well for these requests, so a blocked bot is refused
+	 * before the cart changes; page_guard() checks the page itself afterwards, as before.
+	 */
+	public static function cart_guard() {
+		if ( ( is_admin() && '' === self::wc_admin_ajax_action() ) || wp_doing_cron() || ( defined( 'REST_REQUEST' ) && REST_REQUEST ) ) {
+			return;
+		}
+		$kind = self::front_cart_kind();
+		if ( '' === $kind ) {
+			return;
+		}
+		$verdict = self::check( 'page', false, $kind );
+		if ( ! $verdict ) {
+			return;
+		}
+		if ( self::is_wc_ajax() || '' !== self::wc_admin_ajax_action() ) {
+			// wc-ajax (and admin-ajax.php) answers JSON: the shop's scripts show the message instead of a broken page.
+			self::no_cache();
+			$limited = in_array( $verdict['reason'], array( 'rate_cart', 'rate_coupon' ), true );
+			if ( 429 === $verdict['code'] && ! headers_sent() ) {
+				header( 'Retry-After: ' . ( $limited ? self::retry_after() : 60 ) );
+			}
+			$message = $limited ? self::cart_message( $verdict['reason'] ) : ( 429 === $verdict['code'] ? __( 'Too many requests. Please try again in a minute.', 'scrapelock' ) : __( 'Access denied.', 'scrapelock' ) );
+			wp_send_json(
+				array(
+					'error'    => true,
+					'code'     => 429 === $verdict['code'] ? 'pncp_rate_limited' : 'pncp_forbidden',
+					'message'  => $message,
+					'messages' => '<ul class="woocommerce-error" role="alert"><li>' . esc_html( $message ) . '</li></ul>',
+				),
+				(int) $verdict['code']
+			);
+		}
+		self::die_html( $verdict['code'] );
+	}
+
+	/**
+	 * Seconds until the per-minute counters start again (for Retry-After).
+	 *
+	 * @return int
+	 */
+	private static function retry_after() {
+		return max( 1, MINUTE_IN_SECONDS - ( time() % MINUTE_IN_SECONDS ) );
+	}
+
+	/**
+	 * The message for a request over a cart limit.
+	 *
+	 * @param string $reason rate_cart | rate_coupon.
+	 * @return string
+	 */
+	private static function cart_message( $reason ) {
+		return 'rate_coupon' === $reason
+			? __( 'Too many coupon attempts. Please try again in a minute.', 'scrapelock' )
+			: __( 'Too many cart requests. Please try again in a minute.', 'scrapelock' );
 	}
 
 	/**
@@ -267,12 +433,14 @@ final class PNCP_Bots {
 	 *
 	 * @param string $context page | search | rest | graphql | sitemap.
 	 * @param bool   $count   Whether to count toward the limit.
+	 * @param string $cart    WooCommerce cart write: 'cart' or 'coupon' counts toward the cart limits ('' = not one).
 	 * @return array{code:int, reason:string}|null Null if the request passes (always in "Monitor only", see verdict()).
 	 */
-	public static function check( $context, $count = true ) {
+	public static function check( $context, $count = true, $cart = '' ) {
 		$s = PNCP_Options::get();
 		// No exemption for wp_doing_ajax(): WooCommerce defines DOING_AJAX on wc-ajax, so every bot would
-		// get through (confirmed with real WooCommerce). admin-ajax.php does not reach this point anyway.
+		// get through (confirmed with real WooCommerce). On admin-ajax.php only WooCommerce's cart actions get
+		// here (cart_guard(), 3.4.2).
 		if ( empty( $s['enabled'] ) ) {
 			return self::pass( 'off' );
 		}
@@ -297,7 +465,7 @@ final class PNCP_Bots {
 		// has its own, larger limit below.
 		// WooCommerce AJAX (cart, checkout): does not count toward the page limit, but bots, fake crawlers and
 		// blocks are checked as usual. Only for actions registered by WooCommerce (or an extension of it).
-		if ( self::is_wc_ajax() || ( 'page' === $context && self::is_shop_transaction_page() ) ) {
+		if ( self::is_wc_ajax() || '' !== self::wc_admin_ajax_action() || ( 'page' === $context && self::is_shop_transaction_page() ) ) {
 			$count = false;
 		}
 		// Private URL (XML feed) with a valid token: the service may use any User-Agent.
@@ -412,16 +580,38 @@ final class PNCP_Bots {
 
 		// Every browser sends Accept-Language and "Mozilla/" in the User-Agent; most scripts do not.
 		// Not on wc-ajax: some payment gateways / extensions call them server-side, without Accept-Language.
-		if ( ! empty( $s['require_browser_headers'] ) && ! $allowed_ua && ! $feed && in_array( $context, array( 'page', 'search' ), true ) && ! self::is_wc_ajax() && ! self::looks_like_browser( $ua ) ) {
+		if ( ! empty( $s['require_browser_headers'] ) && ! $allowed_ua && ! $feed && in_array( $context, array( 'page', 'search' ), true ) && ! self::is_wc_ajax() && '' === self::wc_admin_ajax_action() && ! self::looks_like_browser( $ua ) ) {
 			return self::verdict( 403, 'no_browser', $ip );
 		}
 
 		// Headless and fake browsers: what the browser itself sends does not match the User-Agent.
 		// Not for anyone claiming to be a search engine: those are verified (or blocked as fake) above.
-		if ( ! empty( $s['block_headless'] ) && ! $allowed_ua && ! $feed && '' === $family && in_array( $context, array( 'page', 'search' ), true ) && ! self::is_wc_ajax() ) {
+		if ( ! empty( $s['block_headless'] ) && ! $allowed_ua && ! $feed && '' === $family && in_array( $context, array( 'page', 'search' ), true ) && ! self::is_wc_ajax() && '' === self::wc_admin_ajax_action() ) {
 			$fake = self::fake_browser( $ua );
 			if ( '' !== $fake ) {
 				return self::verdict( 403, $fake, $ip );
+			}
+		}
+
+		// WooCommerce cart and checkout writes: a limit of their own, far above what a shopper does, for bots that
+		// fill carts, test stolen cards on the checkout or guess coupon codes. They never count toward the page or
+		// REST limits. Staff who edit posts or run the shop are never limited here (orders by phone, tests).
+		if ( '' !== $cart && $per_ip && ! PNCP_Lockdown::can( 'edit_posts' ) && ! PNCP_Lockdown::can( 'manage_woocommerce' ) ) {
+			$buckets = array( 'rate_cart' => (int) $s['rate_limit_cart'] );
+			if ( 'coupon' === $cart ) {
+				$buckets = array( 'rate_coupon' => (int) $s['rate_limit_coupon'] ) + $buckets;
+			}
+			foreach ( $buckets as $bucket => $limit ) {
+				if ( $limit <= 0 ) {
+					continue;
+				}
+				$current = self::hit( $ip, $bucket );
+				if ( $current > $limit ) {
+					if ( $current === $limit + 1 ) {
+						self::strike( $ip, $bucket );
+					}
+					return self::verdict( 429, $bucket, $ip );
+				}
 			}
 		}
 
@@ -848,6 +1038,26 @@ final class PNCP_Bots {
 		// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Only the action name.
 		$action = isset( $_GET['wc-ajax'] ) ? sanitize_key( wp_unslash( $_GET['wc-ajax'] ) ) : '';
 		return '' !== $action && class_exists( 'WooCommerce' ) && has_action( 'wc_ajax_' . $action );
+	}
+
+	/**
+	 * The WooCommerce cart action of an admin-ajax.php request (3.4.2): woocommerce_apply_coupon,
+	 * woocommerce_remove_coupon, woocommerce_add_to_cart, woocommerce_remove_from_cart or woocommerce_checkout,
+	 * only when WooCommerce (or an extension) has registered it, as with is_wc_ajax().
+	 *
+	 * @return string The action, or '' when this is not one.
+	 */
+	public static function wc_admin_ajax_action() {
+		if ( ! wp_doing_ajax() || ! is_admin() || ! class_exists( 'WooCommerce' ) ) {
+			return '';
+		}
+		// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Only the action name; WooCommerce checks the nonce.
+		$action = isset( $_REQUEST['action'] ) && is_string( $_REQUEST['action'] ) ? sanitize_key( wp_unslash( $_REQUEST['action'] ) ) : '';
+		$known  = array( 'woocommerce_add_to_cart', 'woocommerce_remove_from_cart', 'woocommerce_apply_coupon', 'woocommerce_remove_coupon', 'woocommerce_checkout' );
+		if ( ! in_array( $action, $known, true ) || ( ! has_action( 'wp_ajax_nopriv_' . $action ) && ! has_action( 'wp_ajax_' . $action ) ) ) {
+			return '';
+		}
+		return $action;
 	}
 
 	/**

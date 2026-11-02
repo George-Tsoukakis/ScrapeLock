@@ -2,7 +2,7 @@
 /**
  * Plugin Name:       ScrapeLock – Content & AI Bot Protection
  * Description:       Protects your content: makes copying text and images harder, hides the text in the REST API, GraphQL and RSS, blocks scrapers, AI bots and fake Googlebots, temporarily blocks persistent IPs, protects XML feeds with a token and adds an optional watermark. Lockdown freezes every change to the site until it is unlocked with an authenticator app. Forms, cart, checkout and search engines are not affected.
- * Version:           3.4.1
+ * Version:           3.4.2
  * Requires at least: 6.2
  * Requires PHP:      7.4
  * Author:            CodeBunny
@@ -19,13 +19,14 @@ if ( defined( 'PNCP_VERSION' ) ) {
 	return;
 }
 
-define( 'PNCP_VERSION', '3.4.1' );
+define( 'PNCP_VERSION', '3.4.2' );
 define( 'PNCP_FILE', __FILE__ );
 define( 'PNCP_DIR', plugin_dir_path( __FILE__ ) );
 define( 'PNCP_URL', plugin_dir_url( __FILE__ ) );
 defined( 'PNCP_OPTION' ) || define( 'PNCP_OPTION', 'pncp_settings' ); // Also defined by the early check (mu-plugin).
 
 require_once PNCP_DIR . 'includes/class-pncp-paths.php';
+require_once PNCP_DIR . 'includes/class-pncp-time.php';
 require_once PNCP_DIR . 'includes/class-pncp-options.php';
 require_once PNCP_DIR . 'includes/class-pncp-settings-io.php';
 require_once PNCP_DIR . 'includes/class-pncp-ip.php';
@@ -163,7 +164,7 @@ function pncp_deactivate_site() {
 	// wp_unschedule_hook() removes every event of a hook, whatever its arguments: some carry some (the missing
 	// IP lists, the image to clean up, the numbers in the surge email), which wp_clear_scheduled_hook() would
 	// only remove when given the same ones.
-	foreach ( array( PNCP_Ip::CRON, PNCP_Log::CRON, PNCP_Log::CRON . '_more', PNCP_Integrity::OFFICIAL, PNCP_Surge::MAIL, PNCP_Surge::MAIL_ALERT, PNCP_Watermark::CRON_UNMARK, 'pncp_background_purge', 'pncp_upgrade_files' ) as $pncp_hook ) {
+	foreach ( array( PNCP_Ip::CRON, PNCP_Log::CRON, PNCP_Log::CRON . '_more', PNCP_Integrity::OFFICIAL, PNCP_Integrity::RESUME, PNCP_Surge::MAIL, PNCP_Surge::MAIL_ALERT, PNCP_Watermark::CRON_UNMARK, 'pncp_background_purge', 'pncp_upgrade_files' ) as $pncp_hook ) {
 		wp_unschedule_hook( $pncp_hook );
 	}
 	// The blocks ScrapeLock made at the CDN go away with it (the bans themselves end with the plugin).

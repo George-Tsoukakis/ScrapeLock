@@ -59,6 +59,13 @@ final class PNCP_Watermark {
 	private static $faded = array();
 
 	/**
+	 * The stand-ins for clean full-size images worked out in this request (see stand_in()).
+	 *
+	 * @var array<int, array|null>
+	 */
+	private static $stand_ins = array();
+
+	/**
 	 * Registers the hooks.
 	 */
 	public static function init() {
@@ -72,6 +79,20 @@ final class PNCP_Watermark {
 		add_filter( 'load_image_to_edit_path', array( __CLASS__, 'edit_from_clean' ), 10, 2 );
 		add_action( 'updated_post_meta', array( __CLASS__, 'on_edited' ), 10, 3 );
 		add_filter( 'wp_calculate_image_srcset', array( __CLASS__, 'srcset' ), 10, 5 );
+		// When the full size is not watermarked, visitors get the largest watermarked size wherever the full size
+		// would be linked: the product gallery zoom / lightbox, the Product Gallery blocks, the Store API, wc/v3.
+		add_filter( 'wp_get_attachment_image_src', array( __CLASS__, 'public_image_src' ), 20, 4 );
+		add_filter( 'woocommerce_gallery_image_html_attachment_image_params', array( __CLASS__, 'gallery_params' ), 20, 2 );
+		add_filter( 'woocommerce_single_product_image_thumbnail_html', array( __CLASS__, 'gallery_html' ), 20, 2 );
+		add_filter( 'woocommerce_available_variation', array( __CLASS__, 'variation_data' ), 20, 3 );
+		add_filter( 'woocommerce_structured_data_product', array( __CLASS__, 'structured_data' ), 20, 2 );
+		add_filter( 'woocommerce_rest_prepare_product_object', array( __CLASS__, 'rest_product' ), 20, 3 );
+		add_filter( 'woocommerce_rest_prepare_product_variation_object', array( __CLASS__, 'rest_product' ), 20, 3 );
+		// 3.4.2: the media endpoint of the REST API (source_url, guid, the description's link), the attachment
+		// page's link to the file, and the redirect from an attachment page to its file (attachment pages off).
+		add_filter( 'rest_prepare_attachment', array( __CLASS__, 'rest_attachment' ), 20, 3 );
+		add_filter( 'wp_get_attachment_link', array( __CLASS__, 'attachment_link' ), 20, 2 );
+		add_filter( 'redirect_canonical', array( __CLASS__, 'attachment_redirect' ), 20, 2 );
 	}
 
 	/**
@@ -553,6 +574,396 @@ final class PNCP_Watermark {
 		return $sources;
 	}
 
+	/* ---------- Public stand-in for a clean full size ---------- */
+
+	/**
+	 * Does the current request see the public (watermarked) stand-in instead of a clean full-size image? Not for
+	 * staff (users who can edit posts, so shop managers too), exempt users, the admin screens, WP-CLI or cron:
+	 * they keep the real full size.
+	 *
+	 * @return bool
+	 */
+	private static function public_view() {
+		static $memo = array();
+		$user        = get_current_user_id();
+		if ( isset( $memo[ $user ] ) ) {
+			return $memo[ $user ];
+		}
+		if ( ( defined( 'WP_CLI' ) && WP_CLI ) || wp_doing_cron() || ( is_admin() && ! wp_doing_ajax() ) ) {
+			return false; // Not cached: is_admin() can still change while WordPress loads.
+		}
+		if ( ! did_action( 'init' ) ) {
+			return false; // The current user is not known yet.
+		}
+		$s             = PNCP_Options::get();
+		$memo[ $user ] = ! empty( $s['enabled'] ) && ! PNCP_Lockdown::can( 'edit_posts' ) && ! PNCP_Options::user_is_exempt( $s );
+		return $memo[ $user ];
+	}
+
+	/**
+	 * The largest watermarked size of an image whose full size is clean, as [url, width, height, clean URLs], or
+	 * null when the image needs no stand-in (no watermarked size, or the full size is watermarked itself).
+	 * A size with the proportions of the full image is preferred, so a zoom or lightbox shows the whole picture.
+	 *
+	 * @param int $attachment_id Attachment ID.
+	 * @return array{0: string, 1: int, 2: int, 3: string[]}|null
+	 */
+	public static function stand_in( $attachment_id ) {
+		$memo          = &self::$stand_ins;
+		$attachment_id = (int) $attachment_id;
+		if ( $attachment_id <= 0 ) {
+			return null;
+		}
+		if ( array_key_exists( $attachment_id, $memo ) ) {
+			return $memo[ $attachment_id ];
+		}
+		$memo[ $attachment_id ] = null;
+		$s                      = PNCP_Options::get();
+		if ( empty( $s['enabled'] ) || ! in_array( get_post_mime_type( $attachment_id ), self::$mimes, true ) ) {
+			return null;
+		}
+		$state = self::state( $attachment_id );
+		if ( $state['full'] || ! in_array( 1, $state['sizes'], true ) ) {
+			return null; // The full size carries the watermark, or no size does.
+		}
+		/**
+		 * Whether visitors get the largest watermarked size instead of the clean full-size image (zoom,
+		 * lightbox, Store API, wc/v3, the image of the product's structured data).
+		 *
+		 * @param bool $replace       Default true.
+		 * @param int  $attachment_id Attachment ID.
+		 */
+		if ( ! apply_filters( 'pncp_watermark_replace_full', true, $attachment_id ) ) {
+			return null;
+		}
+		$meta = wp_get_attachment_metadata( $attachment_id );
+		if ( ! is_array( $meta ) || empty( $meta['file'] ) || empty( $meta['sizes'] ) || ! is_array( $meta['sizes'] ) ) {
+			return null;
+		}
+		$fw   = isset( $meta['width'] ) ? (int) $meta['width'] : 0;
+		$fh   = isset( $meta['height'] ) ? (int) $meta['height'] : 0;
+		$best = null;
+		$rank = array( -1, -1 );
+		foreach ( $meta['sizes'] as $size ) {
+			if ( empty( $size['file'] ) || empty( $size['width'] ) || empty( $size['height'] ) ) {
+				continue;
+			}
+			$file = wp_basename( (string) $size['file'] );
+			if ( empty( $state['sizes'][ $file ] ) ) {
+				continue; // Not watermarked (e.g. narrower than the minimum width).
+			}
+			$w         = (int) $size['width'];
+			$h         = (int) $size['height'];
+			$ratio     = $fw > 0 && $fh > 0 && wp_image_matches_ratio( $fw, $fh, $w, $h ) ? 1 : 0;
+			$this_rank = array( $ratio, $w * $h );
+			if ( $this_rank > $rank ) {
+				$rank = $this_rank;
+				$best = array( $file, $w, $h );
+			}
+		}
+		if ( null === $best ) {
+			return null;
+		}
+		$url = (string) wp_get_attachment_url( $attachment_id );
+		if ( '' === $url ) {
+			return null;
+		}
+		$clean = array( $url );
+		if ( function_exists( 'wp_get_original_image_url' ) ) {
+			$original = (string) wp_get_original_image_url( $attachment_id );
+			if ( '' !== $original && $original !== $url ) {
+				$clean[] = $original;
+			}
+		}
+		$base                   = substr( $url, 0, (int) strrpos( $url, '/' ) + 1 );
+		$memo[ $attachment_id ] = array( $base . $best[0], $best[1], $best[2], $clean );
+		return $memo[ $attachment_id ];
+	}
+
+	/**
+	 * Is this URL one of the clean full-size files of the stand-in (with or without a query string, any scheme)?
+	 *
+	 * @param string                                        $url      URL.
+	 * @param array{0: string, 1: int, 2: int, 3: string[]} $stand_in The stand-in.
+	 * @return bool
+	 */
+	private static function is_clean_url( $url, $stand_in ) {
+		$path = (string) wp_parse_url( (string) $url, PHP_URL_PATH );
+		if ( '' === $path ) {
+			return false;
+		}
+		foreach ( $stand_in[3] as $clean ) {
+			if ( (string) wp_parse_url( $clean, PHP_URL_PATH ) === $path ) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	/**
+	 * The URL a visitor gets for an image URL: the stand-in if it is a clean full-size file, otherwise unchanged.
+	 *
+	 * @param string $url           URL.
+	 * @param int    $attachment_id Attachment ID.
+	 * @return string
+	 */
+	public static function public_url( $url, $attachment_id ) {
+		if ( ! is_string( $url ) || '' === $url || ! self::public_view() ) {
+			return $url;
+		}
+		$stand_in = self::stand_in( $attachment_id );
+		return null !== $stand_in && self::is_clean_url( $url, $stand_in ) ? $stand_in[0] : $url;
+	}
+
+	/**
+	 * Every clean full-size URL in a piece of HTML or text replaced with the stand-in.
+	 *
+	 * @param string $text          HTML / text.
+	 * @param int    $attachment_id Attachment ID.
+	 * @return string
+	 */
+	private static function replace_in( $text, $attachment_id ) {
+		if ( ! is_string( $text ) || '' === $text || ! self::public_view() ) {
+			return $text;
+		}
+		$stand_in = self::stand_in( $attachment_id );
+		if ( null === $stand_in ) {
+			return $text;
+		}
+		foreach ( $stand_in[3] as $clean ) {
+			// The URL as written, escaped for HTML, with "/" escaped for JSON, and without its scheme.
+			$no_scheme = (string) preg_replace( '#^https?:#i', '', $clean );
+			$stand     = (string) preg_replace( '#^https?:#i', '', $stand_in[0] );
+			$pairs     = array(
+				$no_scheme                           => $stand,
+				esc_url( $no_scheme )                => esc_url( $stand ),
+				str_replace( '/', '\/', $no_scheme ) => str_replace( '/', '\/', $stand ),
+			);
+			foreach ( $pairs as $from => $to ) {
+				if ( '' !== $from ) {
+					$text = str_replace( $from, $to, $text );
+				}
+			}
+		}
+		return $text;
+	}
+
+	/**
+	 * Filter wp_get_attachment_image_src: when a visitor would get the clean full-size file (size "full", or a
+	 * size the image does not have, which falls back to the full size), they get the largest watermarked size,
+	 * with its own width and height. The srcset WordPress builds from it then has no clean file either.
+	 *
+	 * @param array|false  $image         [url, width, height, is_intermediate] or false.
+	 * @param int          $attachment_id Attachment ID.
+	 * @param string|int[] $size          Requested size.
+	 * @param bool         $icon          Icon.
+	 * @return array|false
+	 */
+	public static function public_image_src( $image, $attachment_id, $size, $icon ) {
+		unset( $size, $icon );
+		if ( ! is_array( $image ) || empty( $image[0] ) || ! empty( $image[3] ) || ! self::public_view() ) {
+			return $image;
+		}
+		$stand_in = self::stand_in( (int) $attachment_id );
+		if ( null === $stand_in || ! self::is_clean_url( (string) $image[0], $stand_in ) ) {
+			return $image;
+		}
+		return array( $stand_in[0], $stand_in[1], $stand_in[2], true );
+	}
+
+	/**
+	 * The zoom / lightbox attributes of a classic product gallery image (data-src, data-large_image and its
+	 * size), in case a theme or plugin filled them from the attachment URL.
+	 *
+	 * @param array<string, mixed> $params        Attributes.
+	 * @param int                  $attachment_id Attachment ID.
+	 * @return array<string, mixed>
+	 */
+	public static function gallery_params( $params, $attachment_id ) {
+		if ( ! is_array( $params ) || ! self::public_view() ) {
+			return $params;
+		}
+		$stand_in = self::stand_in( (int) $attachment_id );
+		if ( null === $stand_in ) {
+			return $params;
+		}
+		foreach ( array( 'data-src', 'data-large_image' ) as $key ) {
+			if ( isset( $params[ $key ] ) && is_string( $params[ $key ] ) && self::is_clean_url( html_entity_decode( $params[ $key ], ENT_QUOTES ), $stand_in ) ) {
+				$params[ $key ]                    = esc_url( $stand_in[0] );
+				$params['data-large_image_width']  = (string) $stand_in[1];
+				$params['data-large_image_height'] = (string) $stand_in[2];
+			}
+		}
+		return $params;
+	}
+
+	/**
+	 * The HTML of one classic product gallery image (the <a href> around it, data-* attributes): no clean
+	 * full-size URL for visitors, also when a theme or plugin wrote it itself.
+	 *
+	 * @param string $html          HTML.
+	 * @param int    $attachment_id Attachment ID.
+	 * @return string
+	 */
+	public static function gallery_html( $html, $attachment_id ) {
+		return self::replace_in( $html, (int) $attachment_id );
+	}
+
+	/**
+	 * The image of a variation (data-product_variations on the product page, used when a variation is picked):
+	 * its "url" is the attachment URL, which is the clean full-size file.
+	 *
+	 * @param array<string, mixed> $data      Variation data.
+	 * @param mixed                $product   Parent product.
+	 * @param mixed                $variation Variation.
+	 * @return array<string, mixed>
+	 */
+	public static function variation_data( $data, $product = null, $variation = null ) {
+		unset( $product, $variation );
+		if ( ! is_array( $data ) || empty( $data['image_id'] ) || empty( $data['image'] ) || ! is_array( $data['image'] ) || ! self::public_view() ) {
+			return $data;
+		}
+		$stand_in = self::stand_in( (int) $data['image_id'] );
+		if ( null === $stand_in ) {
+			return $data;
+		}
+		foreach ( array( 'url', 'src', 'full_src' ) as $key ) {
+			if ( isset( $data['image'][ $key ] ) && is_string( $data['image'][ $key ] ) && self::is_clean_url( $data['image'][ $key ], $stand_in ) ) {
+				$data['image'][ $key ] = $stand_in[0];
+				if ( 'full_src' === $key ) {
+					$data['image']['full_src_w'] = $stand_in[1];
+					$data['image']['full_src_h'] = $stand_in[2];
+				}
+			}
+		}
+		if ( isset( $data['image']['srcset'] ) && is_string( $data['image']['srcset'] ) ) {
+			$data['image']['srcset'] = self::replace_in( $data['image']['srcset'], (int) $data['image_id'] );
+		}
+		return $data;
+	}
+
+	/**
+	 * The image of the product's structured data (JSON-LD), which WooCommerce takes from the attachment URL.
+	 *
+	 * @param array<string, mixed> $markup  Markup.
+	 * @param mixed                $product Product.
+	 * @return array<string, mixed>
+	 */
+	public static function structured_data( $markup, $product = null ) {
+		if ( ! is_array( $markup ) || empty( $markup['image'] ) || ! is_string( $markup['image'] ) || ! is_object( $product ) || ! method_exists( $product, 'get_image_id' ) ) {
+			return $markup;
+		}
+		$markup['image'] = self::public_url( $markup['image'], (int) $product->get_image_id() );
+		return $markup;
+	}
+
+	/**
+	 * WooCommerce REST (wc/v1-v3) products and variations: images[].src (and a variation's image.src) is the
+	 * attachment URL. Users who are not staff get the stand-in; staff and the admin keep the real full size.
+	 *
+	 * @param mixed $response The response.
+	 * @param mixed $item     Product.
+	 * @param mixed $request  Request.
+	 * @return mixed
+	 */
+	public static function rest_product( $response, $item = null, $request = null ) {
+		unset( $item, $request );
+		if ( ! $response instanceof WP_REST_Response || ! self::public_view() ) {
+			return $response;
+		}
+		$data = $response->get_data();
+		if ( ! is_array( $data ) ) {
+			return $response;
+		}
+		$fix = static function ( $image ) {
+			if ( is_array( $image ) && ! empty( $image['id'] ) && isset( $image['src'] ) && is_string( $image['src'] ) ) {
+				$image['src'] = self::public_url( $image['src'], (int) $image['id'] );
+			}
+			return $image;
+		};
+		if ( isset( $data['images'] ) && is_array( $data['images'] ) ) {
+			$data['images'] = array_map( $fix, $data['images'] );
+		}
+		if ( isset( $data['image'] ) && is_array( $data['image'] ) ) {
+			$data['image'] = $fix( $data['image'] );
+		}
+		$response->set_data( $data );
+		return $response;
+	}
+
+	/**
+	 * 3.4.2: wp/v2/media (one image, or the list): source_url (the attachment URL), guid (the original upload)
+	 * and the description (on the attachment page it links the file) carry the clean full-size file. Users who
+	 * are not staff get the stand-in there too; staff and the admin keep the real full size.
+	 *
+	 * @param mixed $response The response.
+	 * @param mixed $post     Attachment.
+	 * @param mixed $request  Request.
+	 * @return mixed
+	 */
+	public static function rest_attachment( $response, $post = null, $request = null ) {
+		unset( $request );
+		if ( ! $response instanceof WP_REST_Response || ! $post instanceof WP_Post || ! self::public_view() ) {
+			return $response;
+		}
+		$id = (int) $post->ID;
+		if ( null === self::stand_in( $id ) ) {
+			return $response;
+		}
+		$data = $response->get_data();
+		if ( ! is_array( $data ) ) {
+			return $response;
+		}
+		if ( isset( $data['source_url'] ) && is_string( $data['source_url'] ) ) {
+			$data['source_url'] = self::public_url( $data['source_url'], $id );
+		}
+		foreach ( array( 'guid', 'description', 'caption' ) as $field ) {
+			foreach ( array( 'rendered', 'raw' ) as $part ) {
+				if ( isset( $data[ $field ][ $part ] ) && is_string( $data[ $field ][ $part ] ) ) {
+					$data[ $field ][ $part ] = 'guid' === $field ? self::public_url( $data[ $field ][ $part ], $id ) : self::replace_in( $data[ $field ][ $part ], $id );
+				}
+			}
+		}
+		if ( isset( $data['media_details']['sizes'] ) && is_array( $data['media_details']['sizes'] ) ) {
+			foreach ( $data['media_details']['sizes'] as $name => $size ) {
+				if ( is_array( $size ) && isset( $size['source_url'] ) && is_string( $size['source_url'] ) ) {
+					$data['media_details']['sizes'][ $name ]['source_url'] = self::public_url( $size['source_url'], $id );
+				}
+			}
+		}
+		$response->set_data( $data );
+		return $response;
+	}
+
+	/**
+	 * 3.4.2: the link to the file on an attachment page (wp_get_attachment_link(), its href is the attachment
+	 * URL, the clean full-size file).
+	 *
+	 * @param string $html HTML.
+	 * @param int    $id   Attachment ID.
+	 * @return string
+	 */
+	public static function attachment_link( $html, $id = 0 ) {
+		$id = (int) $id > 0 ? (int) $id : (int) get_the_ID();
+		return $id > 0 ? self::replace_in( $html, $id ) : $html;
+	}
+
+	/**
+	 * 3.4.2: with attachment pages off (the default since WordPress 6.4), an attachment page redirects to the
+	 * file, the clean full-size one. A visitor is sent to the stand-in instead.
+	 *
+	 * @param string|false $redirect_url  Where WordPress redirects to.
+	 * @param string       $requested_url The requested URL.
+	 * @return string|false
+	 */
+	public static function attachment_redirect( $redirect_url, $requested_url = '' ) {
+		unset( $requested_url );
+		if ( ! is_string( $redirect_url ) || '' === $redirect_url || ! is_attachment() ) {
+			return $redirect_url;
+		}
+		return self::public_url( $redirect_url, (int) get_queried_object_id() );
+	}
+
 	/**
 	 * The size made from the clean source at the highest quality, in a temporary file next to it: the watermark
 	 * is drawn on it and the result is compressed once, at the site's quality.
@@ -755,6 +1166,7 @@ final class PNCP_Watermark {
 	 * @param array<string, mixed> $state         State.
 	 */
 	private static function save_state( $attachment_id, $state ) {
+		unset( self::$stand_ins[ (int) $attachment_id ] );
 		if ( ! $state['full'] && ! in_array( 1, $state['sizes'], true ) ) {
 			delete_post_meta( (int) $attachment_id, self::META );
 			return;
@@ -867,8 +1279,8 @@ final class PNCP_Watermark {
 
 		// The watermark is faded once per request (at most 1600px wide), not again for every size of every image:
 		// fading goes pixel by pixel in PHP. Scaling an already faded watermark gives the same result.
-		$faded  = self::faded_mark( $mark, (int) $s['watermark_opacity'] );
-		$layer  = self::transparent( $dst_w, $dst_h );
+		$faded = self::faded_mark( $mark, (int) $s['watermark_opacity'] );
+		$layer = self::transparent( $dst_w, $dst_h );
 		imagecopyresampled( $layer, $faded, 0, 0, 0, 0, $dst_w, $dst_h, imagesx( $faded ), imagesy( $faded ) );
 		imagealphablending( $image, true );
 
@@ -921,7 +1333,7 @@ final class PNCP_Watermark {
 		// The same source serves every size of an image: read once per request. The profile sits in the first
 		// segments, so only the start of the file is read.
 		static $cache = array();
-		$key = $file . '|' . (int) @filemtime( $file ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged -- Missing file = no profile.
+		$key          = $file . '|' . (int) @filemtime( $file ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged -- Missing file = no profile.
 		if ( isset( $cache[ $key ] ) ) {
 			return $cache[ $key ];
 		}

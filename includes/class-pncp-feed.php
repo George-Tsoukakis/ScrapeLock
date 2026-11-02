@@ -167,7 +167,7 @@ final class PNCP_Feed {
 	 */
 	public static function note_post_content( $content ) {
 		$post                 = get_post();
-		self::$post_content[] = $post instanceof WP_Post && ! is_singular() && '' !== (string) $content && (string) $content === get_the_content( null, false, $post );
+		self::$post_content[] = $post instanceof WP_Post && ! is_singular() && '' !== (string) $content && get_the_content( null, false, $post ) === (string) $content;
 		return $content;
 	}
 

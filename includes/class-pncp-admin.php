@@ -1154,6 +1154,15 @@ final class PNCP_Admin {
 				self::number( $s, 'rate_limit_sitemap', __( 'Sitemaps per minute (0 = off):', 'scrapelock' ), __( 'Scrapers read the sitemap first to find every page. Covers the sitemaps of WordPress, Rank Math, Yoast and similar plugins. Google, Bing and the other verified search engines are never limited. Starting value: 5.', 'scrapelock' ) );
 				self::checkbox( $s, 'ipv6_wide', __( 'IPv6: also limit the whole /56 network (four times the page limit)', 'scrapelock' ), __( 'Pages are counted per /64, because one connection usually gets a whole /64. A server or a home connection often has a /56 or more, so a scraper can take a new /64 for every request. This also counts the /56 the /64 belongs to, up to four times the page limit (429 above it, without a block). Some mobile networks give neighbouring phones addresses of the same /56: on a site with many visitors from them, keep it off. Always on in Emergency Mode.', 'scrapelock' ) );
 				self::number( $s, 'rate_limit_datacenter', __( 'Pages per minute from data centers (0 = off):', 'scrapelock' ), __( 'People rarely browse from a server; scrapers very often run on one. Visitors from the published addresses of AWS, Google Cloud, Oracle Cloud, DigitalOcean and Akamai / Linode get this stricter limit instead of the normal one. The lists are downloaded from the providers once a day. Some VPNs use these providers, so their users get this limit too: it is meant for reading, not for blocking. The always-allowed User-Agents (monitoring, price platforms) and verified search engines are not affected. Starting value: 15. 5 in Emergency Mode.', 'scrapelock' ) );
+				if ( class_exists( 'WooCommerce' ) ) {
+					self::number( $s, 'rate_limit_cart', __( 'WooCommerce cart and checkout actions per minute (0 = off):', 'scrapelock' ), __( 'Adding, changing and removing cart items, coupons and placing the order, through the Store API (block cart and checkout), wc-ajax and the classic forms. A shopper needs a handful per minute; bots that fill carts, test stolen cards or spam orders need hundreds. Above the limit: 429, with a JSON error for the Store API and wc-ajax. Exempt staff and users who can edit posts or manage the shop are never limited. Starting value: 60. 30 in Emergency Mode.', 'scrapelock' ) );
+					self::number( $s, 'rate_limit_coupon', __( 'WooCommerce coupon attempts per minute (0 = off):', 'scrapelock' ), __( 'Each coupon code tried counts, valid or not, so guessing codes is slowed to this many per minute per IP. Starting value: 10. 5 in Emergency Mode.', 'scrapelock' ) );
+				} else {
+					// Not shown without WooCommerce, but kept: saving this tab must not reset them.
+					foreach ( array( 'rate_limit_cart', 'rate_limit_coupon' ) as $pncp_key ) {
+						printf( '<input type="hidden" name="%s[%s]" value="%d">', esc_attr( PNCP_OPTION ), esc_attr( $pncp_key ), (int) $s[ $pncp_key ] );
+					}
+				}
 				self::checkbox( $s, 'auto_emergency', __( 'Watch for attacks spread over many IPs (automatic Emergency Mode)', 'scrapelock' ), __( 'The limits per IP cannot see a scraper that spreads its requests over hundreds of IPs. The whole site can: ScrapeLock learns how many pages per minute your site usually serves, and when that is exceeded five times over for 3 minutes in a row (and never below the minimum below), it does what you choose here. Verified search engines and exempt staff are not counted. Pages served from a page cache without reaching WordPress are not counted either.', 'scrapelock' ) );
 				echo '<div class="pncp-field"><label for="pncp-auto_emergency_mode">' . esc_html__( 'When it happens:', 'scrapelock' ) . '</label> ';
 				self::select(
@@ -1350,15 +1359,17 @@ final class PNCP_Admin {
 		</form>
 		<?php
 		if ( ! PNCP_Edge::usable() ) {
+			self::render_diagnosis(); // The check of settings that were not saved because it failed.
 			return;
 		}
 		if ( ! $locked ) {
 			self::action_form_open( 'pncp_edge', 'pncp_edge', 'pncp-edge-test' );
-			echo '<input type="hidden" name="op" value="test_block">';
+			echo '<input type="hidden" name="op" value="diagnose">';
 			echo '<p>';
-			submit_button( __( 'Test blocking at the CDN', 'scrapelock' ), 'secondary', 'submit', false );
-			echo '</p><p class="description">' . esc_html__( 'Blocks the address 203.0.113.x (reserved for documentation, it belongs to nobody) at the CDN, checks that the CDN lists it and removes it again. No setting changes and no visitor is affected.', 'scrapelock' ) . '</p></form>';
+			submit_button( __( 'Test connection', 'scrapelock' ), 'secondary', 'submit', false );
+			echo '</p><p class="description">' . esc_html__( 'Checks step by step that the CDN can be reached, that the token is valid, active and has the permissions needed, that the zone exists and is active, and how much of the API rate limit is left. Then blocks the address 203.0.113.x (reserved for documentation, it belongs to nobody) at the CDN, checks that the CDN lists it and removes it again. No setting changes and no visitor is affected.', 'scrapelock' ) . '</p></form>';
 		}
+		self::render_diagnosis();
 		echo '<ul class="pncp-list-status pncp-edge-status">';
 		/* translators: 1: number of addresses, 2: CDN name */
 		echo '<li>' . esc_html( sprintf( _n( '%1$s address blocked at %2$s now.', '%1$s addresses blocked at %2$s now.', PNCP_Edge::count(), 'scrapelock' ), number_format_i18n( PNCP_Edge::count() ), PNCP_Edge::providers()[ $c['provider'] ] ) ) . '</li>';
@@ -2803,8 +2814,9 @@ final class PNCP_Admin {
 	}
 
 	/**
-	 * Blocking at the CDN: saves the configuration and tests it with one read-only request. An empty token
-	 * keeps the saved one. Not while the site is locked.
+	 * Blocking at the CDN: tests the configuration (PNCP_Edge::diagnose(), with a test block) and saves it if
+	 * the test passes; "Test connection" only tests the saved one. An empty token keeps the saved one. Not while
+	 * the site is locked.
 	 */
 	public static function handle_edge() {
 		// phpcs:disable WordPress.Security.NonceVerification.Missing -- The nonce is checked in verify().
@@ -2812,10 +2824,14 @@ final class PNCP_Admin {
 		if ( PNCP_Lockdown::is_locked() ) {
 			self::back( 'bots', 'error' );
 		}
-		if ( isset( $_POST['op'] ) && 'test_block' === sanitize_key( wp_unslash( $_POST['op'] ) ) ) {
-			$result = PNCP_Edge::test_block( PNCP_Edge::config() );
-			set_transient( 'pncp_edge_test_' . get_current_user_id(), $result['message'], 2 * MINUTE_IN_SECONDS );
-			self::back( 'bots', $result['ok'] ? 'edge_test_ok' : 'edge_test_failed' );
+		$op = isset( $_POST['op'] ) ? sanitize_key( wp_unslash( $_POST['op'] ) ) : '';
+		if ( 'test_block' === $op || 'diagnose' === $op ) {
+			// 3.4.2: "Test connection" checks every step (token, zone, permissions, a test block, rate limit).
+			$diag = PNCP_Edge::diagnose( PNCP_Edge::config() );
+			self::keep_diagnosis( $diag );
+			$error = PNCP_Edge::diagnosis_error( $diag );
+			set_transient( 'pncp_edge_test_' . get_current_user_id(), '' === $error ? __( 'Connection test passed: blocking at the CDN works. The details are under “Blocking at the CDN”.', 'scrapelock' ) : $error, 2 * MINUTE_IN_SECONDS );
+			self::back( 'bots', '' === $error ? 'edge_test_ok' : 'edge_test_failed' );
 		}
 		$old      = PNCP_Edge::config();
 		$provider = isset( $_POST['provider'] ) ? sanitize_key( wp_unslash( $_POST['provider'] ) ) : '';
@@ -2841,12 +2857,14 @@ final class PNCP_Admin {
 		if ( '' === $zone || '' === $token ) {
 			self::back( 'bots', '' === $zone ? 'edge_zone' : 'edge_token' );
 		}
-		$new   = array(
+		$new  = array(
 			'provider' => $provider,
 			'zone'     => $zone,
 			'token'    => $token,
 		);
-		$error = PNCP_Edge::test( $new );
+		$diag = PNCP_Edge::diagnose( $new );
+		self::keep_diagnosis( $diag );
+		$error = PNCP_Edge::diagnosis_error( $diag );
 		if ( '' !== $error ) {
 			// Not saved: a wrong token or zone would only fill the log with errors.
 			set_transient( 'pncp_edge_test_' . get_current_user_id(), $error, 2 * MINUTE_IN_SECONDS );
@@ -2854,6 +2872,66 @@ final class PNCP_Admin {
 		}
 		PNCP_Edge::save_config( $new );
 		self::back( 'bots', 'edge_ok' );
+	}
+
+	/**
+	 * 3.4.2: keeps the last connection check of this user for 30 minutes, to show it under “Blocking at the CDN”
+	 * (it holds no token).
+	 *
+	 * @param array<string, mixed> $diag The result of PNCP_Edge::diagnose().
+	 */
+	private static function keep_diagnosis( $diag ) {
+		$diag['text'] = PNCP_Edge::diagnosis_text( $diag );
+		set_transient( 'pncp_edge_diag_' . get_current_user_id(), $diag, 30 * MINUTE_IN_SECONDS );
+	}
+
+	/**
+	 * 3.4.2: the last connection check of this user: each step with its result and what to do, and the whole
+	 * check as text to copy (without the token).
+	 */
+	private static function render_diagnosis() {
+		$diag = get_transient( 'pncp_edge_diag_' . get_current_user_id() );
+		if ( ! is_array( $diag ) || empty( $diag['checks'] ) || ! is_array( $diag['checks'] ) ) {
+			return;
+		}
+		$words = array(
+			'ok'   => __( 'OK', 'scrapelock' ),
+			'warn' => __( 'Warning', 'scrapelock' ),
+			'fail' => __( 'Problem', 'scrapelock' ),
+			'skip' => __( 'Not checked', 'scrapelock' ),
+		);
+		echo '<div class="pncp-edge-diag">';
+		/* translators: %s: date and time */
+		echo '<h3>' . esc_html( sprintf( __( 'Connection check (%s)', 'scrapelock' ), wp_date( get_option( 'date_format' ) . ' ' . get_option( 'time_format' ), isset( $diag['time'] ) ? (int) $diag['time'] : time() ) ) ) . '</h3>';
+		echo '<ul class="pncp-edge-checks">';
+		foreach ( $diag['checks'] as $check ) {
+			if ( ! is_array( $check ) || ! isset( $check['status'], $check['label'], $check['detail'] ) ) {
+				continue;
+			}
+			$status = isset( $words[ $check['status'] ] ) ? $check['status'] : 'skip';
+			printf(
+				'<li class="pncp-edge-check pncp-edge-check--%1$s"><span class="pncp-edge-check__status">%2$s</span> <strong>%3$s:</strong> %4$s',
+				esc_attr( $status ),
+				esc_html( $words[ $status ] ),
+				esc_html( (string) $check['label'] ),
+				esc_html( (string) $check['detail'] )
+			);
+			if ( ! empty( $check['fix'] ) ) {
+				echo '<br><span class="pncp-edge-check__fix">' . esc_html__( 'What to do:', 'scrapelock' ) . ' ' . esc_html( (string) $check['fix'] ) . '</span>';
+			}
+			echo '</li>';
+		}
+		echo '</ul>';
+		if ( isset( $diag['text'] ) && is_string( $diag['text'] ) ) {
+			printf(
+				'<details class="pncp-edge-diag__copy"><summary>%1$s</summary><p class="description">%2$s</p><textarea id="pncp-edge-diag-text" class="large-text code" rows="10" readonly>%3$s</textarea><p><button type="button" class="button pncp-copy" data-target="pncp-edge-diag-text">%4$s</button></p></details>',
+				esc_html__( 'Copy diagnostics', 'scrapelock' ),
+				esc_html__( 'For a support request: the result of each step, the zone, the plan, the versions and Cloudflare\'s Ray IDs. It holds no token.', 'scrapelock' ),
+				esc_textarea( $diag['text'] ),
+				esc_html__( 'Copy diagnostics', 'scrapelock' )
+			);
+		}
+		echo '</div>';
 	}
 
 	/**

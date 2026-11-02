@@ -94,6 +94,21 @@ final class PNCP_Seal {
 	const BEACON_MAX_COPY = 1048576;
 
 	/**
+	 * 3.4.2: the lock line, a constant the owner adds to wp-config.php by hand: define( 'SCRAPELOCK_LOCKED',
+	 * '<token>' );. Offered when no file of the lock can be written (neither the guard nor the lock file: PHP
+	 * cannot write to any of their folders), and as an optional second copy outside the database next to them.
+	 * The token is signed with the keys (key()), so it only counts on this site, and names the generation of
+	 * the lock (the state saved when the site was locked, "lgen") and the address alerts go to. While it is
+	 * there, a lock state that is missing, does not match its signature or is older than that generation (put
+	 * back from a copy) counts as "locked", as with the guard file. A newer genuine state is followed as usual:
+	 * an unlock for a while, or an unlock for good (the owner is then told to remove the line). Multisite: one
+	 * line for the whole network (one wp-config.php, one lock, the same keys). ScrapeLock never writes
+	 * wp-config.php itself.
+	 */
+	const CONFIG        = 'SCRAPELOCK_LOCKED';
+	const CONFIG_PREFIX = 'sl1';
+
+	/**
 	 * 3.4, multisite: the snapshot of the whole network, taken when the network is locked (a network option,
 	 * signed, not read on every request): the network options below, the super admins, the application
 	 * passwords, and for every site where ScrapeLock is active the fingerprints of its protected options, its
@@ -166,6 +181,22 @@ final class PNCP_Seal {
 	 * @var bool
 	 */
 	private static $file_at_start = false;
+
+	/**
+	 * 3.4.2: the lock line in wp-config.php (see CONFIG) as read on this request: null = not read yet, false =
+	 * none, or not matching this site's keys.
+	 *
+	 * @var array{g:int, m:string}|false|null
+	 */
+	private static $config = null;
+
+	/**
+	 * 3.4.2: the lock line is not followed for the rest of this request (a new app is being connected with
+	 * SCRAPELOCK_UNLOCK: the lock it named is over, as when the guard file is removed then).
+	 *
+	 * @var bool
+	 */
+	private static $config_off = false;
 
 	/**
 	 * Registers the hooks.
@@ -282,8 +313,8 @@ final class PNCP_Seal {
 	public static function legacy() {
 		// The guard file only exists since 3.3: with it in place, unsigned data is never accepted, whatever the
 		// version stored in the database says.
-		if ( self::guard_installed() || '' !== self::beacon_path() ) {
-			return false; // 3.4.1: the same for the lock file written when the guard could not be.
+		if ( self::guard_installed() || '' !== self::beacon_path() || null !== self::config_lock() ) {
+			return false; // 3.4.1: the same for the lock file written when the guard could not be (3.4.2: and the lock line).
 		}
 		$from = (string) get_option( 'pncp_version', '' );
 		if ( '' === $from || version_compare( $from, '3.3.0', '>=' ) ) {
@@ -1589,6 +1620,185 @@ final class PNCP_Seal {
 		return (bool) preg_match( '/^(?:lock|fails)-[0-9a-f]{20}\.php$/', $name ) && 0 === strpos( $data, self::BEACON_HEAD ) && false === strpos( substr( $data, strlen( self::BEACON_HEAD ) ), '<' );
 	}
 
+	/* ---------- 3.4.2: the lock line in wp-config.php ---------- */
+
+	/**
+	 * The address alerts go to that is signed for a lock being saved now (as in the lock file).
+	 *
+	 * @return string
+	 */
+	public static function lock_mail() {
+		return self::beacon_mail();
+	}
+
+	/**
+	 * What the token of the lock line signs.
+	 *
+	 * @param int    $gen  The generation of the lock.
+	 * @param string $mail The address alerts go to.
+	 * @return array{g:int, m:string}
+	 */
+	private static function config_data( $gen, $mail ) {
+		return array(
+			'g' => (int) $gen,
+			'm' => is_string( $mail ) && is_email( $mail ) ? $mail : '',
+		);
+	}
+
+	/**
+	 * The token of the lock line for a lock: "sl1.", the generation and the address (JSON, base64url), ".", and
+	 * their signature. Only letters, digits, "-", "_" and ".", so it can be copied into wp-config.php as it is.
+	 *
+	 * @param int    $gen  The generation of the lock (the state saved when the site was locked).
+	 * @param string $mail The address alerts go to.
+	 * @return string
+	 */
+	public static function config_token( $gen, $mail ) {
+		$data = self::config_data( $gen, $mail );
+		$body = rtrim( strtr( base64_encode( (string) wp_json_encode( $data ) ), '+/', '-_' ), '=' ); // phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.obfuscation_base64_encode -- A signed token, not obfuscation.
+		return self::CONFIG_PREFIX . '.' . $body . '.' . self::sign( array( 'pncp_lockdown_config', $data ) );
+	}
+
+	/**
+	 * The whole line for wp-config.php.
+	 *
+	 * @param int    $gen  The generation of the lock.
+	 * @param string $mail The address alerts go to.
+	 * @return string
+	 */
+	public static function config_line( $gen, $mail ) {
+		return "define( '" . self::CONFIG . "', '" . self::config_token( $gen, $mail ) . "' );";
+	}
+
+	/**
+	 * The lock line as wp-config.php defines it, if its signature matches this site's keys.
+	 *
+	 * @return array{g:int, m:string}|false
+	 */
+	private static function config_read() {
+		if ( null !== self::$config ) {
+			return self::$config;
+		}
+		self::$config = false;
+		$value        = defined( self::CONFIG ) ? constant( self::CONFIG ) : null;
+		if ( ! is_string( $value ) || strlen( $value ) > 2000 ) {
+			return false;
+		}
+		$parts = explode( '.', trim( $value ) );
+		if ( 3 !== count( $parts ) || self::CONFIG_PREFIX !== $parts[0] || ! preg_match( '/^[A-Za-z0-9_-]+$/', $parts[1] ) ) {
+			return false;
+		}
+		$json = base64_decode( strtr( $parts[1], '-_', '+/' ), true ); // phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.obfuscation_base64_decode -- See config_token().
+		$data = is_string( $json ) ? json_decode( $json, true ) : null;
+		if ( ! is_array( $data ) || ! isset( $data['g'], $data['m'] ) || ! is_int( $data['g'] ) || $data['g'] < 1 || ! is_string( $data['m'] ) ) {
+			return false;
+		}
+		$data = self::config_data( $data['g'], $data['m'] );
+		if ( ! self::valid( array( 'pncp_lockdown_config', $data ), $parts[2] ) ) {
+			return false;
+		}
+		self::$config = $data;
+		return $data;
+	}
+
+	/**
+	 * The lock the line in wp-config.php names (null: no line, a line of another site or changed by hand, or
+	 * not followed on this request): its generation and the address alerts go to.
+	 *
+	 * @return array{gen:int, mail:string}|null
+	 */
+	public static function config_lock() {
+		if ( self::$config_off ) {
+			return null;
+		}
+		$data = self::config_read();
+		return false === $data ? null : array(
+			'gen'  => $data['g'],
+			'mail' => $data['m'],
+		);
+	}
+
+	/**
+	 * The generation the lock line names (0: none). Also while it is not followed: a new state is always saved
+	 * with a higher one, so the line no longer holds it once the owner has dealt with the lock.
+	 *
+	 * @return int
+	 */
+	public static function config_gen() {
+		$data = self::config_read();
+		return false === $data ? 0 : (int) $data['g'];
+	}
+
+	/**
+	 * The lock line is not followed for the rest of this request (see $config_off).
+	 */
+	public static function config_off() {
+		self::$config_off = true;
+	}
+
+	/**
+	 * Is SCRAPELOCK_LOCKED defined in wp-config.php at all (valid or not)?
+	 *
+	 * @return bool
+	 */
+	public static function config_defined() {
+		return defined( self::CONFIG );
+	}
+
+	/**
+	 * What the lock line in wp-config.php means for the lock as it is now: 'none' (no line), 'invalid' (the
+	 * signature does not match this site's keys: the line of another site, changed by hand, or the keys
+	 * changed since; it is not followed), 'current' (it names the current lock, or holds it: the site stays
+	 * locked whatever the database says), 'old' (the site was locked again since: the line names an earlier
+	 * lock, replace it) or 'stale' (the site is not locked: remove the line).
+	 *
+	 * @return string
+	 */
+	public static function config_status() {
+		if ( ! defined( self::CONFIG ) ) {
+			return 'none';
+		}
+		$data = self::config_read();
+		if ( false === $data ) {
+			return 'invalid';
+		}
+		if ( '' !== PNCP_Lockdown::tampered() ) {
+			return 'current';
+		}
+		$state = PNCP_Lockdown::state();
+		if ( empty( $state['locked'] ) ) {
+			return 'stale';
+		}
+		return (int) $data['g'] >= (int) $state['lgen'] ? 'current' : 'old';
+	}
+
+	/**
+	 * The lock line for the current lock ('' when the site is not locked, or its data cannot be trusted).
+	 *
+	 * @return string
+	 */
+	public static function current_config_line() {
+		if ( '' !== PNCP_Lockdown::tampered() ) {
+			return '';
+		}
+		$state = PNCP_Lockdown::state();
+		if ( empty( $state['locked'] ) ) {
+			return '';
+		}
+		$gen  = (int) $state['lgen'] > 0 ? (int) $state['lgen'] : (int) $state['gen'];
+		$mail = is_email( $state['lmail'] ) ? (string) $state['lmail'] : (string) $state['mail'];
+		return self::config_line( $gen, $mail );
+	}
+
+	/**
+	 * Is the lock kept by nothing outside the database but the lock line (no guard file, no lock file)?
+	 *
+	 * @return bool
+	 */
+	public static function needs_config() {
+		return ! self::guard_installed() && '' === self::beacon_path();
+	}
+
 	/**
 	 * WP_Filesystem with direct access, or null (never asks for FTP details).
 	 *
@@ -1814,15 +2024,15 @@ final class PNCP_Seal {
 	}
 
 	/**
-	 * The staff accounts of the current site (frozen roles), and everyone with application passwords who is
-	 * staff here, sorted.
+	 * The staff accounts of the current site (frozen roles and the roles that keep their work while locked),
+	 * and everyone with application passwords who is staff here, sorted.
 	 *
 	 * @return int[]
 	 */
 	private static function staff_ids() {
 		wp_roles();
 		$ids    = array();
-		$frozen = PNCP_Lockdown::frozen_roles();
+		$frozen = array_merge( PNCP_Lockdown::frozen_roles(), PNCP_Lockdown::limited_roles() );
 		if ( $frozen ) {
 			$ids = get_users(
 				array(
@@ -2081,6 +2291,12 @@ final class PNCP_Seal {
 		$beacon = self::beacon();
 		if ( $beacon && isset( $beacon['snap'] ) ) {
 			$want = max( $want, (int) $beacon['snap'] );
+		}
+		// 3.4.2: the snapshots of the lock the line in wp-config.php names are taken after it was locked, so they
+		// have a higher generation: an older one (of an earlier lock, put back from a copy) does not count.
+		$config = self::config_lock();
+		if ( null !== $config ) {
+			$want = max( $want, (int) $config['gen'] );
 		}
 		return $want;
 	}
@@ -2694,6 +2910,11 @@ final class PNCP_Seal {
 			// 3.4.1: without a snapshot (or its copy), the address signed in the lock file, if there is one.
 			$file = defined( 'PNCP_LOCKDOWN_BEACON' ) ? null : self::beacon_file();
 			$mail = null === $file ? '' : $file['mail'];
+		}
+		if ( ! is_string( $mail ) || ! is_email( $mail ) ) {
+			// 3.4.2: or the one signed in the lock line in wp-config.php.
+			$config = self::config_lock();
+			$mail   = null === $config ? '' : $config['mail'];
 		}
 		return is_string( $mail ) && is_email( $mail ) ? $mail : '';
 	}

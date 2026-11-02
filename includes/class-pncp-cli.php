@@ -231,6 +231,22 @@ final class PNCP_Cli {
 	}
 
 	/**
+	 * 3.4.2: the lock line SCRAPELOCK_LOCKED in wp-config.php, for the status.
+	 *
+	 * @return string
+	 */
+	private static function config_text() {
+		$texts = array(
+			'none'    => __( 'No', 'scrapelock' ),
+			'invalid' => __( 'Not valid for this site (not used)', 'scrapelock' ),
+			'current' => __( 'Yes, for this lock', 'scrapelock' ),
+			'old'     => __( 'From an earlier lock: replace it', 'scrapelock' ),
+			'stale'   => __( 'The site is not locked: remove it', 'scrapelock' ),
+		);
+		return $texts[ PNCP_Seal::config_status() ];
+	}
+
+	/**
 	 * Shows the state of Lockdown. Read only: Lockdown cannot be locked or unlocked from here (it opens only
 	 * with the authenticator app, or SCRAPELOCK_UNLOCK in wp-config.php).
 	 *
@@ -285,7 +301,9 @@ final class PNCP_Cli {
 			array( __( 'Lock data in order', 'scrapelock' ), '' === $tampered ? $yes : __( 'No: changed outside WordPress (see Site Health)', 'scrapelock' ) ),
 			array( __( 'Security keys in wp-config.php', 'scrapelock' ), PNCP_Seal::keys_in_config() ? $yes : $no ),
 			array( __( 'Guard file', 'scrapelock' ), is_multisite() ? '-' : ( PNCP_Seal::guard_installed() ? $yes : $no ) ),
+			array( __( 'Lock line in wp-config.php', 'scrapelock' ), self::config_text() ),
 			array( __( 'Roles frozen while locked', 'scrapelock' ), implode( ', ', PNCP_Lockdown::frozen_roles() ) ),
+			array( __( 'Roles that keep their work while locked', 'scrapelock' ), implode( ', ', PNCP_Lockdown::limited_roles() ) ),
 			array( __( 'File integrity fingerprint', 'scrapelock' ), $baseline['time'] ? wp_date( 'Y-m-d H:i', (int) $baseline['time'] ) : '-' ),
 			array( __( 'Last file check', 'scrapelock' ), $report['time'] ? wp_date( 'Y-m-d H:i', (int) $report['time'] ) : '-' ),
 			array( __( 'Changed code files', 'scrapelock' ), (string) count( PNCP_Integrity::findings( $report ) ) ),

@@ -141,7 +141,7 @@ final class PNCP_Rules {
 	 * @param string $file File.
 	 */
 	public static function remove_marker_block( $file ) {
-		if ( ! is_readable( $file ) || ! is_writable( $file ) ) {
+		if ( ! is_readable( $file ) || ! wp_is_writable( $file ) ) {
 			return;
 		}
 		$text = (string) file_get_contents( $file ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Local file.

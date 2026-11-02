@@ -56,9 +56,17 @@ final class PNCP_Edge {
 
 	/**
 	 * Seconds a run may start new API calls. With the 10-second timeout of one call, a run ends within about
-	 * 30 seconds; the lock lasts much longer than that (LOCK_TTL), so it never expires during a run.
+	 * 25 seconds, inside PHP's usual 30-second time limit (3.4.2: 15 instead of 20 seconds; the plugin no longer
+	 * raises the time limit). When less time is left in the request (other scheduled tasks ran first in the same
+	 * cron request), the run stops earlier: see deadline(). The lock lasts much longer than that (LOCK_TTL), so
+	 * it never expires during a run.
 	 */
-	const BUDGET = 20;
+	const BUDGET = 15;
+
+	/**
+	 * Seconds one API call may take.
+	 */
+	const CALL_TIMEOUT = 10;
 
 	/**
 	 * Seconds the lock is held at most, if a run dies without releasing it.
@@ -752,16 +760,6 @@ final class PNCP_Edge {
 	}
 
 	/**
-	 * More time for this request where the host allows it: a run makes up to BATCH calls of up to 10 seconds,
-	 * and WordPress's cron sets no time limit of its own.
-	 */
-	private static function raise_time_limit() {
-		if ( function_exists( 'set_time_limit' ) && false === strpos( (string) ini_get( 'disable_functions' ), 'set_time_limit' ) ) {
-			@set_time_limit( 120 ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged -- Not allowed on every host.
-		}
-	}
-
-	/**
 	 * Schedules the next run at this time, unless one is already due earlier (a ban that came in during this
 	 * run, for example). With $force, earlier runs are moved to this time (the CDN asked to slow down).
 	 *
@@ -835,10 +833,9 @@ final class PNCP_Edge {
 		$next = 0;
 		$wait = 0;
 		try {
-			self::raise_time_limit();
 			$dirty = self::fresh_option_raw( self::DIRTY );
 			self::migrate_queue();
-			$deadline = time() + self::BUDGET;
+			$deadline = self::deadline( self::BUDGET );
 			$calls    = 0;
 			$left     = self::run_retire( $calls, $wait, $deadline );
 			$c        = self::config();
@@ -1164,6 +1161,19 @@ final class PNCP_Edge {
 	}
 
 	/**
+	 * The time after which a run starts no new API call: $seconds from now, or earlier when PHP's time limit would
+	 * end the request before the last call (up to its 10-second timeout) is answered. What is left is done by the
+	 * next run, which is scheduled a minute later (3.4.2).
+	 *
+	 * @param int $seconds Seconds the run would like.
+	 * @return int Unix time.
+	 */
+	private static function deadline( $seconds ) {
+		$left = PNCP_Time::left( $seconds + self::CALL_TIMEOUT ) - self::CALL_TIMEOUT;
+		return time() + (int) max( 0, min( $seconds, floor( $left ) ) );
+	}
+
+	/**
 	 * Deactivation: removes the blocks ScrapeLock made (current and previous configurations), for at most
 	 * the given number of seconds. Blocks that are left stay in the removal queue: they are removed when the
 	 * plugin is activated again, or on uninstall. Cloudflare rules carry the note "ScrapeLock" and can also be
@@ -1174,7 +1184,7 @@ final class PNCP_Edge {
 	public static function remove_all( $seconds = 20 ) {
 		self::retire( self::config() );
 		self::migrate_queue();
-		$deadline = time() + max( 1, (int) $seconds );
+		$deadline = self::deadline( max( 1, (int) $seconds ) );
 		// A run that is busy right now removes the same blocks; a block removed twice is "not found" the second
 		// time, which counts as done. So this goes on even without the lock.
 		$locked             = self::lock();
@@ -1344,10 +1354,11 @@ final class PNCP_Edge {
 	 * @return bool Whether a rule for the value was found.
 	 */
 	private static function cloudflare_search( $c, $target, $search, $want, &$calls, &$out ) {
+		$filter = true;
 		for ( $page = 1; $page <= 3; $page++ ) {
 			++$calls;
 			$args = array_merge(
-				array( 'configuration.target' => $target ),
+				$filter ? array( 'configuration.target' => $target ) : array(),
 				$search,
 				array(
 					'per_page' => 50,
@@ -1355,6 +1366,15 @@ final class PNCP_Edge {
 				)
 			);
 			$res  = self::request( $c, 'GET', self::CLOUDFLARE_API . '/zones/' . rawurlencode( $c['zone'] ) . '/firewall/access_rules/rules?' . http_build_query( $args ) );
+			if ( 'refused' === $res['status'] && 400 === $res['code'] && 1 === $page && 'ip6' === $target && $filter ) {
+				// 3.4.2: Cloudflare's API description lists only ip, ip_range, asn and country for this search
+				// filter. Should it refuse ip6, the same search runs without the filter (the value is compared
+				// below anyway).
+				$filter = false;
+				unset( $args['configuration.target'] );
+				++$calls;
+				$res = self::request( $c, 'GET', self::CLOUDFLARE_API . '/zones/' . rawurlencode( $c['zone'] ) . '/firewall/access_rules/rules?' . http_build_query( $args ) );
+			}
 			if ( 'ok' !== $res['status'] ) {
 				$out['status']  = $res['status'];
 				$out['message'] = $res['message'];
@@ -1375,7 +1395,8 @@ final class PNCP_Edge {
 					return true;
 				}
 			}
-			$pages = isset( $res['json']['result_info']['total_pages'] ) ? (int) $res['json']['result_info']['total_pages'] : 1;
+			// 3.4.2: without result_info (or without total_pages in it), a full page means there may be another.
+			$pages = isset( $res['json']['result_info']['total_pages'] ) && is_numeric( $res['json']['result_info']['total_pages'] ) ? (int) $res['json']['result_info']['total_pages'] : ( count( $rules ) >= 50 ? $page + 1 : $page );
 			if ( '' !== $out['id'] || $page >= $pages || count( $rules ) < 50 ) {
 				break;
 			}
@@ -1444,28 +1465,14 @@ final class PNCP_Edge {
 	}
 
 	/**
-	 * Checks the configuration: the token, its permissions and the zone. Cloudflare: one read, then one test
-	 * block (test_block()), so a token that can only read is refused when the settings are saved.
+	 * Checks the configuration: the token, its permissions and the zone (3.4.2: every step of diagnose(), with a
+	 * test block, so a token that can only read is refused when the settings are saved).
 	 *
 	 * @param array{provider:string, zone:string, token:string} $c Configuration.
-	 * @return string Empty if it works, otherwise what went wrong.
+	 * @return string Empty if it works, otherwise what went wrong and what to do.
 	 */
 	public static function test( $c ) {
-		if ( ! self::usable( $c ) ) {
-			return __( 'Fill in the zone ID and the token.', 'scrapelock' );
-		}
-		if ( 'cloudflare' === $c['provider'] ) {
-			$res = self::request( $c, 'GET', self::CLOUDFLARE_API . '/zones/' . rawurlencode( $c['zone'] ) . '/firewall/access_rules/rules?per_page=5' );
-			if ( 'ok' !== $res['status'] ) {
-				return $res['message'];
-			}
-			// 3.4.1: a token that can only read passes the read above; the first real block would then be
-			// refused. One test block (added, found and removed again) shows that the token can edit the rules.
-			$block = self::test_block( $c );
-			return $block['ok'] ? '' : $block['message'] . ' ' . __( 'The token needs the permission Zone > Firewall Services > Edit.', 'scrapelock' );
-		}
-		$res = self::request( $c, 'GET', self::BUNNY_API . '/pullzone/' . rawurlencode( $c['zone'] ) );
-		return 'ok' === $res['status'] ? '' : $res['message'];
+		return self::diagnosis_error( self::diagnose( $c ) );
 	}
 
 	/**
@@ -1487,8 +1494,8 @@ final class PNCP_Edge {
 		if ( ! self::usable( $c ) ) {
 			return $fail( __( 'Connection', 'scrapelock' ), __( 'Fill in the zone ID and the token.', 'scrapelock' ) );
 		}
-		$ip  = '203.0.113.' . wp_rand( 200, 254 );
-		$ban = array(
+		$ip     = '203.0.113.' . wp_rand( 200, 254 );
+		$ban    = array(
 			'until'  => time() + MINUTE_IN_SECONDS,
 			'reason' => 'test',
 		);
@@ -1513,14 +1520,21 @@ final class PNCP_Edge {
 		if ( true !== $listed ) {
 			return $fail( __( 'Finding the test block at the CDN', 'scrapelock' ), is_string( $listed ) ? $listed : __( 'The CDN accepted the block but does not list it.', 'scrapelock' ) );
 		}
-		if ( 'ok' !== $remove['status'] ) {
+		// 3.4.2: a test block that could not be removed goes to the removal queue, like the blocks of an earlier
+		// configuration: the next runs remove it (and list it on the settings page, to remove by hand, if the
+		// CDN keeps refusing). It was left at the CDN for good before.
+		$later = static function () use ( $c, $ip, $rule ) {
+			self::queue_add( $c, array( $ip => $rule ) );
+			self::soon();
 			/* translators: %s: test IP address */
-			return $fail( __( 'Removing the test block', 'scrapelock' ), $remove['message'] . ' ' . sprintf( __( 'Remove %s by hand at the CDN.', 'scrapelock' ), $ip ) );
+			return sprintf( __( 'ScrapeLock will remove %s in its next run, in a few minutes. If the CDN keeps refusing, the address is listed on this page, to remove by hand at the CDN.', 'scrapelock' ), $ip );
+		};
+		if ( 'ok' !== $remove['status'] ) {
+			return $fail( __( 'Removing the test block', 'scrapelock' ), $remove['message'] . ' ' . $later() );
 		}
 		$gone = self::listed( $c, $ip );
 		if ( false !== $gone ) {
-			/* translators: %s: test IP address */
-			return $fail( __( 'Removing the test block', 'scrapelock' ), ( is_string( $gone ) ? $gone : __( 'The CDN still lists it.', 'scrapelock' ) ) . ' ' . sprintf( __( 'Remove %s by hand at the CDN.', 'scrapelock' ), $ip ) );
+			return $fail( __( 'Removing the test block', 'scrapelock' ), ( is_string( $gone ) ? $gone : __( 'The CDN still lists it.', 'scrapelock' ) ) . ' ' . $later() );
 		}
 		return array(
 			'ok'      => true,
@@ -1547,19 +1561,17 @@ final class PNCP_Edge {
 	}
 
 	/**
-	 * 3.4.1: does a Cloudflare error answer say the token itself is wrong (malformed, mistyped, a Global API Key
-	 * in the token field)? Cloudflare answers those with HTTP 400, not 401 / 403: they must stop the run like a
-	 * refused token, not write off the one address that was being blocked.
+	 * The error codes of a Cloudflare answer, with those in each error_chain.
 	 *
 	 * @param array<string, mixed> $json The answer.
-	 * @return bool
+	 * @return int[]
 	 */
-	private static function token_error( $json ) {
+	private static function cf_codes( $json ) {
 		$codes = array();
 		$walk  = static function ( $errors ) use ( &$walk, &$codes ) {
 			foreach ( is_array( $errors ) ? $errors : array() as $error ) {
 				if ( is_array( $error ) ) {
-					if ( isset( $error['code'] ) ) {
+					if ( isset( $error['code'] ) && is_numeric( $error['code'] ) ) {
 						$codes[] = (int) $error['code'];
 					}
 					if ( isset( $error['error_chain'] ) ) {
@@ -1569,12 +1581,126 @@ final class PNCP_Edge {
 			}
 		};
 		$walk( isset( $json['errors'] ) ? $json['errors'] : array() );
-		foreach ( $codes as $code ) {
-			if ( ( $code >= 6100 && $code <= 6112 ) || in_array( $code, array( 1000, 6003, 9103, 9106, 9109, 10000 ), true ) ) {
-				return true;
-			}
+		return array_values( array_unique( $codes ) );
+	}
+
+	/**
+	 * 3.4.2: what a Cloudflare error answer says is wrong. Cloudflare answers the same problem with different
+	 * HTTP statuses on different endpoints, so the error codes decide first:
+	 * - token_format: 6003 with 6100–6112 in its error_chain (HTTP 400): not an API token (mistyped, cut off, a
+	 *   Global API Key or another key in the token field).
+	 * - token_missing: 9106, 9107 (HTTP 400): no credentials at all.
+	 * - token_invalid: 1000 "Invalid API Token" (HTTP 401), 9109 "Invalid access token", 9103 (unknown key).
+	 * - permission: 10000 "Authentication error", 9109 "Unauthorized to access requested resource" (HTTP 403):
+	 *   the token is known, but may not do this here.
+	 * - zone: 7003 "Could not route to …, perhaps your object identifier is invalid?" (with 7000), 1001 "Invalid
+	 *   zone identifier", 1003.
+	 *
+	 * @param int                  $code HTTP status.
+	 * @param array<string, mixed> $json The answer.
+	 * @return string The kind, or '' when the codes say nothing about the token or the zone.
+	 */
+	private static function cf_kind( $code, $json ) {
+		$codes = self::cf_codes( $json );
+		$text  = '';
+		foreach ( isset( $json['errors'] ) && is_array( $json['errors'] ) ? $json['errors'] : array() as $error ) {
+			$text .= is_array( $error ) && isset( $error['message'] ) && is_string( $error['message'] ) ? ' ' . strtolower( $error['message'] ) : '';
 		}
-		return false;
+		if ( array_intersect( $codes, array( 9106, 9107 ) ) ) {
+			return 'token_missing';
+		}
+		if ( in_array( 6003, $codes, true ) || array_intersect( $codes, range( 6100, 6112 ) ) ) {
+			return 'token_format';
+		}
+		if ( array_intersect( $codes, array( 1000, 9103 ) ) || ( in_array( 9109, $codes, true ) && false !== strpos( $text, 'invalid' ) ) ) {
+			return 'token_invalid';
+		}
+		if ( array_intersect( $codes, array( 7000, 7003, 1001, 1003 ) ) ) {
+			return 'zone';
+		}
+		if ( array_intersect( $codes, array( 9109, 10000 ) ) ) {
+			return 'permission';
+		}
+		if ( 401 === $code ) {
+			return 'token_invalid';
+		}
+		if ( 403 === $code ) {
+			return 'permission';
+		}
+		return '';
+	}
+
+	/**
+	 * 3.4.2: the message for a refused token or zone, by kind (see cf_kind()).
+	 *
+	 * @param string $kind     Kind.
+	 * @param string $provider Provider.
+	 * @return string
+	 */
+	private static function denied_message( $kind, $provider ) {
+		if ( 'cloudflare' !== $provider ) {
+			return __( 'The CDN refused the token: check that it is correct, that it belongs to this zone and that it has the permission described under “API token”.', 'scrapelock' );
+		}
+		switch ( $kind ) {
+			case 'token_format':
+				return __( 'Cloudflare refused the token: it is not in the format of an API token (mistyped, cut off, or a Global API Key or another key instead of an API token).', 'scrapelock' );
+			case 'token_missing':
+				return __( 'Cloudflare received no API token.', 'scrapelock' );
+			case 'token_invalid':
+				return __( 'Cloudflare does not know this API token: it was deleted, rolled (given a new value) or mistyped. Create a new token and enter it again.', 'scrapelock' );
+			case 'zone':
+				return __( 'Cloudflare does not know this zone ID: copy the Zone ID from the Overview page of the site in the Cloudflare dashboard.', 'scrapelock' );
+			default:
+				return __( 'Cloudflare refused the request: the token is not allowed to do this for this zone. It needs the permission Zone → Firewall Services → Edit, with this zone under “Zone Resources”.', 'scrapelock' );
+		}
+	}
+
+	/**
+	 * 3.4.2: what the last answer of this request said besides its body: Cloudflare's Ray ID, the rate-limit
+	 * headers, the time it took and the kind of error. Used by the connection check (diagnose()).
+	 *
+	 * @var array<string, mixed>
+	 */
+	private static $last = array();
+
+	/**
+	 * A response header as one string (a header sent twice comes back as an array).
+	 *
+	 * @param array<string, mixed>|WP_Error $response Response.
+	 * @param string                        $name     Header.
+	 * @return string
+	 */
+	private static function header( $response, $name ) {
+		$value = wp_remote_retrieve_header( $response, $name );
+		if ( is_array( $value ) ) {
+			$value = (string) reset( $value );
+		}
+		return trim( (string) $value );
+	}
+
+	/**
+	 * 3.4.2: why the CDN could not be reached, in words an owner (or their host) can act on.
+	 *
+	 * @param WP_Error $error The error of the HTTP request.
+	 * @return string
+	 */
+	private static function network_message( $error ) {
+		$text = (string) $error->get_error_message();
+		$hint = '';
+		if ( 'http_request_not_executed' === $error->get_error_code() ) {
+			$hint = __( 'WordPress blocks requests to other sites on this server (WP_HTTP_BLOCK_EXTERNAL in wp-config.php): add the CDN\'s API host (api.cloudflare.com or api.bunny.net) to WP_ACCESSIBLE_HOSTS.', 'scrapelock' );
+		} elseif ( preg_match( '/cURL error 28\b|timed out|timeout/i', $text ) ) {
+			$hint = __( 'It did not answer within 10 seconds; it will try again in a few minutes.', 'scrapelock' );
+		} elseif ( preg_match( '/cURL error 6\b|resolve host|getaddrinfo/i', $text ) ) {
+			$hint = __( 'The server could not look up the CDN\'s address (DNS). Ask your host to check the server\'s DNS.', 'scrapelock' );
+		} elseif ( preg_match( '/cURL error 7\b|failed to connect|connection refused|could not connect/i', $text ) ) {
+			$hint = __( 'The server could not open a connection to the CDN: the host\'s firewall may block outgoing connections. Ask your host to allow HTTPS to the CDN\'s API.', 'scrapelock' );
+		} elseif ( preg_match( '/cURL error (35|51|58|60|77)\b|ssl|certificate/i', $text ) ) {
+			$hint = __( 'The secure connection failed: the server\'s certificate store or OpenSSL may be out of date. Ask your host.', 'scrapelock' );
+		}
+		/* translators: %s: error message */
+		$message = sprintf( __( 'The CDN could not be reached: %s', 'scrapelock' ), substr( sanitize_text_field( $text ), 0, 200 ) );
+		return '' !== $hint ? $message . ' ' . $hint : $message;
 	}
 
 	/**
@@ -1584,10 +1710,15 @@ final class PNCP_Edge {
 	 * @param string                                            $method Method.
 	 * @param string                                            $url    URL.
 	 * @param array<string, mixed>|object|null                  $body   JSON body.
-	 * @return array{status:string, code:int, json:array<string, mixed>, message:string}
+	 * @return array{status:string, code:int, json:array<string, mixed>, message:string, kind:string}
 	 */
 	private static function request( $c, $method, $url, $body = null ) {
 		self::$retry_after = 0;
+		self::$last        = array(
+			'ray'  => '',
+			'kind' => '',
+			'ms'   => 0,
+		);
 		// 3.4.1: at most CALL_BUDGET calls in 5 minutes, whatever starts them (runs, deactivation, the tests).
 		$now    = time();
 		$window = get_option( self::CALLS, array() );
@@ -1600,12 +1731,14 @@ final class PNCP_Edge {
 		 */
 		$budget = max( 30, (int) apply_filters( 'pncp_edge_call_budget', self::CALL_BUDGET ) );
 		if ( ! self::$removing_all && $window[1] >= $budget ) {
-			self::$retry_after = $window[0] + 5 * MINUTE_IN_SECONDS - $now;
+			self::$retry_after  = $window[0] + 5 * MINUTE_IN_SECONDS - $now;
+			self::$last['kind'] = 'budget';
 			return array(
 				'status'  => 'wait',
 				'code'    => 0,
 				'json'    => array(),
 				'message' => __( 'ScrapeLock made many calls to the CDN in the last 5 minutes; it will continue in a few minutes.', 'scrapelock' ),
+				'kind'    => 'budget',
 			);
 		}
 		if ( ! self::$removing_all ) {
@@ -1623,7 +1756,7 @@ final class PNCP_Edge {
 		}
 		$args = array(
 			'method'      => $method,
-			'timeout'     => 10,
+			'timeout'     => self::CALL_TIMEOUT,
 			'redirection' => 0,
 			// PNCP_VERSION is not defined while uninstall.php runs (the plugin itself is not loaded then).
 			'user-agent'  => 'ScrapeLock/' . ( defined( 'PNCP_VERSION' ) ? PNCP_VERSION : '' ),
@@ -1632,65 +1765,513 @@ final class PNCP_Edge {
 		if ( null !== $body ) {
 			$args['body'] = (string) wp_json_encode( $body );
 		}
-		$response = wp_remote_request( $url, $args );
+		$start            = microtime( true );
+		$response         = wp_remote_request( $url, $args );
+		self::$last['ms'] = (int) round( ( microtime( true ) - $start ) * 1000 );
 		if ( is_wp_error( $response ) ) {
+			self::$last['kind'] = 'network';
 			return array(
 				'status'  => 'error',
 				'code'    => 0,
 				'json'    => array(),
-				/* translators: %s: error message */
-				'message' => sprintf( __( 'The CDN could not be reached: %s', 'scrapelock' ), $response->get_error_message() ),
+				'message' => self::network_message( $response ),
+				'kind'    => 'network',
 			);
 		}
-		$code  = (int) wp_remote_retrieve_response_code( $response );
-		$retry = trim( (string) wp_remote_retrieve_header( $response, 'retry-after' ) );
+		$code               = (int) wp_remote_retrieve_response_code( $response );
+		self::$last['ray']  = substr( sanitize_text_field( self::header( $response, 'cf-ray' ) ), 0, 40 );
+		self::$last['rate'] = self::header( $response, 'ratelimit' );
+		self::$last['pol']  = self::header( $response, 'ratelimit-policy' );
+		$retry              = self::header( $response, 'retry-after' );
 		if ( '' !== $retry ) {
 			$retry             = ctype_digit( $retry ) ? (int) $retry : (int) strtotime( $retry ) - time();
 			self::$retry_after = max( 0, min( DAY_IN_SECONDS, $retry ) );
 		}
-		$json = json_decode( (string) wp_remote_retrieve_body( $response ), true );
+		$raw  = (string) wp_remote_retrieve_body( $response );
+		$json = json_decode( $raw, true );
 		$json = is_array( $json ) ? $json : array();
-		if ( $code >= 200 && $code < 300 && ( 'cloudflare' !== $c['provider'] || ! empty( $json['success'] ) ) ) {
+		// 3.4.2: an answer of Cloudflare's API always has "success". Anything else (an HTML error page of the
+		// Cloudflare edge, a page of a proxy or firewall in between, an empty body) is not an answer of the API,
+		// whatever its HTTP status says: it never counts as a refused token or a missing block.
+		$api = 'cloudflare' !== $c['provider'] || array_key_exists( 'success', $json );
+		if ( $code >= 200 && $code < 300 && $api && ( 'cloudflare' !== $c['provider'] || true === $json['success'] ) ) {
 			return array(
 				'status'  => 'ok',
 				'code'    => $code,
 				'json'    => $json,
 				'message' => '',
+				'kind'    => '',
 			);
 		}
 		$detail = '';
-		if ( isset( $json['errors'][0]['message'] ) ) {
+		if ( isset( $json['errors'][0]['message'] ) && is_scalar( $json['errors'][0]['message'] ) ) {
 			$detail = (string) $json['errors'][0]['message']; // Cloudflare.
-		} elseif ( isset( $json['Message'] ) ) {
+			$codes  = self::cf_codes( $json );
+			$detail = $codes ? $detail . ' [' . implode( ', ', array_slice( $codes, 0, 4 ) ) . ']' : $detail;
+		} elseif ( isset( $json['Message'] ) && is_scalar( $json['Message'] ) ) {
 			$detail = (string) $json['Message']; // Bunny.
 		}
 		$detail = substr( sanitize_text_field( $detail ), 0, 200 );
-		if ( 401 === $code || 403 === $code || ( $code >= 400 && $code < 500 && self::token_error( $json ) ) ) {
-			$status  = 'denied';
-			$message = __( 'The CDN refused the token: check that it is correct, that it belongs to this zone and that it has the permission described under “API token”.', 'scrapelock' );
-		} elseif ( 429 === $code ) {
+		$kind   = '';
+		if ( 429 === $code ) {
 			$status  = 'wait';
+			$kind    = 'rate';
 			$message = __( 'The CDN asked to slow down; it will continue in a few minutes.', 'scrapelock' );
+		} elseif ( ! $api ) {
+			$status = 'error';
+			$kind   = 'not_api';
+			$html   = false !== stripos( self::header( $response, 'content-type' ), 'html' ) || false !== stripos( substr( $raw, 0, 500 ), '<html' ) || false !== stripos( substr( $raw, 0, 500 ), '<!doctype' );
+			if ( 403 === $code && $html ) {
+				/* translators: %d: HTTP status code */
+				$message = sprintf( __( 'Cloudflare answered with a web page that refuses access (HTTP %d) instead of an API answer: Cloudflare\'s own protection may be blocking this server\'s address. It will try again in a few minutes; if this keeps happening, ask your host or Cloudflare support.', 'scrapelock' ), $code );
+			} elseif ( $code >= 500 || 0 === $code ) {
+				/* translators: %d: HTTP status code */
+				$message = sprintf( __( 'The CDN answered with an error (HTTP %d, an error page instead of an API answer); it will try again in a few minutes.', 'scrapelock' ), $code );
+			} else {
+				/* translators: %d: HTTP status code */
+				$message = sprintf( __( 'The CDN\'s API did not answer as expected (HTTP %d, not an API answer): a proxy or firewall between this server and the CDN may have answered instead. It will try again in a few minutes.', 'scrapelock' ), $code );
+			}
+		} elseif ( 'cloudflare' === $c['provider'] && $code >= 400 && $code < 500 && '' !== self::cf_kind( $code, $json ) ) {
+			$status  = 'denied';
+			$kind    = self::cf_kind( $code, $json );
+			$message = self::denied_message( $kind, $c['provider'] );
+		} elseif ( 401 === $code || 403 === $code ) {
+			$status  = 'denied';
+			$kind    = 'permission';
+			$message = self::denied_message( $kind, $c['provider'] );
 		} elseif ( $code >= 500 || 0 === $code ) {
 			$status = 'error';
 			/* translators: %d: HTTP status code */
 			$message = sprintf( __( 'The CDN answered with an error (HTTP %d); it will try again in a few minutes.', 'scrapelock' ), $code );
+		} elseif ( $code >= 200 && $code < 300 ) {
+			// Cloudflare: HTTP 2xx with "success": false.
+			$status = 'error';
+			/* translators: %d: HTTP status code */
+			$message = sprintf( __( 'The CDN answered that the request did not succeed (HTTP %d); it will try again in a few minutes.', 'scrapelock' ), $code );
 		} else {
 			$status = 'refused';
 			/* translators: %d: HTTP status code */
 			$message = sprintf( __( 'The CDN did not accept the request (HTTP %d).', 'scrapelock' ), $code );
-			if ( 404 === $code ) {
+			if ( 404 === $code && 'cloudflare' !== $c['provider'] ) {
 				$message = __( 'The CDN does not know this zone ID.', 'scrapelock' );
 			}
 		}
 		if ( 'denied' === $status && 'cloudflare' === $c['provider'] && preg_match( '/^[0-9a-f]{37}$/i', (string) $c['token'] ) ) {
 			$message .= ' ' . __( 'This looks like a Global API Key: ScrapeLock needs an API token (My Profile > API Tokens), not the Global API Key.', 'scrapelock' );
 		}
+		if ( '' !== self::$last['ray'] && 'ok' !== $status ) {
+			$detail .= ( '' !== $detail ? '; ' : '' ) . 'Ray ID ' . self::$last['ray'];
+		}
+		self::$last['kind'] = $kind;
 		return array(
 			'status'  => $status,
 			'code'    => $code,
 			'json'    => $json,
 			'message' => '' !== $detail ? $message . ' (' . $detail . ')' : $message,
+			'kind'    => $kind,
 		);
+	}
+
+	/* ---------- Connection check ---------- */
+
+	/**
+	 * 3.4.2: the most IP Access rules a Cloudflare account may hold: 50,000 on every plan, as Cloudflare documents
+	 * it (developers.cloudflare.com/waf/tools/ip-access-rules/, "Availability"); Enterprise accounts can buy more.
+	 * Filter `pncp_edge_rule_limit`.
+	 *
+	 * @return int
+	 */
+	public static function rule_limit() {
+		return max( 1, (int) apply_filters( 'pncp_edge_rule_limit', 50000 ) );
+	}
+
+	/**
+	 * 3.4.2: the rate-limit headroom Cloudflare reported in its last answer (headers Ratelimit and
+	 * Ratelimit-Policy): calls left, the limit and the window in seconds; null when it did not say.
+	 *
+	 * @return array{left:int, limit:int, window:int, reset:int}|null
+	 */
+	private static function last_rate() {
+		$rate = isset( self::$last['rate'] ) ? (string) self::$last['rate'] : '';
+		$pol  = isset( self::$last['pol'] ) ? (string) self::$last['pol'] : '';
+		if ( ! preg_match( '/\br=(\d+)/', $rate, $r ) ) {
+			return null;
+		}
+		$t = preg_match( '/\bt=(\d+)/', $rate, $m ) ? (int) $m[1] : 0;
+		$q = preg_match( '/\bq=(\d+)/', $pol, $m ) ? (int) $m[1] : 1200;
+		$w = preg_match( '/\bw=(\d+)/', $pol, $m ) ? (int) $m[1] : 300;
+		return array(
+			'left'   => (int) $r[1],
+			'limit'  => $q,
+			'window' => $w,
+			'reset'  => $t,
+		);
+	}
+
+	/**
+	 * 3.4.2: checks the connection to the CDN step by step, so the owner sees in one click what works and what
+	 * to change: Cloudflare is reachable, the token is valid and active (and when it expires), the zone exists,
+	 * is active and which plan it has, the token may read and edit the IP Access rules (a test block at
+	 * 203.0.113.x is added, found and removed again), and how much of the API rate limit is left. Stops at the
+	 * first step that makes the following ones pointless. Nothing is saved; no setting changes.
+	 *
+	 * @param array{provider:string, zone:string, token:string} $c Configuration.
+	 * @return array{ok:bool, provider:string, zone:string, time:int, checks:array<int, array{id:string, status:string, label:string, detail:string, fix:string}>, facts:array<string, string>}
+	 */
+	public static function diagnose( $c ) {
+		$out                          = array(
+			'ok'       => false,
+			'provider' => isset( $c['provider'] ) ? (string) $c['provider'] : '',
+			'zone'     => isset( $c['zone'] ) ? (string) $c['zone'] : '',
+			'time'     => time(),
+			'checks'   => array(),
+			'facts'    => array(),
+		);
+		$labels                       = self::check_labels( $out['provider'] );
+		$add                          = static function ( $id, $status, $detail, $fix = '' ) use ( &$out, $labels ) {
+			$out['checks'][] = array(
+				'id'     => $id,
+				'status' => $status,
+				'label'  => isset( $labels[ $id ] ) ? $labels[ $id ] : $id,
+				'detail' => (string) $detail,
+				'fix'    => (string) $fix,
+			);
+		};
+		$finish                       = static function () use ( &$out, $labels, $add ) {
+			$done = array_column( $out['checks'], 'id' );
+			foreach ( array_keys( $labels ) as $id ) {
+				if ( ! in_array( $id, $done, true ) ) {
+					$add( $id, 'skip', __( 'Not checked: an earlier step failed.', 'scrapelock' ) );
+				}
+			}
+			$out['ok'] = ! in_array( 'fail', array_column( $out['checks'], 'status' ), true );
+			return $out;
+		};
+		$out['facts']['token_source'] = self::token_from_config() && isset( $c['token'] ) && self::is_config_token( (string) $c['token'] ) ? 'wp-config.php' : 'settings';
+		$out['facts']['token_length'] = (string) strlen( isset( $c['token'] ) ? (string) $c['token'] : '' );
+		if ( ! self::usable( $c ) ) {
+			$add( 'setup', 'fail', __( 'Fill in the zone ID and the token.', 'scrapelock' ) );
+			return $finish();
+		}
+		if ( 'bunny' === $c['provider'] ) {
+			$res = self::request( $c, 'GET', self::BUNNY_API . '/pullzone/' . rawurlencode( $c['zone'] ) );
+			if ( 'ok' !== $res['status'] ) {
+				$add( 'zone', 'fail', $res['message'], 'denied' === $res['status'] ? __( 'Use the API key from Account settings → API in the bunny.net dashboard, and the ID of the pull zone that serves this site.', 'scrapelock' ) : '' );
+				return $finish();
+			}
+			$name = isset( $res['json']['Name'] ) && is_scalar( $res['json']['Name'] ) ? sanitize_text_field( (string) $res['json']['Name'] ) : '';
+			/* translators: %s: pull zone name */
+			$add( 'zone', 'ok', '' !== $name ? sprintf( __( 'Pull zone “%s” found.', 'scrapelock' ), $name ) : __( 'Pull zone found.', 'scrapelock' ) );
+			$block = self::test_block( $c );
+			$add( 'edit', $block['ok'] ? 'ok' : 'fail', $block['message'] );
+			return $finish();
+		}
+		if ( preg_match( '/^[0-9a-f]{37}$/i', $c['token'] ) ) {
+			$add( 'token', 'fail', __( 'This looks like a Global API Key (37 characters), not an API token.', 'scrapelock' ), __( 'In the Cloudflare dashboard: My Profile → API Tokens → Create Token → Custom token, with the permission Zone → Firewall Services → Edit for this zone. Enter that token instead.', 'scrapelock' ) );
+			return $finish();
+		}
+		$fix_token = __( 'In the Cloudflare dashboard: My Profile → API Tokens (or Manage Account → Account API Tokens) → Create Token → Custom token, with the permission Zone → Firewall Services → Edit and this zone under “Zone Resources”. Enter the new token here.', 'scrapelock' );
+		$fix_perm  = __( 'Edit the token in the Cloudflare dashboard (My Profile → API Tokens): add the permission Zone → Firewall Services → Edit, and this zone (or “All zones”) under “Zone Resources”.', 'scrapelock' );
+		$rays      = array();
+
+		// 1. Cloudflare reachable, token valid (the verify call needs no permission).
+		$verify                     = self::request( $c, 'GET', self::CLOUDFLARE_API . '/user/tokens/verify' );
+		$rays[]                     = self::$last['ray'];
+		$out['facts']['latency_ms'] = (string) self::$last['ms'];
+		if ( in_array( $verify['status'], array( 'error', 'wait' ), true ) ) {
+			$add( 'connection', 'fail', $verify['message'] );
+			$out['facts']['ray'] = implode( ' ', array_filter( $rays ) );
+			return $finish();
+		}
+		/* translators: %d: milliseconds */
+		$add( 'connection', 'ok', sprintf( __( 'api.cloudflare.com answered in %d ms.', 'scrapelock' ), self::$last['ms'] ) );
+		$deferred = false;
+		if ( 'ok' === $verify['status'] ) {
+			$out['facts']['token_owner'] = 'user';
+			if ( ! self::token_status_check( $verify['json'], $add, $out, $fix_token ) ) {
+				return $finish();
+			}
+		} elseif ( 'denied' === $verify['status'] && in_array( $verify['kind'], array( 'token_format', 'token_missing' ), true ) ) {
+			$add( 'token', 'fail', $verify['message'], $fix_token );
+			return $finish();
+		} else {
+			// Not a user token, or not a token at all: an account-owned token is verified at its account, which
+			// the zone tells (below).
+			$deferred = true;
+		}
+
+		// 2. The zone: found, active, plan (any zone permission, Firewall Services included, may read it).
+		$zone   = self::request( $c, 'GET', self::CLOUDFLARE_API . '/zones/' . rawurlencode( $c['zone'] ) );
+		$rays[] = self::$last['ray'];
+		if ( 'ok' !== $zone['status'] ) {
+			if ( in_array( $zone['status'], array( 'error', 'wait' ), true ) ) {
+				$add( 'zone', 'fail', $zone['message'] );
+			} elseif ( $deferred ) {
+				$add( 'token', 'fail', $verify['message'], $fix_token );
+			} elseif ( 'zone' === $zone['kind'] || 404 === $zone['code'] ) {
+				$add( 'zone', 'fail', self::denied_message( 'zone', 'cloudflare' ), __( 'The Zone ID is on the Overview page of the site in the Cloudflare dashboard (right column, “API”). It is 32 characters; the Account ID next to it is not the zone ID.', 'scrapelock' ) );
+			} else {
+				$add( 'zone', 'fail', __( 'The token is valid, but it has no access to this zone: the zone ID belongs to another account, or this zone is not under “Zone Resources” of the token.', 'scrapelock' ) . ' (' . $zone['message'] . ')', $fix_perm );
+			}
+			$out['facts']['ray'] = implode( ' ', array_filter( $rays ) );
+			return $finish();
+		}
+		$z       = isset( $zone['json']['result'] ) && is_array( $zone['json']['result'] ) ? $zone['json']['result'] : array();
+		$name    = isset( $z['name'] ) && is_scalar( $z['name'] ) ? sanitize_text_field( (string) $z['name'] ) : '';
+		$zstatus = isset( $z['status'] ) && is_scalar( $z['status'] ) ? sanitize_key( (string) $z['status'] ) : '';
+		$paused  = ! empty( $z['paused'] );
+		$plan    = '';
+		if ( isset( $z['plan'] ) && is_array( $z['plan'] ) ) {
+			$plan = isset( $z['plan']['name'] ) && is_scalar( $z['plan']['name'] ) ? (string) $z['plan']['name'] : ( isset( $z['plan']['legacy_id'] ) && is_scalar( $z['plan']['legacy_id'] ) ? (string) $z['plan']['legacy_id'] : '' );
+		}
+		$plan    = sanitize_text_field( $plan );
+		$account = isset( $z['account']['id'] ) && is_scalar( $z['account']['id'] ) && preg_match( '/^[0-9a-f]{32}$/i', (string) $z['account']['id'] ) ? strtolower( (string) $z['account']['id'] ) : '';
+
+		$out['facts']['zone_name']   = $name;
+		$out['facts']['zone_status'] = $zstatus . ( $paused ? ', paused' : '' );
+		$out['facts']['plan']        = $plan;
+		if ( $deferred ) {
+			// The token works for this zone but is not a user token: an account-owned token (Manage Account →
+			// Account API Tokens), verified at its account.
+			$done = false;
+			if ( '' !== $account ) {
+				$averify = self::request( $c, 'GET', self::CLOUDFLARE_API . '/accounts/' . $account . '/tokens/verify' );
+				$rays[]  = self::$last['ray'];
+				if ( 'ok' === $averify['status'] ) {
+					$out['facts']['token_owner'] = 'account';
+					$done                        = true;
+					if ( ! self::token_status_check( $averify['json'], $add, $out, $fix_token ) ) {
+						$out['facts']['ray'] = implode( ' ', array_filter( $rays ) );
+						return $finish();
+					}
+				}
+			}
+			if ( ! $done ) {
+				$add( 'token', 'warn', __( 'The token works for this zone, but Cloudflare did not confirm that it is active, or when it expires.', 'scrapelock' ) . ' (' . $verify['message'] . ')' );
+			}
+		}
+		$shown = '' !== $name ? $name : $c['zone'];
+		if ( 'active' === $zstatus && ! $paused ) {
+			/* translators: 1: domain, 2: plan name */
+			$add( 'zone', 'ok', sprintf( __( '%1$s is active on Cloudflare (plan: %2$s).', 'scrapelock' ), $shown, '' !== $plan ? $plan : __( 'unknown', 'scrapelock' ) ) );
+		} elseif ( $paused ) {
+			/* translators: %s: domain */
+			$add( 'zone', 'warn', sprintf( __( 'Cloudflare is paused for %s: traffic does not go through Cloudflare, so blocks made there have no effect until it is resumed.', 'scrapelock' ), $shown ), __( 'Resume Cloudflare on the Overview page of the site (Advanced actions → Resume Cloudflare on site), or leave blocking at the CDN off.', 'scrapelock' ) );
+		} elseif ( in_array( $zstatus, array( 'pending', 'initializing' ), true ) ) {
+			/* translators: 1: domain, 2: zone status */
+			$add( 'zone', 'warn', sprintf( __( '%1$s is not active on Cloudflare yet (status: %2$s): until the domain uses Cloudflare\'s name servers, blocks made there have no effect.', 'scrapelock' ), $shown, $zstatus ), __( 'Finish the setup of the site in the Cloudflare dashboard (change the name servers at your domain registrar).', 'scrapelock' ) );
+		} elseif ( '' === $zstatus ) {
+			/* translators: %s: domain */
+			$add( 'zone', 'warn', sprintf( __( '%s found, but Cloudflare did not say whether it is active.', 'scrapelock' ), $shown ) );
+		} else {
+			/* translators: 1: domain, 2: zone status */
+			$add( 'zone', 'fail', sprintf( __( '%1$s is not in use on Cloudflare (status: %2$s): blocks made there would have no effect.', 'scrapelock' ), $shown, $zstatus ), __( 'Check the zone ID: it must be the zone that serves this site now.', 'scrapelock' ) );
+			$out['facts']['ray'] = implode( ' ', array_filter( $rays ) );
+			return $finish();
+		}
+
+		// 3. Permission to read the IP Access rules (Zone → Firewall Services: Read or Edit).
+		$list   = self::request( $c, 'GET', self::CLOUDFLARE_API . '/zones/' . rawurlencode( $c['zone'] ) . '/firewall/access_rules/rules?per_page=1' );
+		$rays[] = self::$last['ray'];
+		if ( 'ok' !== $list['status'] ) {
+			$add( 'read', 'fail', $list['message'], 'denied' === $list['status'] ? $fix_perm : '' );
+			$out['facts']['ray'] = implode( ' ', array_filter( $rays ) );
+			return $finish();
+		}
+		$total = isset( $list['json']['result_info']['total_count'] ) && is_numeric( $list['json']['result_info']['total_count'] ) ? (int) $list['json']['result_info']['total_count'] : -1;
+		$add( 'read', 'ok', __( 'The token may read the IP Access rules of this zone.', 'scrapelock' ) );
+		$rate = self::last_rate();
+
+		// 4. Permission to block: a test block, added, found and removed again.
+		$block  = self::test_block( $c );
+		$bkind  = isset( self::$last['kind'] ) ? (string) self::$last['kind'] : '';
+		$rays[] = self::$last['ray'];
+		if ( $block['ok'] ) {
+			$add( 'edit', 'ok', $block['message'] );
+		} else {
+			$add( 'edit', 'fail', $block['message'], in_array( $bkind, array( 'permission', 'token_invalid' ), true ) ? __( 'The token can read but not edit the IP Access rules. Edit the token in the Cloudflare dashboard: change Zone → Firewall Services from Read to Edit.', 'scrapelock' ) : '' );
+		}
+		$rate = self::last_rate() ? self::last_rate() : $rate;
+
+		// 5. Room for ScrapeLock's blocks.
+		$max = self::max();
+		if ( $total >= 0 ) {
+			$out['facts']['access_rules'] = (string) $total;
+			/* translators: 1: number of IP Access rules, 2: most addresses ScrapeLock blocks, 3: Cloudflare's limit */
+			$text = sprintf( __( 'This zone has %1$s IP Access rules. ScrapeLock adds at most %2$s (filter pncp_edge_max); Cloudflare allows %3$s per account, for all its zones together.', 'scrapelock' ), number_format_i18n( $total ), number_format_i18n( $max ), number_format_i18n( self::rule_limit() ) );
+			if ( $total + $max > self::rule_limit() ) {
+				$add( 'room', 'warn', $text, __( 'Remove IP Access rules you no longer need in the Cloudflare dashboard (Security → WAF → Tools), or lower the number ScrapeLock blocks with the filter pncp_edge_max.', 'scrapelock' ) );
+			} else {
+				$add( 'room', 'ok', $text );
+			}
+		} else {
+			$add( 'room', 'warn', __( 'Cloudflare did not say how many IP Access rules this zone has.', 'scrapelock' ) );
+		}
+
+		// 6. API rate limit (shared with the dashboard and every other tool of the account).
+		$window = get_option( self::CALLS, array() );
+		$used   = is_array( $window ) && isset( $window[0], $window[1] ) && (int) $window[0] > time() - 5 * MINUTE_IN_SECONDS ? (int) $window[1] : 0;
+		$budget = max( 30, (int) apply_filters( 'pncp_edge_call_budget', self::CALL_BUDGET ) );
+		/* translators: 1: calls made, 2: most calls */
+		$own = sprintf( __( 'ScrapeLock made %1$d of its %2$d calls in the last 5 minutes.', 'scrapelock' ), $used, $budget );
+		if ( $rate ) {
+			$out['facts']['rate_limit'] = $rate['left'] . '/' . $rate['limit'] . ' per ' . $rate['window'] . 's';
+			/* translators: 1: calls left, 2: limit, 3: seconds */
+			$text = sprintf( __( 'Cloudflare: %1$d of %2$d calls left in the current %3$d-second window.', 'scrapelock' ), $rate['left'], $rate['limit'], $rate['window'] ) . ' ' . $own;
+			if ( $rate['left'] < max( 50, (int) ( $rate['limit'] / 10 ) ) ) {
+				$add( 'rate', 'warn', $text, __( 'Other tools use most of the account\'s API limit. ScrapeLock slows down by itself, but blocks may then reach the CDN later.', 'scrapelock' ) );
+			} else {
+				$add( 'rate', 'ok', $text );
+			}
+		} else {
+			$add( 'rate', 'ok', __( 'Cloudflare did not report the rate limit in its answer; it allows 1,200 calls per 5 minutes per user.', 'scrapelock' ) . ' ' . $own );
+		}
+		$out['facts']['ray'] = implode( ' ', array_filter( $rays ) );
+		return $finish();
+	}
+
+	/**
+	 * The checks of diagnose(), in order, with their names.
+	 *
+	 * @param string $provider Provider.
+	 * @return array<string, string>
+	 */
+	private static function check_labels( $provider ) {
+		if ( 'bunny' === $provider ) {
+			return array(
+				'zone' => __( 'API key and pull zone', 'scrapelock' ),
+				'edit' => __( 'Test block', 'scrapelock' ),
+			);
+		}
+		return array(
+			'connection' => __( 'Connection to Cloudflare', 'scrapelock' ),
+			'token'      => __( 'API token', 'scrapelock' ),
+			'zone'       => __( 'Zone', 'scrapelock' ),
+			'read'       => __( 'Permission to read IP Access rules', 'scrapelock' ),
+			'edit'       => __( 'Permission to block (test block)', 'scrapelock' ),
+			'room'       => __( 'Room for blocks', 'scrapelock' ),
+			'rate'       => __( 'API rate limit', 'scrapelock' ),
+		);
+	}
+
+	/**
+	 * Adds the check of the token's status (active, disabled, expired, not yet valid) from a verify answer.
+	 *
+	 * @param array<string, mixed> $json      The answer of tokens/verify.
+	 * @param callable             $add       Adds a check.
+	 * @param array<string, mixed> $out       The diagnosis (facts updated).
+	 * @param string               $fix_token What to do about a token that does not work.
+	 * @return bool Whether the token may be used.
+	 */
+	private static function token_status_check( $json, $add, &$out, $fix_token ) {
+		$r                             = isset( $json['result'] ) && is_array( $json['result'] ) ? $json['result'] : array();
+		$status                        = isset( $r['status'] ) && is_scalar( $r['status'] ) ? sanitize_key( (string) $r['status'] ) : '';
+		$expires                       = isset( $r['expires_on'] ) && is_scalar( $r['expires_on'] ) ? (int) strtotime( (string) $r['expires_on'] ) : 0;
+		$before                        = isset( $r['not_before'] ) && is_scalar( $r['not_before'] ) ? (int) strtotime( (string) $r['not_before'] ) : 0;
+		$format                        = get_option( 'date_format' );
+		$out['facts']['token_status']  = $status;
+		$out['facts']['token_expires'] = $expires ? gmdate( 'Y-m-d H:i', $expires ) . ' UTC' : 'never';
+		if ( 'disabled' === $status ) {
+			$add( 'token', 'fail', __( 'The token is valid but disabled in Cloudflare.', 'scrapelock' ), __( 'Enable it again in the Cloudflare dashboard (My Profile → API Tokens), or create a new one.', 'scrapelock' ) );
+			return false;
+		}
+		if ( 'expired' === $status || ( $expires && $expires <= time() ) ) {
+			/* translators: %s: date */
+			$add( 'token', 'fail', $expires ? sprintf( __( 'The token expired on %s.', 'scrapelock' ), wp_date( $format, $expires ) ) : __( 'The token has expired.', 'scrapelock' ), $fix_token );
+			return false;
+		}
+		if ( $before && $before > time() ) {
+			/* translators: %s: date */
+			$add( 'token', 'fail', sprintf( __( 'The token is not valid before %s (its “Start date” in Cloudflare).', 'scrapelock' ), wp_date( $format . ' ' . get_option( 'time_format' ), $before ) ), __( 'Wait until then, or change the token\'s TTL in the Cloudflare dashboard.', 'scrapelock' ) );
+			return false;
+		}
+		if ( '' !== $status && 'active' !== $status ) {
+			/* translators: %s: status */
+			$add( 'token', 'fail', sprintf( __( 'Cloudflare says the token is not active (status: %s).', 'scrapelock' ), $status ), $fix_token );
+			return false;
+		}
+		if ( $expires && $expires < time() + 14 * DAY_IN_SECONDS ) {
+			/* translators: %s: date */
+			$add( 'token', 'warn', sprintf( __( 'The token is valid and active, but it expires on %s. After that, blocking at the CDN stops.', 'scrapelock' ), wp_date( $format, $expires ) ), __( 'Extend the token\'s TTL in the Cloudflare dashboard (My Profile → API Tokens → Edit), or create a new token and enter it here.', 'scrapelock' ) );
+			return true;
+		}
+		if ( '' === $status ) {
+			$add( 'token', 'warn', __( 'Cloudflare accepted the token but did not say whether it is active.', 'scrapelock' ) );
+			return true;
+		}
+		$add(
+			'token',
+			'ok',
+			$expires
+				/* translators: %s: date */
+				? sprintf( __( 'The token is valid and active (expires on %s).', 'scrapelock' ), wp_date( $format, $expires ) )
+				: __( 'The token is valid and active (no expiry date).', 'scrapelock' )
+		);
+		return true;
+	}
+
+	/**
+	 * 3.4.2: what went wrong according to a diagnosis: the first problem and what to do, or '' when nothing
+	 * stops blocking at the CDN (warnings do not).
+	 *
+	 * @param array<string, mixed> $diag The result of diagnose().
+	 * @return string
+	 */
+	public static function diagnosis_error( $diag ) {
+		foreach ( isset( $diag['checks'] ) && is_array( $diag['checks'] ) ? $diag['checks'] : array() as $check ) {
+			if ( 'fail' === $check['status'] ) {
+				return trim( $check['label'] . ': ' . $check['detail'] . ( '' !== $check['fix'] ? ' ' . $check['fix'] : '' ) );
+			}
+		}
+		return '';
+	}
+
+	/**
+	 * 3.4.2: the diagnosis as plain text, to copy into a support request. Holds no secret: never the token
+	 * (only where it is set and its length), nothing about visitors.
+	 *
+	 * @param array<string, mixed> $diag The result of diagnose().
+	 * @return string
+	 */
+	public static function diagnosis_text( $diag ) {
+		global $wp_version;
+		$words    = array(
+			'ok'   => __( 'OK', 'scrapelock' ),
+			'warn' => __( 'WARNING', 'scrapelock' ),
+			'fail' => __( 'PROBLEM', 'scrapelock' ),
+			'skip' => __( 'NOT CHECKED', 'scrapelock' ),
+		);
+		$provider = isset( $diag['provider'], self::providers()[ $diag['provider'] ] ) ? self::providers()[ $diag['provider'] ] : '-';
+		$lines    = array(
+			/* translators: 1: plugin version, 2: date and time */
+			sprintf( __( 'ScrapeLock %1$s: CDN connection check, %2$s', 'scrapelock' ), defined( 'PNCP_VERSION' ) ? PNCP_VERSION : '', gmdate( 'Y-m-d H:i', isset( $diag['time'] ) ? (int) $diag['time'] : time() ) . ' UTC' ),
+			'CDN: ' . $provider . ' | Zone ID: ' . ( isset( $diag['zone'] ) ? $diag['zone'] : '' ),
+			'',
+		);
+		foreach ( isset( $diag['checks'] ) && is_array( $diag['checks'] ) ? $diag['checks'] : array() as $check ) {
+			$lines[] = '[' . ( isset( $words[ $check['status'] ] ) ? $words[ $check['status'] ] : $check['status'] ) . '] ' . $check['label'] . ': ' . $check['detail'];
+			if ( '' !== $check['fix'] ) {
+				$lines[] = '    -> ' . $check['fix'];
+			}
+		}
+		$lines[] = '';
+		foreach ( isset( $diag['facts'] ) && is_array( $diag['facts'] ) ? $diag['facts'] : array() as $key => $value ) {
+			if ( '' !== (string) $value ) {
+				$lines[] = $key . ': ' . $value;
+			}
+		}
+		$curl    = function_exists( 'curl_version' ) ? curl_version() : array();
+		$lines[] = 'WordPress ' . $wp_version . ', PHP ' . PHP_VERSION . ( isset( $curl['version'] ) ? ', cURL ' . $curl['version'] . ( isset( $curl['ssl_version'] ) ? ' ' . $curl['ssl_version'] : '' ) : '' );
+		$lines[] = 'WP_HTTP_BLOCK_EXTERNAL: ' . ( defined( 'WP_HTTP_BLOCK_EXTERNAL' ) && WP_HTTP_BLOCK_EXTERNAL ? 'yes' : 'no' ) . ', proxy: ' . ( defined( 'WP_PROXY_HOST' ) ? 'yes' : 'no' );
+		$lines[] = 'Account rule lists: not used by ScrapeLock';
+		$text    = implode( "\n", $lines );
+		// Never a secret, even if an answer quoted it back.
+		$config = self::config();
+		foreach ( array( $config['token'], self::token_from_config() ? (string) SCRAPELOCK_EDGE_TOKEN : '' ) as $secret ) {
+			if ( strlen( $secret ) >= 8 ) {
+				$text = str_replace( $secret, '[token]', $text );
+			}
+		}
+		return $text;
 	}
 }

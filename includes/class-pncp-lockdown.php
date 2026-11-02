@@ -3,7 +3,8 @@
  * Lockdown: freezes every change made from wp-admin, the REST API or XML-RPC (plugins, themes, updates,
  * the file editor, users and roles, settings, content) until an administrator unlocks it with a code
  * from an authenticator app. Visitors and customers are not affected: they browse, order, register as
- * customers and comment as usual.
+ * customers and comment as usual. Shop managers (and roles not ticked on the Lockdown tab) keep their shop and
+ * content work, without the capabilities that can take over the site (PNCP_Lockdown::limited_caps()).
  *
  * Lost phone: one-time recovery codes, or, as a last resort, define( 'SCRAPELOCK_UNLOCK', true ); in
  * wp-config.php (whoever can edit that file controls the site anyway).
@@ -30,6 +31,9 @@ final class PNCP_Lockdown {
 	const MUTEX         = 'pncp_lockdown_mutex';
 	const FAILS_OPTION  = 'pncp_lockdown_fails'; // The wrong-code counters (see fail_buckets()).
 	const MUTEX_TTL     = 5; // 3.4: seconds the code-check lock is held at most (was 10; a check takes far less).
+	const DB_FOREIGN    = 'pncp_lockdown_dblock'; // 3.4.2: the connection last found holding the database lock for itself.
+	const MUTEX_PRI     = 'pncp_lockdown_mutex_pri'; // 3.4.2: set while a correct code waits for the code-check lock.
+	const PRI_TTL       = 9; // 3.4.2: seconds a correct code waits for the code-check lock at most (see fallback_lock()).
 
 	/**
 	 * Inside can(): the lock does not take capabilities away.
@@ -88,11 +92,42 @@ final class PNCP_Lockdown {
 	private static $stale = 0;
 
 	/**
+	 * 3.4.2: the stored state is a genuinely signed one of the current lock that is newer than the guard file
+	 * or lock file of this server (another web server with its own wp-content saved it: an unlock for a while,
+	 * or a lock again). The files of this server are brought up to date once the state is read.
+	 *
+	 * @var bool
+	 */
+	private static $follow = false;
+
+	/**
+	 * 3.4.2: the stored state is a genuinely signed, newer unlock for a while made on another web server, while
+	 * the guard file or lock file of this server says locked. This server stays locked (see seal_check()).
+	 *
+	 * @var bool
+	 */
+	private static $elsewhere = false;
+
+	/**
 	 * Staff or not, per user.
 	 *
 	 * @var array<int, bool>
 	 */
 	private static $staff = array();
+
+	/**
+	 * The capabilities refused to working roles while locked (limited_caps()), per request.
+	 *
+	 * @var string[]|null
+	 */
+	private static $limited_caps = null;
+
+	/**
+	 * Was $limited_caps built after plugins_loaded (every filter in place)?
+	 *
+	 * @var bool
+	 */
+	private static $limited_final = false;
 
 	/**
 	 * The wp_die() handler that was in place before ours.
@@ -131,6 +166,20 @@ final class PNCP_Lockdown {
 	private static $mutex = '';
 
 	/**
+	 * The value this request wrote to the priority row (see fallback_lock()), so that release() only frees its own.
+	 *
+	 * @var string
+	 */
+	private static $pri = '';
+
+	/**
+	 * When this request first saw each value of the row (see mutex_take()), by value.
+	 *
+	 * @var array<string, float>
+	 */
+	private static $seen_at = array();
+
+	/**
 	 * The open lock file this request holds an exclusive lock on while it holds the code-check lock (see
 	 * local_lock()), or null.
 	 *
@@ -145,6 +194,22 @@ final class PNCP_Lockdown {
 	 * @var string
 	 */
 	private static $local_id = '';
+
+	/**
+	 * The name of the database lock (GET_LOCK) this request holds as the code-check lock, '' when it holds none
+	 * (see db_lock()).
+	 *
+	 * @var string
+	 */
+	private static $db_held = '';
+
+	/**
+	 * Can the database lock be used on this request? Null until first tried; false after it failed once (the
+	 * file lock and the row are used from then on, see lock()).
+	 *
+	 * @var bool|null
+	 */
+	private static $db_usable = null;
 
 	/**
 	 * Is the stored state being read and checked right now (state())?
@@ -164,7 +229,7 @@ final class PNCP_Lockdown {
 	 * Registers the hooks.
 	 */
 	public static function init() {
-		add_filter( 'map_meta_cap', array( __CLASS__, 'map_meta_cap' ), 9999, 3 );
+		add_filter( 'map_meta_cap', array( __CLASS__, 'map_meta_cap' ), 9999, 4 );
 		add_filter( 'file_mod_allowed', array( __CLASS__, 'file_mod_allowed' ) );
 		add_filter( 'automatic_updater_disabled', array( __CLASS__, 'updater_disabled' ) );
 		foreach ( self::protected_options() as $option ) {
@@ -270,9 +335,17 @@ final class PNCP_Lockdown {
 					// 3.4.1: the generation of the unlock for good that removed the guard file or the lock file. A
 					// file of the lock from before it (lower generation), put back from a backup, no longer counts.
 					'freed'          => 0,
+					// 3.4.2: the generation of the state saved when the site was locked, and the address alerts go to
+					// signed then: the lock line for wp-config.php names them (PNCP_Seal::CONFIG).
+					'lgen'           => 0,
+					'lmail'          => '',
 				),
 				$stored
 			);
+		}
+		if ( self::$follow && ! self::$reading ) {
+			self::$follow = false;
+			self::follow_files();
 		}
 		if ( self::$stale && ! self::$reading ) {
 			$stale       = self::$stale;
@@ -303,7 +376,9 @@ final class PNCP_Lockdown {
 	private static function check_seal() {
 		$stored = self::stored();
 		self::seal_check( $stored );
-		if ( 'replay' === self::$tamper && PNCP_Seal::refresh_beacon() ) {
+		// 3.4.2: also when the state is a newer unlock for a while than the guard read at the start of this request:
+		// another request on this server may have just written both (see seal_check(), $elsewhere).
+		if ( ( 'replay' === self::$tamper || self::$elsewhere ) && PNCP_Seal::refresh_beacon() ) {
 			self::seal_check( $stored );
 		}
 		$beacon = PNCP_Seal::beacon();
@@ -314,7 +389,9 @@ final class PNCP_Lockdown {
 			self::seal_check( $stored );
 		}
 		if ( '' !== self::$tamper ) {
-			$older = 'replay' === self::$tamper && self::$sig_ok && ! empty( $stored['locked'] ) && $beacon && isset( $beacon['gen'] ) && ( isset( $stored['gen'] ) ? (int) $stored['gen'] : 0 ) < $beacon['gen'];
+			$floor = $beacon && isset( $beacon['gen'] ) ? (int) $beacon['gen'] : 0;
+			$floor = max( $floor, self::config_floor() );
+			$older = 'replay' === self::$tamper && self::$sig_ok && ! empty( $stored['locked'] ) && $floor > 0 && ( isset( $stored['gen'] ) ? (int) $stored['gen'] : 0 ) < $floor;
 			self::tamper_alert( $older ? 'replay' : 'state', $older ? 'state' : self::$tamper );
 		}
 		return $stored;
@@ -342,9 +419,15 @@ final class PNCP_Lockdown {
 		self::$sig_ok = $empty || ( null === $sig ? PNCP_Seal::legacy() : PNCP_Seal::valid( $stored, $sig ) );
 		self::$tamper = '';
 		self::$older  = false;
-		self::$stale  = 0;
-		$beacon       = PNCP_Seal::beacon();
-		if ( $beacon && $beacon['locked'] && self::$sig_ok && ! $empty && empty( $stored['locked'] ) && isset( $beacon['gen'], $stored['freed'] ) && (int) $beacon['gen'] < (int) $stored['freed'] ) {
+		self::$stale     = 0;
+		self::$follow    = false;
+		self::$elsewhere = false;
+		$beacon          = PNCP_Seal::beacon();
+		// 3.4.2: the lock line in wp-config.php (PNCP_Seal::CONFIG): the generation of the lock it names. A state
+		// older than that was put back from a copy taken before the lock (or is a copy of an earlier lock).
+		$floor = self::config_floor();
+		$gen   = isset( $stored['gen'] ) ? (int) $stored['gen'] : 0;
+		if ( $beacon && $beacon['locked'] && self::$sig_ok && ! $empty && empty( $stored['locked'] ) && isset( $beacon['gen'], $stored['freed'] ) && (int) $beacon['gen'] < (int) $stored['freed'] && $gen >= $floor ) {
 			// 3.4.1: the guard file or the lock file is older than the unlock for good the signed state names (the
 			// unlock removed it; it was put back, for example with a backup of wp-content/uploads or mu-plugins
 			// taken while the site was locked). Only an unlock with the app (or a recovery code) signs that, so
@@ -357,11 +440,37 @@ final class PNCP_Lockdown {
 			// WordPress's back, or put back from an older copy. The site stays locked. 3.4: a signed state from
 			// an older copy also says "locked", but its generation is lower than the one in the guard (a newer
 			// one is fine: the state is saved a moment before the guard, and only ever goes up).
-			$gen         = isset( $stored['gen'] ) ? (int) $stored['gen'] : 0;
-			self::$older = isset( $beacon['gen'] ) && $gen < $beacon['gen'];
-			if ( ! self::$sig_ok || empty( $stored['locked'] ) || ( isset( $stored['until'] ) ? (int) $stored['until'] : 0 ) > $beacon['until'] || ( isset( $beacon['gen'] ) && $gen < $beacon['gen'] ) ) {
+			//
+			// 3.4.2: a signed state of a higher generation than the guard, unlocked for a while (a later "until"),
+			// is accepted too. On one web server it cannot exist: an unlock writes the guard first, and every
+			// earlier state has a lower generation. It is what several web servers that share the database but
+			// each have their own wp-content see when the owner unlocked on another one; this server's files then
+			// follow it (follow_files()). The database alone cannot make one: only the keys sign it.
+			//
+			// But such a state cannot tell whether it is still the latest: a copy of an unlock for a while, put
+			// back in the database after the owner locked again on the other server, looks just the same to a
+			// server that missed that lock. So an unlock for a while made elsewhere is only followed while this
+			// server is itself unlocked for a while (its guard says so: then the copy opens nothing that is not
+			// already open). A server whose guard says locked stays locked, without an alarm (the state is
+			// genuine); the owner unlocks it on its own Lockdown page. A newer lock (or an ended unlock) is always
+			// followed: it only locks.
+			self::$older = ( isset( $beacon['gen'] ) && $gen < $beacon['gen'] ) || $gen < $floor;
+			$newer       = self::$sig_ok && ! empty( $stored['locked'] ) && isset( $beacon['gen'] ) && $gen > $beacon['gen'] && $gen >= $floor;
+			if ( ! self::$sig_ok || empty( $stored['locked'] ) || ( ! $newer && ( isset( $stored['until'] ) ? (int) $stored['until'] : 0 ) > $beacon['until'] ) || ( isset( $beacon['gen'] ) && $gen < $beacon['gen'] ) || $gen < $floor ) {
 				self::$tamper = 'replay';
+			} elseif ( $newer && ( isset( $stored['until'] ) ? (int) $stored['until'] : 0 ) > time() && (int) $beacon['until'] <= time() ) {
+				self::$elsewhere = true;
+			} elseif ( $newer ) {
+				self::$follow = true;
 			}
+		} elseif ( $floor > 0 && ( $empty || ! self::$sig_ok || $gen < $floor ) ) {
+			// 3.4.2: no file of the lock says "locked", but the lock line in wp-config.php does, and the state is
+			// missing, does not match its signature or is older than the lock the line names: deleted, changed or
+			// put back from an older copy in the database. The site stays locked, as with the guard file. A genuine
+			// state of this lock or a later one (an unlock for a while, or for good) is followed as usual: only an
+			// unlock with the app or a recovery code signs one, and the database alone cannot.
+			self::$older  = self::$sig_ok && ! $empty && $gen < $floor;
+			self::$tamper = 'replay';
 		} elseif ( ! self::$sig_ok ) {
 			// No guard to compare with (it could not be written, or the site was locked without it). A state that
 			// does not match its signature while the signed snapshot of a lock is there was changed in the
@@ -385,6 +494,21 @@ final class PNCP_Lockdown {
 	}
 
 	/**
+	 * 3.4.2: brings this server's guard file (or lock file) up to the stored state, which is newer and signed
+	 * (see seal_check()): another web server saved it. Looked at again first: a request on this server may have
+	 * written them a moment ago.
+	 */
+	private static function follow_files() {
+		PNCP_Seal::refresh_beacon();
+		$beacon = PNCP_Seal::beacon();
+		$state  = self::$state;
+		if ( ! $beacon || empty( $state['locked'] ) || ! isset( $beacon['gen'] ) || (int) $state['gen'] <= (int) $beacon['gen'] ) {
+			return;
+		}
+		PNCP_Seal::write_lock_files( true, (int) $state['until'], (int) $state['gen'], (int) $state['snap'] );
+	}
+
+	/**
 	 * What the seal found: '' (in order), 'replay' or 'keys' (see $tamper).
 	 *
 	 * @return string
@@ -392,6 +516,17 @@ final class PNCP_Lockdown {
 	public static function tampered() {
 		self::state();
 		return self::$tamper;
+	}
+
+	/**
+	 * 3.4.2: the generation of the lock that the lock line in wp-config.php names (0: no valid line, or it is
+	 * not followed on this request).
+	 *
+	 * @return int
+	 */
+	private static function config_floor() {
+		$config = PNCP_Seal::config_lock();
+		return null === $config ? 0 : (int) $config['gen'];
 	}
 
 	/**
@@ -418,6 +553,11 @@ final class PNCP_Lockdown {
 		// again with it, so no copy of the state saved before this one is accepted any more.
 		$state['gen']  = self::next_generation( $state );
 		$state['snap'] = isset( $state['snap'] ) ? (int) $state['snap'] : 0;
+		if ( $locked && ! $was ) {
+			// 3.4.2: a new lock. The lock line for wp-config.php names its generation and the address alerts go to.
+			$state['lgen']  = $state['gen'];
+			$state['lmail'] = PNCP_Seal::lock_mail();
+		}
 		// 3.4.1: on an unlock for good, also a file that says "locked" while the stored state does not (a file put
 		// back from a backup, or a lock whose state could not be saved) is removed.
 		$beacon = $free && ! $locked ? PNCP_Seal::beacon() : null;
@@ -475,7 +615,9 @@ final class PNCP_Lockdown {
 		if ( $beacon && isset( $beacon['gen'] ) ) {
 			$gen = max( $gen, (int) $beacon['gen'] );
 		}
-		return $gen + 1;
+		// 3.4.2: and the lock line in wp-config.php: a state saved after it (also after the Lockdown data was
+		// deleted) is newer than the lock it names.
+		return max( $gen, PNCP_Seal::config_gen() ) + 1;
 	}
 
 	/**
@@ -676,7 +818,7 @@ final class PNCP_Lockdown {
 		set_site_transient( $key, $until . ':' . PNCP_Seal::sign( array( 'alerted', $key, $until ) ), HOUR_IN_SECONDS );
 		self::event( 'tampered', $kind . ( '' !== $detail ? ': ' . $detail : '' ) );
 		$texts = array(
-			'state'         => __( 'The Lockdown data in the database no longer matches its signature or the guard file. The site stays locked. If you did not change the keys in wp-config.php, someone changed the database directly: check the site with a security scanner and change the database password.', 'scrapelock' ),
+			'state'         => __( 'The Lockdown data in the database no longer matches its signature, the guard file or the lock line in wp-config.php. The site stays locked. If you did not change the keys in wp-config.php, someone changed the database directly: check the site with a security scanner and change the database password.', 'scrapelock' ),
 			'snapshot'      => __( 'The saved copy of the protected settings no longer matches its signature, so changed settings cannot be put back. If you did not change the keys in wp-config.php, someone changed the database directly.', 'scrapelock' ),
 			'snapshot_copy' => __( 'The saved copy of the protected settings was deleted or changed in the database while the site was locked. It was put back from the guard file, and changed settings are put back from it. Someone changed the database directly: check the site with a security scanner and change the database password.', 'scrapelock' ),
 			'login'         => __( 'The password of an administrator account was changed directly in the database while the site was locked. The account cannot sign in with it while the site stays locked; unlock with SCRAPELOCK_UNLOCK in wp-config.php or a recovery code from a session that is still signed in, then set a new password. Account:', 'scrapelock' ),
@@ -736,7 +878,7 @@ final class PNCP_Lockdown {
 			return false;
 		}
 		$s = self::state();
-		if ( 'replay' === self::$tamper || 'forged' === self::$tamper ) {
+		if ( 'replay' === self::$tamper || 'forged' === self::$tamper || self::$elsewhere ) {
 			return true; // The guard file, or the signed snapshot of the lock, says locked: the database cannot open it.
 		}
 		return ! empty( $s['locked'] ) && time() >= (int) $s['until'];
@@ -749,7 +891,7 @@ final class PNCP_Lockdown {
 	 */
 	public static function unlocked_until() {
 		$s = self::state();
-		if ( 'replay' === self::$tamper || 'forged' === self::$tamper ) {
+		if ( 'replay' === self::$tamper || 'forged' === self::$tamper || self::$elsewhere ) {
 			return 0;
 		}
 		return ! empty( $s['locked'] ) && (int) $s['until'] > time() ? (int) $s['until'] : 0;
@@ -1007,13 +1149,86 @@ final class PNCP_Lockdown {
 	/* ---------- Who ---------- */
 
 	/**
-	 * Capabilities that let a role take over the site (plugins, themes, files, users, settings). A role
-	 * with any of them is always frozen while locked; it cannot be unticked.
+	 * Capabilities that let an account administer the site (plugins, themes, files, users, settings, the
+	 * Customizer). The accounts with any of them are the "administrators" of the lock's snapshot.
 	 *
 	 * @return string[]
 	 */
 	public static function control_caps() {
 		return array( 'manage_options', 'activate_plugins', 'install_plugins', 'update_plugins', 'delete_plugins', 'edit_plugins', 'install_themes', 'update_themes', 'delete_themes', 'switch_themes', 'edit_themes', 'edit_theme_options', 'update_core', 'edit_files', 'create_users', 'edit_users', 'promote_users', 'delete_users', 'remove_users', 'unfiltered_upload', 'manage_network', 'manage_network_options', 'manage_network_plugins' );
+	}
+
+	/**
+	 * Capabilities of an administrator: a role with any of them is always frozen while locked (it keeps only
+	 * "read"); it cannot be unticked. The others of control_caps() (edit_theme_options, which WooCommerce
+	 * gives to shop managers) do not freeze the whole role: they are refused like every capability of
+	 * limited_caps().
+	 *
+	 * @return string[]
+	 */
+	private static function owner_caps() {
+		return array_values( array_diff( self::control_caps(), array( 'edit_theme_options' ) ) );
+	}
+
+	/**
+	 * The capabilities refused while locked to the roles that keep their work (shop managers, and every role
+	 * that is not ticked on the Lockdown tab): everything that can change code, the look of the whole site,
+	 * other users, settings or where payments go, or carry the site's data away. Content, products, orders,
+	 * coupons, reports, media and comments are not in it. Filter: pncp_lockdown_limited_caps (only adds:
+	 * control_caps() cannot be taken out).
+	 *
+	 * @return string[]
+	 */
+	public static function limited_caps() {
+		if ( null === self::$limited_caps || ! self::$limited_final ) {
+			$caps = array_merge(
+				self::control_caps(),
+				array(
+					// Code and the look of the whole site: Customizer, Site Editor, menus, widgets, theme option
+					// pages (some themes take scripts there), custom CSS, unfiltered HTML (scripts in content).
+					'customize',
+					'edit_css',
+					'unfiltered_html',
+					// WordPress itself and translations.
+					'install_languages',
+					'update_languages',
+					'update_php',
+					'update_https',
+					'resume_plugins',
+					'resume_themes',
+					// Users and data of the whole site.
+					'add_users',
+					'import',
+					'export',
+					'manage_privacy_options',
+					'export_others_personal_data',
+					'erase_others_personal_data',
+					// Multisite.
+					'manage_sites',
+					'create_sites',
+					'delete_sites',
+					'delete_site',
+					'manage_network_users',
+					'manage_network_themes',
+					'upgrade_network',
+					'setup_network',
+					// WooCommerce settings: payment methods (where the money goes), shipping, taxes, emails,
+					// the store's own API keys and webhooks, extensions.
+					'manage_woocommerce',
+				)
+			);
+			/**
+			 * Filters the capabilities refused while the site is locked to roles that keep their work (shop
+			 * managers and roles that are not ticked on the Lockdown tab). Capabilities can only be added.
+			 *
+			 * @param string[] $caps Capabilities.
+			 */
+			$more               = apply_filters( 'pncp_lockdown_limited_caps', $caps );
+			self::$limited_caps = array_values( array_unique( array_merge( $caps, array_map( 'strval', is_array( $more ) ? $more : array() ) ) ) );
+			// Kept for the request once every plugin has added its filters.
+			self::$limited_final = (bool) did_action( 'plugins_loaded' );
+		}
+		return self::$limited_caps;
 	}
 
 	/**
@@ -1038,30 +1253,55 @@ final class PNCP_Lockdown {
 	}
 
 	/**
-	 * Is this role always frozen (it can take over the site)?
+	 * Is this role always frozen (an administrator: it can take over the site)?
 	 *
 	 * @param string $role Role.
 	 * @return bool
 	 */
 	public static function role_always( $role ) {
-		return array() !== array_intersect( self::role_caps( $role ), self::control_caps() );
+		return array() !== array_intersect( self::role_caps( $role ), self::owner_caps() );
 	}
 
 	/**
-	 * Is this role frozen when nothing was chosen? Roles that can take over the site, editorial and shop
-	 * staff, and WordPress' own content roles. Subscribers, customers and member roles of other plugins
-	 * (e.g. accounts that post listings or community posts) are not, even with extra capabilities.
+	 * Does this role have capabilities that are refused while locked (limited_caps())? Such a role, when it is
+	 * not frozen, keeps its work while locked without them (shop managers by default).
+	 *
+	 * @param string $role Role.
+	 * @return bool
+	 */
+	public static function role_limited( $role ) {
+		return array() !== array_intersect( self::role_caps( $role ), self::limited_caps() );
+	}
+
+	/**
+	 * A WooCommerce shop role (shop manager, or a role of another plugin with the same rights)?
+	 *
+	 * @param string $role Role.
+	 * @return bool
+	 */
+	private static function shop_role( $role ) {
+		return array() !== array_intersect( self::role_caps( $role ), array( 'manage_woocommerce', 'edit_shop_orders', 'edit_others_shop_orders' ) );
+	}
+
+	/**
+	 * Is this role frozen when nothing was chosen? Roles that can take over the site, editorial staff, and
+	 * WordPress' own content roles. Shop roles are not: shop managers keep orders, products, coupons, reports
+	 * and content while locked, without the capabilities of limited_caps(). Subscribers, customers and member
+	 * roles of other plugins (e.g. accounts that post listings or community posts) are not frozen either.
 	 *
 	 * @param string $role Role.
 	 * @return bool
 	 */
 	private static function role_default( $role ) {
-		return self::role_always( $role ) || in_array( $role, array( 'administrator', 'editor', 'author', 'contributor', 'shop_manager' ), true ) || array() !== array_intersect( self::role_caps( $role ), self::staff_caps() );
+		if ( self::role_always( $role ) || in_array( $role, array( 'administrator', 'editor', 'author', 'contributor' ), true ) ) {
+			return true;
+		}
+		return ! self::shop_role( $role ) && array() !== array_intersect( self::role_caps( $role ), self::staff_caps() );
 	}
 
 	/**
-	 * The roles frozen while locked: the ones chosen on the Lockdown tab (or the defaults), plus every role
-	 * that can take over the site.
+	 * The roles frozen while locked (only "read"): the ones chosen on the Lockdown tab (or the defaults), plus
+	 * every role that can take over the site.
 	 *
 	 * @return string[]
 	 */
@@ -1077,47 +1317,96 @@ final class PNCP_Lockdown {
 	}
 
 	/**
-	 * Do these stored capabilities ({prefix}capabilities) make a user staff? A frozen role, or a single
-	 * capability given to the user that belongs to staff.
+	 * The roles that keep their work while locked, without the capabilities of limited_caps(): the roles that
+	 * are not frozen but have any of them (shop managers by default).
+	 *
+	 * @return string[]
+	 */
+	public static function limited_roles() {
+		$frozen = self::frozen_roles();
+		$roles  = array();
+		foreach ( array_keys( wp_roles()->get_names() ) as $role ) {
+			if ( ! in_array( $role, $frozen, true ) && self::role_limited( $role ) ) {
+				$roles[] = $role;
+			}
+		}
+		return $roles;
+	}
+
+	/**
+	 * What these stored capabilities ({prefix}capabilities) make a user while locked: 2 = frozen (a frozen
+	 * role, or a single capability of staff given to the user), 1 = keeps its work without the capabilities
+	 * of limited_caps() (a role of limited_roles()), 0 = not touched.
 	 *
 	 * @param mixed $caps {prefix}capabilities value.
-	 * @return bool
+	 * @return int
 	 */
-	private static function grants_staff( $caps ) {
+	private static function grants_level( $caps ) {
 		if ( ! is_array( $caps ) ) {
-			return false;
+			return 0;
 		}
 		$frozen = self::frozen_roles();
 		$roles  = wp_roles();
+		$level  = 0;
 		foreach ( $caps as $name => $grant ) {
 			$name = (string) $name;
 			if ( ! $grant ) {
 				continue;
 			}
-			if ( $roles->is_role( $name ) ? in_array( $name, $frozen, true ) : in_array( $name, array_merge( self::control_caps(), self::staff_caps() ), true ) ) {
-				return true;
+			if ( $roles->is_role( $name ) ) {
+				if ( in_array( $name, $frozen, true ) ) {
+					return 2;
+				}
+				if ( self::role_limited( $name ) ) {
+					$level = 1;
+				}
+			} elseif ( in_array( $name, array_merge( self::control_caps(), self::staff_caps() ), true ) ) {
+				return 2;
 			}
 		}
-		return false;
+		return $level;
 	}
 
 	/**
-	 * Staff: users with a frozen role (see frozen_roles()) or a staff capability of their own. Everyone
-	 * else (customers, subscribers, members) is not touched by the lock. Uses the roles as stored, not the
-	 * capabilities the lock takes away.
+	 * Do these stored capabilities ({prefix}capabilities) make a user staff (frozen, or keeping its work
+	 * without the capabilities of limited_caps())?
+	 *
+	 * @param mixed $caps {prefix}capabilities value.
+	 * @return bool
+	 */
+	private static function grants_staff( $caps ) {
+		return self::grants_level( $caps ) > 0;
+	}
+
+	/**
+	 * What a user is while locked: 2 = frozen, 1 = keeps its work without the capabilities of limited_caps(),
+	 * 0 = not touched (see grants_level()). Network admins are frozen.
+	 *
+	 * @param int $user_id User.
+	 * @return int
+	 */
+	public static function staff_level( $user_id ) {
+		$user_id = (int) $user_id;
+		if ( $user_id < 1 ) {
+			return 0;
+		}
+		if ( ! isset( self::$staff[ $user_id ] ) ) {
+			self::$staff[ $user_id ] = ( is_multisite() && is_super_admin( $user_id ) ) ? 2 : self::grants_level( self::user_caps( $user_id ) );
+		}
+		return self::$staff[ $user_id ];
+	}
+
+	/**
+	 * Staff: users with a frozen role (see frozen_roles()), a role that keeps its work while locked (see
+	 * limited_roles()) or a staff capability of their own. Their email, password and application passwords
+	 * stay as they are while locked. Everyone else (customers, subscribers, members) is not touched by the
+	 * lock. Uses the roles as stored, not the capabilities the lock takes away.
 	 *
 	 * @param int $user_id User.
 	 * @return bool
 	 */
 	public static function is_staff( $user_id ) {
-		$user_id = (int) $user_id;
-		if ( $user_id < 1 ) {
-			return false;
-		}
-		if ( ! isset( self::$staff[ $user_id ] ) ) {
-			self::$staff[ $user_id ] = ( is_multisite() && is_super_admin( $user_id ) ) || self::grants_staff( self::user_caps( $user_id ) );
-		}
-		return self::$staff[ $user_id ];
+		return self::staff_level( $user_id ) > 0;
 	}
 
 	/**
@@ -1195,14 +1484,16 @@ final class PNCP_Lockdown {
 	/* ---------- Enforcement ---------- */
 
 	/**
-	 * While locked, staff keep only "read": wp-admin opens, nothing can be changed.
+	 * While locked, frozen staff keep only "read": wp-admin opens, nothing can be changed. Roles that keep
+	 * their work (shop managers by default) lose only the capabilities of limited_caps().
 	 *
 	 * @param string[] $caps    Primitive capabilities required.
 	 * @param string   $cap     Capability checked.
 	 * @param int      $user_id User.
+	 * @param mixed[]  $args    Object ID etc.
 	 * @return string[]
 	 */
-	public static function map_meta_cap( $caps, $cap, $user_id ) {
+	public static function map_meta_cap( $caps, $cap, $user_id, $args = array() ) {
 		if ( self::$bypass || ! $user_id || in_array( $cap, array( 'read', 'exist', 'level_0' ), true ) ) {
 			return $caps;
 		}
@@ -1212,10 +1503,35 @@ final class PNCP_Lockdown {
 		// could have planted a password or key for that account in advance.
 		$by     = (int) self::state()['unlocked_by'];
 		$frozen = self::is_locked() || ( $by > 0 && self::unlocked_until() && ( (int) $user_id !== $by || ! self::unlocking_session( (int) $user_id ) ) );
-		if ( ! $frozen || ! self::is_staff( $user_id ) ) {
+		$level  = $frozen ? self::staff_level( $user_id ) : 0;
+		if ( $level < 1 ) {
 			return $caps;
 		}
-		return array( 'do_not_allow' );
+		if ( $level > 1 || self::limited_refuses( (array) $caps, (string) $cap, (int) $user_id, (array) $args ) ) {
+			return array( 'do_not_allow' );
+		}
+		return $caps;
+	}
+
+	/**
+	 * Is this capability refused to a role that keeps its work while locked? Any capability of limited_caps(),
+	 * asked for directly or needed for it. Editing another user is allowed only for users the lock does not
+	 * touch (customers, subscribers), as WooCommerce lets shop managers do; never for staff or administrators.
+	 *
+	 * @param string[] $caps    Primitive capabilities required.
+	 * @param string   $cap     Capability checked.
+	 * @param int      $user_id User.
+	 * @param mixed[]  $args    Object ID etc.
+	 * @return bool
+	 */
+	private static function limited_refuses( $caps, $cap, $user_id, $args ) {
+		$check = array_merge( array( $cap ), array_map( 'strval', $caps ) );
+		// 3.4.2: also current_user_can( 'edit_users', $id ) with a user id, as the WooCommerce REST API asks it
+		// (wc/v3/customers): the same edit of one customer as user-edit.php and wp/v2/users.
+		if ( in_array( $cap, array( 'edit_user', 'edit_users' ), true ) && isset( $args[0] ) && is_numeric( $args[0] ) && (int) $args[0] > 0 && (int) $args[0] !== $user_id && ! self::is_staff( (int) $args[0] ) ) {
+			$check = array_diff( $check, array( 'edit_users' ) );
+		}
+		return array() !== array_intersect( $check, self::limited_caps() );
 	}
 
 	/**
@@ -2119,10 +2435,12 @@ final class PNCP_Lockdown {
 	 *
 	 * @param callable $check    Checks the code, inside the lock: returns '' if it is wrong.
 	 * @param bool     $recovery The code has the shape of a recovery code (only the per-IP limit holds it back).
+	 * @param bool     $correct  3.4.2: the code was found correct before the lock (it is checked again inside it):
+	 *                           it goes before requests with codes that are not (see fallback_lock()).
 	 * @return string What $check returned, '' (wrong), 'wait' (too many wrong codes) or 'busy' (no lock).
 	 */
-	private static function attempt( $check, $recovery ) {
-		if ( ! self::lock() ) {
+	private static function attempt( $check, $recovery, $correct = false ) {
+		if ( ! self::lock( $correct ) ) {
 			return 'busy';
 		}
 		$lockouts = array();
@@ -2217,6 +2535,19 @@ final class PNCP_Lockdown {
 	}
 
 	/**
+	 * 3.4.2: is this the current code of the app, as the state reads now (before the lock; check_code_locked()
+	 * checks it again inside it)? Only to let it go first (see fallback_lock()).
+	 *
+	 * @param string $code Code typed.
+	 * @return bool
+	 */
+	private static function app_code_ok( $code ) {
+		$state  = self::state();
+		$secret = self::unseal( $state['secret'] );
+		return '' !== $secret && false !== PNCP_Totp::verify( $secret, $code, (int) $state['last_step'] );
+	}
+
+	/**
 	 * Which stored recovery code hash a typed code matches, compared outside the lock (see handle()): the state
 	 * as read on this request. check_code_locked() then only checks that the hash is still unused.
 	 *
@@ -2241,14 +2572,15 @@ final class PNCP_Lockdown {
 	 * The value of the row that holds the lock, read from the database itself (never from a cache): the same
 	 * place as the state, wp_options, or wp_sitemeta on multisite.
 	 *
+	 * @param string $row The row: MUTEX, or MUTEX_PRI (3.4.2).
 	 * @return string|null Null when the row is missing.
 	 */
-	private static function mutex_read() {
+	private static function mutex_read( $row = self::MUTEX ) {
 		global $wpdb;
 		// phpcs:disable WordPress.DB.DirectDatabaseQuery -- Compare-and-set on our own row needs the value as it is now.
 		$value = is_multisite()
-			? $wpdb->get_var( $wpdb->prepare( 'SELECT meta_value FROM %i WHERE meta_id = %d', $wpdb->sitemeta, self::mutex_meta_id() ) )
-			: $wpdb->get_var( $wpdb->prepare( 'SELECT option_value FROM %i WHERE option_name = %s LIMIT 1', $wpdb->options, self::MUTEX ) );
+			? $wpdb->get_var( $wpdb->prepare( 'SELECT meta_value FROM %i WHERE meta_id = %d', $wpdb->sitemeta, self::mutex_meta_id( $row ) ) )
+			: $wpdb->get_var( $wpdb->prepare( 'SELECT option_value FROM %i WHERE option_name = %s LIMIT 1', $wpdb->options, $row ) );
 		// phpcs:enable
 		return null === $value ? null : (string) $value;
 	}
@@ -2258,12 +2590,13 @@ final class PNCP_Lockdown {
 	 * database access) added more than one. wp_sitemeta has no unique key, and an UPDATE on the meta_key alone
 	 * would change every copy, so no request could ever take the lock again.
 	 *
+	 * @param string $row The row: MUTEX or MUTEX_PRI.
 	 * @return int 0 when there is none.
 	 */
-	private static function mutex_meta_id() {
+	private static function mutex_meta_id( $row = self::MUTEX ) {
 		global $wpdb;
 		// phpcs:ignore WordPress.DB.DirectDatabaseQuery -- Our own row, read from the database itself.
-		return (int) $wpdb->get_var( $wpdb->prepare( 'SELECT MIN(meta_id) FROM %i WHERE meta_key = %s AND site_id = %d', $wpdb->sitemeta, self::MUTEX, get_current_network_id() ) );
+		return (int) $wpdb->get_var( $wpdb->prepare( 'SELECT MIN(meta_id) FROM %i WHERE meta_key = %s AND site_id = %d', $wpdb->sitemeta, $row, get_current_network_id() ) );
 	}
 
 	/**
@@ -2272,14 +2605,15 @@ final class PNCP_Lockdown {
 	 *
 	 * @param string $old   The value read before.
 	 * @param string $value New value.
+	 * @param string $row   The row: MUTEX or MUTEX_PRI.
 	 * @return int Rows changed.
 	 */
-	private static function mutex_swap( $old, $value ) {
+	private static function mutex_swap( $old, $value, $row = self::MUTEX ) {
 		global $wpdb;
 		// phpcs:disable WordPress.DB.DirectDatabaseQuery -- An atomic compare-and-set on our own row; no cache to update.
 		$rows = is_multisite()
-			? $wpdb->query( $wpdb->prepare( 'UPDATE %i SET meta_value = %s WHERE meta_id = %d AND meta_value = %s', $wpdb->sitemeta, $value, self::mutex_meta_id(), $old ) )
-			: $wpdb->query( $wpdb->prepare( 'UPDATE %i SET option_value = %s WHERE option_name = %s AND option_value = %s', $wpdb->options, $value, self::MUTEX, $old ) );
+			? $wpdb->query( $wpdb->prepare( 'UPDATE %i SET meta_value = %s WHERE meta_id = %d AND meta_value = %s', $wpdb->sitemeta, $value, self::mutex_meta_id( $row ), $old ) )
+			: $wpdb->query( $wpdb->prepare( 'UPDATE %i SET option_value = %s WHERE option_name = %s AND option_value = %s', $wpdb->options, $value, $row, $old ) );
 		// phpcs:enable
 		return (int) $rows;
 	}
@@ -2307,11 +2641,15 @@ final class PNCP_Lockdown {
 	 * request that wrote the value is done (or ended), and the value is left over, or was copied and written
 	 * back in the database to keep the owner's codes "busy".
 	 *
+	 * 3.4.2: with $since, a value taken at least two seconds before $since is free too: a code check holds the
+	 * lock for a fraction of a second, so such a value is left over or written back (see fallback_lock()).
+	 *
 	 * @param string|null $value Value of the row.
 	 * @param int         $now   Time.
+	 * @param int         $since When this request started to wait for the row (0: no such limit).
 	 * @return bool
 	 */
-	private static function mutex_held( $value, $now ) {
+	private static function mutex_held( $value, $now, $since = 0 ) {
 		$parts = explode( ':', (string) $value, 3 );
 		if ( 3 !== count( $parts ) || ! ctype_digit( $parts[0] ) ) {
 			return false;
@@ -2320,6 +2658,9 @@ final class PNCP_Lockdown {
 			return false;
 		}
 		$until = (int) $parts[0];
+		if ( $since > 0 && $until - self::MUTEX_TTL <= $since - 2 ) {
+			return false;
+		}
 		return $until > $now && $until <= $now + self::MUTEX_TTL + 1 && PNCP_Seal::valid( array( 'mutex', $until, $parts[1] ), $parts[2] );
 	}
 
@@ -2331,10 +2672,11 @@ final class PNCP_Lockdown {
 	 * written back (every lock gets a new random value, so a request that really holds the lock never writes an
 	 * earlier one): it counts as free.
 	 *
-	 * @param string[] $seen The values this request saw in the row so far, in order (changed).
+	 * @param string[] $seen  The values this request saw in the row so far, in order (changed).
+	 * @param int      $since See mutex_held().
 	 * @return bool
 	 */
-	private static function mutex_take( &$seen = array() ) {
+	private static function mutex_take( &$seen = array(), $since = 0 ) {
 		$now     = time();
 		$current = self::mutex_read();
 		if ( null === $current ) {
@@ -2342,10 +2684,18 @@ final class PNCP_Lockdown {
 			$current = self::mutex_read();
 		}
 		$replayed = null !== $current && '0' !== $current && in_array( $current, array_slice( $seen, 0, -1 ), true );
+		// 3.4.2: with $since, a value this request has seen in the row for a second and a half or more is free too:
+		// no code check holds the lock that long, so it is left over or written back after it was freed.
+		if ( $since > 0 && null !== $current && '0' !== $current ) {
+			if ( ! isset( self::$seen_at[ $current ] ) ) {
+				self::$seen_at[ $current ] = microtime( true );
+			}
+			$replayed = $replayed || microtime( true ) - self::$seen_at[ $current ] >= 1.5;
+		}
 		if ( null !== $current && end( $seen ) !== $current ) {
 			$seen[] = $current;
 		}
-		if ( null === $current || ( ! $replayed && self::mutex_held( $current, $now ) ) ) {
+		if ( null === $current || ( ! $replayed && self::mutex_held( $current, $now, $since ) ) ) {
 			return false;
 		}
 		$value = self::mutex_value( $now + self::MUTEX_TTL );
@@ -2360,46 +2710,166 @@ final class PNCP_Lockdown {
 	 * Creates the row that holds the lock, free, if it is not there yet. Never over another request's value:
 	 * add_option() writes with "ON DUPLICATE KEY UPDATE", so two requests that both found no row would both set
 	 * it to free, and both take the lock (3.4: the first wrong codes on a site could be checked twice at once).
+	 *
+	 * @param string $row The row: MUTEX or MUTEX_PRI.
 	 */
-	private static function mutex_create() {
+	private static function mutex_create( $row = self::MUTEX ) {
 		global $wpdb;
 		if ( is_multisite() ) {
-			add_site_option( self::MUTEX, '0' ); // wp_sitemeta has no unique key: a plain insert after a check.
+			add_site_option( $row, '0' ); // wp_sitemeta has no unique key: a plain insert after a check.
 			return;
 		}
 		$quiet = $wpdb->suppress_errors( true );
 		// phpcs:ignore WordPress.DB.DirectDatabaseQuery -- Our own row; a duplicate is refused by the unique key, as wanted.
-		$wpdb->query( $wpdb->prepare( 'INSERT INTO %i (option_name, option_value, autoload) VALUES (%s, %s, %s)', $wpdb->options, self::MUTEX, '0', 'no' ) );
+		$wpdb->query( $wpdb->prepare( 'INSERT INTO %i (option_name, option_value, autoload) VALUES (%s, %s, %s)', $wpdb->options, $row, '0', 'no' ) );
 		$wpdb->suppress_errors( $quiet );
 	}
 
 	/**
-	 * Takes the lock: an atomic compare-and-set that only one request can win, valid for MUTEX_TTL seconds at
-	 * most (so a request that dies never leaves it held). Waits up to 5 seconds for it: parallel requests wait
-	 * in turn.
+	 * Takes the lock. Waits up to 5 seconds for it: parallel requests wait in turn.
 	 *
-	 * First the lock of a file on this server (local_lock()), then the row in the database. Requests on
-	 * this server wait for each other on the file, which the database cannot change: a value copied from the
-	 * row while held and written back after it was freed no longer keeps the owner's correct code "busy". The
-	 * row still makes requests on other servers (with another lock file) wait.
+	 * 3.4.2: on MySQL and MariaDB, a named lock of the database server (GET_LOCK(), see db_lock()). Every web
+	 * server that uses the database waits on the same lock, writing rows of a table cannot fake or keep it, and
+	 * the database server frees it at once when the request (its connection) ends or dies.
 	 *
+	 * Otherwise (the SQLite drop-in, a database drop-in with several connections, GET_LOCK() failed, or its lock
+	 * is held from outside): the file lock and the row, see fallback_lock().
+	 *
+	 * 3.4.2: while requests may use that fallback (a connection was found holding the database lock for itself in
+	 * the last day, see fallback_possible()), a request that holds the database lock also takes the row, so the
+	 * two ways exclude each other: one that started on the fallback just before the database lock was freed
+	 * cannot check a code at the same time.
+	 *
+	 * @param bool $correct The code was found correct before the lock (see attempt()).
 	 * @return bool
 	 */
-	private static function lock() {
-		$end = microtime( true ) + 5;
-		if ( ! self::local_lock( $end ) ) {
+	private static function lock( $correct = false ) {
+		$db = self::db_lock_checked( 5 );
+		if ( false === $db ) {
 			return false;
 		}
-		$seen = array();
+		if ( null === $db ) {
+			return self::fallback_lock( $correct );
+		}
+		if ( ! self::fallback_possible() ) {
+			return true;
+		}
+		// Only requests that started on the fallback before this one got the database lock can hold the row now
+		// (later ones wait for the database lock), and none of those takes long: see mutex_held() for $since.
+		$since = time();
+		$end   = microtime( true ) + 5;
+		$seen  = array();
 		while ( true ) {
-			if ( self::mutex_take( $seen ) ) {
+			if ( self::mutex_take( $seen, $since ) ) {
 				return true;
 			}
 			if ( microtime( true ) + 0.1 > $end ) {
-				self::local_unlock();
+				self::db_unlock();
 				return false;
 			}
 			usleep( 100000 );
+		}
+	}
+
+	/**
+	 * The lock without the database lock: first the lock of a file on this server (local_lock()), then the row in
+	 * the database, an atomic compare-and-set that only one request can win, valid for MUTEX_TTL seconds at most
+	 * (so a request that dies never leaves it held). Requests on this server wait for each other on the file,
+	 * which the database cannot change: a value copied from the row while held and written back after it was
+	 * freed no longer keeps the owner's correct code "busy". The row still makes requests on other servers (with
+	 * another lock file) wait.
+	 *
+	 * 3.4.2: the row alone is no fair queue across servers: requests that keep sending wrong codes to one server
+	 * (each one a fresh value in the row), and those values written back by someone with database access right
+	 * after they were freed, could keep a correct code on another server waiting until it answered "busy", again
+	 * and again. So a code that was found correct before the lock (a recovery code that matches an unused one, or
+	 * the app's current code) goes first: it marks the priority row (signed, for PRI_TTL seconds at most), which
+	 * every other request waits for before it takes the file or the row, and it treats a value of the row taken
+	 * two seconds or more before it started to wait as free (no code check takes that long). It gets the lock
+	 * within about two seconds. A copy of the priority row written back only holds back requests whose code is
+	 * not correct, and only until it ends.
+	 *
+	 * @param bool $correct The code was found correct before the lock.
+	 * @return bool
+	 */
+	private static function fallback_lock( $correct ) {
+		$since = 0;
+		$end   = microtime( true ) + 5;
+		if ( $correct ) {
+			$since = self::pri_set();
+			$end   = microtime( true ) + self::PRI_TTL - 1;
+		}
+		$seen = array();
+		$file = false;
+		while ( true ) {
+			if ( ! $correct && self::pri_held() ) {
+				if ( $file ) {
+					self::local_unlock();
+					$file = false;
+				}
+			} else {
+				if ( ! $file ) {
+					$file = self::local_lock( min( $end, microtime( true ) + 0.1 ) );
+				}
+				if ( $file && self::mutex_take( $seen, $since ) ) {
+					return true;
+				}
+			}
+			if ( microtime( true ) + 0.1 > $end ) {
+				self::local_unlock();
+				self::pri_release();
+				return false;
+			}
+			usleep( 100000 );
+		}
+	}
+
+	/**
+	 * Marks the priority row (see fallback_lock()) for PRI_TTL seconds: written over whatever it holds (several
+	 * correct codes may wait at once; they then take the row in turn).
+	 *
+	 * @return int The time it was marked.
+	 */
+	private static function pri_set() {
+		global $wpdb;
+		$now = time();
+		if ( null === self::mutex_read( self::MUTEX_PRI ) ) {
+			self::mutex_create( self::MUTEX_PRI );
+		}
+		$until = $now + self::PRI_TTL;
+		$token = wp_generate_password( 16, false );
+		$value = $until . ':' . $token . ':' . PNCP_Seal::sign( array( 'mutex-pri', $until, $token ) );
+		// phpcs:disable WordPress.DB.DirectDatabaseQuery -- Our own row, written in the database itself; no cache to update.
+		$rows = is_multisite()
+			? $wpdb->query( $wpdb->prepare( 'UPDATE %i SET meta_value = %s WHERE meta_id = %d', $wpdb->sitemeta, $value, self::mutex_meta_id( self::MUTEX_PRI ) ) )
+			: $wpdb->query( $wpdb->prepare( 'UPDATE %i SET option_value = %s WHERE option_name = %s', $wpdb->options, $value, self::MUTEX_PRI ) );
+		// phpcs:enable
+		self::$pri = $rows ? $value : '';
+		return $now;
+	}
+
+	/**
+	 * Is the priority row marked by a request with a correct code (signed, not ended)?
+	 *
+	 * @return bool
+	 */
+	private static function pri_held() {
+		$parts = explode( ':', (string) self::mutex_read( self::MUTEX_PRI ), 3 );
+		if ( 3 !== count( $parts ) || ! ctype_digit( $parts[0] ) ) {
+			return false;
+		}
+		$now   = time();
+		$until = (int) $parts[0];
+		return $until > $now && $until <= $now + self::PRI_TTL + 1 && PNCP_Seal::valid( array( 'mutex-pri', $until, $parts[1] ), $parts[2] );
+	}
+
+	/**
+	 * Frees the priority row, if it still holds the value this request wrote.
+	 */
+	private static function pri_release() {
+		if ( '' !== self::$pri ) {
+			self::mutex_swap( self::$pri, '0', self::MUTEX_PRI );
+			self::$pri = '';
 		}
 	}
 
@@ -2409,7 +2879,19 @@ final class PNCP_Lockdown {
 	 * @return bool
 	 */
 	private static function try_lock() {
-		if ( ! self::local_lock( 0 ) ) {
+		$db = self::db_lock_checked( 0 );
+		if ( false === $db ) {
+			return false;
+		}
+		if ( true === $db ) {
+			$seen = array();
+			if ( ! self::fallback_possible() || self::mutex_take( $seen, time() ) ) {
+				return true;
+			}
+			self::db_unlock();
+			return false;
+		}
+		if ( self::pri_held() || ! self::local_lock( 0 ) ) {
 			return false;
 		}
 		if ( self::mutex_take() ) {
@@ -2420,15 +2902,274 @@ final class PNCP_Lockdown {
 	}
 
 	/**
-	 * Releases the lock, only if it is still the one this request took (after more than MUTEX_TTL seconds another
-	 * request may hold it now). The row first, then the file.
+	 * Releases the lock. The database lock is only ever freed by the connection that holds it. Otherwise only
+	 * if the row is still the value this request wrote (after more than MUTEX_TTL seconds another request may
+	 * hold it now): the row first, then the file. The priority row last (3.4.2).
 	 */
 	private static function release() {
 		if ( '' !== self::$mutex ) {
 			self::mutex_swap( self::$mutex, '0' );
 			self::$mutex = '';
 		}
+		self::db_unlock();
 		self::local_unlock();
+		self::pri_release();
+	}
+
+	/**
+	 * Can the code-check lock be a named lock of the database server here?
+	 *
+	 * Only with the mysqli connection of WordPress's own database class (or a subclass that keeps its one
+	 * connection, such as the one of a query logger): a drop-in that spreads queries over several database
+	 * servers (HyperDB, LudicrousDB) could send the SELECT to a replica, where the lock would not be shared;
+	 * the SQLite drop-in has no such locks. Those use the file lock and the row, as before.
+	 *
+	 * @return bool
+	 */
+	public static function db_lock_usable() {
+		global $wpdb;
+		if ( null === self::$db_usable ) {
+			$usable = $wpdb instanceof wpdb && ! property_exists( $wpdb, 'dbhs' ) && $wpdb->dbh instanceof mysqli;
+			/**
+			 * Filters whether the code-check lock of Lockdown is a named lock of the database server (GET_LOCK()).
+			 *
+			 * @param bool $usable True on WordPress's own MySQL / MariaDB connection.
+			 */
+			self::$db_usable = (bool) apply_filters( 'pncp_lockdown_db_lock', $usable );
+		}
+		return self::$db_usable;
+	}
+
+	/**
+	 * The name of the database lock: the same on every web server of this site (made from the keys in
+	 * wp-config.php, the database name, the table prefix and the site, or the network on multisite, whose
+	 * Lockdown state is shared by all its sites), different for other sites on the same database server
+	 * (names are global there), and not guessable without the keys. 48 characters (at most 64 are allowed).
+	 * The name is not a secret, though: anyone who can list the database's connections (the database user of
+	 * WordPress itself can, for its own connections) sees it in the query text while a code is checked. That is
+	 * why a lock held for longer than any code check takes is not obeyed (see db_lock_checked()).
+	 *
+	 * @return string
+	 */
+	public static function db_lock_name() {
+		global $wpdb;
+		$scope = is_multisite() ? 'network:' . get_current_network_id() : 'site:' . get_current_blog_id();
+		return 'pncp_ld_' . substr( hash( 'sha256', PNCP_Seal::sign( array( 'db-lock', (string) $wpdb->dbname, (string) $wpdb->base_prefix, $scope ) ) ), 0, 40 );
+	}
+
+	/**
+	 * Takes the database lock, and finds out when it is kept by a connection that is not a code check.
+	 *
+	 * 3.4.2: a code check holds the lock for a fraction of a second. Someone with the database password could
+	 * read the lock's name from the list of running queries and hold it from their own connection for as long
+	 * as they like, so that every code (app and recovery) answered "busy". So: when the lock is taken, its
+	 * holder is looked up (IS_USED_LOCK()). If that connection has been idle or in one query for longer than a
+	 * code check can last, or is the one found doing so before, or it still holds the lock after a full wait,
+	 * the lock is "foreign": this request uses the file lock and the row instead (as on SQLite), the event is
+	 * logged and the administrator is emailed (once an hour at most), and the owner's code is checked.
+	 *
+	 * @param int $wait Seconds to wait for a lock held by a code check (0: do not wait).
+	 * @return bool|null True: held. False: held by another code check right now (only with $wait 0). Null: use
+	 *                   the file lock and the row.
+	 */
+	private static function db_lock_checked( $wait ) {
+		$got = self::db_lock( 0 );
+		if ( false !== $got ) {
+			return $got;
+		}
+		$holder = self::db_lock_holder();
+		if ( ! self::db_lock_foreign( $holder ) ) {
+			if ( $wait <= 0 ) {
+				return false;
+			}
+			$got = self::db_lock( $wait );
+			if ( false !== $got ) {
+				return $got;
+			}
+			// Held all this time: no code check takes that long.
+			$holder = self::db_lock_holder();
+		}
+		self::db_lock_report( $holder );
+		return null;
+	}
+
+	/**
+	 * The id of the database connection that holds the database lock now (0: none, or not known).
+	 *
+	 * @return int
+	 */
+	private static function db_lock_holder() {
+		global $wpdb;
+		$quiet = $wpdb->suppress_errors( true );
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery -- A lock of the database server, not data: nothing to cache.
+		$id = $wpdb->get_var( $wpdb->prepare( 'SELECT IS_USED_LOCK(%s)', self::db_lock_name() ) );
+		$wpdb->suppress_errors( $quiet );
+		return max( 0, (int) $id );
+	}
+
+	/**
+	 * Does connection $id hold the database lock for itself (not for a code check)? Yes when it is the one
+	 * found doing so before (in the last day; connection ids are not reused while the database server runs),
+	 * or when the list of connections shows it idle or in the same query for longer than MUTEX_TTL. The list
+	 * only shows the connections of the same database user without the PROCESS privilege: otherwise only a
+	 * full wait tells (db_lock_checked()).
+	 *
+	 * @param int $id Connection id.
+	 * @return bool
+	 */
+	private static function db_lock_foreign( $id ) {
+		global $wpdb;
+		if ( $id <= 0 ) {
+			return false;
+		}
+		$known = self::db_foreign_known();
+		if ( $known && $known['id'] === $id && $known['time'] > time() - DAY_IN_SECONDS ) {
+			return true;
+		}
+		$quiet = $wpdb->suppress_errors( true );
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery -- The database server's list of connections: nothing to cache.
+		$time = $wpdb->get_var( $wpdb->prepare( 'SELECT TIME FROM information_schema.PROCESSLIST WHERE ID = %d', $id ) );
+		$wpdb->suppress_errors( $quiet );
+		return null !== $time && (int) $time > self::MUTEX_TTL;
+	}
+
+	/**
+	 * Notes that connection $id holds the database lock for itself: in the lockdown log (once per connection)
+	 * and by email to the administrator (at most once an hour).
+	 *
+	 * @param int $id Connection id (0: not known).
+	 */
+	private static function db_lock_report( $id ) {
+		$known = self::db_foreign_known();
+		$now   = time();
+		if ( $known && $known['id'] === $id && $id > 0 ) {
+			self::db_foreign_save( $id, $now, $known['mailed'] );
+			return;
+		}
+		$mailed = $known ? min( $known['mailed'], $now ) : 0;
+		$detail = $id > 0
+			/* translators: %d: id of a database connection */
+			? sprintf( __( 'database connection %d', 'scrapelock' ), $id )
+			: __( 'unknown database connection', 'scrapelock' );
+		self::db_foreign_save( $id, $now, $mailed > $now - HOUR_IN_SECONDS ? $mailed : $now );
+		self::event( 'db_lock', $detail );
+		if ( $mailed <= $now - HOUR_IN_SECONDS ) {
+			self::mail(
+				__( 'The lock for Lockdown codes was held from outside', 'scrapelock' ),
+				/* translators: %s: e.g. "database connection 42" */
+				sprintf( __( 'A connection to the database (%s) held the lock that Lockdown uses while it checks a code, for longer than any code check takes. Codes are now checked with ScrapeLock\'s own lock instead, so they still work. Only someone with the database password can do this: change that password (and the keys in wp-config.php), and check who has access to the database.', 'scrapelock' ), $detail )
+			);
+		}
+	}
+
+	/**
+	 * The connection last found holding the database lock for itself (db_lock_report()), only as ScrapeLock
+	 * wrote it. 3.4.2: signed, so a value written in the database cannot make a code check that really holds
+	 * the lock look "foreign" (other requests would then check codes at the same time, past the limits for
+	 * wrong codes), nor set back when the administrator was last emailed.
+	 *
+	 * @return array{id:int, time:int, mailed:int}|array{} Empty when there is none (or it is not signed).
+	 */
+	private static function db_foreign_known() {
+		$known = get_site_option( self::DB_FOREIGN, array() );
+		if ( ! is_array( $known ) || ! isset( $known['id'], $known['time'], $known['mailed'], $known['sig'] ) ) {
+			return array();
+		}
+		$data = array(
+			'id'     => (int) $known['id'],
+			'time'   => (int) $known['time'],
+			'mailed' => (int) $known['mailed'],
+		);
+		return PNCP_Seal::valid( array( 'db-foreign', $data['id'], $data['time'], $data['mailed'] ), $known['sig'] ) ? $data : array();
+	}
+
+	/**
+	 * Saves the connection found holding the database lock for itself, signed (see db_foreign_known()).
+	 *
+	 * @param int $id     Connection id (0: not known).
+	 * @param int $time   When it was found.
+	 * @param int $mailed When the administrator was last emailed about it.
+	 */
+	private static function db_foreign_save( $id, $time, $mailed ) {
+		update_site_option(
+			self::DB_FOREIGN,
+			array(
+				'id'     => (int) $id,
+				'time'   => (int) $time,
+				'mailed' => (int) $mailed,
+				'sig'    => PNCP_Seal::sign( array( 'db-foreign', (int) $id, (int) $time, (int) $mailed ) ),
+			)
+		);
+	}
+
+	/**
+	 * May some requests use the fallback lock now while others hold the database lock (fallback_lock())? Only
+	 * after a connection was found holding the database lock for itself, in the last day.
+	 *
+	 * @return bool
+	 */
+	private static function fallback_possible() {
+		$known = self::db_foreign_known();
+		return $known && $known['time'] > time() - DAY_IN_SECONDS;
+	}
+
+	/**
+	 * Takes the database lock, waiting up to $wait seconds (GET_LOCK(): the database server lets the waiting
+	 * requests in one after another).
+	 *
+	 * Someone who can open their own connection to the database (or run queries that last) could hold it
+	 * once they know its name, as they could lock the tables themselves: that is not something a plugin can
+	 * prevent. A stolen admin session with ordinary database writes cannot.
+	 *
+	 * @param int $wait Seconds (0: do not wait).
+	 * @return bool|null True: held. False: held by another request all that time. Null: the database lock
+	 *                   cannot be used (then the file lock and the row are, for the rest of this request).
+	 */
+	private static function db_lock( $wait ) {
+		global $wpdb;
+		self::db_unlock();
+		if ( ! self::db_lock_usable() ) {
+			return null;
+		}
+		$name  = self::db_lock_name();
+		$quiet = $wpdb->suppress_errors( true );
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery -- A lock of the database server, not data: nothing to cache.
+		$got = $wpdb->get_var( $wpdb->prepare( 'SELECT GET_LOCK(%s, %d)', $name, (int) $wait ) );
+		$wpdb->suppress_errors( $quiet );
+		if ( '1' === (string) $got ) {
+			self::$db_held = $name;
+			static $hooked = false;
+			if ( ! $hooked ) {
+				// After a fatal error the connection may live on (a persistent connection): free the lock then too.
+				register_shutdown_function( array( __CLASS__, 'db_unlock' ) );
+				$hooked = true;
+			}
+			return true;
+		}
+		if ( '0' === (string) $got ) {
+			return false;
+		}
+		self::$db_usable = false; // NULL or an error: GET_LOCK() is not available on this server.
+		return null;
+	}
+
+	/**
+	 * Frees the database lock, if this request holds it (also called at shutdown).
+	 */
+	public static function db_unlock() {
+		global $wpdb;
+		if ( '' === self::$db_held ) {
+			return;
+		}
+		$name          = self::$db_held;
+		self::$db_held = '';
+		if ( ! $wpdb instanceof wpdb ) {
+			return;
+		}
+		$quiet = $wpdb->suppress_errors( true );
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery -- A lock of the database server, not data: nothing to cache.
+		$wpdb->query( $wpdb->prepare( 'SELECT RELEASE_LOCK(%s)', $name ) );
+		$wpdb->suppress_errors( $quiet );
 	}
 
 	/**
@@ -2699,8 +3440,15 @@ final class PNCP_Lockdown {
 			echo '<div class="notice notice-error"><p>' . esc_html__( 'ScrapeLock Lockdown is off from the server: SCRAPELOCK_UNLOCK is set in wp-config.php. Remove that line as soon as you can.', 'scrapelock' ) . '</p></div>';
 			return;
 		}
+		if ( $owner && ( self::is_locked() || self::unlocked_until() ) && '' === self::tampered() && PNCP_Seal::needs_config() && 'current' !== PNCP_Seal::config_status() ) {
+			// 3.4.2: nothing outside the database keeps the lock yet.
+			echo '<div class="notice notice-error"><p><strong>' . esc_html__( 'The ScrapeLock lock is not protected yet.', 'scrapelock' ) . '</strong> ' . esc_html__( 'Add the lock line shown on the Lockdown page to wp-config.php.', 'scrapelock' ) . ' <a href="' . esc_url( self::page_url() ) . '">' . esc_html__( 'Lockdown', 'scrapelock' ) . '</a></p></div>';
+		} elseif ( $owner && ! self::is_locked() && ! self::unlocked_until() && 'stale' === PNCP_Seal::config_status() ) {
+			echo '<div class="notice notice-warning"><p>' . esc_html( self::config_remove_text() ) . '</p></div>';
+		}
 		if ( self::is_locked() && self::is_staff( $user ) ) {
-			echo '<div class="notice notice-warning"><p><strong>' . esc_html__( 'This site is locked.', 'scrapelock' ) . '</strong> ' . esc_html__( 'Changes from wp-admin are disabled until an administrator unlocks the site with the authenticator app.', 'scrapelock' );
+			$text = 1 === self::staff_level( $user ) ? __( 'You can keep working on orders, products, coupons, reports and content. Plugins, themes, menus and widgets, users, settings, import and export stay frozen until an administrator unlocks the site with the authenticator app.', 'scrapelock' ) : __( 'Changes from wp-admin are disabled until an administrator unlocks the site with the authenticator app.', 'scrapelock' );
+			echo '<div class="notice notice-warning"><p><strong>' . esc_html__( 'This site is locked.', 'scrapelock' ) . '</strong> ' . esc_html( $text );
 			if ( $owner ) {
 				echo ' <a href="' . esc_url( self::page_url() ) . '">' . esc_html__( 'Unlock', 'scrapelock' ) . '</a>';
 			}
@@ -2795,7 +3543,9 @@ final class PNCP_Lockdown {
 		$html  = $style . '<div class="pncp-locked">'
 			. '<div class="pncp-locked-icon">' . $lock . '</div>'
 			. '<h1>' . esc_html__( 'The site is locked', 'scrapelock' ) . '</h1>'
-			. '<p>' . esc_html__( 'ScrapeLock Lockdown is on, so nothing can be changed right now: plugins, themes, users, settings and content are frozen. This keeps the site safe even if someone has stolen a password.', 'scrapelock' ) . '</p>'
+			. '<p>' . ( 1 === self::staff_level( get_current_user_id() )
+				? esc_html__( 'ScrapeLock Lockdown is on: you can keep working on orders, products, coupons, reports and content, but plugins, themes, menus and widgets, users, settings, import and export are frozen. This keeps the site safe even if someone has stolen a password.', 'scrapelock' )
+				: esc_html__( 'ScrapeLock Lockdown is on, so nothing can be changed right now: plugins, themes, users, settings and content are frozen. This keeps the site safe even if someone has stolen a password.', 'scrapelock' ) ) . '</p>'
 			. '<p>' . ( $owner
 				? esc_html__( 'To make this change, unlock the site with the code from your authenticator app, then lock it again when you are done.', 'scrapelock' )
 				: esc_html__( 'To make this change, ask an administrator to unlock the site.', 'scrapelock' ) ) . '</p>'
@@ -2883,6 +3633,7 @@ final class PNCP_Lockdown {
 				delete_site_transient( 'pncp_ld_codes_' . get_current_user_id() );
 				self::render_codes( $codes );
 			}
+			self::render_config();
 			if ( ! self::is_locked() ) {
 				self::render_warning();
 			}
@@ -2925,7 +3676,7 @@ final class PNCP_Lockdown {
 			'cancelled' => array( 'info', __( 'Setup cancelled.', 'scrapelock' ) ),
 			'wrong'     => array( 'error', __( 'Wrong or expired code. Wait for a new code in the app and try again.', 'scrapelock' ) ),
 			'wait'      => array( 'error', self::wait_message() ),
-			'busy'      => array( 'error', __( 'Another code was being checked at the same moment. Try again.', 'scrapelock' ) ),
+			'busy'      => array( 'error', __( 'Another code was being checked at the same moment. Try again. If this keeps coming back, something is holding the lock for code checks (see the events below); to get in anyway, add define( \'SCRAPELOCK_UNLOCK\', true ); to wp-config.php.', 'scrapelock' ) ),
 			'sessions'  => array( 'success', __( 'All other sessions of your account were signed out. You are still signed in here.', 'scrapelock' ) ),
 			'unlocked_out' => array( 'success', __( 'The site is unlocked, and all other sessions of your account were signed out.', 'scrapelock' ) ),
 			'error'     => array( 'error', __( 'That action is not possible right now.', 'scrapelock' ) ),
@@ -2977,6 +3728,69 @@ final class PNCP_Lockdown {
 			return sprintf( __( 'Too many wrong codes. App codes are refused until %s. You can still unlock with a recovery code.', 'scrapelock' ), wp_date( $fmt, $app ) );
 		}
 		return __( 'Too many wrong codes. Try again later.', 'scrapelock' );
+	}
+
+	/**
+	 * 3.4.2: what to tell the owner about the lock line once the lock is over.
+	 *
+	 * @return string
+	 */
+	private static function config_remove_text() {
+		return __( 'wp-config.php still has the lock line define( \'SCRAPELOCK_LOCKED\', ... ); of a lock that has ended. Remove that line now: while it is there, if the Lockdown data is deleted from the database, the site locks again, and only SCRAPELOCK_UNLOCK or removing the line opens it.', 'scrapelock' );
+	}
+
+	/**
+	 * 3.4.2: the lock line for wp-config.php on the Lockdown tab: to add (or replace) while the site is locked,
+	 * to remove once it is unlocked for good (see PNCP_Seal::CONFIG).
+	 */
+	private static function render_config() {
+		$status = PNCP_Seal::config_status();
+		if ( ! self::is_locked() && ! self::unlocked_until() ) {
+			if ( ! self::server_unlocked() && 'stale' === $status ) {
+				echo '<div class="notice notice-warning inline"><p>' . esc_html( self::config_remove_text() ) . '</p></div>';
+			}
+			return;
+		}
+		if ( '' !== self::tampered() ) {
+			return; // The messages about the changed data say what to do.
+		}
+		$need = PNCP_Seal::needs_config();
+		if ( 'current' === $status ) {
+			$text = __( 'wp-config.php has the lock line of this lock: if the Lockdown data in the database is deleted, changed or put back from an older copy, the site stays locked.', 'scrapelock' );
+			if ( $need ) {
+				$text .= ' ' . __( 'It is the only copy of the lock outside the database: keep it until you unlock "until I lock it again", then remove it. An unlock for a while does not need any change to it.', 'scrapelock' );
+			}
+			echo '<div class="notice notice-success inline"><p>' . esc_html( $text ) . '</p></div>';
+			return;
+		}
+		$line = PNCP_Seal::current_config_line();
+		if ( '' === $line ) {
+			return;
+		}
+		$notes = array();
+		if ( 'old' === $status ) {
+			$notes[] = __( 'The SCRAPELOCK_LOCKED line in wp-config.php is from an earlier lock: replace it with this one.', 'scrapelock' );
+		} elseif ( 'invalid' === $status ) {
+			$notes[] = __( 'The SCRAPELOCK_LOCKED line in wp-config.php does not belong to this site (the line of another site, changed by hand, or the keys in wp-config.php were changed since), so it is not used: replace it with this one.', 'scrapelock' );
+		}
+		if ( $need ) {
+			echo '<div class="pncp-ld-box pncp-ld-warning" role="alert"><h2><span class="dashicons dashicons-warning" aria-hidden="true"></span> ' . esc_html__( 'The lock is not protected yet: add this line to wp-config.php', 'scrapelock' ) . '</h2>';
+			echo '<p>' . esc_html__( 'WordPress cannot write to any folder of wp-content on this server, so neither the guard file nor the lock file could be written: for now everything about the lock is in the database only, and someone who can change the database directly could delete it so that the site looks as if it had never been locked. Add this line to wp-config.php by hand (FTP or your hosting panel), above the line "That\'s all, stop editing!". It is signed with this site\'s keys and only says that this site is locked: while it is there, the site stays locked whatever the database says, until you unlock it with the app.', 'scrapelock' ) . '</p>';
+		} else {
+			echo '<details class="pncp-ld-box"><summary>' . esc_html__( 'Optional: a second copy of the lock in wp-config.php', 'scrapelock' ) . '</summary>';
+			echo '<p>' . esc_html__( 'The guard file or the lock file already keeps the lock outside the database. For one more copy that the web server cannot change, add this line to wp-config.php: if someone deletes those files and the Lockdown data in the database, the site still stays locked.', 'scrapelock' ) . '</p>';
+		}
+		foreach ( $notes as $note ) {
+			echo '<p><strong>' . esc_html( $note ) . '</strong></p>';
+		}
+		echo '<textarea id="pncp-ld-config-line" class="large-text code" rows="2" readonly aria-label="' . esc_attr__( 'Line for wp-config.php', 'scrapelock' ) . '">' . esc_textarea( $line ) . '</textarea>';
+		echo '<p><button type="button" class="button pncp-copy" data-target="pncp-ld-config-line">' . esc_html__( 'Copy', 'scrapelock' ) . '</button></p>';
+		echo '<p class="description">' . esc_html__( 'An unlock for a while needs no change to the line. When you unlock "until I lock it again", remove it; the next lock gets a new one. Lost the phone and the recovery codes? SCRAPELOCK_UNLOCK still works as described below.', 'scrapelock' );
+		if ( is_multisite() ) {
+			echo ' ' . esc_html__( 'Multisite: one line for the whole network, as the lock covers every site.', 'scrapelock' );
+		}
+		echo '</p>';
+		echo $need ? '</div>' : '</details>';
 	}
 
 	/**
@@ -3064,7 +3878,9 @@ final class PNCP_Lockdown {
 	private static function render_report() {
 		$counts       = self::user_counts();
 		$frozen_roles = self::frozen_roles();
+		$work_roles   = self::limited_roles();
 		$staff        = array();
+		$working      = array();
 		$open_roles   = array();
 		$names        = wp_roles()->get_names();
 		foreach ( $counts['avail_roles'] as $role => $count ) {
@@ -3074,6 +3890,8 @@ final class PNCP_Lockdown {
 			$label = sprintf( '%s: %d', isset( $names[ $role ] ) ? translate_user_role( $names[ $role ] ) : $role, $count );
 			if ( in_array( $role, $frozen_roles, true ) ) {
 				$staff[] = $label;
+			} elseif ( in_array( $role, $work_roles, true ) ) {
+				$working[] = $label;
 			} else {
 				$open_roles[] = $label;
 			}
@@ -3087,23 +3905,23 @@ final class PNCP_Lockdown {
 			),
 			__( 'Themes', 'scrapelock' )           => array(
 				__( 'Installing, updating, deleting and switching themes; automatic theme updates.', 'scrapelock' ),
-				__( 'The Customizer, the Site Editor, menus and widgets.', 'scrapelock' ),
+				__( 'The Customizer, the Site Editor, menus, widgets and the option pages of themes, for every role.', 'scrapelock' ),
 			),
 			__( 'WordPress', 'scrapelock' )        => array(
 				__( 'WordPress core updates, automatic updates and translation updates.', 'scrapelock' ),
 				__( 'The plugin and theme file editor: no file can be changed through WordPress.', 'scrapelock' ),
 			),
 			__( 'Users', 'scrapelock' )            => array(
-				__( 'Creating, deleting and editing users; changing roles; creating administrators, also by code.', 'scrapelock' ),
-				__( 'Staff email and password changes, "lost password" resets for staff, and new application passwords for staff. Existing application passwords of staff stop working.', 'scrapelock' ),
+				__( 'Creating and deleting users; changing roles; creating administrators, also by code. Shop managers can still edit the details of customers (not of staff), as WooCommerce allows.', 'scrapelock' ),
+				__( 'Staff email and password changes (also of shop managers), "lost password" resets for staff, and new application passwords for staff. Existing application passwords of staff stop working.', 'scrapelock' ),
 			),
 			__( 'Settings', 'scrapelock' )         => array(
-				__( 'Every settings page (General, Reading, Permalinks, WooCommerce, other plugins) and the ScrapeLock settings.', 'scrapelock' ),
+				__( 'Every settings page (General, Reading, Permalinks, WooCommerce with its payment methods, other plugins) and the ScrapeLock settings; import and export.', 'scrapelock' ),
 				__( 'Also by code: active plugins, theme, site address, admin email, registration, default role, role definitions, ScrapeLock settings and the lock itself.', 'scrapelock' ),
 			),
 			__( 'Content', 'scrapelock' )          => array(
-				__( 'Creating, editing and deleting posts, pages, products, coupons, categories and media; comment moderation.', 'scrapelock' ),
-				__( 'Orders in wp-admin: staff cannot process them while locked.', 'scrapelock' ),
+				__( 'For frozen roles: creating, editing and deleting posts, pages, products, coupons, categories and media; comment moderation; processing orders in wp-admin.', 'scrapelock' ),
+				__( 'For every staff role: HTML that can carry scripts.', 'scrapelock' ),
 			),
 			__( 'Where it applies', 'scrapelock' ) => array(
 				__( 'wp-admin, admin-ajax, the REST API (also WooCommerce REST API keys of staff, e.g. an ERP that writes stock), XML-RPC, application passwords, and the code of other plugins for the protected items above.', 'scrapelock' ),
@@ -3113,7 +3931,8 @@ final class PNCP_Lockdown {
 			__( 'Visitors browse the site; search engines and the bots you allow are not affected.', 'scrapelock' ),
 			__( 'Customers order and pay, register, log in, edit their own account and reset their own password.', 'scrapelock' ),
 			__( 'Comments from visitors, payment webhooks, cron jobs and the scheduled tasks of plugins.', 'scrapelock' ),
-			__( 'Logging in (also for staff, who then only see the dashboard); the ScrapeLock bot protection and firewalls such as Wordfence.', 'scrapelock' ),
+			__( 'Logging in (also for staff: frozen roles then only see the dashboard); the ScrapeLock bot protection and firewalls such as Wordfence.', 'scrapelock' ),
+			__( 'Shop managers (unless their role is ticked below): orders and refunds, products and stock, coupons, reports and analytics, customers, posts, pages, media and comments.', 'scrapelock' ),
 			__( 'Read-only XML feeds with a ScrapeLock token.', 'scrapelock' ),
 		);
 		?>
@@ -3143,6 +3962,8 @@ final class PNCP_Lockdown {
 			<ul class="pncp-ld-site">
 				<?php /* translators: %s: roles and number of users, e.g. "Administrator: 2, Editor: 1" */ ?>
 				<li><?php echo esc_html( sprintf( __( 'Staff accounts that keep only "read" while locked: %s.', 'scrapelock' ), $staff ? implode( ', ', $staff ) : __( 'none', 'scrapelock' ) ) ); ?></li>
+				<?php /* translators: %s: roles and number of users, e.g. "Shop manager: 2" */ ?>
+				<li><?php echo esc_html( sprintf( __( 'Staff accounts that keep their shop and content work while locked, without plugins, themes, menus and widgets, users, settings, import and export: %s.', 'scrapelock' ), $working ? implode( ', ', $working ) : __( 'none', 'scrapelock' ) ) ); ?></li>
 				<?php /* translators: %s: roles and number of users, e.g. "Subscriber: 120, Customer: 3000" */ ?>
 				<li><?php echo esc_html( sprintf( __( 'Accounts that keep working as usual while locked: %s.', 'scrapelock' ), $open_roles ? implode( ', ', $open_roles ) : __( 'none', 'scrapelock' ) ) ); ?></li>
 				<?php /* translators: 1: number of plugins, 2: theme name */ ?>
@@ -3251,6 +4072,9 @@ final class PNCP_Lockdown {
 				<?php
 				if ( $locked ) {
 					esc_html_e( 'The site is locked', 'scrapelock' );
+					if ( '' === self::tampered() && PNCP_Seal::needs_config() && 'current' !== PNCP_Seal::config_status() ) {
+						echo '<br><small>' . esc_html__( 'Not protected yet: add the lock line shown above to wp-config.php.', 'scrapelock' ) . '</small>';
+					}
 				} elseif ( $until ) {
 					/* translators: %s: time */
 					echo esc_html( sprintf( __( 'Unlocked until %s', 'scrapelock' ), wp_date( (string) get_option( 'time_format' ), $until ) ) );
@@ -3311,7 +4135,7 @@ final class PNCP_Lockdown {
 						/* translators: %s: folder */
 						echo esc_html( sprintf( __( 'With the weaker lock, ScrapeLock writes a signed lock file to %s instead: if someone deletes or changes the Lockdown data in the database, the site stays locked, protected settings are put back and the alert goes to the address signed when you locked. It does not keep the active plugins and the theme from the start of every request, and someone who can change the database directly could still deactivate ScrapeLock itself.', 'scrapelock' ), PNCP_Seal::short_path( $beacon ) ) );
 					} else {
-						echo esc_html__( 'No other folder of wp-content can be written either, so with the weaker lock everything about the lock is kept in the database only: someone who can change the database directly can delete all of it, and the site then looks as if it had never been locked. This cannot be noticed or reported.', 'scrapelock' );
+						echo esc_html__( 'No other folder of wp-content can be written either. With the weaker lock, this page then shows a line to add to wp-config.php by hand, define( \'SCRAPELOCK_LOCKED\', \'...\' ); (signed with this site\'s keys): with it, if someone deletes or changes the Lockdown data in the database, the site stays locked, protected settings are put back while their saved copy is there and the alert goes to the address signed when you locked. Until the line is there, everything about the lock is kept in the database only: someone who can change the database directly can delete all of it, and the site then looks as if it had never been locked. This cannot be noticed or reported.', 'scrapelock' );
 					}
 					echo '</p></div>';
 					echo '<p><label><input type="checkbox" name="weak" value="1"> ' . esc_html__( 'Lock without the guard file (weaker)', 'scrapelock' ) . '</label></p>';
@@ -3386,7 +4210,13 @@ final class PNCP_Lockdown {
 		?>
 		<div class="pncp-ld-box pncp-ld-roles">
 			<h2><?php esc_html_e( 'Who is frozen while locked', 'scrapelock' ); ?></h2>
-			<p><?php esc_html_e( 'Ticked roles keep only "read" while the site is locked. Untick the roles of your members or customers if they create content on the site themselves (listings, community posts): they then keep working as usual, including their own email and password. Roles that can change plugins, themes, users or settings are always frozen.', 'scrapelock' ); ?></p>
+			<p><?php esc_html_e( 'What a locked site still allows each role:', 'scrapelock' ); ?></p>
+			<ul class="pncp-ld-role-help">
+				<li><strong><?php esc_html_e( 'Administrators', 'scrapelock' ); ?></strong> <?php esc_html_e( '(and every role that can change plugins, themes, users or settings): always frozen. They keep only "read", and the owner unlocks the site here with the authenticator app.', 'scrapelock' ); ?></li>
+				<li><strong><?php esc_html_e( 'Ticked roles', 'scrapelock' ); ?></strong> <?php esc_html_e( 'keep only "read": they can log in and look, but not change anything. They cannot change their own email or password, and their application passwords cannot be used or added.', 'scrapelock' ); ?></li>
+				<li><strong><?php esc_html_e( 'Unticked staff roles', 'scrapelock' ); ?></strong> <?php esc_html_e( '(shop managers by default) keep their work: orders and refunds, products and stock, coupons, reports and analytics, customers, posts, pages, media and comments. Frozen for them: plugins, themes, the Customizer, menus and widgets, creating or promoting users and editing staff accounts, WordPress and WooCommerce settings (payment methods too), import and export, and HTML that can carry scripts. They cannot change their own email or password, and their application passwords cannot be used or added.', 'scrapelock' ); ?></li>
+				<li><strong><?php esc_html_e( 'Other unticked roles', 'scrapelock' ); ?></strong> <?php esc_html_e( '(customers, subscribers, members who post listings or community posts) keep working as usual, including their own email and password.', 'scrapelock' ); ?></li>
+			</ul>
 			<?php self::form_open( 'roles' ); ?>
 			<input type="hidden" name="roles[]" value="">
 			<ul class="pncp-ld-role-list">
@@ -3403,6 +4233,8 @@ final class PNCP_Lockdown {
 							echo esc_html( sprintf( _n( '%1$s (%2$d user)', '%1$s (%2$d users)', $count, 'scrapelock' ), translate_user_role( $name ), $count ) );
 							if ( $always ) {
 								echo ' <span class="description">' . esc_html__( 'always frozen', 'scrapelock' ) . '</span>';
+							} elseif ( self::role_limited( $role ) ) {
+								echo ' <span class="description">' . esc_html__( 'unticked: keeps its work, without the rights frozen for staff', 'scrapelock' ) . '</span>';
 							}
 							?>
 						</label>
@@ -3470,6 +4302,7 @@ final class PNCP_Lockdown {
 			'sessions'      => __( 'Other sessions signed out', 'scrapelock' ),
 			'stale_file'    => __( 'Old lock file from before the last unlock removed', 'scrapelock' ),
 			'lock_file'     => __( 'Signed copy of the lock written outside the database', 'scrapelock' ),
+			'db_lock'       => __( 'Code-check lock held from outside; ScrapeLock\'s own lock used', 'scrapelock' ),
 		);
 		?>
 		<h2><?php esc_html_e( 'Recent lockdown events', 'scrapelock' ); ?></h2>
@@ -3536,8 +4369,9 @@ final class PNCP_Lockdown {
 		$state = self::state();
 
 		if ( 'relock' === $op ) {
-			// Locking again needs no code: it only makes the site safer.
-			if ( ! self::unlocked_until() ) {
+			// Locking again needs no code: it only makes the site safer. 3.4.2: also from a web server that stays
+			// locked while the site was unlocked for a while on another one (seal_check(), $elsewhere).
+			if ( ! self::unlocked_until() && ! self::$elsewhere ) {
 				self::back( 'error' );
 			}
 			$state['until']          = 0;
@@ -3609,6 +4443,7 @@ final class PNCP_Lockdown {
 				// while the state was deleted or changed. A new app starts unlocked, so they go first; otherwise the
 				// new app could not be saved (save() keeps an untrusted state from being signed).
 				PNCP_Seal::write_guard( false, 0 );
+				PNCP_Seal::config_off(); // 3.4.2: the lock line cannot be removed from here: not followed on this request.
 				PNCP_Seal::forget_snapshots();
 				PNCP_Integrity::forget();
 				self::reload();
@@ -3677,7 +4512,8 @@ final class PNCP_Lockdown {
 			static function () use ( $code, $recovery, $match ) {
 				return self::check_code_locked( $code, $recovery, $match );
 			},
-			$shape
+			$shape,
+			( null !== $match && '' !== $match ) || self::app_code_ok( $code )
 		);
 		if ( ! in_array( $how, array( 'app', 'recovery' ), true ) ) {
 			self::back( self::code_message( $how ) );
@@ -3712,7 +4548,7 @@ final class PNCP_Lockdown {
 				/* translators: %s: folder of the lock file */
 				$how = sprintf( __( 'without the guard file, with the signed lock file in %s', 'scrapelock' ), PNCP_Seal::short_path( dirname( PNCP_Seal::beacon_path() ) ) );
 			} else {
-				$how = __( 'without the guard file, without any signed copy outside the database', 'scrapelock' );
+				$how = __( 'without the guard file, without any signed copy outside the database until the lock line SCRAPELOCK_LOCKED is added to wp-config.php', 'scrapelock' );
 			}
 			self::event( 'locked', $how );
 			// The snapshot of the protected options first: the file fingerprint starts a background request
@@ -3761,7 +4597,8 @@ final class PNCP_Lockdown {
 			}
 			/* translators: %d: minutes */
 			self::event( 'unlocked', $mins ? sprintf( __( '%d min', 'scrapelock' ), $mins ) : __( 'until locked again', 'scrapelock' ) );
-			self::mail( __( 'The site was unlocked', 'scrapelock' ), __( 'The site was unlocked on the Lockdown page. If it was not you, lock it again and change the administrators\' passwords.', 'scrapelock' ) . ( $unknown ? "\n\n" . self::unknown_text( $unknown ) : '' ) );
+			$line = 0 === $mins && null !== PNCP_Seal::config_lock() ? "\n\n" . self::config_remove_text() : '';
+			self::mail( __( 'The site was unlocked', 'scrapelock' ), __( 'The site was unlocked on the Lockdown page. If it was not you, lock it again and change the administrators\' passwords.', 'scrapelock' ) . ( $unknown ? "\n\n" . self::unknown_text( $unknown ) : '' ) . $line );
 			self::back( $out && self::sign_out_others() ? 'unlocked_out' : 'unlocked' );
 		}
 		if ( 'roles' === $op ) {
