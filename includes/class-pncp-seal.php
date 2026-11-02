@@ -31,6 +31,12 @@ final class PNCP_Seal {
 	const SNAP = 'pncp_lockdown_snap';
 
 	/**
+	 * The fingerprints of the same options, signed and autoloaded: what every request compares, without reading
+	 * the (larger, not autoloaded) snapshot itself unless something changed.
+	 */
+	const DIGESTS = 'pncp_lockdown_digests';
+
+	/**
 	 * The guard (must-use plugin).
 	 */
 	const FILE   = 'scrapelock-lockdown-guard.php';
@@ -61,7 +67,21 @@ final class PNCP_Seal {
 	 * @return string
 	 */
 	private static function key() {
-		return hash( 'sha256', wp_salt( 'auth' ) . '|pncp_lockdown_sig', true );
+		return hash( 'sha256', self::key_material() . '|pncp_lockdown_sig', true );
+	}
+
+	/**
+	 * What the keys of Lockdown are made from: SCRAPELOCK_KEY when wp-config.php defines it, otherwise the
+	 * WordPress keys (AUTH_KEY / AUTH_SALT). Security plugins and hosts sometimes change the WordPress keys
+	 * on their own; a key of ScrapeLock's own is not touched by that.
+	 *
+	 * @return string
+	 */
+	public static function key_material() {
+		if ( defined( 'SCRAPELOCK_KEY' ) && is_string( SCRAPELOCK_KEY ) && strlen( SCRAPELOCK_KEY ) >= 32 ) {
+			return 'scrapelock|' . SCRAPELOCK_KEY;
+		}
+		return wp_salt( 'auth' );
 	}
 
 	/**
@@ -108,6 +128,11 @@ final class PNCP_Seal {
 	 * @return bool
 	 */
 	public static function legacy() {
+		// The guard file only exists since 3.3: with it in place, unsigned data is never accepted, whatever the
+		// version stored in the database says (someone who can write to the database could set it back).
+		if ( self::guard_installed() ) {
+			return false;
+		}
 		$from = (string) get_option( 'pncp_version', '' );
 		return '' !== $from && version_compare( $from, '3.3.0', '<' );
 	}
@@ -296,7 +321,11 @@ final class PNCP_Seal {
 		if ( ! function_exists( 'get_filesystem_method' ) ) {
 			require_once ABSPATH . 'wp-admin/includes/file.php';
 		}
-		if ( 'direct' !== get_filesystem_method( array(), PNCP_Paths::mu_plugins() ) || ! WP_Filesystem() ) {
+		// The check writes a test file in the folder it is given: for a mu-plugins folder that does not exist yet
+		// (most sites) it would always fail and the file would never be written. Then wp-content is asked.
+		$mu      = PNCP_Paths::mu_plugins();
+		$context = is_dir( $mu ) ? $mu : dirname( $mu );
+		if ( 'direct' !== get_filesystem_method( array(), $context ) || ! WP_Filesystem() ) {
 			return null;
 		}
 		global $wp_filesystem;
@@ -350,6 +379,37 @@ final class PNCP_Seal {
 		$snap['sig'] = self::sign( $snap );
 		update_option( self::SNAP, $snap, false );
 		wp_cache_delete( self::SNAP, 'options' );
+		self::save_digests( $values );
+	}
+
+	/**
+	 * Stores the signed fingerprints of the protected options (autoloaded).
+	 *
+	 * @param array<string, mixed> $values Option => value.
+	 */
+	private static function save_digests( $values ) {
+		$digests = array();
+		foreach ( $values as $option => $value ) {
+			$digests[ (string) $option ] = self::digest( $value );
+		}
+		$record        = array( 'digests' => $digests );
+		$record['sig'] = self::sign( $record );
+		update_option( self::DIGESTS, $record, true );
+	}
+
+	/**
+	 * The signed fingerprints, or null (missing, or not matching their signature).
+	 *
+	 * @return array<string, string>|null
+	 */
+	private static function digests() {
+		$record = get_option( self::DIGESTS );
+		if ( ! is_array( $record ) || ! isset( $record['digests'], $record['sig'] ) || ! is_array( $record['digests'] ) ) {
+			return null;
+		}
+		$sig = $record['sig'];
+		unset( $record['sig'] );
+		return self::valid( $record, $sig ) ? $record['digests'] : null;
 	}
 
 	/**
@@ -375,6 +435,23 @@ final class PNCP_Seal {
 		if ( ! PNCP_Lockdown::is_locked() ) {
 			return;
 		}
+		// The quick way, on every request: the autoloaded fingerprints against the options (also autoloaded).
+		// The snapshot itself is read only when something differs, or when there are no fingerprints yet.
+		// The fingerprints cover the same options as the snapshot they were made with (an option added to the
+		// protected list by a later version is in neither until the next lock), so they are enough on their own.
+		$digests = self::digests();
+		if ( null !== $digests ) {
+			$same = true;
+			foreach ( $digests as $option => $digest ) {
+				if ( self::digest( get_option( (string) $option ) ) !== $digest ) {
+					$same = false;
+					break;
+				}
+			}
+			if ( $same ) {
+				return;
+			}
+		}
 		$snap = self::snapshot();
 		if ( null === $snap ) {
 			if ( false !== get_option( self::SNAP, false ) || ! self::legacy() ) {
@@ -391,6 +468,9 @@ final class PNCP_Seal {
 		}
 		if ( $restored ) {
 			PNCP_Lockdown::tamper_alert( 'options', implode( ', ', $restored ) );
+		}
+		if ( null === $digests ) {
+			self::save_digests( $snap['values'] ); // A snapshot from before 3.3.2: its fingerprints, once.
 		}
 	}
 

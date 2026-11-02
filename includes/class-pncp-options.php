@@ -362,7 +362,9 @@ final class PNCP_Options {
 			'exempt_cap'              => 'edit_posts',
 			'excluded_ids'            => '',
 			// Before after_setup_theme (e.g. in the feeds check) the translations are not loaded yet.
-			'message'                 => did_action( 'after_setup_theme' ) ? __( 'The content of this page is protected.', 'scrapelock' ) : 'The content of this page is protected.',
+			// Empty = the default message, translated when it is shown (in the site's language, also after the
+			// language changes). Stored translated before 3.3.2, in whatever language was active at install.
+			'message'                 => '',
 			'rest_hide_content'       => 1,
 			'graphql_hide_content'    => 1,
 			'feed_mode'               => 'excerpt',
@@ -492,6 +494,52 @@ final class PNCP_Options {
 	}
 
 	/**
+	 * Why an IP must not be blocked by hand ('' = it may be). The same rules for the Log tab, WP-CLI and the
+	 * Abilities API (AI agents): never the server itself, a private address, the IP of whoever asks, an
+	 * always-allowed IP, or an official address of a search engine, an AI search service or a CDN edge (that
+	 * would block every visitor behind it).
+	 *
+	 * @param string $ip IP.
+	 * @return string invalid | local | own | allowed | official, or ''.
+	 */
+	public static function ban_refusal( $ip ) {
+		$ip = PNCP_Ip::normalize( (string) $ip );
+		if ( '' === $ip ) {
+			return 'invalid';
+		}
+		if ( PNCP_Ip::is_local( $ip ) || PNCP_Ip::is_private( $ip ) ) {
+			return 'local';
+		}
+		if ( PNCP_Ip::client_ip() === $ip ) {
+			return 'own';
+		}
+		if ( PNCP_Ip::in_any( $ip, self::parse_list( self::stored()['allow_ips'] ) ) ) {
+			return 'allowed';
+		}
+		if ( PNCP_Bots::is_official_crawler_ip( $ip ) || '' !== PNCP_Ip::official_owner( $ip ) ) {
+			return 'official';
+		}
+		return '';
+	}
+
+	/**
+	 * A sentence for ban_refusal()'s answer.
+	 *
+	 * @param string $why Answer of ban_refusal().
+	 * @return string
+	 */
+	public static function ban_refusal_text( $why ) {
+		$texts = array(
+			'invalid'  => __( 'Not a valid IP address.', 'scrapelock' ),
+			'local'    => __( 'This is the server itself or a private address: it is never blocked.', 'scrapelock' ),
+			'own'      => __( 'This is your own IP address: it is not blocked, so you do not lock yourself out.', 'scrapelock' ),
+			'allowed'  => __( 'This IP is in "Always allowed IPs".', 'scrapelock' ),
+			'official' => __( 'This IP belongs to a search engine, an AI search service or a CDN in front of the site (blocking it would block every visitor behind it): it is never blocked.', 'scrapelock' ),
+		);
+		return isset( $texts[ $why ] ) ? $texts[ $why ] : '';
+	}
+
+	/**
 	 * Adds an IP to "Always blocked IPs" (button "Block permanently" in the Log tab). Never the server itself,
 	 * the administrator's own IP, an always-allowed IP or a Google / Bing address. Saving this list does not
 	 * empty the page cache (only the IP list changes).
@@ -501,7 +549,7 @@ final class PNCP_Options {
 	 */
 	public static function block_ip_permanently( $ip ) {
 		$ip = trim( (string) $ip );
-		if ( ! filter_var( $ip, FILTER_VALIDATE_IP ) || PNCP_Ip::is_local( $ip ) || PNCP_Ip::is_private( $ip ) || PNCP_Ip::client_ip() === $ip || PNCP_Bots::is_official_crawler_ip( $ip ) || '' !== PNCP_Ip::official_owner( $ip ) || PNCP_Ip::in_any( $ip, self::parse_list( self::stored()['allow_ips'] ) ) ) {
+		if ( '' !== self::ban_refusal( $ip ) ) {
 			return 'refused';
 		}
 		$stored = self::stored();
@@ -731,12 +779,35 @@ final class PNCP_Options {
 	 * Starts or stops Emergency Mode.
 	 *
 	 * @param int $hours Duration in hours (0 = stop).
+	 * @param bool $purge Whether to empty the page cache too (not on the automatic start: see PNCP_Surge).
 	 */
-	public static function set_emergency( $hours ) {
+	public static function set_emergency( $hours, $purge = true ) {
 		$hours = max( 0, min( 72, (int) $hours ) );
 		update_option( self::EMERGENCY_OPTION, $hours ? time() + $hours * HOUR_IN_SECONDS : 0, true );
 		self::flush();
-		pncp_purge_page_cache();
+		if ( $purge ) {
+			pncp_purge_page_cache();
+		}
+	}
+
+	/**
+	 * The message shown to visitors: the administrator's own, or the default in the site's language.
+	 *
+	 * @param array<string, mixed> $s Settings.
+	 * @return string
+	 */
+	public static function message( $s ) {
+		$own = isset( $s['message'] ) ? trim( (string) $s['message'] ) : '';
+		return '' !== $own ? $own : __( 'The content of this page is protected.', 'scrapelock' );
+	}
+
+	/**
+	 * The default message as it may be stored by earlier versions: in English, and translated.
+	 *
+	 * @return string[]
+	 */
+	public static function default_messages() {
+		return array_unique( array( 'The content of this page is protected.', __( 'The content of this page is protected.', 'scrapelock' ) ) );
 	}
 
 	/**
@@ -805,10 +876,27 @@ final class PNCP_Options {
 		$clean['excluded_ids'] = implode( ', ', array_unique( $ids ) );
 
 		$message          = isset( $input['message'] ) ? sanitize_text_field( (string) $input['message'] ) : '';
-		$clean['message'] = '' === $message ? $defaults['message'] : mb_substr( $message, 0, 200 );
+		// The default text, unchanged, is stored as "default" (empty), so it keeps following the site's language.
+		$clean['message'] = '' === $message || in_array( $message, self::default_messages(), true ) ? '' : mb_substr( $message, 0, 200 );
 
 		foreach ( self::list_keys() as $key ) {
 			$clean[ $key ] = implode( "\n", self::parse_list( isset( $input[ $key ] ) ? (string) $input[ $key ] : '' ) );
+		}
+		// Private URLs: a line that would match the homepage or every page ("/", "*") would answer 403 to every
+		// visitor. Such lines are not saved, and the administrator is told which.
+		$private = array();
+		$refused = array();
+		foreach ( self::parse_list( $clean['private_paths'] ) as $pattern ) {
+			if ( null === PNCP_Private_Urls::parse_pattern( $pattern ) ) {
+				$refused[] = $pattern;
+			} else {
+				$private[] = $pattern;
+			}
+		}
+		$clean['private_paths'] = implode( "\n", $private );
+		if ( $refused && function_exists( 'add_settings_error' ) ) {
+			/* translators: %s: the refused lines */
+			add_settings_error( PNCP_OPTION, 'pncp_private_paths', sprintf( __( 'These private URLs were not saved, because they would block the homepage or every page for all visitors: %s. Use the path of the feed (e.g. /skroutz.xml) or its query (e.g. /?feed=skroutz).', 'scrapelock' ), implode( ', ', $refused ) ) );
 		}
 
 		foreach ( self::ip_list_keys() as $key ) {
@@ -823,10 +911,13 @@ final class PNCP_Options {
 		$clean['tdm_policy_url'] = (string) $policy;
 
 		// A shared secret for the CDN (header value): only safe characters, kept short.
-		$secret              = isset( $input['cdn_secret'] ) ? (string) preg_replace( '/[^A-Za-z0-9._\-]/', '', (string) $input['cdn_secret'] ) : '';
-		$clean['cdn_secret'] = substr( $secret, 0, 100 );
-
+		$secret = isset( $input['cdn_secret'] ) ? (string) preg_replace( '/[^A-Za-z0-9._\-]/', '', (string) $input['cdn_secret'] ) : '';
 		$stored = self::stored();
+		// The form never shows the saved secret: an empty field keeps it, the "remove" box clears it.
+		if ( '' === $secret && empty( $input['cdn_secret_clear'] ) ) {
+			$secret = (string) $stored['cdn_secret'];
+		}
+		$clean['cdn_secret'] = substr( $secret, 0, 100 );
 
 		// "Only through the CDN" is turned on (or its secret changed) only from a request that brought the secret:
 		// that proves the CDN sends it. Otherwise the next request, and the administrator, would get a 403.

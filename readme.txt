@@ -4,7 +4,7 @@ Tags: anti-scraping, ai bots, bot protection, rate limit, content protection
 Requires at least: 6.2
 Tested up to: 7.2
 Requires PHP: 7.4
-Stable tag: 3.3.1
+Stable tag: 3.3.2
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -221,6 +221,43 @@ No. A small script waits for the first real interaction (scroll, tap, key or mou
 6. Dashboard widget with the protection status and the last 24 hours.
 
 == Changelog ==
+
+= 3.3.2 =
+* Fix (Lockdown seal): the guard file was never written on sites without a wp-content/mu-plugins folder (the write check ran on the missing folder), so the seal was silently off there and someone able to write to the database could unlock the site. The same fix applies to the early check.
+* Fix (Lockdown seal): unsigned data is never accepted while the guard file exists, and the 3.3 upgrade step no longer signs data that does not match the guard. Setting pncp_version back in the database can no longer make forged data look genuine.
+* Lockdown: locking is much faster. The comparison with the official WordPress.org checksums runs in the background right after, the checksums are cached per version for a week, every file is read once (SHA-256 and MD5 together), and the request gets more time on hosts that allow it. The lock button shows that it is working and cannot be sent twice.
+* Lockdown: the hourly file check rereads only files whose size, times or inode changed (a full pass still runs once a day).
+* Lockdown: while locked, each request compares small signed, autoloaded fingerprints of the protected settings instead of reading and signing the whole snapshot.
+* Lockdown: wrong codes are counted per account and per IP, with a much higher ceiling for everybody together (100 an hour) that recovery codes are not held back by. One counter for everybody let a stolen session stop the owner from unlocking. Counting happens under the same lock as the code check.
+* Lockdown: optional SCRAPELOCK_KEY in wp-config.php, so that a change of the WordPress keys (done automatically by some security plugins and hosts) does not lock you out. A warning explains it before the first lock.
+* Lockdown: the users-per-role count is taken once per page and cached for 10 minutes; a repeated "change refused" is logged at most once every 10 minutes.
+* Fix: behind Cloudflare with "Real visitor IP" left at the default, every visitor shared the edge's address, its page limit and its bans. CF-Connecting-IP is now read automatically from verified Cloudflare edges (and the CDN secret, if set), and a CDN edge that still stands in for the visitors is never counted, limited, struck or banned. A CDN address that arrives in the real-IP header (e.g. a Cloudflare Worker) is limited like any other client.
+* Fix: IPv4-mapped IPv6 addresses (::ffff:1.2.3.4), addresses with a port and non-canonical IPv6 are normalised, so they match the lists (a real Googlebot could be refused as fake before).
+* Fix: a private URL that resolves to the homepage or every page ("/", "*", or a URL with only a query) could answer 403 to every visitor. Such lines are refused when saved and ignored if already stored. Private URLs can now carry a query (e.g. /?feed=skroutz), and a feed protected by its address is also protected when reached through its query variables.
+* Fix: a reinstall could delete the clean image originals ("Remove watermark" after uninstall). Uninstall keeps their index, and a backup without a record is never deleted.
+* Fix: when pncp_version is missing, 1.x is recognised by the shape of its settings, so "trust every proxy" is no longer turned back on by mistake.
+* Search engine verification: a failed forward DNS lookup is "no verdict" (retried in 5 minutes), not "fake"; fake-crawler and fake-AI-bot violations count once per minute.
+* Automatic Emergency Mode no longer empties the page cache at the peak of the traffic, and its email is sent from a background request.
+* Counters use APCu when it is shared by all PHP workers (PHP-FPM, mod_php), instead of a database write on every page; strikes are atomic there too. The data center lookup costs no query for addresses outside the known groups.
+* WooCommerce Store API: only the long product description is emptied (the shop's blocks show the short one), product objects only, and /batch and the cart's cross-sells are covered.
+* List excerpts apply only to the articles' own text (in the main loop and in a theme's own post sections), not to other text that runs through the_content on archive pages (category descriptions, menus, popups).
+* Watermark: faded once per request instead of for every size, more memory for large originals, the clean full-size file is left out of srcset when it is not watermarked, and images edited in the media editor are watermarked again.
+* Front end: links keep their right-click and long-press menu, Ctrl+A is no longer blocked, "blur on capture" lasts at most 6 seconds and ignores file pickers and select lists, the blur no longer moves fixed headers, and the message is announced by screen readers.
+* Anti-framing headers are not sent to the Customizer preview, and a separate wp-admin address is allowed in frame-ancestors.
+* Manual blocks from WP-CLI and the Abilities API follow the same rules as the Log tab (never the server, your own IP, allowed IPs, search engines or CDN edges).
+* Network deactivation cleans up every site. Uninstall tries once more to remove leftover CDN blocks, and also removes site transients and the uploads .htaccess block with its markers.
+* The CDN shared secret is no longer printed into the settings page; an empty field keeps it.
+* Files are written atomically (country database, pre-cache settings); the temporary copy of wp-config.php ends in .php. The pre-cache check removes old counter files in small batches and hourly.
+* Hotlink rules (Apache, Nginx) match the referer's host, not any text in it.
+* The "Who is exempt" label says that contributors and shop managers are included.
+* After an update, the file work of the upgrade (early check, pre-cache check, uploads rule, new lists, page cache) no longer runs inside the first visitor's request: it runs in a background request, or on the next wp-admin page.
+* Pre-cache check: its settings file no longer holds the CDN lists twice, and the Google / Bing lists are in crawlers.json, read only when a request claims to be one of them. Much less to decode on every request without APCu.
+* Watermark: a watermarked JPEG / WebP size is made from the clean original with a single lossy save (filter pncp_watermark_single_compression), at the site's own image quality; the JPEG colour profile (e.g. Display P3 from phones) is kept; WebP / AVIF copies made by image optimizers next to a rewritten file ("photo.jpg.webp") are removed, and the action pncp_watermark_file_changed lets others react.
+* GraphQL: the text of blocks (WPGraphQL Content Blocks editorBlocks renderedHtml and text attributes, WPGraphQL Gutenberg blocks and blocksJSON) is hidden from visitors too.
+* Front end: the protection script and styles are minified and printed inline (about 6 KB), with no request of their own; with SCRIPT_DEBUG the readable files load as before.
+* The default visitor message is shown in the site's language, also after the language changes (it was stored translated at install time). Leave the field empty for the default.
+* Cloudflare hotlink rule: matches the referer's host with starts_with() (every plan), not any text in it.
+* Translation template updated.
 
 = 3.3.1 =
 * Pre-cache check: its data (settings, counters, events) now lives in a protected folder with a random name inside the uploads directory, uploads/scrapelock/, as plain data files: no PHP file is generated any more. The line in wp-config.php loads the check from the plugin's own folder. The old wp-content/scrapelock-precheck folder is removed on upgrade and its events are moved into the log; the check resumes as soon as an administrator opens wp-admin.

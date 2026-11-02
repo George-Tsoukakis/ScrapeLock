@@ -64,22 +64,39 @@
 		return !! ( sel && sel.rangeCount > 0 && ! sel.isCollapsed && selectionAllowed( sel ) );
 	}
 
-	function showMessage() {
-		if ( ! cfg.showMessage || ! cfg.message || ! document.body ) {
-			return;
-		}
-		if ( ! toast ) {
+	/** The message area. It exists from page load: screen readers announce a live region only after it exists. */
+	function ensureToast() {
+		if ( ! toast && document.body ) {
 			toast = document.createElement( 'div' );
 			toast.className = 'pncp-toast';
 			toast.setAttribute( 'role', 'status' );
 			toast.setAttribute( 'aria-live', 'polite' );
 			document.body.appendChild( toast );
 		}
+		return toast;
+	}
+	if ( cfg.showMessage && cfg.message ) {
+		if ( document.body ) {
+			ensureToast();
+		} else {
+			document.addEventListener( 'DOMContentLoaded', ensureToast );
+		}
+	}
+
+	function showMessage() {
+		if ( ! cfg.showMessage || ! cfg.message || ! ensureToast() ) {
+			return;
+		}
 		toast.textContent = cfg.message;
 		toast.classList.add( 'pncp-toast--visible' );
 		clearTimeout( toastTimer );
 		toastTimer = setTimeout( function () {
 			toast.classList.remove( 'pncp-toast--visible' );
+			setTimeout( function () {
+				if ( ! toast.classList.contains( 'pncp-toast--visible' ) ) {
+					toast.textContent = '';
+				}
+			}, 250 );
 		}, 3000 );
 	}
 
@@ -115,7 +132,9 @@
 	/* ---------- Right-click ---------- */
 	if ( cfg.contextMenu ) {
 		window.addEventListener( 'contextmenu', function ( e ) {
-			if ( isAllowed( targetOf( e ) ) ) {
+			var target = elementOf( targetOf( e ) );
+			// Links keep their menu ("Open in new tab", "Copy link"): it gives nothing of the text away.
+			if ( isAllowed( target ) || ( target && target.closest && target.closest( 'a[href]' ) ) ) {
 				return;
 			}
 			stop( e );
@@ -159,9 +178,10 @@
 
 	/* ---------- Shortcuts ---------- */
 	if ( cfg.shortcuts ) {
-		// a: select all, c/x: copy/cut, s: save, u: view source.
+		// c/x: copy/cut, s: save, u: view source. Select all (a) is left alone: selection is already limited
+		// by the CSS, and keyboard and assistive-technology users rely on it (e.g. in a search field).
 		// p (print) is blocked only if printing is disabled.
-		var keys = [ 'a', 'c', 'x', 's', 'u' ];
+		var keys = [ 'c', 'x', 's', 'u' ];
 		if ( cfg.printMode === 'block' ) {
 			keys.push( 'p' );
 		}
@@ -277,9 +297,14 @@
 			// A click inside an iframe on the page (e.g. video) also takes focus: no blur there.
 			setTimeout( function () {
 				var active = document.activeElement;
-				if ( ! active || String( active.tagName ).toUpperCase() !== 'IFRAME' ) {
-					blurOn( 0 );
+				var tag = active ? String( active.tagName ).toUpperCase() : '';
+				// Not for an iframe on the page (video), nor for a file picker, a select list or a field the
+				// visitor is using: those take focus too. At most 6 seconds, in case the focus event never comes
+				// back (address bar, extensions, Alt-Tab), so the page never stays blurred.
+				if ( tag === 'IFRAME' || tag === 'SELECT' || ( tag === 'INPUT' && active.type === 'file' ) ) {
+					return;
 				}
+				blurOn( 6000 );
 			}, 0 );
 		} );
 		window.addEventListener( 'focus', blurOff );

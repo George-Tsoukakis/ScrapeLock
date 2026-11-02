@@ -135,8 +135,20 @@ final class PNCP_Ip {
 		if ( 16 === strlen( $bin ) && 0 === strpos( $bin, str_repeat( "\0", 10 ) . "\xff\xff" ) ) {
 			$bin = substr( $bin, 12 ); // IPv4-mapped IPv6.
 		}
-		$hex   = bin2hex( $bin );
-		$group = get_option( self::dc_group_name( $bin ), array() );
+		$hex  = bin2hex( $bin );
+		$name = self::dc_group_name( $bin );
+		// The list of groups is small and autoloaded: an address whose group does not exist costs no query.
+		$known = get_option( 'pncp_dc_groups', array() );
+		if ( ! is_array( $known ) || ! in_array( $name, $known, true ) ) {
+			return '';
+		}
+		$group = PNCP_Log::apcu_ok() ? apcu_fetch( PNCP_Log::apcu_key( $name ) ) : false;
+		if ( ! is_array( $group ) ) {
+			$group = get_option( $name, array() );
+			if ( PNCP_Log::apcu_ok() && is_array( $group ) ) {
+				apcu_store( PNCP_Log::apcu_key( $name ), $group, HOUR_IN_SECONDS );
+			}
+		}
 		foreach ( is_array( $group ) ? $group : array() as $row ) {
 			if ( strcmp( $hex, $row[0] ) >= 0 && strcmp( $hex, $row[1] ) <= 0 ) {
 				$names = self::datacenters();
@@ -187,8 +199,15 @@ final class PNCP_Ip {
 		}
 		foreach ( $groups as $option => $rows ) {
 			update_option( $option, $rows, false );
+			if ( PNCP_Log::apcu_ok() ) {
+				apcu_delete( PNCP_Log::apcu_key( $option ) );
+			}
 		}
-		update_option( 'pncp_dc_groups', array_keys( $groups ), false );
+		// Autoloaded (a short list of names): read on every page without a query of its own.
+		update_option( 'pncp_dc_groups', array_keys( $groups ), true );
+		if ( function_exists( 'wp_set_option_autoload' ) ) {
+			wp_set_option_autoload( 'pncp_dc_groups', true ); // Stored as not autoloaded before 3.3.2.
+		}
 	}
 
 	/**
@@ -547,7 +566,62 @@ final class PNCP_Ip {
 	 */
 	public static function remote_addr() {
 		$ip = isset( $_SERVER['REMOTE_ADDR'] ) ? sanitize_text_field( wp_unslash( $_SERVER['REMOTE_ADDR'] ) ) : '';
-		return filter_var( $ip, FILTER_VALIDATE_IP ) ? $ip : '';
+		return self::normalize( $ip );
+	}
+
+	/**
+	 * One spelling per address, so that it matches the lists and the DNS answers: without a port or brackets
+	 * ("1.2.3.4:5678", "[2001:db8::1]:443", as some proxies send), IPv6 in its short lowercase form, and an
+	 * IPv4-mapped IPv6 address (::ffff:203.0.113.5, from dual-stack sockets) as the IPv4 address.
+	 *
+	 * @param string $ip IP as received.
+	 * @return string The IP, or '' if it is not one.
+	 */
+	public static function normalize( $ip ) {
+		$ip = trim( (string) $ip );
+		if ( '' === $ip ) {
+			return '';
+		}
+		if ( '[' === $ip[0] ) {
+			$end = strpos( $ip, ']' );
+			$ip  = false === $end ? '' : substr( $ip, 1, $end - 1 );
+		} elseif ( 1 === substr_count( $ip, ':' ) ) {
+			$ip = substr( $ip, 0, (int) strpos( $ip, ':' ) ); // IPv4 with a port.
+		}
+		$bin = @inet_pton( $ip ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged -- Invalid value = false.
+		if ( false === $bin ) {
+			return '';
+		}
+		if ( 16 === strlen( $bin ) && 0 === strpos( $bin, str_repeat( "\0", 10 ) . "\xff\xff" ) ) {
+			$bin = substr( $bin, 12 );
+		}
+		return (string) inet_ntop( $bin );
+	}
+
+	/**
+	 * Is the address an edge server of a CDN in front of the site (Cloudflare, Bunny)? Many visitors share
+	 * one: it is never counted, limited or banned as if it were a single visitor.
+	 *
+	 * @param string $ip IP.
+	 * @return bool
+	 */
+	public static function is_cdn( $ip ) {
+		$ip = (string) $ip;
+		return '' !== $ip && ( self::in_any( $ip, self::list_of( 'cloudflare' ) ) || self::is_bunny( $ip ) );
+	}
+
+	/**
+	 * Is the address the CDN edge that connected to the server, still standing in for the visitor (the real
+	 * visitor IP could not be read)? Only then is it shared by many visitors. A CDN address that came from the
+	 * real-IP header is a client of its own (e.g. a Cloudflare Worker, which a scraper can rent) and is limited
+	 * like any other.
+	 *
+	 * @param string $ip IP.
+	 * @return bool
+	 */
+	public static function is_cdn_edge( $ip ) {
+		$ip = (string) $ip;
+		return '' !== $ip && $ip === self::remote_addr() && self::is_cdn( $ip );
 	}
 
 	/**
@@ -740,8 +814,8 @@ final class PNCP_Ip {
 				$chain = array_map( 'trim', explode( ',', sanitize_text_field( wp_unslash( $_SERVER[ $headers[ $setting ] ] ) ) ) );
 				// From the end: the last value is the one written by our own proxy.
 				for ( $i = count( $chain ) - 1; $i >= 0; $i-- ) {
-					$candidate = $chain[ $i ];
-					if ( ! filter_var( $candidate, FILTER_VALIDATE_IP ) ) {
+					$candidate = self::normalize( $chain[ $i ] );
+					if ( '' === $candidate ) {
 						break;
 					}
 					$ip = $candidate;
@@ -753,10 +827,18 @@ final class PNCP_Ip {
 					self::$reliable = false;
 				}
 			}
+		} elseif ( 'remote_addr' === $setting && ! empty( $_SERVER['HTTP_CF_CONNECTING_IP'] ) && self::is_trusted_proxy( $remote, $s, 'cf_connecting_ip' ) ) {
+			// "Real visitor IP" left at the default but the request comes from a Cloudflare edge (checked against
+			// Cloudflare's list, and the CDN secret if one is set): Cloudflare always writes CF-Connecting-IP
+			// itself, so it is the visitor. Otherwise every visitor would share the edge's address and its limits.
+			$candidate = self::normalize( sanitize_text_field( wp_unslash( $_SERVER['HTTP_CF_CONNECTING_IP'] ) ) );
+			if ( '' !== $candidate ) {
+				$ip = $candidate;
+			}
 		}
 
-		$ip              = (string) apply_filters( 'pncp_client_ip', $ip );
-		self::$client_ip = filter_var( $ip, FILTER_VALIDATE_IP ) ? $ip : '';
+		$ip              = self::normalize( (string) apply_filters( 'pncp_client_ip', $ip ) );
+		self::$client_ip = $ip;
 		return self::$client_ip;
 	}
 
@@ -881,6 +963,10 @@ final class PNCP_Ip {
 		$parts  = explode( '/', trim( (string) $range ), 2 );
 		$subnet = @inet_pton( $parts[0] ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged -- Invalid value = false.
 		$addr   = @inet_pton( (string) $ip ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged
+		// An IPv4-mapped IPv6 address is compared as the IPv4 address it carries.
+		if ( false !== $addr && 16 === strlen( $addr ) && false !== $subnet && 4 === strlen( $subnet ) && 0 === strpos( $addr, str_repeat( "\0", 10 ) . "\xff\xff" ) ) {
+			$addr = substr( $addr, 12 );
+		}
 		if ( false === $subnet || false === $addr || strlen( $subnet ) !== strlen( $addr ) ) {
 			return false;
 		}

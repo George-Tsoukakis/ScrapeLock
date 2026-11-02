@@ -266,7 +266,11 @@ final class PNCP_Early {
 		if ( ! function_exists( 'get_filesystem_method' ) ) {
 			require_once ABSPATH . 'wp-admin/includes/file.php';
 		}
-		if ( 'direct' !== get_filesystem_method( array(), PNCP_Paths::mu_plugins() ) || ! WP_Filesystem() ) {
+		// The check writes a test file in the folder it is given: for a mu-plugins folder that does not exist yet
+		// (most sites) it would always fail and the file would never be written. Then wp-content is asked.
+		$mu      = PNCP_Paths::mu_plugins();
+		$context = is_dir( $mu ) ? $mu : dirname( $mu );
+		if ( 'direct' !== get_filesystem_method( array(), $context ) || ! WP_Filesystem() ) {
 			return null;
 		}
 		global $wp_filesystem;

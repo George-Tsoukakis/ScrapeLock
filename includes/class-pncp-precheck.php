@@ -29,13 +29,14 @@ final class PNCP_Precheck {
 	/**
 	 * Version of the configuration file; the runtime ignores any other.
 	 */
-	const FORMAT = 2;
+	const FORMAT = 3;
 
 	/**
 	 * Registers the hooks.
 	 */
 	public static function init() {
 		add_action( PNCP_Log::CRON, array( __CLASS__, 'import_events' ), 5 );
+		add_action( PNCP_Log::CRON, array( __CLASS__, 'cleanup_hits' ), 6 );
 		add_action( PNCP_Ip::CRON, array( __CLASS__, 'refresh' ), 30 );
 		// If the wp-config.php line could not be added during a front-end request (it is never edited there),
 		// finish it on the next admin page load, where editing the config file is safe.
@@ -49,6 +50,19 @@ final class PNCP_Precheck {
 	public static function maybe_sync() {
 		if ( self::wanted() && 'ok' !== get_option( self::STATUS ) ) {
 			self::sync();
+		}
+	}
+
+	/**
+	 * The hourly cleanup of the per-minute counter files left by the check (all of them, not just a few).
+	 */
+	public static function cleanup_hits() {
+		$dir = self::dir();
+		if ( '' !== $dir && is_dir( $dir . '/hits' ) ) {
+			if ( ! class_exists( 'PNCP_Precheck_Runtime' ) ) {
+				require_once self::runtime_file();
+			}
+			PNCP_Precheck_Runtime::cleanup( $dir . '/hits', (int) floor( time() / 60 ), 0 );
 		}
 	}
 
@@ -255,20 +269,14 @@ final class PNCP_Precheck {
 		$s       = PNCP_Options::stored();
 		$headers = PNCP_Ip::ip_headers();
 		$setting = (string) $s['ip_header'];
-		$proxies = PNCP_Options::parse_list( $s['trusted_proxies'] );
-		if ( ! empty( $s['trust_cloudflare'] ) && in_array( $setting, array( 'cf_connecting_ip', 'x_forwarded_for' ), true ) ) {
-			$proxies = array_merge( $proxies, PNCP_Ip::list_of( 'cloudflare' ) );
-		}
-		if ( ! empty( $s['trust_bunny'] ) && in_array( $setting, array( 'x_real_ip', 'x_forwarded_for' ), true ) ) {
-			$proxies = array_merge( $proxies, PNCP_Ip::list_of( 'bunny' ) );
-		}
 		$crawlers = array();
 		foreach ( PNCP_Bots::crawler_families() as $family => $def ) {
 			$ips        = '' !== $def['list'] ? PNCP_Ip::list_of( $def['list'] ) : array();
 			$crawlers[] = array(
 				'ua'  => array_map( 'strtolower', $def['ua'] ),
 				// Without a list (Applebot, YandexBot, or a list not downloaded yet) the normal check decides.
-				'ips' => $ips ? self::set( $ips ) : null,
+				// The lists themselves are in crawlers.json, read only when a request claims to be a crawler.
+				'ips' => $ips ? true : null,
 			);
 		}
 		$home   = rtrim( (string) wp_parse_url( home_url( '/' ), PHP_URL_PATH ), '/' );
@@ -285,15 +293,19 @@ final class PNCP_Precheck {
 			'header'          => isset( $headers[ $setting ] ) ? $headers[ $setting ] : '',
 			'private'         => in_array( $setting, array( 'x_real_ip', 'x_forwarded_for' ), true ),
 			'trust_any'       => ! empty( $s['trust_any_proxy'] ),
-			'proxies'         => self::set( $proxies ),
-			// Explicit "Trusted proxies" only (no CDN edge lists): used when a CDN secret is set but the
-			// request does not carry it, so a spoofed CDN edge IP is not trusted for the real-IP header.
-			'proxies_base'    => self::set( PNCP_Options::parse_list( $s['trusted_proxies'] ) ),
+			// The explicit "Trusted proxies"; the CDN edges are trusted by the flags below, from their own sets
+			// (each list is written once). With a CDN secret set but not on the request, only these are trusted.
+			'proxies'         => self::set( PNCP_Options::parse_list( $s['trusted_proxies'] ) ),
+			'proxies_cdn'     => array(
+				'cf'    => ! empty( $s['trust_cloudflare'] ) && in_array( $setting, array( 'cf_connecting_ip', 'x_forwarded_for' ), true ),
+				'bunny' => ! empty( $s['trust_bunny'] ) && in_array( $setting, array( 'x_real_ip', 'x_forwarded_for' ), true ),
+			),
 			// Only a hash of the CDN secret is written to the file.
 			'cdn_secret_hash' => '' !== $secret ? hash( 'sha256', $secret ) : '',
 			// "Only through the CDN": cached pages are refused here too, before the page cache serves them.
 			'cdn_only'        => PNCP_Origin::active( $s ),
-			'cdn'             => self::set( array_merge( PNCP_Ip::list_of( 'cloudflare' ), PNCP_Ip::list_of( 'bunny' ) ) ),
+			'cdn_cf'          => self::set( PNCP_Ip::list_of( 'cloudflare' ) ),
+			'cdn_bunny'       => self::set( PNCP_Ip::list_of( 'bunny' ) ),
 			'allow'           => self::set( PNCP_Options::parse_list( $s['allow_ips'] ) ),
 			'block'           => self::set( PNCP_Options::parse_list( $s['block_ips'] ) ),
 			'crawlers'        => $crawlers,
@@ -340,6 +352,45 @@ final class PNCP_Precheck {
 	}
 
 	/**
+	 * The official crawler lists (Google, Bing) as they are written to crawlers.json: one set per crawler
+	 * family, in the order of the configuration (null where there is no list).
+	 *
+	 * @return string
+	 */
+	public static function crawlers_json() {
+		$sets = array();
+		foreach ( PNCP_Bots::crawler_families() as $def ) {
+			$ips    = '' !== $def['list'] ? PNCP_Ip::list_of( $def['list'] ) : array();
+			$sets[] = $ips ? self::set( $ips ) : null;
+		}
+		return (string) wp_json_encode( $sets, JSON_UNESCAPED_SLASHES ) . "\n";
+	}
+
+	/**
+	 * Writes a data file of the check: next to it first, then renamed over it, so a request reading it meanwhile
+	 * gets the whole old or the whole new file, never half of one (which would let everything through).
+	 *
+	 * @param WP_Filesystem_Base $filesystem Filesystem.
+	 * @param string             $file       File.
+	 * @param string             $contents   Contents.
+	 * @return bool
+	 */
+	private static function write_data_file( $filesystem, $file, $contents ) {
+		if ( is_readable( $file ) && (string) file_get_contents( $file ) === $contents ) { // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Local file.
+			return true;
+		}
+		$tmp = $file . '.' . wp_generate_password( 8, false ) . '.tmp';
+		if ( ! $filesystem->put_contents( $tmp, $contents, FS_CHMOD_FILE ) ) {
+			return false;
+		}
+		if ( ! @rename( $tmp, $file ) ) { // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged, WordPress.WP.AlternativeFunctions.rename_rename -- Atomic replace in the same folder.
+			$filesystem->delete( $tmp );
+			return false;
+		}
+		return true;
+	}
+
+	/**
 	 * Writes the folder (protected from direct access) and the configuration. The folder holds data only:
 	 * the check is the plugin's own file.
 	 *
@@ -365,11 +416,11 @@ final class PNCP_Precheck {
 		if ( "\n" === $json ) {
 			return false;
 		}
-		$file = self::config_file();
-		if ( is_readable( $file ) && (string) file_get_contents( $file ) === $json ) { // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Local file.
-			return true;
+		// The crawler lists first: a new config.json never points to lists that are not there yet.
+		if ( ! self::write_data_file( $filesystem, $dir . '/crawlers.json', self::crawlers_json() ) ) {
+			return false;
 		}
-		return (bool) $filesystem->put_contents( $file, $json, FS_CHMOD_FILE );
+		return self::write_data_file( $filesystem, self::config_file(), $json );
 	}
 
 	/**
@@ -468,7 +519,10 @@ final class PNCP_Precheck {
 		// on one filesystem, so a concurrent request always reads either the whole old file or the whole new
 		// one, never a half-written one; and if the write fails (disk full, quota) the original stays in
 		// place, so there is no risk window and no "restore" step that could also fail.
-		$tmp = $path . '.scrapelock-' . wp_generate_password( 8, false ) . '.tmp';
+		// The temporary copy ends in .php: if PHP stopped before the rename and the copy were left behind, the
+		// web server would run it (no output, like wp-config.php itself) instead of sending the database
+		// password as plain text.
+		$tmp = preg_replace( '/\.php$/i', '', $path ) . '.scrapelock-' . wp_generate_password( 8, false ) . '.php';
 		if ( ! $filesystem->put_contents( $tmp, $wanted, $mode ) || (string) file_get_contents( $tmp ) !== $wanted ) { // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Local file.
 			$filesystem->delete( $tmp );
 			return false;
@@ -498,9 +552,11 @@ final class PNCP_Precheck {
 		if ( ! self::has_dir() ) {
 			return;
 		}
-		$filesystem = self::filesystem();
-		if ( $filesystem && ( is_dir( self::dir() . '/bans' ) || wp_mkdir_p( self::dir() . '/bans' ) ) ) {
-			$filesystem->put_contents( self::dir() . '/bans/' . md5( $ip ), (string) (int) $until, FS_CHMOD_FILE );
+		// Written directly, as the check itself writes its files: this runs inside the visitor's request that
+		// earned the ban, and starting WP_Filesystem (with its test file in uploads) there costs more than the write.
+		$dir = self::dir() . '/bans';
+		if ( is_dir( $dir ) || wp_mkdir_p( $dir ) ) {
+			@file_put_contents( $dir . '/' . md5( $ip ), (string) (int) $until, LOCK_EX ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged, WordPress.WP.AlternativeFunctions.file_system_operations_file_put_contents -- A tiny data file in the plugin's own folder.
 		}
 	}
 
@@ -639,6 +695,10 @@ final class PNCP_Precheck {
 		}
 		if ( '' === $context ) {
 			$context = (string) wp_upload_dir( null, false )['basedir'];
+		}
+		// The test file needs a folder that exists (uploads is created only with the first upload).
+		while ( '' !== $context && ! is_dir( $context ) && dirname( $context ) !== $context ) {
+			$context = dirname( $context );
 		}
 		if ( 'direct' !== get_filesystem_method( array(), $context ) || ! WP_Filesystem() ) {
 			return null;

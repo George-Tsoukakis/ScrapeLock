@@ -47,6 +47,7 @@ final class PNCP_Private_Urls {
 	 */
 	public static function init() {
 		add_action( 'plugins_loaded', array( __CLASS__, 'guard' ), 0 );
+		add_action( 'parse_request', array( __CLASS__, 'guard_resolved' ), 0 );
 	}
 
 	/**
@@ -73,7 +74,16 @@ final class PNCP_Private_Urls {
 		if ( '' === $pattern ) {
 			return;
 		}
+		self::protect( $pattern, $s );
+	}
 
+	/**
+	 * Lets the request through (valid token or allowed IP) or stops it with a 403.
+	 *
+	 * @param string               $pattern The pattern the request matched.
+	 * @param array<string, mixed> $s       Settings.
+	 */
+	private static function protect( $pattern, $s ) {
 		// Not even the successful response goes into a shared cache: many CDNs ignore the query string,
 		// so the feed with the token would afterwards be served without a token too.
 		PNCP_Bots::no_cache();
@@ -342,26 +352,136 @@ final class PNCP_Private_Urls {
 	}
 
 	/**
-	 * The first pattern that matches the path ('' = none). * means "anything".
+	 * A pattern split into the path to match and the query arguments the request must carry. A pattern with
+	 * only a query (e.g. https://site/?feed=skroutz) is that query on the homepage. A pattern without a query
+	 * that would match the homepage or every page ("/", "*", "/*") is refused: it would lock the whole site.
 	 *
-	 * @param string   $path     Path.
-	 * @param string[] $patterns Patterns (paths or full URLs).
-	 * @return string
+	 * @param string $pattern Pattern (path or full URL).
+	 * @return array{path:string, query:array<string, string>}|null Null when the pattern is not usable.
 	 */
-	public static function matching_pattern( $path, $patterns ) {
-		foreach ( $patterns as $pattern ) {
-			$p = (string) wp_parse_url( $pattern, PHP_URL_PATH );
-			if ( '' === $p ) {
-				continue;
-			}
-			$p = self::relative_path( $p );
-			// With or without a trailing / (WordPress accepts both for most paths).
-			$regex = '#^' . str_replace( '\*', '.*', preg_quote( untrailingslashit( $p ), '#' ) ) . '/?$#i';
-			if ( preg_match( $regex, $path ) ) {
-				return $pattern;
+	public static function parse_pattern( $pattern ) {
+		$pattern = (string) $pattern;
+		$path    = (string) wp_parse_url( $pattern, PHP_URL_PATH );
+		$raw     = (string) wp_parse_url( $pattern, PHP_URL_QUERY );
+		$query   = array();
+		if ( '' !== $raw ) {
+			parse_str( $raw, $args );
+			foreach ( (array) $args as $key => $value ) {
+				if ( self::QUERY_ARG !== (string) $key && is_scalar( $value ) ) {
+					$query[ (string) $key ] = (string) $value;
+				}
 			}
 		}
+		if ( '' === $path && ! $query ) {
+			return null;
+		}
+		$path = self::relative_path( '' === $path ? '/' : $path );
+		if ( ! $query && '' === trim( $path, '/*' ) ) {
+			return null;
+		}
+		return array(
+			'path'  => $path,
+			'query' => $query,
+		);
+	}
+
+	/**
+	 * The first pattern that matches the request ('' = none). * means "anything" in the path. A query argument
+	 * in a pattern must be in the request with the same value (* = any value).
+	 *
+	 * @param string                    $path     Path.
+	 * @param string[]                  $patterns Patterns (paths or full URLs).
+	 * @param array<string, mixed>|null $query    The request's query arguments (null = this request's).
+	 * @return string
+	 */
+	public static function matching_pattern( $path, $patterns, $query = null ) {
+		if ( null === $query ) {
+			$query = wp_unslash( $_GET ); // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Only compared against the patterns.
+		}
+		foreach ( $patterns as $pattern ) {
+			$parsed = self::parse_pattern( $pattern );
+			if ( null === $parsed ) {
+				continue;
+			}
+			// With or without a trailing / (WordPress accepts both for most paths).
+			$regex = '#^' . str_replace( '\*', '.*', preg_quote( untrailingslashit( $parsed['path'] ), '#' ) ) . '/?$#i';
+			if ( ! preg_match( $regex, $path ) ) {
+				continue;
+			}
+			foreach ( $parsed['query'] as $key => $value ) {
+				if ( ! isset( $query[ $key ] ) || ! is_scalar( $query[ $key ] ) || ( '*' !== $value && (string) $query[ $key ] !== $value ) ) {
+					continue 2;
+				}
+			}
+			return $pattern;
+		}
 		return '';
+	}
+
+	/**
+	 * The query variables a pattern resolves to through the rewrite rules (e.g. /skroutz.xml =>
+	 * skroutz_feed=1), so that the same feed asked for as /?skroutz_feed=1 is protected too. Only for
+	 * patterns without * and without a query of their own.
+	 *
+	 * @param string $pattern Pattern.
+	 * @return array<string, string>
+	 */
+	private static function resolved_vars( $pattern ) {
+		global $wp_rewrite;
+		$parsed = self::parse_pattern( $pattern );
+		if ( null === $parsed || $parsed['query'] || false !== strpos( $parsed['path'], '*' ) || ! $wp_rewrite instanceof WP_Rewrite ) {
+			return array();
+		}
+		$rules = $wp_rewrite->wp_rewrite_rules();
+		if ( ! is_array( $rules ) ) {
+			return array();
+		}
+		$request = ltrim( $parsed['path'], '/' );
+		foreach ( $rules as $match => $target ) {
+			if ( preg_match( '#^' . $match . '#', $request, $matches ) || preg_match( '#^' . $match . '#', urldecode( $request ), $matches ) ) {
+				$query = preg_replace( '!^.+\?!', '', (string) $target );
+				$query = class_exists( 'WP_MatchesMapRegex' ) ? WP_MatchesMapRegex::apply( $query, $matches ) : $query;
+				parse_str( (string) $query, $vars );
+				$out = array();
+				foreach ( (array) $vars as $key => $value ) {
+					if ( is_scalar( $value ) && '' !== (string) $value ) {
+						$out[ (string) $key ] = (string) $value;
+					}
+				}
+				return $out;
+			}
+		}
+		return array();
+	}
+
+	/**
+	 * After WordPress has read the request: a protected feed reached by its query variables instead of its
+	 * address (/?feed_var=1 for /feed.xml) gets the same check as the address.
+	 *
+	 * @param WP $wp The request.
+	 */
+	public static function guard_resolved( $wp ) {
+		if ( self::$granted || ! $wp instanceof WP ) {
+			return;
+		}
+		$s = PNCP_Options::get();
+		if ( empty( $s['enabled'] ) || '' === trim( (string) $s['private_paths'] ) ) {
+			return;
+		}
+		$vars = (array) $wp->query_vars;
+		foreach ( PNCP_Options::parse_list( $s['private_paths'] ) as $pattern ) {
+			$want = self::resolved_vars( $pattern );
+			if ( ! $want ) {
+				continue;
+			}
+			foreach ( $want as $key => $value ) {
+				if ( ! isset( $vars[ $key ] ) || ! is_scalar( $vars[ $key ] ) || (string) $vars[ $key ] !== $value ) {
+					continue 2;
+				}
+			}
+			self::protect( $pattern, $s );
+			return;
+		}
 	}
 
 	/**
@@ -394,10 +514,15 @@ final class PNCP_Private_Urls {
 	 * @return string
 	 */
 	public static function example_url( $pattern, $token ) {
-		$path = self::relative_path( (string) wp_parse_url( $pattern, PHP_URL_PATH ) );
+		$parsed = self::parse_pattern( $pattern );
+		$path   = null === $parsed ? '/feed.xml' : $parsed['path'];
 		if ( false !== strpos( $path, '*' ) ) {
 			$path = '/feed.xml'; // Pattern with *: we show a generic example.
 		}
-		return add_query_arg( self::QUERY_ARG, rawurlencode( $token ), home_url( $path ) );
+		$url = home_url( $path );
+		if ( null !== $parsed && $parsed['query'] ) {
+			$url = add_query_arg( array_map( 'rawurlencode', $parsed['query'] ), $url );
+		}
+		return add_query_arg( self::QUERY_ARG, rawurlencode( $token ), $url );
 	}
 }

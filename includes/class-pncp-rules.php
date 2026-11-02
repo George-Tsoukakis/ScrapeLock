@@ -109,10 +109,17 @@ final class PNCP_Rules {
 		if ( ! is_dir( $dir ) || ( ! $on && ! file_exists( $file ) ) ) {
 			return;
 		}
+		if ( ! $on ) {
+			// Off: only a file that has our block is touched, and the block goes completely, markers included
+			// (insert_with_markers() with no lines would leave an empty block with its comments in someone
+			// else's file).
+			self::remove_marker_block( $file );
+			return;
+		}
 		if ( ! function_exists( 'insert_with_markers' ) ) {
 			require_once ABSPATH . 'wp-admin/includes/misc.php';
 		}
-		$lines = $on ? array(
+		$lines = array(
 			'# No PHP in the uploads folder: a file uploaded here never runs as code.',
 			'<FilesMatch "\.(?i:php[0-9]?|phtml|phar)$">',
 			'	<IfModule mod_authz_core.c>',
@@ -123,8 +130,28 @@ final class PNCP_Rules {
 			'		Deny from all',
 			'	</IfModule>',
 			'</FilesMatch>',
-		) : array();
+		);
 		insert_with_markers( $file, 'ScrapeLock', $lines );
+	}
+
+	/**
+	 * Removes the "# BEGIN ScrapeLock … # END ScrapeLock" block from a file, if it has one. The rest of the file
+	 * stays as it is; a file that held nothing else is left empty, not deleted (the server may expect it).
+	 *
+	 * @param string $file File.
+	 */
+	public static function remove_marker_block( $file ) {
+		if ( ! is_readable( $file ) || ! is_writable( $file ) ) {
+			return;
+		}
+		$text = (string) file_get_contents( $file ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Local file.
+		if ( false === strpos( $text, '# BEGIN ScrapeLock' ) ) {
+			return;
+		}
+		$clean = (string) preg_replace( '/^# BEGIN ScrapeLock\R.*?^# END ScrapeLock\R?/ms', '', $text );
+		if ( $clean !== $text ) {
+			file_put_contents( $file, $clean, LOCK_EX ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_file_put_contents -- Same file, same owner.
+		}
 	}
 
 	/**
@@ -159,11 +186,12 @@ final class PNCP_Rules {
 	private static function private_regexes() {
 		$out = array();
 		foreach ( PNCP_Options::parse_list( PNCP_Options::get()['private_paths'] ) as $pattern ) {
-			$path = (string) wp_parse_url( $pattern, PHP_URL_PATH );
-			if ( '' === $path ) {
+			// Patterns with a query, or too broad to be safe, are left to PHP (a server rule cannot check them).
+			$parsed = PNCP_Private_Urls::parse_pattern( $pattern );
+			if ( null === $parsed || $parsed['query'] ) {
 				continue;
 			}
-			$full  = (string) wp_parse_url( home_url( PNCP_Private_Urls::relative_path( $path ) ), PHP_URL_PATH );
+			$full  = (string) wp_parse_url( home_url( $parsed['path'] ), PHP_URL_PATH );
 			$out[] = '^' . str_replace( '\*', '.*', preg_quote( $full, '#' ) ) . '$';
 		}
 		return $out;
@@ -424,7 +452,11 @@ final class PNCP_Rules {
 		$lines[] = '# (If a location for images already exists, e.g. for expires, put the two lines inside it.)';
 		$lines[] = 'location ~* ^' . preg_quote( $uploads, '#' ) . '/.*\.(jpe?g|png|webp|gif|avif)$ {';
 		// The domain as regex: as a plain name it would clash with server_names ("conflicting parameter" in nginx -t).
-		$lines[] = '    valid_referers none blocked server_names ~^([^/]*\\.)?' . self::nginx_referer( $host ) . '(:|/|$) ~' . implode( ' ~', array_map( array( __CLASS__, 'nginx_referer' ), self::hotlink_allowed() ) ) . ';';
+		$allowed = array();
+		foreach ( self::hotlink_allowed() as $domain ) {
+			$allowed[] = '~^' . self::referer_host_regex( $domain );
+		}
+		$lines[] = '    valid_referers none blocked server_names ~^([^/]*\\.)?' . self::nginx_referer( $host ) . '(:|/|$) ' . implode( ' ', $allowed ) . ';';
 		$lines[] = '    if ($invalid_referer) { return 403; }';
 		$lines[] = '}';
 		$regexes = self::private_regexes();
@@ -465,6 +497,23 @@ final class PNCP_Rules {
 	 */
 	public static function nginx_referer( $domain ) {
 		return str_replace( '.', '\.', rtrim( $domain, '.' ) );
+	}
+
+	/**
+	 * A referer regex anchored to the host: the domain itself or a subdomain of it, never the domain merely
+	 * appearing somewhere in the address (https://leech.example/?google.com). "google." means any ending
+	 * (google.com, google.gr).
+	 *
+	 * @param string $domain Domain from hotlink_allowed().
+	 * @return string Regex for the host part, without the scheme.
+	 */
+	public static function referer_host_regex( $domain ) {
+		$domain = (string) $domain;
+		$body   = self::nginx_referer( $domain );
+		// "google." = Google's own country domains (google.com, google.gr, google.co.uk, google.com.cy), not
+		// google.example.com, which anyone can create under their own domain.
+		$any    = '.' === substr( $domain, -1 ) ? '\.[a-z]{2,3}(\.[a-z]{2})?' : '';
+		return '([^/]*\.)?' . $body . $any . '(:|/|$)';
 	}
 
 	/**
@@ -530,9 +579,9 @@ final class PNCP_Rules {
 		}
 		$lines[] = '# Image hotlinking.';
 		$lines[] = 'RewriteCond %{HTTP_REFERER} !^$';
-		$lines[] = 'RewriteCond %{HTTP_REFERER} !^https?://([^/]+\.)?' . preg_quote( $host, '#' ) . '/ [NC]';
+		$lines[] = 'RewriteCond %{HTTP_REFERER} !^https?://([^/]+\.)?' . preg_quote( $host, '#' ) . '(:[0-9]+)?(/|$) [NC]';
 		foreach ( self::hotlink_allowed() as $domain ) {
-			$lines[] = 'RewriteCond %{HTTP_REFERER} !' . preg_quote( $domain, '#' ) . ' [NC]';
+			$lines[] = 'RewriteCond %{HTTP_REFERER} !^https?://' . self::referer_host_regex( $domain ) . ' [NC]';
 		}
 		$lines[] = 'RewriteRule ^' . preg_quote( $uploads, '#' ) . '/.*\.(jpe?g|png|webp|gif|avif)$ - [F,NC,L]';
 		foreach ( self::private_regexes() as $regex ) {
@@ -642,9 +691,33 @@ final class PNCP_Rules {
 			'expression' => '(http.host eq "' . $host . '") and not cf.client.bot and (lower(http.user_agent) contains "googlebot" or lower(http.user_agent) contains "bingbot" or lower(http.user_agent) contains "applebot")',
 		);
 
-		$referers = array( 'http.referer eq ""', 'http.referer contains "' . $host . '"' );
-		foreach ( self::hotlink_allowed() as $domain ) {
-			$referers[] = 'http.referer contains "' . $domain . '"';
+		// starts_with() on the whole address (available on every Cloudflare plan, unlike regex): the allowed site
+		// must be the referer's host, not text anywhere in it (https://leech.example/?google.com passed with
+		// "contains"). A full domain ends with "/", so bing.com.leech.example does not match either.
+		$referers = array( 'http.referer eq ""' );
+		$bare  = preg_replace( '/^www\./i', '', $host );
+		$hosts = array_unique( array( $host, $bare, 'www.' . $bare ) );
+		foreach ( array( 'https://', 'http://' ) as $scheme ) {
+			foreach ( $hosts as $own ) {
+				$referers[] = 'starts_with(http.referer, "' . $scheme . $own . '/")';
+				$referers[] = 'starts_with(http.referer, "' . $scheme . $own . ':")';
+			}
+		}
+		$own = $referers;
+		// Cloudflare refuses an expression over 4096 characters: with a long list of allowed sites (filter
+		// pncp_hotlink_allowed) only the site itself and its www. are listed.
+		foreach ( array( array( '', 'www.', 'm.', 'l.', 'lm.', 'images.' ), array( '', 'www.' ) ) as $subs ) {
+			$referers = $own;
+			foreach ( self::hotlink_allowed() as $domain ) {
+				$domain = strtolower( trim( (string) $domain ) );
+				$end    = '.' === substr( $domain, -1 ) ? '' : '/';
+				foreach ( $subs as $sub ) {
+					$referers[] = 'starts_with(http.referer, "https://' . $sub . $domain . $end . '")';
+				}
+			}
+			if ( strlen( implode( ' or ', $referers ) ) < 3600 ) {
+				break;
+			}
 		}
 		$rules['hotlink'] = array(
 			'title'      => __( 'Image hotlinking', 'scrapelock' ),

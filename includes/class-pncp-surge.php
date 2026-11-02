@@ -17,6 +17,14 @@ final class PNCP_Surge {
 
 	const STATE = 'pncp_surge';
 	const LAST  = 'pncp_surge_last';
+	const MAIL  = 'pncp_surge_mail';
+
+	/**
+	 * Registers the hooks.
+	 */
+	public static function init() {
+		add_action( self::MAIL, array( __CLASS__, 'mail' ), 10, 3 );
+	}
 
 	/**
 	 * How many times the usual rate counts as an attack, and for how many minutes in a row.
@@ -109,7 +117,11 @@ final class PNCP_Surge {
 	 */
 	private static function trigger( $count, $threshold ) {
 		$hours = max( 1, min( 72, (int) apply_filters( 'pncp_auto_emergency_hours', 1 ) ) );
-		PNCP_Options::set_emergency( $hours );
+		// This runs inside a visitor's request, at the peak of the traffic. The page cache is NOT emptied: that
+		// would send every visitor to PHP and the database at once (a cache stampede) exactly when the site is
+		// under the most load. Cached pages are cheap to serve; the stricter checks apply to every request
+		// that reaches PHP, and the early / pre-cache checks to the rest.
+		PNCP_Options::set_emergency( $hours, false );
 		$last = get_option( self::LAST, array() );
 		$last = is_array( $last ) ? $last : array();
 		array_unshift(
@@ -122,7 +134,27 @@ final class PNCP_Surge {
 			)
 		);
 		update_option( self::LAST, array_slice( $last, 0, 10 ), false );
-		$to = is_multisite() ? get_site_option( 'admin_email' ) : get_option( 'admin_email' );
+		// The email is sent from a scheduled event, not by the visitor whose request crossed the threshold.
+		wp_schedule_single_event( time(), self::MAIL, array( $count, $threshold, $hours ) );
+		// Started right away, in its own background request (a loopback to wp-cron.php that this request does
+		// not wait for), also on sites where DISABLE_WP_CRON turned off the automatic start.
+		if ( function_exists( 'spawn_cron' ) ) {
+			spawn_cron();
+		}
+	}
+
+	/**
+	 * Emails the administration address that Emergency Mode started (scheduled by trigger()).
+	 *
+	 * @param int $count     Pages in the last minute.
+	 * @param int $threshold The threshold it crossed.
+	 * @param int $hours     Hours.
+	 */
+	public static function mail( $count, $threshold, $hours ) {
+		$count     = (int) $count;
+		$threshold = (int) $threshold;
+		$hours     = (int) $hours;
+		$to        = is_multisite() ? get_site_option( 'admin_email' ) : get_option( 'admin_email' );
 		if ( is_email( $to ) ) {
 			wp_mail(
 				$to,

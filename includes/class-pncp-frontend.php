@@ -156,8 +156,24 @@ final class PNCP_Frontend {
 
 		$s = PNCP_Options::get();
 
-		wp_enqueue_style( 'pncp-protect', PNCP_URL . 'assets/css/protect.css', array(), PNCP_VERSION );
-		wp_register_script( 'pncp-protect', PNCP_URL . 'assets/js/protect.js', array(), PNCP_VERSION, false );
+		// Minified and printed inline in <head>: no extra request that would hold back the first paint of every
+		// protected page (about 6 KB together). With SCRIPT_DEBUG the readable files are loaded instead.
+		$debug = defined( 'SCRIPT_DEBUG' ) && SCRIPT_DEBUG;
+		$css   = $debug ? '' : self::asset( 'assets/css/protect.min.css' );
+		$js    = $debug ? '' : self::asset( 'assets/js/protect.min.js' );
+		if ( '' !== $css ) {
+			wp_register_style( 'pncp-protect', false, array(), PNCP_VERSION );
+			wp_enqueue_style( 'pncp-protect' );
+			wp_add_inline_style( 'pncp-protect', $css );
+		} else {
+			wp_enqueue_style( 'pncp-protect', PNCP_URL . 'assets/css/protect.css', array(), PNCP_VERSION );
+		}
+		if ( '' !== $js ) {
+			wp_register_script( 'pncp-protect', false, array(), PNCP_VERSION, false );
+			wp_add_inline_script( 'pncp-protect', $js, 'after' );
+		} else {
+			wp_register_script( 'pncp-protect', PNCP_URL . 'assets/js/protect.js', array(), PNCP_VERSION, false );
+		}
 
 		$title = is_singular() ? get_the_title() : wp_get_document_title();
 
@@ -173,7 +189,7 @@ final class PNCP_Frontend {
 			'minChars'    => (int) $s['attribution_min_chars'],
 			'printMode'   => $s['print_mode'],
 			'showMessage' => (bool) $s['show_message'],
-			'message'     => $s['message'],
+			'message'     => PNCP_Options::message( $s ),
 			'sourceTitle' => wp_strip_all_tags( html_entity_decode( $title, ENT_QUOTES, get_bloginfo( 'charset' ) ) ),
 			'sourceUrl'   => esc_url_raw( self::current_url() ),
 			'siteName'    => wp_strip_all_tags( get_bloginfo( 'name' ) ),
@@ -184,6 +200,23 @@ final class PNCP_Frontend {
 		);
 
 		wp_add_inline_script( 'pncp-protect', 'window.pncpConfig = ' . wp_json_encode( $config ) . ';', 'before' );
+	}
+
+	/**
+	 * The contents of one of the plugin's own minified files ('' if it cannot be read).
+	 *
+	 * @param string $rel Path inside the plugin.
+	 * @return string
+	 */
+	private static function asset( $rel ) {
+		$file = PNCP_DIR . $rel;
+		// A minified file older than its readable source was not rebuilt after an edit: the readable file is
+		// loaded instead ('' here), so a fix never stays hidden behind an old build.
+		$source = PNCP_DIR . str_replace( '.min.', '.', $rel );
+		if ( ! is_readable( $file ) || ( is_file( $source ) && filemtime( $source ) > filemtime( $file ) ) ) {
+			return '';
+		}
+		return trim( (string) file_get_contents( $file ) ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- The plugin's own file.
 	}
 
 	/**
@@ -204,7 +237,7 @@ final class PNCP_Frontend {
 	 * @return array<string, string>
 	 */
 	public static function script_attributes( $attributes ) {
-		if ( isset( $attributes['id'] ) && in_array( $attributes['id'], array( 'pncp-protect-js', 'pncp-protect-js-before' ), true ) ) {
+		if ( isset( $attributes['id'] ) && in_array( $attributes['id'], array( 'pncp-protect-js', 'pncp-protect-js-before', 'pncp-protect-js-after' ), true ) ) {
 			$attributes['data-cfasync']            = 'false';
 			$attributes['data-no-optimize']        = '1';
 			$attributes['data-no-defer']           = '1';
@@ -225,15 +258,23 @@ final class PNCP_Frontend {
 		// Excluded: embed pages (oEmbed), which exist to be placed in iframes, and the checkout / order
 		// page, which some banks open inside their own iframe.
 		$checkout = function_exists( 'is_checkout' ) && ( is_checkout() || ( function_exists( 'is_wc_endpoint_url' ) && is_wc_endpoint_url( 'order-received' ) ) );
-		if ( ! empty( $s['block_framing'] ) && ! is_embed() && ! $checkout && apply_filters( 'pncp_block_framing', true ) ) {
+		// Not in the Customizer / Site Editor preview, which shows the site inside wp-admin's own iframe.
+		if ( ! empty( $s['block_framing'] ) && ! is_embed() && ! $checkout && ! is_customize_preview() && apply_filters( 'pncp_block_framing', true ) ) {
 			$sent = strtolower( implode( "\n", headers_list() ) );
+			// wp-admin on another address than the site (domain mapping on multisite, a separate admin host):
+			// it must still be able to show the site in its previews, so it is allowed by name.
+			$home  = (string) wp_parse_url( home_url(), PHP_URL_HOST );
+			$admin = (string) wp_parse_url( admin_url(), PHP_URL_HOST );
+			$other = '' !== $admin && strtolower( $admin ) !== strtolower( $home );
 			// We do not replace security headers set by another plugin or the server (e.g. X-Frame-Options: DENY).
-			if ( false === strpos( $sent, 'x-frame-options:' ) ) {
+			// With a separate admin address only the CSP is sent: X-Frame-Options cannot name another address.
+			if ( ! $other && false === strpos( $sent, 'x-frame-options:' ) ) {
 				header( 'X-Frame-Options: SAMEORIGIN' );
 			}
 			if ( false === strpos( $sent, 'frame-ancestors' ) ) {
+				$origin = $other ? ' ' . (string) wp_parse_url( admin_url(), PHP_URL_SCHEME ) . '://' . $admin : '';
 				// Second CSP header (replace = false): browsers apply both, the existing one stays.
-				header( "Content-Security-Policy: frame-ancestors 'self'", false );
+				header( "Content-Security-Policy: frame-ancestors 'self'" . $origin, false );
 			}
 		}
 		if ( ! empty( $s['tdm_reservation'] ) ) {

@@ -23,7 +23,8 @@ final class PNCP_Lockdown {
 	const PENDING_META  = 'pncp_lockdown_pending';
 	const ACTION        = 'pncp_lockdown';
 	const MAX_FAILS     = 5;  // Per user, in 15 minutes.
-	const MAX_FAILS_ALL = 20; // All users together, in an hour.
+	const MAX_FAILS_ALL = 20; // Per IP (IPv6: per /64), in an hour.
+	const MAX_FAILS_SITE = 100; // All accounts and IPs together, in an hour: a ceiling for guessing from many places.
 	const CODES         = 10;
 	const MUTEX         = 'pncp_lockdown_mutex';
 
@@ -63,6 +64,13 @@ final class PNCP_Lockdown {
 	 * @var bool
 	 */
 	private static $sig_ok = true;
+
+	/**
+	 * The code typed on this request has the shape of a recovery code (see handle()).
+	 *
+	 * @var bool
+	 */
+	private static $recovery_attempt = false;
 
 	/**
 	 * Staff or not, per user.
@@ -227,7 +235,13 @@ final class PNCP_Lockdown {
 			return;
 		}
 		self::reload();
-		$state       = self::state();
+		$state = self::state();
+		if ( '' !== self::$tamper ) {
+			// The guard says locked and the database does not, or the data does not match its signature: signing
+			// it now would make a forged state (e.g. "unlocked") look genuine and remove the guard. Left as it is;
+			// the site stays locked and the owner is alerted (check_seal()).
+			return;
+		}
 		$state['fp'] = PNCP_Integrity::resign();
 		self::save( $state );
 		if ( ! empty( $state['locked'] ) ) {
@@ -726,6 +740,13 @@ final class PNCP_Lockdown {
 			return;
 		}
 		$seen[ $what ] = true;
+		// The same refusal is logged at most once every 10 minutes: code that retries on every page (a cache
+		// plugin rewriting its settings, for example) would otherwise write to the database on every request.
+		$key = 'pncp_ld_ref_' . md5( $what );
+		if ( get_site_transient( $key ) ) {
+			return;
+		}
+		set_site_transient( $key, 1, 10 * MINUTE_IN_SECONDS );
 		self::event( 'refused', $what );
 	}
 
@@ -778,7 +799,7 @@ final class PNCP_Lockdown {
 	 * @return string 32 bytes.
 	 */
 	private static function key() {
-		return hash( 'sha256', wp_salt( 'auth' ) . '|pncp_lockdown', true );
+		return hash( 'sha256', PNCP_Seal::key_material() . '|pncp_lockdown', true );
 	}
 
 	/**
@@ -815,17 +836,44 @@ final class PNCP_Lockdown {
 	 * @return bool
 	 */
 	private static function too_many_fails() {
-		return (int) get_site_transient( 'pncp_ld_fail_' . get_current_user_id() ) >= self::MAX_FAILS || (int) get_site_transient( 'pncp_ld_fail_all' ) >= self::MAX_FAILS_ALL;
+		// Per account and per IP. Not one counter for everybody: with it, someone using a stolen administrator
+		// session could keep typing wrong codes and stop the real owner from unlocking the site at all.
+		// A ceiling for everybody remains, five times higher than before: guessing from many accounts or IPs at
+		// once still stops, while one stolen session alone cannot reach it. Recovery codes are not affected by
+		// it (they are long and random), so the owner can still unlock.
+		if ( (int) get_site_transient( 'pncp_ld_fail_site' ) >= self::MAX_FAILS_SITE && ! self::$recovery_attempt ) {
+			return true;
+		}
+		return (int) get_site_transient( 'pncp_ld_fail_' . get_current_user_id() ) >= self::MAX_FAILS || (int) get_site_transient( self::ip_fail_key() ) >= self::MAX_FAILS_ALL;
 	}
 
 	/**
-	 * Counts a wrong code.
+	 * The key of the wrong-code counter of this IP (IPv6: its /64).
+	 *
+	 * @return string
+	 */
+	private static function ip_fail_key() {
+		return 'pncp_ld_fail_ip_' . md5( PNCP_Ip::limit_key( PNCP_Ip::client_ip() ) );
+	}
+
+	/**
+	 * Counts a wrong code. Inside the same lock as the code check, so that parallel wrong guesses cannot lose
+	 * counts and get extra tries.
 	 */
 	private static function failed() {
-		$key  = 'pncp_ld_fail_' . get_current_user_id();
-		$mine = (int) get_site_transient( $key ) + 1;
-		set_site_transient( $key, $mine, 15 * MINUTE_IN_SECONDS );
-		set_site_transient( 'pncp_ld_fail_all', (int) get_site_transient( 'pncp_ld_fail_all' ) + 1, HOUR_IN_SECONDS );
+		$held = self::lock();
+		try {
+			$key  = 'pncp_ld_fail_' . get_current_user_id();
+			$mine = (int) get_site_transient( $key ) + 1;
+			set_site_transient( $key, $mine, 15 * MINUTE_IN_SECONDS );
+			$ip_key = self::ip_fail_key();
+			set_site_transient( $ip_key, (int) get_site_transient( $ip_key ) + 1, HOUR_IN_SECONDS );
+			set_site_transient( 'pncp_ld_fail_site', (int) get_site_transient( 'pncp_ld_fail_site' ) + 1, HOUR_IN_SECONDS );
+		} finally {
+			if ( $held ) {
+				self::release();
+			}
+		}
 		self::event( 'failed' );
 		if ( self::MAX_FAILS === $mine ) {
 			self::mail( __( 'Too many wrong lockdown codes', 'scrapelock' ), __( 'Someone typed several wrong authenticator codes on the Lockdown page. Further attempts from that account are blocked for 15 minutes. If it was not you, change that account\'s password.', 'scrapelock' ) );
@@ -1074,6 +1122,7 @@ final class PNCP_Lockdown {
 		}
 		wp_enqueue_script( 'pncp-qrcode', PNCP_URL . 'assets/js/vendor/qrcode.js', array(), '1.4.4', true );
 		wp_enqueue_script( 'pncp-lockdown', PNCP_URL . 'assets/js/lockdown.js', array( 'pncp-qrcode' ), PNCP_VERSION, true );
+		wp_localize_script( 'pncp-lockdown', 'pncpLockdown', array( 'working' => __( 'Please wait…', 'scrapelock' ) ) );
 	}
 
 	/**
@@ -1308,6 +1357,11 @@ final class PNCP_Lockdown {
 				<li><?php esc_html_e( 'Backup: the 10 recovery codes shown once when you connect the app. Print them and keep them away from the phone; each one unlocks the site once.', 'scrapelock' ); ?></li>
 				<li><?php esc_html_e( 'Lost both the phone and the recovery codes? Only someone with access to the server files (FTP or your hosting panel) can unlock the site, by adding a line to wp-config.php.', 'scrapelock' ); ?></li>
 				<li><?php esc_html_e( 'While locked, password resets for staff are frozen too: if you forget your WordPress password, the same line in wp-config.php is the way back.', 'scrapelock' ); ?></li>
+				<?php if ( ! defined( 'SCRAPELOCK_KEY' ) && ! self::configured() ) : ?>
+					<li><?php esc_html_e( 'The app is tied to the security keys in wp-config.php (AUTH_KEY, AUTH_SALT). Some security plugins and hosting companies change them automatically, for example after a scan: the app codes then stop working and only a recovery code or the wp-config.php line unlocks the site. To avoid this, add a key of ScrapeLock\'s own to wp-config.php BEFORE you connect the app:', 'scrapelock' ); ?> <code>define( 'SCRAPELOCK_KEY', '<?php echo esc_html( wp_generate_password( 48, false ) ); ?>' );</code></li>
+				<?php elseif ( ! defined( 'SCRAPELOCK_KEY' ) ) : ?>
+					<li><?php esc_html_e( 'The app is tied to the security keys in wp-config.php (AUTH_KEY, AUTH_SALT), which some security plugins and hosting companies change automatically. To tie it to a key of ScrapeLock\'s own instead: first remove the app below, then add SCRAPELOCK_KEY to wp-config.php, then connect the app again. Adding the key while the app is connected makes its codes stop working.', 'scrapelock' ); ?></li>
+				<?php endif; ?>
 			</ul>
 		</div>
 		<?php
@@ -1317,7 +1371,7 @@ final class PNCP_Lockdown {
 	 * The full report: what the lock freezes, what keeps working, and who it applies to on this site.
 	 */
 	private static function render_report() {
-		$counts       = count_users();
+		$counts       = self::user_counts();
 		$frozen_roles = self::frozen_roles();
 		$staff        = array();
 		$open_roles   = array();
@@ -1406,6 +1460,25 @@ final class PNCP_Lockdown {
 			</ul>
 		</div>
 		<?php
+	}
+
+	/**
+	 * Users per role, counted once per page (count_users() is a heavy query on a shop with many customers) and
+	 * kept for 10 minutes.
+	 *
+	 * @return array{total_users:int, avail_roles:array<string, int>}
+	 */
+	private static function user_counts() {
+		static $counts = null;
+		if ( null === $counts ) {
+			$key    = 'pncp_ld_user_counts_' . get_current_blog_id();
+			$counts = get_transient( $key );
+			if ( ! is_array( $counts ) || ! isset( $counts['avail_roles'] ) ) {
+				$counts = count_users();
+				set_transient( $key, $counts, 10 * MINUTE_IN_SECONDS );
+			}
+		}
+		return $counts;
 	}
 
 	/**
@@ -1578,7 +1651,7 @@ final class PNCP_Lockdown {
 	 * can take over the site are always ticked.
 	 */
 	private static function render_roles() {
-		$counts = count_users();
+		$counts = self::user_counts();
 		$frozen = self::frozen_roles();
 		?>
 		<div class="pncp-ld-box pncp-ld-roles">
@@ -1746,6 +1819,9 @@ final class PNCP_Lockdown {
 		if ( ! in_array( $op, array( 'confirm', 'lock', 'unlock', 'codes', 'remove', 'roles', 'quarantine' ), true ) ) {
 			self::back( 'error' );
 		}
+		// A recovery code (8 characters; app codes have 6 digits) on the unlock form is not held back by the
+		// site-wide ceiling, so the owner can always unlock with one.
+		self::$recovery_attempt = 'unlock' === $op && 8 === strlen( (string) preg_replace( '/[^a-z0-9]/i', '', $code ) );
 		if ( self::too_many_fails() ) {
 			self::back( 'wait' );
 		}
@@ -1821,6 +1897,7 @@ final class PNCP_Lockdown {
 			}
 			if ( 0 === $mins ) {
 				delete_option( PNCP_Seal::SNAP );
+				delete_option( PNCP_Seal::DIGESTS );
 			}
 			PNCP_Integrity::mark_stale(); // Updates are allowed now: the next check takes a new fingerprint.
 			/* translators: %d: minutes */
@@ -1870,6 +1947,7 @@ final class PNCP_Lockdown {
 			self::back( 'guard' );
 		}
 		delete_option( PNCP_Seal::SNAP );
+		delete_option( PNCP_Seal::DIGESTS );
 		self::event( 'removed' );
 		self::mail( __( 'The authenticator app was removed', 'scrapelock' ), __( 'The authenticator app was removed from the Lockdown page and the lock is off. If it was not you, change the administrators\' passwords.', 'scrapelock' ) );
 		self::back( 'removed' );

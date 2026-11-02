@@ -382,7 +382,17 @@ final class PNCP_Geo {
 			$wp_filesystem->put_contents( $dir . '/index.html', '', FS_CHMOD_FILE );
 			$wp_filesystem->put_contents( $dir . '/.htaccess', "Require all denied\n<IfModule !mod_authz_core.c>\nDeny from all\n</IfModule>\n", FS_CHMOD_FILE );
 		}
-		return (bool) $wp_filesystem->put_contents( $dir . '/' . $name, $contents, FS_CHMOD_FILE );
+		// Written next to it, then renamed over it: a lookup during the monthly refresh reads the whole old or the
+		// whole new file, never a half-written one (which could give a visitor the wrong country).
+		$tmp = $dir . '/' . $name . '.' . wp_generate_password( 8, false ) . '.tmp';
+		if ( ! $wp_filesystem->put_contents( $tmp, $contents, FS_CHMOD_FILE ) ) {
+			return false;
+		}
+		if ( ! @rename( $tmp, $dir . '/' . $name ) ) { // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged, WordPress.WP.AlternativeFunctions.rename_rename -- Atomic replace in the same folder.
+			$wp_filesystem->delete( $tmp );
+			return false;
+		}
+		return true;
 	}
 
 	/**

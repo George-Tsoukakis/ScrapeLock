@@ -309,8 +309,13 @@ final class PNCP_Bots {
 			return null;
 		}
 
+		// A CDN edge (Cloudflare, Bunny) still seen as the visitor: many visitors share that one address, so
+		// nothing here is decided per IP (block list, bans, limits, strikes), as in the early check. The checks
+		// on the request itself (User-Agent, browser headers) still apply.
+		$per_ip = ! PNCP_Ip::is_cdn_edge( $ip );
+
 		// The administrator's lists: always blocked, before everything else.
-		if ( PNCP_Ip::in_any( $ip, PNCP_Options::parse_list( $s['block_ips'] ) ) ) {
+		if ( $per_ip && PNCP_Ip::in_any( $ip, PNCP_Options::parse_list( $s['block_ips'] ) ) ) {
 			return self::verdict( 403, 'blocked_ip', $ip );
 		}
 		if ( self::referrer_blocked( $s ) ) {
@@ -335,17 +340,19 @@ final class PNCP_Bots {
 			self::surge( $s );
 		}
 
-		if ( PNCP_Log::is_banned( $ip ) ) {
+		if ( ! $per_ip ) {
+			$count = false; // No per-IP limits for a shared CDN address (the site-wide surge counter above still counts).
+		} elseif ( PNCP_Log::is_banned( $ip ) ) {
 			return self::verdict( 403, 'banned', $ip );
 		}
 
 		if ( 'fake' === $ai ) {
-			PNCP_Log::strike( $ip, 'fake_ai_bot' );
+			self::strike_once_a_minute( $ip, 'fake_ai_bot' );
 			return self::verdict( 403, 'fake_ai_bot', $ip );
 		}
 
 		if ( '' !== $family && ! empty( $s['block_fake_crawlers'] ) && ! self::$verify_inconclusive ) {
-			PNCP_Log::strike( $ip, 'fake_crawler' );
+			self::strike_once_a_minute( $ip, 'fake_crawler' );
 			return self::verdict( 403, 'fake_crawler', $ip );
 		}
 		// When verification could not finish (DNS budget used up, or a temporary DNS failure) the request is
@@ -427,7 +434,10 @@ final class PNCP_Bots {
 			}
 			// Data centers (AWS, Google Cloud, Oracle, DigitalOcean, Linode): people rarely browse from a server,
 			// scrapers very often run on one. Not for the always-allowed User-Agents (monitoring, price platforms).
-			if ( ! $allowed_ua && (int) $s['rate_limit_datacenter'] > 0 && '' !== PNCP_Ip::datacenter( $ip ) ) {
+			// A User-Agent alone ("WhatsApp", "Skroutz") is easy to fake: from a data center it is exempt only when
+			// the allow entry is pinned to the service's IPs (UA@CIDR), or it is a verified AI search bot.
+			$dc_exempt = $allowed_ua && ( self::allow_list_match_pinned( $ua, $ip, $s ) || self::ua_in_list( $ua, PNCP_Options::allowed_ai_search() ) );
+			if ( ! $dc_exempt && (int) $s['rate_limit_datacenter'] > 0 && '' !== PNCP_Ip::datacenter( $ip ) ) {
 				$stricter['rate_datacenter'] = (int) $s['rate_limit_datacenter'];
 			}
 			foreach ( $stricter as $bucket => $limit ) {
@@ -885,7 +895,15 @@ final class PNCP_Bots {
 		$host_lc = strtolower( rtrim( $host, '.' ) );
 		foreach ( $def['dns'] as $domain ) {
 			if ( substr( $host_lc, -strlen( $domain ) ) === $domain ) {
-				$verified = in_array( $ip, self::forward_ips( $host_lc ), true );
+				$forward = self::forward_ips( $host_lc );
+				if ( null === $forward ) {
+					// The name is right but its forward lookup failed (timeout, resolver hiccup): not a verdict.
+					// Retried in 5 minutes, and the request is not counted as a fake crawler meanwhile.
+					self::$verify_inconclusive = true;
+					PNCP_Log::cache_set( $key, 'unknown', 5 * MINUTE_IN_SECONDS );
+					return false;
+				}
+				$verified = in_array( PNCP_Ip::normalize( $ip ), $forward, true );
 				break;
 			}
 		}
@@ -908,26 +926,43 @@ final class PNCP_Bots {
 	 * The IPv4/IPv6 addresses of a hostname.
 	 *
 	 * @param string $host Hostname.
-	 * @return string[]
+	 * @return string[]|null The addresses (normalised), or null when the lookup failed or returned nothing.
 	 */
 	private static function forward_ips( $host ) {
 		$pre = apply_filters( 'pncp_forward_dns', null, $host );
 		if ( is_array( $pre ) ) {
-			return $pre;
+			return array_values( array_filter( array_map( array( 'PNCP_Ip', 'normalize' ), $pre ) ) );
 		}
 		$ips     = array();
-		$records = @dns_get_record( $host, DNS_A | DNS_AAAA ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged -- DNS failure = unverified.
+		$records = @dns_get_record( $host, DNS_A | DNS_AAAA ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged -- DNS failure = no verdict.
 		if ( is_array( $records ) ) {
 			foreach ( $records as $record ) {
-				if ( ! empty( $record['ip'] ) ) {
-					$ips[] = $record['ip'];
-				}
-				if ( ! empty( $record['ipv6'] ) ) {
-					$ips[] = inet_ntop( inet_pton( $record['ipv6'] ) );
+				foreach ( array( 'ip', 'ipv6' ) as $field ) {
+					$ip = ! empty( $record[ $field ] ) ? PNCP_Ip::normalize( (string) $record[ $field ] ) : '';
+					if ( '' !== $ip ) {
+						$ips[] = $ip;
+					}
 				}
 			}
 		}
-		return $ips;
+		// A real crawler's hostname always has an address: an empty answer is a failed lookup, not proof.
+		return $ips ? $ips : null;
+	}
+
+	/**
+	 * A violation for a request that is refused on every try (fake crawler, fake AI bot): counted at most once
+	 * per minute per IP, like the rate limits, so a few requests in a row are not already a ban.
+	 *
+	 * @param string $ip     IP.
+	 * @param string $reason Reason.
+	 */
+	private static function strike_once_a_minute( $ip, $reason ) {
+		$key = 'pncp_sk_' . md5( $reason . '|' . PNCP_Ip::limit_key( $ip ) . '|' . (int) floor( time() / MINUTE_IN_SECONDS ) );
+		if ( false !== PNCP_Log::cache_get( $key ) ) {
+			return;
+		}
+		PNCP_Log::cache_set( $key, 1, 2 * MINUTE_IN_SECONDS );
+		PNCP_Log::strike( $ip, $reason );
 	}
 
 	/**
@@ -944,6 +979,15 @@ final class PNCP_Bots {
 		if ( wp_using_ext_object_cache() ) {
 			wp_cache_add( $key, 0, 'pncp', 2 * MINUTE_IN_SECONDS );
 			return (int) wp_cache_incr( $key, 1, 'pncp' );
+		}
+		if ( PNCP_Log::apcu_ok() ) {
+			// Shared memory of PHP: atomic, and no database write on every page.
+			$name = PNCP_Log::apcu_key( $key );
+			apcu_add( $name, 0, 2 * MINUTE_IN_SECONDS );
+			$count = apcu_inc( $name );
+			if ( false !== $count ) {
+				return (int) $count;
+			}
 		}
 		$count = self::db_incr( $key, 2 * MINUTE_IN_SECONDS );
 		if ( null !== $count ) {
@@ -977,7 +1021,13 @@ final class PNCP_Bots {
 	 */
 	private static function peek( $bucket, $net, $minute ) {
 		$key = self::counter_key( $bucket, $net, $minute );
-		return (int) ( wp_using_ext_object_cache() ? wp_cache_get( $key, 'pncp' ) : get_transient( $key ) );
+		if ( wp_using_ext_object_cache() ) {
+			return (int) wp_cache_get( $key, 'pncp' );
+		}
+		if ( PNCP_Log::apcu_ok() ) {
+			return (int) apcu_fetch( PNCP_Log::apcu_key( $key ) );
+		}
+		return (int) get_transient( $key );
 	}
 
 	/**
@@ -1215,7 +1265,13 @@ final class PNCP_Bots {
 		// Allowed bots (link previews such as facebookexternalhit, price-comparison, monitoring) and allowed
 		// AI search bots are never banned by the trap: a page elsewhere embedding the trap URL (e.g. a link
 		// shared on a chat app) must not get the real preview bot banned.
-		if ( '' !== $ua && ( self::allow_list_match( $ua, $ip, $s ) || self::ua_in_list( $ua, PNCP_Options::allowed_ai_search() ) ) ) {
+		if ( '' !== $ua && ( self::allow_list_match_pinned( $ua, $ip, $s ) || self::ua_in_list( $ua, PNCP_Options::allowed_ai_search() ) ) ) {
+			return false;
+		}
+		// An unpinned allow entry matches on the User-Agent alone, which anyone can copy: it protects from the
+		// trap only outside data centers (link previews come from the chat apps' own networks; a scraper that
+		// adds "WhatsApp" to its User-Agent usually runs on a cloud server).
+		if ( '' !== $ua && self::allow_list_match( $ua, $ip, $s ) && '' === PNCP_Ip::datacenter( $ip ) ) {
 			return false;
 		}
 		if ( self::is_prefetch() ) {

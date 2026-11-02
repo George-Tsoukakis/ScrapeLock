@@ -52,6 +52,13 @@ final class PNCP_Watermark {
 	private static $mark = null;
 
 	/**
+	 * The faded watermark of this request, per opacity.
+	 *
+	 * @var array<int, resource|\GdImage>
+	 */
+	private static $faded = array();
+
+	/**
 	 * Registers the hooks.
 	 */
 	public static function init() {
@@ -63,6 +70,8 @@ final class PNCP_Watermark {
 		add_action( 'updated_option', array( __CLASS__, 'on_option' ), 10, 3 );
 		add_action( 'added_option', array( __CLASS__, 'on_added_option' ), 10, 2 );
 		add_filter( 'load_image_to_edit_path', array( __CLASS__, 'edit_from_clean' ), 10, 2 );
+		add_action( 'updated_post_meta', array( __CLASS__, 'on_edited' ), 10, 3 );
+		add_filter( 'wp_calculate_image_srcset', array( __CLASS__, 'srcset' ), 10, 5 );
 	}
 
 	/**
@@ -283,8 +292,21 @@ final class PNCP_Watermark {
 			return $metadata;
 		}
 		$dir = trailingslashit( dirname( (string) get_attached_file( $attachment_id, true ) ) );
-		// The full-size files have already been restored (restore_full), so they are clean.
-		$source = $regen ? self::clean_source( $attachment_id ) : '';
+		// The full-size files have already been restored (restore_full), so they are clean. On a new upload the
+		// full size is still clean here too (mark_full() runs after the sizes).
+		$source = $regen || $apply ? self::clean_source( $attachment_id ) : '';
+		// Watermarked sizes are made from the full size WordPress uses for its own sizes (the "-scaled" file,
+		// at most 2560px), not from a huge original: it is clean here as well.
+		$attached  = (string) get_attached_file( $attachment_id, true );
+		$sizes_src = '' !== $attached && is_file( $attached ) ? $attached : $source;
+		/**
+		 * Whether a watermarked JPEG / WebP size is made from the clean original with a single lossy save, instead
+		 * of opening the size WordPress already compressed and compressing it a second time. Costs one more
+		 * resize per size; turn off on very slow servers.
+		 *
+		 * @param bool $single Default true.
+		 */
+		$single = (bool) apply_filters( 'pncp_watermark_single_compression', true );
 		$crops  = wp_get_registered_image_subsizes();
 
 		foreach ( $metadata['sizes'] as $name => $size ) {
@@ -299,8 +321,14 @@ final class PNCP_Watermark {
 			$path = $dir . $file;
 			$mime = isset( $size['mime-type'] ) ? (string) $size['mime-type'] : (string) wp_check_filetype( $file )['type'];
 
-			if ( $regen ) {
-				$crop = isset( $crops[ $name ]['crop'] ) ? $crops[ $name ]['crop'] : true;
+			$crop  = isset( $crops[ $name ]['crop'] ) ? $crops[ $name ]['crop'] : true;
+			$lossy = in_array( $mime, array( 'image/jpeg', 'image/webp' ), true );
+			$mark  = $apply && (int) $size['width'] >= (int) $s['watermark_min_width'];
+			// Made once, at the highest quality, from the clean source: the watermark goes on it and it is
+			// compressed a single time. Then a regeneration of the size itself is not needed either.
+			$tmp = $mark && $lossy && $single && '' !== $sizes_src ? self::lossless_size( $sizes_src, $path, (int) $size['width'], (int) $size['height'], $crop, $mime ) : '';
+
+			if ( $regen && '' === $tmp ) {
 				if ( '' === $source || ! self::resize_from( $source, $path, (int) $size['width'], (int) $size['height'], $crop, $mime ) ) {
 					// Not regenerated from a clean source: it may already be watermarked, so we do not add a second one.
 					++self::$errors;
@@ -309,10 +337,16 @@ final class PNCP_Watermark {
 			}
 
 			$marked = false;
-			if ( $apply && (int) $size['width'] >= (int) $s['watermark_min_width'] ) {
-				$marked = self::apply_to_file( $path, $mime, $s );
+			if ( '' !== $tmp ) {
+				$marked = self::apply_to_file( $tmp, $mime, $s, $path, $source );
+				wp_delete_file( $tmp );
+			} elseif ( $mark ) {
+				$marked = self::apply_to_file( $path, $mime, $s, null, '' !== $source ? $source : null );
 			}
 			$state['sizes'][ $file ] = $marked ? 1 : 0;
+			if ( $regen && ! $marked ) {
+				self::drop_stale_copies( $path ); // Made clean again: copies of the watermarked version are stale.
+			}
 
 			if ( is_file( $path ) ) {
 				clearstatcache( true, $path );
@@ -338,7 +372,7 @@ final class PNCP_Watermark {
 				continue;
 			}
 			$type = wp_check_filetype( $path )['type'];
-			if ( self::apply_to_file( $path, $type ? $type : $mime, $s ) ) {
+			if ( self::apply_to_file( $path, $type ? $type : $mime, $s, null, self::backup_path( $path ) ) ) {
 				clearstatcache( true, $path );
 				// Hash of the file we wrote: if it changes (e.g. image replacement), the backup is no longer valid.
 				$state['full'][ $rel ] = (string) md5_file( $path );
@@ -370,7 +404,8 @@ final class PNCP_Watermark {
 	 *
 	 * Only when the file on disk is still the one we wrote (same hash). If it changed (e.g.
 	 * «Enable Media Replace» uploaded a new image under the same name), the file on disk is the new clean
-	 * original and the old backup is deleted. Backups without a record (orphans) are deleted too.
+	 * original and the old backup is deleted. A backup without a record is never deleted: it may be the only
+	 * clean copy.
 	 *
 	 * @param int                  $attachment_id ID.
 	 * @param array<string, mixed> $state         State.
@@ -409,9 +444,12 @@ final class PNCP_Watermark {
 				}
 			} elseif ( $ours ) {
 				copy( $backup, $path );
-			} else {
-				wp_delete_file( $backup ); // A new file replaced the old one: the backup is no longer valid.
+				self::drop_stale_copies( $path );
+			} elseif ( '' !== $hash ) {
+				wp_delete_file( $backup ); // A new file replaced the one we wrote: the backup is no longer valid.
 			}
+			// No record of the file (e.g. the record was lost): nothing can prove the backup is stale, and it may
+			// be the only clean copy. It is left alone, never deleted.
 		}
 	}
 
@@ -452,6 +490,94 @@ final class PNCP_Watermark {
 	}
 
 	/**
+	 * The classic image editor (Media → Edit image → crop, rotate, Save) writes the new image and its sizes from
+	 * the clean copy and saves the metadata without generating sizes the usual way, so on_generate() never sees
+	 * them: the edited image would be published without a watermark. After it saves, the image is rebuilt once,
+	 * with the watermark if it is allowed.
+	 *
+	 * @param int    $meta_id   Meta ID.
+	 * @param int    $object_id Attachment ID.
+	 * @param string $meta_key  Key.
+	 */
+	public static function on_edited( $meta_id, $object_id, $meta_key ) {
+		static $queued = array();
+		// phpcs:disable WordPress.Security.NonceVerification -- Only reads which core action is running; core checked its nonce.
+		if ( '_wp_attachment_metadata' !== $meta_key || ! wp_doing_ajax() || ! isset( $_REQUEST['action'], $_REQUEST['do'] ) || 'image-editor' !== $_REQUEST['action'] || 'save' !== $_REQUEST['do'] ) {
+			return;
+		}
+		// phpcs:enable
+		$object_id = (int) $object_id;
+		if ( isset( $queued[ $object_id ] ) || ! self::eligible( $object_id, PNCP_Options::get() ) ) {
+			return;
+		}
+		$queued[ $object_id ] = true;
+		// After the editor has finished (its answer is sent with wp_die(), then shutdown runs).
+		add_action(
+			'shutdown',
+			static function () use ( $object_id ) {
+				self::rebuild( $object_id, true );
+			}
+		);
+	}
+
+	/**
+	 * When the full-size image is not watermarked ("Watermark the full-size image too" is off), it is left out
+	 * of srcset: otherwise large and retina screens would download the clean full-size file instead of the
+	 * watermarked sizes, and anyone could take it from there.
+	 *
+	 * @param array<int, array<string, mixed>> $sources       Sources.
+	 * @param array<int, int>                  $size_array    Width and height.
+	 * @param string                           $image_src     The src.
+	 * @param array<string, mixed>             $image_meta    Metadata.
+	 * @param int                              $attachment_id Attachment ID.
+	 * @return array<int, array<string, mixed>>
+	 */
+	public static function srcset( $sources, $size_array, $image_src, $image_meta, $attachment_id ) {
+		if ( ! is_array( $sources ) || count( $sources ) < 2 || empty( $image_meta['file'] ) ) {
+			return $sources;
+		}
+		$s = PNCP_Options::get();
+		if ( empty( $s['enabled'] ) || ! empty( $s['watermark_full'] ) ) {
+			return $sources;
+		}
+		$state = self::state( (int) $attachment_id );
+		if ( ! in_array( 1, $state['sizes'], true ) ) {
+			return $sources; // This image has no watermarked sizes.
+		}
+		$full = wp_basename( (string) $image_meta['file'] );
+		foreach ( $sources as $width => $source ) {
+			if ( isset( $source['url'] ) && wp_basename( (string) wp_parse_url( (string) $source['url'], PHP_URL_PATH ) ) === $full ) {
+				unset( $sources[ $width ] );
+			}
+		}
+		return $sources;
+	}
+
+	/**
+	 * The size made from the clean source at the highest quality, in a temporary file next to it: the watermark
+	 * is drawn on it and the result is compressed once, at the site's quality.
+	 *
+	 * @param string     $source Clean source.
+	 * @param string     $path   The size's file (only its folder and type are used).
+	 * @param int        $width  Width.
+	 * @param int        $height Height.
+	 * @param bool|array $crop   Crop.
+	 * @param string     $mime   Type.
+	 * @return string The temporary file, or '' (then the size WordPress made is used).
+	 */
+	private static function lossless_size( $source, $path, $width, $height, $crop, $mime ) {
+		$ext = 'image/webp' === $mime ? 'webp' : 'jpg';
+		$tmp = trailingslashit( dirname( $path ) ) . 'pncp-' . wp_generate_password( 10, false ) . '.' . $ext;
+		if ( ! self::resize_from( $source, $tmp, $width, $height, $crop, $mime, 100 ) ) {
+			if ( is_file( $tmp ) ) {
+				wp_delete_file( $tmp );
+			}
+			return '';
+		}
+		return $tmp;
+	}
+
+	/**
 	 * Generates a size from the source, under the same file name WordPress already uses.
 	 *
 	 * @param string     $source Source.
@@ -460,12 +586,16 @@ final class PNCP_Watermark {
 	 * @param int        $height Height.
 	 * @param bool|array $crop   Crop.
 	 * @param string     $mime   Target file type.
+	 * @param int        $quality Quality (0 = the site's).
 	 * @return bool
 	 */
-	private static function resize_from( $source, $target, $width, $height, $crop, $mime ) {
+	private static function resize_from( $source, $target, $width, $height, $crop, $mime, $quality = 0 ) {
 		$editor = wp_get_image_editor( $source );
 		if ( is_wp_error( $editor ) ) {
 			return false;
+		}
+		if ( $quality > 0 ) {
+			$editor->set_quality( $quality );
 		}
 		if ( method_exists( $editor, 'maybe_exif_rotate' ) ) {
 			$editor->maybe_exif_rotate();
@@ -698,14 +828,24 @@ final class PNCP_Watermark {
 	/**
 	 * Watermark a single file.
 	 *
-	 * @param string               $path Path.
-	 * @param string               $mime Type.
-	 * @param array<string, mixed> $s    Settings.
+	 * @param string               $path     File to read.
+	 * @param string               $mime     Type.
+	 * @param array<string, mixed> $s        Settings.
+	 * @param string|null          $dest     File to write (null = the same file).
+	 * @param string|null          $icc_from File to take the JPEG colour profile from (null = $path).
 	 * @return bool
 	 */
-	public static function apply_to_file( $path, $mime, $s ) {
-		if ( ! self::available() || ! is_file( $path ) || ! wp_is_writable( $path ) ) {
+	public static function apply_to_file( $path, $mime, $s, $dest = null, $icc_from = null ) {
+		$dest = null === $dest ? $path : (string) $dest;
+		if ( ! self::available() || ! is_file( $path ) || ! wp_is_writable( is_file( $dest ) ? $dest : dirname( $dest ) ) ) {
 			return false;
+		}
+		// The colour profile (phones: Display P3) is read before the file is written: GD drops it.
+		$icc = 'image/jpeg' === $mime ? self::jpeg_icc( null !== $icc_from && is_file( (string) $icc_from ) ? (string) $icc_from : $path ) : '';
+		// A large original (a 48-megapixel photo is about 200 MB in GD) needs the memory WordPress allows for
+		// images, not the normal limit, or the upload would end in a fatal error.
+		if ( function_exists( 'wp_raise_memory_limit' ) ) {
+			wp_raise_memory_limit( 'image' );
 		}
 		$image = self::load( $path, $mime );
 		if ( ! $image ) {
@@ -725,9 +865,11 @@ final class PNCP_Watermark {
 		$dst_w  = max( 1, (int) round( $mark_w * $scale ) );
 		$dst_h  = max( 1, (int) round( $mark_h * $scale ) );
 
-		$layer = self::transparent( $dst_w, $dst_h );
-		imagecopyresampled( $layer, $mark, 0, 0, 0, 0, $dst_w, $dst_h, $mark_w, $mark_h );
-		self::fade( $layer, (int) $s['watermark_opacity'] );
+		// The watermark is faded once per request (at most 1600px wide), not again for every size of every image:
+		// fading goes pixel by pixel in PHP. Scaling an already faded watermark gives the same result.
+		$faded  = self::faded_mark( $mark, (int) $s['watermark_opacity'] );
+		$layer  = self::transparent( $dst_w, $dst_h );
+		imagecopyresampled( $layer, $faded, 0, 0, 0, 0, $dst_w, $dst_h, imagesx( $faded ), imagesy( $faded ) );
 		imagealphablending( $image, true );
 
 		$position = (string) $s['watermark_position'];
@@ -759,7 +901,104 @@ final class PNCP_Watermark {
 			imagecopy( $image, $layer, $x, $y, 0, 0, $dst_w, $dst_h );
 		}
 
-		return self::save( $image, $path, $mime );
+		if ( ! self::save( $image, $dest, $mime ) ) {
+			return false;
+		}
+		if ( '' !== $icc ) {
+			self::jpeg_put_icc( $dest, $icc );
+		}
+		self::drop_stale_copies( $dest );
+		return true;
+	}
+
+	/**
+	 * The ICC colour profile segments (APP2 "ICC_PROFILE") of a JPEG file, as raw bytes ('' when there is none).
+	 *
+	 * @param string $file JPEG file.
+	 * @return string
+	 */
+	private static function jpeg_icc( $file ) {
+		// The same source serves every size of an image: read once per request. The profile sits in the first
+		// segments, so only the start of the file is read.
+		static $cache = array();
+		$key = $file . '|' . (int) @filemtime( $file ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged -- Missing file = no profile.
+		if ( isset( $cache[ $key ] ) ) {
+			return $cache[ $key ];
+		}
+		$data          = (string) @file_get_contents( $file, false, null, 0, 1048576 ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged, WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Local file.
+		$cache[ $key ] = self::icc_segments( $data );
+		return $cache[ $key ];
+	}
+
+	/**
+	 * The ICC segments in the bytes of a JPEG.
+	 *
+	 * @param string $data JPEG bytes (at least its header).
+	 * @return string
+	 */
+	private static function icc_segments( $data ) {
+		if ( "\xFF\xD8" !== substr( $data, 0, 2 ) ) {
+			return '';
+		}
+		$out = '';
+		$pos = 2;
+		$len = strlen( $data );
+		while ( $pos + 4 <= $len && "\xFF" === $data[ $pos ] ) {
+			$marker = ord( $data[ $pos + 1 ] );
+			if ( 0xDA === $marker || 0xD9 === $marker ) {
+				break; // Image data starts: no more metadata segments.
+			}
+			$size = unpack( 'n', substr( $data, $pos + 2, 2 ) )[1];
+			if ( $size < 2 || $pos + 2 + $size > $len ) {
+				break;
+			}
+			if ( 0xE2 === $marker && "ICC_PROFILE\0" === substr( $data, $pos + 4, 12 ) ) {
+				$out .= substr( $data, $pos, 2 + $size );
+			}
+			$pos += 2 + $size;
+		}
+		return $out;
+	}
+
+	/**
+	 * Puts ICC profile segments into a JPEG written by GD (which has none), after its JFIF header.
+	 *
+	 * @param string $file JPEG file.
+	 * @param string $icc  Segments from jpeg_icc().
+	 */
+	private static function jpeg_put_icc( $file, $icc ) {
+		$data = (string) @file_get_contents( $file ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged, WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Local file.
+		if ( "\xFF\xD8" !== substr( $data, 0, 2 ) || '' !== self::icc_segments( $data ) ) {
+			return;
+		}
+		$at = 2;
+		if ( "\xFF\xE0" === substr( $data, 2, 2 ) ) {
+			$at = 4 + unpack( 'n', substr( $data, 4, 2 ) )[1]; // After APP0 (JFIF), where readers expect it.
+		}
+		file_put_contents( $file, substr( $data, 0, $at ) . $icc . substr( $data, $at ), LOCK_EX ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_file_put_contents -- The file just written.
+	}
+
+	/**
+	 * Removes copies other plugins made of a file that has just been rewritten: WebP / AVIF next to it
+	 * ("photo.jpg.webp", as EWWW, Imagify and WebP Express name them). They were made from the previous
+	 * version, so they would serve the image without (or with the old) watermark to browsers that get the
+	 * WebP. The plugin makes them again from the new file, or the browser gets the file itself.
+	 *
+	 * @param string $file File that was rewritten.
+	 */
+	private static function drop_stale_copies( $file ) {
+		foreach ( array( '.webp', '.avif' ) as $ext ) {
+			if ( is_file( $file . $ext ) ) {
+				wp_delete_file( $file . $ext );
+			}
+		}
+		/**
+		 * Fires after ScrapeLock rewrote an image file (watermark added or removed), for image optimizers and
+		 * CDNs that keep their own copy of it.
+		 *
+		 * @param string $file The file.
+		 */
+		do_action( 'pncp_watermark_file_changed', $file );
 	}
 
 	/**
@@ -847,14 +1086,31 @@ final class PNCP_Watermark {
 	private static function save( $image, $path, $mime ) {
 		switch ( $mime ) {
 			case 'image/jpeg':
-				// phpcs:ignore WordPress.NamingConventions.PrefixAllGlobals.NonPrefixedHooknameFound -- WordPress core filter.
-				return imagejpeg( $image, $path, (int) apply_filters( 'jpeg_quality', 82, 'pncp_watermark' ) );
+				return imagejpeg( $image, $path, self::quality( $mime ) );
 			case 'image/png':
 				return imagepng( $image, $path, 6 );
 			case 'image/webp':
-				return function_exists( 'imagewebp' ) && imagewebp( $image, $path, 82 );
+				return function_exists( 'imagewebp' ) && imagewebp( $image, $path, self::quality( $mime ) );
 		}
 		return false;
+	}
+
+	/**
+	 * The quality the site uses for its images (WordPress' own filters, as its image editor reads them), so a
+	 * watermarked file is not compressed differently from the rest.
+	 *
+	 * @param string $mime Type.
+	 * @return int 1–100.
+	 */
+	private static function quality( $mime ) {
+		$quality = 'image/webp' === $mime ? 86 : 82;
+		// phpcs:disable WordPress.NamingConventions.PrefixAllGlobals.NonPrefixedHooknameFound -- WordPress core filters.
+		$quality = (int) apply_filters( 'wp_editor_set_quality', $quality, $mime );
+		if ( 'image/jpeg' === $mime ) {
+			$quality = (int) apply_filters( 'jpeg_quality', $quality, 'pncp_watermark' );
+		}
+		// phpcs:enable
+		return max( 1, min( 100, $quality ) );
 	}
 
 	/**
@@ -895,7 +1151,33 @@ final class PNCP_Watermark {
 	 * Forgets the per-request watermark (after a settings change or in tests).
 	 */
 	public static function reset() {
-		self::$mark = null;
+		self::$mark  = null;
+		self::$faded = array();
+	}
+
+	/**
+	 * The watermark with the opacity applied, made once per request and opacity, at most 1600px wide (the
+	 * largest a watermark is drawn: 60% of a 2560px image).
+	 *
+	 * @param resource|\GdImage $mark    Watermark.
+	 * @param int               $opacity 10–100.
+	 * @return resource|\GdImage
+	 */
+	private static function faded_mark( $mark, $opacity ) {
+		$opacity = max( 10, min( 100, (int) $opacity ) );
+		if ( isset( self::$faded[ $opacity ] ) ) {
+			return self::$faded[ $opacity ];
+		}
+		$w     = imagesx( $mark );
+		$h     = imagesy( $mark );
+		$scale = min( 1, 1600 / max( 1, $w ) );
+		$fw    = max( 1, (int) round( $w * $scale ) );
+		$fh    = max( 1, (int) round( $h * $scale ) );
+		$copy  = self::transparent( $fw, $fh );
+		imagecopyresampled( $copy, $mark, 0, 0, 0, 0, $fw, $fh, $w, $h );
+		self::fade( $copy, $opacity );
+		self::$faded[ $opacity ] = $copy;
+		return $copy;
 	}
 
 	/**

@@ -64,7 +64,7 @@ final class PNCP_Precheck_Runtime {
 			}
 		}
 		$c = json_decode( (string) @file_get_contents( $file ), true );
-		if ( ! is_array( $c ) || ! isset( $c['format'] ) || 2 !== $c['format'] ) {
+		if ( ! is_array( $c ) || ! isset( $c['format'] ) || ! in_array( $c['format'], array( 2, 3 ), true ) ) {
 			return null;
 		}
 		$c['dir'] = $dir;
@@ -82,7 +82,7 @@ final class PNCP_Precheck_Runtime {
 	public static function run( $c ) {
 		// A run.php written before 3.3.1 passes its own configuration: it does nothing until wp-admin
 		// replaces its line in wp-config.php.
-		if ( ! is_array( $c ) || ! isset( $c['format'] ) || 2 !== $c['format'] ) {
+		if ( ! is_array( $c ) || ! isset( $c['format'] ) || ! in_array( $c['format'], array( 2, 3 ), true ) ) {
 			return;
 		}
 		try {
@@ -133,7 +133,7 @@ final class PNCP_Precheck_Runtime {
 			return null;
 		}
 		// A CDN address means "Real visitor IP" is not set: then one decision would hit many visitors at once.
-		if ( self::in_any( $ip, $c['cdn'] ) ) {
+		if ( self::is_cdn( $ip, $c ) ) {
 			return null;
 		}
 		if ( self::in_any( $ip, $c['block'] ) ) {
@@ -143,9 +143,10 @@ final class PNCP_Precheck_Runtime {
 		// Search engines: Google and Bing are verified with their official lists. The others (Applebot,
 		// YandexBot) are verified with DNS by the normal check, so they are left to it.
 		$ua = isset( $_SERVER['HTTP_USER_AGENT'] ) ? strtolower( (string) $_SERVER['HTTP_USER_AGENT'] ) : '';
-		foreach ( $c['crawlers'] as $crawler ) {
+		foreach ( $c['crawlers'] as $i => $crawler ) {
 			if ( self::ua_in( $ua, $crawler['ua'] ) ) {
-				if ( null === $crawler['ips'] || self::in_any( $ip, $crawler['ips'] ) ) {
+				$ips = true === $crawler['ips'] ? self::crawler_set( $c, $i ) : $crawler['ips'];
+				if ( null === $ips || self::in_any( $ip, $ips ) ) {
 					return null;
 				}
 				break; // Claims to be Google / Bing from another address: counted like everyone else.
@@ -283,8 +284,7 @@ final class PNCP_Precheck_Runtime {
 	 */
 	public static function client_ip( $c, &$reliable ) {
 		$reliable = true;
-		$remote   = isset( $_SERVER['REMOTE_ADDR'] ) ? trim( (string) $_SERVER['REMOTE_ADDR'] ) : '';
-		$remote   = filter_var( $remote, FILTER_VALIDATE_IP ) ? $remote : '';
+		$remote   = self::normalize_ip( isset( $_SERVER['REMOTE_ADDR'] ) ? (string) $_SERVER['REMOTE_ADDR'] : '' );
 		$ip       = $remote;
 		$header   = (string) $c['header'];
 		if ( '' !== $header && ! empty( $_SERVER[ $header ] ) ) {
@@ -293,10 +293,11 @@ final class PNCP_Precheck_Runtime {
 			if ( $trusted || $legacy ) {
 				$chain = array_map( 'trim', explode( ',', (string) $_SERVER[ $header ] ) );
 				for ( $i = count( $chain ) - 1; $i >= 0; $i-- ) {
-					if ( ! filter_var( $chain[ $i ], FILTER_VALIDATE_IP ) ) {
+					$candidate = self::normalize_ip( $chain[ $i ] );
+					if ( '' === $candidate ) {
 						break;
 					}
-					$ip = $chain[ $i ];
+					$ip = $candidate;
 					if ( $legacy || 'HTTP_X_FORWARDED_FOR' !== $header || ! self::trusted( $ip, $c ) ) {
 						break;
 					}
@@ -307,6 +308,34 @@ final class PNCP_Precheck_Runtime {
 			}
 		}
 		return $ip;
+	}
+
+	/**
+	 * The same spelling as PNCP_Ip::normalize() (no port or brackets, short IPv6, IPv4-mapped as IPv4), without
+	 * WordPress, which is not loaded yet here.
+	 *
+	 * @param string $ip IP as received.
+	 * @return string The IP, or ''.
+	 */
+	public static function normalize_ip( $ip ) {
+		$ip = trim( (string) $ip );
+		if ( '' === $ip ) {
+			return '';
+		}
+		if ( '[' === $ip[0] ) {
+			$end = strpos( $ip, ']' );
+			$ip  = false === $end ? '' : substr( $ip, 1, $end - 1 );
+		} elseif ( 1 === substr_count( $ip, ':' ) ) {
+			$ip = substr( $ip, 0, (int) strpos( $ip, ':' ) );
+		}
+		$bin = @inet_pton( $ip ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged -- Invalid value = false.
+		if ( false === $bin ) {
+			return '';
+		}
+		if ( 16 === strlen( $bin ) && 0 === strpos( $bin, str_repeat( "\0", 10 ) . "\xff\xff" ) ) {
+			$bin = substr( $bin, 12 );
+		}
+		return (string) inet_ntop( $bin );
 	}
 
 	/**
@@ -325,8 +354,48 @@ final class PNCP_Precheck_Runtime {
 		}
 		// With a CDN secret set but not present on the request, only the explicit "Trusted proxies" are
 		// trusted, not the CDN edge lists (so a spoofed CDN edge IP cannot set the real-IP header).
+		if ( 3 === $c['format'] ) {
+			if ( self::in_any( $ip, $c['proxies'] ) ) {
+				return true;
+			}
+			if ( ! self::cdn_trust_ok( $c ) ) {
+				return false;
+			}
+			return ( ! empty( $c['proxies_cdn']['cf'] ) && self::in_any( $ip, $c['cdn_cf'] ) ) || ( ! empty( $c['proxies_cdn']['bunny'] ) && self::in_any( $ip, $c['cdn_bunny'] ) );
+		}
 		$set = self::cdn_trust_ok( $c ) ? $c['proxies'] : ( isset( $c['proxies_base'] ) ? $c['proxies_base'] : $c['proxies'] );
 		return self::in_any( $ip, $set );
+	}
+
+	/**
+	 * Is the address a CDN edge (Cloudflare, Bunny)?
+	 *
+	 * @param string               $ip IP.
+	 * @param array<string, mixed> $c  Configuration.
+	 * @return bool
+	 */
+	public static function is_cdn( $ip, $c ) {
+		if ( 3 === $c['format'] ) {
+			return self::in_any( $ip, $c['cdn_cf'] ) || self::in_any( $ip, $c['cdn_bunny'] );
+		}
+		return self::in_any( $ip, $c['cdn'] );
+	}
+
+	/**
+	 * The official list of a crawler family, from crawlers.json: read only when a request claims to be a
+	 * crawler (most requests do not), once per request.
+	 *
+	 * @param array<string, mixed> $c Configuration.
+	 * @param int                  $i The family's position.
+	 * @return array{0:array<string, bool>, 1:string[]}|null Null = no list: the normal check decides.
+	 */
+	public static function crawler_set( $c, $i ) {
+		static $sets = null;
+		if ( null === $sets ) {
+			$sets = json_decode( (string) @file_get_contents( $c['dir'] . '/crawlers.json' ), true );
+			$sets = is_array( $sets ) ? $sets : array();
+		}
+		return isset( $sets[ $i ] ) && is_array( $sets[ $i ] ) ? $sets[ $i ] : null;
 	}
 
 	/**
@@ -489,12 +558,20 @@ final class PNCP_Precheck_Runtime {
 	 *
 	 * @param string $base   The hits folder.
 	 * @param int    $minute Current minute.
+	 * @param int    $max    Most files removed in this call (0 = no limit).
 	 */
-	public static function cleanup( $base, $minute ) {
+	public static function cleanup( $base, $minute, $max = 300 ) {
+		// At most $max files per call inside a visitor's request: after an attack spread over thousands of IPs,
+		// the old minutes hold thousands of files, and one visitor must not wait for all of them. What is left
+		// is removed by the next minutes' first requests and by the hourly cleanup (PNCP_Precheck::cleanup_hits).
+		$left = (int) $max > 0 ? (int) $max : PHP_INT_MAX;
 		foreach ( (array) @scandir( $base ) as $name ) {
 			if ( ctype_digit( (string) $name ) && (int) $name < $minute - 1 ) {
 				foreach ( (array) @scandir( $base . '/' . $name ) as $file ) {
 					if ( '.' !== $file && '..' !== $file ) {
+						if ( $left-- <= 0 ) {
+							return;
+						}
 						@unlink( $base . '/' . $name . '/' . $file );
 					}
 				}

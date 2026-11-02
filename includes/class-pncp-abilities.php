@@ -288,8 +288,9 @@ final class PNCP_Abilities {
 		if ( $minutes < 1 || $minutes > 43200 ) {
 			return new WP_Error( 'scrapelock_invalid_minutes', __( 'Minutes must be between 1 and 43200.', 'scrapelock' ) );
 		}
-		if ( PNCP_Bots::is_official_crawler_ip( $ip ) ) {
-			return new WP_Error( 'scrapelock_official_crawler', __( 'This IP belongs to Google or Bing: it is never blocked.', 'scrapelock' ) );
+		$why = PNCP_Options::ban_refusal( $ip );
+		if ( '' !== $why ) {
+			return new WP_Error( 'scrapelock_refused_' . $why, PNCP_Options::ban_refusal_text( $why ) );
 		}
 		PNCP_Log::ban( $ip, $minutes, 'manual' );
 		PNCP_Log::reset_cache();

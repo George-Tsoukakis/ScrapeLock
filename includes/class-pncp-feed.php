@@ -29,6 +29,7 @@ final class PNCP_Feed {
 			return;
 		}
 		if ( ! empty( $s['list_excerpts'] ) && ! is_admin() ) {
+			add_filter( 'the_content', array( __CLASS__, 'note_post_content' ), 0 );
 			add_filter( 'the_content', array( __CLASS__, 'list_excerpt' ), 999 );
 		}
 		if ( 'full' === $s['feed_mode'] ) {
@@ -150,6 +151,27 @@ final class PNCP_Feed {
 	}
 
 	/**
+	 * For each the_content call in progress (they can nest: a block that renders another post), whether its
+	 * text is the current post's own text. Pushed at priority 0, popped by list_excerpt() at 999.
+	 *
+	 * @var bool[]
+	 */
+	private static $post_content = array();
+
+	/**
+	 * At the start of the_content: is this the current post's own text? the_content() passes exactly what
+	 * get_the_content() returns; other text run through the filter (term descriptions, layouts) is different.
+	 *
+	 * @param string $content Content.
+	 * @return string Unchanged.
+	 */
+	public static function note_post_content( $content ) {
+		$post                 = get_post();
+		self::$post_content[] = $post instanceof WP_Post && ! is_singular() && '' !== (string) $content && (string) $content === get_the_content( null, false, $post );
+		return $content;
+	}
+
+	/**
 	 * Lists of articles (home, categories, tags, archives, search) show an excerpt and a link instead of the full
 	 * text of each article, for visitors. Many themes print the whole text of every article there, so a single
 	 * request gives a scraper ten articles; with excerpts it has to open each one, and each one counts toward the
@@ -159,7 +181,12 @@ final class PNCP_Feed {
 	 * @return string
 	 */
 	public static function list_excerpt( $content ) {
-		if ( is_singular() || is_feed() || is_admin() || wp_doing_ajax() || ( defined( 'REST_REQUEST' ) && REST_REQUEST ) || ! get_post() ) {
+		// Only the text of the current article, in any loop (the main one or a theme's own "latest posts"
+		// section). Themes and plugins also run the_content on other text on these pages (category
+		// descriptions, popups, mega menus, reusable layouts): that is not replaced with the excerpt of
+		// whatever post happens to be current. Popped first, so the stack stays balanced on every path.
+		$is_post = (bool) array_pop( self::$post_content );
+		if ( ! $is_post || is_singular() || is_feed() || is_admin() || wp_doing_ajax() || ( defined( 'REST_REQUEST' ) && REST_REQUEST ) || ! get_post() ) {
 			return $content;
 		}
 		// A password-protected article shows only its form: its excerpt must not give the text away.

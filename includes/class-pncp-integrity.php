@@ -25,6 +25,12 @@ final class PNCP_Integrity {
 	const BASELINE = 'pncp_integrity';
 	const REPORT   = 'pncp_integrity_report';
 	const ACTION   = 'pncp_integrity_check';
+	const OFFICIAL = 'pncp_integrity_official';
+
+	/**
+	 * Most seconds spent on the official checksums in one run: what is left is checked on the next run.
+	 */
+	const OFFICIAL_SECONDS = 60;
 
 	/**
 	 * Most files read in one pass, and most seconds spent: on a very large site the pass stops and says so.
@@ -37,6 +43,7 @@ final class PNCP_Integrity {
 	 */
 	public static function init() {
 		add_action( PNCP_Log::CRON, array( __CLASS__, 'cron' ), 20 );
+		add_action( self::OFFICIAL, array( __CLASS__, 'run_official' ) );
 		add_action( 'init', array( __CLASS__, 'ensure_cron' ) );
 		if ( is_admin() ) {
 			add_action( 'admin_post_' . self::ACTION, array( __CLASS__, 'handle' ) );
@@ -140,11 +147,18 @@ final class PNCP_Integrity {
 	/**
 	 * Reads the code files and their SHA-256.
 	 *
-	 * @return array{files: array<string, string>, complete: bool}
+	 * @param bool $quick Reuse the hash of a file whose size, times and inode have not changed since the last
+	 *                    pass (the hourly check). The change time (ctime) is set by the system on every write
+	 *                    and cannot be set back by a script, so a changed file is never missed; a full pass
+	 *                    still runs once a day.
+	 * @return array{files: array<string, string>, md5: array<string, string>, complete: bool}
 	 */
-	public static function collect() {
+	public static function collect( $quick = false ) {
+		$known = $quick ? self::stat_cache() : null;
+		$stats = array();
 		$start    = microtime( true );
 		$files    = array();
+		$md5      = array(); // Kept for this request only: the official checksums are MD5.
 		$complete = true;
 		$seen     = array();
 		$where    = self::locations();
@@ -197,15 +211,104 @@ final class PNCP_Integrity {
 						$complete = false;
 						break 3;
 					}
-					$files[ $path ] = (string) hash_file( 'sha256', $path );
+					$stat = @stat( $path ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged -- Unreadable = hashed below.
+					$sig  = false !== $stat ? $stat['size'] . ':' . $stat['mtime'] . ':' . $stat['ctime'] . ':' . $stat['ino'] : '';
+					if ( '' !== $sig && null !== $known && isset( $known[ $path ] ) && $known[ $path ][0] === $sig ) {
+						$files[ $path ] = $known[ $path ][1];
+						$stats[ $path ] = $known[ $path ];
+						continue;
+					}
+					$hashes = self::hash_both( $path );
+					if ( null === $hashes ) {
+						// Cannot be read now (e.g. its permissions were changed): it stays in the list with an empty
+						// hash, so the change is reported instead of the file silently leaving the fingerprint.
+						$files[ $path ] = '';
+						continue;
+					}
+					$files[ $path ] = $hashes[0];
+					$md5[ $path ]   = $hashes[1];
+					if ( '' !== $sig ) {
+						$stats[ $path ] = array( $sig, $hashes[0] );
+					}
 				}
 			}
 		}
 		ksort( $files );
+		if ( $complete ) {
+			self::save_stat_cache( $stats, null === $known );
+		}
 		return array(
 			'files'    => $files,
+			'md5'      => $md5,
 			'complete' => $complete,
 		);
+	}
+
+	/**
+	 * The size, times and inode of each file at the last pass, with its hash: null when there is none, when it
+	 * does not match its signature, or when the last full pass is more than a day old (then a full pass runs).
+	 *
+	 * @return array<string, array{0:string, 1:string}>|null
+	 */
+	private static function stat_cache() {
+		$stored = get_option( 'pncp_integrity_stat' );
+		if ( ! is_array( $stored ) || ! isset( $stored['full'], $stored['data'], $stored['sig'] ) || time() - (int) $stored['full'] > DAY_IN_SECONDS ) {
+			return null;
+		}
+		$sig = $stored['sig'];
+		unset( $stored['sig'] );
+		if ( ! PNCP_Seal::valid( $stored, $sig ) ) {
+			return null;
+		}
+		$raw  = base64_decode( (string) $stored['data'], true ); // phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.obfuscation_base64_decode -- Our own compressed data.
+		$json = false !== $raw ? @gzuncompress( $raw ) : false; // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged -- Damaged = full pass.
+		$data = false !== $json ? json_decode( $json, true ) : null;
+		return is_array( $data ) ? $data : null;
+	}
+
+	/**
+	 * Stores the file details of this pass (signed, not autoloaded).
+	 *
+	 * @param array<string, array{0:string, 1:string}> $stats Path => [size:mtime:ctime:inode, SHA-256].
+	 * @param bool                                     $full  Whether every file was read in this pass.
+	 */
+	private static function save_stat_cache( $stats, $full ) {
+		$old    = get_option( 'pncp_integrity_stat' );
+		$record = array(
+			'full' => $full || ! is_array( $old ) || ! isset( $old['full'] ) ? time() : (int) $old['full'],
+			'data' => base64_encode( (string) gzcompress( (string) wp_json_encode( $stats ), 6 ) ), // phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.obfuscation_base64_encode -- Compressed data stored as text.
+		);
+		$record['sig'] = PNCP_Seal::sign( $record );
+		if ( false === $old ) {
+			add_option( 'pncp_integrity_stat', $record, '', false );
+		} else {
+			update_option( 'pncp_integrity_stat', $record, false );
+		}
+	}
+
+	/**
+	 * SHA-256 (the fingerprint) and MD5 (what WordPress.org publishes) of a file, from a single read.
+	 *
+	 * @param string $path File.
+	 * @return array{0:string, 1:string}|null Null if it cannot be read.
+	 */
+	private static function hash_both( $path ) {
+		$handle = @fopen( $path, 'rb' ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged, WordPress.WP.AlternativeFunctions.file_system_operations_fopen -- Reading a local file; unreadable = skipped.
+		if ( false === $handle ) {
+			return null;
+		}
+		$sha = hash_init( 'sha256' );
+		$md5 = hash_init( 'md5' );
+		while ( ! feof( $handle ) ) {
+			$chunk = fread( $handle, 1048576 ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fread -- Local file.
+			if ( false === $chunk ) {
+				break;
+			}
+			hash_update( $sha, $chunk );
+			hash_update( $md5, $chunk );
+		}
+		fclose( $handle ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fclose -- Local file.
+		return array( hash_final( $sha ), hash_final( $md5 ) );
 	}
 
 	/**
@@ -340,6 +443,7 @@ final class PNCP_Integrity {
 	 * official checksums.
 	 */
 	public static function snapshot() {
+		self::more_time();
 		$now  = self::collect();
 		$raw  = gzcompress( (string) wp_json_encode( $now['files'] ), 6 );
 		$time = time();
@@ -360,10 +464,50 @@ final class PNCP_Integrity {
 		$report['removed']  = array();
 		$report['complete'] = $now['complete'];
 		$report['handled']  = array();
-		$report['official'] = self::official( $now['files'] );
+		// The official checksums (one request to WordPress.org per plugin) are compared right after, from a
+		// scheduled event: locking the site does not wait for them. Until then the report says "pending".
+		$report['official'] = array( 'pending' => true );
 		self::put( self::REPORT, $report );
 		delete_option( 'pncp_integrity_alerted' ); // A new fingerprint: what is flagged from now on is new.
+		self::schedule_official();
+	}
+
+	/**
+	 * Schedules the comparison with the official checksums, to run in the background now.
+	 */
+	public static function schedule_official() {
+		if ( ! wp_next_scheduled( self::OFFICIAL ) ) {
+			wp_schedule_single_event( time(), self::OFFICIAL );
+		}
+		if ( function_exists( 'spawn_cron' ) ) {
+			spawn_cron();
+		}
+	}
+
+	/**
+	 * The scheduled comparison with the official checksums (after a new fingerprint): fills in the report and
+	 * emails what it finds.
+	 */
+	public static function run_official() {
+		self::more_time();
+		$base   = self::baseline();
+		$report = self::report();
+		if ( $base['tampered'] || ! $base['files'] ) {
+			return;
+		}
+		$report['official'] = self::official( $base['files'] );
+		self::put( self::REPORT, $report );
 		self::alert( $report );
+	}
+
+	/**
+	 * More time for the PHP request that reads the files (where the host allows it), so that a large site is not
+	 * cut off half-way by max_execution_time.
+	 */
+	private static function more_time() {
+		if ( function_exists( 'set_time_limit' ) && false === strpos( (string) ini_get( 'disable_functions' ), 'set_time_limit' ) ) {
+			@set_time_limit( 300 ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged -- Not allowed on every host.
+		}
 	}
 
 	/**
@@ -406,6 +550,7 @@ final class PNCP_Integrity {
 	 * @return array<string, mixed> The report.
 	 */
 	public static function check() {
+		self::more_time();
 		$base = self::baseline();
 		if ( $base['tampered'] ) {
 			// Never a new fingerprint here: it would accept whatever was hidden. Reported until the site is
@@ -421,7 +566,7 @@ final class PNCP_Integrity {
 			self::snapshot();
 			return self::report();
 		}
-		$now     = self::collect();
+		$now     = self::collect( true );
 		$added   = array_keys( array_diff_key( $now['files'], $base['files'] ) );
 		$removed = $now['complete'] ? array_keys( array_diff_key( $base['files'], $now['files'] ) ) : array();
 		$changed = array();
@@ -438,7 +583,7 @@ final class PNCP_Integrity {
 		$report['complete'] = $now['complete'] && $base['complete'];
 		// The official checksums once a day: each plugin is one request to WordPress.org.
 		if ( empty( $report['official']['time'] ) || time() - (int) $report['official']['time'] > DAY_IN_SECONDS ) {
-			$report['official'] = self::official( $now['files'] );
+			$report['official'] = self::official( $now['files'], $now['md5'] );
 		}
 		self::put( self::REPORT, $report );
 		self::alert( $report );
@@ -546,10 +691,16 @@ final class PNCP_Integrity {
 	 * lists "wp core verify-checksums" and "wp plugin verify-checksums" use). Only code files are compared.
 	 * Plugins that are not on WordPress.org (premium, custom) cannot be checked and are listed as such.
 	 *
-	 * @param array<string, string> $files Code files found now (path => SHA-256).
+	 * @param array<string, string>      $files Code files found now (path => SHA-256).
+	 * @param array<string, string>|null $md5   Their MD5, if already read (otherwise read here).
 	 * @return array{time:int, modified:string[], unknown:string[], unverified:string[], core:bool}
 	 */
-	public static function official( $files ) {
+	public static function official( $files, $md5 = null ) {
+		$md5   = is_array( $md5 ) ? $md5 : array();
+		$start = microtime( true );
+		$sum   = static function ( $path ) use ( $md5 ) {
+			return isset( $md5[ $path ] ) ? $md5[ $path ] : (string) md5_file( $path );
+		};
 		$out   = array(
 			'time'       => time(),
 			'modified'   => array(),
@@ -567,11 +718,11 @@ final class PNCP_Integrity {
 		}
 		if ( is_array( $core ) && $core ) {
 			$out['core'] = true;
-			foreach ( $core as $rel => $md5 ) {
+			foreach ( $core as $rel => $expected ) {
 				if ( 0 === strpos( $rel, 'wp-content/' ) || ! self::is_code( $rel ) || ! file_exists( $base . $rel ) ) {
 					continue;
 				}
-				if ( md5_file( $base . $rel ) !== $md5 ) {
+				if ( $sum( $base . $rel ) !== $expected ) {
 					$out['modified'][] = $base . $rel;
 				}
 			}
@@ -593,18 +744,22 @@ final class PNCP_Integrity {
 			if ( '.' === $slug || empty( $data['Version'] ) ) {
 				continue;
 			}
+			if ( microtime( true ) - $start > self::OFFICIAL_SECONDS ) {
+				$out['unverified'][] = $slug; // Out of time for this run: checked on the next one.
+				continue;
+			}
 			$sums = self::plugin_checksums( $slug, (string) $data['Version'] );
 			if ( null === $sums ) {
 				$out['unverified'][] = $slug;
 				continue;
 			}
 			$dir = $plugin_dir . $slug . '/';
-			foreach ( $sums as $rel => $sum ) {
+			foreach ( $sums as $rel => $sum_data ) {
 				if ( ! self::is_code( $rel ) || ! file_exists( $dir . $rel ) ) {
 					continue;
 				}
-				$md5 = isset( $sum['md5'] ) ? (array) $sum['md5'] : array();
-				if ( $md5 && ! in_array( md5_file( $dir . $rel ), $md5, true ) ) {
+				$expected = isset( $sum_data['md5'] ) ? (array) $sum_data['md5'] : array();
+				if ( $expected && ! in_array( $sum( $dir . $rel ), $expected, true ) ) {
 					$out['modified'][] = $dir . $rel;
 				}
 			}
@@ -629,6 +784,25 @@ final class PNCP_Integrity {
 	 * @return array<string, string>|null Path => MD5, or null.
 	 */
 	private static function core_checksums( $version, $locale ) {
+		// The checksums of a release never change: kept for a week (a missing answer for a day).
+		$key    = 'pncp_cs_core_' . md5( $version . '|' . $locale );
+		$cached = get_site_transient( $key );
+		if ( is_array( $cached ) ) {
+			return $cached ? $cached : null;
+		}
+		$sums = self::fetch_core_checksums( $version, $locale );
+		set_site_transient( $key, null === $sums ? array() : $sums, null === $sums ? DAY_IN_SECONDS : WEEK_IN_SECONDS );
+		return $sums;
+	}
+
+	/**
+	 * Downloads the official checksums of a WordPress version.
+	 *
+	 * @param string $version WordPress version.
+	 * @param string $locale  Locale.
+	 * @return array<string, string>|null Path => MD5, or null.
+	 */
+	private static function fetch_core_checksums( $version, $locale ) {
 		$response = wp_remote_get(
 			'https://api.wordpress.org/core/checksums/1.0/?' . http_build_query(
 				array(
@@ -661,6 +835,26 @@ final class PNCP_Integrity {
 	 * @return array<string, array<string, mixed>>|null
 	 */
 	private static function plugin_checksums( $slug, $version ) {
+		// A plugin version's checksums never change: kept for a week, so locking again after an unlock only asks
+		// for the plugins that were updated. "Not on WordPress.org" (premium, custom) is kept for a day.
+		$key    = 'pncp_cs_' . md5( $slug . '|' . $version );
+		$cached = get_site_transient( $key );
+		if ( is_array( $cached ) ) {
+			return $cached ? $cached : null;
+		}
+		$sums = self::fetch_plugin_checksums( $slug, $version );
+		set_site_transient( $key, null === $sums ? array() : $sums, null === $sums ? DAY_IN_SECONDS : WEEK_IN_SECONDS );
+		return $sums;
+	}
+
+	/**
+	 * Downloads the official checksums of a plugin version.
+	 *
+	 * @param string $slug    Plugin folder.
+	 * @param string $version Version.
+	 * @return array<string, array<string, mixed>>|null
+	 */
+	private static function fetch_plugin_checksums( $slug, $version ) {
 		$response = wp_remote_get( 'https://downloads.wordpress.org/plugin-checksums/' . rawurlencode( $slug ) . '/' . rawurlencode( $version ) . '.json', array( 'timeout' => 10 ) );
 		if ( is_wp_error( $response ) || 200 !== (int) wp_remote_retrieve_response_code( $response ) ) {
 			return null;
@@ -821,6 +1015,9 @@ final class PNCP_Integrity {
 			<?php endif; ?>
 			<?php if ( ! empty( $report['handled'] ) ) : ?>
 				<p><strong><?php esc_html_e( 'Quarantine:', 'scrapelock' ); ?></strong> <?php echo esc_html( implode( '; ', (array) $report['handled'] ) ); ?></p>
+			<?php endif; ?>
+			<?php if ( ! empty( $off['pending'] ) ) : ?>
+				<p class="description"><?php esc_html_e( 'The comparison with the official copies on WordPress.org is running in the background; you are emailed if it finds anything.', 'scrapelock' ); ?></p>
 			<?php endif; ?>
 			<?php if ( ! empty( $off['time'] ) ) : ?>
 				<p class="description">

@@ -19,6 +19,11 @@ body.pncp-no-select .pncp-allow * {
 	-webkit-touch-callout: default;
 }
 
+/* Links keep the long-press menu on phones (open in new tab, copy link) */
+body.pncp-no-select a[href] {
+	-webkit-touch-callout: default;
+}
+
 body.pncp-protected img {
 	-webkit-user-drag: none;
 }
@@ -29,12 +34,14 @@ body.pncp-no-img-save img {
 }
 
 /* Blur while a screenshot tool is open (optional) */
-html.pncp-blurred body {
+/* On the page's elements, not on body: a filter on body would move fixed headers, cookie bars and the
+   message, and the message stays readable */
+html.pncp-blurred body > *:not(.pncp-toast) {
 	filter: blur(14px);
 }
 
 @media (prefers-reduced-motion: no-preference) {
-	html body.pncp-protected {
+	html body.pncp-protected > * {
 		transition: filter 0.08s linear;
 	}
 }
@@ -56,15 +63,20 @@ html.pncp-blurred body {
 	line-height: 1.45;
 	text-align: left;
 	opacity: 0;
-	visibility: hidden;
 	transform: translate(-50%, 8px);
-	transition: opacity 0.2s ease, transform 0.2s ease, visibility 0.2s;
+	transition: opacity 0.2s ease, transform 0.2s ease;
 	pointer-events: none;
+}
+
+/* Empty while hidden (not visibility: hidden, which would stop screen readers announcing it) */
+.pncp-toast:empty {
+	padding: 0;
+	border: 0;
+	box-shadow: none;
 }
 
 .pncp-toast--visible {
 	opacity: 1;
-	visibility: visible;
 	transform: translate(-50%, 0);
 }
 

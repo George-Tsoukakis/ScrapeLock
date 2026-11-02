@@ -745,8 +745,9 @@ final class PNCP_Log {
 	 * @param string $reason  Reason (key of reasons()).
 	 */
 	public static function ban( $ip, $minutes, $reason ) {
-		// Never the Google / Bing IPs, whoever tried to "trap" them.
-		if ( '' === $ip || ! filter_var( $ip, FILTER_VALIDATE_IP ) || PNCP_Bots::is_official_crawler_ip( $ip ) ) {
+		// Never the Google / Bing IPs, whoever tried to "trap" them, and never the CDN edge that stands in for
+		// the visitors (a ban on a Cloudflare edge would block every visitor behind it).
+		if ( '' === $ip || ! filter_var( $ip, FILTER_VALIDATE_IP ) || PNCP_Bots::is_official_crawler_ip( $ip ) || PNCP_Ip::is_cdn_edge( $ip ) ) {
 			return;
 		}
 		$until = time() + max( 1, (int) $minutes ) * MINUTE_IN_SECONDS;
@@ -912,7 +913,7 @@ final class PNCP_Log {
 	public static function strike( $ip, $reason ) {
 		$s       = PNCP_Options::get();
 		$strikes = (int) $s['ban_strikes'];
-		if ( $strikes < 1 || '' === $ip ) {
+		if ( $strikes < 1 || '' === $ip || PNCP_Ip::is_cdn_edge( $ip ) ) {
 			return false;
 		}
 		$key = 'pncp_st_' . md5( PNCP_Ip::limit_key( $ip ) ); // IPv6: per /64, like the limits.
@@ -920,16 +921,54 @@ final class PNCP_Log {
 			// Atomic: two concurrent violations cannot both read the same value and lose a strike.
 			wp_cache_add( $key, 0, 'pncp', 10 * MINUTE_IN_SECONDS );
 			$count = (int) wp_cache_incr( $key, 1, 'pncp' );
+		} elseif ( self::apcu_ok() ) {
+			// Atomic too, in PHP's shared memory (bots that send requests in parallel would otherwise lose strikes).
+			$name = self::apcu_key( $key );
+			apcu_add( $name, 0, 10 * MINUTE_IN_SECONDS );
+			$count = (int) apcu_inc( $name );
 		} else {
 			$count = (int) self::cache_get( $key ) + 1;
 			self::cache_set( $key, $count, 10 * MINUTE_IN_SECONDS );
 		}
 		if ( $count >= $strikes ) {
 			self::cache_delete( $key );
+			if ( self::apcu_ok() ) {
+				apcu_delete( self::apcu_key( $key ) );
+			}
 			self::ban( $ip, (int) $s['ban_minutes'], $reason );
 			return true;
 		}
 		return false;
+	}
+
+	/**
+	 * Can the per-minute counters live in APCu (PHP's shared memory) instead of the database? Only where APCu is
+	 * shared by all PHP workers of the site (PHP-FPM, Apache mod_php); under CGI or LSAPI each process may
+	 * have its own, and the counts would be split. Filter `pncp_use_apcu`.
+	 *
+	 * @return bool
+	 */
+	public static function apcu_ok() {
+		static $ok = null;
+		if ( null === $ok ) {
+			$ok = function_exists( 'apcu_enabled' ) && apcu_enabled() && in_array( PHP_SAPI, array( 'fpm-fcgi', 'apache2handler' ), true );
+			$ok = (bool) apply_filters( 'pncp_use_apcu', $ok );
+		}
+		return $ok;
+	}
+
+	/**
+	 * An APCu key for this site (several sites may share one server and its APCu).
+	 *
+	 * @param string $key Key.
+	 * @return string
+	 */
+	public static function apcu_key( $key ) {
+		static $prefix = null;
+		if ( null === $prefix ) {
+			$prefix = 'pncp_' . substr( md5( ABSPATH . '|' . get_current_blog_id() ), 0, 8 ) . '_';
+		}
+		return $prefix . $key;
 	}
 
 	/* ---------- Cache: object cache if present, otherwise transients ---------- */

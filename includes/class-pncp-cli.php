@@ -89,8 +89,9 @@ final class PNCP_Cli {
 		if ( $minutes < 1 || $minutes > 30 * DAY_IN_SECONDS / MINUTE_IN_SECONDS ) {
 			WP_CLI::error( '--minutes must be between 1 and 43200.' );
 		}
-		if ( PNCP_Bots::is_official_crawler_ip( $ip ) ) {
-			WP_CLI::error( 'This IP belongs to Google or Bing: it is never blocked.' );
+		$why = PNCP_Options::ban_refusal( $ip );
+		if ( '' !== $why ) {
+			WP_CLI::error( PNCP_Options::ban_refusal_text( $why ) );
 		}
 		PNCP_Log::ban( $ip, $minutes, 'manual' );
 		PNCP_Log::reset_cache();

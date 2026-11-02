@@ -53,15 +53,17 @@ final class PNCP_Rest {
 		foreach ( self::post_types() as $type ) {
 			add_filter( 'rest_prepare_' . $type, array( __CLASS__, 'strip' ), 99, 3 );
 		}
-		// WooCommerce's public Store API serves product descriptions without login, in /products and also in
-		// the cart line items. Both are stripped for visitors; cart totals, prices and quantities are left.
+		// WooCommerce's public Store API serves product descriptions without login, in /products, in the cart
+		// line items and in /batch. The long description is stripped for visitors; the rest is left.
 		add_filter( 'rest_post_dispatch', array( __CLASS__, 'strip_store_api' ), 99, 3 );
 	}
 
 	/**
-	 * Empties description / short_description in the WooCommerce Store API for visitors, in both the product
-	 * routes and the cart line items (so the catalogue text cannot be read through "add to cart, then read
-	 * the cart").
+	 * Empties the long product description in the WooCommerce Store API for visitors: in the product routes, the
+	 * cart line items (so the catalogue text cannot be read through "add to cart, then read the cart") and the
+	 * batch route. The short description stays: the shop's own blocks (All Products, Product Summary, cart and
+	 * checkout) show it, and it is already public on the shop pages. Only product objects are touched (they
+	 * carry "prices"), never category or attribute terms.
 	 *
 	 * @param WP_HTTP_Response $result  The response.
 	 * @param WP_REST_Server   $server  The server.
@@ -70,7 +72,7 @@ final class PNCP_Rest {
 	 */
 	public static function strip_store_api( $result, $server, $request ) {
 		$route = (string) $request->get_route();
-		if ( ! $result instanceof WP_HTTP_Response || ! preg_match( '#^/wc/store(/v\d+)?/(products|cart)#', $route, $m ) ) {
+		if ( ! $result instanceof WP_HTTP_Response || ! preg_match( '#^/wc/store(/v\d+)?/(products|cart|batch)#', $route, $m ) ) {
 			return $result;
 		}
 		if ( PNCP_Lockdown::can( 'edit_posts' ) || PNCP_Options::user_is_exempt( PNCP_Options::get() ) ) {
@@ -79,37 +81,52 @@ final class PNCP_Rest {
 		if ( ! apply_filters( 'pncp_rest_hide_content', true, null ) ) {
 			return $result;
 		}
-
 		$data = $result->get_data();
 		if ( ! is_array( $data ) ) {
 			return $result;
 		}
-		$strip = static function ( $item ) {
-			if ( is_array( $item ) ) {
-				foreach ( array( 'description', 'short_description' ) as $field ) {
-					if ( isset( $item[ $field ] ) && is_string( $item[ $field ] ) ) {
-						$item[ $field ] = '';
+		if ( 'batch' === $m[2] ) {
+			// { responses: [ { body: … }, … ] }: each answer as if it had been asked for on its own.
+			if ( isset( $data['responses'] ) && is_array( $data['responses'] ) ) {
+				foreach ( $data['responses'] as $i => $response ) {
+					if ( is_array( $response ) && isset( $response['body'] ) && is_array( $response['body'] ) ) {
+						$data['responses'][ $i ]['body'] = self::strip_store_data( $response['body'] );
 					}
 				}
 			}
-			return $item;
-		};
-		if ( 'cart' === $m[2] ) {
-			// The cart object (or /cart/items, a bare list): strip each line item's description.
-			if ( isset( $data['items'] ) && is_array( $data['items'] ) ) {
-				$data['items'] = array_map( $strip, $data['items'] );
-			} elseif ( isset( $data['id'] ) || isset( $data['key'] ) ) {
-				$data = $strip( $data );
-			} else {
-				$data = array_map( $strip, $data );
-			}
 		} else {
-			// A list of products or a single product.
-			$data = isset( $data['id'] ) ? $strip( $data ) : array_map( $strip, $data );
+			$data = self::strip_store_data( $data );
 		}
 		$result->set_data( $data );
-
 		return $result;
+	}
+
+	/**
+	 * Store API data with the long description of every product in it emptied: a product, a list of products,
+	 * a cart (its line items) or a list of line items.
+	 *
+	 * @param array<int|string, mixed> $data Data.
+	 * @return array<int|string, mixed>
+	 */
+	private static function strip_store_data( $data ) {
+		$strip = static function ( $item ) {
+			if ( is_array( $item ) && isset( $item['prices'] ) && isset( $item['description'] ) && is_string( $item['description'] ) ) {
+				$item['description'] = '';
+			}
+			return $item;
+		};
+		if ( isset( $data['items'] ) && is_array( $data['items'] ) ) {
+			// A cart: its line items, and the cross-sell products it suggests.
+			$data['items'] = array_map( $strip, $data['items'] );
+			if ( isset( $data['cross_sells'] ) && is_array( $data['cross_sells'] ) ) {
+				$data['cross_sells'] = array_map( $strip, $data['cross_sells'] );
+			}
+			return $data;
+		}
+		if ( isset( $data['prices'] ) ) {
+			return $strip( $data );
+		}
+		return array_map( $strip, $data );
 	}
 
 	/**
