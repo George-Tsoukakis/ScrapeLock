@@ -77,8 +77,13 @@ final class PNCP_Human {
 	}
 
 	/**
-	 * Proof-of-work difficulty: leading zero hex digits of sha256( challenge . answer ). 3 = about 4,000
-	 * attempts, a fraction of a second in a browser. Filter `pncp_human_difficulty` (1–5).
+	 * Proof-of-work difficulty: leading zero hex digits of sha256( challenge . answer ). Each step is 16 times
+	 * the work: 3 = about 4,000 attempts on average, a fraction of a second in a browser; 4 = about 65,000, a
+	 * second or two on a phone; 5 = about a million, often 10–30 seconds on a phone, so a visitor who leaves
+	 * sooner is never verified. Filter `pncp_human_difficulty` (1–5). The script tries up to 8 times the
+	 * average before it gives up (fewer than 1 visitor in 2,900 gets that far), or until the challenge expires
+	 * (CHALLENGE_TTL). Up to 3.3 it gave up after a million attempts at any difficulty, so at 5 about 4
+	 * visitors in 10 were never verified.
 	 *
 	 * @return int
 	 */
@@ -217,6 +222,7 @@ final class PNCP_Human {
 				array(
 					'c' => self::challenge( $ip ),
 					'd' => self::difficulty(),
+					't' => self::CHALLENGE_TTL, // The script stops trying when the challenge would have expired.
 				)
 			);
 		}

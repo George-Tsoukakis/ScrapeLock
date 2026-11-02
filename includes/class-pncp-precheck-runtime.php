@@ -24,6 +24,14 @@
 final class PNCP_Precheck_Runtime {
 
 	/**
+	 * Whether this request was logged here as "would block" ("Monitor only"): WordPress's own log then does
+	 * not log it a second time (PNCP_Log::add()).
+	 *
+	 * @var bool
+	 */
+	public static $monitored = false;
+
+	/**
 	 * Called by the line in wp-config.php: reads the configuration from the data folder and runs the check.
 	 *
 	 * @param string $dir The data folder.
@@ -94,6 +102,13 @@ final class PNCP_Precheck_Runtime {
 			return;
 		}
 		list( $code, $reason, $ip ) = $verdict;
+		// "Monitor only": the verdict is logged as "would block" (code 0) and the request goes on, to the page
+		// cache or WordPress.
+		if ( self::monitoring( $c, time() ) ) {
+			self::event( $c, 0, $reason, $ip );
+			self::$monitored = true;
+			return;
+		}
 		self::event( $c, $code, $reason, $ip );
 		if ( ! headers_sent() ) {
 			http_response_code( $code );
@@ -121,6 +136,13 @@ final class PNCP_Precheck_Runtime {
 		if ( 'cli' === PHP_SAPI || ! self::applies( $c ) ) {
 			return null;
 		}
+		if ( self::emergency( $c, $now ) ) {
+			// 3.4: Emergency Mode's stricter page limit and bans (never looser than the stored ones).
+			$e                = (array) $c['emergency'];
+			$c['limit']       = isset( $e['limit'] ) ? (int) $e['limit'] : (int) $c['limit'];
+			$c['ban_strikes'] = isset( $e['ban_strikes'] ) ? (int) $e['ban_strikes'] : (int) $c['ban_strikes'];
+			$c['ban_minutes'] = isset( $e['ban_minutes'] ) ? (int) $e['ban_minutes'] : (int) $c['ban_minutes'];
+		}
 		$direct = self::not_via_cdn( $c );
 		if ( '' !== $direct ) {
 			return array( 403, 'not_via_cdn', $direct );
@@ -133,7 +155,9 @@ final class PNCP_Precheck_Runtime {
 			return null;
 		}
 		// A CDN address means "Real visitor IP" is not set: then one decision would hit many visitors at once.
-		if ( self::is_cdn( $ip, $c ) ) {
+		// 3.4: not without the CDN shared secret, when one is set: such a request came through someone else's
+		// account at the CDN, and is limited like any other address.
+		if ( self::is_cdn( $ip, $c ) && self::cdn_trust_ok( $c ) ) {
 			return null;
 		}
 		if ( self::in_any( $ip, $c['block'] ) ) {
@@ -183,12 +207,39 @@ final class PNCP_Precheck_Runtime {
 		if ( $count <= $limit ) {
 			return null;
 		}
-		// One "violation" per minute over the limit, as in the normal check; enough of them = a ban.
-		if ( $count === $limit + 1 && self::strike( $c, $bankey, $now ) ) {
+		// One "violation" per minute over the limit, as in the normal check; enough of them = a ban. Not in
+		// "Monitor only", which never bans.
+		if ( $count === $limit + 1 && ! self::monitoring( $c, $now ) && self::strike( $c, $bankey, $now ) ) {
 			self::ban( $dir, $bankey, $now + max( 1, (int) $c['ban_minutes'] ) * 60 );
 			self::event( $c, 403, 'ban', $ip ); // The event keeps the exact IP for the log.
 		}
 		return array( 429, 'rate_page', $ip );
+	}
+
+	/**
+	 * Is "Monitor only" in effect (as PNCP_Options::monitoring())? The first-week monitoring of a new install
+	 * ends at its time here too, even before WordPress rewrites the configuration.
+	 *
+	 * @param array<string, mixed> $c   Configuration.
+	 * @param int                  $now Time.
+	 * @return bool
+	 */
+	public static function monitoring( $c, $now ) {
+		if ( self::emergency( $c, $now ) ) {
+			return false; // 3.4: Emergency Mode really blocks, also while "Monitor only" is on (as in WordPress).
+		}
+		return ! empty( $c['monitor'] ) && ( empty( $c['monitor_until'] ) || $now < (int) $c['monitor_until'] );
+	}
+
+	/**
+	 * Is Emergency Mode on (3.4: its end time is in the configuration)?
+	 *
+	 * @param array<string, mixed> $c   Configuration.
+	 * @param int                  $now Time.
+	 * @return bool
+	 */
+	public static function emergency( $c, $now ) {
+		return ! empty( $c['emergency_until'] ) && $now < (int) $c['emergency_until'] && isset( $c['emergency'] ) && is_array( $c['emergency'] );
 	}
 
 	/**
@@ -201,8 +252,23 @@ final class PNCP_Precheck_Runtime {
 		if ( empty( $c['cdn_only'] ) || self::cdn_trust_ok( $c ) ) {
 			return '';
 		}
-		$remote = isset( $_SERVER['REMOTE_ADDR'] ) ? trim( (string) $_SERVER['REMOTE_ADDR'] ) : '';
-		return filter_var( $remote, FILTER_VALIDATE_IP ) && ! self::is_local( $remote ) ? $remote : '';
+		$remote = self::normalize_ip( isset( $_SERVER['REMOTE_ADDR'] ) ? (string) $_SERVER['REMOTE_ADDR'] : '' );
+		if ( '' === $remote ) {
+			return '';
+		}
+		if ( ! self::is_local( $remote ) ) {
+			return $remote;
+		}
+		// The server itself only when no proxy passed the request on: behind a local reverse proxy (Nginx in
+		// front of Apache, Varnish) every request comes from 127.0.0.1, also the ones that went around the CDN.
+		// Those are judged by the visitor's address, as PNCP_Origin::exempt() does.
+		foreach ( array( 'HTTP_X_FORWARDED_FOR', 'HTTP_FORWARDED', 'HTTP_X_REAL_IP', 'HTTP_CF_CONNECTING_IP' ) as $header ) {
+			if ( ! empty( $_SERVER[ $header ] ) ) {
+				$ip = self::client_ip( $c, $reliable );
+				return '' !== $ip && ! self::is_local( $ip ) ? $ip : '';
+			}
+		}
+		return '';
 	}
 
 	/**

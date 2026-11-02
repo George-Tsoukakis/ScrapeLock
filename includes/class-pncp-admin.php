@@ -17,6 +17,13 @@ final class PNCP_Admin {
 	const GROUP = 'pncp_settings_group';
 
 	/**
+	 * The tab whose settings form is open (for the "Reset this tab to defaults" link under it).
+	 *
+	 * @var string
+	 */
+	private static $form_section = '';
+
+	/**
 	 * Registers the hooks.
 	 */
 	public static function init() {
@@ -25,6 +32,7 @@ final class PNCP_Admin {
 		add_action( 'admin_enqueue_scripts', array( __CLASS__, 'assets' ) );
 		add_filter( 'plugin_action_links_' . plugin_basename( PNCP_FILE ), array( __CLASS__, 'action_links' ) );
 		add_action( 'admin_post_pncp_profile', array( __CLASS__, 'handle_profile' ) );
+		add_action( 'admin_post_pncp_settings', array( __CLASS__, 'handle_settings' ) );
 		add_action( 'admin_post_pncp_token', array( __CLASS__, 'handle_token' ) );
 		add_action( 'admin_post_pncp_log', array( __CLASS__, 'handle_log' ) );
 		add_action( 'admin_post_pncp_cf_ip', array( __CLASS__, 'handle_cf_ip' ) );
@@ -331,6 +339,66 @@ final class PNCP_Admin {
 	}
 
 	/**
+	 * A heading between two parts of one settings form (e.g. "Bots" and "Limits" on the Bots and limits tab).
+	 * Closes the settings table of the part before and opens the table of the next part: the fields stay in
+	 * the same form.
+	 *
+	 * @param string $id    Part id (the heading's anchor is pncp-group-<id>).
+	 * @param string $title Heading.
+	 * @param string $intro One sentence about what the part holds.
+	 */
+	private static function group_heading( $id, $title, $intro ) {
+		echo '</table>';
+		printf( '<h2 class="pncp-group-title" id="pncp-group-%s">%s</h2>', esc_attr( $id ), esc_html( $title ) );
+		printf( '<p class="description pncp-group-intro">%s</p>', esc_html( $intro ) );
+		echo '<table class="form-table" role="presentation">';
+	}
+
+	/**
+	 * Whether the folded "Network and CDN" part of the Bots and limits tab opens on its own: something in it
+	 * needs a look (an insecure 1.4 setting, a CDN that hides every visitor, an early or pre-cache check that
+	 * is on but not running), or the administrator just used one of its one-click fixes.
+	 *
+	 * @param array<string, mixed> $s Settings.
+	 * @return bool
+	 */
+	private static function network_needs_attention( $s ) {
+		// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Only decides whether a part is shown open.
+		$message = isset( $_GET['pncp_message'] ) ? sanitize_key( wp_unslash( $_GET['pncp_message'] ) ) : '';
+		return ! empty( $s['trust_any_proxy'] )
+			|| in_array( $message, array( 'cf_ip', 'bunny_ip', 'bunny_ip_failed' ), true )
+			|| '' !== PNCP_Ip::cdn_hides_visitors()
+			|| ( ! empty( $s['early_mode'] ) && ! PNCP_Early::installed() )
+			|| ( ! is_multisite() && ! empty( $s['enabled'] ) && ! empty( $s['precheck'] ) && ! PNCP_Precheck::active() );
+	}
+
+	/**
+	 * One line with the state of the "Network and CDN" part, shown next to its heading while it is folded.
+	 *
+	 * @param array<string, mixed> $s Settings.
+	 * @return string
+	 */
+	private static function network_summary( $s ) {
+		$headers = array(
+			'remote_addr'      => 'REMOTE_ADDR',
+			'cf_connecting_ip' => 'CF-Connecting-IP',
+			'x_forwarded_for'  => 'X-Forwarded-For',
+			'x_real_ip'        => 'X-Real-IP',
+			'true_client_ip'   => 'True-Client-IP',
+		);
+		$on      = __( 'on', 'scrapelock' );
+		$off     = __( 'off', 'scrapelock' );
+		return sprintf(
+			/* translators: 1: name of an HTTP header (e.g. REMOTE_ADDR), 2: "on" or "off" (early check), 3: "on" or "off" (pre-cache check), 4: "on" or "off" (only through the CDN) */
+			__( 'Real visitor IP: %1$s · Early check: %2$s · Pre-cache check: %3$s · Only through the CDN: %4$s', 'scrapelock' ),
+			isset( $headers[ $s['ip_header'] ] ) ? $headers[ $s['ip_header'] ] : (string) $s['ip_header'],
+			! empty( $s['early_mode'] ) ? $on : $off,
+			! is_multisite() && ! empty( $s['precheck'] ) ? $on : $off,
+			PNCP_Origin::active( $s ) ? $on : $off
+		);
+	}
+
+	/**
 	 * Quick links to the sections of a long tab.
 	 *
 	 * @param array<string, string> $sections id => label.
@@ -360,6 +428,13 @@ final class PNCP_Admin {
 			array( '' !== $s['countries_block'] || '' !== $s['countries_strict'], __( 'Countries', 'scrapelock' ) ),
 		);
 		echo '<ul class="pncp-status-bar" aria-label="' . esc_attr__( 'Protection status', 'scrapelock' ) . '">';
+		if ( ! empty( $s['enabled'] ) && PNCP_Options::monitoring( $s ) ) {
+			printf(
+				'<li class="pncp-pill pncp-pill--alert pncp-pill--monitor"><a href="%1$s">%2$s</a></li>',
+				esc_url( PNCP_Status::settings_url( array( 'tab' => 'bots' ) ) . '#pncp-sec-monitor' ),
+				esc_html( self::monitor_label( $s ) )
+			);
+		}
 		if ( $emergency ) {
 			echo '<li class="pncp-pill pncp-pill--alert">' . esc_html__( 'Emergency Mode', 'scrapelock' ) . '</li>';
 		}
@@ -372,6 +447,23 @@ final class PNCP_Admin {
 			);
 		}
 		echo '</ul>';
+	}
+
+	/**
+	 * "Monitor only: nothing is blocked", with the day blocking starts on its own during the first-week monitoring.
+	 *
+	 * @param array<string, mixed> $s Settings.
+	 * @return string
+	 */
+	public static function monitor_label( $s ) {
+		if ( ! empty( $s['monitor_until'] ) ) {
+			return sprintf(
+				/* translators: %s: date */
+				__( 'Monitor only: nothing is blocked until %s', 'scrapelock' ),
+				wp_date( get_option( 'date_format' ), (int) $s['monitor_until'] )
+			);
+		}
+		return __( 'Monitor only: nothing is blocked', 'scrapelock' );
 	}
 
 	/**
@@ -415,6 +507,7 @@ final class PNCP_Admin {
 	 * @param string $section Tab.
 	 */
 	private static function form_open( $section ) {
+		self::$form_section = $section;
 		echo '<form method="post" action="options.php" class="pncp-settings-form">';
 		settings_fields( self::GROUP );
 		printf( '<input type="hidden" name="%s[_sections][]" value="%s">', esc_attr( PNCP_OPTION ), esc_attr( $section ) );
@@ -423,10 +516,29 @@ final class PNCP_Admin {
 
 	/**
 	 * Closes the settings form.
+	 *
+	 * @param bool $table Whether a settings table is still open (false when the form ends with a folded part).
 	 */
-	private static function form_close() {
-		echo '</table>';
+	private static function form_close( $table = true ) {
+		if ( $table ) {
+			echo '</table>';
+		}
 		submit_button( __( 'Save changes', 'scrapelock' ) );
+		if ( isset( PNCP_Settings_Io::tab_names()[ self::$form_section ] ) ) {
+			// A link, not a button: it opens a confirmation that lists what would change (render_reset_confirm()).
+			printf(
+				'<p class="pncp-reset-tab"><a href="%1$s">%2$s</a></p>',
+				esc_url(
+					PNCP_Status::settings_url(
+						array(
+							'tab'        => self::$form_section,
+							'pncp_reset' => self::$form_section,
+						)
+					)
+				),
+				esc_html__( 'Reset this tab to defaults…', 'scrapelock' )
+			);
+		}
 		echo '</form>';
 	}
 
@@ -479,6 +591,14 @@ final class PNCP_Admin {
 			if ( 'lockdown' === $tab ) {
 				PNCP_Lockdown::render_tab();
 			} else {
+				// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Only displays the confirmation.
+				if ( isset( $_GET['pncp_reset'] ) && sanitize_key( wp_unslash( $_GET['pncp_reset'] ) ) === $tab ) {
+					self::render_reset_confirm( $tab );
+				}
+				// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Only displays the confirmation.
+				if ( 'general' === $tab && isset( $_GET['pncp_import'] ) ) {
+					self::render_import_confirm();
+				}
 				$method = 'tab_' . $tab;
 				self::$method( PNCP_Options::stored() );
 			}
@@ -542,7 +662,7 @@ final class PNCP_Admin {
 			<th scope="row"><?php esc_html_e( 'What is blocked', 'scrapelock' ); ?></th>
 			<td>
 				<?php
-				self::checkbox( $s, 'block_selection', __( 'Text selection with the mouse or finger', 'scrapelock' ) );
+				self::checkbox( $s, 'block_selection', __( 'Text selection with the mouse or finger', 'scrapelock' ), __( 'Not recommended: it also stops visitors who select text to have it read aloud (select-to-speak, screen readers), translated or looked up, and copying with the source below cannot work. Off in the Balanced preset.', 'scrapelock' ) );
 				self::checkbox( $s, 'block_context_menu', __( 'Right click', 'scrapelock' ) );
 				self::checkbox( $s, 'block_shortcuts', __( 'Shortcuts Ctrl/Cmd + A, C, X, S, U', 'scrapelock' ), __( 'Keyboard navigation (Tab, arrows, Enter) is never affected.', 'scrapelock' ) );
 				self::checkbox( $s, 'block_devtools', __( 'Developer tools shortcuts (F12, Ctrl+Shift+I/J/C/K, Cmd+Opt+I/J/C/U)', 'scrapelock' ), __( 'Cosmetic: it only blocks the shortcuts. It does not detect DevTools and does not “break” the page.', 'scrapelock' ) );
@@ -628,6 +748,181 @@ final class PNCP_Admin {
 		</tr>
 		<?php
 		self::form_close();
+		self::render_settings_io();
+	}
+
+	/**
+	 * Export, import and the saved versions (undo).
+	 */
+	private static function render_settings_io() {
+		$backups = PNCP_Settings_Io::backups();
+		?>
+		<section class="pncp-card pncp-settings-io" aria-labelledby="pncp-settings-io-title">
+			<h2 id="pncp-settings-io-title"><?php esc_html_e( 'Export, import and undo', 'scrapelock' ); ?></h2>
+			<p class="description"><?php esc_html_e( 'Download the settings of every tab as a JSON file, e.g. to copy them to another site or keep a backup. The file leaves out secrets: the CDN shared secret, the API token for blocking at the CDN and the private feed tokens (of which only a hash is stored). Set those again on the other site.', 'scrapelock' ); ?></p>
+			<?php self::action_form_open( 'pncp_settings', 'pncp_settings', 'pncp-inline-form' ); ?>
+				<input type="hidden" name="op" value="export">
+				<p><button type="submit" class="button"><?php esc_html_e( 'Export settings', 'scrapelock' ); ?></button></p>
+			</form>
+			<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>" enctype="multipart/form-data">
+				<input type="hidden" name="action" value="pncp_settings">
+				<input type="hidden" name="op" value="import_preview">
+				<?php wp_nonce_field( 'pncp_settings' ); ?>
+				<p>
+					<label for="pncp-import-file"><?php esc_html_e( 'Import settings from a file:', 'scrapelock' ); ?></label>
+					<input type="file" id="pncp-import-file" name="pncp_import_file" accept=".json,application/json" required aria-describedby="pncp-import-help">
+					<button type="submit" class="button"><?php esc_html_e( 'Check the file', 'scrapelock' ); ?></button>
+				</p>
+				<p class="description" id="pncp-import-help"><?php esc_html_e( 'Nothing changes yet: you first see which settings the file would change, and confirm.', 'scrapelock' ); ?></p>
+			</form>
+			<h3><?php esc_html_e( 'Earlier versions', 'scrapelock' ); ?></h3>
+			<?php if ( ! $backups ) : ?>
+				<p class="description"><?php esc_html_e( 'None yet. Before a preset, an import or a reset changes the settings, the previous ones are kept here (the last 5).', 'scrapelock' ); ?></p>
+			<?php else : ?>
+				<ul class="pncp-backups">
+					<?php foreach ( $backups as $item ) : ?>
+						<li>
+							<?php
+							$user = get_userdata( (int) $item['user'] );
+							echo esc_html(
+								sprintf(
+									/* translators: 1: date and time, 2: what changed, 3: user name */
+									__( '%1$s: %2$s (%3$s)', 'scrapelock' ),
+									wp_date( get_option( 'date_format' ) . ' ' . get_option( 'time_format' ), (int) $item['time'] ),
+									PNCP_Settings_Io::reason_label( $item ),
+									$user ? $user->display_name : __( 'WP-CLI or automatic', 'scrapelock' )
+								)
+							);
+							self::action_form_open( 'pncp_settings', 'pncp_settings', 'pncp-inline-form' );
+							?>
+								<input type="hidden" name="op" value="restore">
+								<input type="hidden" name="id" value="<?php echo esc_attr( $item['id'] ); ?>">
+								<button type="submit" class="button button-small"><?php esc_html_e( 'Restore', 'scrapelock' ); ?></button>
+							</form>
+						</li>
+					<?php endforeach; ?>
+				</ul>
+			<?php endif; ?>
+		</section>
+		<?php
+	}
+
+	/**
+	 * The settings that would change, as a table.
+	 *
+	 * @param array<int, array<string, string>> $changes key, old, new.
+	 * @param string                            $label   Header of the new values.
+	 */
+	private static function render_changes( $changes, $label ) {
+		?>
+		<table class="widefat striped pncp-changes">
+			<thead><tr><th scope="col"><?php esc_html_e( 'Setting', 'scrapelock' ); ?></th><th scope="col"><?php esc_html_e( 'Now', 'scrapelock' ); ?></th><th scope="col"><?php echo esc_html( $label ); ?></th></tr></thead>
+			<tbody>
+				<?php foreach ( $changes as $change ) : ?>
+					<tr>
+						<td><code><?php echo esc_html( $change['key'] ); ?></code></td>
+						<td><?php echo '' === $change['old'] ? '<em>' . esc_html__( '(empty)', 'scrapelock' ) . '</em>' : esc_html( $change['old'] ); ?></td>
+						<td><?php echo '' === $change['new'] ? '<em>' . esc_html__( '(empty)', 'scrapelock' ) . '</em>' : esc_html( $change['new'] ); ?></td>
+					</tr>
+				<?php endforeach; ?>
+			</tbody>
+		</table>
+		<?php
+	}
+
+	/**
+	 * The warnings and refusals of PNCP_Options::sanitize() for a prepared change.
+	 *
+	 * @param array<int, array<string, string>> $messages type, message.
+	 */
+	private static function render_messages( $messages ) {
+		foreach ( $messages as $message ) {
+			printf( '<div class="notice notice-%1$s inline"><p>%2$s</p></div>', esc_attr( $message['type'] ), esc_html( $message['message'] ) );
+		}
+	}
+
+	/**
+	 * Confirmation of an import: what the file would change.
+	 */
+	private static function render_import_confirm() {
+		$data = get_transient( 'pncp_import_' . get_current_user_id() );
+		if ( ! is_array( $data ) || empty( $data['settings'] ) ) {
+			echo '<div class="notice notice-error"><p>' . esc_html__( 'The checked file is no longer available (it is kept for 15 minutes). Choose it again.', 'scrapelock' ) . '</p></div>';
+			return;
+		}
+		$prepared = PNCP_Settings_Io::prepare( $data['settings'] );
+		?>
+		<div class="notice notice-warning pncp-confirm pncp-import-confirm">
+			<p><strong><?php esc_html_e( 'Import these settings?', 'scrapelock' ); ?></strong>
+			<?php
+			if ( ! empty( $data['name'] ) ) {
+				echo ' ' . esc_html( (string) $data['name'] );
+			}
+			?>
+			</p>
+			<?php
+			self::render_messages( $prepared['messages'] );
+			if ( ! empty( $data['ignored'] ) ) {
+				/* translators: %s: setting names */
+				echo '<p>' . esc_html( sprintf( __( 'Left out (unknown, secret or belonging to the other site): %s', 'scrapelock' ), implode( ', ', $data['ignored'] ) ) ) . '</p>';
+			}
+			if ( $prepared['changes'] ) {
+				/* translators: %d: number of settings */
+				echo '<p>' . esc_html( sprintf( _n( '%d setting would change. The current settings are kept as an earlier version, so you can undo the import.', '%d settings would change. The current settings are kept as an earlier version, so you can undo the import.', count( $prepared['changes'] ), 'scrapelock' ), count( $prepared['changes'] ) ) ) . '</p>';
+				self::render_changes( $prepared['changes'], __( 'After the import', 'scrapelock' ) );
+			} else {
+				echo '<p>' . esc_html__( 'The file holds the same settings as this site: nothing would change.', 'scrapelock' ) . '</p>';
+			}
+			self::action_form_open( 'pncp_settings', 'pncp_settings' );
+			?>
+				<p>
+					<?php if ( $prepared['changes'] ) : ?>
+						<button type="submit" name="op" value="import_apply" class="button button-primary"><?php esc_html_e( 'Yes, import', 'scrapelock' ); ?></button>
+					<?php endif; ?>
+					<button type="submit" name="op" value="import_cancel" class="button"><?php esc_html_e( 'Cancel', 'scrapelock' ); ?></button>
+				</p>
+			</form>
+		</div>
+		<?php
+	}
+
+	/**
+	 * Confirmation of "Reset this tab to defaults": what would change.
+	 *
+	 * @param string $tab Tab.
+	 */
+	private static function render_reset_confirm( $tab ) {
+		$names = PNCP_Settings_Io::tab_names();
+		if ( ! isset( $names[ $tab ] ) ) {
+			return;
+		}
+		$prepared = PNCP_Settings_Io::prepare( PNCP_Settings_Io::section_defaults( $tab ) );
+		?>
+		<div class="notice notice-warning pncp-confirm pncp-reset-confirm">
+			<p><strong>
+			<?php
+			/* translators: %s: tab name */
+			echo esc_html( sprintf( __( 'Reset the “%s” tab to its defaults?', 'scrapelock' ), $names[ $tab ] ) );
+			?>
+			</strong></p>
+			<?php if ( $prepared['changes'] ) : ?>
+				<p><?php esc_html_e( 'Only the settings of this tab change. The current settings are kept as an earlier version, so you can undo the reset.', 'scrapelock' ); ?><?php echo 'bots' === $tab ? ' ' . esc_html__( 'The CDN shared secret is kept.', 'scrapelock' ) : ''; ?></p>
+				<?php self::render_messages( $prepared['messages'] ); ?>
+				<?php self::render_changes( $prepared['changes'], __( 'Default', 'scrapelock' ) ); ?>
+				<?php self::action_form_open( 'pncp_settings', 'pncp_settings' ); ?>
+					<input type="hidden" name="op" value="reset">
+					<input type="hidden" name="section" value="<?php echo esc_attr( $tab ); ?>">
+					<p>
+						<button type="submit" class="button button-primary"><?php esc_html_e( 'Yes, reset', 'scrapelock' ); ?></button>
+						<a class="button" href="<?php echo esc_url( PNCP_Status::settings_url( array( 'tab' => $tab ) ) ); ?>"><?php esc_html_e( 'Cancel', 'scrapelock' ); ?></a>
+					</p>
+				</form>
+			<?php else : ?>
+				<p><?php esc_html_e( 'This tab already has its default settings: nothing would change.', 'scrapelock' ); ?></p>
+				<p><a class="button" href="<?php echo esc_url( PNCP_Status::settings_url( array( 'tab' => $tab ) ) ); ?>"><?php esc_html_e( 'Back', 'scrapelock' ); ?></a></p>
+			<?php endif; ?>
+		</div>
+		<?php
 	}
 
 	/**
@@ -652,7 +947,7 @@ final class PNCP_Admin {
 				<?php self::action_form_open( 'pncp_profile', 'pncp_profile', 'pncp-profile-form' ); ?>
 					<?php foreach ( $profiles as $key => $profile ) : ?>
 						<div class="pncp-profile<?php echo $current === $key ? ' is-current' : ''; ?>">
-							<button type="submit" name="profile" value="<?php echo esc_attr( $key ); ?>" class="button<?php echo 'balanced' === $key ? ' button-primary' : ''; ?>" aria-describedby="pncp-profile-<?php echo esc_attr( $key ); ?>"><?php echo esc_html( $profile[0] ); ?></button>
+							<button type="submit" name="profile" value="<?php echo esc_attr( $key ); ?>" class="button<?php echo 'balanced' === $key ? ' button-primary' : ''; ?>" aria-describedby="pncp-profile-<?php echo esc_attr( $key ); ?>"<?php self::profile_confirm( $s, $key ); ?>><?php echo esc_html( $profile[0] ); ?></button>
 							<p class="description" id="pncp-profile-<?php echo esc_attr( $key ); ?>"><?php echo esc_html( $profile[1] ); ?></p>
 						</div>
 					<?php endforeach; ?>
@@ -660,7 +955,20 @@ final class PNCP_Admin {
 			</section>
 			<section class="pncp-card pncp-card--emergency" aria-labelledby="pncp-emergency-title">
 				<h2 id="pncp-emergency-title"><?php esc_html_e( 'Emergency Mode', 'scrapelock' ); ?></h2>
-				<p class="description"><?php esc_html_e( 'For a scraping attack in progress: browsers only, limit 20 pages/minute, 6-hour block after 2 violations, REST/GraphQL without content. Your settings do not change: when it ends, they apply again as they were.', 'scrapelock' ); ?></p>
+				<p class="description"><?php esc_html_e( 'For a scraping attack in progress. Your settings do not change: when it ends, they apply again as they were.', 'scrapelock' ); ?></p>
+				<?php
+				// Made from the overlay itself (PNCP_Options::emergency_overlay()), so it lists exactly what changes.
+				$changes = PNCP_Options::emergency_changes( PNCP_Options::stored() );
+				if ( $changes ) {
+					echo '<p class="description">' . esc_html__( 'While it is on, compared with your settings:', 'scrapelock' ) . '</p><ul class="pncp-emergency-changes">';
+					foreach ( $changes as $change ) {
+						echo '<li>' . esc_html( $change ) . '</li>';
+					}
+					echo '</ul>';
+				} else {
+					echo '<p class="description">' . esc_html__( 'Your settings are already at least as strict as Emergency Mode: it would change nothing.', 'scrapelock' ) . '</p>';
+				}
+				?>
 				<?php if ( $until ) : ?>
 					<p class="pncp-emergency-on">
 						<?php
@@ -684,13 +992,21 @@ final class PNCP_Admin {
 				<?php else : ?>
 					<?php
 					$state = PNCP_Surge::state();
-					if ( ! empty( $s['auto_emergency'] ) ) {
+					if ( ! empty( $s['auto_emergency'] ) && 'start' === $s['auto_emergency_mode'] ) {
 						echo '<p class="description">' . esc_html(
 							$state['samples'] >= PNCP_Surge::WARMUP
 								/* translators: 1: usual pages per minute, 2: threshold */
 								? sprintf( __( 'Automatic start: on. Usually %1$s pages per minute; it starts above %2$d.', 'scrapelock' ), number_format_i18n( $state['avg'], 1 ), PNCP_Surge::threshold( $state, $s ) )
 								/* translators: %d: threshold */
 								: sprintf( __( 'Automatic start: on, still learning the usual rate; until then it starts above %d pages per minute.', 'scrapelock' ), PNCP_Surge::threshold( $state, $s ) )
+						) . '</p>';
+					} elseif ( ! empty( $s['auto_emergency'] ) ) {
+						echo '<p class="description">' . esc_html(
+							$state['samples'] >= PNCP_Surge::WARMUP
+								/* translators: 1: usual pages per minute, 2: threshold */
+								? sprintf( __( 'Attack alert: on. Usually %1$s pages per minute; above %2$d you get an email and a notice here with a button to start Emergency Mode.', 'scrapelock' ), number_format_i18n( $state['avg'], 1 ), PNCP_Surge::threshold( $state, $s ) )
+								/* translators: %d: threshold */
+								: sprintf( __( 'Attack alert: on, still learning the usual rate; until then you are alerted above %d pages per minute.', 'scrapelock' ), PNCP_Surge::threshold( $state, $s ) )
 						) . '</p>';
 					}
 					?>
@@ -713,6 +1029,29 @@ final class PNCP_Admin {
 	}
 
 	/**
+	 * A confirm() question on a preset button when the preset turns off RSS feeds or printing that are on now
+	 * (assets/js/admin.js asks it before the form is sent).
+	 *
+	 * @param array<string, mixed> $s   Settings.
+	 * @param string               $key Preset.
+	 */
+	private static function profile_confirm( $s, $key ) {
+		$values = PNCP_Options::profiles()[ $key ];
+		$feeds  = isset( $values['feed_mode'] ) && 'disabled' === $values['feed_mode'] && 'disabled' !== $s['feed_mode'];
+		$print  = isset( $values['print_mode'] ) && 'block' === $values['print_mode'] && 'block' !== $s['print_mode'];
+		if ( $feeds && $print ) {
+			$text = __( 'This preset turns off the RSS feeds and printing. Feed readers, podcast apps, newsletter tools and services that read your feed stop getting it, and visitors cannot print pages. The current settings are kept, so you can undo it. Continue?', 'scrapelock' );
+		} elseif ( $feeds ) {
+			$text = __( 'This preset turns off the RSS feeds. Feed readers, podcast apps, newsletter tools and services that read your feed stop getting it. The current settings are kept, so you can undo it. Continue?', 'scrapelock' );
+		} elseif ( $print ) {
+			$text = __( 'This preset turns off printing: visitors cannot print pages. The current settings are kept, so you can undo it. Continue?', 'scrapelock' );
+		} else {
+			return;
+		}
+		printf( ' data-pncp-confirm="%s"', esc_attr( $text ) );
+	}
+
+	/**
 	 * "Bots and limits" tab.
 	 *
 	 * @param array<string, mixed> $s Settings.
@@ -721,6 +1060,7 @@ final class PNCP_Admin {
 		self::render_cloudflare_hint( $s );
 		self::section_nav(
 			array(
+				'monitor'   => __( 'Monitor only', 'scrapelock' ),
 				'bots'      => __( 'Bots', 'scrapelock' ),
 				'ai'        => __( 'AI', 'scrapelock' ),
 				'allowed'   => __( 'Always allowed', 'scrapelock' ),
@@ -729,13 +1069,34 @@ final class PNCP_Admin {
 				'human'     => __( 'Human check', 'scrapelock' ),
 				'countries' => __( 'Countries', 'scrapelock' ),
 				'ban'       => __( 'Temporary block', 'scrapelock' ),
-				'ip'        => __( 'Real visitor IP', 'scrapelock' ),
+				'network'   => __( 'Network and CDN', 'scrapelock' ),
 				'edge'      => __( 'Blocking at the CDN', 'scrapelock' ),
 				'lists'     => __( 'IP lists', 'scrapelock' ),
 			)
 		);
+		// One form in three parts: Bots, Limits, and "Network and CDN" (folded: most sites never change it).
+		// The parts are only headings between tables; every field still belongs to the same form and the same
+		// "bots" section of the settings, so saving keeps working exactly as before.
 		self::form_open( 'bots' );
 		?>
+		<?php self::row_open( 'monitor', __( 'Monitor only', 'scrapelock' ) ); ?>
+				<?php
+				self::checkbox( $s, 'monitor_mode', __( 'Monitor only (log what would be blocked, block nothing)', 'scrapelock' ), __( 'Every check below still runs, but a request it would refuse is let through and written to the log as “Would block”. No IP is blocked temporarily and nothing is blocked at the CDN. Use it to see what the settings would do before they do it: you and your staff are exempt, so you would never notice a block yourselves. Private URLs (feeds with a token) and Lockdown are not affected: they keep protecting.', 'scrapelock' ) );
+				if ( ! empty( $s['monitor_mode'] ) && ! empty( $s['monitor_until'] ) && PNCP_Options::monitoring( $s ) ) {
+					printf(
+						'<p class="description pncp-monitor-until">%s</p>',
+						esc_html(
+							sprintf(
+								/* translators: %s: date and time */
+								__( 'New install: ScrapeLock starts blocking on its own on %s. Untick the box (or use “Enforce now”) to start earlier; turned on by hand, “Monitor only” has no end.', 'scrapelock' ),
+								wp_date( get_option( 'date_format' ) . ' ' . get_option( 'time_format' ), (int) $s['monitor_until'] )
+							)
+						)
+					);
+				}
+				?>
+		<?php self::row_close(); ?>
+		<?php self::group_heading( 'bots', __( 'Bots', 'scrapelock' ), __( 'Who may read the site: the bot list, AI crawlers, and the User-Agents, IPs and referrers that are always allowed or always blocked.', 'scrapelock' ) ); ?>
 		<?php self::row_open( 'bots', __( 'Scrapers and bots', 'scrapelock' ) ); ?>
 				<?php
 				self::checkbox( $s, 'block_bots', __( 'Block (403) the User-Agents in the list', 'scrapelock' ) );
@@ -745,6 +1106,20 @@ final class PNCP_Admin {
 				self::checkbox( $s, 'block_headless', __( 'Block headless and fake browsers', 'scrapelock' ), __( 'Blocks Chrome running without a window when it says so in its headers (“HeadlessChrome”), and, on HTTPS, scripts that copy the User-Agent of Chrome, Edge or Firefox without the Sec-Fetch headers every modern browser sends. It catches common tools and cheap scrapers, not every automated browser: one that is carefully disguised (e.g. Puppeteer with “stealth”, or Selenium with a visible Chrome) sends the same headers as a person. The page limits, the human check and the bot trap still apply to those. In-app browsers (Android WebView) are not checked.', 'scrapelock' ) );
 				self::checkbox( $s, 'trap_enabled', __( 'Bot trap', 'scrapelock' ), __( 'Invisible link on every page, disallowed in robots.txt. Whoever opens it is blocked temporarily, even if it pretends to be a browser. Visitors do not see it, and another site cannot trap them.', 'scrapelock' ) );
 				self::textarea( $s, 'bot_list', __( 'User-Agents to block (one per line, matches anywhere in the User-Agent, case-insensitive):', 'scrapelock' ), __( 'It contains two AI categories: training crawlers (GPTBot, ClaudeBot, CCBot, Google-Extended etc.) and AI search / assistants (OAI-SearchBot, ChatGPT-User, Claude-SearchBot, PerplexityBot etc.). You can allow the second one in the next section.', 'scrapelock' ) . ' ' . sprintf( /* translators: %s: number of AI crawlers */ __( 'In addition, %s more AI crawlers and agents (DeepSeek, Grok, Qwen, Mistral, NotebookLM and others) are blocked by name: that list is built into ScrapeLock and updated with each version, so it is not shown here. A line that starts with “=” must be the whole User-Agent, e.g. “=node”.', 'scrapelock' ), number_format_i18n( count( PNCP_Bots::known_ai_agents() ) ) ), 10, true );
+				self::checkbox( $s, 'block_http_libs', __( 'Also block generic HTTP libraries (strict)', 'scrapelock' ), __( 'Blocks the User-Agent that programming libraries send by default: curl, Wget, python-requests, Go, Java, okhttp, Dart, node-fetch, axios, Guzzle and others. Many cheap scrapers use them, but so do WooCommerce mobile apps (Flutter, Android), headless front ends, ERP and price sync, and uptime monitors. Turn it on only if nothing like that reads your site, or add those services to “Always allowed” first.', 'scrapelock' ) );
+				$libraries = PNCP_Options::http_libraries_in_list( $s );
+				if ( $libraries && empty( $s['block_http_libs'] ) ) {
+					printf(
+						'<p class="description pncp-http-libs-note">%s</p>',
+						esc_html(
+							sprintf(
+								/* translators: %s: list of User-Agents, e.g. "curl/, okhttp, Dart/" */
+								__( 'Your bot list above still contains generic HTTP libraries (%s), so they are blocked even with this option off: lists saved before ScrapeLock 3.4 had them by default. If a mobile app, a headless front end or a sync service gets a 403, remove those lines from the list, or allow the service in “Always allowed”.', 'scrapelock' ),
+								implode( ', ', $libraries )
+							)
+						)
+					);
+				}
 				?>
 		<?php self::row_close(); ?>
 		<?php self::row_open( 'ai', __( 'AI search and training', 'scrapelock' ) ); ?>
@@ -769,6 +1144,7 @@ final class PNCP_Admin {
 				self::checkbox( $s, 'block_user_enum', __( 'Hide usernames from visitors', 'scrapelock' ), __( '?author=1, 2, 3… returns “page not found” instead of the redirect to /author/username/, the REST API does not list users, the users sitemap is removed and oEmbed shows the site instead of the author. Logged-in users see everything as before. Author archives with a link stay.', 'scrapelock' ) );
 				?>
 		<?php self::row_close(); ?>
+		<?php self::group_heading( 'limits', __( 'Limits', 'scrapelock' ), __( 'How much one visitor may read per minute, stricter limits for some visitors, countries, and the temporary block for those who keep going.', 'scrapelock' ) ); ?>
 		<?php self::row_open( 'limits', __( 'Limits per IP', 'scrapelock' ) ); ?>
 				<?php
 				self::number( $s, 'rate_limit', __( 'Pages per minute (0 = off):', 'scrapelock' ), __( 'Starting value: 60. Above the limit it returns 429. Be careful with networks that share an IP (companies, mobile carriers) and with CDNs: set the “Real visitor IP” correctly first.', 'scrapelock' ) );
@@ -778,7 +1154,18 @@ final class PNCP_Admin {
 				self::number( $s, 'rate_limit_sitemap', __( 'Sitemaps per minute (0 = off):', 'scrapelock' ), __( 'Scrapers read the sitemap first to find every page. Covers the sitemaps of WordPress, Rank Math, Yoast and similar plugins. Google, Bing and the other verified search engines are never limited. Starting value: 5.', 'scrapelock' ) );
 				self::checkbox( $s, 'ipv6_wide', __( 'IPv6: also limit the whole /56 network (four times the page limit)', 'scrapelock' ), __( 'Pages are counted per /64, because one connection usually gets a whole /64. A server or a home connection often has a /56 or more, so a scraper can take a new /64 for every request. This also counts the /56 the /64 belongs to, up to four times the page limit (429 above it, without a block). Some mobile networks give neighbouring phones addresses of the same /56: on a site with many visitors from them, keep it off. Always on in Emergency Mode.', 'scrapelock' ) );
 				self::number( $s, 'rate_limit_datacenter', __( 'Pages per minute from data centers (0 = off):', 'scrapelock' ), __( 'People rarely browse from a server; scrapers very often run on one. Visitors from the published addresses of AWS, Google Cloud, Oracle Cloud, DigitalOcean and Akamai / Linode get this stricter limit instead of the normal one. The lists are downloaded from the providers once a day. Some VPNs use these providers, so their users get this limit too: it is meant for reading, not for blocking. The always-allowed User-Agents (monitoring, price platforms) and verified search engines are not affected. Starting value: 15. 5 in Emergency Mode.', 'scrapelock' ) );
-				self::checkbox( $s, 'auto_emergency', __( 'Start Emergency Mode automatically during an attack', 'scrapelock' ), __( 'The limits per IP cannot see a scraper that spreads its requests over hundreds of IPs. The whole site can: ScrapeLock learns how many pages per minute your site usually serves, and when that is exceeded five times over for 3 minutes in a row (and never below the minimum below), it starts Emergency Mode for 1 hour and emails you. Verified search engines and exempt staff are not counted. Pages served from a page cache without reaching WordPress are not counted either.', 'scrapelock' ) );
+				self::checkbox( $s, 'auto_emergency', __( 'Watch for attacks spread over many IPs (automatic Emergency Mode)', 'scrapelock' ), __( 'The limits per IP cannot see a scraper that spreads its requests over hundreds of IPs. The whole site can: ScrapeLock learns how many pages per minute your site usually serves, and when that is exceeded five times over for 3 minutes in a row (and never below the minimum below), it does what you choose here. Verified search engines and exempt staff are not counted. Pages served from a page cache without reaching WordPress are not counted either.', 'scrapelock' ) );
+				echo '<div class="pncp-field"><label for="pncp-auto_emergency_mode">' . esc_html__( 'When it happens:', 'scrapelock' ) . '</label> ';
+				self::select(
+					$s,
+					'auto_emergency_mode',
+					array(
+						'notify' => __( 'Email me and show a notice with a “Start Emergency Mode” button (recommended)', 'scrapelock' ),
+						'start'  => __( 'Start Emergency Mode for 1 hour on its own, and email me', 'scrapelock' ),
+					),
+					__( 'A rush of real visitors (a newsletter, a link on a popular site) looks the same as an attack. Emergency Mode changes many settings at once, listed in its box on the first tab, e.g. excerpts instead of full text in lists and stricter limits for data centers, where some services in “Always allowed” run. Feeds stay open to feed readers and podcast apps.', 'scrapelock' )
+				);
+				echo '</div>';
 				self::number( $s, 'auto_emergency_min', __( 'Minimum pages per minute for the automatic start:', 'scrapelock' ), __( 'Below this the site is never considered under attack, however quiet it usually is. Starting value: 300 (5 pages per second).', 'scrapelock' ) );
 				?>
 		<?php self::row_close(); ?>
@@ -797,92 +1184,111 @@ final class PNCP_Admin {
 				self::render_geo_status( $s );
 				?>
 		<?php self::row_close(); ?>
-		<tr id="pncp-sec-ban">
-			<th scope="row"><?php esc_html_e( 'Temporary block', 'scrapelock' ); ?></th>
-			<td>
+		<?php self::row_open( 'ban', __( 'Temporary block', 'scrapelock' ) ); ?>
 				<?php
 				self::number( $s, 'ban_strikes', __( 'Block after this many violations within 10 minutes (0 = never):', 'scrapelock' ), __( 'Violation: every minute in which the IP exceeded a limit, and every fake Googlebot. The trap blocks immediately.', 'scrapelock' ) );
 				self::number( $s, 'ban_minutes', __( 'Block duration (minutes):', 'scrapelock' ) );
-				self::checkbox( $s, 'early_mode', __( 'Early check: block known bots before the theme and the other plugins load', 'scrapelock' ), __( 'Adds the small file wp-content/mu-plugins/scrapelock-early.php, which stops blocked IPs and referrers, temporarily blocked IPs and User-Agents in the bot list with less server load. Search engines, logged-in users, forms and feeds are left to the normal check. It is removed when you turn this off or deactivate the plugin.', 'scrapelock' ) );
-				if ( ! empty( $s['early_mode'] ) && ! PNCP_Early::installed() ) {
-					echo '<p class="pncp-inline-warning">' . esc_html__( 'The file could not be created (the server does not allow direct file writes to wp-content/mu-plugins). The normal check works as before.', 'scrapelock' ) . '</p>';
-				}
-				if ( ! is_multisite() ) {
-					self::checkbox( $s, 'precheck', __( 'Pre-cache check: apply the page limit and blocks also to pages served from the page cache', 'scrapelock' ), __( 'Page caches such as WP Rocket serve stored pages before any plugin loads, so a bot that looks like a browser could read them without a limit. This adds one line at the top of wp-config.php that loads a small check before the cache: always-blocked IPs, temporarily blocked IPs and the “Pages per minute” limit. Counters are kept in APCu or in a folder of the uploads directory (uploads/scrapelock). Search engines, logged-in users, forms, wp-admin and the REST API are left to the normal check. The line and the files are removed when you turn this off or deactivate the plugin.', 'scrapelock' ) );
-					self::render_precheck_status( $s );
-				}
 				?>
-				<p><label for="pncp-log_retention"><?php esc_html_e( 'Keep the block log for:', 'scrapelock' ); ?></label>
-				<?php
-				self::select(
-					$s,
-					'log_retention',
-					array(
-						'1'  => __( '1 day', 'scrapelock' ),
-						'7'  => __( '7 days', 'scrapelock' ),
-						'30' => __( '30 days', 'scrapelock' ),
-					),
-					__( 'The log keeps IP and User-Agent, i.e. personal data (GDPR). It is deleted automatically.', 'scrapelock' )
-				);
-				?>
-				</p>
-				<?php self::textarea( $s, 'content_paths', __( 'Content addresses: path prefixes of pages that other plugins show, one per line, e.g. /hub/space/', 'scrapelock' ), __( 'Only for the log: blocked requests under these addresses count as “Pages”. Routes that plugins register as WordPress rewrite rules, and all posts, pages, products and terms, are found without this. Nothing is blocked or allowed because of it.', 'scrapelock' ), 2 ); ?>
-			</td>
-		</tr>
-		<tr id="pncp-sec-ip">
-			<th scope="row"><label for="pncp-ip_header"><?php esc_html_e( 'Real visitor IP', 'scrapelock' ); ?></label></th>
-			<td>
-				<?php
-				self::select(
-					$s,
-					'ip_header',
-					array(
-						'remote_addr'      => __( 'REMOTE_ADDR (no CDN/proxy)', 'scrapelock' ),
-						'cf_connecting_ip' => 'CF-Connecting-IP (Cloudflare)',
-						'x_forwarded_for'  => 'X-Forwarded-For',
-						'x_real_ip'        => 'X-Real-IP',
-						'true_client_ip'   => 'True-Client-IP',
-					),
-					__( 'Behind a CDN or reverse proxy all visitors appear with the CDN\'s IP. Choose the header with the real IP.', 'scrapelock' )
-				);
-				?>
-				<p><strong><?php esc_html_e( 'Trusted Proxy:', 'scrapelock' ); ?></strong> <?php esc_html_e( 'the header is read only when the request comes from a proxy you trust. Otherwise anyone could write any IP they want and bypass limits and blocks. CF-Connecting-IP: only from Cloudflare. X-Real-IP / X-Forwarded-For: from Bunny CDN, the server itself or a private network (Nginx in front of Apache). True-Client-IP: only from the proxies in the list.', 'scrapelock' ); ?></p>
-				<?php
-				self::checkbox( $s, 'trust_cloudflare', __( 'Trust Cloudflare addresses', 'scrapelock' ), __( 'The official Cloudflare list is refreshed every day.', 'scrapelock' ) );
-				self::checkbox( $s, 'trust_bunny', __( 'Trust Bunny CDN addresses', 'scrapelock' ), __( 'For X-Real-IP / X-Forwarded-For and Bunny\'s country header. The official list of Bunny edge servers is refreshed every day.', 'scrapelock' ) );
-				if ( ! empty( $s['trust_any_proxy'] ) ) {
-					echo '<div class="pncp-inline-warning">';
-					self::checkbox( $s, 'trust_any_proxy', __( 'Trust every request (1.4 behaviour, insecure)', 'scrapelock' ), __( 'On because this is how version 1.4 worked. Fill in your proxies below and uncheck it. Once turned off, it cannot be turned on again.', 'scrapelock' ) );
-					echo '</div>';
-				}
-				self::textarea( $s, 'trusted_proxies', __( 'Other trusted proxies / load balancers (IP or CIDR, one per line):', 'scrapelock' ), '', 3 );
-				self::password( $s, 'cdn_secret', __( 'CDN shared secret (optional):', 'scrapelock' ), __( 'Only when "Real visitor IP" is a CDN header (CF-Connecting-IP, X-Real-IP, X-Forwarded-For). A CDN (Bunny, Cloudflare) is multi-tenant: its edge IPs are shared, so by default anyone could point their own CDN zone at your origin and set the real-IP header. Set a secret here and configure your CDN to send it on every request as the header “X-ScrapeLock-CDN”; the CDN’s real-IP header is then trusted only when the secret matches. Leave empty to keep the current behaviour. For best effect, also restrict your origin so it is reachable only through the CDN.', 'scrapelock' ) );
-				self::checkbox( $s, 'cdn_only', __( 'Only through the CDN: refuse (403) requests that do not bring the secret', 'scrapelock' ), __( 'Someone who finds your server\'s own address can go around the CDN and everything it blocks. With this on, every request without the secret in the X-ScrapeLock-CDN header gets a 403, also pages from the page cache when the pre-cache check is on. First make the CDN add the header to every request: in Bunny CDN, an Edge Rule with the action “Set Request Header” (X-ScrapeLock-CDN = your secret) for all requests; in Cloudflare, Rules → Transform Rules → “Modify Request Header”, set static. It can only be turned on from a request that brings the secret, so you cannot lock yourself out by mistake. Not affected: the server itself (cron, cache preload), WP-CLI. Files the web server sends without WordPress (images, CSS, JS) are not covered. If the CDN ever stops sending the header, add define( \'SCRAPELOCK_CDN_ONLY\', false ); to wp-config.php.', 'scrapelock' ) );
-				if ( '' !== trim( (string) $s['cdn_secret'] ) ) {
-					echo '<p class="description pncp-cdn-only-status">' . esc_html( PNCP_Origin::has_secret( (string) $s['cdn_secret'] ) ? __( 'This request brought the secret: the CDN sends it.', 'scrapelock' ) : __( 'This request did not bring the secret: the CDN does not send it yet, or you opened the site around the CDN.', 'scrapelock' ) ) . '</p>';
-				}
-				if ( defined( 'SCRAPELOCK_CDN_ONLY' ) && ! SCRAPELOCK_CDN_ONLY ) {
-					echo '<p class="description">' . esc_html__( 'Turned off in wp-config.php (SCRAPELOCK_CDN_ONLY).', 'scrapelock' ) . '</p>';
-				}
-				?>
-				<p class="description">
+				<p class="description"><?php esc_html_e( 'How long the log is kept is set on the Log tab.', 'scrapelock' ); ?></p>
+		<?php self::row_close(); ?>
+		</table>
+		<details class="pncp-advanced" id="pncp-sec-network"<?php echo self::network_needs_attention( $s ) ? ' open' : ''; ?>>
+			<summary>
+				<h2 class="pncp-advanced__title"><?php esc_html_e( 'Network and CDN (advanced)', 'scrapelock' ); ?></h2>
+				<span class="pncp-advanced__state"><?php echo esc_html( self::network_summary( $s ) ); ?></span>
+			</summary>
+			<p class="description"><?php esc_html_e( 'Only for sites behind a CDN or a proxy, and for the checks that run before WordPress and the page cache. Most sites never need to change these.', 'scrapelock' ); ?></p>
+			<table class="form-table" role="presentation">
+			<tr id="pncp-sec-ip">
+				<th scope="row"><label for="pncp-ip_header"><?php esc_html_e( 'Real visitor IP', 'scrapelock' ); ?></label></th>
+				<td>
 					<?php
-					esc_html_e( 'What the server sees on this request:', 'scrapelock' );
-					echo '<br><code>REMOTE_ADDR = ' . esc_html( PNCP_Ip::remote_addr() ) . '</code>';
-					foreach ( PNCP_Ip::ip_headers() as $key ) {
-						if ( ! empty( $_SERVER[ $key ] ) ) {
-							echo '<br><code>' . esc_html( $key . ' = ' . sanitize_text_field( wp_unslash( $_SERVER[ $key ] ) ) ) . '</code>';
-						}
-					}
-					echo '<br>' . esc_html__( 'Trusted proxy:', 'scrapelock' ) . ' <code>' . esc_html( PNCP_Ip::is_trusted_proxy( PNCP_Ip::remote_addr(), $s, (string) $s['ip_header'] ) ? __( 'yes', 'scrapelock' ) : __( 'no', 'scrapelock' ) ) . '</code>';
-					echo '<br>' . esc_html__( 'IP the plugin uses now:', 'scrapelock' ) . ' <code>' . esc_html( PNCP_Ip::client_ip() ) . '</code>';
+					self::select(
+						$s,
+						'ip_header',
+						array(
+							'remote_addr'      => __( 'REMOTE_ADDR (no CDN/proxy)', 'scrapelock' ),
+							'cf_connecting_ip' => 'CF-Connecting-IP (Cloudflare)',
+							'x_forwarded_for'  => 'X-Forwarded-For',
+							'x_real_ip'        => 'X-Real-IP',
+							'true_client_ip'   => 'True-Client-IP',
+						),
+						__( 'Behind a CDN or reverse proxy all visitors appear with the CDN\'s IP. Choose the header with the real IP.', 'scrapelock' )
+					);
 					?>
-				</p>
-			</td>
-		</tr>
+					<p><strong><?php esc_html_e( 'Trusted Proxy:', 'scrapelock' ); ?></strong> <?php esc_html_e( 'the header is read only when the request comes from a proxy you trust. Otherwise anyone could write any IP they want and bypass limits and blocks. CF-Connecting-IP: only from Cloudflare. X-Real-IP / X-Forwarded-For: from Bunny CDN, the server itself or a private network (Nginx in front of Apache). True-Client-IP: only from the proxies in the list.', 'scrapelock' ); ?></p>
+					<?php
+					self::checkbox( $s, 'trust_cloudflare', __( 'Trust Cloudflare addresses', 'scrapelock' ), __( 'The official Cloudflare list is refreshed every day.', 'scrapelock' ) );
+					self::checkbox( $s, 'trust_bunny', __( 'Trust Bunny CDN addresses', 'scrapelock' ), __( 'For X-Real-IP / X-Forwarded-For and Bunny\'s country header. The official list of Bunny edge servers is refreshed every day.', 'scrapelock' ) );
+					if ( ! empty( $s['trust_any_proxy'] ) ) {
+						echo '<div class="pncp-inline-warning">';
+						self::checkbox( $s, 'trust_any_proxy', __( 'Trust every request (1.4 behaviour, insecure)', 'scrapelock' ), __( 'On because this is how version 1.4 worked. Fill in your proxies below and uncheck it. Once turned off, it cannot be turned on again.', 'scrapelock' ) );
+						echo '</div>';
+					}
+					self::textarea( $s, 'trusted_proxies', __( 'Other trusted proxies / load balancers (IP or CIDR, one per line):', 'scrapelock' ), '', 3 );
+					self::password( $s, 'cdn_secret', __( 'CDN shared secret (optional):', 'scrapelock' ), __( 'Only when "Real visitor IP" is a CDN header (CF-Connecting-IP, X-Real-IP, X-Forwarded-For). A CDN (Bunny, Cloudflare) is multi-tenant: its edge IPs are shared, so by default anyone could point their own CDN zone at your origin and set the real-IP header. Set a secret here and configure your CDN to send it on every request as the header “X-ScrapeLock-CDN”; the CDN’s real-IP header is then trusted only when the secret matches. Leave empty to keep the current behaviour. For best effect, also restrict your origin so it is reachable only through the CDN.', 'scrapelock' ) );
+					self::checkbox( $s, 'cdn_only', __( 'Only through the CDN: refuse (403) requests that do not bring the secret', 'scrapelock' ), __( 'Someone who finds your server\'s own address can go around the CDN and everything it blocks. With this on, every request without the secret in the X-ScrapeLock-CDN header gets a 403, also pages from the page cache when the pre-cache check is on. First make the CDN add the header to every request: in Bunny CDN, an Edge Rule with the action “Set Request Header” (X-ScrapeLock-CDN = your secret) for all requests; in Cloudflare, Rules → Transform Rules → “Modify Request Header”, set static. It can only be turned on from a request that brings the secret, so you cannot lock yourself out by mistake. Not affected: the server itself (cron, cache preload), WP-CLI. Files the web server sends without WordPress (images, CSS, JS) are not covered. If the CDN ever stops sending the header, add define( \'SCRAPELOCK_CDN_ONLY\', false ); to wp-config.php.', 'scrapelock' ) );
+					if ( '' !== trim( (string) $s['cdn_secret'] ) ) {
+						echo '<p class="description pncp-cdn-only-status">' . esc_html( PNCP_Origin::has_secret( (string) $s['cdn_secret'] ) ? __( 'This request brought the secret: the CDN sends it.', 'scrapelock' ) : __( 'This request did not bring the secret: the CDN does not send it yet, or you opened the site around the CDN.', 'scrapelock' ) ) . '</p>';
+					}
+					if ( defined( 'SCRAPELOCK_CDN_ONLY' ) && ! SCRAPELOCK_CDN_ONLY ) {
+						echo '<p class="description">' . esc_html__( 'Turned off in wp-config.php (SCRAPELOCK_CDN_ONLY).', 'scrapelock' ) . '</p>';
+					}
+					?>
+					<p class="description">
+						<?php
+						esc_html_e( 'What the server sees on this request:', 'scrapelock' );
+						echo '<br><code>REMOTE_ADDR = ' . esc_html( PNCP_Ip::remote_addr() ) . '</code>';
+						foreach ( PNCP_Ip::ip_headers() as $key ) {
+							if ( ! empty( $_SERVER[ $key ] ) ) {
+								echo '<br><code>' . esc_html( $key . ' = ' . sanitize_text_field( wp_unslash( $_SERVER[ $key ] ) ) ) . '</code>';
+							}
+						}
+						echo '<br>' . esc_html__( 'Trusted proxy:', 'scrapelock' ) . ' <code>' . esc_html( PNCP_Ip::is_trusted_proxy( PNCP_Ip::remote_addr(), $s, (string) $s['ip_header'] ) ? __( 'yes', 'scrapelock' ) : __( 'no', 'scrapelock' ) ) . '</code>';
+						echo '<br>' . esc_html__( 'IP the plugin uses now:', 'scrapelock' ) . ' <code>' . esc_html( PNCP_Ip::client_ip() ) . '</code>';
+						?>
+					</p>
+				</td>
+			</tr>
+			<tr id="pncp-sec-early">
+				<th scope="row"><?php esc_html_e( 'Early checks', 'scrapelock' ); ?></th>
+				<td>
+					<?php
+					self::checkbox( $s, 'early_mode', __( 'Early check: block known bots before the theme and the other plugins load', 'scrapelock' ), __( 'Adds the small file wp-content/mu-plugins/scrapelock-early.php, which stops blocked IPs and referrers, temporarily blocked IPs and User-Agents in the bot list with less server load. Search engines, logged-in users, forms and feeds are left to the normal check. It is removed when you turn this off or deactivate the plugin.', 'scrapelock' ) );
+					if ( ! empty( $s['early_mode'] ) && ! PNCP_Early::installed() ) {
+						echo '<p class="pncp-inline-warning">' . esc_html__( 'The file could not be created (the server does not allow direct file writes to wp-content/mu-plugins). The normal check works as before.', 'scrapelock' ) . '</p>';
+					}
+					if ( ! is_multisite() ) {
+						self::checkbox( $s, 'precheck', __( 'Pre-cache check: apply the page limit and blocks also to pages served from the page cache', 'scrapelock' ), __( 'Page caches such as WP Rocket serve stored pages before any plugin loads, so a bot that looks like a browser could read them without a limit. This adds one line at the top of wp-config.php that loads a small check before the cache: always-blocked IPs, temporarily blocked IPs and the “Pages per minute” limit. Counters are kept in APCu or in a folder of the uploads directory (uploads/scrapelock). Search engines, logged-in users, forms, wp-admin and the REST API are left to the normal check. The line and the files are removed when you turn this off or deactivate the plugin.', 'scrapelock' ) );
+						self::render_precheck_status( $s );
+					}
+					?>
+				</td>
+			</tr>
+			</table>
+		</details>
 		<?php
-		self::form_close();
+		self::form_close( false );
+		// Blocking at the CDN has a form of its own (the API token never goes through the settings form), so it
+		// is folded separately, after the settings form and its Save button, and says that it saves only itself.
+		$edge   = PNCP_Edge::state();
+		$usable = PNCP_Edge::usable();
+		// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Only decides whether a part is shown open.
+		$message = isset( $_GET['pncp_message'] ) ? sanitize_key( wp_unslash( $_GET['pncp_message'] ) ) : '';
+		$open    = 0 === strpos( $message, 'edge' ) || ( $usable && ( '' !== $edge['error'] || ! empty( $s['trust_any_proxy'] ) ) );
+		printf(
+			'<details class="pncp-advanced" id="pncp-sec-edge"%1$s><summary><h2 class="pncp-advanced__title">%2$s</h2> <span class="pncp-advanced__state">%3$s</span></summary>',
+			$open ? ' open' : '',
+			esc_html__( 'Blocking at the CDN (advanced)', 'scrapelock' ),
+			esc_html(
+				$usable
+					/* translators: 1: CDN name, 2: number of addresses */
+					? sprintf( _n( '%1$s: %2$s address blocked now', '%1$s: %2$s addresses blocked now', PNCP_Edge::count(), 'scrapelock' ), PNCP_Edge::providers()[ PNCP_Edge::config()['provider'] ], number_format_i18n( PNCP_Edge::count() ) )
+					: __( 'Off', 'scrapelock' )
+			)
+		);
 		self::render_edge( $s );
+		echo '</details>';
 		self::render_ip_lists();
 	}
 
@@ -896,7 +1302,7 @@ final class PNCP_Admin {
 		$state  = PNCP_Edge::state();
 		$locked = PNCP_Lockdown::is_locked();
 		?>
-		<h2 id="pncp-sec-edge"><?php esc_html_e( 'Blocking at the CDN', 'scrapelock' ); ?></h2>
+		<p class="description pncp-edge-own-save"><strong><?php esc_html_e( 'This part has its own button: it saves only the connection to the CDN, not the settings above.', 'scrapelock' ); ?></strong></p>
 		<p class="description pncp-edge-intro"><?php esc_html_e( 'The IPs ScrapeLock blocks temporarily are also blocked by your CDN, with your own account. A scraper that keeps going is then stopped at the CDN, before its requests reach your server: no PHP, no database, no bandwidth. Each block is removed when the temporary block ends. Only the blocked addresses are sent, with the reason and the end time; nothing about your visitors or content.', 'scrapelock' ); ?></p>
 		<?php
 		if ( $locked ) {
@@ -963,6 +1369,16 @@ final class PNCP_Admin {
 		if ( '' !== $state['error'] ) {
 			/* translators: 1: date and time, 2: error message */
 			echo '<li class="pncp-edge-error"><strong>' . esc_html( sprintf( __( 'Last error (%1$s): %2$s', 'scrapelock' ), wp_date( get_option( 'date_format' ) . ' ' . get_option( 'time_format' ), $state['error_time'] ), $state['error'] ) ) . '</strong></li>';
+		}
+		$dropped = array();
+		foreach ( $state['dropped'] as $item ) {
+			if ( isset( $item['key'], $item['time'] ) && (int) $item['time'] > time() - 30 * DAY_IN_SECONDS ) {
+				$dropped[] = (string) $item['key'];
+			}
+		}
+		if ( $dropped ) {
+			/* translators: %s: list of IP addresses */
+			echo '<li class="pncp-edge-error">' . esc_html( sprintf( __( 'These blocks could not be removed at the CDN by ScrapeLock; remove them in the CDN dashboard: %s', 'scrapelock' ), implode( ', ', array_slice( array_unique( $dropped ), 0, 20 ) ) ) ) . '</li>';
 		}
 		if ( 'bunny' === $c['provider'] ) {
 			echo '<li>' . esc_html__( 'Bunny CDN blocks single addresses: a blocked IPv6 network (/64) stays blocked by ScrapeLock only.', 'scrapelock' ) . '</li>';
@@ -1611,13 +2027,73 @@ final class PNCP_Admin {
 	 */
 	private static function tab_log( $s ) {
 		PNCP_Precheck::import_events(); // Blocks of the pre-cache check since the last hourly import.
-		$summary = PNCP_Log::summary( 24 );
+		// Which entries are shown: all, the real blocks, or the "would block" entries of "Monitor only".
+		// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Only selects a view.
+		$view  = isset( $_GET['log_view'] ) ? sanitize_key( wp_unslash( $_GET['log_view'] ) ) : 'all';
+		$view  = in_array( $view, array( 'all', 'blocked', 'monitor' ), true ) ? $view : 'all';
+		$which = 'monitor' === $view ? 'monitor' : 'blocked';
+		// The figures are counted at most every 5 minutes (they are grouped queries over days of rows).
+		$cached  = PNCP_Log::summary_cached( 24, $which );
+		$summary = $cached['value'];
+		$would   = 'monitor' === $view ? $summary : PNCP_Log::summary_cached( 24, 'monitor' )['value'];
 		$reasons = PNCP_Log::reasons();
 		$bans    = PNCP_Log::active_bans();
 		$format  = get_option( 'date_format' ) . ' ' . get_option( 'time_format' );
+		if ( ! empty( $s['enabled'] ) && PNCP_Options::monitoring( $s ) ) :
+			?>
+			<div class="pncp-monitor-box notice notice-warning inline">
+				<p><strong><?php echo esc_html( self::monitor_label( $s ) ); ?></strong></p>
+				<p><?php esc_html_e( 'Requests that the settings would refuse are let through and logged as “Would block”. Check them below: an app, a feed reader or a service you rely on should be added to “Always allowed” before blocking starts.', 'scrapelock' ); ?></p>
+				<?php PNCP_Status::enforce_form(); ?>
+			</div>
+			<?php
+		endif;
+		$views = array(
+			'all'     => __( 'All events', 'scrapelock' ),
+			'blocked' => __( 'Blocked', 'scrapelock' ),
+			'monitor' => __( 'Would block (Monitor only)', 'scrapelock' ),
+		);
+		echo '<ul class="subsubsub pncp-log-views">';
+		$last = array_key_last( $views );
+		foreach ( $views as $key => $label ) {
+			printf(
+				'<li><a href="%1$s"%2$s>%3$s</a>%4$s</li>',
+				esc_url( PNCP_Status::log_url( $key ) ),
+				$view === $key ? ' class="current" aria-current="page"' : '',
+				esc_html( $label ),
+				$last === $key ? '' : ' |'
+			);
+		}
+		echo '</ul><div class="clear"></div>';
 		?>
+		<?php self::action_form_open( 'pncp_log', 'pncp_log', 'pncp-inline-form pncp-refresh-figures' ); ?>
+			<input type="hidden" name="op" value="refresh_figures">
+			<span class="description">
+				<?php
+				echo esc_html(
+					sprintf(
+						/* translators: %s: time */
+						__( 'Figures counted at %s (they are counted again every 5 minutes).', 'scrapelock' ),
+						wp_date( get_option( 'time_format' ), (int) $cached['time'] )
+					)
+				);
+				?>
+			</span>
+			<button type="submit" class="button button-small"><?php esc_html_e( 'Refresh', 'scrapelock' ); ?></button>
+		</form>
 		<h2><?php esc_html_e( 'Last 24 hours', 'scrapelock' ); ?></h2>
-		<p class="pncp-big-number"><?php echo esc_html( sprintf( /* translators: %s: count */ __( '%s blocked requests', 'scrapelock' ), number_format_i18n( $summary['total'] ) ) ); ?></p>
+		<?php if ( 'monitor' === $view ) : ?>
+			<p class="pncp-big-number"><?php echo esc_html( sprintf( /* translators: %s: count */ __( '%s requests would have been blocked', 'scrapelock' ), number_format_i18n( $summary['total'] ) ) ); ?></p>
+		<?php else : ?>
+			<p class="pncp-big-number"><?php echo esc_html( sprintf( /* translators: %s: count */ __( '%s blocked requests', 'scrapelock' ), number_format_i18n( $summary['total'] ) ) ); ?></p>
+			<?php if ( $would['total'] > 0 ) : ?>
+				<p>
+					<a href="<?php echo esc_url( PNCP_Status::log_url( 'monitor' ) ); ?>">
+						<?php echo esc_html( sprintf( /* translators: %s: count */ __( '%s more would have been blocked (Monitor only)', 'scrapelock' ), number_format_i18n( $would['total'] ) ) ); ?>
+					</a>
+				</p>
+			<?php endif; ?>
+		<?php endif; ?>
 		<div class="pncp-cards">
 			<section class="pncp-card">
 				<h3><?php esc_html_e( 'By reason', 'scrapelock' ); ?></h3>
@@ -1642,7 +2118,7 @@ final class PNCP_Admin {
 			168 => __( 'Last 7 days', 'scrapelock' ),
 		);
 		foreach ( $periods as $hours => $period ) :
-			$top = PNCP_Log::top_paths( $hours );
+			$top = PNCP_Log::top_paths_cached( $hours, $which )['value'];
 			?>
 			<h3><?php echo esc_html( $period ); ?></h3>
 			<div class="pncp-cards">
@@ -1654,7 +2130,7 @@ final class PNCP_Admin {
 					<h4><?php esc_html_e( 'Addresses that do not exist', 'scrapelock' ); ?></h4>
 					<?php self::path_table( $top['unknown'] ); ?>
 					<?php if ( $top['unknown'] ) : ?>
-						<p class="description"><?php esc_html_e( 'A real page here? Pages of plugins that WordPress does not know (e.g. a community or forum) count as “Pages” when you add their prefix in “Content addresses” (Bots and limits tab).', 'scrapelock' ); ?></p>
+						<p class="description"><?php esc_html_e( 'A real page here? Pages of plugins that WordPress does not know (e.g. a community or forum) count as “Pages” when you add their prefix in “Content addresses” (“Log settings”, at the bottom of this tab).', 'scrapelock' ); ?></p>
 					<?php endif; ?>
 				</section>
 				<section class="pncp-card">
@@ -1664,7 +2140,7 @@ final class PNCP_Admin {
 			</div>
 		<?php endforeach; ?>
 		<?php if ( 7 > (int) $s['log_retention'] ) : ?>
-			<p class="description"><?php esc_html_e( 'The log is kept for 1 day, so the 7-day view shows only the last day. Change “Keep the block log for” in the “Bots and limits” tab to see more.', 'scrapelock' ); ?></p>
+			<p class="description"><?php esc_html_e( 'The log is kept for 1 day, so the 7-day view shows only the last day. Change “Keep the block log for” under “Log settings” below to see more.', 'scrapelock' ); ?></p>
 		<?php endif; ?>
 
 		<h2><?php esc_html_e( 'IPs blocked now', 'scrapelock' ); ?></h2>
@@ -1707,7 +2183,7 @@ final class PNCP_Admin {
 		<?php self::render_repeat_offenders( $format, $reasons ); ?>
 
 		<h2><?php esc_html_e( 'Latest events', 'scrapelock' ); ?></h2>
-		<?php $rows = PNCP_Log::recent( 100 ); ?>
+		<?php $rows = PNCP_Log::recent( 100, $view ); ?>
 		<?php if ( ! $rows ) : ?>
 			<p><?php esc_html_e( 'No events.', 'scrapelock' ); ?></p>
 		<?php else : ?>
@@ -1723,27 +2199,57 @@ final class PNCP_Admin {
 					</tr>
 				</thead>
 				<tbody>
-					<?php $buttons = array(); ?>
+					<?php
+					$buttons       = array();
+					$allow_buttons = array();
+					?>
 					<?php foreach ( $rows as $row ) : ?>
 						<tr>
 							<td><?php echo esc_html( wp_date( $format, (int) strtotime( $row['created'] . ' UTC' ) ) ); ?></td>
 							<td>
-								<code><?php echo esc_html( $row['ip'] ); ?></code>
+								<?php if ( '' === (string) $row['ip'] ) : ?>
+									<?php // Events added up because the log reached its limit of new rows for that minute (PNCP_Log::add()). ?>
+									<span class="pncp-badge" title="<?php esc_attr_e( 'Too many different IPs in this minute: their requests are added up in one row.', 'scrapelock' ); ?>"><?php esc_html_e( 'Many IPs', 'scrapelock' ); ?></span>
+								<?php else : ?>
+									<code><?php echo esc_html( $row['ip'] ); ?></code>
+								<?php endif; ?>
 								<?php
 								// The button once per IP: the first (most recent) row of each.
-								if ( ! isset( $buttons[ $row['ip'] ] ) ) {
+								if ( '' !== (string) $row['ip'] && ! isset( $buttons[ $row['ip'] ] ) ) {
 									$buttons[ $row['ip'] ] = true;
 									echo '<br>';
 									self::block_permanently_button( (string) $row['ip'] );
 								}
 								?>
 							</td>
-							<td><?php echo esc_html( ( isset( $reasons[ $row['reason'] ] ) ? $reasons[ $row['reason'] ] : $row['reason'] ) . ' (' . $row['code'] . ')' ); ?></td>
+							<td>
+								<?php
+								$label = isset( $reasons[ $row['reason'] ] ) ? $reasons[ $row['reason'] ] : $row['reason'];
+								// A "would block" entry of "Monitor only" was let through: it has no status code.
+								if ( PNCP_Log::is_monitor_row( $row ) ) {
+									echo esc_html( $label ) . ' <span class="pncp-badge pncp-badge--monitor">' . esc_html__( 'Would block', 'scrapelock' ) . '</span>';
+								} else {
+									echo esc_html(
+										sprintf(
+											/* translators: 1: reason the request was blocked, 2: HTTP status code (e.g. 403) */
+											__( '%1$s (%2$s)', 'scrapelock' ),
+											$label,
+											$row['code']
+										)
+									);
+								}
+								?>
+							</td>
 							<td><?php echo esc_html( number_format_i18n( (int) $row['hits'] ) ); ?></td>
 							<td><code><?php echo esc_html( PNCP_Log::display_path( $row['path'] ) ); ?></code></td>
 							<td class="pncp-ua">
 								<?php
 								echo esc_html( $row['ua'] );
+								// The allow button once per User-Agent, like the block button once per IP.
+								if ( 'bot_ua' === $row['reason'] && '' !== trim( (string) $row['ua'] ) && ! isset( $allow_buttons[ strtolower( (string) $row['ua'] ) ] ) ) {
+									$allow_buttons[ strtolower( (string) $row['ua'] ) ] = true;
+									self::allow_ua_button( (string) $row['ua'], $s );
+								}
 								if ( isset( $row['uas'] ) && (int) $row['uas'] > 1 ) {
 									echo '<br><span class="pncp-badge">' . esc_html(
 										sprintf(
@@ -1764,9 +2270,9 @@ final class PNCP_Admin {
 			<?php
 			echo esc_html(
 				sprintf(
-					/* translators: %s: days */
-					__( 'The log is deleted automatically after %s days (setting in the “Bots and limits” tab).', 'scrapelock' ),
-					$s['log_retention']
+					/* translators: %s: number of days */
+					_n( 'The log is deleted automatically after %s day (see “Log settings” below).', 'The log is deleted automatically after %s days (see “Log settings” below).', (int) $s['log_retention'], 'scrapelock' ),
+					number_format_i18n( (int) $s['log_retention'] )
 				)
 			);
 			?>
@@ -1776,6 +2282,45 @@ final class PNCP_Admin {
 			<?php submit_button( __( 'Delete log', 'scrapelock' ), 'delete', 'submit', false ); ?>
 		</form>
 		<?php
+		self::render_log_settings( $s );
+	}
+
+	/**
+	 * "Log settings" at the bottom of the Log tab: how long the log is kept, and the content addresses that
+	 * only change how the log groups blocked requests. A form of its own (section "log"): saving it changes
+	 * these two settings and keeps every other one as it is.
+	 *
+	 * @param array<string, mixed> $s Settings.
+	 */
+	private static function render_log_settings( $s ) {
+		?>
+		<h2 id="pncp-sec-log-settings"><?php esc_html_e( 'Log settings', 'scrapelock' ); ?></h2>
+		<?php self::form_open( 'log' ); ?>
+		<tr>
+			<th scope="row"><label for="pncp-log_retention"><?php esc_html_e( 'Keep the block log for', 'scrapelock' ); ?></label></th>
+			<td>
+				<?php
+				self::select(
+					$s,
+					'log_retention',
+					array(
+						'1'  => __( '1 day', 'scrapelock' ),
+						'7'  => __( '7 days', 'scrapelock' ),
+						'30' => __( '30 days', 'scrapelock' ),
+					),
+					__( 'The log keeps IP and User-Agent, i.e. personal data (GDPR). It is deleted automatically.', 'scrapelock' )
+				);
+				?>
+			</td>
+		</tr>
+		<tr id="pncp-sec-content-paths">
+			<th scope="row"><?php esc_html_e( 'Content addresses', 'scrapelock' ); ?></th>
+			<td>
+				<?php self::textarea( $s, 'content_paths', __( 'Content addresses: path prefixes of pages that other plugins show, one per line, e.g. /hub/space/', 'scrapelock' ), __( 'Only for the log: blocked requests under these addresses count as “Pages”. Routes that plugins register as WordPress rewrite rules, and all posts, pages, products and terms, are found without this. Nothing is blocked or allowed because of it.', 'scrapelock' ), 2 ); ?>
+			</td>
+		</tr>
+		<?php
+		self::form_close();
 	}
 
 	/**
@@ -1856,6 +2401,50 @@ final class PNCP_Admin {
 	}
 
 	/**
+	 * The "Always allow this User-Agent" button for a request blocked by the bot list: adds a token of the
+	 * User-Agent to "Always allowed User-Agents". The token is suggested (the bot-list entry it matched, e.g.
+	 * "Dart/" or "okhttp") and can be edited before it is added; the handler refuses tokens that would also
+	 * match ordinary browsers. Replaced by a note when the User-Agent is already allowed.
+	 *
+	 * @param string               $ua User-Agent of the log row.
+	 * @param array<string, mixed> $s  Settings.
+	 */
+	private static function allow_ua_button( $ua, $s ) {
+		if ( PNCP_Bots::allow_list_match( $ua, '', array( 'allow_list' => self::unpinned_allow_list( $s ) ) ) ) {
+			echo '<br><span class="pncp-badge">' . esc_html__( 'Always allowed now', 'scrapelock' ) . '</span>';
+			return;
+		}
+		$token = PNCP_Options::allow_token_for( $ua, $s );
+		$id    = 'pncp-allow-ua-' . substr( md5( $ua ), 0, 10 );
+		echo '<br>';
+		self::action_form_open( 'pncp_log', 'pncp_log', 'pncp-inline-form pncp-allow-ua-form' );
+		?>
+			<input type="hidden" name="op" value="allow_ua">
+			<label class="screen-reader-text" for="<?php echo esc_attr( $id ); ?>"><?php esc_html_e( 'Part of the User-Agent to allow', 'scrapelock' ); ?></label>
+			<input type="text" class="small-text pncp-allow-ua-token" id="<?php echo esc_attr( $id ); ?>" name="token" value="<?php echo esc_attr( $token ); ?>" maxlength="100" size="16">
+			<button type="submit" class="button button-small"><?php esc_html_e( 'Always allow this User-Agent', 'scrapelock' ); ?></button>
+		</form>
+		<?php
+	}
+
+	/**
+	 * The always-allowed User-Agents without the entries tied to IPs (for the "already allowed" note: a log row
+	 * keeps no proof of where a pinned entry would have come from).
+	 *
+	 * @param array<string, mixed> $s Settings.
+	 * @return string
+	 */
+	private static function unpinned_allow_list( $s ) {
+		$out = array();
+		foreach ( PNCP_Options::parse_list( (string) $s['allow_list'] ) as $entry ) {
+			if ( false === strpos( $entry, '@' ) ) {
+				$out[] = $entry;
+			}
+		}
+		return implode( "\n", $out );
+	}
+
+	/**
 	 * Persistent IPs of the last 7 days (two or more temporary blocks, or many blocked requests), with the
 	 * "Block permanently" button.
 	 *
@@ -1863,7 +2452,7 @@ final class PNCP_Admin {
 	 * @param array<string, string> $reasons Reason labels.
 	 */
 	private static function render_repeat_offenders( $format, $reasons ) {
-		$rows = PNCP_Log::repeat_offenders();
+		$rows = PNCP_Log::repeat_offenders_cached()['value'];
 		?>
 		<h2><?php esc_html_e( 'Persistent IPs (last 7 days)', 'scrapelock' ); ?></h2>
 		<p class="description">
@@ -1981,15 +2570,19 @@ final class PNCP_Admin {
 	/**
 	 * Redirects back to a tab with a notice.
 	 *
-	 * @param string $tab     Tab.
-	 * @param string $message Notice code.
+	 * @param string                $tab     Tab.
+	 * @param string                $message Notice code.
+	 * @param array<string, string> $args    More query arguments.
 	 */
-	private static function back( $tab, $message ) {
+	private static function back( $tab, $message, $args = array() ) {
 		wp_safe_redirect(
 			PNCP_Status::settings_url(
-				array(
-					'tab'          => $tab,
-					'pncp_message' => $message,
+				array_merge(
+					array(
+						'tab'          => $tab,
+						'pncp_message' => $message,
+					),
+					$args
 				)
 			)
 		);
@@ -2004,12 +2597,102 @@ final class PNCP_Admin {
 		self::verify( 'pncp_profile' );
 		$profile  = isset( $_POST['profile'] ) ? sanitize_key( wp_unslash( $_POST['profile'] ) ) : '';
 		$profiles = PNCP_Options::profiles();
-		if ( ! isset( $profiles[ $profile ] ) ) {
+		if ( ! isset( $profiles[ $profile ] ) || PNCP_Lockdown::is_locked() ) {
 			self::back( 'general', 'error' );
 		}
+		// The settings as they were are kept first, so "Undo" in the notice can put them back.
+		$undo = PNCP_Settings_Io::backup( 'profile:' . $profile );
 		update_option( PNCP_OPTION, array_merge( PNCP_Options::stored(), $profiles[ $profile ] ) );
 		PNCP_Options::flush();
-		self::back( 'general', 'profile' );
+		self::back( 'general', 'profile', array( 'pncp_undo' => $undo ) );
+		// phpcs:enable
+	}
+
+	/**
+	 * Export, import (check, then apply or cancel), reset a tab and restore an earlier version.
+	 */
+	public static function handle_settings() {
+		// phpcs:disable WordPress.Security.NonceVerification.Missing -- The nonce is checked in verify().
+		self::verify( 'pncp_settings' );
+		$op = isset( $_POST['op'] ) ? sanitize_key( wp_unslash( $_POST['op'] ) ) : '';
+		if ( 'export' === $op ) {
+			$host = sanitize_file_name( (string) wp_parse_url( home_url(), PHP_URL_HOST ) );
+			nocache_headers();
+			header( 'Content-Type: application/json; charset=utf-8' );
+			header( 'Content-Disposition: attachment; filename="scrapelock-settings-' . $host . '-' . gmdate( 'Y-m-d' ) . '.json"' );
+			header( 'X-Content-Type-Options: nosniff' );
+			echo PNCP_Settings_Io::export_json(); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- JSON file download, not HTML.
+			exit;
+		}
+		if ( PNCP_Lockdown::is_locked() ) {
+			self::back( 'general', 'error' );
+		}
+		$key = 'pncp_import_' . get_current_user_id();
+		switch ( $op ) {
+			case 'import_preview':
+				// phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- The file is checked below and read as JSON only.
+				$file = isset( $_FILES['pncp_import_file'] ) && is_array( $_FILES['pncp_import_file'] ) ? $_FILES['pncp_import_file'] : array();
+				if ( empty( $file['tmp_name'] ) || ! isset( $file['error'] ) || UPLOAD_ERR_OK !== (int) $file['error'] || ! is_uploaded_file( $file['tmp_name'] ) ) {
+					self::back( 'general', 'import_nofile' );
+				}
+				if ( (int) $file['size'] > PNCP_Settings_Io::MAX_FILE ) {
+					self::back( 'general', 'import_invalid' );
+				}
+				// phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- A just-uploaded temporary file.
+				$parsed = PNCP_Settings_Io::parse( (string) file_get_contents( $file['tmp_name'] ) );
+				if ( is_wp_error( $parsed ) ) {
+					self::back( 'general', 'import_invalid' );
+				}
+				// Only the values read from the file are kept until the confirmation, never the file itself.
+				$parsed['name'] = isset( $file['name'] ) ? sanitize_file_name( wp_unslash( $file['name'] ) ) : '';
+				set_transient( $key, $parsed, 15 * MINUTE_IN_SECONDS );
+				wp_safe_redirect(
+					PNCP_Status::settings_url(
+						array(
+							'tab'         => 'general',
+							'pncp_import' => 1,
+						)
+					)
+				);
+				exit;
+			case 'import_apply':
+				$data = get_transient( $key );
+				delete_transient( $key );
+				if ( ! is_array( $data ) || empty( $data['settings'] ) ) {
+					self::back( 'general', 'import_expired' );
+				}
+				$result = PNCP_Settings_Io::apply( PNCP_Settings_Io::prepare( $data['settings'] ), 'import' );
+				if ( is_wp_error( $result ) ) {
+					self::back( 'general', 'error' );
+				}
+				self::back( 'general', '' === $result ? 'unchanged' : 'imported', '' === $result ? array() : array( 'pncp_undo' => $result ) );
+				break;
+			case 'import_cancel':
+				delete_transient( $key );
+				self::back( 'general', 'import_cancelled' );
+				break;
+			case 'reset':
+				$section = isset( $_POST['section'] ) ? sanitize_key( wp_unslash( $_POST['section'] ) ) : '';
+				if ( ! isset( PNCP_Settings_Io::tab_names()[ $section ] ) ) {
+					self::back( 'general', 'error' );
+				}
+				$result = PNCP_Settings_Io::apply( PNCP_Settings_Io::prepare( PNCP_Settings_Io::section_defaults( $section ) ), 'reset:' . $section );
+				if ( is_wp_error( $result ) ) {
+					self::back( $section, 'error' );
+				}
+				self::back( $section, '' === $result ? 'unchanged' : 'reset', '' === $result ? array() : array( 'pncp_undo' => $result ) );
+				break;
+			case 'restore':
+				$id     = isset( $_POST['id'] ) ? sanitize_key( wp_unslash( $_POST['id'] ) ) : '';
+				$result = PNCP_Settings_Io::restore( $id );
+				if ( is_wp_error( $result ) ) {
+					self::back( 'general', 'restore_missing' );
+				}
+				$tab = isset( $_POST['tab'] ) ? sanitize_key( wp_unslash( $_POST['tab'] ) ) : 'general';
+				self::back( isset( PNCP_Settings_Io::tab_names()[ $tab ] ) ? $tab : 'general', 'restored', array( 'pncp_undo' => $result ) );
+				break;
+		}
+		self::back( 'general', 'error' );
 		// phpcs:enable
 	}
 
@@ -2062,16 +2745,25 @@ final class PNCP_Admin {
 				$result = PNCP_Options::block_ip_permanently( $ip );
 				self::back( 'log', 'perm_' . $result );
 				break;
+			case 'allow_ua':
+				$token = isset( $_POST['token'] ) ? sanitize_text_field( wp_unslash( $_POST['token'] ) ) : '';
+				self::back( 'log', 'allow_ua_' . PNCP_Options::allow_user_agent( $token ) );
+				break;
 			case 'clear_log':
 				PNCP_Log::clear();
 				self::back( 'log', 'cleared' );
+				break;
+			case 'refresh_figures':
+				PNCP_Log::flush_aggregates();
+				self::back( 'log', 'figures' );
 				break;
 			case 'refresh_lists':
 				$result = PNCP_Ip::refresh_lists();
 				self::back( 'bots', in_array( 0, $result, true ) ? 'lists_partial' : 'lists' );
 				break;
 			case 'refresh_geo':
-				self::back( 'bots', PNCP_Geo::refresh() ? 'geo' : 'geo_failed' );
+				// Only while the setting is on: otherwise the files would be deleted again by the next daily task.
+				self::back( 'bots', PNCP_Geo::needed() && PNCP_Geo::refresh() ? 'geo' : 'geo_failed' );
 				break;
 		}
 		self::back( 'general', 'error' );
@@ -2178,13 +2870,27 @@ final class PNCP_Admin {
 		$message = $ours && isset( $_GET['pncp_message'] ) ? sanitize_key( wp_unslash( $_GET['pncp_message'] ) ) : '';
 		$texts   = array(
 			'profile'          => array( 'success', __( 'Preset applied.', 'scrapelock' ) ),
+			'imported'         => array( 'success', __( 'Settings imported.', 'scrapelock' ) ),
+			'reset'            => array( 'success', __( 'The tab was reset to its defaults.', 'scrapelock' ) ),
+			'restored'         => array( 'success', __( 'The earlier settings were restored.', 'scrapelock' ) ),
+			'unchanged'        => array( 'info', __( 'Nothing changed: the settings were already like that.', 'scrapelock' ) ),
+			'import_cancelled' => array( 'info', __( 'Import cancelled. Nothing changed.', 'scrapelock' ) ),
+			'import_nofile'    => array( 'error', __( 'No file was received. Choose the JSON file exported from ScrapeLock and try again.', 'scrapelock' ) ),
+			'import_invalid'   => array( 'error', __( 'The file is not a ScrapeLock settings export (or it is damaged). Nothing changed.', 'scrapelock' ) ),
+			'import_expired'   => array( 'error', __( 'The checked file is no longer available (it is kept for 15 minutes). Choose it again. Nothing changed.', 'scrapelock' ) ),
+			'restore_missing'  => array( 'error', __( 'This saved version no longer exists (only the last 5 are kept). Nothing changed.', 'scrapelock' ) ),
 			'token'            => array( 'success', __( 'New token created.', 'scrapelock' ) ),
 			'revoked'          => array( 'success', __( 'Previous token revoked.', 'scrapelock' ) ),
 			'unbanned'         => array( 'success', __( 'Block lifted.', 'scrapelock' ) ),
 			'cleared'          => array( 'success', __( 'Log deleted.', 'scrapelock' ) ),
+			'figures'          => array( 'success', __( 'Figures counted again.', 'scrapelock' ) ),
 			'perm_added'       => array( 'success', __( 'The IP was added to the always-blocked IPs (“Bots and limits” → “Always blocked”). You can remove it there.', 'scrapelock' ) ),
 			'perm_exists'      => array( 'info', __( 'The IP is already in the always-blocked IPs.', 'scrapelock' ) ),
 			'perm_full'        => array( 'error', __( 'The always-blocked IPs already have 200 lines. Combine addresses into CIDR ranges there first.', 'scrapelock' ) ),
+			'allow_ua_added'   => array( 'success', __( 'The User-Agent was added to “Always allowed User-Agents” (“Bots and limits” → “Always allowed”). You can remove it there. The page limits still apply to it.', 'scrapelock' ) ),
+			'allow_ua_exists'  => array( 'info', __( 'This User-Agent is already always allowed.', 'scrapelock' ) ),
+			'allow_ua_full'    => array( 'error', __( 'The always-allowed User-Agents already have 200 lines. Remove some there first.', 'scrapelock' ) ),
+			'allow_ua_refused' => array( 'error', __( 'This User-Agent part was not added: it is empty, too short or too generic (it would also match ordinary browsers, e.g. “Mozilla” or “Chrome”), or contains “@”. Use the name of the app or service, e.g. “Dart/” or “okhttp”.', 'scrapelock' ) ),
 			'perm_refused'     => array( 'error', __( 'This IP cannot be blocked permanently: it is the server itself, your own IP, a private address, an always-allowed IP or an address in an official list (Google, Bing, AI search services, Cloudflare, Bunny CDN).', 'scrapelock' ) ),
 			'lists'            => array( 'success', __( 'IP lists refreshed.', 'scrapelock' ) ),
 			'geo'              => array( 'success', __( 'Country database downloaded.', 'scrapelock' ) ),
@@ -2209,7 +2915,17 @@ final class PNCP_Admin {
 				delete_transient( 'pncp_edge_test_' . get_current_user_id() );
 				$text = trim( $text . ( is_string( $detail ) && '' !== $detail ? ' ' . $detail : '' ) );
 			}
-			if ( '' !== $text ) {
+			// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Only displays a notice.
+			$undo = isset( $_GET['pncp_undo'] ) ? sanitize_key( wp_unslash( $_GET['pncp_undo'] ) ) : '';
+			if ( '' !== $undo && in_array( $message, array( 'profile', 'imported', 'reset', 'restored' ), true ) && PNCP_Settings_Io::find( $undo ) ) {
+				// "Undo" puts back the version saved just before the change.
+				printf( '<div class="notice notice-%1$s is-dismissible pncp-undo-notice"><p>%2$s</p>', esc_attr( $texts[ $message ][0] ), esc_html( $text ) );
+				self::action_form_open( 'pncp_settings', 'pncp_settings', 'pncp-inline-form' );
+				printf( '<input type="hidden" name="op" value="restore"><input type="hidden" name="id" value="%s">', esc_attr( $undo ) );
+				// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Only selects the tab to return to.
+				printf( '<input type="hidden" name="tab" value="%s">', esc_attr( isset( $_GET['tab'] ) ? sanitize_key( wp_unslash( $_GET['tab'] ) ) : 'general' ) );
+				echo '<p><button type="submit" class="button">' . esc_html__( 'Undo', 'scrapelock' ) . '</button></p></form></div>';
+			} elseif ( '' !== $text ) {
 				printf( '<div class="notice notice-%1$s is-dismissible"><p>%2$s</p></div>', esc_attr( $texts[ $message ][0] ), esc_html( $text ) );
 			}
 		}

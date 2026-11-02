@@ -15,6 +15,12 @@ defined( 'ABSPATH' ) || exit;
 final class PNCP_Abilities {
 
 	/**
+	 * The longest Emergency Mode an agent can start through the Abilities API (hours). The ScrapeLock page
+	 * and WP-CLI allow up to 72.
+	 */
+	const MAX_EMERGENCY_HOURS = 24;
+
+	/**
 	 * Registers the hooks (nothing before WordPress 6.9).
 	 */
 	public static function init() {
@@ -63,9 +69,9 @@ final class PNCP_Abilities {
 					'properties'           => array(
 						'hours' => array(
 							'type'        => 'integer',
-							'description' => __( 'Period in hours (1 to 720).', 'scrapelock' ),
+							'description' => __( 'Period in hours (1 to 168). Longer periods are counted as 168 hours (7 days).', 'scrapelock' ),
 							'minimum'     => 1,
-							'maximum'     => 720,
+							'maximum'     => 720, // Still accepted, so callers written for 720 keep working; capped in get_summary().
 							'default'     => 24,
 						),
 					),
@@ -82,6 +88,10 @@ final class PNCP_Abilities {
 						'lockdown'         => array(
 							'type' => 'string',
 							'enum' => array( 'not_set_up', 'unlocked', 'locked', 'off_from_server' ),
+						),
+						'monitor'          => array(
+							'type'        => 'boolean',
+							'description' => __( 'Monitor only: requests are logged as “would block” and let through; blocked_requests then counts those.', 'scrapelock' ),
 						),
 						'blocked_ips'      => array( 'type' => 'integer' ),
 						'hours'            => array( 'type' => 'integer' ),
@@ -173,16 +183,16 @@ final class PNCP_Abilities {
 			'scrapelock/emergency-mode',
 			array(
 				'label'               => __( 'Start or stop Emergency Mode', 'scrapelock' ),
-				'description'         => __( 'Emergency Mode applies stricter limits and checks for a few hours, e.g. during a scraping attack. 0 hours stops it.', 'scrapelock' ),
+				'description'         => __( 'Emergency Mode applies stricter limits and checks for a few hours, e.g. during a scraping attack: real visitors and services can notice it (excerpts instead of full text in lists, stricter limits for data centers). At most 24 hours from here; 0 hours stops it.', 'scrapelock' ),
 				'category'            => 'scrapelock',
 				'input_schema'        => array(
 					'type'                 => 'object',
 					'properties'           => array(
 						'hours' => array(
 							'type'        => 'integer',
-							'description' => __( 'Hours (1 to 72), or 0 to stop.', 'scrapelock' ),
+							'description' => __( 'Hours (1 to 24), or 0 to stop.', 'scrapelock' ),
 							'minimum'     => 0,
-							'maximum'     => 72,
+							'maximum'     => self::MAX_EMERGENCY_HOURS,
 						),
 					),
 					'required'             => array( 'hours' ),
@@ -198,9 +208,10 @@ final class PNCP_Abilities {
 				'permission_callback' => array( __CLASS__, 'can_change' ),
 				'meta'                => array(
 					'show_in_rest' => true,
+					// Destructive: it changes how the whole site answers every visitor, so an agent should ask first.
 					'annotations'  => array(
 						'readonly'    => false,
-						'destructive' => false,
+						'destructive' => true,
 						'idempotent'  => false,
 					),
 				),
@@ -252,8 +263,11 @@ final class PNCP_Abilities {
 	 * @return array<string, mixed>
 	 */
 	public static function get_summary( $input = null ) {
-		$hours   = isset( $input['hours'] ) ? max( 1, min( 720, (int) $input['hours'] ) ) : 24;
-		$summary = PNCP_Log::summary( $hours );
+		// At most 7 days: longer periods are grouped queries over too many rows for a call anyone with the
+		// ability can repeat. Kept for 5 minutes, like the Log tab.
+		$hours   = isset( $input['hours'] ) ? max( 1, min( 168, (int) $input['hours'] ) ) : 24;
+		$monitor = PNCP_Options::monitoring( PNCP_Options::stored() );
+		$summary = PNCP_Log::summary_cached( $hours, $monitor ? 'monitor' : 'blocked' )['value'];
 		if ( PNCP_Lockdown::server_unlocked() ) {
 			$lockdown = 'off_from_server';
 		} elseif ( ! PNCP_Lockdown::configured() ) {
@@ -265,6 +279,7 @@ final class PNCP_Abilities {
 			'enabled'          => PNCP_Status::is_enabled(),
 			'emergency_until'  => PNCP_Options::emergency_until(),
 			'lockdown'         => $lockdown,
+			'monitor'          => $monitor,
 			'blocked_ips'      => PNCP_Log::count_bans(),
 			'hours'            => $hours,
 			'blocked_requests' => (int) $summary['total'],
@@ -331,8 +346,11 @@ final class PNCP_Abilities {
 	 */
 	public static function emergency_mode( $input ) {
 		$hours = isset( $input['hours'] ) ? (int) $input['hours'] : -1;
-		if ( $hours < 0 || $hours > 72 ) {
-			return new WP_Error( 'scrapelock_invalid_hours', __( 'Hours must be between 0 and 72.', 'scrapelock' ) );
+		// Checked here too, not only by the input schema: an agent may start it for a day at most. Longer
+		// (up to 72 hours) only from the ScrapeLock page or WP-CLI, by a person.
+		if ( $hours < 0 || $hours > self::MAX_EMERGENCY_HOURS ) {
+			/* translators: %d: hours */
+			return new WP_Error( 'scrapelock_invalid_hours', sprintf( __( 'Hours must be between 0 and %d.', 'scrapelock' ), self::MAX_EMERGENCY_HOURS ) );
 		}
 		PNCP_Options::set_emergency( $hours );
 		return array( 'emergency_until' => PNCP_Options::emergency_until() );

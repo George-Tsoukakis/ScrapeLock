@@ -29,12 +29,26 @@
 		return out;
 	}
 
-	function solve( challenge, difficulty ) {
+	/**
+	 * Finds n so that sha256( challenge + n ) starts with `difficulty` zero hex digits. On average that takes
+	 * 16^difficulty attempts, but the number varies a lot from one challenge to the next: the search gives up
+	 * only after 8 × 16^difficulty attempts (fewer than 1 in 2,900 visitors get that far) or when the challenge
+	 * is about to expire on the server (maxMs). It runs in batches of 64 and hands control back to the browser
+	 * at least every 50 ms, so scrolling and typing stay smooth.
+	 */
+	function solve( challenge, difficulty, maxMs ) {
 		var prefix = new Array( difficulty + 1 ).join( '0' );
+		var limit = 8 * Math.pow( 16, difficulty );
 		var encoder = new TextEncoder();
+		var begun = Date.now();
+		var slice = begun;
 		var n = 0;
+		function pause() {
+			return new Promise( function ( resolve ) {
+				setTimeout( resolve, 0 );
+			} );
+		}
 		function next() {
-			// Small batches, so the page stays responsive.
 			var batch = [];
 			for ( var i = 0; i < 64; i++, n++ ) {
 				batch.push( n );
@@ -51,7 +65,15 @@
 						return results[ j ];
 					}
 				}
-				return n > 1000000 ? -1 : next();
+				var now = Date.now();
+				if ( n >= limit || now - begun > maxMs ) {
+					return -1;
+				}
+				if ( now - slice >= 50 ) {
+					slice = now;
+					return pause().then( next );
+				}
+				return next();
 			} );
 		}
 		return next();
@@ -75,7 +97,11 @@
 					return;
 				}
 				var challenge = json.data.c;
-				return solve( challenge, parseInt( json.data.d, 10 ) || 3 ).then( function ( answer ) {
+				// The server's difficulty (1–8) and how long the challenge stays valid there, less a margin for
+				// sending the answer.
+				var difficulty = Math.min( 8, Math.max( 1, parseInt( json.data.d, 10 ) || 3 ) );
+				var ttl = parseInt( json.data.t, 10 ) || 300;
+				return solve( challenge, difficulty, Math.max( 10, ttl - 15 ) * 1000 ).then( function ( answer ) {
 					if ( answer < 0 ) {
 						return;
 					}

@@ -36,6 +36,66 @@ final class PNCP_Geo {
 	 */
 	public static function init() {
 		add_action( PNCP_Ip::CRON, array( __CLASS__, 'maybe_refresh' ), 20 );
+		add_action( 'update_option_' . PNCP_OPTION, array( __CLASS__, 'settings_saved' ), 10, 2 );
+	}
+
+	/**
+	 * After the settings are saved: with "Download the country database" turned off, the files are deleted, so
+	 * an old database is never used again (and does not sit in uploads for nothing).
+	 *
+	 * @param mixed $old   Previous settings (not used).
+	 * @param mixed $value New settings.
+	 */
+	public static function settings_saved( $old, $value ) {
+		unset( $old );
+		if ( is_array( $value ) && empty( $value['geo_db'] ) ) {
+			self::remove();
+		}
+	}
+
+	/**
+	 * Upgrade to 3.4: the state is autoloaded from now on (read on every request that needs a country, without
+	 * a separate query), and a database left behind while the setting is off is deleted (until 3.3 it was
+	 * still used).
+	 */
+	public static function upgrade() {
+		$stored = PNCP_Options::stored();
+		if ( empty( $stored['geo_db'] ) ) {
+			self::remove();
+			return;
+		}
+		$data = get_option( self::OPTION, false );
+		if ( false === $data ) {
+			return;
+		}
+		if ( function_exists( 'wp_set_option_autoload' ) ) {
+			wp_set_option_autoload( self::OPTION, true );
+		} else {
+			delete_option( self::OPTION );
+			add_option( self::OPTION, $data, '', true );
+		}
+	}
+
+	/**
+	 * Deletes the database: the files and the state. Nothing happens when there is none.
+	 */
+	public static function remove() {
+		if ( false !== get_option( self::OPTION, false ) ) {
+			delete_option( self::OPTION );
+		}
+		if ( self::has_files() ) {
+			self::remove_files();
+		}
+		self::reset();
+	}
+
+	/**
+	 * Are both files there?
+	 *
+	 * @return bool
+	 */
+	public static function has_files() {
+		return is_readable( self::dir() . '/v4.bin' ) && is_readable( self::dir() . '/v6.bin' );
 	}
 
 	/**
@@ -69,7 +129,8 @@ final class PNCP_Geo {
 	}
 
 	/**
-	 * State: updated (timestamp), month, v4 / v6 (number of ranges).
+	 * State: updated (timestamp), month, v4 / v6 (number of ranges). The option is small and autoloaded (since
+	 * 3.4), so reading it costs no query.
 	 *
 	 * @return array{updated:int, month:string, v4:int, v6:int}
 	 */
@@ -101,7 +162,10 @@ final class PNCP_Geo {
 		if ( '' === $country ) {
 			$country = self::from_bunny();
 		}
-		if ( '' === $country && self::status()['updated'] ) {
+		// The local database only while "Download the country database" is on: a database left from before the
+		// setting was turned off is never used (it would grow older every month). needed() comes first, so with
+		// the setting off not even the state is read.
+		if ( '' === $country && self::needed() && self::status()['updated'] ) {
 			$country = self::lookup( $ip );
 		}
 		$country            = (string) apply_filters( 'pncp_visitor_country', $country, $ip );
@@ -208,10 +272,16 @@ final class PNCP_Geo {
 	}
 
 	/**
-	 * Daily: refreshes the database if it is used and is missing or older than 28 days.
+	 * Daily: refreshes the database if it is used and is missing (never downloaded, or the files were deleted,
+	 * e.g. by a migration that skipped uploads) or older than 28 days. With the setting off, a database left
+	 * behind is deleted. With protection paused (but the setting on) it is kept and not refreshed.
 	 */
 	public static function maybe_refresh() {
-		if ( self::needed() && self::status()['updated'] < time() - 28 * DAY_IN_SECONDS ) {
+		if ( empty( PNCP_Options::stored()['geo_db'] ) ) {
+			self::remove();
+			return;
+		}
+		if ( self::needed() && ( self::status()['updated'] < time() - 28 * DAY_IN_SECONDS || ! self::has_files() ) ) {
 			self::refresh();
 		}
 	}
@@ -299,7 +369,7 @@ final class PNCP_Geo {
 				'v4'      => $count4,
 				'v6'      => $count6,
 			),
-			false
+			true // Autoloaded: read whenever a country is looked up.
 		);
 		self::reset();
 		return true;

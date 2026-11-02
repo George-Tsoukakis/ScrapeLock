@@ -295,7 +295,7 @@ final class PNCP_Precheck {
 			'trust_any'       => ! empty( $s['trust_any_proxy'] ),
 			// The explicit "Trusted proxies"; the CDN edges are trusted by the flags below, from their own sets
 			// (each list is written once). With a CDN secret set but not on the request, only these are trusted.
-			'proxies'         => self::set( PNCP_Options::parse_list( $s['trusted_proxies'] ) ),
+			'proxies'         => self::set( PNCP_Ip::trusted_ranges( $s ) ),
 			'proxies_cdn'     => array(
 				'cf'    => ! empty( $s['trust_cloudflare'] ) && in_array( $setting, array( 'cf_connecting_ip', 'x_forwarded_for' ), true ),
 				'bunny' => ! empty( $s['trust_bunny'] ) && in_array( $setting, array( 'x_real_ip', 'x_forwarded_for' ), true ),
@@ -310,6 +310,14 @@ final class PNCP_Precheck {
 			'block'           => self::set( PNCP_Options::parse_list( $s['block_ips'] ) ),
 			'crawlers'        => $crawlers,
 			'apcu'            => (bool) apply_filters( 'pncp_precheck_apcu', true ),
+			// "Monitor only": log what would be refused, refuse nothing (with the end of the first-week monitoring).
+			'monitor'         => ! empty( $s['monitor_mode'] ),
+			'monitor_until'   => (int) $s['monitor_until'],
+			// 3.4: Emergency Mode (until when, and its stricter limits): while it lasts, cached pages get the same
+			// page limit and bans as pages WordPress builds, and "Monitor only" is paused here too. It ends at its
+			// time without the file being written again.
+			'emergency_until' => PNCP_Options::emergency_until(),
+			'emergency'       => self::emergency_limits( $s ),
 		);
 		/**
 		 * Filters the configuration of the pre-cache check before it is written to config.json.
@@ -317,6 +325,21 @@ final class PNCP_Precheck {
 		 * @param array<string, mixed> $config Configuration.
 		 */
 		return (array) apply_filters( 'pncp_precheck_config', $config );
+	}
+
+	/**
+	 * The limits of Emergency Mode that the pre-cache check applies (see PNCP_Options::emergency_overlay()).
+	 *
+	 * @param array<string, mixed> $s Stored settings.
+	 * @return array{limit:int, ban_strikes:int, ban_minutes:int}
+	 */
+	private static function emergency_limits( $s ) {
+		$overlay = PNCP_Options::emergency_overlay( $s );
+		return array(
+			'limit'       => (int) $overlay['rate_limit'],
+			'ban_strikes' => (int) $overlay['ban_strikes'],
+			'ban_minutes' => (int) $overlay['ban_minutes'],
+		);
 	}
 
 	/**
@@ -333,6 +356,7 @@ final class PNCP_Precheck {
 			if ( ! PNCP_Ip::valid_range( $range ) ) {
 				continue;
 			}
+			$range = PNCP_Options::unmap_range( $range ); // 3.4: ::ffff:198.51.100.7 is compared as 198.51.100.7.
 			if ( false === strpos( $range, '/' ) ) {
 				$exact[ (string) inet_ntop( (string) inet_pton( $range ) ) ] = true;
 			} else {
@@ -636,7 +660,8 @@ final class PNCP_Precheck {
 			if ( 'ban' === $reason ) {
 				$bans[ $ip ] = (int) $time;
 			}
-			$key = $ip . '|' . $reason . '|' . (int) floor( (int) $time / MINUTE_IN_SECONDS );
+			// The code is part of the key, as in PNCP_Log::add(): "would block" (0) and real blocks stay apart.
+			$key = $ip . '|' . $reason . '|' . (int) $code . '|' . (int) floor( (int) $time / MINUTE_IN_SECONDS );
 			if ( isset( $rows[ $key ] ) ) {
 				++$rows[ $key ]['hits'];
 				$rows[ $key ]['seen'][ md5( $ua ) ] = true;

@@ -328,7 +328,16 @@ final class PNCP_Private_Urls {
 	 */
 	private static function request_path() {
 		$uri  = isset( $_SERVER['REQUEST_URI'] ) ? wp_unslash( $_SERVER['REQUEST_URI'] ) : ''; // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- Only compared against patterns.
-		$path = self::relative_path( rawurldecode( (string) wp_parse_url( (string) $uri, PHP_URL_PATH ) ) );
+		$path = rawurldecode( (string) wp_parse_url( (string) $uri, PHP_URL_PATH ) );
+		// 3.4: what comes after a ";" (path parameters, e.g. /skroutz.xml;x) or an encoded NUL (%00) is not part of
+		// the path to compare: code that matches the address loosely may still answer such a request.
+		$cut = strcspn( $path, ";\0" );
+		if ( $cut < strlen( $path ) ) {
+			$path = substr( $path, 0, $cut );
+		}
+		// Trailing spaces, control characters and dots (/skroutz.xml%20, /skroutz.xml.) are not part of it either.
+		$path = rtrim( $path, " .\t\n\r\0\x0B\x0C" );
+		$path = self::relative_path( $path );
 		// WordPress also accepts the /index.php/path form.
 		if ( 0 === stripos( $path, '/index.php/' ) ) {
 			$path = substr( $path, strlen( '/index.php' ) );

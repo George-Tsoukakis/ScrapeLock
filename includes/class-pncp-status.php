@@ -15,6 +15,8 @@ final class PNCP_Status {
 
 	const ACTION    = 'pncp_toggle';
 	const EMERGENCY = 'pncp_emergency';
+	const MONITOR   = 'pncp_monitor';
+	const DISMISS   = 'pncp_surge_dismiss';
 
 	// Same as PNCP_Admin::PAGE; the admin class is not loaded on the public site, where the bar is shown.
 	const SETTINGS_PAGE = 'scrapelock';
@@ -29,6 +31,8 @@ final class PNCP_Status {
 		add_action( 'wp_enqueue_scripts', array( __CLASS__, 'admin_bar_css' ) );
 		add_action( 'admin_post_' . self::ACTION, array( __CLASS__, 'handle_toggle' ) );
 		add_action( 'admin_post_' . self::EMERGENCY, array( __CLASS__, 'handle_emergency' ) );
+		add_action( 'admin_post_' . self::MONITOR, array( __CLASS__, 'handle_monitor' ) );
+		add_action( 'admin_post_' . self::DISMISS, array( __CLASS__, 'handle_dismiss' ) );
 		add_action( 'admin_notices', array( __CLASS__, 'notice' ) );
 		add_filter( 'removable_query_args', array( __CLASS__, 'removable_args' ) );
 	}
@@ -43,6 +47,7 @@ final class PNCP_Status {
 		$args[] = 'pncp_toggled';
 		$args[] = 'pncp_emergency';
 		$args[] = 'pncp_confirm';
+		$args[] = 'pncp_enforced';
 		return $args;
 	}
 
@@ -113,6 +118,34 @@ final class PNCP_Status {
 	}
 
 	/**
+	 * Starts Emergency Mode with one click (with nonce), from the surge alert of the automatic Emergency Mode.
+	 *
+	 * @param int $hours Duration in hours (one of the choices of handle_emergency()).
+	 * @return string
+	 */
+	public static function emergency_start_url( $hours = 1 ) {
+		return wp_nonce_url(
+			add_query_arg(
+				array(
+					'action' => self::EMERGENCY,
+					'hours'  => (int) $hours,
+				),
+				admin_url( 'admin-post.php' )
+			),
+			self::EMERGENCY
+		);
+	}
+
+	/**
+	 * Dismisses the surge alert (with nonce).
+	 *
+	 * @return string
+	 */
+	public static function surge_dismiss_url() {
+		return wp_nonce_url( add_query_arg( 'action', self::DISMISS, admin_url( 'admin-post.php' ) ), self::DISMISS );
+	}
+
+	/**
 	 * Enable (GET with nonce) or disable (POST only, from the confirmation form). Administrators only.
 	 */
 	public static function handle_toggle() {
@@ -164,9 +197,168 @@ final class PNCP_Status {
 		if ( ! in_array( $hours, array( 0, 1, 6, 24, 72 ), true ) ) {
 			$hours = 24;
 		}
-		PNCP_Options::set_emergency( $hours );
+		PNCP_Options::set_emergency( $hours ); // Also answers the surge alert, if there is one.
 		wp_safe_redirect( self::settings_url( array( 'pncp_emergency' => $hours ? 'on' : 'off' ) ) );
 		exit;
+	}
+
+	/**
+	 * Dismisses the surge alert of the automatic Emergency Mode (nonce, administrators only).
+	 */
+	public static function handle_dismiss() {
+		if ( ! current_user_can( 'manage_options' ) ) {
+			wp_die( esc_html__( 'You are not allowed to change this setting.', 'scrapelock' ), '', array( 'response' => 403 ) );
+		}
+		check_admin_referer( self::DISMISS );
+		PNCP_Surge::clear_alert();
+		$redirect = wp_validate_redirect( wp_get_referer(), self::settings_url() );
+		wp_safe_redirect( $redirect ? $redirect : self::settings_url() );
+		exit;
+	}
+
+	/**
+	 * The surge alert of the automatic Emergency Mode in "notify" mode: what happened, and one click to start
+	 * Emergency Mode for an hour, or to dismiss it. Only while Emergency Mode is off and protection is on.
+	 */
+	private static function surge_notice() {
+		$alert = PNCP_Surge::alert_state();
+		if ( ! $alert || PNCP_Options::emergency_until() || ! self::is_enabled() || ! self::notice_screen() ) {
+			return;
+		}
+		printf(
+			'<div class="notice notice-warning pncp-surge-notice"><p><strong>%1$s</strong> %2$s</p><p><a class="button button-primary" href="%3$s">%4$s</a> <a class="button" href="%5$s">%6$s</a> <a href="%7$s">%8$s</a></p></div>',
+			esc_html__( 'Unusual traffic.', 'scrapelock' ),
+			esc_html(
+				sprintf(
+					/* translators: 1: time, 2: pages per minute, 3: threshold */
+					__( 'At %1$s the site received %2$d pages per minute, above the %3$d that count as an attack. It can be a scraping attack spread over many IPs, or many real visitors at once. Nothing has been changed.', 'scrapelock' ),
+					wp_date( get_option( 'time_format' ), $alert['time'] ),
+					$alert['count'],
+					$alert['threshold']
+				)
+			),
+			esc_url( self::emergency_start_url( 1 ) ),
+			esc_html__( 'Start Emergency Mode (1 hour)', 'scrapelock' ),
+			esc_url( self::surge_dismiss_url() ),
+			esc_html__( 'Dismiss', 'scrapelock' ),
+			esc_url( self::settings_url() . '#pncp-emergency-title' ),
+			esc_html__( 'What Emergency Mode changes', 'scrapelock' )
+		);
+	}
+
+	/**
+	 * "Enforce now": ends "Monitor only" (POST with nonce), so the checks start blocking. Administrators only.
+	 */
+	public static function handle_monitor() {
+		if ( ! current_user_can( 'manage_options' ) ) {
+			wp_die( esc_html__( 'You are not allowed to change this setting.', 'scrapelock' ), '', array( 'response' => 403 ) );
+		}
+		check_admin_referer( self::MONITOR );
+		$method = isset( $_SERVER['REQUEST_METHOD'] ) ? strtoupper( sanitize_key( wp_unslash( $_SERVER['REQUEST_METHOD'] ) ) ) : 'GET';
+		if ( 'POST' !== $method ) {
+			wp_die( esc_html__( 'Invalid request.', 'scrapelock' ), '', array( 'response' => 400 ) );
+		}
+		$settings                  = PNCP_Options::stored();
+		$settings['monitor_mode']  = 0;
+		$settings['monitor_until'] = 0;
+		update_option( PNCP_OPTION, $settings ); // Also rewrites the early and pre-cache checks (update_option_pncp_settings).
+		PNCP_Options::flush();
+		// Started by hand: no "blocking has started" notice later on.
+		update_option( PNCP_Options::MONITOR_ENDED_OPTION, 'shown', false );
+		wp_safe_redirect( self::settings_url( array( 'pncp_enforced' => PNCP_Options::monitoring( PNCP_Options::stored() ) ? 'failed' : 'on' ) ) );
+		exit;
+	}
+
+	/**
+	 * The Log tab, showing all events, the real blocks or the "would block" entries of "Monitor only".
+	 *
+	 * @param string $view all | blocked | monitor.
+	 * @return string
+	 */
+	public static function log_url( $view ) {
+		return self::settings_url(
+			array(
+				'tab'      => 'log',
+				'log_view' => $view,
+			)
+		);
+	}
+
+	/**
+	 * The "Enforce now" button (a small form with nonce).
+	 */
+	public static function enforce_form() {
+		printf( '<form method="post" action="%s" class="pncp-inline-form">', esc_url( admin_url( 'admin-post.php' ) ) );
+		printf( '<input type="hidden" name="action" value="%s">', esc_attr( self::MONITOR ) );
+		wp_nonce_field( self::MONITOR );
+		printf( '<button type="submit" class="button button-primary">%s</button>', esc_html__( 'Enforce now', 'scrapelock' ) );
+		echo '</form>';
+	}
+
+	/**
+	 * While "Monitor only" is on: what would have been blocked so far, by reason, with a link to those entries
+	 * in the Log tab and the "Enforce now" button. Once, after the first-week monitoring ended: blocking started.
+	 */
+	private static function monitor_notice() {
+		$s = PNCP_Options::stored();
+		if ( 'pending' === get_option( PNCP_Options::MONITOR_ENDED_OPTION ) ) {
+			// Told once: marked as shown as soon as it is printed.
+			update_option( PNCP_Options::MONITOR_ENDED_OPTION, 'shown', false );
+			printf(
+				'<div class="notice notice-info is-dismissible"><p><strong>%1$s</strong> %2$s <a href="%3$s">%4$s</a></p></div>',
+				esc_html__( 'ScrapeLock now blocks.', 'scrapelock' ),
+				esc_html(
+					sprintf(
+						/* translators: %d: number of days */
+						__( 'The first %d days in “Monitor only” have ended: requests the settings refuse now get a 403 or 429. You can go back to “Monitor only” in “Bots and limits”.', 'scrapelock' ),
+						PNCP_Options::MONITOR_DAYS
+					)
+				),
+				esc_url( self::settings_url( array( 'tab' => 'log' ) ) ),
+				esc_html__( 'See the log', 'scrapelock' )
+			);
+		}
+		if ( empty( $s['enabled'] ) || ! PNCP_Options::monitoring( $s ) || ! self::notice_screen() ) {
+			return;
+		}
+		// The first-week monitoring: since it started; turned on by hand: the last 7 days (the longest the log keeps by default).
+		$hours   = ! empty( $s['monitor_until'] ) ? max( 1, (int) ceil( ( time() - ( (int) $s['monitor_until'] - PNCP_Options::MONITOR_DAYS * DAY_IN_SECONDS ) ) / HOUR_IN_SECONDS ) ) : 7 * 24;
+		$summary = PNCP_Log::summary( $hours, 'monitor' );
+		$labels  = PNCP_Log::reasons();
+		echo '<div class="notice notice-warning pncp-monitor-notice"><p><strong>' . esc_html__( 'ScrapeLock is in “Monitor only”: nothing is blocked.', 'scrapelock' ) . '</strong> ';
+		if ( ! empty( $s['monitor_until'] ) ) {
+			echo esc_html(
+				sprintf(
+					/* translators: %s: date and time */
+					__( 'It starts blocking on its own on %s.', 'scrapelock' ),
+					wp_date( get_option( 'date_format' ) . ' ' . get_option( 'time_format' ), (int) $s['monitor_until'] )
+				)
+			) . ' ';
+		}
+		echo esc_html(
+			sprintf(
+				/* translators: %s: number of requests */
+				_n( 'So far %s request would have been blocked.', 'So far %s requests would have been blocked.', (int) $summary['total'], 'scrapelock' ),
+				number_format_i18n( $summary['total'] )
+			)
+		);
+		echo '</p>';
+		if ( $summary['reasons'] ) {
+			echo '<ul class="ul-disc">';
+			foreach ( array_slice( $summary['reasons'], 0, 8, true ) as $reason => $n ) {
+				printf( '<li>%1$s: %2$s</li>', esc_html( isset( $labels[ $reason ] ) ? $labels[ $reason ] : $reason ), esc_html( number_format_i18n( $n ) ) );
+			}
+			echo '</ul>';
+		}
+		echo '<p>';
+		printf(
+			'<a href="%1$s">%2$s</a>',
+			esc_url( self::log_url( 'monitor' ) ),
+			esc_html__( 'See what would be blocked in the log', 'scrapelock' )
+		);
+		echo '</p>';
+		self::enforce_form();
+		echo '</div>';
 	}
 
 	/**
@@ -204,7 +396,17 @@ final class PNCP_Status {
 				esc_html( $on ? __( 'Emergency Mode started.', 'scrapelock' ) : __( 'Emergency Mode stopped. Your normal settings apply again.', 'scrapelock' ) )
 			);
 		}
+		if ( isset( $_GET['pncp_enforced'] ) ) {
+			$on = 'on' === sanitize_key( wp_unslash( $_GET['pncp_enforced'] ) );
+			printf(
+				'<div class="notice notice-%1$s is-dismissible"><p>%2$s</p></div>',
+				$on ? 'success' : 'error',
+				esc_html( $on ? __( '“Monitor only” is off: ScrapeLock now blocks.', 'scrapelock' ) : __( '“Monitor only” could not be turned off (the settings cannot change while the site is locked).', 'scrapelock' ) )
+			);
+		}
 		// phpcs:enable WordPress.Security.NonceVerification.Recommended
+		self::monitor_notice();
+		self::surge_notice();
 		$until = PNCP_Options::emergency_until();
 		if ( $until && self::is_enabled() && self::notice_screen() ) {
 			printf(
@@ -261,15 +463,19 @@ final class PNCP_Status {
 		$s       = PNCP_Options::get();
 		$on      = ! empty( $s['enabled'] );
 		$until   = PNCP_Options::emergency_until();
-		$summary = PNCP_Log::summary( 24 );
+		$monitor = $on && PNCP_Options::monitoring( $s );
+		// One SUM, kept for 5 minutes: the widget shows only the total (not the grouped summary).
+		$total   = PNCP_Log::total( 24, $monitor ? 'monitor' : 'blocked' );
 		?>
 		<div class="pncp-widget">
-			<p class="pncp-state <?php echo $on ? ( $until ? 'is-emergency' : 'is-on' ) : 'is-off'; ?>">
+			<p class="pncp-state <?php echo $on ? ( $until || $monitor ? 'is-emergency' : 'is-on' ) : 'is-off'; ?>">
 				<span class="dashicons <?php echo $on ? 'dashicons-shield-alt' : 'dashicons-warning'; ?>" aria-hidden="true"></span>
 				<strong>
 				<?php
 				if ( ! $on ) {
 					esc_html_e( 'Protection is disabled', 'scrapelock' );
+				} elseif ( $monitor ) {
+					esc_html_e( 'Monitor only: nothing is blocked', 'scrapelock' );
 				} elseif ( $until ) {
 					esc_html_e( 'Emergency Mode is active', 'scrapelock' );
 				} else {
@@ -281,14 +487,24 @@ final class PNCP_Status {
 			<?php if ( $on ) : ?>
 				<p class="pncp-summary">
 					<?php
-					echo esc_html(
-						sprintf(
-							/* translators: 1: requests, 2: active bans */
-							__( 'Last 24 hours: %1$s blocked requests · %2$s IPs blocked now', 'scrapelock' ),
-							number_format_i18n( $summary['total'] ),
-							number_format_i18n( PNCP_Log::count_bans() )
-						)
-					);
+					if ( $monitor ) {
+						echo esc_html(
+							sprintf(
+								/* translators: %s: requests */
+								__( 'Last 24 hours: %s requests would have been blocked', 'scrapelock' ),
+								number_format_i18n( $total )
+							)
+						);
+					} else {
+						echo esc_html(
+							sprintf(
+								/* translators: 1: requests, 2: active bans */
+								__( 'Last 24 hours: %1$s blocked requests · %2$s IPs blocked now', 'scrapelock' ),
+								number_format_i18n( $total ),
+								number_format_i18n( PNCP_Log::count_bans() )
+							)
+						);
+					}
 					?>
 				</p>
 				<ul class="pncp-layers">
@@ -327,7 +543,10 @@ final class PNCP_Status {
 		$on        = self::is_enabled();
 		$emergency = $on && PNCP_Options::emergency_until();
 		$locked    = PNCP_Lockdown::is_locked();
-		if ( $emergency ) {
+		$monitor   = $on && PNCP_Options::monitoring();
+		if ( $monitor ) {
+			$label = __( 'Protection: MONITOR ONLY', 'scrapelock' );
+		} elseif ( $emergency ) {
 			$label = __( 'Protection: EMERGENCY', 'scrapelock' );
 		} else {
 			$label = $on ? __( 'Protection: ON', 'scrapelock' ) : __( 'Protection: OFF', 'scrapelock' );
@@ -342,8 +561,8 @@ final class PNCP_Status {
 				'title' => '<span class="ab-icon dashicons ' . ( $on ? 'dashicons-shield-alt' : 'dashicons-warning' ) . '" aria-hidden="true"></span><span class="ab-label">' . esc_html( $label ) . '</span>',
 				'href'  => $locked ? PNCP_Lockdown::page_url() : self::settings_url(),
 				'meta'  => array(
-					'class' => $emergency ? 'pncp-emergency' : ( $on ? 'pncp-on' : 'pncp-off' ),
-					'title' => $on ? __( 'The site is protected', 'scrapelock' ) : __( 'Protection is disabled', 'scrapelock' ),
+					'class' => $monitor || $emergency ? 'pncp-emergency' : ( $on ? 'pncp-on' : 'pncp-off' ),
+					'title' => $monitor ? __( 'Monitor only: nothing is blocked', 'scrapelock' ) : ( $on ? __( 'The site is protected', 'scrapelock' ) : __( 'Protection is disabled', 'scrapelock' ) ),
 				),
 			)
 		);

@@ -22,11 +22,14 @@ final class PNCP_Lockdown {
 	const LOG_OPTION    = 'pncp_lockdown_log';
 	const PENDING_META  = 'pncp_lockdown_pending';
 	const ACTION        = 'pncp_lockdown';
-	const MAX_FAILS     = 5;  // Per user, in 15 minutes.
+	const MAX_FAILS     = 5;  // Per account from one IP, in 15 minutes (then refused for 15 min, 1 h, 6 h).
+	const MAX_FAILS_ACCOUNT = 20; // Per account from all IPs, in an hour (app codes only).
 	const MAX_FAILS_ALL = 20; // Per IP (IPv6: per /64), in an hour.
 	const MAX_FAILS_SITE = 100; // All accounts and IPs together, in an hour: a ceiling for guessing from many places.
 	const CODES         = 10;
 	const MUTEX         = 'pncp_lockdown_mutex';
+	const FAILS_OPTION  = 'pncp_lockdown_fails'; // The wrong-code counters (see fail_buckets()).
+	const MUTEX_TTL     = 5; // 3.4: seconds the code-check lock is held at most (was 10; a check takes far less).
 
 	/**
 	 * Inside can(): the lock does not take capabilities away.
@@ -51,8 +54,10 @@ final class PNCP_Lockdown {
 
 	/**
 	 * What the seal found when the state was read: '' (in order), 'replay' (the guard file says locked but the
-	 * database does not: the site stays locked) or 'keys' (the signature does not match and there is no guard
-	 * to compare with: changed in the database, or the keys in wp-config.php were changed).
+	 * database does not: the site stays locked), 'forged' (there is no guard to compare with, but the state is
+	 * missing, does not match its signature or is older than the lock, while the signed snapshot of that lock is
+	 * still there: the site stays locked too) or 'keys' (the signature does not match and nothing signed shows a
+	 * lock: changed in the database, or the keys in wp-config.php were changed).
 	 *
 	 * @var string
 	 */
@@ -66,11 +71,12 @@ final class PNCP_Lockdown {
 	private static $sig_ok = true;
 
 	/**
-	 * The code typed on this request has the shape of a recovery code (see handle()).
+	 * 3.4: is the stored state, though genuinely signed, older than the one the guard names (a copy put back
+	 * from a backup)? Its app secret and recovery codes may be old ones, so they are not used.
 	 *
 	 * @var bool
 	 */
-	private static $recovery_attempt = false;
+	private static $older = false;
 
 	/**
 	 * Staff or not, per user.
@@ -87,6 +93,49 @@ final class PNCP_Lockdown {
 	private static $die_handler = null;
 
 	/**
+	 * Was this request signed in with an application password?
+	 *
+	 * @var bool
+	 */
+	private static $app_password = false;
+
+	/**
+	 * 3.4: while unlocked for a while, per user on this request: did the stored capabilities let the account
+	 * administer the site before the change being written (note_role())?
+	 *
+	 * @var array<int, bool>
+	 */
+	private static $caps_before = array();
+
+	/**
+	 * Per user: is this request signed in with the session that unlocked for a while?
+	 *
+	 * @var array<int, bool>
+	 */
+	private static $session_ok = array();
+
+	/**
+	 * The value this request wrote to the code-check lock (see lock()), so that release() only frees its own.
+	 *
+	 * @var string
+	 */
+	private static $mutex = '';
+
+	/**
+	 * Is the stored state being read and checked right now (state())?
+	 *
+	 * @var bool
+	 */
+	private static $reading = false;
+
+	/**
+	 * Alerts found while the state was being read: sent once it is read (see state()).
+	 *
+	 * @var array<int, array{0: string, 1: string}>
+	 */
+	private static $queued = array();
+
+	/**
 	 * Registers the hooks.
 	 */
 	public static function init() {
@@ -96,7 +145,8 @@ final class PNCP_Lockdown {
 		foreach ( self::protected_options() as $option ) {
 			add_filter( 'pre_update_option_' . $option, array( __CLASS__, 'keep_option' ), 9999, 3 );
 		}
-		foreach ( array( 'active_sitewide_plugins', 'admin_email', self::OPTION ) as $option ) {
+		// Multisite: the network options too (3.4: also the super admins and who may register).
+		foreach ( array( 'active_sitewide_plugins', 'admin_email', 'site_admins', 'registration', self::OPTION ) as $option ) {
 			add_filter( 'pre_update_site_option_' . $option, array( __CLASS__, 'keep_option' ), 9999, 3 );
 		}
 		add_filter( 'update_user_metadata', array( __CLASS__, 'keep_roles' ), 9999, 4 );
@@ -107,11 +157,31 @@ final class PNCP_Lockdown {
 		add_filter( 'send_password_change_email', array( __CLASS__, 'change_email' ), 9999, 2 );
 		add_filter( 'allow_password_reset', array( __CLASS__, 'allow_password_reset' ), 9999, 2 );
 		add_filter( 'wp_is_application_passwords_available_for_user', array( __CLASS__, 'app_passwords' ), 9999, 2 );
+		add_action( 'application_password_did_authenticate', array( __CLASS__, 'note_app_password' ) );
+		add_action( 'wp_authenticate_application_password_errors', array( __CLASS__, 'app_password_errors' ), 10, 3 );
 		add_action( 'woocommerce_save_account_details_errors', array( __CLASS__, 'woocommerce_account_errors' ), 10, 2 );
 		// WooCommerce sends users who cannot edit posts away from wp-admin and hides their admin bar: staff
 		// would then not even reach the unlock page.
 		add_filter( 'woocommerce_prevent_admin_access', array( __CLASS__, 'woocommerce_admin_access' ) );
 		add_filter( 'woocommerce_disable_admin_bar', array( __CLASS__, 'woocommerce_admin_access' ) );
+		// 3.4: unlocked for a while, the owner's changes through WordPress are noted, and kept when the site locks
+		// again by itself: on the first request after the end (before the seal compares the options), or in the
+		// hourly check, whichever comes first.
+		add_action( 'updated_option', array( __CLASS__, 'note_option' ), 10, 3 );
+		add_action( 'added_option', array( __CLASS__, 'note_added_option' ), 10, 2 );
+		add_action( 'deleted_option', array( __CLASS__, 'note_deleted_option' ) );
+		// Multisite: the network options changed by the owner during an unlock for a while.
+		add_action( 'update_site_option', array( __CLASS__, 'note_site_option' ), 10, 3 );
+		add_action( 'add_site_option', array( __CLASS__, 'note_added_site_option' ), 10, 2 );
+		add_action( 'delete_site_option', array( __CLASS__, 'note_deleted_site_option' ) );
+		// Multisite: who is staff depends on the site (its roles), so it is looked up again on another site.
+		add_action( 'switch_blog', array( __CLASS__, 'forget_staff' ) );
+		add_filter( 'update_user_metadata', array( __CLASS__, 'note_caps_before' ), PHP_INT_MAX, 3 );
+		add_filter( 'add_user_metadata', array( __CLASS__, 'note_caps_before' ), PHP_INT_MAX, 3 );
+		add_action( 'updated_user_meta', array( __CLASS__, 'note_role' ), 10, 4 );
+		add_action( 'added_user_meta', array( __CLASS__, 'note_role' ), 10, 4 );
+		add_action( 'plugins_loaded', array( __CLASS__, 'expire_window' ), 0 );
+		add_action( PNCP_Log::CRON, array( __CLASS__, 'expire_window' ), 5 );
 		if ( is_admin() ) {
 			add_action( 'admin_post_' . self::ACTION, array( __CLASS__, 'handle' ) );
 			add_action( 'admin_notices', array( __CLASS__, 'notices' ) );
@@ -130,9 +200,12 @@ final class PNCP_Lockdown {
 	 */
 	public static function state() {
 		if ( null === self::$state ) {
-			$stored = get_site_option( self::OPTION, array() );
-			$stored = is_array( $stored ) ? $stored : array();
-			self::check_seal( $stored );
+			self::$reading = true;
+			try {
+				$stored = self::check_seal();
+			} finally {
+				self::$reading = false;
+			}
 			unset( $stored['sig'] );
 			self::$state = array_merge(
 				array(
@@ -149,35 +222,119 @@ final class PNCP_Lockdown {
 					// file fingerprint (a deleted or older fingerprint is noticed).
 					'unlocked_by' => 0,
 					'fp'          => 0,
+					// 3.4: the version that signed the state. Signed with it, so unsigned data is never taken for
+					// data from before 3.3 once a version with signatures has written it (PNCP_Seal::legacy()).
+					'sealed'      => '',
+					// 3.4: the (keyed) fingerprint of the browser session that unlocked for a while. Only requests
+					// signed in with that session get the rights back; another session of the same account, an
+					// application password, XML-RPC or a WooCommerce API key stay as when locked.
+					'unlock_session' => '',
+					// 3.4: the generation of the state (one more on every save, also noted in the guard file), and
+					// the generation of the snapshot of the protected options that belongs to it. A signed copy
+					// put back from an older backup has a lower generation than the guard and is not accepted.
+					'gen'            => 0,
+					'snap'           => 0,
+					// 3.4, multisite: the lock has a snapshot of the whole network (PNCP_Seal::network_mode()).
+					'net'            => 0,
+					// 3.4: the lock time of the snapshot the state names (a snapshot that is missing a moment after the
+					// lock was deleted, not still being taken), and the site's administration address in it: alerts
+					// go there while locked, not to an address someone changed in the database.
+					'snapped'        => 0,
+					'mail'           => '',
 				),
 				$stored
 			);
+		}
+		// Alerts found while reading the state are sent now: where they go depends on the state.
+		$alerts       = self::$queued;
+		self::$queued = array();
+		foreach ( $alerts as $alert ) {
+			self::tamper_alert( $alert[0], $alert[1] );
 		}
 		return self::$state;
 	}
 
 	/**
-	 * Checks the stored state against its signature and against the guard file (PNCP_Seal).
+	 * Reads the stored state and checks it against its signature and against the guard file (PNCP_Seal).
+	 *
+	 * The guard and the state are written a moment apart. A request that sees one of them already changed and
+	 * the other not yet looks again before it raises the alarm: the guard file once more, and the state once
+	 * more after a short wait when it is exactly one generation behind the guard.
+	 *
+	 * @return array<string, mixed> Stored state, with its signature.
+	 */
+	private static function check_seal() {
+		$stored = self::stored();
+		self::seal_check( $stored );
+		if ( 'replay' === self::$tamper && PNCP_Seal::refresh_beacon() ) {
+			self::seal_check( $stored );
+		}
+		$beacon = PNCP_Seal::beacon();
+		if ( 'replay' === self::$tamper && $beacon && isset( $beacon['gen'], $stored['gen'] ) && (int) $stored['gen'] === $beacon['gen'] - 1 ) {
+			usleep( 250000 );
+			self::forget_cached();
+			$stored = self::stored();
+			self::seal_check( $stored );
+		}
+		if ( '' !== self::$tamper ) {
+			$older = 'replay' === self::$tamper && self::$sig_ok && ! empty( $stored['locked'] ) && $beacon && isset( $beacon['gen'] ) && ( isset( $stored['gen'] ) ? (int) $stored['gen'] : 0 ) < $beacon['gen'];
+			self::tamper_alert( $older ? 'replay' : 'state', $older ? 'state' : self::$tamper );
+		}
+		return $stored;
+	}
+
+	/**
+	 * The state as stored (with its signature).
+	 *
+	 * @return array<string, mixed>
+	 */
+	private static function stored() {
+		$stored = get_site_option( self::OPTION, array() );
+		return is_array( $stored ) ? $stored : array();
+	}
+
+	/**
+	 * Compares the stored state with its signature and the guard: sets $sig_ok and $tamper.
 	 *
 	 * @param array<string, mixed> $stored Stored state, with its signature.
 	 */
-	private static function check_seal( $stored ) {
+	private static function seal_check( $stored ) {
 		$sig = isset( $stored['sig'] ) ? $stored['sig'] : null;
 		unset( $stored['sig'] );
-		self::$sig_ok = ! $stored || ( null === $sig ? PNCP_Seal::legacy() : PNCP_Seal::valid( $stored, $sig ) );
+		$empty        = ! $stored;
+		self::$sig_ok = $empty || ( null === $sig ? PNCP_Seal::legacy() : PNCP_Seal::valid( $stored, $sig ) );
 		self::$tamper = '';
+		self::$older  = false;
 		$beacon       = PNCP_Seal::beacon();
 		if ( $beacon && $beacon['locked'] ) {
 			// The guard (a file) says the site is locked: a database that says otherwise was changed behind
-			// WordPress's back, or put back from an older copy. The site stays locked.
-			if ( ! self::$sig_ok || empty( $stored['locked'] ) || ( isset( $stored['until'] ) ? (int) $stored['until'] : 0 ) > $beacon['until'] ) {
+			// WordPress's back, or put back from an older copy. The site stays locked. 3.4: a signed state from
+			// an older copy also says "locked", but its generation is lower than the one in the guard (a newer
+			// one is fine: the state is saved a moment before the guard, and only ever goes up).
+			$gen         = isset( $stored['gen'] ) ? (int) $stored['gen'] : 0;
+			self::$older = isset( $beacon['gen'] ) && $gen < $beacon['gen'];
+			if ( ! self::$sig_ok || empty( $stored['locked'] ) || ( isset( $stored['until'] ) ? (int) $stored['until'] : 0 ) > $beacon['until'] || ( isset( $beacon['gen'] ) && $gen < $beacon['gen'] ) ) {
 				self::$tamper = 'replay';
 			}
 		} elseif ( ! self::$sig_ok ) {
-			self::$tamper = 'keys';
-		}
-		if ( '' !== self::$tamper ) {
-			self::tamper_alert( 'state', self::$tamper );
+			// No guard to compare with (it could not be written, or the site was locked without it). A state that
+			// does not match its signature while the signed snapshot of a lock is there was changed in the
+			// database (for example "locked" set to false): the site stays locked. Without anything signed, the
+			// keys in wp-config.php may simply have been changed.
+			self::$tamper = PNCP_Seal::lock_evidence( true ) ? 'forged' : 'keys';
+		} elseif ( $empty || empty( $stored['locked'] ) ) {
+			$since = $empty ? null : ( isset( $stored['since'] ) ? (int) $stored['since'] : 0 );
+			$snap  = $empty ? null : ( isset( $stored['snap'] ) ? (int) $stored['snap'] : null );
+			// The state was deleted, or put back from a copy older than the lock, while the signed fingerprints of
+			// the lock are still there (only the autoloaded ones are read here: no extra query on every request).
+			// 3.4: the signed snapshot of the lock is read too. Without a guard file that says "locked" (it could
+			// not be written, or the owner locked without it on purpose) the fingerprints can be deleted along
+			// with the state, and the snapshot is what is left. It costs one small query (none with a persistent
+			// object cache); the snapshot itself is only there while the site is locked (a full unlock deletes
+			// it), so an unlocked site never loads it.
+			if ( PNCP_Seal::lock_evidence( false, $since, $snap ) || PNCP_Seal::snapshot_evidence( $since, $snap ) ) {
+				self::$tamper = 'forged';
+			}
 		}
 	}
 
@@ -199,39 +356,134 @@ final class PNCP_Lockdown {
 	 */
 	private static function save( $state ) {
 		unset( $state['sig'] );
-		$prev   = null === self::$state ? self::state() : self::$state;
+		$prev = null === self::$state ? self::state() : self::$state;
+		// 3.4: the stored state is forged, or an older copy, while the guard says locked: saving it would sign
+		// its app secret and recovery codes (perhaps old ones) as current. Only a save that removes the app
+		// (with SCRAPELOCK_UNLOCK) goes through; anything else waits until the owner has dealt with it.
+		if ( in_array( self::$tamper, array( 'replay', 'forged' ), true ) && ( ! self::$sig_ok || self::$older ) && ! empty( $state['secret'] ) ) {
+			return false;
+		}
 		$locked = ! empty( $state['locked'] );
 		$until  = $locked ? (int) $state['until'] : 0;
 		$was    = ! empty( $prev['locked'] );
-		$before = $was ? (int) $prev['until'] : 0;
-		$guard  = $was !== $locked || $before !== $until || ( $locked && ! PNCP_Seal::guard_installed() );
+		// 3.4: every save gets the next generation, and while locked (or when unlocking) the guard is written
+		// again with it, so no copy of the state saved before this one is accepted any more.
+		$state['gen']  = self::next_generation( $state );
+		$state['snap'] = isset( $state['snap'] ) ? (int) $state['snap'] : 0;
+		$guard         = $was || $locked;
 		// Less locked (unlocked, or open for longer): the guard first, so it never says "locked" while the
 		// database says otherwise. If the guard cannot be changed, the state is not either.
 		$less = ( ! $locked && ! empty( $prev['locked'] ) ) || ( $locked && $until > (int) $prev['until'] );
-		if ( $guard && $less && ! PNCP_Seal::write_guard( $locked, $until ) && PNCP_Seal::guard_installed() ) {
+		if ( $guard && $less && ! PNCP_Seal::write_guard( $locked, $until, $state['gen'], $state['snap'] ) && PNCP_Seal::guard_installed() ) {
 			return false;
 		}
-		$stored        = $state;
-		$stored['sig'] = PNCP_Seal::sign( $state );
-		self::$writing = true;
-		update_site_option( self::OPTION, $stored );
-		self::$writing = false;
-		self::$state   = $state;
-		self::$tamper  = '';
-		self::$sig_ok  = true;
-		// More locked: the database first, then the guard.
+		$state['sealed'] = PNCP_VERSION;
+		$stored          = $state;
+		$stored['sig']   = PNCP_Seal::sign( $state );
+		self::$writing   = true;
+		$saved           = update_site_option( self::OPTION, $stored );
+		self::$writing   = false;
+		if ( ! $saved && $guard && $less && $was ) {
+			// The database refused the write after the guard was changed: the guard goes back to the state that
+			// is still stored, or every request would see the stored state as an older copy.
+			PNCP_Seal::write_guard( true, (int) $prev['until'], (int) $prev['gen'], (int) $prev['snap'] );
+			return false;
+		}
+		self::$state      = $state;
+		self::$session_ok = array();
+		self::$tamper     = '';
+		self::$sig_ok     = true;
+		self::$older      = false;
+		// More locked, or as locked as before: the database first, then the guard.
 		if ( $guard && ! $less ) {
-			PNCP_Seal::write_guard( $locked, $until );
+			PNCP_Seal::write_guard( $locked, $until, $state['gen'], $state['snap'] );
 		}
 		return true;
 	}
 
 	/**
+	 * The next generation: higher than the one of the state (as stored or about to be saved) and the one in the
+	 * guard file, so it only ever goes up, also after a state that was put back from an older copy.
+	 *
+	 * @param array<string, mixed>|null $state The state about to be saved (null: the one stored now).
+	 * @return int
+	 */
+	public static function next_generation( $state = null ) {
+		$gen = (int) self::state()['gen'];
+		if ( is_array( $state ) && isset( $state['gen'] ) ) {
+			$gen = max( $gen, (int) $state['gen'] );
+		}
+		$beacon = PNCP_Seal::beacon();
+		if ( $beacon && isset( $beacon['gen'] ) ) {
+			$gen = max( $gen, (int) $beacon['gen'] );
+		}
+		return $gen + 1;
+	}
+
+	/**
+	 * Notes the generation of a new snapshot of the protected options in the (signed) state, and so in the
+	 * guard: older snapshots and fingerprints are no longer accepted (PNCP_Seal::snapshot()).
+	 *
+	 * @param int  $gen Generation of the snapshot.
+	 * @param bool $net Multisite: a new snapshot of the whole network (the lock has one from now on).
+	 */
+	public static function note_snapshot( $gen, $net = false ) {
+		$state            = self::state();
+		$state['snap']    = (int) $gen;
+		$state['snapped'] = (int) $state['since'];
+		$mail             = PNCP_Seal::alert_address();
+		if ( '' !== $mail ) {
+			$state['mail'] = $mail;
+		}
+		if ( $net ) {
+			$state['net'] = 1;
+		}
+		self::save( $state );
+	}
+
+	/**
+	 * The upgrade to 3.4: a genuine state signed by 3.3 gets a generation (and the guard with it), and the
+	 * genuine snapshot of the current lock too. Only data that matches its signature and the guard is saved
+	 * again, and only once (it then has a generation); a forged or older state is left as it is (the site stays
+	 * locked and the owner is alerted, check_seal()).
+	 */
+	public static function upgrade_generation() {
+		if ( false === get_site_option( self::OPTION, false ) ) {
+			return;
+		}
+		self::reload();
+		$state = self::state();
+		if ( '' !== self::$tamper || ! self::$sig_ok || (int) $state['gen'] > 0 ) {
+			return;
+		}
+		self::save( $state );
+		if ( ! empty( $state['locked'] ) ) {
+			PNCP_Seal::upgrade_snapshot();
+		}
+	}
+
+	/**
 	 * The upgrade to 3.3: signs the state and the fingerprint stored before signatures existed, writes the
 	 * guard and takes the snapshot of the protected options if the site is locked.
+	 *
+	 * Only for data that really is from before 3.3 (PNCP_Seal::legacy()): nothing signed yet, no guard, no
+	 * snapshot. Someone who can write to the database could otherwise change the protected options, add an
+	 * administrator and set the stored version back to "3.2.0": the upgrade would then sign their values and
+	 * accept their administrator. Data that already carries signatures is never signed again; the protected
+	 * options are put back from the snapshot as usual (PNCP_Seal::verify_options()).
+	 *
+	 * @param string $from The version the upgrade comes from.
 	 */
-	public static function upgrade_seal() {
+	public static function upgrade_seal( $from = '' ) {
 		if ( false === get_site_option( self::OPTION, false ) ) {
+			return;
+		}
+		if ( ! PNCP_Seal::legacy() ) {
+			// The stored version says "before 3.3" but a newer version already signed the data (or the guard is
+			// there): the version was set back in the database. Nothing is signed again; the owner is told.
+			if ( '' !== $from && version_compare( $from, '3.3.0', '<' ) && ( PNCP_Seal::guard_installed() || PNCP_Seal::sealed_before() ) ) {
+				self::tamper_alert( 'version', $from );
+			}
 			return;
 		}
 		self::reload();
@@ -245,7 +497,7 @@ final class PNCP_Lockdown {
 		$state['fp'] = PNCP_Integrity::resign();
 		self::save( $state );
 		if ( ! empty( $state['locked'] ) ) {
-			PNCP_Seal::take_snapshot();
+			PNCP_Seal::take_site_snapshot(); // There is none yet (legacy() checked it): the values as the lock left them.
 		}
 		self::event( 'sealed' );
 	}
@@ -269,11 +521,37 @@ final class PNCP_Lockdown {
 	 */
 	public static function write_protected( $option, $value ) {
 		self::$writing = true;
-		if ( false === $value ) {
-			delete_option( $option );
-		} else {
-			update_option( $option, $value );
-		}
+		// Without the values the guard keeps on this request: update_option() compares with the stored value.
+		PNCP_Seal::unguarded(
+			static function () use ( $option, $value ) {
+				if ( false === $value ) {
+					delete_option( $option );
+				} else {
+					update_option( $option, $value );
+				}
+			}
+		);
+		self::$writing = false;
+	}
+
+	/**
+	 * Multisite: writes a network option while locked (the seal putting back a value changed behind WordPress's
+	 * back).
+	 *
+	 * @param string $option Network option.
+	 * @param mixed  $value  Value from the snapshot of the network (false = the option did not exist).
+	 */
+	public static function write_protected_site( $option, $value ) {
+		self::$writing = true;
+		PNCP_Seal::unguarded(
+			static function () use ( $option, $value ) {
+				if ( false === $value ) {
+					delete_site_option( $option );
+				} else {
+					update_site_option( $option, $value );
+				}
+			}
+		);
 		self::$writing = false;
 	}
 
@@ -290,7 +568,8 @@ final class PNCP_Lockdown {
 	/**
 	 * Something was changed behind WordPress's back: logged, and emailed at most once an hour per kind.
 	 *
-	 * @param string $kind   state | snapshot | options | admin | fingerprint.
+	 * @param string $kind   state | snapshot | snapshot_copy | replay | options | admin | apps | fingerprint | version |
+	 *                       login | fails.
 	 * @param string $detail Detail.
 	 */
 	public static function tamper_alert( $kind, $detail = '' ) {
@@ -304,21 +583,49 @@ final class PNCP_Lockdown {
 			);
 			return;
 		}
-		$key = 'pncp_ld_tamper_' . sanitize_key( $kind );
-		if ( get_site_transient( $key ) ) {
+		if ( self::$reading ) {
+			self::$queued[] = array( (string) $kind, (string) $detail );
 			return;
 		}
-		set_site_transient( $key, 1, HOUR_IN_SECONDS );
+		$key = 'pncp_ld_tamper_' . sanitize_key( $kind );
+		if ( self::alerted( $key ) ) {
+			return;
+		}
+		// 3.4: signed, with the time it ends, so a value planted in the database cannot switch the alerts off.
+		$until = time() + HOUR_IN_SECONDS;
+		set_site_transient( $key, $until . ':' . PNCP_Seal::sign( array( 'alerted', $key, $until ) ), HOUR_IN_SECONDS );
 		self::event( 'tampered', $kind . ( '' !== $detail ? ': ' . $detail : '' ) );
 		$texts = array(
-			'state'       => __( 'The Lockdown data in the database no longer matches its signature or the guard file. The site stays locked. If you did not change the keys in wp-config.php, someone changed the database directly: check the site with a security scanner and change the database password.', 'scrapelock' ),
-			'snapshot'    => __( 'The saved copy of the protected settings no longer matches its signature, so changed settings cannot be put back. If you did not change the keys in wp-config.php, someone changed the database directly.', 'scrapelock' ),
-			'options'     => __( 'Protected settings were changed directly in the database while the site was locked, and have been put back:', 'scrapelock' ),
-			'admin'       => __( 'Accounts were given administrator rights behind WordPress\'s back after the site was locked. They cannot sign in while it stays locked; check and remove them before you unlock:', 'scrapelock' ),
-			'fingerprint' => __( 'The fingerprint of the code files was changed or removed in the database while the site was locked, so new or changed files might have been hidden. Check the files with a security scanner; a new fingerprint is taken the next time you lock the site.', 'scrapelock' ),
+			'state'         => __( 'The Lockdown data in the database no longer matches its signature or the guard file. The site stays locked. If you did not change the keys in wp-config.php, someone changed the database directly: check the site with a security scanner and change the database password.', 'scrapelock' ),
+			'snapshot'      => __( 'The saved copy of the protected settings no longer matches its signature, so changed settings cannot be put back. If you did not change the keys in wp-config.php, someone changed the database directly.', 'scrapelock' ),
+			'snapshot_copy' => __( 'The saved copy of the protected settings was deleted or changed in the database while the site was locked. It was put back from the guard file, and changed settings are put back from it. Someone changed the database directly: check the site with a security scanner and change the database password.', 'scrapelock' ),
+			'login'         => __( 'The password of an administrator account was changed directly in the database while the site was locked. The account cannot sign in with it while the site stays locked; unlock with SCRAPELOCK_UNLOCK in wp-config.php or a recovery code from a session that is still signed in, then set a new password. Account:', 'scrapelock' ),
+			'fails'         => __( 'The counters of wrong Lockdown codes were deleted or set back in the database while the site was locked. The copy next to the guard file still counts. Someone changed the database directly: check the site with a security scanner and change the database password.', 'scrapelock' ),
+			'options'       => __( 'Protected settings were changed directly in the database while the site was locked, and have been put back:', 'scrapelock' ),
+			'admin'         => __( 'Accounts were given administrator rights behind WordPress\'s back after the site was locked. They cannot sign in while it stays locked; check and remove them before you unlock:', 'scrapelock' ),
+			'fingerprint'   => __( 'The fingerprint of the code files was changed or removed in the database while the site was locked, so new or changed files might have been hidden. Check the files with a security scanner; a new fingerprint is taken the next time you lock the site.', 'scrapelock' ),
+			'apps'          => __( 'Application passwords were added to staff accounts behind WordPress\'s back while the site was locked. They were refused and removed; check these accounts and change their passwords:', 'scrapelock' ),
+			'replay'        => __( 'An older copy of the Lockdown data (for example from a database backup) was put back in the database while the site was locked. It was not accepted: the site stays locked, and the active plugins and the theme stay as they were when it was locked. If you did not restore a backup yourself, someone changed the database directly: check the site with a security scanner and change the database password. Found:', 'scrapelock' ),
+			'version'       => __( 'The ScrapeLock version stored in the database was set back to an older one, while the Lockdown data had already been signed by a newer version. Nothing was signed again and changed protected settings are put back. If you did not install an older ScrapeLock yourself, someone changed the database directly: check the site with a security scanner and change the database password. Version found:', 'scrapelock' ),
 		);
 		$text = isset( $texts[ $kind ] ) ? $texts[ $kind ] : $texts['state'];
 		self::mail( __( 'Lockdown data was changed outside WordPress', 'scrapelock' ), $text . ( '' !== $detail ? ' ' . $detail : '' ) );
+	}
+
+	/**
+	 * Was this alert emailed less than an hour ago? Only a value ScrapeLock signed counts, and never for longer
+	 * than an hour from now, whatever the stored value or its expiry time says.
+	 *
+	 * @param string $key Name of the transient.
+	 * @return bool
+	 */
+	private static function alerted( $key ) {
+		$parts = explode( ':', (string) get_site_transient( $key ), 2 );
+		if ( 2 !== count( $parts ) || ! ctype_digit( $parts[0] ) ) {
+			return false;
+		}
+		$until = (int) $parts[0];
+		return $until > time() && $until <= time() + HOUR_IN_SECONDS && PNCP_Seal::valid( array( 'alerted', $key, $until ), $parts[1] );
 	}
 
 	/**
@@ -349,8 +656,8 @@ final class PNCP_Lockdown {
 			return false;
 		}
 		$s = self::state();
-		if ( 'replay' === self::$tamper ) {
-			return true; // The guard file says locked: the database cannot open it.
+		if ( 'replay' === self::$tamper || 'forged' === self::$tamper ) {
+			return true; // The guard file, or the signed snapshot of the lock, says locked: the database cannot open it.
 		}
 		return ! empty( $s['locked'] ) && time() >= (int) $s['until'];
 	}
@@ -362,10 +669,259 @@ final class PNCP_Lockdown {
 	 */
 	public static function unlocked_until() {
 		$s = self::state();
-		if ( 'replay' === self::$tamper ) {
+		if ( 'replay' === self::$tamper || 'forged' === self::$tamper ) {
 			return 0;
 		}
 		return ! empty( $s['locked'] ) && (int) $s['until'] > time() ? (int) $s['until'] : 0;
+	}
+
+	/* ---------- Unlocked for a while: locking again by itself ---------- */
+
+	/**
+	 * Has an unlock for a while ended, without the snapshot of the protected options taken again since? Its end
+	 * time stays in the state until expire_window() has run. Never while the state cannot be trusted.
+	 *
+	 * @return bool
+	 */
+	public static function reseal_pending() {
+		if ( self::server_unlocked() || '' !== self::tampered() ) {
+			return false;
+		}
+		$s = self::state();
+		return ! empty( $s['locked'] ) && (int) $s['until'] > 0 && time() >= (int) $s['until'];
+	}
+
+	/**
+	 * Is this request the administrator who unlocked for a while, in the browser session that unlocked, while it
+	 * is still open? Only their changes are noted (and kept afterwards); not other requests, other sessions,
+	 * application passwords, WP-CLI or scheduled events, nor ScrapeLock putting a value back.
+	 *
+	 * @return bool
+	 */
+	public static function window_session() {
+		if ( self::$writing || ! did_action( 'plugins_loaded' ) ) {
+			return false;
+		}
+		$by = (int) self::state()['unlocked_by'];
+		return $by > 0 && self::unlocked_until() && get_current_user_id() === $by && self::unlocking_session( $by );
+	}
+
+	/**
+	 * A protected option to note (see window_session())?
+	 *
+	 * @param string $option Option.
+	 * @return bool
+	 */
+	private static function noted( $option ) {
+		return in_array( (string) $option, self::sealed_options(), true ) && self::window_session();
+	}
+
+	/**
+	 * A protected option was changed through WordPress (updated_option).
+	 *
+	 * @param string $option Option.
+	 * @param mixed  $old    Old value.
+	 * @param mixed  $value  New value.
+	 */
+	public static function note_option( $option, $old, $value ) {
+		if ( self::noted( $option ) ) {
+			PNCP_Seal::window_note( (string) $option, $old, $value );
+		}
+	}
+
+	/**
+	 * A protected option was added through WordPress (added_option).
+	 *
+	 * @param string $option Option.
+	 * @param mixed  $value  Value.
+	 */
+	public static function note_added_option( $option, $value ) {
+		if ( self::noted( $option ) ) {
+			PNCP_Seal::window_note( (string) $option, false, $value );
+		}
+	}
+
+	/**
+	 * A protected option was deleted through WordPress (deleted_option).
+	 *
+	 * @param string $option Option.
+	 */
+	public static function note_deleted_option( $option ) {
+		if ( self::noted( $option ) ) {
+			PNCP_Seal::window_note( (string) $option, null, false );
+		}
+	}
+
+	/**
+	 * Multisite: a network option was changed through WordPress (update_site_option).
+	 *
+	 * @param string $option Option.
+	 * @param mixed  $value  New value.
+	 * @param mixed  $old    Old value.
+	 */
+	public static function note_site_option( $option, $value, $old ) {
+		if ( self::noted_site( $option ) ) {
+			PNCP_Seal::window_note_network( (string) $option, $old, $value );
+		}
+	}
+
+	/**
+	 * Multisite: a network option was added through WordPress (add_site_option).
+	 *
+	 * @param string $option Option.
+	 * @param mixed  $value  Value.
+	 */
+	public static function note_added_site_option( $option, $value ) {
+		if ( self::noted_site( $option ) ) {
+			PNCP_Seal::window_note_network( (string) $option, false, $value );
+		}
+	}
+
+	/**
+	 * Multisite: a network option was deleted through WordPress (delete_site_option).
+	 *
+	 * @param string $option Option.
+	 */
+	public static function note_deleted_site_option( $option ) {
+		if ( self::noted_site( $option ) ) {
+			PNCP_Seal::window_note_network( (string) $option, null, false );
+		}
+	}
+
+	/**
+	 * A network option to note (see window_session())?
+	 *
+	 * @param string $option Option.
+	 * @return bool
+	 */
+	private static function noted_site( $option ) {
+		return is_multisite() && in_array( (string) $option, PNCP_Seal::NETWORK_OPTIONS, true ) && self::window_session();
+	}
+
+	/**
+	 * Forgets who is staff (switch_blog: on multisite it depends on the site).
+	 */
+	public static function forget_staff() {
+		self::$staff = array();
+	}
+
+	/**
+	 * Can this user administer the current site, by the roles and capabilities stored for it? (Multisite: used
+	 * for each site a user belongs to, see PNCP_Seal::authenticate().)
+	 *
+	 * @param int $user_id User.
+	 * @return bool
+	 */
+	public static function can_administer( $user_id ) {
+		return self::grants_control( self::user_caps( (int) $user_id ) );
+	}
+
+	/**
+	 * Is it the key of the roles of a user on this site ({prefix}capabilities)?
+	 *
+	 * @param mixed $meta_key Meta key.
+	 * @return bool
+	 */
+	private static function caps_key( $meta_key ) {
+		global $wpdb;
+		return is_string( $meta_key ) && $wpdb->get_blog_prefix() . 'capabilities' === $meta_key;
+	}
+
+	/**
+	 * Can these stored capabilities administer the site?
+	 *
+	 * @param mixed $caps {prefix}capabilities value.
+	 * @return bool
+	 */
+	private static function grants_control( $caps ) {
+		return array() !== array_intersect( self::privileged( $caps ), self::control_caps() );
+	}
+
+	/**
+	 * Before a role change is written: notes whether the account could administer the site until now (as
+	 * stored). A filter that changes nothing.
+	 *
+	 * @param null|bool $check    Short-circuit.
+	 * @param int       $user_id  User.
+	 * @param string    $meta_key Key.
+	 * @return null|bool
+	 */
+	public static function note_caps_before( $check, $user_id, $meta_key ) {
+		if ( null === $check && self::caps_key( $meta_key ) && self::window_session() ) {
+			self::$caps_before[ (int) $user_id ] = self::grants_control( get_user_meta( (int) $user_id, $meta_key, true ) );
+		}
+		return $check;
+	}
+
+	/**
+	 * After a role change through WordPress by the owner during an unlock for a while: notes the account. It
+	 * counts as an administrator the owner added only if it could not administer the site before this change
+	 * (an account given the rights in the database, which the owner then only edited, is not taken over).
+	 *
+	 * @param int    $meta_id  Meta ID.
+	 * @param int    $user_id  User.
+	 * @param string $meta_key Key.
+	 * @param mixed  $value    New value.
+	 */
+	public static function note_role( $meta_id, $user_id, $meta_key, $value ) {
+		if ( ! self::caps_key( $meta_key ) || ! self::window_session() ) {
+			return;
+		}
+		$user_id = (int) $user_id;
+		$before  = ! empty( self::$caps_before[ $user_id ] );
+		unset( self::$caps_before[ $user_id ], self::$staff[ $user_id ] );
+		$value = maybe_unserialize( $value );
+		$kind  = self::grants_control( $value ) ? ( $before ? -1 : 2 ) : ( self::grants_staff( $value ) ? 1 : 0 );
+		if ( -1 !== $kind ) {
+			PNCP_Seal::window_note_user( $user_id, $kind );
+		}
+	}
+
+	/**
+	 * The first request after an unlock for a while has ended (or the hourly check): the site is locked again,
+	 * and the signed snapshot is taken again with the changes the owner made through WordPress meanwhile
+	 * (PNCP_Seal::accept_window()), so they are not put back and reported as changed outside WordPress, and the
+	 * administrators they added can sign in.
+	 *
+	 * One request at a time: the same lock as the code checks, taken without waiting (a request that does not
+	 * get it compares with the snapshot as it will be, PNCP_Seal::current_snapshot()). The state is read again
+	 * once the lock is held, so the snapshot is taken once.
+	 */
+	public static function expire_window() {
+		if ( ! self::reseal_pending() || ! self::try_lock() ) {
+			return;
+		}
+		try {
+			self::reload();
+			if ( ! self::reseal_pending() ) {
+				return; // Another request did it a moment ago.
+			}
+			$noted = PNCP_Seal::window_summary();
+			$gen   = PNCP_Seal::accept_window();
+			$state = self::state();
+			if ( $gen > 0 ) {
+				$state['snap'] = $gen;
+			}
+			$state['until']          = 0;
+			$state['unlocked_by']    = 0;
+			$state['unlock_session'] = '';
+			self::save( $state );
+			PNCP_Seal::forget_window();
+			$detail = implode( ', ', $noted['options'] ) . ( $noted['admins'] ? ( $noted['options'] ? ', ' : '' ) . 'admins: ' . $noted['admins'] : '' );
+			// Logged on init: the current user is only looked up from then on.
+			if ( did_action( 'init' ) ) {
+				self::event( 'relocked_auto', $detail );
+			} else {
+				add_action(
+					'init',
+					static function () use ( $detail ) {
+						self::event( 'relocked_auto', $detail );
+					}
+				);
+			}
+		} finally {
+			self::release();
+		}
 	}
 
 	/* ---------- Who ---------- */
@@ -570,14 +1126,62 @@ final class PNCP_Lockdown {
 		if ( self::$bypass || ! $user_id || in_array( $cap, array( 'read', 'exist', 'level_0' ), true ) ) {
 			return $caps;
 		}
-		// Unlocked for a while: only for the administrator who unlocked; other staff (and a stolen session of
-		// theirs) stay as when locked.
+		// Unlocked for a while: only for the administrator who unlocked, and only in the browser session they
+		// unlocked with. Other staff, another session of the same account (a stolen cookie), an application
+		// password, XML-RPC and WooCommerce API keys stay as when locked: someone who can write to the database
+		// could have planted a password or key for that account in advance.
 		$by     = (int) self::state()['unlocked_by'];
-		$frozen = self::is_locked() || ( $by > 0 && (int) $user_id !== $by && self::unlocked_until() );
+		$frozen = self::is_locked() || ( $by > 0 && self::unlocked_until() && ( (int) $user_id !== $by || ! self::unlocking_session( (int) $user_id ) ) );
 		if ( ! $frozen || ! self::is_staff( $user_id ) ) {
 			return $caps;
 		}
 		return array( 'do_not_allow' );
+	}
+
+	/**
+	 * The fingerprint of a session token as kept in the lock state. Keyed with the keys in wp-config.php, so it
+	 * is not the value WordPress stores the session under (session_tokens) and cannot be made from the database.
+	 *
+	 * @param string $token Session token.
+	 * @return string
+	 */
+	private static function session_hash( $token ) {
+		return hash_hmac( 'sha256', (string) $token, PNCP_Seal::key_material() . '|pncp_unlock_session' );
+	}
+
+	/**
+	 * Is this request signed in, with a valid login cookie, in the session that unlocked the site for a while?
+	 * Not for application passwords, XML-RPC or anything else that does not carry that cookie (WooCommerce API
+	 * keys, WP-CLI, scheduled events).
+	 *
+	 * @param int $user_id User.
+	 * @return bool
+	 */
+	private static function unlocking_session( $user_id ) {
+		if ( isset( self::$session_ok[ $user_id ] ) ) {
+			return self::$session_ok[ $user_id ];
+		}
+		// False while checking: code hooked to the cookie check could ask for capabilities again.
+		self::$session_ok[ $user_id ] = false;
+		$hash = (string) self::state()['unlock_session'];
+		if ( '' === $hash || self::$app_password || ( defined( 'XMLRPC_REQUEST' ) && XMLRPC_REQUEST ) || get_current_user_id() !== $user_id ) {
+			return false;
+		}
+		$cookie = wp_parse_auth_cookie( '', 'logged_in' );
+		if ( empty( $cookie['token'] ) || ! hash_equals( $hash, self::session_hash( $cookie['token'] ) ) ) {
+			return false;
+		}
+		// The cookie must be genuine and its session still open (signed out = no rights).
+		self::$session_ok[ $user_id ] = (int) wp_validate_auth_cookie( '', 'logged_in' ) === $user_id;
+		return self::$session_ok[ $user_id ];
+	}
+
+	/**
+	 * Notes that this request signed in with an application password.
+	 */
+	public static function note_app_password() {
+		self::$app_password = true;
+		self::$session_ok   = array();
 	}
 
 	/**
@@ -697,14 +1301,31 @@ final class PNCP_Lockdown {
 	}
 
 	/**
-	 * No new application passwords (a back door) for staff while locked.
+	 * No application passwords (a back door) for staff while locked, and while unlocked for a while: they can
+	 * neither be used nor created until the site is unlocked "until I lock it again".
 	 *
 	 * @param bool    $available Available.
 	 * @param WP_User $user      User.
 	 * @return bool
 	 */
 	public static function app_passwords( $available, $user ) {
-		return $user instanceof WP_User && self::is_locked() && self::is_staff( $user->ID ) ? false : $available;
+		return $user instanceof WP_User && ( self::is_locked() || self::unlocked_until() ) && self::is_staff( $user->ID ) ? false : $available;
+	}
+
+	/**
+	 * While there is a snapshot of a lock: a staff application password that was not there when the site was
+	 * locked is refused (it can only have been added in the database), also with SCRAPELOCK_UNLOCK.
+	 *
+	 * @param WP_Error             $error Errors so far.
+	 * @param WP_User              $user  User.
+	 * @param array<string, mixed> $item  The application password.
+	 */
+	public static function app_password_errors( $error, $user, $item ) {
+		if ( ! $error instanceof WP_Error || ! $user instanceof WP_User || ! isset( $item['uuid'] ) || ! PNCP_Seal::app_password_new( $user->ID, (string) $item['uuid'] ) ) {
+			return;
+		}
+		self::tamper_alert( 'apps', $user->user_login );
+		$error->add( 'pncp_locked', __( 'This application password was added while the site was locked and cannot be used.', 'scrapelock' ) );
 	}
 
 	/**
@@ -831,84 +1452,431 @@ final class PNCP_Lockdown {
 	}
 
 	/**
-	 * Too many wrong codes lately?
+	 * How long codes are refused after too many wrong ones: the first time, the second time, and from the third
+	 * time on. The count of lockouts is forgotten a day after the last one ended.
 	 *
-	 * @return bool
+	 * @return int[] Seconds.
 	 */
-	private static function too_many_fails() {
-		// Per account and per IP. Not one counter for everybody: with it, someone using a stolen administrator
-		// session could keep typing wrong codes and stop the real owner from unlocking the site at all.
-		// A ceiling for everybody remains, five times higher than before: guessing from many accounts or IPs at
-		// once still stops, while one stolen session alone cannot reach it. Recovery codes are not affected by
-		// it (they are long and random), so the owner can still unlock.
-		if ( (int) get_site_transient( 'pncp_ld_fail_site' ) >= self::MAX_FAILS_SITE && ! self::$recovery_attempt ) {
-			return true;
-		}
-		return (int) get_site_transient( 'pncp_ld_fail_' . get_current_user_id() ) >= self::MAX_FAILS || (int) get_site_transient( self::ip_fail_key() ) >= self::MAX_FAILS_ALL;
+	private static function lockout_steps() {
+		return array( 15 * MINUTE_IN_SECONDS, HOUR_IN_SECONDS, 6 * HOUR_IN_SECONDS );
 	}
 
 	/**
-	 * The key of the wrong-code counter of this IP (IPv6: its /64).
+	 * The wrong-code counters this request is counted in: their limit, how long they count, whether reaching the
+	 * limit locks out (for longer each time) and whether the limit also holds back recovery codes.
+	 *
+	 * Per account from this IP: not per account alone, so that someone using a stolen session of the owner's own
+	 * account somewhere else cannot use up the owner's tries. Per account from all IPs: a higher limit, so that a
+	 * stolen session cannot guess from many IPs. Per IP (IPv6: per /64): all accounts together. And a ceiling for
+	 * the whole site: guessing from many accounts and IPs at once stops. Recovery codes (long and random, so they
+	 * cannot be guessed) are only held back by the per-IP limit: whatever happens on other IPs or other sessions
+	 * of the same account, the owner can still unlock with one.
+	 *
+	 * @return array<string, array{limit: int, window: int, lockout: bool, recovery: bool}>
+	 */
+	private static function fail_buckets() {
+		$user = get_current_user_id();
+		// 3.4: a keyed hash of the IP (the counters are also copied to a file next to the guard, see fails_save()).
+		$ip = substr( PNCP_Seal::sign( array( 'fails_ip', PNCP_Ip::limit_key( PNCP_Ip::client_ip() ) ) ), 0, 32 );
+		return array(
+			'u:' . $user . ':' . $ip => array(
+				'limit'    => self::MAX_FAILS,
+				'window'   => 15 * MINUTE_IN_SECONDS,
+				'lockout'  => true,
+				'recovery' => false,
+			),
+			'a:' . $user             => array(
+				'limit'    => self::MAX_FAILS_ACCOUNT,
+				'window'   => HOUR_IN_SECONDS,
+				'lockout'  => true,
+				'recovery' => false,
+			),
+			'i:' . $ip               => array(
+				'limit'    => self::MAX_FAILS_ALL,
+				'window'   => HOUR_IN_SECONDS,
+				'lockout'  => true,
+				'recovery' => true,
+			),
+			'site'                   => array(
+				'limit'    => self::MAX_FAILS_SITE,
+				'window'   => HOUR_IN_SECONDS,
+				'lockout'  => false,
+				'recovery' => false,
+			),
+		);
+	}
+
+	/**
+	 * One counter: wrong codes since the start of its window, locked out until, lockouts so far, last change.
+	 *
+	 * @param array<string, mixed> $fails All counters.
+	 * @param string               $key   Counter.
+	 * @return array{n: int, start: int, until: int, level: int, last: int}
+	 */
+	private static function fail_row( $fails, $key ) {
+		$row = isset( $fails[ $key ] ) && is_array( $fails[ $key ] ) ? $fails[ $key ] : array();
+		$out = array();
+		foreach ( array( 'n', 'start', 'until', 'level', 'last' ) as $field ) {
+			$out[ $field ] = isset( $row[ $field ] ) ? max( 0, (int) $row[ $field ] ) : 0;
+		}
+		// 3.4: values this code never writes are ignored, so a counter changed in the database (or a copy of
+		// one from much earlier) cannot refuse codes for longer than a real lockout: a window that starts in the
+		// future, a lockout that ends more than the longest lockout from now.
+		$now   = time();
+		$steps = self::lockout_steps();
+		if ( $out['start'] > $now + 60 ) {
+			$out['n']     = 0;
+			$out['start'] = 0;
+		}
+		if ( $out['until'] > $now + max( $steps ) + 60 ) {
+			$out['until'] = 0;
+		}
+		return $out;
+	}
+
+	/**
+	 * The wrong-code counters as they are in the database now (called inside the lock, so never an older copy
+	 * from earlier in the request or from the cache).
+	 *
+	 * @return array<string, mixed>
+	 */
+	private static function fails_load() {
+		self::reload();
+		return self::fails_read();
+	}
+
+	/**
+	 * The wrong-code counters as stored, if they match their signature. 3.4: they are signed, so counters
+	 * written in the database (for example a lockout of the owner's IP that would last for years) count as
+	 * none; counters stored by an earlier version start over once.
+	 *
+	 * @return array<string, mixed>
+	 */
+	private static function fails_read() {
+		$db   = self::fails_db();
+		$file = self::fails_file_read();
+		// 3.4: while the guard is in place, the counters are also kept in a file next to it, and every save counts
+		// one up in both. Counters deleted in the database, or set back to an older copy, would otherwise start
+		// again from nothing: a file further on than the database counts instead, and the owner is alerted.
+		if ( $file['seq'] > $db['seq'] ) {
+			self::tamper_alert( 'fails' );
+			return $file['rows'];
+		}
+		return $db['rows'];
+	}
+
+	/**
+	 * The counters in the database, if they match their signature: rows and the number of their save (0 for
+	 * counters saved before the copy in the file).
+	 *
+	 * @return array{rows: array<string, mixed>, seq: int}
+	 */
+	private static function fails_db() {
+		$stored = get_site_option( self::FAILS_OPTION, array() );
+		$none   = array(
+			'rows' => array(),
+			'seq'  => 0,
+		);
+		if ( ! is_array( $stored ) || ! isset( $stored['rows'], $stored['sig'] ) || ! is_array( $stored['rows'] ) ) {
+			return $none;
+		}
+		$seq    = isset( $stored['seq'] ) ? (int) $stored['seq'] : 0;
+		$signed = isset( $stored['seq'] ) ? array(
+			'fails' => $stored['rows'],
+			'seq'   => $seq,
+		) : array( 'fails' => $stored['rows'] );
+		if ( ! PNCP_Seal::valid( $signed, $stored['sig'] ) ) {
+			return $none;
+		}
+		return array(
+			'rows' => $stored['rows'],
+			'seq'  => $seq,
+		);
+	}
+
+	/**
+	 * The file with the copy of the wrong-code counters (next to the guard, see fails_read()). Not PHP: it is
+	 * never run, and the folder of must-use plugins only loads PHP files.
 	 *
 	 * @return string
 	 */
-	private static function ip_fail_key() {
-		return 'pncp_ld_fail_ip_' . md5( PNCP_Ip::limit_key( PNCP_Ip::client_ip() ) );
+	public static function fails_file() {
+		return PNCP_Paths::mu_plugins() . '/scrapelock-lockdown-fails.json';
 	}
 
 	/**
-	 * Counts a wrong code. Inside the same lock as the code check, so that parallel wrong guesses cannot lose
-	 * counts and get extra tries.
+	 * The counters in the file, if it matches its signature (otherwise none): rows and the number of their save.
+	 *
+	 * @return array{rows: array<string, mixed>, seq: int}
 	 */
-	private static function failed() {
-		$held = self::lock();
-		try {
-			$key  = 'pncp_ld_fail_' . get_current_user_id();
-			$mine = (int) get_site_transient( $key ) + 1;
-			set_site_transient( $key, $mine, 15 * MINUTE_IN_SECONDS );
-			$ip_key = self::ip_fail_key();
-			set_site_transient( $ip_key, (int) get_site_transient( $ip_key ) + 1, HOUR_IN_SECONDS );
-			set_site_transient( 'pncp_ld_fail_site', (int) get_site_transient( 'pncp_ld_fail_site' ) + 1, HOUR_IN_SECONDS );
-		} finally {
-			if ( $held ) {
-				self::release();
+	private static function fails_file_read() {
+		$none = array(
+			'rows' => array(),
+			'seq'  => 0,
+		);
+		$path = self::fails_file();
+		if ( ! is_readable( $path ) ) {
+			return $none;
+		}
+		clearstatcache( true, $path );
+		$data = json_decode( (string) file_get_contents( $path ), true ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Local file.
+		if ( ! is_array( $data ) || ! isset( $data['rows'], $data['seq'], $data['sig'] ) || ! is_array( $data['rows'] ) ) {
+			return $none;
+		}
+		$signed = array(
+			'fails_file' => $data['rows'],
+			'seq'        => (int) $data['seq'],
+		);
+		if ( ! PNCP_Seal::valid( $signed, $data['sig'] ) ) {
+			return $none;
+		}
+		return array(
+			'rows' => $data['rows'],
+			'seq'  => (int) $data['seq'],
+		);
+	}
+
+	/**
+	 * Saves the wrong-code counters. A counter is kept while it counts, while its lockout lasts and for a day
+	 * after it (so that the next lockout is longer); at most 1000 of them, so that wrong codes from very many IPs
+	 * cannot make the option grow without end. The ones with a lockout that still lasts are kept first.
+	 *
+	 * @param array<string, mixed> $fails All counters.
+	 */
+	private static function fails_save( $fails ) {
+		$now  = time();
+		$keep = array();
+		foreach ( $fails as $key => $row ) {
+			$row = self::fail_row( $fails, $key );
+			if ( $row['start'] + HOUR_IN_SECONDS >= $now || $row['until'] + DAY_IN_SECONDS >= $now ) {
+				$keep[ $key ] = $row;
 			}
 		}
-		self::event( 'failed' );
-		if ( self::MAX_FAILS === $mine ) {
-			self::mail( __( 'Too many wrong lockdown codes', 'scrapelock' ), __( 'Someone typed several wrong authenticator codes on the Lockdown page. Further attempts from that account are blocked for 15 minutes. If it was not you, change that account\'s password.', 'scrapelock' ) );
+		if ( count( $keep ) > 1000 ) {
+			uasort(
+				$keep,
+				static function ( $a, $b ) use ( $now ) {
+					$locked = (int) ( $b['until'] > $now ) - (int) ( $a['until'] > $now );
+					return $locked ? $locked : $b['last'] - $a['last'];
+				}
+			);
+			$keep = array_slice( $keep, 0, 1000, true );
+		}
+		// 3.4: one more than the last save in the database and in the file (see fails_read()).
+		$seq    = max( self::fails_db()['seq'], self::fails_file_read()['seq'] ) + 1;
+		$stored = array(
+			'rows' => $keep,
+			'seq'  => $seq,
+			// Named, so it cannot pass for other signed data.
+			'sig'  => PNCP_Seal::sign(
+				array(
+					'fails' => $keep,
+					'seq'   => $seq,
+				)
+			),
+		);
+		if ( is_multisite() ) {
+			update_site_option( self::FAILS_OPTION, $stored );
+		} else {
+			update_option( self::FAILS_OPTION, $stored, false ); // Not autoloaded: only read on the Lockdown page.
+		}
+		// 3.4: the copy in the file next to the guard (after the database: a file newer than the database means
+		// the database was changed). Only while the guard is there; the file goes with it.
+		$path = self::fails_file();
+		if ( PNCP_Seal::guard_installed() && wp_is_writable( dirname( $path ) ) ) {
+			$json = (string) wp_json_encode(
+				array(
+					'rows' => $keep,
+					'seq'  => $seq,
+					'sig'  => PNCP_Seal::sign(
+						array(
+							'fails_file' => $keep,
+							'seq'        => $seq,
+						)
+					),
+				)
+			);
+			file_put_contents( $path, $json, LOCK_EX ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_file_put_contents -- A small data file next to the guard, written inside the code-check lock.
 		}
 	}
 
 	/**
-	 * Checks a code from the app or, if allowed, a recovery code (used up).
+	 * Until when codes typed on this request are refused (0: they are not).
 	 *
-	 * @param string $code           Code typed.
-	 * @param bool   $allow_recovery Recovery codes accepted.
-	 * @return string 'app', 'recovery' or '' (wrong).
+	 * @param array<string, mixed> $fails    All counters.
+	 * @param bool                 $recovery The code has the shape of a recovery code.
+	 * @return int
 	 */
-	private static function check_code( $code, $allow_recovery ) {
-		// One check at a time, on the state as it is in the database now: two requests with the same code at
-		// the same moment cannot both pass (the second sees the step or the recovery code already used).
+	private static function blocked_until( $fails, $recovery ) {
+		$now   = time();
+		$until = 0;
+		foreach ( self::fail_buckets() as $key => $bucket ) {
+			if ( $recovery && ! $bucket['recovery'] ) {
+				continue;
+			}
+			$row = self::fail_row( $fails, $key );
+			if ( $bucket['lockout'] && $row['until'] > $now ) {
+				$until = max( $until, $row['until'] );
+			} elseif ( ! $bucket['lockout'] && $row['n'] >= $bucket['limit'] && $row['start'] + $bucket['window'] > $now ) {
+				$until = max( $until, $row['start'] + $bucket['window'] );
+			}
+		}
+		return $until;
+	}
+
+	/**
+	 * Counts a wrong code in every counter of this request (a wrong recovery code only in the per-IP one: it is
+	 * only held back there). A counter that reaches its limit locks out: 15 minutes the first time, then 1 hour,
+	 * then 6 hours.
+	 *
+	 * @param array<string, mixed> $fails    All counters (changed).
+	 * @param bool                 $recovery The code has the shape of a recovery code.
+	 * @return array<int, array{0: string, 1: int}> The lockouts this wrong code started: kind and seconds.
+	 */
+	private static function count_fail( &$fails, $recovery ) {
+		$now   = time();
+		$steps = self::lockout_steps();
+		$out   = array();
+		foreach ( self::fail_buckets() as $key => $bucket ) {
+			if ( $recovery && ! $bucket['recovery'] ) {
+				continue;
+			}
+			$row = self::fail_row( $fails, $key );
+			if ( $row['start'] + $bucket['window'] <= $now ) {
+				$row['n']     = 0;
+				$row['start'] = $now;
+			}
+			if ( $row['level'] && $row['until'] + DAY_IN_SECONDS < $now ) {
+				$row['level'] = 0; // A day without a lockout: the next one is the shortest again.
+			}
+			++$row['n'];
+			$row['last'] = $now;
+			if ( $bucket['lockout'] && $row['n'] >= $bucket['limit'] ) {
+				$length       = $steps[ min( $row['level'], count( $steps ) - 1 ) ];
+				$row['until'] = $now + $length;
+				$row['n']     = 0;
+				$row['start'] = $now;
+				++$row['level'];
+				$out[] = array( substr( $key, 0, 1 ), $length );
+			} elseif ( ! $bucket['lockout'] && $row['n'] === $bucket['limit'] ) {
+				$out[] = array( 's', $row['start'] + $bucket['window'] - $now );
+			}
+			$fails[ $key ] = $row;
+		}
+		return $out;
+	}
+
+	/**
+	 * Logs a lockout and emails the site's administration address about it.
+	 *
+	 * @param string $kind   'u' (this account from this IP), 'a' (this account), 'i' (this IP) or 's' (the site).
+	 * @param int    $length Seconds.
+	 */
+	private static function lockout_notice( $kind, $length ) {
+		$time = human_time_diff( 0, max( 60, $length ) );
+		switch ( $kind ) {
+			case 'u':
+				/* translators: %s: length of time, e.g. "15 mins" */
+				$message = sprintf( __( 'Someone typed several wrong authenticator codes on the Lockdown page. Further codes from that account and IP are refused for %s. If it was not you, change that account\'s password and sign out its other sessions on the Lockdown page.', 'scrapelock' ), $time );
+				$detail  = __( 'account and IP', 'scrapelock' );
+				break;
+			case 'a':
+				/* translators: %s: length of time, e.g. "1 hour" */
+				$message = sprintf( __( 'Many wrong authenticator codes were typed on the Lockdown page with the same account. Further app codes from that account are refused for %s; recovery codes still work. If it was not you, change that account\'s password and sign out its other sessions on the Lockdown page.', 'scrapelock' ), $time );
+				$detail  = __( 'account', 'scrapelock' );
+				break;
+			case 'i':
+				/* translators: %s: length of time, e.g. "1 hour" */
+				$message = sprintf( __( 'Many wrong codes on the Lockdown page came from the same IP. Further codes from that IP are refused for %s.', 'scrapelock' ), $time );
+				$detail  = __( 'IP', 'scrapelock' );
+				break;
+			default:
+				/* translators: %s: length of time, e.g. "1 hour" */
+				$message = sprintf( __( 'Many wrong codes were typed on the Lockdown page, from several accounts or IPs. App codes are refused on the whole site for up to %s; recovery codes still work. Check who has administrator access to the site.', 'scrapelock' ), $time );
+				$detail  = __( 'whole site', 'scrapelock' );
+		}
+		self::event( 'lockout', $detail . ', ' . $time );
+		self::mail( __( 'Too many wrong lockdown codes', 'scrapelock' ), $message );
+	}
+
+	/**
+	 * Checks a code in one critical section: under the lock, on what is in the database now, the counters are
+	 * checked, the code is checked and a wrong code is counted. Parallel requests wait for each other, so they
+	 * cannot all pass the counter check before any of them is counted, and the same code cannot be used twice.
+	 *
+	 * @param callable $check    Checks the code, inside the lock: returns '' if it is wrong.
+	 * @param bool     $recovery The code has the shape of a recovery code (only the per-IP limit holds it back).
+	 * @return string What $check returned, '' (wrong), 'wait' (too many wrong codes) or 'busy' (no lock).
+	 */
+	private static function attempt( $check, $recovery ) {
 		if ( ! self::lock() ) {
 			return 'busy';
 		}
+		$lockouts = array();
 		try {
-			self::reload();
-			return self::check_code_locked( $code, $allow_recovery );
+			$fails = self::fails_load();
+			if ( self::blocked_until( $fails, $recovery ) ) {
+				$result = 'wait';
+			} else {
+				$result = (string) call_user_func( $check );
+				if ( '' === $result ) {
+					$lockouts = self::count_fail( $fails, $recovery );
+					self::fails_save( $fails );
+				}
+			}
 		} finally {
 			self::release();
 		}
+		if ( '' === $result ) {
+			self::event( 'failed' );
+		}
+		foreach ( $lockouts as $lockout ) {
+			self::lockout_notice( $lockout[0], $lockout[1] );
+		}
+		return $result;
 	}
 
 	/**
-	 * check_code(), inside the lock.
+	 * Until when app codes (and recovery codes) typed now from this account and IP would be refused, for the
+	 * message on the page (read without the lock: only shown).
 	 *
-	 * @param string $code           Code typed.
-	 * @param bool   $allow_recovery Recovery codes accepted.
+	 * @return int[] Array of two: app codes, recovery codes (0: not refused).
+	 */
+	private static function wait_until() {
+		$fails = self::fails_read();
+		return array( self::blocked_until( $fails, false ), self::blocked_until( $fails, true ) );
+	}
+
+	/**
+	 * Signs out every other session of the current account (needs a correct code, also while locked: someone
+	 * with a stolen session must not stay signed in). The session of this request stays.
+	 *
+	 * @return bool
+	 */
+	private static function sign_out_others() {
+		$token = wp_get_session_token();
+		if ( '' === $token ) {
+			return false;
+		}
+		WP_Session_Tokens::get_instance( get_current_user_id() )->destroy_others( $token );
+		self::event( 'sessions' );
+		return true;
+	}
+
+	/**
+	 * Checks a code from the app or, if allowed, a recovery code (used up). Only inside attempt(), so on the
+	 * state as it is in the database now: two requests with the same code at the same moment cannot both pass
+	 * (the second sees the step or the recovery code already used). A code with the shape of a recovery code is
+	 * never checked as an app code (app codes have 6 digits), so it cannot be used to guess app codes past the
+	 * limits that hold back app codes.
+	 *
+	 * @param string      $code           Code typed.
+	 * @param bool        $allow_recovery Recovery codes accepted.
+	 * @param string|null $found          The stored hash the code matched, found before the lock was taken
+	 *                                    (recovery_match(): '' when none), or null to compare here.
 	 * @return string 'app', 'recovery' or '' (wrong).
 	 */
-	private static function check_code_locked( $code, $allow_recovery ) {
+	private static function check_code_locked( $code, $allow_recovery, $found = null ) {
 		$state  = self::state();
 		$secret = self::unseal( $state['secret'] );
 		$step   = '' !== $secret ? PNCP_Totp::verify( $secret, $code, (int) $state['last_step'] ) : false;
@@ -918,10 +1886,11 @@ final class PNCP_Lockdown {
 			return 'app';
 		}
 		$typed = strtolower( preg_replace( '/[^a-z0-9]/i', '', (string) $code ) );
-		if ( $allow_recovery && 8 === strlen( $typed ) ) {
+		if ( $allow_recovery && 8 === strlen( $typed ) && '' !== $found ) {
 			$typed = substr( $typed, 0, 4 ) . '-' . substr( $typed, 4 );
 			foreach ( $state['codes'] as $i => $hash ) {
-				if ( password_verify( $typed, $hash ) ) {
+				// The hash found before the lock must still be there (not used up meanwhile by another request).
+				if ( null !== $found ? hash_equals( (string) $hash, $found ) : password_verify( $typed, $hash ) ) {
 					unset( $state['codes'][ $i ] );
 					$state['codes'] = array_values( $state['codes'] );
 					self::save( $state );
@@ -935,42 +1904,151 @@ final class PNCP_Lockdown {
 	}
 
 	/**
-	 * Sets the row that holds the lock (the same place as the state: wp_options, or wp_sitemeta on
-	 * multisite) to a value, optionally only while its current value is below a time: one atomic UPDATE.
+	 * Which stored recovery code hash a typed code matches, compared outside the lock (see handle()): the state
+	 * as read on this request. check_code_locked() then only checks that the hash is still unused.
 	 *
-	 * @param string   $value      New value.
-	 * @param int|null $older_than Only if the current value is below this (null: always).
+	 * @param string $code Code typed.
+	 * @return string The matching hash, or '' when none matches.
+	 */
+	private static function recovery_match( $code ) {
+		$typed = strtolower( preg_replace( '/[^a-z0-9]/i', '', (string) $code ) );
+		if ( 8 !== strlen( $typed ) ) {
+			return '';
+		}
+		$typed = substr( $typed, 0, 4 ) . '-' . substr( $typed, 4 );
+		foreach ( (array) self::state()['codes'] as $hash ) {
+			if ( is_string( $hash ) && password_verify( $typed, $hash ) ) {
+				return $hash;
+			}
+		}
+		return '';
+	}
+
+	/**
+	 * The value of the row that holds the lock, read from the database itself (never from a cache): the same
+	 * place as the state, wp_options, or wp_sitemeta on multisite.
+	 *
+	 * @return string|null Null when the row is missing.
+	 */
+	private static function mutex_read() {
+		global $wpdb;
+		// phpcs:disable WordPress.DB.DirectDatabaseQuery -- Compare-and-set on our own row needs the value as it is now.
+		$value = is_multisite()
+			? $wpdb->get_var( $wpdb->prepare( 'SELECT meta_value FROM %i WHERE meta_key = %s AND site_id = %d LIMIT 1', $wpdb->sitemeta, self::MUTEX, get_current_network_id() ) )
+			: $wpdb->get_var( $wpdb->prepare( 'SELECT option_value FROM %i WHERE option_name = %s LIMIT 1', $wpdb->options, self::MUTEX ) );
+		// phpcs:enable
+		return null === $value ? null : (string) $value;
+	}
+
+	/**
+	 * Changes the row that holds the lock from one value to another: one atomic UPDATE, which only one of
+	 * several requests that read the same value can win.
+	 *
+	 * @param string $old   The value read before.
+	 * @param string $value New value.
 	 * @return int Rows changed.
 	 */
-	private static function mutex_set( $value, $older_than = null ) {
+	private static function mutex_swap( $old, $value ) {
 		global $wpdb;
 		// phpcs:disable WordPress.DB.DirectDatabaseQuery -- An atomic compare-and-set on our own row; no cache to update.
-		if ( is_multisite() ) {
-			$rows = null === $older_than
-				? $wpdb->query( $wpdb->prepare( 'UPDATE %i SET meta_value = %s WHERE meta_key = %s AND site_id = %d', $wpdb->sitemeta, $value, self::MUTEX, get_current_network_id() ) )
-				: $wpdb->query( $wpdb->prepare( 'UPDATE %i SET meta_value = %s WHERE meta_key = %s AND site_id = %d AND meta_value + 0 < %d', $wpdb->sitemeta, $value, self::MUTEX, get_current_network_id(), $older_than ) );
-		} else {
-			$rows = null === $older_than
-				? $wpdb->query( $wpdb->prepare( 'UPDATE %i SET option_value = %s WHERE option_name = %s', $wpdb->options, $value, self::MUTEX ) )
-				: $wpdb->query( $wpdb->prepare( 'UPDATE %i SET option_value = %s WHERE option_name = %s AND option_value + 0 < %d', $wpdb->options, $value, self::MUTEX, $older_than ) );
-		}
+		$rows = is_multisite()
+			? $wpdb->query( $wpdb->prepare( 'UPDATE %i SET meta_value = %s WHERE meta_key = %s AND site_id = %d AND meta_value = %s', $wpdb->sitemeta, $value, self::MUTEX, get_current_network_id(), $old ) )
+			: $wpdb->query( $wpdb->prepare( 'UPDATE %i SET option_value = %s WHERE option_name = %s AND option_value = %s', $wpdb->options, $value, self::MUTEX, $old ) );
 		// phpcs:enable
 		return (int) $rows;
 	}
 
 	/**
-	 * Takes the lock: an atomic UPDATE that only one request can win, valid for 10 seconds at most (so a
-	 * request that dies never leaves it held). Waits up to 3 seconds for it.
+	 * A new value for the row that holds the lock: until when it is held, a random token and a signature.
+	 *
+	 * @param int $until Until when.
+	 * @return string
+	 */
+	private static function mutex_value( $until ) {
+		$token = wp_generate_password( 16, false );
+		return (int) $until . ':' . $token . ':' . PNCP_Seal::sign( array( 'mutex', (int) $until, $token ) );
+	}
+
+	/**
+	 * Is the lock held by a request right now? Only a value written by ScrapeLock counts (3.4: it is signed):
+	 * one written in the database to keep every code check "busy" is free, whatever time it names, and so is
+	 * one that ends more than 6 seconds from now (3.4: a lock is only ever taken for 5 seconds; a code check
+	 * takes a fraction of a second).
+	 *
+	 * @param string|null $value Value of the row.
+	 * @param int         $now   Time.
+	 * @return bool
+	 */
+	private static function mutex_held( $value, $now ) {
+		$parts = explode( ':', (string) $value, 3 );
+		if ( 3 !== count( $parts ) || ! ctype_digit( $parts[0] ) ) {
+			return false;
+		}
+		$until = (int) $parts[0];
+		return $until > $now && $until <= $now + self::MUTEX_TTL + 1 && PNCP_Seal::valid( array( 'mutex', $until, $parts[1] ), $parts[2] );
+	}
+
+	/**
+	 * Takes the lock if it is free when looked at: read the row, and swap it for a new value only if it is
+	 * still the value that was read.
+	 *
+	 * 3.4: a value this request already saw in the row, then saw replaced by another one, and now sees again was
+	 * written back (every lock gets a new random value, so a request that really holds the lock never writes an
+	 * earlier one): it counts as free.
+	 *
+	 * @param string[] $seen The values this request saw in the row so far, in order (changed).
+	 * @return bool
+	 */
+	private static function mutex_take( &$seen = array() ) {
+		$now     = time();
+		$current = self::mutex_read();
+		if ( null === $current ) {
+			self::mutex_create();
+			$current = self::mutex_read();
+		}
+		$replayed = null !== $current && '0' !== $current && in_array( $current, array_slice( $seen, 0, -1 ), true );
+		if ( null !== $current && end( $seen ) !== $current ) {
+			$seen[] = $current;
+		}
+		if ( null === $current || ( ! $replayed && self::mutex_held( $current, $now ) ) ) {
+			return false;
+		}
+		$value = self::mutex_value( $now + self::MUTEX_TTL );
+		if ( 1 !== self::mutex_swap( $current, $value ) ) {
+			return false;
+		}
+		self::$mutex = $value;
+		return true;
+	}
+
+	/**
+	 * Creates the row that holds the lock, free, if it is not there yet. Never over another request's value:
+	 * add_option() writes with "ON DUPLICATE KEY UPDATE", so two requests that both found no row would both set
+	 * it to free, and both take the lock (3.4: the first wrong codes on a site could be checked twice at once).
+	 */
+	private static function mutex_create() {
+		global $wpdb;
+		if ( is_multisite() ) {
+			add_site_option( self::MUTEX, '0' ); // wp_sitemeta has no unique key: a plain insert after a check.
+			return;
+		}
+		$quiet = $wpdb->suppress_errors( true );
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery -- Our own row; a duplicate is refused by the unique key, as wanted.
+		$wpdb->query( $wpdb->prepare( 'INSERT INTO %i (option_name, option_value, autoload) VALUES (%s, %s, %s)', $wpdb->options, self::MUTEX, '0', 'no' ) );
+		$wpdb->suppress_errors( $quiet );
+	}
+
+	/**
+	 * Takes the lock: an atomic compare-and-set that only one request can win, valid for MUTEX_TTL seconds at
+	 * most (so a request that dies never leaves it held). Waits up to 5 seconds for it: parallel requests wait
+	 * in turn.
 	 *
 	 * @return bool
 	 */
 	private static function lock() {
-		if ( false === get_site_option( self::MUTEX, false ) ) {
-			add_site_option( self::MUTEX, '0' );
-		}
-		for ( $i = 0; $i < 30; $i++ ) {
-			$now = time();
-			if ( 1 === self::mutex_set( (string) ( $now + 10 ), $now ) ) {
+		$seen = array();
+		for ( $i = 0; $i < 50; $i++ ) {
+			if ( self::mutex_take( $seen ) ) {
 				return true;
 			}
 			usleep( 100000 );
@@ -979,10 +2057,23 @@ final class PNCP_Lockdown {
 	}
 
 	/**
-	 * Releases the lock.
+	 * Takes the lock if it is free right now, without waiting (expire_window(), on an ordinary request).
+	 *
+	 * @return bool
+	 */
+	private static function try_lock() {
+		return self::mutex_take();
+	}
+
+	/**
+	 * Releases the lock, only if it is still the one this request took (after more than MUTEX_TTL seconds another
+	 * request may hold it now).
 	 */
 	private static function release() {
-		self::mutex_set( '0' );
+		if ( '' !== self::$mutex ) {
+			self::mutex_swap( self::$mutex, '0' );
+			self::$mutex = '';
+		}
 	}
 
 	/**
@@ -990,14 +2081,25 @@ final class PNCP_Lockdown {
 	 * persistent object cache, which the request that changed it has already updated).
 	 */
 	private static function reload() {
+		self::forget_cached();
+		self::$state      = null;
+		self::$session_ok = array();
+	}
+
+	/**
+	 * Forgets the cached copy of the stored state (and the counters next to it) on this request.
+	 */
+	private static function forget_cached() {
 		if ( is_multisite() ) {
 			wp_cache_delete( get_current_network_id() . ':' . self::OPTION, 'site-options' );
+			wp_cache_delete( get_current_network_id() . ':' . self::FAILS_OPTION, 'site-options' );
+			wp_cache_delete( get_current_network_id() . ':notoptions', 'site-options' );
 		} else {
 			wp_cache_delete( self::OPTION, 'options' );
+			wp_cache_delete( self::FAILS_OPTION, 'options' );
 			wp_cache_delete( 'alloptions', 'options' );
 			wp_cache_delete( 'notoptions', 'options' );
 		}
-		self::$state = null;
 	}
 
 	/* ---------- Log and email ---------- */
@@ -1061,9 +2163,18 @@ final class PNCP_Lockdown {
 			require_once ABSPATH . 'wp-admin/includes/plugin.php';
 		}
 		self::$writing = true;
-		deactivate_plugins( $files, true );
+		// The stored list (not the one the guard keeps on this request: the same list, with ScrapeLock added).
+		PNCP_Seal::unguarded(
+			static function () use ( $files ) {
+				deactivate_plugins( $files, true );
+			}
+		);
 		self::$writing = false;
-		PNCP_Seal::take_snapshot(); // The new list of active plugins is the one to keep.
+		// The new list of active plugins is the one to keep. Only that value in the snapshot: the other protected
+		// options and the administrators stay as they were signed when the site was locked.
+		PNCP_Seal::update_snapshot( 'active_plugins' );
+		// Multisite: a plugin active on the whole network is deactivated there; that list is kept too.
+		PNCP_Seal::update_network_value( 'active_sitewide_plugins' );
 	}
 
 	/**
@@ -1074,7 +2185,7 @@ final class PNCP_Lockdown {
 	 */
 	private static function mail( $subject, $message ) {
 		$user = wp_get_current_user();
-		$to   = is_multisite() ? get_site_option( 'admin_email' ) : get_option( 'admin_email' );
+		$to   = self::alert_to();
 		if ( ! is_email( $to ) ) {
 			return;
 		}
@@ -1085,6 +2196,25 @@ final class PNCP_Lockdown {
 			. sprintf( __( 'IP: %s', 'scrapelock' ), PNCP_Ip::client_ip() ) . "\n"
 			. self::page_url() . "\n";
 		wp_mail( $to, '[' . wp_specialchars_decode( get_bloginfo( 'name' ), ENT_QUOTES ) . '] ScrapeLock: ' . $subject, $body );
+	}
+
+	/**
+	 * Where alerts go. 3.4: while the site is locked (or the lock data was changed), the administration address
+	 * as it was signed when the site was locked: from the snapshot (or its copy in the guard file), or else from
+	 * the signed state. Someone who changed the address in the database does not get the alert about it.
+	 *
+	 * @return string
+	 */
+	private static function alert_to() {
+		$live = is_multisite() ? get_site_option( 'admin_email' ) : get_option( 'admin_email' );
+		if ( ! self::is_locked() && '' === self::tampered() ) {
+			return (string) $live;
+		}
+		$to = PNCP_Seal::alert_address();
+		if ( '' === $to && self::$sig_ok && is_email( self::state()['mail'] ) ) {
+			$to = (string) self::state()['mail'];
+		}
+		return '' !== $to ? $to : (string) $live;
 	}
 
 	/* ---------- wp-admin ---------- */
@@ -1149,8 +2279,34 @@ final class PNCP_Lockdown {
 		$until = self::unlocked_until();
 		if ( $until && $owner ) {
 			/* translators: %s: time */
-			echo '<div class="notice notice-info"><p>' . esc_html( sprintf( __( 'The site is unlocked until %s, then it locks again by itself.', 'scrapelock' ), wp_date( (string) get_option( 'time_format' ), $until ) ) ) . ' <a href="' . esc_url( self::page_url() ) . '">' . esc_html__( 'Lock now', 'scrapelock' ) . '</a></p></div>';
+			echo '<div class="notice notice-info"><p>' . esc_html( sprintf( __( 'The site is unlocked until %s, then it locks again by itself.', 'scrapelock' ), wp_date( (string) get_option( 'time_format' ), $until ) ) ) . ' ';
+			if ( (int) self::state()['unlocked_by'] === $user ) {
+				echo esc_html( self::window_text() ) . ' ';
+			}
+			echo '<a href="' . esc_url( self::page_url() ) . '">' . esc_html__( 'Lock now', 'scrapelock' ) . '</a></p></div>';
 		}
+	}
+
+	/**
+	 * While unlocked for a while: what is kept when the site locks again by itself, and what was noted so far.
+	 *
+	 * @return string
+	 */
+	private static function window_text() {
+		$text  = __( 'What you change through WordPress in this browser session is kept when it locks again: plugins you activate or deactivate, the theme, the site address, the administration email, roles, administrators you add and ScrapeLock settings. Changes made any other way (directly in the database, from another session or with WP-CLI) are put back.', 'scrapelock' );
+		$noted = PNCP_Seal::window_summary();
+		if ( $noted['options'] || $noted['admins'] ) {
+			$parts = $noted['options'];
+			if ( $noted['admins'] ) {
+				/* translators: %d: number of accounts */
+				$parts[] = sprintf( _n( '%d new administrator', '%d new administrators', $noted['admins'], 'scrapelock' ), $noted['admins'] );
+			}
+			/* translators: %s: list of settings */
+			$text .= ' ' . sprintf( __( 'Kept so far: %s.', 'scrapelock' ), implode( ', ', $parts ) );
+		} else {
+			$text .= ' ' . __( 'Nothing changed so far.', 'scrapelock' );
+		}
+		return $text;
 	}
 
 	/**
@@ -1299,7 +2455,13 @@ final class PNCP_Lockdown {
 			if ( ! self::is_locked() ) {
 				self::render_warning();
 			}
-			if ( ! self::configured() && '' !== $pending ) {
+			if ( is_multisite() ) {
+				self::render_multisite();
+			}
+			if ( ! self::configured() && self::is_locked() ) {
+				// The state was deleted in the database while the site is locked (check_seal()): no new app here.
+				echo '<div class="notice notice-error inline"><p>' . esc_html__( 'The Lockdown data in the database was changed outside WordPress, so its code cannot be trusted and the site stays locked. To unlock, add define( \'SCRAPELOCK_UNLOCK\', true ); to wp-config.php, remove the app on this page, set it up again and lock. Then remove the line.', 'scrapelock' ) . '</p></div>';
+			} elseif ( ! self::configured() && '' !== $pending ) {
 				self::render_pending( self::unseal( $pending ) );
 			} elseif ( ! self::configured() ) {
 				self::render_setup();
@@ -1331,18 +2493,59 @@ final class PNCP_Lockdown {
 			'removed'   => array( 'success', __( 'The authenticator app was removed and the lock is off.', 'scrapelock' ) ),
 			'cancelled' => array( 'info', __( 'Setup cancelled.', 'scrapelock' ) ),
 			'wrong'     => array( 'error', __( 'Wrong or expired code. Wait for a new code in the app and try again.', 'scrapelock' ) ),
-			'wait'      => array( 'error', __( 'Too many wrong codes. Try again in 15 minutes.', 'scrapelock' ) ),
+			'wait'      => array( 'error', self::wait_message() ),
+			'busy'      => array( 'error', __( 'Another code was being checked at the same moment. Try again.', 'scrapelock' ) ),
+			'sessions'  => array( 'success', __( 'All other sessions of your account were signed out. You are still signed in here.', 'scrapelock' ) ),
+			'unlocked_out' => array( 'success', __( 'The site is unlocked, and all other sessions of your account were signed out.', 'scrapelock' ) ),
 			'error'     => array( 'error', __( 'That action is not possible right now.', 'scrapelock' ) ),
 			'roles'     => array( 'success', __( 'The frozen roles were saved.', 'scrapelock' ) ),
 			'integrity' => array( 'success', __( 'The file integrity check is done.', 'scrapelock' ) ),
 			'quarantine' => array( 'success', __( 'The quarantine setting was saved.', 'scrapelock' ) ),
 			'ack'       => array( 'error', __( 'Tick the box to confirm that you have saved your recovery codes and understand how to unlock the site.', 'scrapelock' ) ),
 			'tampered'  => array( 'error', __( 'The Lockdown data in the database was changed outside WordPress, so its code cannot be trusted and the site stays locked. To unlock, add define( \'SCRAPELOCK_UNLOCK\', true ); to wp-config.php, remove the app on this page, set it up again and lock. Then remove the line.', 'scrapelock' ) ),
+			'noguard'   => array( 'error', __( 'The site was not locked: the guard file wp-content/mu-plugins/scrapelock-lockdown-guard.php could not be written, because WordPress cannot write files to that folder directly. Without it, someone who can change the database directly (for example through a vulnerable plugin) could unlock the site. Let the web server write to wp-content/mu-plugins (create the folder if it is missing), then lock again. Or tick "Lock without the guard file (weaker)".', 'scrapelock' ) ),
 			'guard'     => array( 'error', __( 'The site was not unlocked: the guard file wp-content/mu-plugins/scrapelock-lockdown-guard.php could not be changed. Check that the web server may write to that folder, or unlock from the server with SCRAPELOCK_UNLOCK.', 'scrapelock' ) ),
 		);
 		if ( isset( $messages[ $code ] ) ) {
 			printf( '<div class="notice notice-%s inline"><p>%s</p></div>', esc_attr( $messages[ $code ][0] ), esc_html( $messages[ $code ][1] ) );
 		}
+		$key     = 'pncp_ld_unknown_' . get_current_user_id();
+		$unknown = in_array( $code, array( 'unlocked', 'unlocked_out' ), true ) ? get_site_transient( $key ) : false;
+		if ( is_array( $unknown ) && $unknown ) {
+			delete_site_transient( $key );
+			printf( '<div class="notice notice-warning inline"><p>%s</p></div>', esc_html( self::unknown_text( array_map( 'strval', $unknown ) ) ) );
+		}
+	}
+
+	/**
+	 * The warning about accounts that got administrator rights behind WordPress's back while the site was
+	 * locked, after a full unlock.
+	 *
+	 * @param string[] $unknown The accounts.
+	 * @return string
+	 */
+	private static function unknown_text( $unknown ) {
+		/* translators: %s: list of accounts, e.g. "bob (#5), eve (#7)" */
+		return sprintf( __( 'Check these accounts: they got administrator rights directly in the database while the site was locked, and can sign in and administer the site now that it is unlocked. Remove their rights or delete them if you did not give them: %s', 'scrapelock' ), implode( ', ', $unknown ) );
+	}
+
+	/**
+	 * After too many wrong codes: until when codes are refused, and whether a recovery code still works.
+	 *
+	 * @return string
+	 */
+	private static function wait_message() {
+		list( $app, $recovery ) = self::wait_until();
+		$fmt = get_option( 'date_format' ) . ' ' . get_option( 'time_format' );
+		if ( $recovery ) {
+			/* translators: %s: date and time */
+			return sprintf( __( 'Too many wrong codes from this IP. Try again after %s.', 'scrapelock' ), wp_date( $fmt, $recovery ) );
+		}
+		if ( $app ) {
+			/* translators: %s: date and time */
+			return sprintf( __( 'Too many wrong codes. App codes are refused until %s. You can still unlock with a recovery code.', 'scrapelock' ), wp_date( $fmt, $app ) );
+		}
+		return __( 'Too many wrong codes. Try again later.', 'scrapelock' );
 	}
 
 	/**
@@ -1363,6 +2566,63 @@ final class PNCP_Lockdown {
 					<li><?php esc_html_e( 'The app is tied to the security keys in wp-config.php (AUTH_KEY, AUTH_SALT), which some security plugins and hosting companies change automatically. To tie it to a key of ScrapeLock\'s own instead: first remove the app below, then add SCRAPELOCK_KEY to wp-config.php, then connect the app again. Adding the key while the app is connected makes its codes stop working.', 'scrapelock' ); ?></li>
 				<?php endif; ?>
 			</ul>
+		</div>
+		<?php
+	}
+
+	/**
+	 * Multisite: what the lock covers on a network, and its limits.
+	 */
+	private static function render_multisite() {
+		$limits = PNCP_Seal::network_limits();
+		?>
+		<div class="pncp-ld-box" role="note">
+			<h2><?php esc_html_e( 'Multisite network', 'scrapelock' ); ?></h2>
+			<ul>
+				<li><?php esc_html_e( 'The lock covers the whole network: locking or unlocking here does it for every site.', 'scrapelock' ); ?></li>
+				<li>
+				<?php
+				echo esc_html(
+					sprintf(
+						/* translators: %d: number of sites */
+						__( 'When you lock, ScrapeLock saves a signed copy of the plugins active on the whole network, the super admins, the network admin email and the registration setting, and of the protected settings and administrators of every site where ScrapeLock is active (up to %d sites). Each site checks its own copy and puts back what was changed directly in the database. An account made a super admin or a site administrator behind WordPress\'s back cannot sign in.', 'scrapelock' ),
+						$limits['sites']
+					)
+				);
+				?>
+				</li>
+				<li>
+				<?php
+				echo esc_html(
+					sprintf(
+						/* translators: %d: number of sites */
+						__( 'The guard file keeps the plugins active on the whole network (with ScrapeLock) and, for the first %d sites, their active plugins and theme as they were when you locked, from the start of every request.', 'scrapelock' ),
+						$limits['guard']
+					)
+				);
+				?>
+				</li>
+				<li>
+				<?php
+				echo esc_html(
+					sprintf(
+						/* translators: %d: number of sites */
+						__( 'Limits: sites added after you locked are not covered until you unlock and lock again. On a network with more than %d sites, the full copy of the settings of the other sites is saved on their first visit after you locked, from the values that still match the fingerprints taken when you locked: a setting changed directly in the database before that visit is reported, but apart from the active plugins and the theme it cannot be put back.', 'scrapelock' ),
+						$limits['now']
+					)
+				);
+				?>
+				</li>
+			</ul>
+			<?php
+			$coverage = PNCP_Seal::network_coverage();
+			if ( self::is_locked() && ! PNCP_Seal::network_mode() ) {
+				echo '<p class="pncp-inline-warning">' . esc_html__( 'This network was locked with an earlier version of ScrapeLock: only the site where it was locked has a saved copy of its settings, and the super admins and the network plugins are not checked. Unlock and lock again to protect every site.', 'scrapelock' ) . '</p>';
+			} elseif ( null !== $coverage && self::is_locked() ) {
+				/* translators: 1: number of sites, 2: number of sites */
+				echo '<p>' . esc_html( sprintf( __( 'Sites covered by this lock: %1$d of %2$d (sites where ScrapeLock is not active are not counted as covered).', 'scrapelock' ), $coverage['covered'], $coverage['total'] ) ) . '</p>';
+			}
+			?>
 		</div>
 		<?php
 	}
@@ -1567,6 +2827,10 @@ final class PNCP_Lockdown {
 					if ( $by ) {
 						/* translators: %s: user name */
 						echo '<br><small>' . esc_html( sprintf( __( 'Only for %s; the other staff stay as when locked.', 'scrapelock' ), $by->display_name ) ) . '</small>';
+						echo '<br><small>' . esc_html__( 'Only in the browser session that unlocked: other sessions of this account, application passwords, XML-RPC and API keys stay as when locked until you unlock "until I lock it again". If you sign out, lock again and unlock.', 'scrapelock' ) . '</small>';
+						if ( get_current_user_id() === (int) $state['unlocked_by'] ) {
+							echo '<br><small>' . esc_html( self::window_text() ) . '</small>';
+						}
 					}
 				} else {
 					esc_html_e( 'The site is not locked', 'scrapelock' );
@@ -1596,6 +2860,7 @@ final class PNCP_Lockdown {
 					printf( '<option value="%d"%s>%s</option>', (int) $minutes, selected( 30, $minutes, false ), esc_html( $label ) );
 				}
 				echo '</select></p>';
+				echo '<p><label><input type="checkbox" name="others" value="1"> ' . esc_html__( 'Also sign out all other sessions of this account', 'scrapelock' ) . '</label></p>';
 				submit_button( __( 'Unlock', 'scrapelock' ), 'primary', 'submit', false );
 				echo '</form>';
 			} elseif ( $until ) {
@@ -1608,11 +2873,16 @@ final class PNCP_Lockdown {
 				if ( empty( $state['ack'] ) ) {
 					echo '<p><label><input type="checkbox" name="ack" value="1" required> ' . esc_html__( 'I have printed or saved my recovery codes, and I understand that only the app, a recovery code or access to the server files can unlock the site.', 'scrapelock' ) . '</label></p>';
 				}
+				if ( ! PNCP_Seal::can_write_guard() ) {
+					echo '<div class="notice notice-warning inline"><p>' . esc_html__( 'WordPress cannot write the guard file to wp-content/mu-plugins on this server. The guard keeps a signed copy of the lock outside the database: without it, someone who can change the database directly could unlock the site. Let the web server write to that folder (create it if it is missing), then reload this page.', 'scrapelock' ) . '</p></div>';
+					echo '<p><label><input type="checkbox" name="weak" value="1"> ' . esc_html__( 'Lock without the guard file (weaker)', 'scrapelock' ) . '</label></p>';
+				}
 				submit_button( __( 'Lock the site', 'scrapelock' ), 'primary', 'submit', false );
 				echo '</form>';
 			}
 			?>
 		</div>
+		<?php self::render_sessions(); ?>
 		<?php if ( ! $locked ) : ?>
 			<?php self::render_roles(); ?>
 			<div class="pncp-ld-box">
@@ -1643,6 +2913,27 @@ final class PNCP_Lockdown {
 			<p><code>define( 'SCRAPELOCK_UNLOCK', true );</code></p>
 		</div>
 		<?php endif; ?>
+		<?php
+	}
+
+	/**
+	 * Signing out the other sessions of this account, with a code: also while locked, so that someone who stole a
+	 * session of the owner's account (and keeps typing wrong codes with it) can be thrown out.
+	 */
+	private static function render_sessions() {
+		$sessions = count( WP_Session_Tokens::get_instance( get_current_user_id() )->get_all() );
+		?>
+		<div class="pncp-ld-box pncp-ld-sessions">
+			<h2><?php esc_html_e( 'Other sessions of your account', 'scrapelock' ); ?></h2>
+			<?php /* translators: %d: number of sessions */ ?>
+			<p><?php echo esc_html( sprintf( _n( 'Your account is signed in %d time, counting this one.', 'Your account is signed in %d times, counting this one.', $sessions, 'scrapelock' ), $sessions ) ); ?> <?php esc_html_e( 'If someone else may be using your account (a stolen password or session), sign out everywhere else. This works while the site is locked too; you stay signed in here.', 'scrapelock' ); ?></p>
+			<?php
+			self::form_open( 'sessions' );
+			self::code_field( true );
+			submit_button( __( 'Sign out all other sessions of this account', 'scrapelock' ), 'secondary', 'submit', false );
+			echo '</form>';
+			?>
+		</div>
 		<?php
 	}
 
@@ -1724,6 +3015,7 @@ final class PNCP_Lockdown {
 			'locked'        => __( 'Locked', 'scrapelock' ),
 			'unlocked'      => __( 'Unlocked', 'scrapelock' ),
 			'relocked'      => __( 'Locked again', 'scrapelock' ),
+			'relocked_auto' => __( 'Locked again by itself; your changes were kept', 'scrapelock' ),
 			'failed'        => __( 'Wrong code', 'scrapelock' ),
 			'recovery_used' => __( 'Recovery code used', 'scrapelock' ),
 			'codes'         => __( 'New recovery codes', 'scrapelock' ),
@@ -1735,6 +3027,8 @@ final class PNCP_Lockdown {
 			'quarantine_setting' => __( 'Quarantine setting', 'scrapelock' ),
 			'tampered'      => __( 'Changed outside WordPress', 'scrapelock' ),
 			'sealed'        => __( 'Lockdown data signed', 'scrapelock' ),
+			'lockout'       => __( 'Codes refused after too many wrong ones', 'scrapelock' ),
+			'sessions'      => __( 'Other sessions signed out', 'scrapelock' ),
 		);
 		?>
 		<h2><?php esc_html_e( 'Recent lockdown events', 'scrapelock' ); ?></h2>
@@ -1755,6 +3049,19 @@ final class PNCP_Lockdown {
 	}
 
 	/* ---------- Actions ---------- */
+
+	/**
+	 * The message for a code that did not pass attempt().
+	 *
+	 * @param string $how What attempt() returned.
+	 * @return string Message code.
+	 */
+	private static function code_message( $how ) {
+		if ( 'wait' === $how ) {
+			return 'wait';
+		}
+		return 'busy' === $how ? 'busy' : 'wrong';
+	}
 
 	/**
 	 * Back to the page with a message.
@@ -1779,7 +3086,10 @@ final class PNCP_Lockdown {
 		$op   = isset( $_POST['op'] ) ? sanitize_key( wp_unslash( $_POST['op'] ) ) : '';
 		$code = isset( $_POST['code'] ) ? sanitize_text_field( wp_unslash( $_POST['code'] ) ) : '';
 		$mins = isset( $_POST['minutes'] ) ? absint( $_POST['minutes'] ) : 30;
+		$mins = in_array( $mins, array( 0, 15, 30, 60, 120 ), true ) ? $mins : 30;
 		$ack  = ! empty( $_POST['ack'] );
+		$weak = ! empty( $_POST['weak'] );
+		$out  = ! empty( $_POST['others'] );
 		$pick = isset( $_POST['roles'] ) && is_array( $_POST['roles'] ) ? array_filter( array_map( 'sanitize_key', wp_unslash( $_POST['roles'] ) ) ) : array();
 		// phpcs:enable
 		$state = self::state();
@@ -1789,17 +3099,28 @@ final class PNCP_Lockdown {
 			if ( ! self::unlocked_until() ) {
 				self::back( 'error' );
 			}
-			$state['until']       = 0;
-			$state['unlocked_by'] = 0;
+			$state['until']          = 0;
+			$state['unlocked_by']    = 0;
+			$state['unlock_session'] = '';
 			self::save( $state );
 			self::event( 'relocked' );
 			PNCP_Integrity::snapshot(); // Updates may have run while it was open: a new fingerprint.
+			// Staff could not add application passwords while it was open either: new ones on the accounts the
+			// last snapshot knew were added in the database. Removed before the new snapshot would accept them.
+			PNCP_Seal::check_apps_all( true );
 			PNCP_Seal::take_snapshot();
+			PNCP_Seal::forget_window(); // Locked by hand: the snapshot is taken as the site is now.
 			self::back( 'locked' );
 		}
 		if ( 'cancel' === $op ) {
 			delete_user_meta( $user, self::PENDING_META );
 			self::back( 'cancelled' );
+		}
+		// While locked, no app can be connected: with the state deleted in the database the site stays locked
+		// (check_seal()), and a new app would otherwise unlock it. The way out is SCRAPELOCK_UNLOCK.
+		if ( in_array( $op, array( 'setup', 'confirm' ), true ) && self::is_locked() ) {
+			delete_user_meta( $user, self::PENDING_META );
+			self::back( '' !== self::tampered() ? 'tampered' : 'error' );
 		}
 		if ( 'setup' === $op ) {
 			if ( self::configured() ) {
@@ -1813,26 +3134,36 @@ final class PNCP_Lockdown {
 		}
 		// The state in the database no longer matches its signature while the guard says locked: its secret
 		// and codes cannot be trusted. The way out is the one for a lost phone (SCRAPELOCK_UNLOCK).
-		if ( 'replay' === self::tampered() && ! self::$sig_ok ) {
+		// Not with SCRAPELOCK_UNLOCK: whoever can edit wp-config.php sets the app up again that way.
+		// 3.4: the same for a genuinely signed state that is older than the guard (put back from a backup): its
+		// secret and recovery codes may be old ones.
+		if ( ! self::server_unlocked() && in_array( self::tampered(), array( 'replay', 'forged' ), true ) && ( ! self::$sig_ok || self::$older || ! self::configured() ) ) {
 			self::back( 'tampered' );
 		}
-		if ( ! in_array( $op, array( 'confirm', 'lock', 'unlock', 'codes', 'remove', 'roles', 'quarantine' ), true ) ) {
+		if ( ! in_array( $op, array( 'confirm', 'lock', 'unlock', 'sessions', 'codes', 'remove', 'roles', 'quarantine' ), true ) ) {
 			self::back( 'error' );
 		}
-		// A recovery code (8 characters; app codes have 6 digits) on the unlock form is not held back by the
-		// site-wide ceiling, so the owner can always unlock with one.
-		self::$recovery_attempt = 'unlock' === $op && 8 === strlen( (string) preg_replace( '/[^a-z0-9]/i', '', $code ) );
-		if ( self::too_many_fails() ) {
-			self::back( 'wait' );
-		}
+		// A recovery code (8 characters; app codes have 6 digits) is accepted to unlock and to sign out the other
+		// sessions. It is only held back by the per-IP limit (see fail_buckets()), so the owner can always unlock
+		// with one, even while a stolen session of the same account keeps typing wrong codes elsewhere.
+		$recovery = in_array( $op, array( 'unlock', 'sessions' ), true );
+		$shape    = $recovery && 8 === strlen( (string) preg_replace( '/[^a-z0-9]/i', '', $code ) );
 
 		if ( 'confirm' === $op ) {
-			$secret = self::unseal( (string) get_user_meta( $user, self::PENDING_META, true ) );
-			$step   = '' !== $secret && ! self::configured() ? PNCP_Totp::verify( $secret, $code ) : false;
-			if ( false === $step ) {
-				self::failed();
-				self::back( 'wrong' );
+			$secret = '';
+			$step   = false;
+			$how    = self::attempt(
+				static function () use ( $user, $code, &$secret, &$step ) {
+					$secret = self::unseal( (string) get_user_meta( $user, self::PENDING_META, true ) );
+					$step   = '' !== $secret && ! self::configured() ? PNCP_Totp::verify( $secret, $code ) : false;
+					return false === $step ? '' : 'app';
+				},
+				false
+			);
+			if ( 'app' !== $how ) {
+				self::back( self::code_message( $how ) );
 			}
+			$state = self::state();
 			$codes = self::new_codes();
 			self::save(
 				array_merge(
@@ -1843,10 +3174,19 @@ final class PNCP_Lockdown {
 						'until'     => 0,
 						'last_step' => $step,
 						'codes'     => array_map( array( __CLASS__, 'hash_code' ), $codes ),
+						'fp'        => 0,
+						'net'       => 0,
 					)
 				)
 			);
 			delete_user_meta( $user, self::PENDING_META );
+			// A new app starts unlocked (it cannot be connected while the site is locked): a guard file or a
+			// snapshot left from an earlier lock (for example after the state was deleted and the site was opened
+			// with SCRAPELOCK_UNLOCK) would otherwise keep it locked.
+			PNCP_Seal::write_guard( false, 0 );
+			PNCP_Seal::forget_snapshots();
+			PNCP_Seal::forget_window();
+			PNCP_Integrity::forget();
 			set_site_transient( 'pncp_ld_codes_' . $user, $codes, 2 * MINUTE_IN_SECONDS );
 			self::event( 'connected' );
 			self::back( 'connected' );
@@ -1857,53 +3197,110 @@ final class PNCP_Lockdown {
 		if ( 'lock' === $op && empty( $state['ack'] ) && ! $ack ) {
 			self::back( 'ack' );
 		}
-		if ( ! self::configured() || ( 'lock' === $op && ( $locked || self::unlocked_until() ) ) || ( 'unlock' === $op && ! $locked ) || ( in_array( $op, array( 'codes', 'remove', 'roles', 'quarantine' ), true ) && $locked ) || ( 'remove' === $op && self::unlocked_until() ) ) {
+		// Without the guard file, someone who can change the database directly could open the lock (delete its
+		// state): locking needs the guard, unless the owner chose the weaker lock on purpose. Checked before the
+		// code is used, so the owner can fix the folder and try again with the same code.
+		if ( 'lock' === $op && ! $weak && ! PNCP_Seal::can_write_guard() ) {
+			self::back( 'noguard' );
+		}
+		// Signing out the other sessions needs no unlock: it works locked or not, as it only takes access away.
+		// A timed unlock belongs to this browser session: without one (no login cookie), nobody would get the rights.
+		if ( 'unlock' === $op && 0 !== $mins && '' === wp_get_session_token() ) {
 			self::back( 'error' );
 		}
-		$how = self::check_code( $code, 'unlock' === $op );
-		if ( 'busy' === $how ) {
+		if ( ! self::configured() || ( 'lock' === $op && ( $locked || self::unlocked_until() ) ) || ( 'unlock' === $op && ! $locked ) || ( in_array( $op, array( 'codes', 'remove', 'roles', 'quarantine' ), true ) && $locked ) || ( 'remove' === $op && self::unlocked_until() ) || ( ( 'sessions' === $op || $out ) && '' === wp_get_session_token() ) ) {
 			self::back( 'error' );
 		}
-		if ( '' === $how ) {
-			self::failed();
-			self::back( 'wrong' );
+		// 3.4: a code with the shape of a recovery code is compared with the (slow, bcrypt) hashes before the lock
+		// is taken; inside it only the hash it matched is looked up. Otherwise every such attempt would hold the
+		// lock for about half a second, and sessions typing wrong ones from many IPs could keep the owner's
+		// correct recovery code waiting ("busy"). A request whose IP is already refused does not get that far.
+		$match = null;
+		if ( $shape ) {
+			$wait = self::wait_until();
+			if ( $wait[1] ) {
+				self::back( self::code_message( 'wait' ) );
+			}
+			$match = self::recovery_match( $code );
+		}
+		$how = self::attempt(
+			static function () use ( $code, $recovery, $match ) {
+				return self::check_code_locked( $code, $recovery, $match );
+			},
+			$shape
+		);
+		if ( ! in_array( $how, array( 'app', 'recovery' ), true ) ) {
+			self::back( self::code_message( $how ) );
 		}
 		$state = self::state();
 
+		if ( 'sessions' === $op ) {
+			self::sign_out_others();
+			self::back( 'sessions' );
+		}
+
 		if ( 'lock' === $op ) {
+			// The guard first: if it cannot be written after all, the site is not locked (unless the owner chose
+			// the weaker lock). If the state cannot be saved after it, the guard keeps the site locked.
+			if ( ! PNCP_Seal::write_guard( true, 0 ) && ! $weak ) {
+				self::back( 'noguard' );
+			}
 			$state['locked']      = true;
 			$state['until']       = 0;
 			$state['since']       = time();
 			$state['ack']         = true;
 			$state['unlocked_by'] = 0;
+			$state['unlock_session'] = '';
 			self::save( $state );
-			self::event( 'locked' );
-			PNCP_Integrity::snapshot();
+			self::event( 'locked', PNCP_Seal::guard_installed() ? '' : __( 'without the guard file', 'scrapelock' ) );
+			// The snapshot of the protected options first: the file fingerprint starts a background request
+			// (the official checksums), which must find the snapshot of this lock already there.
 			PNCP_Seal::take_snapshot();
+			PNCP_Seal::forget_window();
+			PNCP_Integrity::snapshot();
 			self::back( 'locked' );
 		}
 		if ( 'unlock' === $op ) {
-			$mins = in_array( $mins, array( 0, 15, 30, 60, 120 ), true ) ? $mins : 30;
 			if ( 0 === $mins ) {
-				$state['locked']      = false;
-				$state['until']       = 0;
-				$state['unlocked_by'] = 0;
+				$state['locked']         = false;
+				$state['until']          = 0;
+				$state['unlocked_by']    = 0;
+				$state['unlock_session'] = '';
+				$state['net']            = 0;
 			} else {
 				$state['until']       = time() + $mins * MINUTE_IN_SECONDS;
-				$state['unlocked_by'] = $user; // Only this administrator gets the rights back meanwhile.
+				$state['unlocked_by'] = $user; // Only this administrator gets the rights back meanwhile,
+				// and only in this browser session (see unlocking_session()).
+				$state['unlock_session'] = self::session_hash( wp_get_session_token() );
 			}
+			// A new unlock starts with nothing noted (a record of an earlier unlock no longer matches anyway).
+			PNCP_Seal::forget_window();
 			if ( ! self::save( $state ) ) {
 				self::back( 'guard' );
 			}
+			$unknown = array();
 			if ( 0 === $mins ) {
-				delete_option( PNCP_Seal::SNAP );
-				delete_option( PNCP_Seal::DIGESTS );
+				// 3.4: accounts that got administrator rights behind WordPress's back while the site was locked could
+				// not sign in until now; from now on they can. Named on the page and in the email, so the owner can
+				// check them (the snapshot that knows who they are is deleted next).
+				$unknown = PNCP_Seal::check_admins( false );
+				if ( $unknown ) {
+					set_site_transient( 'pncp_ld_unknown_' . $user, $unknown, 10 * MINUTE_IN_SECONDS );
+					self::event( 'tampered', 'admin (unlocked): ' . implode( ', ', $unknown ) );
+				}
+				// Application passwords work again from now on: the ones added in the database while the site was
+				// locked are removed first, while the snapshot to compare with is still there.
+				PNCP_Seal::check_apps_all();
+				PNCP_Seal::forget_snapshots();
 			}
 			PNCP_Integrity::mark_stale(); // Updates are allowed now: the next check takes a new fingerprint.
+			if ( 0 === $mins && PNCP_Integrity::fingerprint_while_locked() ) {
+				PNCP_Integrity::forget(); // It could not be marked (changed in the database): it would still say "locked".
+			}
 			/* translators: %d: minutes */
 			self::event( 'unlocked', $mins ? sprintf( __( '%d min', 'scrapelock' ), $mins ) : __( 'until locked again', 'scrapelock' ) );
-			self::mail( __( 'The site was unlocked', 'scrapelock' ), __( 'The site was unlocked on the Lockdown page. If it was not you, lock it again and change the administrators\' passwords.', 'scrapelock' ) );
-			self::back( 'unlocked' );
+			self::mail( __( 'The site was unlocked', 'scrapelock' ), __( 'The site was unlocked on the Lockdown page. If it was not you, lock it again and change the administrators\' passwords.', 'scrapelock' ) . ( $unknown ? "\n\n" . self::unknown_text( $unknown ) : '' ) );
+			self::back( $out && self::sign_out_others() ? 'unlocked_out' : 'unlocked' );
 		}
 		if ( 'roles' === $op ) {
 			// Only existing roles; the roles that can take over the site are added in frozen_roles() anyway.
@@ -1943,11 +3340,16 @@ final class PNCP_Lockdown {
 		$state['codes']     = array();
 		$state['ack']       = false;
 		$state['unlocked_by'] = 0;
+		$state['unlock_session'] = '';
+		$state['fp']        = 0;
+		$state['net']       = 0;
 		if ( ! self::save( $state ) ) {
 			self::back( 'guard' );
 		}
-		delete_option( PNCP_Seal::SNAP );
-		delete_option( PNCP_Seal::DIGESTS );
+		PNCP_Seal::check_apps_all(); // As for a full unlock (also with SCRAPELOCK_UNLOCK).
+		PNCP_Seal::forget_window();
+		PNCP_Seal::forget_snapshots();
+		PNCP_Integrity::forget();
 		self::event( 'removed' );
 		self::mail( __( 'The authenticator app was removed', 'scrapelock' ), __( 'The authenticator app was removed from the Lockdown page and the lock is off. If it was not you, change the administrators\' passwords.', 'scrapelock' ) );
 		self::back( 'removed' );

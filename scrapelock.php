@@ -2,7 +2,7 @@
 /**
  * Plugin Name:       ScrapeLock – Content & AI Bot Protection
  * Description:       Protects your content: makes copying text and images harder, hides the text in the REST API, GraphQL and RSS, blocks scrapers, AI bots and fake Googlebots, temporarily blocks persistent IPs, protects XML feeds with a token and adds an optional watermark. Lockdown freezes every change to the site until it is unlocked with an authenticator app. Forms, cart, checkout and search engines are not affected.
- * Version:           3.3.2
+ * Version:           3.4.0
  * Requires at least: 6.2
  * Requires PHP:      7.4
  * Author:            CodeBunny
@@ -19,7 +19,7 @@ if ( defined( 'PNCP_VERSION' ) ) {
 	return;
 }
 
-define( 'PNCP_VERSION', '3.3.2' );
+define( 'PNCP_VERSION', '3.4.0' );
 define( 'PNCP_FILE', __FILE__ );
 define( 'PNCP_DIR', plugin_dir_path( __FILE__ ) );
 define( 'PNCP_URL', plugin_dir_url( __FILE__ ) );
@@ -27,6 +27,7 @@ defined( 'PNCP_OPTION' ) || define( 'PNCP_OPTION', 'pncp_settings' ); // Also de
 
 require_once PNCP_DIR . 'includes/class-pncp-paths.php';
 require_once PNCP_DIR . 'includes/class-pncp-options.php';
+require_once PNCP_DIR . 'includes/class-pncp-settings-io.php';
 require_once PNCP_DIR . 'includes/class-pncp-ip.php';
 require_once PNCP_DIR . 'includes/class-pncp-log.php';
 require_once PNCP_DIR . 'includes/class-pncp-frontend.php';
@@ -151,8 +152,11 @@ function pncp_deactivate( $network_wide = false ) {
  * Deactivation of one site: its scheduled events, its blocks at the CDN, its uploads rule and its page cache.
  */
 function pncp_deactivate_site() {
-	foreach ( array( PNCP_Ip::CRON, PNCP_Log::CRON, PNCP_Integrity::OFFICIAL, PNCP_Surge::MAIL ) as $pncp_hook ) {
-		wp_clear_scheduled_hook( $pncp_hook );
+	// wp_unschedule_hook() removes every event of a hook, whatever its arguments: some carry some (the missing
+	// IP lists, the image to clean up, the numbers in the surge email), which wp_clear_scheduled_hook() would
+	// only remove when given the same ones.
+	foreach ( array( PNCP_Ip::CRON, PNCP_Log::CRON, PNCP_Log::CRON . '_more', PNCP_Integrity::OFFICIAL, PNCP_Surge::MAIL, PNCP_Surge::MAIL_ALERT, PNCP_Watermark::CRON_UNMARK, 'pncp_background_purge', 'pncp_upgrade_files' ) as $pncp_hook ) {
+		wp_unschedule_hook( $pncp_hook );
 	}
 	// The blocks ScrapeLock made at the CDN go away with it (the bans themselves end with the plugin).
 	PNCP_Edge::remove_all();
@@ -176,7 +180,9 @@ function pncp_upgrade() {
 	}
 
 	if ( ! is_array( $stored ) ) {
-		add_option( PNCP_OPTION, PNCP_Options::defaults() );
+		// A new install starts in "Monitor only" for its first week (3.4): it logs what it would block and
+		// blocks nothing, then starts blocking on its own. Existing sites never get it (their settings exist).
+		add_option( PNCP_OPTION, array_merge( PNCP_Options::defaults(), PNCP_Options::new_install() ) );
 	} elseif ( '' === $from_settings || version_compare( $from_settings, '2.0.0', '<' ) ) {
 		update_option( PNCP_OPTION, pncp_migrate_from_1x( $stored ), true );
 	} else {
@@ -198,6 +204,16 @@ function pncp_upgrade() {
 			$added += PNCP_Options::new_in_300();
 		}
 		$added = array_diff_key( $added, $stored );
+		// 3.4: the automatic Emergency Mode only tells the administrator on new installs; a site that had it on
+		// keeps starting it on its own, as before.
+		if ( version_compare( $from_settings, '3.4.0', '<' ) && ! isset( $stored['auto_emergency_mode'] ) ) {
+			$added += array_diff_key( PNCP_Options::new_in_340( $stored ), $stored );
+		}
+		// 3.4: text selection is no longer blocked by default on new installs. Settings that somehow lack the key
+		// (a partial copy) keep the old default, so nothing changes on an existing site.
+		if ( version_compare( $from_settings, '3.4.0', '<' ) && ! isset( $stored['block_selection'] ) ) {
+			$added['block_selection'] = 1;
+		}
 		// 2.8.3: the HTTP libraries that passed the bot list are added to it. Your own entries stay; a list
 		// emptied on purpose stays empty.
 		if ( version_compare( $from_settings, '2.8.3', '<' ) && isset( $stored['bot_list'] ) ) {
@@ -251,8 +267,19 @@ function pncp_upgrade() {
 	}
 	// 3.3: Lockdown data stored before signatures existed is signed now (while pncp_version still says older).
 	if ( '' !== $from && version_compare( $from, '3.3.0', '<' ) ) {
-		PNCP_Lockdown::upgrade_seal();
+		PNCP_Lockdown::upgrade_seal( $from );
 	}
+	// 3.4: Lockdown data signed by 3.3 gets generations (in the guard file too), so an older copy of it put back
+	// in the database is no longer accepted. Only genuine data; nothing that was changed is signed.
+	if ( '' !== $from && version_compare( $from, '3.4.0', '<' ) ) {
+		PNCP_Lockdown::upgrade_generation();
+	}
+	// 3.4: the removal queue of the CDN blocks no longer holds a copy of a token set in wp-config.php; blocks a
+	// deactivation could not remove in time are removed now.
+	PNCP_Edge::resume();
+	// 3.4: the country database state is autoloaded, and a database left behind while "Download the country
+	// database" is off is deleted (it used to be used anyway, and never refreshed).
+	PNCP_Geo::upgrade();
 	update_option( 'pncp_version', PNCP_VERSION, true ); // Autoloaded: read on every request by pncp_maybe_upgrade().
 	PNCP_Options::flush();
 	// The rest touches files (mu-plugins, wp-config.php, uploads/.htaccess), downloads lists and empties the
@@ -331,8 +358,8 @@ function pncp_settings_look_1x( $stored ) {
  * @return array<string, mixed>
  */
 function pncp_migrate_from_1x( $old ) {
-	// The 2.4, 2.5, 2.6, 2.9 and 3.0 additions stay off, as on every existing site.
-	$new = array_merge( PNCP_Options::defaults(), PNCP_Options::new_in_240(), PNCP_Options::new_in_250(), PNCP_Options::new_in_260(), PNCP_Options::new_in_290(), PNCP_Options::new_in_300(), $old );
+	// The 2.4, 2.5, 2.6, 2.9 and 3.0 additions stay off, as on every existing site; 3.4 keeps the old defaults.
+	$new = array_merge( PNCP_Options::defaults(), PNCP_Options::new_in_240(), PNCP_Options::new_in_250(), PNCP_Options::new_in_260(), PNCP_Options::new_in_290(), PNCP_Options::new_in_300(), PNCP_Options::new_in_340( $old ), $old );
 
 	$list   = isset( $old['bot_list'] ) ? PNCP_Options::parse_list( (string) $old['bot_list'] ) : array();
 	$legacy = array_map( 'strtolower', PNCP_Options::legacy_bot_list() );
@@ -342,7 +369,10 @@ function pncp_migrate_from_1x( $old ) {
 	if ( isset( $old['bot_list'] ) && ! $list ) {
 		$new['bot_list'] = ''; // You had emptied it on purpose: it stays empty.
 	} elseif ( ! $list || $lower === $legacy ) {
-		$new['bot_list'] = PNCP_Options::default_bot_list();
+		// The 1.4 default blocked curl, Wget and the Python / Go libraries: since 3.4 they are no longer in the
+		// default list, so they are kept here (with the rest of the libraries, as every 2.x/3.x site has them)
+		// and nothing that was blocked before starts passing.
+		$new['bot_list'] = implode( "\n", array_slice( PNCP_Options::parse_list( implode( "\n", array_merge( PNCP_Options::default_bot_entries(), PNCP_Options::http_library_agents() ) ) ), 0, 200 ) );
 	} else {
 		foreach ( PNCP_Options::default_bot_entries() as $entry ) {
 			if ( ! in_array( strtolower( $entry ), array_map( 'strtolower', $list ), true ) && ! in_array( strtolower( $entry ), $legacy, true ) ) {
@@ -442,7 +472,37 @@ function pncp_purge_page_cache() {
 		}
 	}
 }
-add_action( 'update_option_' . PNCP_OPTION, 'pncp_purge_page_cache' );
+
+/**
+ * After the settings are saved, the page cache is emptied only when a setting that cached pages depend on
+ * changed (PNCP_Options::cache_keys(), e.g. "Block text selection", the bot list, the feeds). Saving the log
+ * retention, a country list or the watermark opacity leaves the cache, and Cloudflare's, alone: emptying it
+ * sends every visitor to PHP and the database until it fills again.
+ *
+ * @param mixed $old_value Settings before.
+ * @param mixed $value     Settings after.
+ */
+function pncp_settings_purge( $old_value, $value ) {
+	if ( PNCP_Options::cache_keys_changed( is_array( $old_value ) ? $old_value : array(), is_array( $value ) ? $value : array() ) ) {
+		pncp_purge_page_cache();
+	}
+}
+add_action( 'update_option_' . PNCP_OPTION, 'pncp_settings_purge', 10, 2 );
+
+/**
+ * Empties the page cache in a background request (a scheduled event started right away with a loopback to
+ * wp-cron.php that this request does not wait for), e.g. after Emergency Mode starts or ends. Several calls
+ * before it runs empty the cache once.
+ */
+function pncp_schedule_purge() {
+	if ( ! wp_next_scheduled( 'pncp_background_purge' ) ) {
+		wp_schedule_single_event( time(), 'pncp_background_purge' );
+	}
+	if ( function_exists( 'spawn_cron' ) ) {
+		spawn_cron();
+	}
+}
+add_action( 'pncp_background_purge', 'pncp_purge_page_cache' );
 
 /**
  * After a settings change the per-request caches are forgotten.
@@ -459,6 +519,9 @@ add_action( 'update_option_' . PNCP_OPTION, 'pncp_settings_changed', 0 );
 add_action( 'update_option_' . PNCP_OPTION, array( 'PNCP_Early', 'sync' ) );
 add_action( 'update_option_' . PNCP_OPTION, array( 'PNCP_Precheck', 'sync' ) );
 add_action( 'update_option_' . PNCP_OPTION, array( 'PNCP_Rules', 'settings_saved' ) );
+// The first-week "Monitor only" of a new install ends on its own: hourly, and on the next wp-admin page load.
+add_action( PNCP_Log::CRON, array( 'PNCP_Options', 'end_monitor_trial' ) );
+add_action( 'admin_init', array( 'PNCP_Options', 'end_monitor_trial' ) );
 // Settings are first read before the translations load: they are read again afterwards.
 add_action( 'after_setup_theme', array( 'PNCP_Options', 'flush' ), 0 );
 

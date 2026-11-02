@@ -37,20 +37,21 @@ function pncp_uninstall_site() {
 	}
 	unset( $pncp_retire, $pncp_config );
 
-	foreach ( array( 'pncp_settings', 'pncp_version', 'pncp_db_version', 'pncp_emergency_until', 'pncp_ip_lists', 'pncp_ip_lists_cloudflare', 'pncp_ip_lists_bunny', 'pncp_ip_lists_google', 'pncp_ip_lists_bing', 'pncp_ip_lists_openai_search', 'pncp_ip_lists_openai_user', 'pncp_ip_lists_perplexity_bot', 'pncp_ip_lists_perplexity_user', 'pncp_ip_lists_anthropic', 'pncp_ip_lists_updated', 'pncp_bans', 'pncp_feed_token', 'pncp_feed_stats', 'pncp_legacy_token_notice', 'pncp_legacy_token_migrated', 'pncp_wm_cursor_apply', 'pncp_wm_cursor_remove', 'pncp_upgrade_lock', 'pncp_geo', 'pncp_precheck_status', 'pncp_precheck_key', 'pncp_log_uas', 'pncp_lockdown', 'pncp_lockdown_log', 'pncp_integrity', 'pncp_integrity_report', 'pncp_integrity_alerted', 'pncp_surge', 'pncp_surge_last', 'pncp_edge', 'pncp_edge_state', 'pncp_edge_retire', 'pncp_edge_staff', 'pncp_lockdown_snap', 'pncp_lockdown_digests', 'pncp_lockdown_mutex', 'pncp_integrity_stat', 'pncp_upgrade_files' ) as $pncp_option ) {
+	foreach ( array( 'pncp_settings', 'pncp_version', 'pncp_db_version', 'pncp_emergency_until', 'pncp_ip_lists', 'pncp_ip_lists_cloudflare', 'pncp_ip_lists_bunny', 'pncp_ip_lists_google', 'pncp_ip_lists_bing', 'pncp_ip_lists_openai_search', 'pncp_ip_lists_openai_user', 'pncp_ip_lists_perplexity_bot', 'pncp_ip_lists_perplexity_user', 'pncp_ip_lists_anthropic', 'pncp_ip_lists_updated', 'pncp_bans', 'pncp_feed_token', 'pncp_feed_stats', 'pncp_legacy_token_notice', 'pncp_legacy_token_migrated', 'pncp_wm_cursor_apply', 'pncp_wm_cursor_remove', 'pncp_upgrade_lock', 'pncp_geo', 'pncp_origin_proxy', 'pncp_precheck_status', 'pncp_precheck_key', 'pncp_log_uas', 'pncp_lockdown', 'pncp_lockdown_log', 'pncp_integrity', 'pncp_integrity_report', 'pncp_integrity_alerted', 'pncp_surge', 'pncp_surge_last', 'pncp_surge_alert', 'pncp_edge', 'pncp_edge_state', 'pncp_edge_retire', 'pncp_edge_staff', 'pncp_edge_lock', 'pncp_edge_dirty', 'pncp_lockdown_snap', 'pncp_lockdown_digests', 'pncp_lockdown_window', 'pncp_lockdown_mutex', 'pncp_lockdown_fails', 'pncp_integrity_stat', 'pncp_upgrade_files', 'pncp_log_cleaned', 'pncp_bans_until', 'pncp_monitor_ended', 'pncp_settings_backups' ) as $pncp_option ) {
 		delete_option( $pncp_option );
 	}
-	wp_clear_scheduled_hook( 'pncp_refresh_ip_lists' );
-	wp_clear_scheduled_hook( 'pncp_log_cleanup' );
-	wp_clear_scheduled_hook( 'pncp_wm_unmark' );
-	wp_clear_scheduled_hook( 'pncp_edge_sync' );
-	wp_clear_scheduled_hook( 'pncp_integrity_official' );
-	wp_clear_scheduled_hook( 'pncp_surge_mail' );
-	wp_clear_scheduled_hook( 'pncp_upgrade_files' );
+	// Every event of each hook, whatever its arguments (wp_clear_scheduled_hook() only removes the ones without).
+	foreach ( array( 'pncp_refresh_ip_lists', 'pncp_log_cleanup', 'pncp_log_cleanup_more', 'pncp_wm_unmark', 'pncp_edge_sync', 'pncp_integrity_official', 'pncp_surge_mail', 'pncp_surge_mail_alert', 'pncp_background_purge', 'pncp_upgrade_files' ) as $pncp_hook ) {
+		wp_unschedule_hook( $pncp_hook );
+	}
 	// The Lockdown guard (must-use plugin), only if it is ours.
 	$pncp_guard = PNCP_Paths::mu_plugins() . '/scrapelock-lockdown-guard.php';
 	if ( is_readable( $pncp_guard ) && false !== strpos( (string) file_get_contents( $pncp_guard, false, null, 0, 200 ), 'Plugin Name: ScrapeLock Lockdown guard' ) ) { // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Local file.
 		wp_delete_file( $pncp_guard );
+	}
+	// 3.4: the copy of the wrong-code counters next to the guard.
+	if ( file_exists( PNCP_Paths::mu_plugins() . '/scrapelock-lockdown-fails.json' ) ) {
+		wp_delete_file( PNCP_Paths::mu_plugins() . '/scrapelock-lockdown-fails.json' );
 	}
 
 	// The per-attachment "already watermarked" record (_pncp_wm) and pncp_backup_dir are kept on purpose: they
@@ -127,10 +128,15 @@ if ( is_multisite() ) {
 delete_site_option( 'pncp_lockdown' );
 delete_site_option( 'pncp_lockdown_log' );
 delete_site_option( 'pncp_lockdown_mutex' );
+delete_site_option( 'pncp_lockdown_fails' );
 delete_site_option( 'pncp_integrity' );
 delete_site_option( 'pncp_integrity_report' );
 delete_metadata( 'user', 0, 'pncp_lockdown_pending', '', true );
 delete_site_option( 'pncp_lockdown_digests' );
+// 3.4, multisite: the snapshot of the whole network, its fingerprints and the changes noted while unlocked for a while.
+delete_site_option( 'pncp_lockdown_net_snap' );
+delete_site_option( 'pncp_lockdown_net_digests' );
+delete_site_option( 'pncp_lockdown_net_window' );
 
 // Network transients (Lockdown wrong-code counters, recovery codes shown once, cached checksums): on multisite
 // they live in the network's own table, which the per-site cleanup above does not reach.

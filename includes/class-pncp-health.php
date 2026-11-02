@@ -1,7 +1,8 @@
 <?php
 /**
  * ScrapeLock on Tools → Site Health: tests for the settings that silently stop working (the real visitor IP
- * behind a CDN, the early check, the pre-cache check, Lockdown) and a section in the Info tab.
+ * behind a CDN, the early check, the pre-cache check, the official IP lists, Lockdown), for the states that
+ * should not last (Emergency Mode, Monitor only), and a section in the Info tab.
  *
  * @package ScrapeLock
  */
@@ -30,7 +31,11 @@ final class PNCP_Health {
 	public static function tests( $tests ) {
 		$names = array(
 			'protection' => __( 'ScrapeLock protection', 'scrapelock' ),
+			'emergency'  => __( 'ScrapeLock Emergency Mode', 'scrapelock' ),
+			'monitor'    => __( 'ScrapeLock Monitor only', 'scrapelock' ),
+			'ip_lists'   => __( 'ScrapeLock official IP lists', 'scrapelock' ),
 			'real_ip'    => __( 'ScrapeLock real visitor IP', 'scrapelock' ),
+			'origin'     => __( 'ScrapeLock only through the CDN', 'scrapelock' ),
 			'early'      => __( 'ScrapeLock early check', 'scrapelock' ),
 			'precheck'   => __( 'ScrapeLock pre-cache check', 'scrapelock' ),
 			'lockdown'   => __( 'ScrapeLock Lockdown', 'scrapelock' ),
@@ -53,9 +58,16 @@ final class PNCP_Health {
 	 * @param string $label       Title.
 	 * @param string $description Explanation (plain text).
 	 * @param string $tab         Settings tab for the link ('' = none).
+	 * @param string $anchor      Section of the tab for the link, e.g. "pncp-sec-lists" ('' = the top).
+	 * @param string $extra       More actions, already escaped HTML (e.g. a "Stop Emergency Mode" link).
 	 * @return array<string, mixed>
 	 */
-	private static function result( $key, $status, $label, $description, $tab = '' ) {
+	private static function result( $key, $status, $label, $description, $tab = '', $anchor = '', $extra = '' ) {
+		$link = '';
+		if ( '' !== $tab ) {
+			$url  = PNCP_Status::settings_url( array( 'tab' => $tab ) ) . ( '' !== $anchor ? '#' . $anchor : '' );
+			$link = '<p><a href="' . esc_url( $url ) . '">' . esc_html__( 'Open the ScrapeLock settings', 'scrapelock' ) . '</a></p>';
+		}
 		return array(
 			'label'       => $label,
 			'status'      => $status,
@@ -64,7 +76,7 @@ final class PNCP_Health {
 				'color' => 'critical' === $status ? 'red' : ( 'recommended' === $status ? 'orange' : 'blue' ),
 			),
 			'description' => '<p>' . esc_html( $description ) . '</p>',
-			'actions'     => '' === $tab ? '' : '<p><a href="' . esc_url( PNCP_Status::settings_url( array( 'tab' => $tab ) ) ) . '">' . esc_html__( 'Open the ScrapeLock settings', 'scrapelock' ) . '</a></p>',
+			'actions'     => $extra . $link,
 			'test'        => 'scrapelock_' . $key,
 		);
 	}
@@ -82,6 +94,103 @@ final class PNCP_Health {
 	}
 
 	/**
+	 * Emergency Mode is meant for the hours of an attack, not for good: it shows excerpts instead of full text
+	 * in lists, limits data centers harder and turns on the browser checks, which real visitors and services
+	 * notice. Recommended while it runs; critical when it was started for more than a day (it can run up to 72
+	 * hours), so a forgotten start is noticed.
+	 *
+	 * @return array<string, mixed>
+	 */
+	public static function test_emergency() {
+		$until = PNCP_Options::emergency_until();
+		if ( ! $until ) {
+			return self::result( 'emergency', 'good', __( 'ScrapeLock Emergency Mode is off', 'scrapelock' ), __( 'The normal settings apply. Emergency Mode is started by hand (or by the automatic Emergency Mode, if you let it) during a scraping attack, and ends by itself.', 'scrapelock' ) );
+		}
+		$left = $until - time();
+		$stop = '<p><a class="button" href="' . esc_url( PNCP_Status::emergency_stop_url() ) . '">' . esc_html__( 'Stop Emergency Mode now', 'scrapelock' ) . '</a></p>';
+		return self::result(
+			'emergency',
+			$left > DAY_IN_SECONDS ? 'critical' : 'recommended',
+			/* translators: %s: time left, e.g. "3 hours" */
+			sprintf( __( 'ScrapeLock Emergency Mode is on for another %s', 'scrapelock' ), human_time_diff( time(), $until ) ),
+			sprintf(
+				/* translators: %s: date and time */
+				__( 'Until %s, stricter limits and checks apply to everyone except verified search engines and exempt staff, and lists of articles may show excerpts instead of the full text. Real visitors and some services (feeds, apps, monitoring from data centers) can notice it. Stop it as soon as the attack is over.', 'scrapelock' ),
+				wp_date( get_option( 'date_format' ) . ' ' . get_option( 'time_format' ), $until )
+			),
+			'general',
+			'',
+			$stop
+		);
+	}
+
+	/**
+	 * "Monitor only": every check runs, but nothing is blocked. Fine for the first days, not for good.
+	 *
+	 * @return array<string, mixed>
+	 */
+	public static function test_monitor() {
+		$s = PNCP_Options::stored();
+		if ( empty( $s['enabled'] ) || ! PNCP_Options::monitoring( $s ) ) {
+			return self::result( 'monitor', 'good', __( 'ScrapeLock blocks what its settings say', 'scrapelock' ), __( '“Monitor only” is off: requests that the settings refuse are blocked.', 'scrapelock' ) );
+		}
+		$description = __( 'Every check runs, but a request the settings would refuse is let through and only logged as “Would block”. Scrapers are not stopped. Check the “Would block” entries in the Log, add the services you rely on to “Always allowed”, then turn “Monitor only” off.', 'scrapelock' );
+		if ( ! empty( $s['monitor_until'] ) ) {
+			$description .= ' ' . sprintf(
+				/* translators: %s: date and time */
+				__( 'This is the first week of a new install: ScrapeLock starts blocking on its own on %s.', 'scrapelock' ),
+				wp_date( get_option( 'date_format' ) . ' ' . get_option( 'time_format' ), (int) $s['monitor_until'] )
+			);
+		}
+		$log = '<p><a href="' . esc_url( PNCP_Status::log_url( 'monitor' ) ) . '">' . esc_html__( 'See what would have been blocked', 'scrapelock' ) . '</a></p>';
+		return self::result( 'monitor', 'recommended', __( 'ScrapeLock is in “Monitor only” mode: nothing is blocked', 'scrapelock' ), $description, 'bots', 'pncp-sec-monitor', $log );
+	}
+
+	/**
+	 * The official lists of Google, Bing and Cloudflare are downloaded once a day. Missing, or not refreshed
+	 * for more than 3 days (the daily task stopped, or the server cannot reach them), real crawlers are
+	 * verified with slower DNS lookups only and the Cloudflare addresses come from the list built into the
+	 * plugin, which ages with it. Only the lists the current settings use are checked.
+	 *
+	 * @return array<string, mixed>
+	 */
+	public static function test_ip_lists() {
+		$names   = array(
+			'google'     => 'Google',
+			'bing'       => 'Bing',
+			'cloudflare' => 'Cloudflare',
+		);
+		$updated = PNCP_Ip::lists_updated();
+		$needed  = PNCP_Ip::needed_lists();
+		$missing = array();
+		$stale   = array();
+		foreach ( $names as $key => $label ) {
+			if ( ! in_array( $key, $needed, true ) ) {
+				continue;
+			}
+			if ( empty( $updated[ $key ] ) ) {
+				$missing[] = $label;
+			} elseif ( $updated[ $key ] < time() - 3 * DAY_IN_SECONDS ) {
+				$stale[] = $label;
+			}
+		}
+		if ( ! $missing && ! $stale ) {
+			return self::result( 'ip_lists', 'good', __( 'The official IP lists are up to date', 'scrapelock' ), __( 'The lists of Google, Bing and (when used) Cloudflare are refreshed every day.', 'scrapelock' ) );
+		}
+		$parts = array();
+		if ( $missing ) {
+			/* translators: %s: list names, e.g. "Google, Bing" */
+			$parts[] = sprintf( __( 'Never downloaded: %s.', 'scrapelock' ), implode( ', ', $missing ) );
+		}
+		if ( $stale ) {
+			/* translators: %s: list names, e.g. "Google, Bing" */
+			$parts[] = sprintf( __( 'Not refreshed for more than 3 days: %s.', 'scrapelock' ), implode( ', ', $stale ) );
+		}
+		$parts[] = __( 'Until they are, real search engines are verified with slower DNS lookups only, and the Cloudflare addresses come from the list built into the plugin. The lists are refreshed once a day through WordPress\'s scheduled tasks (cron): check that cron runs and that the server can reach google.com, bing.com and cloudflare.com, or use “Refresh lists now”.', 'scrapelock' );
+		return self::result( 'ip_lists', 'recommended', __( 'ScrapeLock official IP lists are missing or out of date', 'scrapelock' ), implode( ' ', $parts ), 'bots', 'pncp-sec-lists' );
+	}
+
+	/**
 	 * Behind a CDN, does every visitor appear with the CDN's address?
 	 *
 	 * @return array<string, mixed>
@@ -94,7 +203,48 @@ final class PNCP_Health {
 		if ( 'bunny' === $cdn ) {
 			return self::result( 'real_ip', 'critical', __( 'All visitors appear with a Bunny CDN address', 'scrapelock' ), __( 'The site is behind Bunny CDN, but ScrapeLock sees Bunny\'s address instead of the visitor\'s. Limits and blocks then hit Bunny itself, i.e. many visitors at once. Use X-Real-IP from Bunny (one click on the Bots tab).', 'scrapelock' ), 'bots' );
 		}
+		$s    = PNCP_Options::stored();
+		$wide = array();
+		foreach ( PNCP_Options::parse_list( $s['trusted_proxies'] ) as $range ) {
+			if ( PNCP_Options::range_too_wide( $range ) ) {
+				$wide[] = $range;
+			}
+		}
+		$open = array();
+		foreach ( array( 'allow_ips', 'private_ips' ) as $key ) {
+			foreach ( PNCP_Options::parse_list( isset( $s[ $key ] ) ? $s[ $key ] : '' ) as $range ) {
+				if ( PNCP_Options::range_too_wide( PNCP_Options::unmap_range( $range ) ) ) {
+					$open[] = $range;
+				}
+			}
+		}
+		if ( $open && ! $wide ) {
+			// 3.4: saved by an earlier version (the form, import and WP-CLI now refuse them).
+			/* translators: %s: the IP ranges */
+			return self::result( 'real_ip', 'recommended', __( 'ScrapeLock allowed or private IPs include ranges that are too wide', 'scrapelock' ), sprintf( __( 'These ranges in "Always allowed IPs" or the private URL IPs cover a large part of the internet: %s. Every visitor in them skips the protection. Remove them and list only your own addresses.', 'scrapelock' ), implode( ', ', $open ) ), 'bots' );
+		}
+		if ( $wide ) {
+			// 3.4: saved by an earlier version. They are ignored now, but the setting should be corrected.
+			/* translators: %s: the IP ranges */
+			return self::result( 'real_ip', 'recommended', __( 'ScrapeLock trusted proxies include ranges that are too wide', 'scrapelock' ), sprintf( __( 'These trusted proxy ranges cover a large part of the internet: %s. With them any visitor could choose its own IP with a header, so ScrapeLock ignores them. Remove them and list only the addresses of your own proxy or load balancer.', 'scrapelock' ), implode( ', ', $wide ) ), 'bots' );
+		}
 		return self::result( 'real_ip', 'good', __( 'ScrapeLock sees the real visitor IP', 'scrapelock' ), __( 'No CDN was found hiding the visitors\' addresses on this request.', 'scrapelock' ) );
+	}
+
+	/**
+	 * "Only through the CDN" on, but every request comes from a local reverse proxy that is not trusted, so they
+	 * all pass as the server's own requests and the setting does nothing.
+	 *
+	 * @return array<string, mixed>
+	 */
+	public static function test_origin() {
+		if ( ! PNCP_Status::is_enabled() || ! PNCP_Origin::active() ) {
+			return self::result( 'origin', 'good', __( 'ScrapeLock “Only through the CDN” is not in use', 'scrapelock' ), __( 'Requests that go around the CDN are not refused. Turn it on (Bots tab) once the CDN sends the shared secret.', 'scrapelock' ) );
+		}
+		if ( PNCP_Origin::proxy_problem() ) {
+			return self::result( 'origin', 'critical', __( '“Only through the CDN” does not protect this site yet', 'scrapelock' ), PNCP_Origin::proxy_message(), 'bots' );
+		}
+		return self::result( 'origin', 'good', __( 'ScrapeLock refuses requests that go around the CDN', 'scrapelock' ), __( 'Requests without the CDN shared secret get a 403.', 'scrapelock' ) );
 	}
 
 	/**
@@ -144,7 +294,7 @@ final class PNCP_Health {
 		if ( PNCP_Lockdown::configured() && ! PNCP_Seal::keys_in_config() ) {
 			return self::result( 'lockdown', 'recommended', __( 'ScrapeLock Lockdown: the security keys are not in wp-config.php', 'scrapelock' ), __( 'AUTH_KEY and AUTH_SALT are not defined in wp-config.php, so WordPress keeps them in the database. Lockdown encrypts and signs its data with them: someone who can change the database could then also read them. Add the keys to wp-config.php (from https://api.wordpress.org/secret-key/1.1/salt/) and connect the authenticator app again.', 'scrapelock' ), 'lockdown' );
 		}
-		if ( PNCP_Lockdown::is_locked() && ! is_multisite() && ! PNCP_Seal::guard_installed() ) {
+		if ( PNCP_Lockdown::is_locked() && ! PNCP_Seal::guard_installed() ) {
 			return self::result( 'lockdown', 'recommended', __( 'ScrapeLock Lockdown works without its guard file', 'scrapelock' ), __( 'The file wp-content/mu-plugins/scrapelock-lockdown-guard.php could not be written. The lock works, but someone who can change the database directly could open it. Let the web server write to wp-content/mu-plugins, then lock the site again.', 'scrapelock' ), 'lockdown' );
 		}
 		if ( ! PNCP_Lockdown::configured() ) {
@@ -232,14 +382,19 @@ final class PNCP_Health {
 	 * @return array<string, mixed>
 	 */
 	public static function info( $info ) {
-		$s     = PNCP_Options::stored();
-		$yes   = __( 'Yes', 'scrapelock' );
-		$no    = __( 'No', 'scrapelock' );
-		$flag  = static function ( $key ) use ( $s, $yes, $no ) {
+		$s    = PNCP_Options::stored();
+		$yes  = __( 'Yes', 'scrapelock' );
+		$no   = __( 'No', 'scrapelock' );
+		$flag = static function ( $key ) use ( $s, $yes, $no ) {
 			return ! empty( $s[ $key ] ) ? $yes : $no;
 		};
-		$until = PNCP_Options::emergency_until();
-		$lists = array();
+		// A limit per minute as it is stored, or "off" for 0.
+		$per_min = static function ( $key ) use ( $s ) {
+			/* translators: %d: requests per minute */
+			return (int) $s[ $key ] > 0 ? sprintf( __( '%d/min', 'scrapelock' ), (int) $s[ $key ] ) : __( 'Off', 'scrapelock' );
+		};
+		$until   = PNCP_Options::emergency_until();
+		$lists   = array();
 		foreach ( PNCP_Ip::lists_updated() as $name => $time ) {
 			$lists[] = $name . ': ' . ( $time ? wp_date( 'Y-m-d H:i', $time ) : '-' );
 		}
@@ -270,6 +425,17 @@ final class PNCP_Health {
 			'enabled'        => array( __( 'Protection', 'scrapelock' ), $flag( 'enabled' ) ),
 			/* translators: %s: date and time. */
 			'emergency'      => array( __( 'Emergency Mode', 'scrapelock' ), $until ? sprintf( __( 'On until %s', 'scrapelock' ), wp_date( 'Y-m-d H:i', $until ) ) : $no ),
+			'monitor'        => array( __( 'Monitor only (nothing blocked)', 'scrapelock' ), PNCP_Options::monitoring( $s ) ? ( ! empty( $s['monitor_until'] ) ? sprintf( /* translators: %s: date and time. */ __( 'On until %s', 'scrapelock' ), wp_date( 'Y-m-d H:i', (int) $s['monitor_until'] ) ) : $yes ) : $no ),
+			'block_bots'     => array( __( 'Block the bot list', 'scrapelock' ), $flag( 'block_bots' ) ),
+			'browsers_only'  => array( __( 'Browsers only', 'scrapelock' ), $flag( 'require_browser_headers' ) ),
+			'human_check'    => array( __( 'Human check', 'scrapelock' ), empty( $s['human_check'] ) ? $no : $per_min( 'rate_limit_unverified' ) ),
+			'rate_limits'    => array( __( 'Limits per minute (pages, search, REST, 404, sitemaps)', 'scrapelock' ), implode( ', ', array_map( $per_min, array( 'rate_limit', 'rate_limit_search', 'rate_limit_rest', 'rate_limit_404', 'rate_limit_sitemap' ) ) ) ),
+			'datacenter'     => array( __( 'Limit for data centers', 'scrapelock' ), $per_min( 'rate_limit_datacenter' ) ),
+			'countries'      => array( __( 'Blocked countries', 'scrapelock' ), '' !== trim( (string) $s['countries_block'] ) ? implode( ', ', PNCP_Options::parse_countries( (string) $s['countries_block'] ) ) : '-' ),
+			'countries_lim'  => array( __( 'Countries with a stricter limit', 'scrapelock' ), '' !== trim( (string) $s['countries_strict'] ) ? implode( ', ', PNCP_Options::parse_countries( (string) $s['countries_strict'] ) ) . ' (' . $per_min( 'rate_limit_country' ) . ')' : '-' ),
+			'exempt_cap'     => array( __( 'Who is exempt', 'scrapelock' ), (string) $s['exempt_cap'] ),
+			'feed_mode'      => array( __( 'Feeds', 'scrapelock' ), (string) $s['feed_mode'] ),
+			'rest_content'   => array( __( 'Content hidden in the REST API', 'scrapelock' ), $flag( 'rest_hide_content' ) ),
 			'ip_header'      => array( __( 'Real visitor IP', 'scrapelock' ), (string) $s['ip_header'] ),
 			'ip_lists'       => array( __( 'Official IP lists updated', 'scrapelock' ), $lists ? implode( ', ', $lists ) : '-' ),
 			'early'          => array( __( 'Early check', 'scrapelock' ), empty( $s['early_mode'] ) ? $no : ( PNCP_Early::installed() ? __( 'Running', 'scrapelock' ) : __( 'On, not running', 'scrapelock' ) ) ),
@@ -282,7 +448,7 @@ final class PNCP_Health {
 			'ipv6_wide'      => array( __( 'IPv6 /56 limit', 'scrapelock' ), $flag( 'ipv6_wide' ) ),
 			'archives'       => array( __( 'Web archives blocked', 'scrapelock' ), $flag( 'block_archivers' ) ),
 			'upload_php'     => array( __( 'No PHP in the uploads folder', 'scrapelock' ), $flag( 'block_upload_php' ) ),
-			'auto_emergency' => array( __( 'Automatic Emergency Mode', 'scrapelock' ), $flag( 'auto_emergency' ) ),
+			'auto_emergency' => array( __( 'Automatic Emergency Mode', 'scrapelock' ), empty( $s['auto_emergency'] ) ? $no : ( 'start' === $s['auto_emergency_mode'] ? __( 'Starts on its own', 'scrapelock' ) : __( 'Alerts only', 'scrapelock' ) ) ),
 			'edge'           => array( __( 'Blocking at the CDN', 'scrapelock' ), $edge ),
 			'cdn_only'       => array( __( 'Only through the CDN', 'scrapelock' ), PNCP_Origin::active( $s ) ? $yes : $no ),
 			'integrity'      => array( __( 'File integrity fingerprint', 'scrapelock' ), PNCP_Integrity::baseline()['time'] ? wp_date( 'Y-m-d H:i', PNCP_Integrity::baseline()['time'] ) : '-' ),

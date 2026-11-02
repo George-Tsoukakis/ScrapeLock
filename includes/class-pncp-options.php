@@ -21,6 +21,17 @@ final class PNCP_Options {
 	const EMERGENCY_OPTION = 'pncp_emergency_until';
 
 	/**
+	 * How many days a new install starts in "Monitor only" before it starts blocking on its own.
+	 */
+	const MONITOR_DAYS = 7;
+
+	/**
+	 * Option that remembers the end of the first-week monitoring: "pending" until the administrator has been
+	 * told that blocking started, then "shown", so they are told once.
+	 */
+	const MONITOR_ENDED_OPTION = 'pncp_monitor_ended';
+
+	/**
 	 * Cache of get() for the current request.
 	 *
 	 * @var array<string, mixed>|null
@@ -34,13 +45,16 @@ final class PNCP_Options {
 	 */
 	public static function choices() {
 		return array(
-			'copy_mode'          => array( 'block', 'attribution', 'allow' ),
-			'print_mode'         => array( 'allow', 'source', 'block' ),
-			'exempt_cap'         => array( 'manage_options', 'edit_others_posts', 'edit_posts', 'none' ),
-			'feed_mode'          => array( 'full', 'excerpt', 'disabled' ),
-			'ip_header'          => array( 'remote_addr', 'x_forwarded_for', 'x_real_ip', 'cf_connecting_ip', 'true_client_ip' ),
-			'watermark_position' => array( 'br', 'bl', 'tr', 'tl', 'center', 'tiled' ),
-			'log_retention'      => array( '1', '7', '30' ),
+			'copy_mode'           => array( 'block', 'attribution', 'allow' ),
+			'print_mode'          => array( 'allow', 'source', 'block' ),
+			'exempt_cap'          => array( 'manage_options', 'edit_others_posts', 'edit_posts', 'none' ),
+			'feed_mode'           => array( 'full', 'excerpt', 'disabled' ),
+			'ip_header'           => array( 'remote_addr', 'x_forwarded_for', 'x_real_ip', 'cf_connecting_ip', 'true_client_ip' ),
+			'watermark_position'  => array( 'br', 'bl', 'tr', 'tl', 'center', 'tiled' ),
+			'log_retention'       => array( '1', '7', '30' ),
+			// What the automatic Emergency Mode does when the site is hit far harder than usual: tell the
+			// administrator (email + notice with a "Start Emergency Mode" button), or start it on its own.
+			'auto_emergency_mode' => array( 'notify', 'start' ),
 		);
 	}
 
@@ -100,6 +114,8 @@ final class PNCP_Options {
 			'block_upload_php',
 			'auto_emergency',
 			'cdn_only',
+			'block_http_libs',
+			'monitor_mode',
 		);
 	}
 
@@ -156,9 +172,12 @@ final class PNCP_Options {
 	public static function sections() {
 		return array(
 			'general' => array( 'enabled', 'scope_posts', 'scope_pages', 'scope_home', 'scope_products', 'skip_woo_pages', 'excluded_ids', 'block_selection', 'block_context_menu', 'block_shortcuts', 'block_devtools', 'block_image_drag', 'block_text_drag', 'blur_on_capture', 'copy_mode', 'attribution_min_chars', 'print_mode', 'exempt_cap', 'show_message', 'message', 'block_framing', 'tdm_reservation', 'tdm_policy_url' ),
-			'bots'    => array( 'block_bots', 'block_empty_ua', 'block_fake_crawlers', 'require_browser_headers', 'block_headless', 'trap_enabled', 'block_archivers', 'ipv6_wide', 'bot_list', 'allow_list', 'allow_ips', 'allow_ai_search', 'verify_ai_bots', 'robots_ai_block', 'content_signal', 'block_ips', 'block_referrers', 'block_user_enum', 'rate_limit', 'rate_limit_search', 'rate_limit_rest', 'rate_limit_404', 'rate_limit_sitemap', 'human_check', 'rate_limit_unverified', 'geo_db', 'countries_block', 'countries_strict', 'rate_limit_country', 'rate_limit_datacenter', 'ban_strikes', 'ban_minutes', 'auto_emergency', 'auto_emergency_min', 'early_mode', 'precheck', 'log_retention', 'content_paths', 'ip_header', 'trust_cloudflare', 'trust_bunny', 'trust_any_proxy', 'trusted_proxies', 'cdn_secret', 'cdn_only' ),
+			'bots'    => array( 'monitor_mode', 'block_bots', 'block_empty_ua', 'block_fake_crawlers', 'require_browser_headers', 'block_headless', 'trap_enabled', 'block_http_libs', 'block_archivers', 'ipv6_wide', 'bot_list', 'allow_list', 'allow_ips', 'allow_ai_search', 'verify_ai_bots', 'robots_ai_block', 'content_signal', 'block_ips', 'block_referrers', 'block_user_enum', 'rate_limit', 'rate_limit_search', 'rate_limit_rest', 'rate_limit_404', 'rate_limit_sitemap', 'human_check', 'rate_limit_unverified', 'geo_db', 'countries_block', 'countries_strict', 'rate_limit_country', 'rate_limit_datacenter', 'ban_strikes', 'ban_minutes', 'auto_emergency', 'auto_emergency_mode', 'auto_emergency_min', 'early_mode', 'precheck', 'ip_header', 'trust_cloudflare', 'trust_bunny', 'trust_any_proxy', 'trusted_proxies', 'cdn_secret', 'cdn_only' ),
 			'content' => array( 'rest_hide_content', 'hide_rest_discovery', 'graphql_hide_content', 'feed_mode', 'feed_source_link', 'list_excerpts', 'private_paths', 'private_ips', 'disable_pingback', 'hide_versions', 'block_upload_php' ),
 			'images'  => array( 'watermark_enabled', 'watermark_full', 'watermark_products', 'watermark_image_id', 'watermark_opacity', 'watermark_size', 'watermark_position', 'watermark_min_width' ),
+			// Log tab: how long the log is kept, and the addresses that count as "Pages" in it (until 3.3 on the
+			// Bots and limits tab, same keys).
+			'log'     => array( 'log_retention', 'content_paths' ),
 		);
 	}
 
@@ -172,14 +191,26 @@ final class PNCP_Options {
 	}
 
 	/**
-	 * The User-Agents blocked by default (substring, case-insensitive).
+	 * The User-Agents blocked by default (substring, case-insensitive): AI crawlers and named scraping tools.
 	 * Never contains search engines, social network previews or price comparison platforms.
+	 *
+	 * Since 3.4 it no longer contains the generic HTTP libraries (curl, okhttp, Dart, python-requests etc.):
+	 * WooCommerce mobile apps, headless front ends, ERP price sync and uptime monitors use the same ones, so
+	 * blocking them by default broke real sites. They are blocked only with "Also block generic HTTP libraries"
+	 * (block_http_libs, see http_library_agents()). Existing sites keep the list they have.
 	 *
 	 * @return string[]
 	 */
 	public static function default_bot_entries() {
+		$libraries = array_map( 'strtolower', self::http_library_agents() );
+		$entries   = array();
+		foreach ( self::legacy_bot_list() as $entry ) {
+			if ( ! in_array( strtolower( $entry ), $libraries, true ) ) {
+				$entries[] = $entry;
+			}
+		}
 		return array_merge(
-			self::legacy_bot_list(),
+			$entries,
 			array(
 				// AI crawlers and agents.
 				'OAI-SearchBot',
@@ -211,7 +242,7 @@ final class PNCP_Options {
 				'TikTokSpider',
 				'iaskspider',
 				'QualifiedBot',
-				// Scraping tools and headless browsers.
+				// Scraping tools and headless browsers: made for copying sites, not for talking to an API.
 				'HeadlessChrome',
 				'PhantomJS',
 				'Puppeteer',
@@ -222,17 +253,45 @@ final class PNCP_Options {
 				'crawl4ai',
 				'ScrapingBee',
 				'Zyte',
-				'node-fetch',
-				'axios/',
-				'okhttp',
-				'libwww-perl',
-				'Java/',
-				'httpx',
 				'colly',
 				'Nutch',
-			),
-			self::new_bots_in_283()
+				'Mechanize',
+			)
 		);
+	}
+
+	/**
+	 * Generic HTTP libraries: the User-Agent each one sends when the program does not set its own. Scrapers use
+	 * them, but so do mobile apps (Flutter "Dart/", Android "okhttp"), headless front ends (node-fetch, axios,
+	 * undici), ERP and price sync (Java, Guzzle, python-requests) and monitors (curl). Blocked on top of the bot
+	 * list only with "Also block generic HTTP libraries (strict)". Until 3.3 they were part of the default list,
+	 * so lists saved before 3.4 usually contain them already.
+	 *
+	 * @return string[]
+	 */
+	public static function http_library_agents() {
+		return (array) apply_filters(
+			'pncp_http_library_agents',
+			array( 'curl/', 'Wget/', 'python-requests', 'python-urllib', 'aiohttp', 'httpx', 'Go-http-client', 'node-fetch', 'axios/', '=node', 'undici', 'okhttp', 'Dart/', 'Java/', 'Java-http-client', 'Apache-HttpClient', 'GuzzleHttp', 'libwww-perl', 'HTTP-Tiny', '=Ruby', 'Faraday v', 'Bun/', 'Deno/', 'PowerShell/' )
+		);
+	}
+
+	/**
+	 * The generic HTTP libraries that a stored bot list contains (lists saved before 3.4 usually do): they are
+	 * blocked even with "Also block generic HTTP libraries" off, so the Bots tab names them.
+	 *
+	 * @param array<string, mixed> $s Settings.
+	 * @return string[]
+	 */
+	public static function http_libraries_in_list( $s ) {
+		$list = array_map( 'strtolower', self::parse_list( isset( $s['bot_list'] ) ? (string) $s['bot_list'] : '' ) );
+		$out  = array();
+		foreach ( self::http_library_agents() as $agent ) {
+			if ( in_array( strtolower( (string) $agent ), $list, true ) ) {
+				$out[] = (string) $agent;
+			}
+		}
+		return $out;
 	}
 
 	/**
@@ -294,14 +353,15 @@ final class PNCP_Options {
 
 	/**
 	 * The User-Agents blocked when "Block bots" is on: the editable bot list, the AI crawlers built into the
-	 * plugin (PNCP_Bots::known_ai_agents()) and, with "Block web archives", the archive crawlers; no duplicates.
+	 * plugin (PNCP_Bots::known_ai_agents()), with "Block web archives" the archive crawlers and, with "Also block
+	 * generic HTTP libraries", the libraries of http_library_agents(); no duplicates.
 	 *
 	 * @param array<string, mixed> $s Settings.
 	 * @return string[]
 	 */
 	public static function blocked_agents( $s ) {
 		$out = array();
-		foreach ( array_merge( self::parse_list( $s['bot_list'] ), PNCP_Bots::known_ai_agents(), empty( $s['block_archivers'] ) ? array() : PNCP_Bots::archive_agents() ) as $agent ) {
+		foreach ( array_merge( self::parse_list( $s['bot_list'] ), PNCP_Bots::known_ai_agents(), empty( $s['block_archivers'] ) ? array() : PNCP_Bots::archive_agents(), empty( $s['block_http_libs'] ) ? array() : self::http_library_agents() ) as $agent ) {
 			$agent = trim( (string) $agent );
 			if ( '' !== $agent && '=' !== $agent ) {
 				$out[ strtolower( $agent ) ] = $agent;
@@ -312,8 +372,9 @@ final class PNCP_Options {
 
 	/**
 	 * HTTP libraries added to the bot list in 2.8.3: the User-Agent each one sends by default (measured, not
-	 * guessed). "=" = the whole User-Agent, for names too short to match safely anywhere in it. Existing sites
-	 * get them on upgrade (pncp_upgrade()).
+	 * guessed). "=" = the whole User-Agent, for names too short to match safely anywhere in it. Sites older than
+	 * 2.8.3 get them on upgrade (pncp_upgrade()), as they did then. Since 3.4 all but Mechanize are in
+	 * http_library_agents() instead of the default list.
 	 *
 	 * @return string[]
 	 */
@@ -331,7 +392,36 @@ final class PNCP_Options {
 	public static function default_allow_list() {
 		return implode(
 			"\n",
-			array( 'facebookexternalhit', 'Facebot', 'Twitterbot', 'LinkedInBot', 'WhatsApp', 'TelegramBot', 'Slackbot', 'Discordbot', 'Pinterest', 'Viber', 'SkypeUriPreview', 'Skroutz', 'BestPrice', 'UptimeRobot', 'Pingdom', 'Jetpack' )
+			array(
+				'facebookexternalhit',
+				'Facebot',
+				'Twitterbot',
+				'LinkedInBot',
+				'WhatsApp',
+				'TelegramBot',
+				'Slackbot',
+				'Discordbot',
+				'Pinterest',
+				'Viber',
+				'SkypeUriPreview',
+				'Skroutz',
+				'BestPrice',
+				// Uptime monitors and site managers (since 3.4, new installs only).
+				'UptimeRobot',
+				'Pingdom',
+				'Jetpack',
+				'StatusCake',
+				'Site24x7',
+				'Better Uptime',
+				'BetterStack',
+				'HetrixTools',
+				'ManageWP',
+				'MainWP',
+				'WPUmbrella',
+				'WP Umbrella',
+				'Freshping',
+				'Uptime-Kuma',
+			)
 		);
 	}
 
@@ -347,7 +437,10 @@ final class PNCP_Options {
 			'scope_pages'             => 1,
 			'scope_home'              => 1,
 			'scope_products'          => 1,
-			'block_selection'         => 1,
+			// Since 3.4 off on new installs, as in the recommended Balanced preset: blocking selection also stops
+			// select-to-speak, screen readers' "read selection", translation tools and copying with the source.
+			// Existing sites keep their stored value (see new_in_340()).
+			'block_selection'         => 0,
 			'block_context_menu'      => 1,
 			'block_shortcuts'         => 1,
 			'block_devtools'          => 0, // Since 2.3: cosmetic, it stops no bot; on in the Strict / Maximum presets.
@@ -374,6 +467,8 @@ final class PNCP_Options {
 			'require_browser_headers' => 0,
 			'trap_enabled'            => 1,
 			'bot_list'                => self::default_bot_list(),
+			// Since 3.4. Off on new and existing sites: apps, headless front ends and sync tools use these libraries.
+			'block_http_libs'         => 0,
 			'allow_list'              => self::default_allow_list(),
 			'allow_ips'               => '',
 			'robots_ai_block'         => 1,
@@ -440,10 +535,111 @@ final class PNCP_Options {
 			// Starts Emergency Mode on its own during an attack (PNCP_Surge). Existing sites: off.
 			'auto_emergency'          => 1,
 			'auto_emergency_min'      => 300,
+			// Since 3.4. A sudden rush of real visitors (a newsletter, a link on a big site) looks the same as an
+			// attack, and Emergency Mode changes many settings at once (browsers only, which also refuses feed
+			// readers, excerpts in lists, stricter limits): new installs only tell the administrator, who starts it
+			// with one click. Existing sites that had the automatic start on keep "start" (see new_in_340()).
+			'auto_emergency_mode'     => 'notify',
 			// Pages per minute from data center addresses (0 = off). Existing sites: off.
 			'rate_limit_datacenter'   => 15,
 			// Since 3.2. Off everywhere: it needs a rule at the CDN first.
 			'cdn_only'                => 0,
+			// Since 3.4. "Monitor only": log what would be blocked, block nothing. Off here (existing sites and
+			// "reset" keep blocking); a new install turns it on for its first week, see new_install().
+			'monitor_mode'            => 0,
+			// When the first-week monitoring ends (timestamp, 0 = no end: switched on by hand). Not a form field.
+			'monitor_until'           => 0,
+		);
+	}
+
+	/**
+	 * What a brand-new install gets on top of the defaults: "Monitor only" for its first week, so the owner
+	 * sees in the log what would be blocked (staff are exempt and never notice a block themselves) before
+	 * anything is. Afterwards it starts blocking on its own (end_monitor_trial()). Existing sites never get this.
+	 *
+	 * @return array<string, int>
+	 */
+	public static function new_install() {
+		return array(
+			'monitor_mode'  => 1,
+			'monitor_until' => time() + self::MONITOR_DAYS * DAY_IN_SECONDS,
+		);
+	}
+
+	/**
+	 * Is "Monitor only" in effect: every check logs what it would block and lets the request through?
+	 * The first-week monitoring ends at its time even before the hourly task has turned the setting off
+	 * (or when it cannot, e.g. while the site is locked).
+	 *
+	 * @param array<string, mixed>|null $s Settings (null = the settings in effect now).
+	 * @return bool
+	 */
+	public static function monitoring( $s = null ) {
+		$s = null === $s ? self::get() : $s;
+		return ! empty( $s['monitor_mode'] ) && ( empty( $s['monitor_until'] ) || time() < (int) $s['monitor_until'] );
+	}
+
+	/**
+	 * Ends the first-week monitoring once its time has come: the setting is turned off (blocking starts) and
+	 * the administrator is told once, with a notice in wp-admin and an email. Runs hourly and in wp-admin.
+	 */
+	public static function end_monitor_trial() {
+		$s = self::stored();
+		if ( empty( $s['monitor_mode'] ) || empty( $s['monitor_until'] ) || time() < (int) $s['monitor_until'] ) {
+			return;
+		}
+		$since              = (int) $s['monitor_until'] - self::MONITOR_DAYS * DAY_IN_SECONDS;
+		$s['monitor_mode']  = 0;
+		$s['monitor_until'] = 0;
+		update_option( PNCP_OPTION, $s ); // Refused while the site is locked: monitoring() has already ended anyway.
+		self::flush();
+		// add_option() does nothing when the option exists: told once, even if the update above is retried.
+		if ( add_option( self::MONITOR_ENDED_OPTION, 'pending', '', false ) ) {
+			self::mail_monitor_ended( $since );
+		}
+	}
+
+	/**
+	 * The email sent when the first-week monitoring ends.
+	 *
+	 * @param int $since When the monitoring started.
+	 */
+	private static function mail_monitor_ended( $since ) {
+		$counts = PNCP_Log::summary( max( 1, (int) ceil( ( time() - $since ) / HOUR_IN_SECONDS ) ), 'monitor' );
+		$labels = PNCP_Log::reasons();
+		$lines  = array();
+		foreach ( array_slice( $counts['reasons'], 0, 10, true ) as $reason => $n ) {
+			$lines[] = '- ' . ( isset( $labels[ $reason ] ) ? $labels[ $reason ] : $reason ) . ': ' . number_format_i18n( $n );
+		}
+		$body = sprintf(
+			/* translators: 1: site name, 2: number of days, 3: number of requests */
+			__( 'ScrapeLock on %1$s now blocks bots and scrapers: the first %2$d days in “Monitor only” have ended. In that time %3$s requests would have been blocked.', 'scrapelock' ),
+			wp_specialchars_decode( get_bloginfo( 'name' ), ENT_QUOTES ),
+			self::MONITOR_DAYS,
+			number_format_i18n( $counts['total'] )
+		);
+		if ( $lines ) {
+			$body .= "\n\n" . implode( "\n", $lines );
+		}
+		$body .= "\n\n" . __( 'To see what is blocked, or to go back to “Monitor only”, open the ScrapeLock settings:', 'scrapelock' ) . "\n" . admin_url( 'options-general.php?page=scrapelock&tab=log' );
+		/* translators: %s: site name */
+		wp_mail( get_option( 'admin_email' ), sprintf( __( '[%s] ScrapeLock now blocks bots', 'scrapelock' ), wp_specialchars_decode( get_bloginfo( 'name' ), ENT_QUOTES ) ), $body );
+	}
+
+	/**
+	 * The settings added (or with a new default) in 3.4, with the values existing sites get on upgrade. The
+	 * automatic Emergency Mode keeps doing what it did: a site that had it on keeps starting it on its own
+	 * ("start"); a site that had it off gets "notify", the safer choice, should it ever turn it on. Text selection
+	 * stays blocked, as it was by default before 3.4.
+	 *
+	 * @param array<string, mixed> $stored Stored settings.
+	 * @return array<string, string>
+	 */
+	public static function new_in_340( $stored ) {
+		return array(
+			'auto_emergency_mode' => ! empty( $stored['auto_emergency'] ) ? 'start' : 'notify',
+			// The default before 3.4. Every site stores it, so this only matters for settings that lack it.
+			'block_selection'     => 1,
 		);
 	}
 
@@ -516,10 +712,31 @@ final class PNCP_Options {
 		if ( PNCP_Ip::in_any( $ip, self::parse_list( self::stored()['allow_ips'] ) ) ) {
 			return 'allowed';
 		}
-		if ( PNCP_Bots::is_official_crawler_ip( $ip ) || '' !== PNCP_Ip::official_owner( $ip ) ) {
+		if ( PNCP_Bots::is_official_crawler_ip( $ip ) || '' !== PNCP_Ip::official_owner( $ip ) || self::crawler_fallback_ip( $ip ) ) {
 			return 'official';
 		}
 		return '';
+	}
+
+	/**
+	 * 3.4: is the IP in the main, long-standing ranges of Googlebot or Bingbot, while the official list of that
+	 * crawler is not downloaded yet (a new install without internet access, or a failed download)? Only for
+	 * refusing a manual block: the full lists decide everything else once they are there.
+	 *
+	 * @param string $ip IP.
+	 * @return bool
+	 */
+	private static function crawler_fallback_ip( $ip ) {
+		$fallback = array(
+			'google' => array( '66.249.64.0/19', '2001:4860:4801::/48' ),
+			'bing'   => array( '157.55.39.0/24', '207.46.13.0/24', '40.77.167.0/24' ),
+		);
+		foreach ( $fallback as $name => $ranges ) {
+			if ( ! PNCP_Ip::list_of( $name ) && PNCP_Ip::in_any( $ip, $ranges ) ) {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	/**
@@ -582,6 +799,91 @@ final class PNCP_Options {
 	 */
 	public static function is_blocked_permanently( $ip ) {
 		return PNCP_Ip::in_any( (string) $ip, self::parse_list( self::stored()['block_ips'] ) );
+	}
+
+	/**
+	 * The part of a blocked User-Agent that the "Always allow this User-Agent" button suggests: the bot-list
+	 * entry it matched ("Dart/", "okhttp", "GPTBot"), so exactly what blocked it passes. An entry that must be
+	 * the whole User-Agent ("=node") suggests the whole User-Agent, because the allow list matches anywhere.
+	 *
+	 * @param string               $ua User-Agent.
+	 * @param array<string, mixed> $s  Settings.
+	 * @return string
+	 */
+	public static function allow_token_for( $ua, $s ) {
+		$ua = trim( (string) $ua );
+		foreach ( self::blocked_agents( $s ) as $needle ) {
+			if ( PNCP_Bots::ua_in_list( $ua, array( $needle ) ) ) {
+				return '=' === $needle[0] ? mb_substr( $ua, 0, 100 ) : $needle;
+			}
+		}
+		return mb_substr( $ua, 0, 100 );
+	}
+
+	/**
+	 * Why a User-Agent part must not be added to "Always allowed User-Agents" ('' = it may be). Refused: empty,
+	 * fewer than three letters or digits, "@" (IP pinning is set in the Bots tab, where the IPs can be checked),
+	 * and anything so generic that it would also match an ordinary browser or every bot ("Mozilla", "Chrome",
+	 * "compatible", "bot"): the allow list overrides the bot list and "Browsers only", so such an entry would
+	 * switch them off for everyone.
+	 *
+	 * @param string $token User-Agent part.
+	 * @return string empty | generic, or ''.
+	 */
+	public static function allow_token_refusal( $token ) {
+		$token = trim( (string) $token );
+		if ( '' === $token || preg_match_all( '/[A-Za-z0-9]/', $token ) < 3 || false !== strpos( $token, '@' ) ) {
+			return 'empty';
+		}
+		$samples = array(
+			'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36 Edg/130.0.0.0',
+			'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Safari/605.1.15',
+			'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1',
+			'Mozilla/5.0 (Linux; Android 14; SM-S918B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Mobile Safari/537.36',
+			'Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:131.0) Gecko/20100101 Firefox/131.0',
+			'Mozilla/5.0 (compatible; ExampleBot/1.0; +https://www.example.com/bot.html)',
+		);
+		foreach ( $samples as $sample ) {
+			if ( false !== stripos( $sample, $token ) ) {
+				return 'generic';
+			}
+		}
+		$generic = array( 'bot', 'bots', 'crawl', 'crawler', 'spider', 'http', 'https', 'client', 'agent', 'user-agent', 'browser', 'mobile', 'compatible', 'www', 'com' );
+		return in_array( strtolower( rtrim( $token, '/' ) ), $generic, true ) ? 'generic' : '';
+	}
+
+	/**
+	 * Adds a User-Agent part to "Always allowed User-Agents" (button "Always allow this User-Agent" in the Log
+	 * tab). Like block_ip_permanently(), saving it does not empty the page cache: only the list changes.
+	 *
+	 * @param string $token User-Agent part, e.g. "Dart/" or "okhttp".
+	 * @return string added | exists | full | refused
+	 */
+	public static function allow_user_agent( $token ) {
+		$token = mb_substr( trim( sanitize_text_field( (string) $token ) ), 0, 100 );
+		if ( '' !== self::allow_token_refusal( $token ) ) {
+			return 'refused';
+		}
+		$stored = self::stored();
+		$list   = self::parse_list( $stored['allow_list'] );
+		if ( in_array( strtolower( $token ), array_map( 'strtolower', $list ), true ) ) {
+			return 'exists';
+		}
+		if ( count( $list ) >= 200 ) {
+			return 'full'; // The list keeps at most 200 lines (parse_list).
+		}
+		$list[]               = $token;
+		$stored['allow_list'] = implode( "\n", $list );
+		$purge                = has_action( 'update_option_' . PNCP_OPTION, 'pncp_purge_page_cache' );
+		if ( false !== $purge ) {
+			remove_action( 'update_option_' . PNCP_OPTION, 'pncp_purge_page_cache', $purge );
+		}
+		update_option( PNCP_OPTION, $stored );
+		if ( false !== $purge ) {
+			add_action( 'update_option_' . PNCP_OPTION, 'pncp_purge_page_cache', $purge );
+		}
+		self::flush();
+		return 'added';
 	}
 
 	/**
@@ -739,6 +1041,10 @@ final class PNCP_Options {
 			return $current > 0 ? min( $current, $cap ) : $cap;
 		};
 		return array(
+			// 3.4: Emergency Mode is started to stop an attack (by the administrator, or on its own when set to),
+			// so it blocks also while "Monitor only" is on, for example in the first week of a new install.
+			// Before, it only logged what it would block then. "Monitor only" is back when it ends.
+			'monitor_mode'            => 0,
 			'block_bots'              => 1,
 			'block_empty_ua'          => 1,
 			'block_fake_crawlers'     => 1,
@@ -766,6 +1072,192 @@ final class PNCP_Options {
 	}
 
 	/**
+	 * What Emergency Mode changes on this site, in words: one line per setting of emergency_overlay() whose value
+	 * differs from the current one. Built from the overlay itself, so the description on the settings page is
+	 * always the list of what really changes (a setting the overlay gets later without a label here is still
+	 * listed, by its name).
+	 *
+	 * @param array<string, mixed> $s Stored settings.
+	 * @return string[]
+	 */
+	public static function emergency_changes( $s ) {
+		$s     = array_merge( self::defaults(), (array) $s );
+		$lines = array();
+		foreach ( self::emergency_overlay( $s ) as $key => $value ) {
+			if ( isset( $s[ $key ] ) && (string) $s[ $key ] === (string) $value ) {
+				continue; // Already like this in your settings: nothing changes.
+			}
+			if ( 'monitor_mode' === $key && ! self::monitoring( $s ) ) {
+				continue; // "Monitor only" is on in the settings but has already ended (the first week is over).
+			}
+			$lines[] = self::emergency_label( $key, $value );
+		}
+		return $lines;
+	}
+
+	/**
+	 * One setting of Emergency Mode, in words, with the value it gets.
+	 *
+	 * @param string $key   Setting.
+	 * @param mixed  $value Value in Emergency Mode.
+	 * @return string
+	 */
+	public static function emergency_label( $key, $value ) {
+		$n = (int) $value;
+		switch ( $key ) {
+			case 'monitor_mode':
+				return __( '“Monitor only” is paused: everything below really blocks', 'scrapelock' );
+			case 'block_bots':
+				return __( 'The bot list blocks AI crawlers and scrapers', 'scrapelock' );
+			case 'block_empty_ua':
+				return __( 'Requests without a User-Agent are blocked', 'scrapelock' );
+			case 'block_fake_crawlers':
+				return __( 'Fake search engines are blocked', 'scrapelock' );
+			case 'require_browser_headers':
+				return __( 'Browsers only: pages are refused to clients that do not send browser headers (feeds stay open to feed readers and podcast apps)', 'scrapelock' );
+			case 'block_headless':
+				return __( 'Headless and fake browsers are blocked (not on feeds)', 'scrapelock' );
+			case 'trap_enabled':
+				return __( 'The bot trap is on', 'scrapelock' );
+			case 'rest_hide_content':
+				return __( 'The REST API does not show the text of posts', 'scrapelock' );
+			case 'graphql_hide_content':
+				return __( 'GraphQL does not show the text of posts', 'scrapelock' );
+			case 'block_framing':
+				return __( 'Other sites cannot show your pages in a frame', 'scrapelock' );
+			case 'feed_mode':
+				return 'disabled' === $value ? __( 'RSS / Atom feeds are disabled', 'scrapelock' ) : __( 'RSS / Atom feeds show a short excerpt only', 'scrapelock' );
+			case 'rate_limit':
+				/* translators: %d: number of pages */
+				return sprintf( _n( 'At most %d page per minute per IP', 'At most %d pages per minute per IP', $n, 'scrapelock' ), $n );
+			case 'rate_limit_search':
+				/* translators: %d: number of searches */
+				return sprintf( _n( 'At most %d search per minute per IP', 'At most %d searches per minute per IP', $n, 'scrapelock' ), $n );
+			case 'rate_limit_rest':
+				/* translators: %d: number of requests */
+				return sprintf( _n( 'At most %d REST API / GraphQL request per minute per IP', 'At most %d REST API / GraphQL requests per minute per IP', $n, 'scrapelock' ), $n );
+			case 'rate_limit_404':
+				/* translators: %d: number of pages */
+				return sprintf( _n( 'At most %d “page not found” per minute per IP', 'At most %d “page not found” per minute per IP', $n, 'scrapelock' ), $n );
+			case 'rate_limit_sitemap':
+				/* translators: %d: number of requests */
+				return sprintf( _n( 'At most %d sitemap request per minute per IP', 'At most %d sitemap requests per minute per IP', $n, 'scrapelock' ), $n );
+			case 'human_check':
+				return __( 'The human check is on', 'scrapelock' );
+			case 'rate_limit_unverified':
+				/* translators: %d: number of pages */
+				return sprintf( _n( 'Visitors who have not passed the human check: at most %d page per minute', 'Visitors who have not passed the human check: at most %d pages per minute', $n, 'scrapelock' ), $n );
+			case 'block_user_enum':
+				return __( 'Lists of user names (author scans) are blocked', 'scrapelock' );
+			case 'ban_strikes':
+				/* translators: %d: number of violations */
+				return sprintf( _n( 'An IP is blocked temporarily after %d violation', 'An IP is blocked temporarily after %d violations', $n, 'scrapelock' ), $n );
+			case 'ban_minutes':
+				return 0 === $n % 60
+					/* translators: %d: number of hours */
+					? sprintf( _n( 'A temporary block lasts %d hour', 'A temporary block lasts %d hours', (int) ( $n / 60 ), 'scrapelock' ), (int) ( $n / 60 ) )
+					/* translators: %d: number of minutes */
+					: sprintf( _n( 'A temporary block lasts %d minute', 'A temporary block lasts %d minutes', $n, 'scrapelock' ), $n );
+			case 'list_excerpts':
+				return __( 'Lists of articles (home page, categories, archives, search) show an excerpt and a link instead of the full text', 'scrapelock' );
+			case 'ipv6_wide':
+				return __( 'IPv6: the whole /56 network is limited too', 'scrapelock' );
+			case 'rate_limit_datacenter':
+				/* translators: %d: number of pages */
+				return sprintf( _n( 'At most %d page per minute from data centers (also services in “Always allowed” that are not pinned to their IPs)', 'At most %d pages per minute from data centers (also services in “Always allowed” that are not pinned to their IPs)', $n, 'scrapelock' ), $n );
+		}
+		return $key . ': ' . (string) $value;
+	}
+
+	/**
+	 * The settings that change what a logged-out visitor gets for an address that a page cache or a CDN may keep
+	 * a copy of: the HTML of pages and feeds, their headers, robots.txt, and the cache plugins' own rules (WP
+	 * Rocket's list of User-Agents that never get cached pages). Only a change to one of these empties the page
+	 * cache (pncp_settings_purge()); every other setting is read by PHP on each request, or written to its own
+	 * file (early check, pre-cache check, uploads rule), so a cached page is still right after it changes.
+	 *
+	 * Not here on purpose: log retention, limits, countries, IP lists, proxies, CDN secret, "Monitor only", the
+	 * automatic Emergency Mode (checked in PHP, before or without the cache); who is exempt (staff are logged in
+	 * and never get cached pages); the watermark look (it changes image files, not the HTML, and the files are
+	 * redone later by the image tool).
+	 *
+	 * @return string[]
+	 */
+	public static function cache_keys() {
+		return array(
+			// Whether and where the protection script and its settings are printed into the page.
+			'enabled',
+			'scope_posts',
+			'scope_pages',
+			'scope_home',
+			'scope_products',
+			'skip_woo_pages',
+			'excluded_ids',
+			'block_selection',
+			'block_context_menu',
+			'block_shortcuts',
+			'block_devtools',
+			'block_image_drag',
+			'block_text_drag',
+			'blur_on_capture',
+			'copy_mode',
+			'attribution_min_chars',
+			'print_mode',
+			'show_message',
+			'message',
+			'human_check',
+			'trap_enabled',
+			// Headers and tags in the page head.
+			'block_framing',
+			'tdm_reservation',
+			'tdm_policy_url',
+			'hide_versions',
+			'hide_rest_discovery',
+			'disable_pingback',
+			// What pages, lists and feeds contain.
+			'list_excerpts',
+			'feed_mode',
+			'feed_source_link',
+			'watermark_full',
+			'rest_hide_content',
+			'graphql_hide_content',
+			'block_user_enum',
+			'private_paths',
+			'private_ips',
+			// robots.txt (a CDN keeps .txt files) and the User-Agents WP Rocket must never serve from its cache.
+			'robots_ai_block',
+			'content_signal',
+			'allow_ai_search',
+			'block_bots',
+			'block_empty_ua',
+			'bot_list',
+			'block_http_libs',
+			'block_archivers',
+			'precheck',
+		);
+	}
+
+	/**
+	 * Which of cache_keys() differ between two sets of settings.
+	 *
+	 * @param array<string, mixed> $old Settings before.
+	 * @param array<string, mixed> $new Settings after.
+	 * @return string[]
+	 */
+	public static function cache_keys_changed( $old, $new ) {
+		$defaults = self::defaults();
+		$old      = array_merge( $defaults, is_array( $old ) ? $old : array() );
+		$new      = array_merge( $defaults, is_array( $new ) ? $new : array() );
+		$changed  = array();
+		foreach ( self::cache_keys() as $key ) {
+			if ( (string) $old[ $key ] !== (string) $new[ $key ] ) {
+				$changed[] = $key;
+			}
+		}
+		return $changed;
+	}
+
+	/**
 	 * When Emergency Mode expires (0 = inactive).
 	 *
 	 * @return int
@@ -778,16 +1270,30 @@ final class PNCP_Options {
 	/**
 	 * Starts or stops Emergency Mode.
 	 *
-	 * @param int $hours Duration in hours (0 = stop).
-	 * @param bool $purge Whether to empty the page cache too (not on the automatic start: see PNCP_Surge).
+	 * The page cache is never emptied here. Emergency Mode is started at the peak of an attack: emptying the
+	 * whole cache (and Cloudflare's, "purge everything") would send every visitor to PHP and the database at
+	 * once, and make the administrator's click wait for the cache plugins and the Cloudflare API. Most of what
+	 * it changes (limits, bot checks, temporary blocks) is checked in PHP on every request, so cached pages are
+	 * still right. Only when it changes something a cached page contains (cache_keys(): e.g. excerpts in the
+	 * lists, the frame header, the feeds) is the cache emptied, once, in a background request (a loopback to
+	 * wp-cron.php that nobody waits for). The automatic start passes false and empties nothing: see PNCP_Surge.
+	 *
+	 * @param int  $hours Duration in hours (0 = stop).
+	 * @param bool $purge Whether the page cache may be emptied in the background when cached pages change.
 	 */
 	public static function set_emergency( $hours, $purge = true ) {
-		$hours = max( 0, min( 72, (int) $hours ) );
+		$hours  = max( 0, min( 72, (int) $hours ) );
+		$before = self::get();
 		update_option( self::EMERGENCY_OPTION, $hours ? time() + $hours * HOUR_IN_SECONDS : 0, true );
 		self::flush();
-		if ( $purge ) {
-			pncp_purge_page_cache();
+		// 3.4: the pre-cache check applies Emergency Mode too (its end time and limits are in its configuration).
+		PNCP_Precheck::refresh();
+		if ( $purge && self::cache_keys_changed( $before, self::get() ) ) {
+			pncp_schedule_purge();
 		}
+		// Started or stopped (from the ScrapeLock page, WP-CLI or the Abilities API): the alert of the automatic
+		// Emergency Mode, if one is shown, has been answered.
+		PNCP_Surge::clear_alert();
 	}
 
 	/**
@@ -820,7 +1326,22 @@ final class PNCP_Options {
 		if ( ! is_array( $stored ) ) {
 			$stored = array();
 		}
-		return array_merge( self::defaults(), $stored );
+		// Settings stored before 3.4 that the upgrade could not add to: on a site locked with Lockdown the
+		// settings keep their value (pncp_upgrade() is refused like any other change). They get the values an
+		// upgrade gives existing sites, not the new-install defaults, so an automatic Emergency Mode that started
+		// on its own keeps doing so.
+		if ( $stored && ! isset( $stored['auto_emergency_mode'] ) ) {
+			$stored += self::new_in_340( $stored );
+		}
+		$defaults = self::defaults();
+		foreach ( $defaults as $key => $default ) {
+			// 3.4: a setting that should be a single value but is stored as a list or nothing (changed in the
+			// database, or damaged) gets its default, instead of warnings on every page that shows it.
+			if ( array_key_exists( $key, $stored ) && is_scalar( $default ) && ! is_scalar( $stored[ $key ] ) ) {
+				$stored[ $key ] = $default;
+			}
+		}
+		return array_merge( $defaults, $stored );
 	}
 
 	/**
@@ -906,6 +1427,7 @@ final class PNCP_Options {
 		foreach ( array( 'countries_block', 'countries_strict' ) as $key ) {
 			$clean[ $key ] = implode( "\n", self::parse_countries( isset( $input[ $key ] ) ? (string) $input[ $key ] : '' ) );
 		}
+		self::guard_block_lists( $clean, $input );
 
 		$policy                  = isset( $input['tdm_policy_url'] ) ? esc_url_raw( trim( (string) $input['tdm_policy_url'] ), array( 'https', 'http' ) ) : '';
 		$clean['tdm_policy_url'] = (string) $policy;
@@ -948,8 +1470,210 @@ final class PNCP_Options {
 			}
 		}
 
+		// The end of the first-week monitoring is not a form field. It is kept while "Monitor only" stays on;
+		// turned off, it goes; turned on by hand, the mode has no end (it blocks again only when you say so).
+		// A programmatic save (a new install, the hourly end) brings its own value.
+		if ( empty( $clean['monitor_mode'] ) ) {
+			$clean['monitor_until'] = 0;
+		} elseif ( isset( $input['monitor_until'] ) && ! isset( $input['_sections'] ) ) {
+			$clean['monitor_until'] = absint( $input['monitor_until'] );
+		} else {
+			$clean['monitor_until'] = ! empty( $stored['monitor_mode'] ) ? absint( $stored['monitor_until'] ) : 0;
+		}
+
 		self::flush();
 		return $clean;
+	}
+
+	/**
+	 * Guards against blocking everyone by mistake, like the private URLs guard above. "Always blocked IPs" do not
+	 * keep a range wider than /8 (IPv4, 16 million addresses) or /16 (IPv6): 0.0.0.0/0 or ::/0 would refuse every
+	 * visitor, and ranges that wide always hold real visitors and search engines. The administrator is told which
+	 * lines were not saved. A range that holds the IP of whoever is saving, or a blocked country that is the shop's
+	 * own country (WooCommerce) or the one this request comes from, is saved (it can be intended, e.g. while
+	 * testing through a VPN), but with a warning.
+	 *
+	 * Only what the form (or an import) brings is checked: a tab that does not save these fields keeps them as
+	 * they are.
+	 *
+	 * @param array<string, mixed> $clean Sanitized values (changed in place).
+	 * @param array<string, mixed> $input Form values.
+	 */
+	private static function guard_block_lists( &$clean, $input ) {
+		$notify = function_exists( 'add_settings_error' );
+		// 3.4: the same limit for the lists that let addresses through. A trusted proxy range this wide lets any
+		// visitor choose its own IP with a header (even 127.0.0.1, the server itself), like "trust any proxy";
+		// an allowed range this wide lets a large part of the internet past the protection.
+		$texts = array(
+			/* translators: %s: the refused lines */
+			'trusted_proxies' => __( 'These trusted proxy ranges were not saved, because they are too wide (wider than /8 for IPv4 or /16 for IPv6): any visitor could then choose its own IP with a header and never be limited or blocked: %s. List only the addresses of your own proxy or load balancer.', 'scrapelock' ),
+			/* translators: %s: the refused lines */
+			'allow_ips'       => __( 'These always-allowed IP ranges were not saved, because they are too wide (wider than /8 for IPv4 or /16 for IPv6) and would let a large part of the internet past the protection: %s.', 'scrapelock' ),
+			/* translators: %s: the refused lines */
+			'private_ips'     => __( 'These IP ranges for the private URLs were not saved, because they are too wide (wider than /8 for IPv4 or /16 for IPv6) and would open the private URLs to a large part of the internet: %s.', 'scrapelock' ),
+		);
+		foreach ( $texts as $key => $text ) {
+			if ( ! self::saved_here( $key, $input ) ) {
+				continue; // Not on the tab being saved: kept as it is.
+			}
+			$keep_list = array();
+			$wide_list = array();
+			foreach ( self::parse_list( isset( $clean[ $key ] ) ? $clean[ $key ] : '' ) as $range ) {
+				if ( self::range_too_wide( $range ) ) {
+					$wide_list[] = $range;
+				} else {
+					$keep_list[] = $range;
+				}
+			}
+			$clean[ $key ] = implode( "\n", $keep_list );
+			if ( $wide_list && $notify ) {
+				add_settings_error( PNCP_OPTION, 'pncp_' . $key . '_wide', sprintf( $text, implode( ', ', $wide_list ) ) );
+			}
+		}
+
+		if ( isset( $input['_sections'] ) && ! in_array( 'bots', (array) $input['_sections'], true ) ) {
+			return;
+		}
+		$kept = array();
+		$wide = array();
+		foreach ( self::parse_list( $clean['block_ips'] ) as $range ) {
+			if ( self::range_too_wide( $range ) ) {
+				$wide[] = $range;
+			} else {
+				$kept[] = $range;
+			}
+		}
+		$clean['block_ips'] = implode( "\n", $kept );
+		if ( $wide && $notify ) {
+			add_settings_error(
+				PNCP_OPTION,
+				'pncp_block_ips_wide',
+				/* translators: %s: the refused lines */
+				sprintf( __( 'These always-blocked IP ranges were not saved, because they are too wide (wider than /8 for IPv4 or /16 for IPv6) and would block a large part of the internet or every visitor: %s. Block single addresses or narrower ranges, e.g. 203.0.113.0/24.', 'scrapelock' ), implode( ', ', $wide ) )
+			);
+		}
+		$ip = PNCP_Ip::client_ip();
+		if ( '' !== $ip && $notify ) {
+			$own = array();
+			foreach ( $kept as $range ) {
+				if ( PNCP_Ip::in_range( $ip, $range ) ) {
+					$own[] = $range;
+				}
+			}
+			if ( $own ) {
+				add_settings_error(
+					PNCP_OPTION,
+					'pncp_block_ips_own',
+					/* translators: 1: the IP of the administrator, 2: the ranges */
+					sprintf( __( 'Warning: your own IP (%1$s) is in these always-blocked IPs: %2$s. They were saved, but you can lock yourself out of this site (the early check and the pre-cache check refuse them before anyone is logged in), together with everyone on your network. If this is not intended, remove them, or add your IP to “Always allowed IPs”.', 'scrapelock' ), $ip, implode( ', ', $own ) ),
+					'warning'
+				);
+			}
+		}
+
+		$blocked = self::parse_list( $clean['countries_block'] );
+		if ( ! $blocked || ! $notify ) {
+			return;
+		}
+		$shop = self::shop_country();
+		if ( '' !== $shop && in_array( $shop, $blocked, true ) ) {
+			add_settings_error(
+				PNCP_OPTION,
+				'pncp_countries_shop',
+				/* translators: %s: country code */
+				sprintf( __( 'Warning: the blocked countries include %s, the country of your shop (WooCommerce → Settings → Store address). It was saved, but customers from your own country will be refused.', 'scrapelock' ), $shop ),
+				'warning'
+			);
+		}
+		$here = '' !== $ip ? PNCP_Geo::country( $ip ) : '';
+		if ( '' !== $here && $here !== $shop && in_array( $here, $blocked, true ) ) {
+			add_settings_error(
+				PNCP_OPTION,
+				'pncp_countries_here',
+				/* translators: %s: country code */
+				sprintf( __( 'Warning: the blocked countries include %s, the country you are visiting from now. It was saved, but you will be refused once you log out, and so will visitors from there.', 'scrapelock' ), $here ),
+				'warning'
+			);
+		}
+	}
+
+	/**
+	 * Does this save bring the field (the form of its tab, an import or WP-CLI, which save every field)?
+	 *
+	 * @param string               $key   Field.
+	 * @param array<string, mixed> $input Form values.
+	 * @return bool
+	 */
+	private static function saved_here( $key, $input ) {
+		if ( ! isset( $input['_sections'] ) ) {
+			return true;
+		}
+		foreach ( self::sections() as $section => $fields ) {
+			if ( in_array( $key, $fields, true ) && in_array( $section, (array) $input['_sections'], true ) ) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	/**
+	 * Is an IP range wider than /8 (IPv4) or /16 (IPv6)?
+	 *
+	 * @param string $range IP or CIDR.
+	 * @return bool
+	 */
+	public static function range_too_wide( $range ) {
+		$parts = explode( '/', trim( (string) $range ), 2 );
+		if ( ! isset( $parts[1] ) || ! ctype_digit( $parts[1] ) ) {
+			return false; // A single address.
+		}
+		$prefix = (int) $parts[1];
+		if ( ! filter_var( $parts[0], FILTER_VALIDATE_IP, FILTER_FLAG_IPV6 ) ) {
+			return $prefix < 8;
+		}
+		// 3.4: IPv6 written for IPv4 addresses (::ffff:0.0.0.0/96 is "every IPv4 address"): the IPv4 limit counts
+		// for the part after the first 96 bits, and a wider IPv6 range that holds all of them is too wide too.
+		$bin    = inet_pton( $parts[0] );
+		$mapped = str_repeat( "\0", 10 ) . "\xff\xff";
+		if ( false !== $bin && 16 === strlen( $bin ) && self::same_bits( $bin, $mapped, min( $prefix, 96 ) ) ) {
+			return $prefix < 96 + 8;
+		}
+		return $prefix < 16;
+	}
+
+	/**
+	 * Do two binary strings start with the same bits?
+	 *
+	 * @param string $a    Binary string.
+	 * @param string $b    Binary string.
+	 * @param int    $bits How many bits.
+	 * @return bool
+	 */
+	private static function same_bits( $a, $b, $bits ) {
+		$bytes = intdiv( $bits, 8 );
+		if ( substr( $a, 0, $bytes ) !== substr( $b, 0, $bytes ) ) {
+			return false;
+		}
+		$rest = $bits % 8;
+		if ( 0 === $rest ) {
+			return true;
+		}
+		$mask = ( 0xff << ( 8 - $rest ) ) & 0xff;
+		return ( ord( $a[ $bytes ] ) & $mask ) === ( ord( $b[ $bytes ] ) & $mask );
+	}
+
+	/**
+	 * The country of the WooCommerce store address (ISO code), or '' without WooCommerce.
+	 *
+	 * @return string
+	 */
+	public static function shop_country() {
+		if ( ! class_exists( 'WooCommerce' ) ) {
+			return '';
+		}
+		// "GR:I" (country:state) or "GR".
+		$country = strtoupper( strtok( (string) get_option( 'woocommerce_default_country', '' ), ':' ) );
+		return preg_match( '/^[A-Z]{2}$/', $country ) ? $country : '';
 	}
 
 	/**
@@ -959,6 +1683,9 @@ final class PNCP_Options {
 	 * @return string[]
 	 */
 	public static function parse_list( $raw ) {
+		if ( ! is_scalar( $raw ) ) {
+			return array(); // Not text (a damaged setting): no lines.
+		}
 		$lines = preg_split( '/\r\n|\r|\n/', (string) $raw );
 		$out   = array();
 		foreach ( $lines as $line ) {
@@ -980,10 +1707,35 @@ final class PNCP_Options {
 		$out = array();
 		foreach ( self::parse_list( $raw ) as $range ) {
 			if ( PNCP_Ip::valid_range( $range ) ) {
-				$out[] = $range;
+				$out[] = self::unmap_range( $range );
 			}
 		}
-		return $out;
+		return array_values( array_unique( $out ) );
+	}
+
+	/**
+	 * 3.4: an IPv4 address (or range) written in its IPv6 form (::ffff:198.51.100.7, ::ffff:198.51.100.0/120) is
+	 * saved as IPv4 (198.51.100.7, 198.51.100.0/24): visitors are compared by their IPv4 address, so the IPv6
+	 * form never matched anyone. A wider IPv6 range is kept as written.
+	 *
+	 * @param string $range IP or CIDR.
+	 * @return string
+	 */
+	public static function unmap_range( $range ) {
+		$parts = explode( '/', (string) $range, 2 );
+		if ( false === strpos( $parts[0], ':' ) || ! filter_var( $parts[0], FILTER_VALIDATE_IP, FILTER_FLAG_IPV6 ) ) {
+			return $range;
+		}
+		$bin = inet_pton( $parts[0] );
+		if ( false === $bin || 16 !== strlen( $bin ) || str_repeat( "\0", 10 ) . "\xff\xff" !== substr( $bin, 0, 12 ) ) {
+			return $range;
+		}
+		$v4 = (string) inet_ntop( substr( $bin, 12 ) );
+		if ( ! isset( $parts[1] ) ) {
+			return $v4;
+		}
+		$prefix = (int) $parts[1];
+		return $prefix >= 96 ? $v4 . '/' . ( $prefix - 96 ) : $range;
 	}
 
 	/**

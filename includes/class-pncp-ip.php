@@ -616,12 +616,17 @@ final class PNCP_Ip {
 	 * real-IP header is a client of its own (e.g. a Cloudflare Worker, which a scraper can rent) and is limited
 	 * like any other.
 	 *
+	 * 3.4: with a CDN shared secret set, only a request that carries it comes through this site's own CDN. A
+	 * request from a CDN address without it was sent through someone else's account at the same CDN (their own
+	 * zone, or a Worker), which anyone can set up: it stands in for nobody here, and is limited, blocked and
+	 * banned like any other address.
+	 *
 	 * @param string $ip IP.
 	 * @return bool
 	 */
 	public static function is_cdn_edge( $ip ) {
 		$ip = (string) $ip;
-		return '' !== $ip && $ip === self::remote_addr() && self::is_cdn( $ip );
+		return '' !== $ip && $ip === self::remote_addr() && self::is_cdn( $ip ) && self::cdn_secret_ok( PNCP_Options::get() );
 	}
 
 	/**
@@ -746,7 +751,7 @@ final class PNCP_Ip {
 		if ( '' === $ip ) {
 			return false;
 		}
-		if ( self::in_any( $ip, PNCP_Options::parse_list( $s['trusted_proxies'] ) ) ) {
+		if ( self::in_any( $ip, self::trusted_ranges( $s ) ) ) {
 			return true;
 		}
 		// A multi-tenant CDN (Bunny, Cloudflare) trusts its own edge IPs, but an attacker can point their own
@@ -765,6 +770,23 @@ final class PNCP_Ip {
 			default:
 				return $cloudflare || self::is_private( $ip ) || $bunny;
 		}
+	}
+
+	/**
+	 * The "Trusted proxies" that count. 3.4: a range wider than /8 (IPv4) or /16 (IPv6) is ignored (and no longer
+	 * saved): with it, any visitor could choose its own IP with a header.
+	 *
+	 * @param array<string, mixed> $s Settings.
+	 * @return string[]
+	 */
+	public static function trusted_ranges( $s ) {
+		$out = array();
+		foreach ( PNCP_Options::parse_list( isset( $s['trusted_proxies'] ) ? $s['trusted_proxies'] : '' ) as $range ) {
+			if ( ! PNCP_Options::range_too_wide( $range ) ) {
+				$out[] = $range;
+			}
+		}
+		return $out;
 	}
 
 	/**
@@ -964,8 +986,17 @@ final class PNCP_Ip {
 		$subnet = @inet_pton( $parts[0] ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged -- Invalid value = false.
 		$addr   = @inet_pton( (string) $ip ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged
 		// An IPv4-mapped IPv6 address is compared as the IPv4 address it carries.
-		if ( false !== $addr && 16 === strlen( $addr ) && false !== $subnet && 4 === strlen( $subnet ) && 0 === strpos( $addr, str_repeat( "\0", 10 ) . "\xff\xff" ) ) {
+		$mapped = str_repeat( "\0", 10 ) . "\xff\xff";
+		if ( false !== $addr && 16 === strlen( $addr ) && false !== $subnet && 4 === strlen( $subnet ) && 0 === strpos( $addr, $mapped ) ) {
 			$addr = substr( $addr, 12 );
+		}
+		// 3.4: and so is a range written in that form (::ffff:198.51.100.7, ::ffff:198.51.100.0/120, saved before
+		// such lines were saved as IPv4), for an IPv4 visitor.
+		if ( false !== $addr && 4 === strlen( $addr ) && false !== $subnet && 16 === strlen( $subnet ) && 0 === strpos( $subnet, $mapped ) && ( ! isset( $parts[1] ) || ( ctype_digit( $parts[1] ) && (int) $parts[1] >= 96 && (int) $parts[1] <= 128 ) ) ) {
+			$subnet = substr( $subnet, 12 );
+			if ( isset( $parts[1] ) ) {
+				$parts[1] = (string) ( (int) $parts[1] - 96 );
+			}
 		}
 		if ( false === $subnet || false === $addr || strlen( $subnet ) !== strlen( $addr ) ) {
 			return false;

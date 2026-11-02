@@ -15,15 +15,25 @@ defined( 'ABSPATH' ) || exit;
  */
 final class PNCP_Surge {
 
-	const STATE = 'pncp_surge';
-	const LAST  = 'pncp_surge_last';
-	const MAIL  = 'pncp_surge_mail';
+	const STATE      = 'pncp_surge';
+	const LAST       = 'pncp_surge_last';
+	const MAIL       = 'pncp_surge_mail';
+	const ALERT      = 'pncp_surge_alert';
+	const MAIL_ALERT = 'pncp_surge_mail_alert';
+
+	/**
+	 * How long an alert ("notify" mode) is shown in wp-admin, and how long after one no new alert is sent while
+	 * the surge goes on (one email per hour at most, not one per minute).
+	 */
+	const ALERT_HOURS = 6;
+	const ALERT_QUIET = HOUR_IN_SECONDS;
 
 	/**
 	 * Registers the hooks.
 	 */
 	public static function init() {
 		add_action( self::MAIL, array( __CLASS__, 'mail' ), 10, 3 );
+		add_action( self::MAIL_ALERT, array( __CLASS__, 'mail_alert' ), 10, 2 );
 	}
 
 	/**
@@ -59,7 +69,11 @@ final class PNCP_Surge {
 		$closed = self::close( $state, $minute - 1, (int) $prev, $s );
 		self::save( $closed );
 		if ( $closed['streak'] >= (int) apply_filters( 'pncp_auto_emergency_minutes', self::MINUTES ) && ! empty( $s['auto_emergency'] ) && ! PNCP_Options::emergency_until() ) {
-			self::trigger( (int) $prev, self::threshold( $closed, $s ) );
+			if ( isset( $s['auto_emergency_mode'] ) && 'start' === $s['auto_emergency_mode'] ) {
+				self::trigger( (int) $prev, self::threshold( $closed, $s ) );
+			} else {
+				self::alert( (int) $prev, self::threshold( $closed, $s ) );
+			}
 		}
 	}
 
@@ -144,6 +158,105 @@ final class PNCP_Surge {
 	}
 
 	/**
+	 * "Notify" mode: Emergency Mode is NOT started. The surge is remembered for the notice in wp-admin (with a
+	 * one-click "Start Emergency Mode" button) and the administration address gets an email, at most once an
+	 * hour while it goes on. A rush of real visitors looks the same as an attack from here; a person decides.
+	 *
+	 * @param int $count     Pages in the last minute.
+	 * @param int $threshold The threshold it crossed.
+	 */
+	private static function alert( $count, $threshold ) {
+		// The time of the last alert, or of its dismissal (also by starting Emergency Mode), as stored: a surge
+		// that goes on brings no new notice and email for an hour after either.
+		$alert = get_option( self::ALERT, array() );
+		$last  = is_array( $alert ) ? max( isset( $alert['time'] ) ? (int) $alert['time'] : 0, isset( $alert['dismissed'] ) ? (int) $alert['dismissed'] : 0 ) : 0;
+		if ( $last > time() - self::ALERT_QUIET ) {
+			return; // Already told: no email every minute while the surge goes on.
+		}
+		update_option(
+			self::ALERT,
+			array(
+				'time'      => time(),
+				'count'     => $count,
+				'threshold' => $threshold,
+			),
+			false
+		);
+		// Sent from a scheduled event in a background request, not by the visitor whose request crossed it.
+		wp_schedule_single_event( time(), self::MAIL_ALERT, array( $count, $threshold ) );
+		if ( function_exists( 'spawn_cron' ) ) {
+			spawn_cron();
+		}
+	}
+
+	/**
+	 * The surge alert still shown in wp-admin ("notify" mode), or null: none, older than ALERT_HOURS, or
+	 * already answered (Emergency Mode started, or the notice dismissed).
+	 *
+	 * @return array{time:int, count:int, threshold:int}|null
+	 */
+	public static function alert_state() {
+		$alert = get_option( self::ALERT, array() );
+		if ( ! is_array( $alert ) || empty( $alert['time'] ) || ! empty( $alert['dismissed'] ) || (int) $alert['time'] < time() - self::ALERT_HOURS * HOUR_IN_SECONDS ) {
+			return null;
+		}
+		return array(
+			'time'      => (int) $alert['time'],
+			'count'     => isset( $alert['count'] ) ? (int) $alert['count'] : 0,
+			'threshold' => isset( $alert['threshold'] ) ? (int) $alert['threshold'] : 0,
+		);
+	}
+
+	/**
+	 * Forgets the alert (Emergency Mode was started, or the administrator dismissed the notice).
+	 */
+	public static function clear_alert() {
+		// 3.4: kept with the time it was dismissed rather than deleted, so a quiet hour follows the dismissal
+		// too (alert()). Before, dismissing the notice during a surge that went on brought it back, with a new
+		// email, a minute later.
+		$alert = get_option( self::ALERT, array() );
+		if ( ! is_array( $alert ) || empty( $alert['time'] ) ) {
+			delete_option( self::ALERT );
+			return;
+		}
+		if ( empty( $alert['dismissed'] ) ) {
+			$alert['dismissed'] = time();
+			update_option( self::ALERT, $alert, false );
+		}
+	}
+
+	/**
+	 * Emails the administration address about a surge in "notify" mode (scheduled by alert()).
+	 *
+	 * @param int $count     Pages in the last minute.
+	 * @param int $threshold The threshold it crossed.
+	 */
+	public static function mail_alert( $count, $threshold ) {
+		$to = is_multisite() ? get_site_option( 'admin_email' ) : get_option( 'admin_email' );
+		if ( ! is_email( $to ) ) {
+			return;
+		}
+		$body = sprintf(
+			/* translators: 1: pages per minute, 2: threshold, 3: minutes in a row */
+			__( 'The site received %1$d pages per minute, above the %2$d that count as an attack, for %3$d minutes in a row. This can be a scraping attack spread over many IP addresses, or many real visitors at once (a newsletter, a link on a popular site). ScrapeLock has NOT changed anything.', 'scrapelock' ),
+			(int) $count,
+			(int) $threshold,
+			(int) apply_filters( 'pncp_auto_emergency_minutes', self::MINUTES )
+		);
+		$body .= "\n\n" . __( 'If it is an attack, open the ScrapeLock page and click “Start Emergency Mode”. It changes, until it ends:', 'scrapelock' );
+		foreach ( PNCP_Options::emergency_changes( PNCP_Options::stored() ) as $line ) {
+			$body .= "\n- " . $line;
+		}
+		$body .= "\n\n" . PNCP_Status::settings_url();
+		wp_mail(
+			$to,
+			/* translators: %s: site name */
+			sprintf( __( '[%s] ScrapeLock: unusual traffic, start Emergency Mode?', 'scrapelock' ), wp_specialchars_decode( get_bloginfo( 'name' ), ENT_QUOTES ) ),
+			$body
+		);
+	}
+
+	/**
 	 * Emails the administration address that Emergency Mode started (scheduled by trigger()).
 	 *
 	 * @param int $count     Pages in the last minute.
@@ -158,10 +271,16 @@ final class PNCP_Surge {
 		if ( is_email( $to ) ) {
 			wp_mail(
 				$to,
-				'[' . wp_specialchars_decode( get_bloginfo( 'name' ), ENT_QUOTES ) . '] ScrapeLock: ' . __( 'Emergency Mode started automatically', 'scrapelock' ),
+				/* translators: %s: site name */
+				sprintf( __( '[%s] ScrapeLock: Emergency Mode started automatically', 'scrapelock' ), wp_specialchars_decode( get_bloginfo( 'name' ), ENT_QUOTES ) ),
 				sprintf(
-					/* translators: 1: pages per minute, 2: threshold, 3: minutes in a row, 4: hours */
-					__( 'The site received %1$d pages per minute, above the %2$d that count as an attack, for %3$d minutes in a row. ScrapeLock started Emergency Mode for %4$d hour(s): stricter limits and checks for everyone except verified search engines and exempt staff. It ends by itself; you can end it sooner from the ScrapeLock page.', 'scrapelock' ),
+					/* translators: 1: pages per minute, 2: threshold, 3: minutes in a row, 4: number of hours */
+					_n(
+						'The site received %1$d pages per minute, above the %2$d that count as an attack, for %3$d minutes in a row. ScrapeLock started Emergency Mode for %4$d hour: stricter limits and checks for everyone except verified search engines and exempt staff. It ends by itself; you can end it sooner from the ScrapeLock page.',
+						'The site received %1$d pages per minute, above the %2$d that count as an attack, for %3$d minutes in a row. ScrapeLock started Emergency Mode for %4$d hours: stricter limits and checks for everyone except verified search engines and exempt staff. It ends by itself; you can end it sooner from the ScrapeLock page.',
+						$hours,
+						'scrapelock'
+					),
 					$count,
 					$threshold,
 					(int) apply_filters( 'pncp_auto_emergency_minutes', self::MINUTES ),

@@ -39,6 +39,13 @@ final class PNCP_Integrity {
 	const MAX_SECONDS = 25;
 
 	/**
+	 * Which folders a fingerprint covers: 1 = before 3.4 (the WordPress folder without its other subfolders,
+	 * caches and the updater's folders left out), 2 = since 3.4 (the whole WordPress folder, see roots() and
+	 * excluded()).
+	 */
+	const SCOPE = 2;
+
+	/**
 	 * Registers the hooks.
 	 */
 	public static function init() {
@@ -67,20 +74,52 @@ final class PNCP_Integrity {
 	}
 
 	/**
-	 * Folders that change by themselves and are left out: caches, the updater's work folders, the logs of
-	 * other security plugins and the pre-cache check's own files. Filter `pncp_integrity_exclude`
-	 * (paths relative to wp-content, or folder names that are skipped anywhere).
+	 * Folders whose files change by themselves: caches, the updater's work folders, the logs of other security
+	 * plugins and the pre-cache check's own files. Filter `pncp_integrity_exclude`:
 	 *
-	 * @return array{paths:string[], names:string[]}
+	 * - "paths": folders relative to wp-content (the known cache folders, the updater's folders);
+	 * - "names": folder names, anywhere (the work folders of developer tools);
+	 * - "skip":  folders that are not read at all (none by default), as full paths or relative to the
+	 *            WordPress folder. Only for something very large that can never run as PHP.
+	 *
+	 * 3.4: a folder in "paths" or "names" is still read. A file there that changes, or goes away, is not
+	 * reported (a cache writes its files all the time), but a NEW code file is, unless it is an inert data
+	 * file of a cache (see inert()): a backdoor is often dropped exactly where nobody looks. Folders that are
+	 * simply called "cache" are no longer left out everywhere, only the known cache folders of wp-content.
+	 *
+	 * @return array{paths:string[], names:string[], skip:string[]}
 	 */
 	private static function excluded() {
-		return (array) apply_filters(
+		$skip = (array) apply_filters(
 			'pncp_integrity_exclude',
 			array(
-				'paths' => array( 'upgrade', 'upgrade-temp-backup', 'wflogs', 'et-cache', 'litespeed', 'w3tc-config' ),
-				'names' => array( 'cache', '.git', 'node_modules' ),
+				'paths' => array( 'cache', 'upgrade', 'upgrade-temp-backup', 'wflogs', 'et-cache', 'litespeed', 'w3tc-config', 'wphb-cache' ),
+				'names' => array( '.git', 'node_modules' ),
+				'skip'  => array(),
 			)
 		);
+		return array(
+			'paths' => isset( $skip['paths'] ) ? (array) $skip['paths'] : array(),
+			'names' => isset( $skip['names'] ) ? (array) $skip['names'] : array(),
+			'skip'  => isset( $skip['skip'] ) ? (array) $skip['skip'] : array(),
+		);
+	}
+
+	/**
+	 * Is this code file in a folder that changes by itself an inert data file? Caches often keep their data in
+	 * .php files that start with an unconditional "die" or "exit" (so that the server never shows them): such
+	 * a file stops at its first line when it is opened or included, so nothing else in it can run. Only a bare
+	 * die/exit, or one with a plain text in quotes, counts (anything else in the brackets would run first).
+	 *
+	 * @param string $path File.
+	 * @return bool
+	 */
+	private static function inert( $path ) {
+		if ( ! preg_match( '/\.php[0-9]?$/i', $path ) ) {
+			return false; // .htaccess, .user.ini, .phtml, .phar and .inc files are always counted.
+		}
+		$head = @file_get_contents( $path, false, null, 0, 200 ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged, WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Local file; unreadable = counted.
+		return is_string( $head ) && (bool) preg_match( '/^<\?php\s+(?:die|exit)\s*(?:\(\s*(?:\'[^\'\\\\]*\'|"[^"\\\\${]*")?\s*\))?\s*;/i', $head );
 	}
 
 	/**
@@ -122,27 +161,32 @@ final class PNCP_Integrity {
 	}
 
 	/**
-	 * The folders read: the WordPress folder (only its own files), wp-admin, wp-includes, wp-content (all of it,
-	 * uploads included: a PHP file there is the first thing to look for) and, when they live elsewhere, the
-	 * plugin, must-use plugin, theme and uploads folders.
+	 * The folders read, all with their subfolders: wp-content (uploads included: a PHP file there is the first
+	 * thing to look for), wp-admin, wp-includes, the plugin, must-use plugin, theme and uploads folders when they
+	 * live elsewhere, and last the whole WordPress folder. 3.4: the whole WordPress folder, not only its own
+	 * files: a backdoor in a folder of its own next to wp-admin (or in .well-known) was never read before. The
+	 * most important folders come first, so a pass that runs out of time has read them; a folder reached
+	 * twice is read once (collect()).
 	 *
-	 * @return array<int, array{0:string, 1:bool}> Folder => read subfolders.
+	 * @return string[]
 	 */
 	private static function roots() {
 		$where = self::locations();
-		$roots = array(
-			array( $where['core'], false ),
-			array( $where['core'] . '/wp-admin', true ),
-			array( $where['core'] . '/' . WPINC, true ),
-			array( $where['content'], true ),
-		);
+		$roots = array( $where['content'], $where['core'] . '/wp-admin', $where['core'] . '/' . WPINC );
 		foreach ( array_merge( array( $where['plugins'], $where['mu_plugins'], $where['uploads'] ), $where['themes'] ) as $dir ) {
 			if ( '' !== $dir && 0 !== strpos( $dir . '/', $where['content'] . '/' ) ) {
-				$roots[] = array( $dir, true );
+				$roots[] = $dir;
 			}
 		}
+		$roots[] = $where['core'];
 		return $roots;
 	}
+
+	/**
+	 * The value noted for a code file in a folder that changes by itself (see excluded()): its hash after this
+	 * mark. Such a file is reported when it is new, not when it changes or goes away (check()).
+	 */
+	const VOLATILE = 'volatile:';
 
 	/**
 	 * Reads the code files and their SHA-256.
@@ -154,8 +198,8 @@ final class PNCP_Integrity {
 	 * @return array{files: array<string, string>, md5: array<string, string>, complete: bool}
 	 */
 	public static function collect( $quick = false ) {
-		$known = $quick ? self::stat_cache() : null;
-		$stats = array();
+		$known    = $quick ? self::stat_cache() : null;
+		$stats    = array();
 		$start    = microtime( true );
 		$files    = array();
 		$md5      = array(); // Kept for this request only: the official checksums are MD5.
@@ -165,10 +209,24 @@ final class PNCP_Integrity {
 		$content  = $where['content'];
 		$skip     = self::excluded();
 		$paths    = array();
-		foreach ( (array) $skip['paths'] as $path ) {
-			$paths[] = $content . '/' . trim( wp_normalize_path( (string) $path ), '/' ) . '/';
+		foreach ( $skip['paths'] as $path ) {
+			$path = trim( wp_normalize_path( (string) $path ), '/' );
+			if ( '' !== $path ) {
+				$paths[] = $content . '/' . $path . '/';
+			}
 		}
-		$names = array_map( 'strtolower', (array) $skip['names'] );
+		$names = array_map( 'strtolower', $skip['names'] );
+		$never = array();
+		foreach ( $skip['skip'] as $path ) {
+			$path = wp_normalize_path( (string) $path );
+			if ( '' !== trim( $path, '/' ) ) {
+				$never[] = untrailingslashit( path_is_absolute( $path ) ? $path : $where['core'] . '/' . ltrim( $path, '/' ) ) . '/';
+			}
+		}
+		// 3.4: the Lockdown guard is written again on every change of the lock (it carries the generation of the
+		// state). When it is exactly what ScrapeLock writes for the current lock it counts as unchanged; anything
+		// else in it (changed by hand, or code added) shows as a changed file.
+		$guard = PNCP_Paths::clean( PNCP_Seal::path() );
 
 		// wp-config.php one level above the WordPress folder is not in any folder that is read.
 		$config = $where['config'];
@@ -176,16 +234,21 @@ final class PNCP_Integrity {
 			$files[ $config ] = (string) hash_file( 'sha256', $config );
 		}
 
-		foreach ( self::roots() as list( $root, $deep ) ) {
+		foreach ( self::roots() as $root ) {
 			if ( ! is_dir( $root ) ) {
 				continue;
 			}
-			$stack = array( $root );
+			// Each folder with whether it is in a folder that changes by itself.
+			$stack = array( array( $root, self::starts_with_any( $root . '/', $paths ) ) );
 			while ( $stack ) {
-				$dir  = array_pop( $stack );
-				$real = realpath( $dir );
+				list( $dir, $volatile ) = array_pop( $stack );
+				$real                   = realpath( $dir );
 				if ( false === $real || isset( $seen[ $real ] ) ) {
-					continue; // A folder reached twice (symbolic links) is read once.
+					continue; // A folder reached twice (symbolic links, or a root inside another root) is read once.
+				}
+				if ( microtime( true ) - $start > self::MAX_SECONDS ) {
+					$complete = false; // Also checked here: a folder with many files that are not code takes time too.
+					break 2;
 				}
 				$seen[ $real ] = true;
 				$entries       = @scandir( $dir ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged -- An unreadable folder is skipped.
@@ -198,13 +261,16 @@ final class PNCP_Integrity {
 					}
 					$path = $dir . '/' . $entry;
 					if ( is_dir( $path ) ) {
-						// The WordPress root is read without its subfolders: wp-admin, wp-includes and wp-content are roots of their own.
-						if ( $deep && ! in_array( strtolower( $entry ), $names, true ) && ! self::starts_with_any( $path . '/', $paths ) ) {
-							$stack[] = $path;
+						if ( ! self::starts_with_any( $path . '/', $never ) ) {
+							$stack[] = array( $path, $volatile || in_array( strtolower( $entry ), $names, true ) || self::starts_with_any( $path . '/', $paths ) );
 						}
 						continue;
 					}
 					if ( ! self::is_code( $entry ) || ! is_readable( $path ) ) {
+						continue;
+					}
+					if ( PNCP_Paths::clean( $path ) === $guard && PNCP_Seal::guard_genuine() ) {
+						$files[ $path ] = 'scrapelock-lockdown-guard';
 						continue;
 					}
 					if ( count( $files ) >= self::MAX_FILES || microtime( true ) - $start > self::MAX_SECONDS ) {
@@ -214,21 +280,35 @@ final class PNCP_Integrity {
 					$stat = @stat( $path ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged -- Unreadable = hashed below.
 					$sig  = false !== $stat ? $stat['size'] . ':' . $stat['mtime'] . ':' . $stat['ctime'] . ':' . $stat['ino'] : '';
 					if ( '' !== $sig && null !== $known && isset( $known[ $path ] ) && $known[ $path ][0] === $sig ) {
-						$files[ $path ] = $known[ $path ][1];
-						$stats[ $path ] = $known[ $path ];
+						$cached = (string) $known[ $path ][1];
+						// Reused only while its folder is of the same kind as at the last pass (the filter may change).
+						if ( ( 'inert' === $cached || 0 === strpos( $cached, self::VOLATILE ) ) === $volatile ) {
+							$stats[ $path ] = $known[ $path ];
+							if ( 'inert' !== $cached ) {
+								$files[ $path ] = $cached;
+							}
+							continue;
+						}
+					}
+					if ( $volatile && self::inert( $path ) ) {
+						// A cache's data file that cannot run: not noted (if code is put in it, it is no longer inert
+						// and shows as a new file).
+						if ( '' !== $sig ) {
+							$stats[ $path ] = array( $sig, 'inert' );
+						}
 						continue;
 					}
 					$hashes = self::hash_both( $path );
 					if ( null === $hashes ) {
 						// Cannot be read now (e.g. its permissions were changed): it stays in the list with an empty
 						// hash, so the change is reported instead of the file silently leaving the fingerprint.
-						$files[ $path ] = '';
+						$files[ $path ] = $volatile ? self::VOLATILE : '';
 						continue;
 					}
-					$files[ $path ] = $hashes[0];
+					$files[ $path ] = ( $volatile ? self::VOLATILE : '' ) . $hashes[0];
 					$md5[ $path ]   = $hashes[1];
 					if ( '' !== $sig ) {
-						$stats[ $path ] = array( $sig, $hashes[0] );
+						$stats[ $path ] = array( $sig, $files[ $path ] );
 					}
 				}
 			}
@@ -312,6 +392,73 @@ final class PNCP_Integrity {
 	}
 
 	/**
+	 * A fingerprint taken before 3.4 did not cover every folder that is read now. The files found now in the
+	 * folders it did not cover were not there to compare when the site was locked: they are added to it (so
+	 * the first check after the upgrade does not report every file of another application in the WordPress
+	 * folder as new), and the fingerprint is stored again with the wider scope. The files it already covered
+	 * keep the hashes taken when the site was locked; nothing in them is accepted. From the next lock on, the
+	 * fingerprint covers everything from the start.
+	 *
+	 * @param array<string, string> $base The files of the stored fingerprint.
+	 * @param array<string, string> $now  The files found now.
+	 * @return array<string, string> The files of the fingerprint, widened.
+	 */
+	private static function widen( $base, $now ) {
+		$where   = self::locations();
+		$old     = array( $where['content'] . '/', $where['core'] . '/wp-admin/', $where['core'] . '/' . WPINC . '/' );
+		$outside = array();
+		foreach ( array_merge( array( $where['plugins'], $where['mu_plugins'], $where['uploads'] ), $where['themes'] ) as $dir ) {
+			if ( '' !== $dir && 0 !== strpos( $dir . '/', $where['content'] . '/' ) ) {
+				$old[] = $dir . '/';
+			}
+		}
+		// What the folders before 3.4 left out: these folders of wp-content, and these folder names anywhere.
+		$left_out = array();
+		foreach ( array( 'upgrade', 'upgrade-temp-backup', 'wflogs', 'et-cache', 'litespeed', 'w3tc-config' ) as $path ) {
+			$left_out[] = $where['content'] . '/' . $path . '/';
+		}
+		foreach ( $now as $path => $hash ) {
+			$path = (string) $path;
+			if ( isset( $base[ $path ] ) ) {
+				if ( self::volatile( $hash ) && ! self::volatile( $base[ $path ] ) ) {
+					$base[ $path ] = self::VOLATILE . $base[ $path ]; // Now in a folder that changes by itself.
+				}
+				continue;
+			}
+			$covered = dirname( $path ) === $where['core'] || $path === $where['config'];
+			foreach ( $old as $root ) {
+				if ( 0 === strpos( $path, $root ) ) {
+					$covered = ! self::starts_with_any( $path, $left_out ) && ! preg_match( '#/(?:cache|\.git|node_modules)/#i', '/' . dirname( substr( $path, strlen( $root ) ) ) . '/' );
+					break;
+				}
+			}
+			if ( ! $covered ) {
+				$outside[ $path ] = $hash;
+			}
+		}
+		$stored = self::get( self::BASELINE );
+		if ( is_array( $stored ) && isset( $stored['time'] ) ) {
+			$files = array_merge( $base, $outside );
+			ksort( $files );
+			$stored['files'] = base64_encode( (string) gzcompress( (string) wp_json_encode( $files ), 6 ) ); // phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.obfuscation_base64_encode -- Compressed list of file hashes, stored as text.
+			$stored['scope'] = self::SCOPE;
+			self::put_baseline( $stored );
+			return $files;
+		}
+		return array_merge( $base, $outside );
+	}
+
+	/**
+	 * Is this the value of a file in a folder that changes by itself (see collect())?
+	 *
+	 * @param string $hash Value noted for the file.
+	 * @return bool
+	 */
+	private static function volatile( $hash ) {
+		return 0 === strpos( (string) $hash, self::VOLATILE );
+	}
+
+	/**
 	 * Does the path start with any of the prefixes?
 	 *
 	 * @param string   $path     Path.
@@ -388,6 +535,7 @@ final class PNCP_Integrity {
 			'complete' => ! is_array( $stored ) || ! isset( $stored['complete'] ) || ! empty( $stored['complete'] ),
 			'stale'    => is_array( $stored ) && ! empty( $stored['stale'] ),
 			'tampered' => $tampered,
+			'scope'    => is_array( $stored ) && isset( $stored['scope'] ) ? (int) $stored['scope'] : 1,
 		);
 	}
 
@@ -403,7 +551,8 @@ final class PNCP_Integrity {
 	}
 
 	/**
-	 * The upgrade to 3.3: signs a fingerprint stored before signatures existed.
+	 * The upgrade to 3.3: signs a fingerprint stored before signatures existed. A fingerprint that already has a
+	 * signature is never signed again (signing it again would make one changed in the database look genuine).
 	 *
 	 * @return int Its time (0 = none).
 	 */
@@ -412,8 +561,37 @@ final class PNCP_Integrity {
 		if ( ! is_array( $stored ) || empty( $stored['time'] ) ) {
 			return 0;
 		}
-		self::put_baseline( $stored );
+		if ( ! isset( $stored['sig'] ) ) {
+			self::put_baseline( $stored );
+		}
 		return (int) $stored['time'];
+	}
+
+	/**
+	 * Does the stored fingerprint carry a signature (written by 3.3 or later)? Whether it matches is not checked.
+	 *
+	 * @return bool
+	 */
+	public static function fingerprint_signed() {
+		$stored = self::get( self::BASELINE );
+		return is_array( $stored ) && isset( $stored['sig'] );
+	}
+
+	/**
+	 * Is there a genuine (signed) fingerprint taken while the site was locked and not opened since? It is taken
+	 * when the site is locked (noted in it since 3.4) and marked "stale" when it is unlocked, so one that is not
+	 * stale means the site was locked. Reads the stored data only (never the lock state, which asks this).
+	 *
+	 * @return bool
+	 */
+	public static function fingerprint_while_locked() {
+		$stored = self::get( self::BASELINE );
+		if ( ! is_array( $stored ) || ! isset( $stored['sig'] ) || empty( $stored['time'] ) || empty( $stored['locked'] ) || ! empty( $stored['stale'] ) ) {
+			return false;
+		}
+		$sig = $stored['sig'];
+		unset( $stored['sig'] );
+		return PNCP_Seal::valid( $stored, $sig );
 	}
 
 	/**
@@ -453,6 +631,11 @@ final class PNCP_Integrity {
 				'files'    => base64_encode( (string) $raw ), // phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.obfuscation_base64_encode -- Compressed list of file hashes, stored as text.
 				'complete' => $now['complete'],
 				'stale'    => false,
+				// 3.4: taken while the site was locked (not with "Check now" while it is open). With its
+				// signature, it shows the site was locked if the lock state is deleted behind WordPress's back.
+				'locked'   => PNCP_Lockdown::is_locked(),
+				// 3.4: which folders it covers (see SCOPE).
+				'scope'    => self::SCOPE,
 			)
 		);
 		PNCP_Lockdown::note_fingerprint( $time );
@@ -522,6 +705,19 @@ final class PNCP_Integrity {
 		}
 	}
 
+	/**
+	 * Deletes the fingerprint when the lock ends for good (the app removed, or a new app connected): the next lock
+	 * takes a new one, and a fingerprint left behind would still say "the site was locked"
+	 * (fingerprint_while_locked()).
+	 */
+	public static function forget() {
+		if ( is_multisite() ) {
+			delete_site_option( self::BASELINE );
+		} else {
+			delete_option( self::BASELINE );
+		}
+	}
+
 	/* ---------- The check ---------- */
 
 	/**
@@ -531,6 +727,12 @@ final class PNCP_Integrity {
 		if ( PNCP_Lockdown::is_locked() ) {
 			self::check();
 			PNCP_Seal::check_admins();
+			// Multisite: the main site checks every site the lock covers (the others only themselves).
+			if ( is_multisite() && is_main_site() ) {
+				PNCP_Seal::check_apps_all();
+			} else {
+				PNCP_Seal::check_apps();
+			}
 		}
 	}
 
@@ -566,12 +768,23 @@ final class PNCP_Integrity {
 			self::snapshot();
 			return self::report();
 		}
-		$now     = self::collect( true );
+		$now = self::collect( true );
+		if ( $base['scope'] < self::SCOPE ) {
+			$base['files'] = self::widen( $base['files'], $now['files'] );
+		}
 		$added   = array_keys( array_diff_key( $now['files'], $base['files'] ) );
-		$removed = $now['complete'] ? array_keys( array_diff_key( $base['files'], $now['files'] ) ) : array();
+		$removed = array();
+		if ( $now['complete'] ) {
+			foreach ( array_diff_key( $base['files'], $now['files'] ) as $path => $hash ) {
+				// A cache emptied, or the updater's leftovers cleaned up: not reported (see excluded()).
+				if ( ! self::volatile( $hash ) ) {
+					$removed[] = $path;
+				}
+			}
+		}
 		$changed = array();
 		foreach ( array_intersect_key( $now['files'], $base['files'] ) as $path => $hash ) {
-			if ( $base['files'][ $path ] !== $hash ) {
+			if ( $base['files'][ $path ] !== $hash && ! ( self::volatile( $hash ) && self::volatile( $base['files'][ $path ] ) ) ) {
 				$changed[] = $path;
 			}
 		}
@@ -626,8 +839,7 @@ final class PNCP_Integrity {
 	 */
 	private static function alert( $report ) {
 		$found = self::findings( $report );
-		$sent  = get_option( 'pncp_integrity_alerted', array() );
-		$sent  = is_array( $sent ) ? $sent : array();
+		$sent  = self::alerted();
 		$keys  = array();
 		foreach ( $found as $path => $kind ) {
 			$keys[] = md5( $path . '|' . $kind );
@@ -635,7 +847,7 @@ final class PNCP_Integrity {
 		if ( ! array_diff( $keys, $sent ) ) {
 			return;
 		}
-		update_option( 'pncp_integrity_alerted', array_slice( array_values( array_unique( array_merge( $sent, $keys ) ) ), -5000 ), false );
+		self::save_alerted( array_slice( array_values( array_unique( array_merge( $sent, $keys ) ) ), -5000 ) );
 		$lines = array();
 		foreach ( array_slice( $found, 0, 50, true ) as $path => $kind ) {
 			$lines[] = '- ' . self::kind_label( $kind ) . ': ' . self::relative( $path );
@@ -652,6 +864,37 @@ final class PNCP_Integrity {
 				'[' . wp_specialchars_decode( get_bloginfo( 'name' ), ENT_QUOTES ) . '] ScrapeLock: ' . __( 'Changed files found', 'scrapelock' ),
 				__( 'ScrapeLock found code files that were added or changed while the site was locked, or that differ from the official copies on WordPress.org. Nobody can install or update anything while the site is locked, so check them: a file you do not recognise is often a backdoor uploaded through a vulnerable plugin.', 'scrapelock' ) . "\n\n" . implode( "\n", $lines ) . "\n\n" . PNCP_Lockdown::page_url()
 			);
+		}
+	}
+
+	/**
+	 * The files already emailed about since the last fingerprint (their keys). 3.4: signed, so that someone who
+	 * can write to the database cannot mark a new backdoor as "already reported" and so stop the email. A list
+	 * that does not match its signature (or one from before 3.4) counts as empty: everything flagged is emailed
+	 * once more.
+	 *
+	 * @return string[]
+	 */
+	private static function alerted() {
+		$stored = get_option( 'pncp_integrity_alerted', array() );
+		if ( ! is_array( $stored ) || ! isset( $stored['keys'], $stored['sig'] ) || ! is_array( $stored['keys'] ) ) {
+			return array();
+		}
+		return PNCP_Seal::valid( array( 'keys' => $stored['keys'] ), $stored['sig'] ) ? array_map( 'strval', $stored['keys'] ) : array();
+	}
+
+	/**
+	 * Stores the signed list of the files already emailed about (not autoloaded).
+	 *
+	 * @param string[] $keys Keys.
+	 */
+	private static function save_alerted( $keys ) {
+		$record = array( 'keys' => array_values( array_map( 'strval', $keys ) ) );
+		$record['sig'] = PNCP_Seal::sign( $record );
+		if ( false === get_option( 'pncp_integrity_alerted', false ) ) {
+			add_option( 'pncp_integrity_alerted', $record, '', false );
+		} else {
+			update_option( 'pncp_integrity_alerted', $record, false );
 		}
 	}
 
@@ -786,12 +1029,12 @@ final class PNCP_Integrity {
 	private static function core_checksums( $version, $locale ) {
 		// The checksums of a release never change: kept for a week (a missing answer for a day).
 		$key    = 'pncp_cs_core_' . md5( $version . '|' . $locale );
-		$cached = get_site_transient( $key );
+		$cached = self::cached_sums( $key );
 		if ( is_array( $cached ) ) {
 			return $cached ? $cached : null;
 		}
 		$sums = self::fetch_core_checksums( $version, $locale );
-		set_site_transient( $key, null === $sums ? array() : $sums, null === $sums ? DAY_IN_SECONDS : WEEK_IN_SECONDS );
+		self::cache_sums( $key, null === $sums ? array() : $sums, null === $sums ? DAY_IN_SECONDS : WEEK_IN_SECONDS );
 		return $sums;
 	}
 
@@ -838,13 +1081,56 @@ final class PNCP_Integrity {
 		// A plugin version's checksums never change: kept for a week, so locking again after an unlock only asks
 		// for the plugins that were updated. "Not on WordPress.org" (premium, custom) is kept for a day.
 		$key    = 'pncp_cs_' . md5( $slug . '|' . $version );
-		$cached = get_site_transient( $key );
+		$cached = self::cached_sums( $key );
 		if ( is_array( $cached ) ) {
 			return $cached ? $cached : null;
 		}
 		$sums = self::fetch_plugin_checksums( $slug, $version );
-		set_site_transient( $key, null === $sums ? array() : $sums, null === $sums ? DAY_IN_SECONDS : WEEK_IN_SECONDS );
+		self::cache_sums( $key, null === $sums ? array() : $sums, null === $sums ? DAY_IN_SECONDS : WEEK_IN_SECONDS );
 		return $sums;
+	}
+
+	/**
+	 * Official checksums kept from an earlier run, or null. 3.4: signed together with the name they are kept
+	 * under, so checksums written in the database (to make a changed file look official) or copied from another
+	 * plugin are not used: they are downloaded again. Checksums kept by an earlier version (unsigned) are
+	 * downloaded again too.
+	 *
+	 * @param string $key Name of the transient.
+	 * @return array<string, mixed>|null Empty array: "not available" was kept.
+	 */
+	private static function cached_sums( $key ) {
+		$cached = get_site_transient( $key );
+		if ( ! is_array( $cached ) || ! isset( $cached['sums'], $cached['sig'] ) || ! is_array( $cached['sums'] ) ) {
+			return null;
+		}
+		$data = array(
+			'key'  => $key,
+			'sums' => $cached['sums'],
+		);
+		return PNCP_Seal::valid( $data, $cached['sig'] ) ? $cached['sums'] : null;
+	}
+
+	/**
+	 * Keeps official checksums for a while, signed (see cached_sums()).
+	 *
+	 * @param string               $key  Name of the transient.
+	 * @param array<string, mixed> $sums Checksums (empty: not available).
+	 * @param int                  $ttl  Seconds.
+	 */
+	private static function cache_sums( $key, $sums, $ttl ) {
+		$data = array(
+			'key'  => $key,
+			'sums' => $sums,
+		);
+		set_site_transient(
+			$key,
+			array(
+				'sums' => $sums,
+				'sig'  => PNCP_Seal::sign( $data ),
+			),
+			$ttl
+		);
 	}
 
 	/**
@@ -979,7 +1265,7 @@ final class PNCP_Integrity {
 		?>
 		<div class="pncp-ld-box pncp-ld-integrity" id="pncp-integrity">
 			<h2><?php esc_html_e( 'File integrity', 'scrapelock' ); ?></h2>
-			<p><?php esc_html_e( 'While the site is locked nobody can install or update anything, so a new or changed code file means that something wrote it by itself, usually through a vulnerable plugin. ScrapeLock keeps a fingerprint of every PHP, .htaccess and .user.ini file when you lock the site (and again after a temporary unlock), checks it every hour and emails the administration address about anything new. WordPress and the plugins from WordPress.org are also compared with their official copies, which finds a change made before you locked. Caches and the updater\'s folders are left out.', 'scrapelock' ); ?></p>
+			<p><?php esc_html_e( 'While the site is locked nobody can install or update anything, so a new or changed code file means that something wrote it by itself, usually through a vulnerable plugin. ScrapeLock keeps a fingerprint of every PHP, .htaccess and .user.ini file when you lock the site (and again after a temporary unlock), checks it every hour and emails the administration address about anything new. WordPress and the plugins from WordPress.org are also compared with their official copies, which finds a change made before you locked. The whole WordPress folder is read. In caches and the updater\'s folders only new code files are reported, not files that change or go away.', 'scrapelock' ); ?></p>
 			<p>
 				<?php
 				if ( $base['time'] ) {

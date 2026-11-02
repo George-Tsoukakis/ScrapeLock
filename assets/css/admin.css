@@ -108,6 +108,21 @@
 	vertical-align: middle;
 }
 
+.pncp-allow-ua-form {
+	display: inline-flex;
+	flex-wrap: wrap;
+	gap: 4px;
+	margin-top: 4px;
+}
+
+.pncp-allow-ua-form .pncp-allow-ua-token {
+	width: 9em;
+	min-height: 24px;
+	padding: 0 6px;
+	font-size: 12px;
+	line-height: 22px;
+}
+
 .pncp-big-number {
 	margin: 4px 0 0;
 	font-size: 20px;
@@ -385,7 +400,8 @@
 	margin: 1px 0 0;
 	border: 0;
 	border-radius: 999px;
-	background: #a7aaad;
+	/* Off: #8c8f94 on white is 3.2:1, enough for a control (WCAG 1.4.11 asks for 3:1); #a7aaad was 2.3:1. */
+	background: #8c8f94;
 	box-shadow: none;
 	cursor: pointer;
 	transition: background-color 0.15s ease;
@@ -418,11 +434,104 @@
 	outline-offset: 2px;
 }
 
+/* Windows High Contrast and other forced colours: the browser drops background colours, so the switch would
+   lose its track and knob. Draw them with system colours instead: an outlined track with a knob on the left
+   when off, a filled track (Highlight) with the knob on the right when on. */
+@media (forced-colors: active) {
+	.pncp-admin input.pncp-toggle {
+		forced-color-adjust: none;
+		border: 1px solid CanvasText;
+		background: Canvas;
+	}
+
+	.pncp-admin input.pncp-toggle::before {
+		top: 2px;
+		left: 2px;
+		background: CanvasText;
+	}
+
+	.pncp-admin input.pncp-toggle:checked {
+		border-color: Highlight;
+		background: Highlight;
+	}
+
+	.pncp-admin input.pncp-toggle:checked::before {
+		background: HighlightText;
+	}
+
+	.pncp-admin input.pncp-toggle:focus-visible {
+		outline: 2px solid Highlight;
+	}
+
+	.pncp-admin input.pncp-toggle:disabled {
+		border-color: GrayText;
+	}
+
+	.pncp-admin input.pncp-toggle:disabled::before {
+		background: GrayText;
+	}
+}
+
 @media (prefers-reduced-motion: reduce) {
 	.pncp-admin input.pncp-toggle,
 	.pncp-admin input.pncp-toggle::before {
 		transition: none;
 	}
+}
+
+/* Parts of one long settings form (Bots, Limits) and the folded advanced parts (Network and CDN) */
+.pncp-group-title {
+	margin: 28px 0 4px;
+	font-size: 1.4em;
+}
+
+.pncp-group-intro {
+	margin: 0 0 8px;
+}
+
+.pncp-advanced {
+	margin: 28px 0 0;
+	border: 1px solid var(--pncp-border);
+	border-radius: 6px;
+	background: #fff;
+}
+
+.pncp-advanced > summary {
+	padding: 12px 16px;
+	cursor: pointer;
+}
+
+.pncp-advanced > summary:focus-visible {
+	outline: 2px solid var(--pncp-accent);
+	outline-offset: 2px;
+}
+
+.pncp-advanced__title {
+	display: inline;
+	margin: 0;
+	font-size: 1.3em;
+}
+
+.pncp-advanced__state {
+	display: block;
+	margin: 4px 0 0 18px;
+	color: #50575e;
+	font-size: 13px;
+}
+
+.pncp-advanced[open] > summary {
+	border-bottom: 1px solid var(--pncp-border);
+}
+
+.pncp-advanced > :not(summary) {
+	margin-right: 16px;
+	margin-left: 16px;
+}
+
+.pncp-advanced > .form-table {
+	margin-right: 0;
+	margin-left: 0;
+	padding: 0 16px;
 }
 
 /* Long lists, folded */
@@ -514,6 +623,31 @@
 .pncp-badge--bad {
 	background: #fcf0f1;
 	color: #8a2424;
+}
+
+/* "Monitor only": entries let through, and the state in the status bar and the Log tab. */
+.pncp-badge--monitor {
+	background: var(--pncp-accent-soft);
+	color: #135e96;
+}
+
+.pncp-pill--monitor a {
+	color: inherit;
+	text-decoration: none;
+}
+
+.pncp-pill--monitor a:hover,
+.pncp-pill--monitor a:focus {
+	text-decoration: underline;
+}
+
+.pncp-monitor-box form {
+	margin: 0 0 8px;
+}
+
+.pncp-log-views {
+	float: none;
+	margin: 8px 0 0;
 }
 
 .pncp-ua-reason {
@@ -647,4 +781,34 @@
 
 .pncp-ld-role-list li {
 	margin: 0 0 6px;
+}
+
+/* Export, import and undo; reset a tab */
+.pncp-settings-io {
+	margin: 20px 0;
+	max-width: 960px;
+}
+
+.pncp-backups li {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 8px;
+	align-items: center;
+}
+
+.pncp-changes {
+	margin: 8px 0 12px;
+	max-width: 960px;
+}
+
+.pncp-changes td {
+	word-break: break-word;
+}
+
+.pncp-undo-notice .pncp-inline-form p {
+	margin: 0 0 8px;
+}
+
+.pncp-reset-tab {
+	margin-top: -8px;
 }

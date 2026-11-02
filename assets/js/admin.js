@@ -1,5 +1,5 @@
 /**
- * ScrapeLock – settings page: copy buttons and batch watermark tool.
+ * ScrapeLock – settings page: folded parts, copy buttons and batch watermark tool.
  */
 ( function () {
 	'use strict';
@@ -12,6 +12,46 @@
 	function format( text, a, b ) {
 		return String( text ).replace( '%1$s', a ).replace( '%2$s', b );
 	}
+
+	/* ---------- Confirmation ---------- */
+	// Buttons with data-pncp-confirm (e.g. a preset that turns off RSS feeds or printing) ask first.
+	document.addEventListener( 'click', function ( e ) {
+		var button = e.target.closest ? e.target.closest( '[data-pncp-confirm]' ) : null;
+		if ( button && ! window.confirm( button.getAttribute( 'data-pncp-confirm' ) ) ) {
+			e.preventDefault();
+		}
+	} );
+
+	/* ---------- Folded parts ---------- */
+	// A quick link (or an address with #pncp-sec-…) to a setting inside a folded part, e.g. "Real visitor IP"
+	// in "Network and CDN", opens that part first, so the link never lands on something hidden.
+	function openFor( hash ) {
+		if ( ! hash || hash.length < 2 ) {
+			return;
+		}
+		var id;
+		try {
+			id = decodeURIComponent( hash.slice( 1 ) );
+		} catch ( err ) {
+			return;
+		}
+		var target = document.getElementById( id );
+		if ( ! target ) {
+			return;
+		}
+		for ( var node = target; node; node = node.parentElement ) {
+			if ( 'DETAILS' === node.tagName && ! node.open ) {
+				node.open = true;
+			}
+		}
+		if ( target.scrollIntoView ) {
+			target.scrollIntoView();
+		}
+	}
+	openFor( window.location.hash );
+	window.addEventListener( 'hashchange', function () {
+		openFor( window.location.hash );
+	} );
 
 	/* ---------- Copy ---------- */
 	document.addEventListener( 'click', function ( e ) {
