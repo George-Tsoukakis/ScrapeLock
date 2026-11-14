@@ -21,6 +21,11 @@ final class PNCP_Early {
 	const MARKER = 'ScrapeLock early check';
 
 	/**
+	 * 3.4.3: network option (not autoloaded) with the mu-plugins folder ScrapeLock created, see make_dir().
+	 */
+	const DIR_OPTION = 'pncp_mu_dir_created';
+
+	/**
 	 * Runs from the mu-plugin, before the other plugins load.
 	 *
 	 * @param string $dir      The plugin's folder (with a trailing slash).
@@ -30,9 +35,19 @@ final class PNCP_Early {
 		if ( ! self::plugin_active( $basename ) ) {
 			return;
 		}
-		defined( 'PNCP_OPTION' ) || define( 'PNCP_OPTION', 'pncp_settings' );
+		// All the files first: a plugin folder that is only partly there (an update copying its files, an
+		// incomplete upload) must not stop the whole site with a fatal error. The normal check decides then.
+		$files = array();
 		foreach ( array( 'options', 'ip', 'log', 'private-urls', 'bots' ) as $name ) {
-			require_once $dir . 'includes/class-pncp-' . $name . '.php';
+			$file = $dir . 'includes/class-pncp-' . $name . '.php';
+			if ( ! is_readable( $file ) ) {
+				return;
+			}
+			$files[] = $file;
+		}
+		defined( 'PNCP_OPTION' ) || define( 'PNCP_OPTION', 'pncp_settings' );
+		foreach ( $files as $file ) {
+			require_once $file;
 		}
 
 		$verdict = self::check();
@@ -62,6 +77,11 @@ final class PNCP_Early {
 	 * @return bool
 	 */
 	private static function plugin_active( $basename ) {
+		// 3.4.3: and where WordPress loads it from. With the plugin folder a symlink (deployments, this file holds
+		// the resolved path), renaming the folder to switch ScrapeLock off left this check blocking on its own.
+		if ( defined( 'WP_PLUGIN_DIR' ) && ! is_file( WP_PLUGIN_DIR . '/' . $basename ) ) {
+			return false;
+		}
 		if ( in_array( $basename, (array) get_option( 'active_plugins', array() ), true ) ) {
 			return true;
 		}
@@ -147,8 +167,8 @@ final class PNCP_Early {
 				return true;
 			}
 		}
-		$uri  = isset( $_SERVER['REQUEST_URI'] ) ? sanitize_text_field( wp_unslash( $_SERVER['REQUEST_URI'] ) ) : '';
-		$path = PNCP_Private_Urls::relative_path( rawurldecode( (string) wp_parse_url( $uri, PHP_URL_PATH ) ) );
+		// 3.4.3: decoded before it is cleaned, so a percent-encoded private path (/%CF%84.xml) is recognised.
+		$path = PNCP_Private_Urls::relative_path( PNCP_Bots::request_path() );
 		if ( preg_match( '#^/(?:index\.php/)?(?:wp-login\.php|cp-[0-9a-f]{10}(?:/|$))#i', $path ) || PNCP_Bots::is_open_path( $path ) ) {
 			return true;
 		}
@@ -233,15 +253,34 @@ final class PNCP_Early {
 		if ( ! $filesystem ) {
 			return false;
 		}
-		$dir = PNCP_Paths::mu_plugins();
-		if ( ! $filesystem->is_dir( $dir ) && ! wp_mkdir_p( $dir ) ) {
+		if ( ! self::make_dir() ) {
 			return false;
 		}
 		$path = self::path();
 		if ( $filesystem->exists( $path ) && ! self::ours( $path ) ) {
 			return false; // Someone else's file with the same name: never overwritten.
 		}
-		return $filesystem->put_contents( $path, self::code(), FS_CHMOD_FILE ) && self::installed();
+		// Written next to it first (not ending in .php, so WordPress never loads it), then renamed over it: a
+		// request loading the must-use plugins meanwhile, or a write cut short (disk full, quota), never leaves
+		// a half-written file there, which would stop every page of the site, wp-admin included, with a fatal error.
+		$code = self::code();
+		$tmp  = $path . '.' . wp_generate_password( 8, false ) . '.tmp';
+		if ( ! $filesystem->put_contents( $tmp, $code, FS_CHMOD_FILE ) || (string) file_get_contents( $tmp ) !== $code ) { // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Local file.
+			$filesystem->delete( $tmp );
+			return false;
+		}
+		if ( ! @rename( $tmp, $path ) ) { // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged, WordPress.WP.AlternativeFunctions.rename_rename -- Atomic replace in the same folder; WP_Filesystem has no atomic move.
+			$filesystem->delete( $tmp );
+			// Where the rename is refused (e.g. a file in use on Windows), written in place, as before.
+			if ( ! $filesystem->put_contents( $path, $code, FS_CHMOD_FILE ) ) {
+				return false;
+			}
+		}
+		// OPcache would keep running the previous file (e.g. one that points to the plugin's former folder).
+		if ( function_exists( 'opcache_invalidate' ) ) {
+			opcache_invalidate( $path, true );
+		}
+		return self::installed();
 	}
 
 	/**
@@ -252,6 +291,48 @@ final class PNCP_Early {
 		if ( file_exists( $path ) && self::ours( $path ) ) {
 			wp_delete_file( $path );
 		}
+		self::remove_dir(); // 3.4.3: and the mu-plugins folder, if ScrapeLock created it and it is now empty.
+	}
+
+	/**
+	 * 3.4.3: creates the mu-plugins folder when it is not there, and records that ScrapeLock created it (a
+	 * network option, not autoloaded), so that remove_dir() takes it away again once it is empty. Used for the
+	 * early check and the Lockdown guard.
+	 *
+	 * @return bool Whether the folder is there.
+	 */
+	public static function make_dir() {
+		$dir = PNCP_Paths::mu_plugins();
+		if ( is_dir( $dir ) ) {
+			return true;
+		}
+		if ( ! wp_mkdir_p( $dir ) ) {
+			return false;
+		}
+		update_site_option( self::DIR_OPTION, $dir ); // On a single site: update_option() with autoload off.
+		return true;
+	}
+
+	/**
+	 * 3.4.3: removes the mu-plugins folder, only when ScrapeLock created it (make_dir()) and it is empty: a
+	 * folder that was already there, or that now holds other files, is never removed.
+	 */
+	public static function remove_dir() {
+		$dir = (string) get_site_option( self::DIR_OPTION, '' );
+		if ( '' === $dir ) {
+			return;
+		}
+		clearstatcache();
+		if ( is_dir( $dir ) ) {
+			$files = scandir( $dir );
+			if ( false === $files || array() !== array_diff( $files, array( '.', '..' ) ) ) {
+				return; // Not empty (or not readable): kept, and still ours to remove later.
+			}
+			if ( ! @rmdir( $dir ) ) { // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged, WordPress.WP.AlternativeFunctions.file_system_operations_rmdir -- Only an empty folder ScrapeLock created.
+				return;
+			}
+		}
+		delete_site_option( self::DIR_OPTION );
 	}
 
 	/**

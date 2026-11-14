@@ -239,12 +239,15 @@ final class PNCP_Origin {
 		if ( self::exempt() || self::has_secret( (string) $s['cdn_secret'] ) ) {
 			return;
 		}
+		// 3.4.3: logged with the address the request was judged by: behind a local proxy that is the visitor's,
+		// not 127.0.0.1 (as the pre-cache check logs it).
+		$from = PNCP_Ip::is_local( PNCP_Ip::remote_addr() ) ? PNCP_Ip::client_ip() : PNCP_Ip::remote_addr();
 		// "Monitor only": logged as "would block", and the request goes on.
 		if ( PNCP_Options::monitoring() ) {
-			PNCP_Log::add( 'not_via_cdn', PNCP_Log::MONITOR_CODE, PNCP_Ip::remote_addr() );
+			PNCP_Log::add( 'not_via_cdn', PNCP_Log::MONITOR_CODE, $from );
 			return;
 		}
-		PNCP_Log::add( 'not_via_cdn', 403, PNCP_Ip::remote_addr() );
+		PNCP_Log::add( 'not_via_cdn', 403, $from );
 		if ( ! headers_sent() ) {
 			status_header( 403 );
 			nocache_headers();

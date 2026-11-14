@@ -391,6 +391,8 @@ final class PNCP_Cli {
 		$url = trim( $url );
 		if ( '' !== $url && '/' === $url[0] ) {
 			$url = home_url( $url );
+		} elseif ( '' !== $url && '?' === $url[0] ) {
+			$url = home_url( '/' . $url ); // 3.4.3: --address=?s=shoes was checked as "http://?s=shoes", a page.
 		} elseif ( '' !== $url && false === strpos( $url, '://' ) ) {
 			$url = 'http://' . $url; // WP-CLI accepts --url=example.com/path.
 		}

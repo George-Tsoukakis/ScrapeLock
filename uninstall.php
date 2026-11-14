@@ -37,7 +37,7 @@ function pncp_uninstall_site() {
 	}
 	unset( $pncp_retire, $pncp_config );
 
-	foreach ( array( 'pncp_settings', 'pncp_version', 'pncp_db_version', 'pncp_emergency_until', 'pncp_ip_lists', 'pncp_ip_lists_cloudflare', 'pncp_ip_lists_bunny', 'pncp_ip_lists_google', 'pncp_ip_lists_bing', 'pncp_ip_lists_openai_search', 'pncp_ip_lists_openai_user', 'pncp_ip_lists_perplexity_bot', 'pncp_ip_lists_perplexity_user', 'pncp_ip_lists_anthropic', 'pncp_ip_lists_updated', 'pncp_bans', 'pncp_feed_token', 'pncp_feed_stats', 'pncp_legacy_token_notice', 'pncp_legacy_token_migrated', 'pncp_wm_cursor_apply', 'pncp_wm_cursor_remove', 'pncp_upgrade_lock', 'pncp_geo', 'pncp_origin_proxy', 'pncp_precheck_status', 'pncp_precheck_key', 'pncp_log_uas', 'pncp_lockdown', 'pncp_lockdown_log', 'pncp_integrity', 'pncp_integrity_report', 'pncp_integrity_alerted', 'pncp_surge', 'pncp_surge_last', 'pncp_surge_alert', 'pncp_edge', 'pncp_edge_state', 'pncp_edge_retire', 'pncp_edge_staff', 'pncp_edge_lock', 'pncp_edge_dirty', 'pncp_edge_not_before', 'pncp_edge_calls', 'pncp_lockdown_snap', 'pncp_lockdown_digests', 'pncp_lockdown_window', 'pncp_lockdown_mutex', 'pncp_lockdown_mutex_pri', 'pncp_lockdown_fails', 'pncp_lockdown_dblock', 'pncp_integrity_stat', 'pncp_integrity_scan', 'pncp_upgrade_files', 'pncp_log_cleaned', 'pncp_bans_until', 'pncp_monitor_ended', 'pncp_settings_backups' ) as $pncp_option ) {
+	foreach ( array( 'pncp_settings', 'pncp_version', 'pncp_db_version', 'pncp_emergency_until', 'pncp_ip_lists', 'pncp_ip_lists_cloudflare', 'pncp_ip_lists_bunny', 'pncp_ip_lists_google', 'pncp_ip_lists_bing', 'pncp_ip_lists_openai_search', 'pncp_ip_lists_openai_user', 'pncp_ip_lists_perplexity_bot', 'pncp_ip_lists_perplexity_user', 'pncp_ip_lists_anthropic', 'pncp_ip_lists_updated', 'pncp_bans', 'pncp_feed_token', 'pncp_feed_stats', 'pncp_legacy_token_notice', 'pncp_legacy_token_migrated', 'pncp_wm_cursor_apply', 'pncp_wm_cursor_remove', 'pncp_upgrade_lock', 'pncp_geo', 'pncp_origin_proxy', 'pncp_precheck_status', 'pncp_precheck_key', 'pncp_log_uas', 'pncp_lockdown', 'pncp_lockdown_log', 'pncp_integrity', 'pncp_integrity_report', 'pncp_integrity_alerted', 'pncp_surge', 'pncp_surge_last', 'pncp_surge_alert', 'pncp_edge', 'pncp_edge_state', 'pncp_edge_retire', 'pncp_edge_staff', 'pncp_edge_lock', 'pncp_edge_dirty', 'pncp_edge_not_before', 'pncp_edge_calls', 'pncp_lockdown_snap', 'pncp_lockdown_digests', 'pncp_lockdown_window', 'pncp_lockdown_mutex', 'pncp_lockdown_mutex_pri', 'pncp_lockdown_fails', 'pncp_lockdown_dblock', 'pncp_integrity_stat', 'pncp_integrity_scan', 'pncp_upgrade_files', 'pncp_log_cleaned', 'pncp_bans_until', 'pncp_monitor_ended', 'pncp_settings_backups', 'pncp_lockdown_updates_mailed', 'pncp_bans_stamp', 'pncp_dc_stamp', 'pncp_precheck_hv_key' ) as $pncp_option ) {
 		delete_option( $pncp_option );
 	}
 	// Every event of each hook, whatever its arguments (wp_clear_scheduled_hook() only removes the ones without).
@@ -149,6 +149,13 @@ if ( is_readable( $pncp_early ) && false !== strpos( (string) file_get_contents(
 	wp_delete_file( $pncp_early );
 }
 unset( $pncp_early );
+// 3.4.3: the mu-plugins folder, only if ScrapeLock created it and nothing else is in it now.
+$pncp_mu_dir = (string) get_site_option( 'pncp_mu_dir_created', '' );
+if ( '' !== $pncp_mu_dir && is_dir( $pncp_mu_dir ) && wp_normalize_path( $pncp_mu_dir ) === wp_normalize_path( PNCP_Paths::mu_plugins() ) && 2 === count( (array) scandir( $pncp_mu_dir ) ) ) {
+	@rmdir( $pncp_mu_dir ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged, WordPress.WP.AlternativeFunctions.file_system_operations_rmdir -- Only an empty folder ScrapeLock created.
+}
+delete_site_option( 'pncp_mu_dir_created' );
+unset( $pncp_mu_dir );
 
 if ( is_multisite() ) {
 	foreach ( get_sites(

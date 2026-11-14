@@ -290,7 +290,7 @@ final class PNCP_Status {
 	public static function enforce_form() {
 		printf( '<form method="post" action="%s" class="pncp-inline-form">', esc_url( admin_url( 'admin-post.php' ) ) );
 		printf( '<input type="hidden" name="action" value="%s">', esc_attr( self::MONITOR ) );
-		wp_nonce_field( self::MONITOR );
+		self::nonce_field( self::MONITOR );
 		printf( '<button type="submit" class="button button-primary">%s</button>', esc_html__( 'Enforce now', 'scrapelock' ) );
 		echo '</form>';
 	}
@@ -323,7 +323,8 @@ final class PNCP_Status {
 		}
 		// The first-week monitoring: since it started; turned on by hand: the last 7 days (the longest the log keeps by default).
 		$hours   = ! empty( $s['monitor_until'] ) ? max( 1, (int) ceil( ( time() - ( (int) $s['monitor_until'] - PNCP_Options::MONITOR_DAYS * DAY_IN_SECONDS ) ) / HOUR_IN_SECONDS ) ) : 7 * 24;
-		$summary = PNCP_Log::summary( $hours, 'monitor' );
+		// Kept for 5 minutes, like the Log tab (four grouped queries on every Dashboard and settings page otherwise).
+		$summary = PNCP_Log::summary_cached( $hours, 'monitor' )['value'];
 		$labels  = PNCP_Log::reasons();
 		echo '<div class="notice notice-warning pncp-monitor-notice"><p><strong>' . esc_html__( 'ScrapeLock is in “Monitor only”: nothing is blocked.', 'scrapelock' ) . '</strong> ';
 		if ( ! empty( $s['monitor_until'] ) ) {
@@ -638,5 +639,14 @@ final class PNCP_Status {
 			. '#wpadminbar #wp-admin-bar-pncp-status .ab-icon:before{font-size:32px;line-height:46px;top:0}'
 			. '#wpadminbar #wp-admin-bar-pncp-status .ab-label{display:none}}';
 		wp_add_inline_style( 'admin-bar', $css );
+	}
+	/**
+	 * 3.4.3: wp_nonce_field() without its id="_wpnonce", which repeated on every form of a page. The field name
+	 * and the referer field stay the same, so the nonce is checked as before.
+	 *
+	 * @param string $action Nonce action.
+	 */
+	private static function nonce_field( $action ) {
+		echo preg_replace( '/ id="_wpnonce"/', '', wp_nonce_field( $action, '_wpnonce', true, false ), 1 ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Core markup.
 	}
 }

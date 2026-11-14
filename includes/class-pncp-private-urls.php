@@ -36,6 +36,17 @@ final class PNCP_Private_Urls {
 	const STATS_OPTION = 'pncp_feed_stats';
 
 	/**
+	 * 3.4.3: transient holding the query variables that the rewrite rules behind the patterns with * set,
+	 * with the hash of the patterns and rules they were computed from.
+	 */
+	const VARS_TRANSIENT = 'pncp_private_vars';
+
+	/**
+	 * Core query variables that ordinary pages also use: a rule that sets only these is not a feed of its own.
+	 */
+	const CORE_VARS = array( 'p', 'page_id', 'name', 'pagename', 'attachment', 'attachment_id', 'subpost', 'subpost_id', 'paged', 'page', 'cpage', 'year', 'monthnum', 'day', 'hour', 'minute', 'second', 'w', 'm', 'author', 'author_name', 'cat', 'category_name', 'tag', 'tag_id', 'taxonomy', 'term', 's', 'search', 'post_type', 'post_format', 'feed', 'embed', 'tb', 'withcomments', 'withoutcomments', 'preview', 'static', 'error', 'order', 'orderby' );
+
+	/**
 	 * Whether the current request passed the check (so the bot check does not block it afterwards).
 	 *
 	 * @var bool
@@ -328,15 +339,29 @@ final class PNCP_Private_Urls {
 	 */
 	private static function request_path() {
 		$uri  = isset( $_SERVER['REQUEST_URI'] ) ? wp_unslash( $_SERVER['REQUEST_URI'] ) : ''; // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- Only compared against patterns.
-		$path = rawurldecode( (string) wp_parse_url( (string) $uri, PHP_URL_PATH ) );
+		// A request line that starts with // (//skroutz.xml) would be read as a host by wp_parse_url(), with no path
+		// at all, while WordPress still serves the page: the leading slashes count as one.
+		$uri  = preg_replace( '#^/{2,}#', '/', (string) $uri );
+		$path = wp_parse_url( (string) $uri, PHP_URL_PATH );
+		if ( false === $path ) {
+			// 3.4.3: wp_parse_url() gives up on some request targets (http://host:99999/feeds/x.xml, http:///feeds/x.xml),
+			// while the web server may still hand them to WordPress. Split by hand: no query, no fragment,
+			// no scheme and host.
+			$path = substr( (string) $uri, 0, strcspn( (string) $uri, '?#' ) );
+			$path = preg_replace( '#^[a-z][a-z0-9+.-]*://[^/]*#i', '', $path );
+		}
+		$path = rawurldecode( (string) $path );
+		// Repeated slashes inside the path (/feeds//skroutz.xml) are one, as for the web server and WordPress.
+		$path = (string) preg_replace( '#/{2,}#', '/', $path );
 		// 3.4: what comes after a ";" (path parameters, e.g. /skroutz.xml;x) or an encoded NUL (%00) is not part of
 		// the path to compare: code that matches the address loosely may still answer such a request.
 		$cut = strcspn( $path, ";\0" );
 		if ( $cut < strlen( $path ) ) {
 			$path = substr( $path, 0, $cut );
 		}
-		// Trailing spaces, control characters and dots (/skroutz.xml%20, /skroutz.xml.) are not part of it either.
-		$path = rtrim( $path, " .\t\n\r\0\x0B\x0C" );
+		// Trailing spaces, control characters and dots (/skroutz.xml%20, /skroutz.xml.) are not part of it either,
+		// nor extra trailing slashes (/skroutz.xml//): WordPress trims them all before it matches its rewrite rules.
+		$path = rtrim( $path, " ./\t\n\r\0\x0B\x0C" );
 		$path = self::relative_path( $path );
 		// WordPress also accepts the /index.php/path form.
 		if ( 0 === stripos( $path, '/index.php/' ) ) {
@@ -420,13 +445,43 @@ final class PNCP_Private_Urls {
 				continue;
 			}
 			foreach ( $parsed['query'] as $key => $value ) {
-				if ( ! isset( $query[ $key ] ) || ! is_scalar( $query[ $key ] ) || ( '*' !== $value && (string) $query[ $key ] !== $value ) ) {
+				if ( ! isset( $query[ $key ] ) || ! self::same_value( $key, $query[ $key ], $value ) ) {
 					continue 2;
 				}
 			}
 			return $pattern;
 		}
 		return '';
+	}
+
+	/**
+	 * Does a query value ask for the same thing as the pattern's value? For "feed", WordPress drops leading
+	 * underscores before it runs the feed (do_feed()), so ?feed=_skroutz is the same feed as ?feed=skroutz.
+	 *
+	 * 3.4.3: a value of 1 is a flag (a rewrite rule sets skroutz_feed=1), and the code that serves the feed reads it
+	 * as a boolean (if ( get_query_var( 'skroutz_feed' ) )): ?skroutz_feed=01, =yes, =1%20 or skroutz_feed[]=1 is
+	 * the same feed, so any value PHP reads as true matches it.
+	 *
+	 * @param string $key   Query variable.
+	 * @param mixed  $got   Value in the request.
+	 * @param string $value Value in the pattern (* = any).
+	 * @return bool
+	 */
+	private static function same_value( $key, $got, $value ) {
+		if ( '1' === $value && ( is_scalar( $got ) || is_array( $got ) ) ) {
+			return (bool) $got;
+		}
+		if ( ! is_scalar( $got ) ) {
+			return false;
+		}
+		$got = (string) $got;
+		if ( '*' === $value ) {
+			return true;
+		}
+		if ( 'feed' === $key ) {
+			return ltrim( $got, '_' ) === ltrim( $value, '_' );
+		}
+		return $got === $value;
 	}
 
 	/**
@@ -493,13 +548,144 @@ final class PNCP_Private_Urls {
 				continue;
 			}
 			foreach ( $want as $key => $value ) {
-				if ( ! isset( $vars[ $key ] ) || ! is_scalar( $vars[ $key ] ) || ( '*' !== $value && (string) $vars[ $key ] !== $value ) ) {
+				if ( ! isset( $vars[ $key ] ) || ! self::same_value( $key, $vars[ $key ], $value ) ) {
 					continue 2;
 				}
 			}
 			self::protect( $pattern, $s );
 			return;
 		}
+		// 3.4.3: patterns with * (/feeds/*.xml) through the query variables of the rewrite rules that serve them
+		// (/?skroutz_feed=abc for ^feeds/([a-z]+)\.xml$ => skroutz_feed=$matches[1]). A request that came through
+		// the pretty address was already checked by guard(); this catches the same feed asked for by its variables,
+		// on any path (/, /index.php, /some-post/).
+		foreach ( self::wildcard_vars( PNCP_Options::parse_list( $s['private_paths'] ) ) as $pattern => $sets ) {
+			foreach ( $sets as $want ) {
+				foreach ( $want as $key => $value ) {
+					if ( ! isset( $vars[ $key ] ) || ! self::wildcard_value( $key, $vars[ $key ], $value ) ) {
+						continue 2;
+					}
+				}
+				self::protect( $pattern, $s );
+				return;
+			}
+		}
+	}
+
+	/**
+	 * 3.4.3: does a query value match a value of wildcard_vars()? * = any non-empty value.
+	 *
+	 * @param string $key   Query variable.
+	 * @param mixed  $got   Value in the request.
+	 * @param string $value Value the rule sets (* = from the address).
+	 * @return bool
+	 */
+	private static function wildcard_value( $key, $got, $value ) {
+		if ( '*' !== $value ) {
+			return self::same_value( $key, $got, $value );
+		}
+		return is_array( $got ) ? ! empty( $got ) : ( is_scalar( $got ) && '' !== (string) $got );
+	}
+
+	/**
+	 * 3.4.3: for each pattern with * (and no query of its own), the query variables of the rewrite rules whose
+	 * address falls under the pattern: pattern => list of (variable => value, * = taken from the address).
+	 * A rule's address is its regex with every group, class and quantifier replaced by a probe
+	 * (^feeds/([a-z]+)\.xml$ => /feeds/x.xml). Rules that set only core variables (pagename, paged, feed, …)
+	 * are left out: those are ordinary pages, and the pattern still protects their address.
+	 *
+	 * Computed once per set of patterns and rules, and kept in a transient.
+	 *
+	 * @param string[] $patterns Patterns.
+	 * @return array<string, array<int, array<string, string>>>
+	 */
+	private static function wildcard_vars( $patterns ) {
+		global $wp_rewrite;
+		$wild = array();
+		foreach ( $patterns as $pattern ) {
+			$parsed = self::parse_pattern( $pattern );
+			if ( null !== $parsed && ! $parsed['query'] && false !== strpos( $parsed['path'], '*' ) ) {
+				$wild[] = (string) $pattern;
+			}
+		}
+		if ( ! $wild || ! $wp_rewrite instanceof WP_Rewrite ) {
+			return array();
+		}
+		$rules = $wp_rewrite->wp_rewrite_rules();
+		if ( ! is_array( $rules ) || ! $rules ) {
+			return array();
+		}
+		$hash   = md5( serialize( array( $wild, $rules ) ) ); // phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.serialize_serialize -- Only hashed.
+		$cached = get_transient( self::VARS_TRANSIENT );
+		if ( is_array( $cached ) && isset( $cached['hash'], $cached['vars'] ) && $hash === $cached['hash'] && is_array( $cached['vars'] ) ) {
+			return $cached['vars'];
+		}
+
+		$out = array();
+		foreach ( $rules as $match => $target ) {
+			$sample = self::rule_sample( (string) $match );
+			$query  = preg_replace( '!^.+\?!', '', (string) $target );
+			parse_str( (string) $query, $args );
+			$set = array();
+			foreach ( (array) $args as $key => $value ) {
+				if ( ! is_scalar( $value ) || '' === (string) $value ) {
+					continue;
+				}
+				$set[ (string) $key ] = false !== strpos( (string) $value, '$matches[' ) ? '*' : (string) $value;
+			}
+			if ( ! $set || ! array_diff( array_keys( $set ), self::CORE_VARS ) ) {
+				continue;
+			}
+			foreach ( $wild as $pattern ) {
+				if ( '' !== self::matching_pattern( $sample, array( $pattern ), array() ) && ( ! isset( $out[ $pattern ] ) || ! in_array( $set, $out[ $pattern ], true ) ) ) {
+					$out[ $pattern ][] = $set;
+				}
+			}
+		}
+		// No expiration: one autoloaded row, replaced when the patterns or the rules change.
+		set_transient(
+			self::VARS_TRANSIENT,
+			array(
+				'hash' => $hash,
+				'vars' => $out,
+			)
+		);
+		return $out;
+	}
+
+	/**
+	 * 3.4.3: a sample address of a rewrite rule's regex (^feeds/([a-z]+)\.xml$ => /feeds/x.xml).
+	 *
+	 * @param string $regex Rule regex.
+	 * @return string
+	 */
+	private static function rule_sample( $regex ) {
+		$sample = (string) preg_replace( '#^\^|\$$#', '', $regex );
+		// Escaped characters are set aside first, so the steps below do not read them as syntax.
+		// \d, \w, … (classes) become the probe, \. and the like the character itself.
+		$escaped = array();
+		$sample  = (string) preg_replace_callback(
+			'#\\\\(.)#s',
+			function ( $m ) use ( &$escaped ) {
+				$escaped[] = preg_match( '#^[a-z0-9]$#i', $m[1] ) ? 'x' : $m[1];
+				return "\0" . ( count( $escaped ) - 1 ) . "\1";
+			},
+			$sample
+		);
+		$sample = (string) preg_replace( '#\[\^?\]?[^\]]*\]#', 'x', $sample );
+		$sample = str_replace( '.', 'x', $sample );
+		do {
+			$sample = (string) preg_replace( '#\([^()]*\)#', 'x', $sample, -1, $count );
+		} while ( $count > 0 );
+		$sample = (string) preg_replace( '#\{\d*,?\d*\}|[?*+]#', '', $sample );
+		$sample = (string) preg_replace_callback(
+			'#\x00(\d+)\x01#',
+			function ( $m ) use ( $escaped ) {
+				return isset( $escaped[ (int) $m[1] ] ) ? $escaped[ (int) $m[1] ] : '';
+			},
+			$sample
+		);
+		return '/' . ltrim( $sample, '/' );
 	}
 
 	/**

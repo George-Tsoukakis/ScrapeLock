@@ -21,6 +21,12 @@ final class PNCP_Human {
 	const COOKIE = 'pncp_hv';
 
 	/**
+	 * 3.4.3: the second cookie, for the pre-cache check (PNCP_Precheck::human()): the same proof, signed with a
+	 * key the check can read before WordPress loads.
+	 */
+	const PC_COOKIE = 'pncp_hvc';
+
+	/**
 	 * Seconds a challenge stays valid.
 	 */
 	const CHALLENGE_TTL = 300;
@@ -71,7 +77,9 @@ final class PNCP_Human {
 			'pncpHuman',
 			array(
 				'url'    => admin_url( 'admin-ajax.php' ),
-				'cookie' => self::COOKIE,
+				// 3.4.3: with the pre-cache check, the script looks for its cookie: a visitor verified before
+				// it was turned on solves the check once more and gets both.
+				'cookie' => PNCP_Precheck::wanted() ? self::PC_COOKIE : self::COOKIE,
 			)
 		);
 	}
@@ -149,6 +157,51 @@ final class PNCP_Human {
 	}
 
 	/**
+	 * 3.4.3: Marks a solved challenge as spent, in one atomic step: true only for the first caller, false if it
+	 * was already spent (also by a request running at the same moment). With a persistent object cache or APCu
+	 * an atomic add; otherwise one INSERT IGNORE into wp_options, which the unique option_name decides. The
+	 * marker is the same transient as before ("pncp_hvu_" . md5( challenge ), CHALLENGE_TTL), so expired ones
+	 * go with the hourly cleanup (PNCP_Log::purge_expired_transients()) and WordPress's own daily one.
+	 * add_option() is not used: it inserts with ON DUPLICATE KEY UPDATE, so a second insert does not fail.
+	 *
+	 * @param string $challenge Challenge (already checked).
+	 * @return bool
+	 */
+	private static function spend( $challenge ) {
+		global $wpdb;
+		$key = 'pncp_hvu_' . md5( $challenge );
+		if ( wp_using_ext_object_cache() ) {
+			return wp_cache_add( $key, 1, 'pncp', self::CHALLENGE_TTL );
+		}
+		if ( PNCP_Log::apcu_ok() ) {
+			return apcu_add( PNCP_Log::apcu_key( $key ), 1, self::CHALLENGE_TTL );
+		}
+		// phpcs:disable WordPress.DB.DirectDatabaseQuery -- Atomic insert; the options API has none.
+		$added = $wpdb->query(
+			$wpdb->prepare(
+				"INSERT IGNORE INTO {$wpdb->options} ( option_name, option_value, autoload ) VALUES ( %s, %s, 'off' )",
+				'_transient_' . $key,
+				'1'
+			)
+		);
+		if ( 1 !== (int) $added ) {
+			return false;
+		}
+		$wpdb->query(
+			$wpdb->prepare(
+				"INSERT IGNORE INTO {$wpdb->options} ( option_name, option_value, autoload ) VALUES ( %s, %s, 'off' )",
+				'_transient_timeout_' . $key,
+				(string) ( time() + self::CHALLENGE_TTL )
+			)
+		);
+		// phpcs:enable
+		wp_cache_delete( '_transient_' . $key, 'options' );
+		wp_cache_delete( '_transient_timeout_' . $key, 'options' );
+		wp_cache_delete( 'notoptions', 'options' );
+		return true;
+	}
+
+	/**
 	 * The cookie value: "expiry.signature".
 	 *
 	 * @param string $ip IP.
@@ -157,6 +210,19 @@ final class PNCP_Human {
 	public static function cookie_value( $ip ) {
 		$expires = time() + self::COOKIE_DAYS * DAY_IN_SECONDS;
 		return $expires . '.' . self::sign( 'v|' . $expires, $ip );
+	}
+
+	/**
+	 * 3.4.3: the value of the cookie for the pre-cache check: "expiry.signature", as
+	 * PNCP_Precheck_Runtime::human_ok() checks it (the raw User-Agent: the check has no WordPress functions).
+	 *
+	 * @param string $ip IP.
+	 * @return string
+	 */
+	public static function pc_value( $ip ) {
+		$expires = time() + self::COOKIE_DAYS * DAY_IN_SECONDS;
+		$ua      = isset( $_SERVER['HTTP_USER_AGENT'] ) ? (string) $_SERVER['HTTP_USER_AGENT'] : ''; // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized,WordPress.Security.ValidatedSanitizedInput.MissingUnslash -- Only hashed, as the check hashes it.
+		return $expires . '.' . hash_hmac( 'sha256', $expires . '|' . PNCP_Ip::limit_key( $ip ) . '|' . md5( $ua ), PNCP_Precheck::human_key() );
 	}
 
 	/**
@@ -185,18 +251,20 @@ final class PNCP_Human {
 		if ( empty( $_COOKIE[ self::COOKIE ] ) || headers_sent() ) {
 			return;
 		}
-		setcookie(
-			self::COOKIE,
-			'',
-			array(
-				'expires'  => time() - YEAR_IN_SECONDS,
-				'path'     => COOKIEPATH ? COOKIEPATH : '/',
-				'secure'   => is_ssl(),
-				'httponly' => false,
-				'samesite' => 'Lax',
-			)
-		);
-		unset( $_COOKIE[ self::COOKIE ] );
+		foreach ( array( self::COOKIE, self::PC_COOKIE ) as $name ) {
+			setcookie(
+				$name,
+				'',
+				array(
+					'expires'  => time() - YEAR_IN_SECONDS,
+					'path'     => COOKIEPATH ? COOKIEPATH : '/',
+					'secure'   => is_ssl(),
+					'httponly' => false,
+					'samesite' => 'Lax',
+				)
+			);
+			unset( $_COOKIE[ $name ] );
+		}
 	}
 
 	/**
@@ -211,10 +279,11 @@ final class PNCP_Human {
 		// Throttle both challenge requests and answer attempts per IP (IPv6: per /64), so a script cannot
 		// hammer the endpoint or brute-force many challenges at once.
 		$bucket = 'pncp_hv_' . md5( PNCP_Ip::limit_key( $ip ) ) . '_' . (int) floor( time() / MINUTE_IN_SECONDS );
-		$tries  = (int) PNCP_Log::cache_get( $bucket ) + 1;
-		PNCP_Log::cache_set( $bucket, $tries, MINUTE_IN_SECONDS );
+		$tries  = PNCP_Log::cache_incr( $bucket, MINUTE_IN_SECONDS ); // 3.4.3: atomic where it can be.
 		if ( $tries > self::max_per_minute() ) {
-			wp_send_json_error( null, 429 );
+			$retry = PNCP_Bots::retry_after(); // 3.5: the bucket is per minute, like the limits.
+			header( 'Retry-After: ' . $retry );
+			wp_send_json_error( array( 'retry_after' => $retry ), 429 );
 		}
 		$method = isset( $_SERVER['REQUEST_METHOD'] ) ? strtoupper( sanitize_key( wp_unslash( $_SERVER['REQUEST_METHOD'] ) ) ) : 'GET';
 		if ( 'POST' !== $method ) {
@@ -232,15 +301,11 @@ final class PNCP_Human {
 		// phpcs:enable
 		// Single use: a challenge that was already spent cannot be replayed (so one solved proof of work
 		// cannot hand out many cookies, e.g. across rotating IPs in the same /64).
-		$spent = '' !== $challenge ? 'pncp_hvu_' . md5( $challenge ) : '';
-		if ( '' !== $spent && PNCP_Log::cache_get( $spent ) ) {
+		// 3.4.3: checked first, spent in one atomic step after the answer is right (see spend()). Up to 3.4.2 the
+		// marker was read here and written after the check, so two answers sent at the same moment both got a
+		// cookie.
+		if ( ! self::check_answer( $challenge, $answer, $ip ) || ! self::spend( $challenge ) ) {
 			wp_send_json_error( null, 403 );
-		}
-		if ( ! self::check_answer( $challenge, $answer, $ip ) ) {
-			wp_send_json_error( null, 403 );
-		}
-		if ( '' !== $spent ) {
-			PNCP_Log::cache_set( $spent, 1, self::CHALLENGE_TTL );
 		}
 		setcookie(
 			self::COOKIE,
@@ -253,6 +318,19 @@ final class PNCP_Human {
 				'samesite' => 'Lax',
 			)
 		);
+		if ( PNCP_Precheck::wanted() ) {
+			setcookie(
+				self::PC_COOKIE,
+				self::pc_value( $ip ),
+				array(
+					'expires'  => time() + self::COOKIE_DAYS * DAY_IN_SECONDS,
+					'path'     => COOKIEPATH ? COOKIEPATH : '/',
+					'secure'   => is_ssl(),
+					'httponly' => false, // The script reads it (see enqueue()).
+					'samesite' => 'Lax',
+				)
+			);
+		}
 		wp_send_json_success();
 	}
 }

@@ -176,14 +176,21 @@ final class PNCP_Surface {
 	 * @return array<string, array<string, string[]>> namespace => route => methods
 	 */
 	public static function public_routes() {
-		$open = array();
-		foreach ( rest_get_server()->get_routes() as $route => $handlers ) {
+		$open   = array();
+		$server = rest_get_server();
+		foreach ( $server->get_routes() as $route => $handlers ) {
+			// The namespace the route was registered with (e.g. "wp/v2", "oembed/1.0"), not only its first part.
+			$options = $server->get_route_options( $route );
 			foreach ( (array) $handlers as $handler ) {
 				$check = isset( $handler['permission_callback'] ) ? $handler['permission_callback'] : null;
 				if ( null !== $check && '__return_true' !== $check ) {
 					continue;
 				}
-				$namespace = '/' === $route ? '/' : '/' . strtok( ltrim( $route, '/' ), '/' );
+				if ( is_array( $options ) && ! empty( $options['namespace'] ) ) {
+					$namespace = '/' . trim( (string) $options['namespace'], '/' );
+				} else {
+					$namespace = '/' === $route ? '/' : '/' . strtok( ltrim( $route, '/' ), '/' );
+				}
 				foreach ( array_keys( array_filter( isset( $handler['methods'] ) ? (array) $handler['methods'] : array() ) ) as $method ) {
 					$open[ $namespace ][ $route ][] = (string) $method;
 				}

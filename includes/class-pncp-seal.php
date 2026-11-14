@@ -248,6 +248,67 @@ final class PNCP_Seal {
 	}
 
 	/**
+	 * 3.4.3: a Lockdown option as it is in the database now. With a persistent object cache (Redis, Memcached)
+	 * get_option() answers from the cache, which keeps an option with no expiry: a row changed or deleted
+	 * with SQL went unseen, the tamper checks passed and a later write compared against the stale copy (and
+	 * changed nothing). The row is read directly, and the cache is brought in line with it. Without an
+	 * object cache this is get_option() / get_site_option() as before.
+	 *
+	 * @param string $name    Option.
+	 * @param bool   $network A site option (network option on multisite).
+	 * @param mixed  $default Value when the row is not there.
+	 * @return mixed
+	 */
+	public static function fresh_option( $name, $network = false, $default = false ) {
+		$net = $network && is_multisite();
+		if ( ! wp_using_ext_object_cache() ) {
+			return $net ? get_site_option( $name, $default ) : get_option( $name, $default );
+		}
+		global $wpdb;
+		// phpcs:disable WordPress.DB.DirectDatabaseQuery -- The row itself, not the cached copy (see above).
+		if ( $net ) {
+			$raw = $wpdb->get_var( $wpdb->prepare( "SELECT meta_value FROM {$wpdb->sitemeta} WHERE meta_key = %s AND site_id = %d LIMIT 1", $name, get_current_network_id() ) );
+		} else {
+			$raw = $wpdb->get_var( $wpdb->prepare( "SELECT option_value FROM {$wpdb->options} WHERE option_name = %s LIMIT 1", $name ) );
+		}
+		// phpcs:enable
+		$value = null === $raw ? null : ( is_serialized( $raw ) ? @unserialize( trim( $raw ), array( 'allowed_classes' => false ) ) : $raw ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged, WordPress.PHP.DiscouragedPHPFunctions.serialize_unserialize -- Data only, no objects.
+		if ( $net ) {
+			$key = get_current_network_id() . ':' . $name;
+			if ( null === $raw ) {
+				wp_cache_delete( $key, 'site-options' );
+			} else {
+				wp_cache_set( $key, $value, 'site-options' );
+			}
+		} else {
+			// The cache holds the stored text (get_option() unserializes it): in "alloptions" for an autoloaded
+			// option, under its own name otherwise.
+			$all = wp_cache_get( 'alloptions', 'options' );
+			if ( is_array( $all ) && array_key_exists( $name, $all ) ) {
+				if ( null === $raw ) {
+					unset( $all[ $name ] );
+				} else {
+					$all[ $name ] = $raw;
+				}
+				wp_cache_set( 'alloptions', $all, 'options' );
+			}
+			if ( null === $raw ) {
+				wp_cache_delete( $name, 'options' );
+			} elseif ( ! is_array( $all ) || ! array_key_exists( $name, $all ) ) {
+				wp_cache_set( $name, $raw, 'options' );
+			}
+			if ( null !== $raw ) {
+				$not = wp_cache_get( 'notoptions', 'options' );
+				if ( is_array( $not ) && isset( $not[ $name ] ) ) {
+					unset( $not[ $name ] );
+					wp_cache_set( 'notoptions', $not, 'options' );
+				}
+			}
+		}
+		return null === $raw ? $default : $value;
+	}
+
+	/**
 	 * What the keys of Lockdown are made from: SCRAPELOCK_KEY when wp-config.php defines it, otherwise the
 	 * WordPress keys (AUTH_KEY / AUTH_SALT). Security plugins and hosts sometimes change the WordPress keys
 	 * on their own; a key of ScrapeLock's own is not touched by that.
@@ -331,7 +392,7 @@ final class PNCP_Seal {
 	 * @return bool
 	 */
 	public static function sealed_before() {
-		$state = get_site_option( PNCP_Lockdown::OPTION, array() );
+		$state = self::fresh_option( PNCP_Lockdown::OPTION, true, array() );
 		if ( is_array( $state ) && ( isset( $state['sig'] ) || ! empty( $state['sealed'] ) ) ) {
 			return true;
 		}
@@ -445,8 +506,27 @@ final class PNCP_Seal {
 	 * @return bool
 	 */
 	public static function keys_in_config() {
+		if ( defined( 'SCRAPELOCK_KEY' ) && is_string( SCRAPELOCK_KEY ) && strlen( SCRAPELOCK_KEY ) >= 32 ) {
+			return true; // The keys are made from ScrapeLock's own key then (see key_material()), not from AUTH_KEY / AUTH_SALT.
+		}
+		// 3.4.3: as wp_salt() decides: a value used by more than one of the keys (or the sample phrase, also
+		// translated) is ignored by WordPress, which then makes one and keeps it in the database.
+		$count = array();
+		foreach ( array( 'AUTH', 'SECURE_AUTH', 'LOGGED_IN', 'NONCE', 'SECRET' ) as $first ) {
+			foreach ( array( 'KEY', 'SALT' ) as $second ) {
+				if ( defined( "{$first}_{$second}" ) ) {
+					$value           = (string) constant( "{$first}_{$second}" );
+					$count[ $value ] = isset( $count[ $value ] ) ? $count[ $value ] + 1 : 1;
+				}
+			}
+		}
+		$sample = array( 'put your unique phrase here', __( 'put your unique phrase here' ) ); // phpcs:ignore WordPress.WP.I18n.MissingArgDomain -- WordPress's own string, as wp_salt() reads it.
 		foreach ( array( 'AUTH_KEY', 'AUTH_SALT' ) as $name ) {
-			if ( ! defined( $name ) || '' === (string) constant( $name ) || 'put your unique phrase here' === constant( $name ) ) {
+			if ( ! defined( $name ) ) {
+				return false;
+			}
+			$value = (string) constant( $name );
+			if ( '' === $value || in_array( $value, $sample, true ) || 1 !== $count[ $value ] ) {
 				return false;
 			}
 		}
@@ -1023,15 +1103,26 @@ final class PNCP_Seal {
 		if ( ! $filesystem ) {
 			return false;
 		}
-		$dir = PNCP_Paths::mu_plugins();
-		if ( ! $filesystem->is_dir( $dir ) && ! wp_mkdir_p( $dir ) ) {
+		if ( ! PNCP_Early::make_dir() ) { // 3.4.3: recorded when ScrapeLock creates the folder.
 			return false;
 		}
 		if ( $filesystem->exists( $path ) && ! self::ours( $path ) ) {
 			return false; // Someone else's file with the same name: never overwritten.
 		}
 		$copy = $locked && ! is_multisite() ? self::snapshot_source( (int) $snap ) : null;
-		$ok   = $filesystem->put_contents( $path, $code, FS_CHMOD_FILE );
+		// Written to a temporary file next to it first and then renamed, so a request that loads the must-use
+		// plugins meanwhile never includes half a file (a fatal error for that request). The temporary name does
+		// not end in .php, so WordPress never loads it. Where that cannot be done (a folder PHP cannot create
+		// files in), the guard is written in place, as before.
+		$tmp = dirname( $path ) . '/.' . self::FILE . '.' . wp_generate_password( 12, false ) . '.tmp';
+		$ok  = $filesystem->put_contents( $tmp, $code, FS_CHMOD_FILE ) && @rename( $tmp, $path ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged, WordPress.WP.AlternativeFunctions.rename_rename -- Direct access only (see filesystem()); a failure falls back to writing in place.
+		if ( $filesystem->exists( $tmp ) ) {
+			$filesystem->delete( $tmp );
+		}
+		if ( ! $ok ) {
+			$ok = $filesystem->put_contents( $path, $code, FS_CHMOD_FILE );
+		}
+		clearstatcache( true, $path );
 		if ( function_exists( 'opcache_invalidate' ) ) {
 			opcache_invalidate( $path, true );
 		}
@@ -1081,6 +1172,7 @@ final class PNCP_Seal {
 				opcache_invalidate( $path, true );
 			}
 		}
+		PNCP_Early::remove_dir(); // 3.4.3: and the mu-plugins folder, if ScrapeLock created it and it is now empty.
 	}
 
 	/**
@@ -2354,7 +2446,7 @@ final class PNCP_Seal {
 				return null;
 			}
 		}
-		$record = get_option( self::DIGESTS );
+		$record = self::fresh_option( self::DIGESTS ); // 3.4.3: the row, not a cached copy (see fresh_option()).
 		if ( ! is_array( $record ) || ! isset( $record['digests'], $record['sig'] ) || ! is_array( $record['digests'] ) ) {
 			return null;
 		}
@@ -2404,7 +2496,7 @@ final class PNCP_Seal {
 	 * @return array{time:int, values:array<string, mixed>, admins:int[]}|null
 	 */
 	private static function snapshot_record() {
-		$snap = get_option( self::SNAP );
+		$snap = self::fresh_option( self::SNAP ); // 3.4.3: the row, not a cached copy.
 		if ( ! is_array( $snap ) || ! isset( $snap['sig'], $snap['values'], $snap['admins'], $snap['time'] ) ) {
 			return null;
 		}
@@ -2440,7 +2532,7 @@ final class PNCP_Seal {
 		if ( self::NET_DIGESTS === $name && null !== self::$net_digests ) {
 			return false === self::$net_digests ? null : self::$net_digests;
 		}
-		$stored = get_site_option( $name );
+		$stored = self::fresh_option( $name, true ); // 3.4.3: the row, not a cached copy.
 		$record = null;
 		if ( is_array( $stored ) && isset( $stored['sig'], $stored['sites'], $stored['since'], $stored['gen'] ) && is_array( $stored['sites'] ) ) {
 			$sig = $stored['sig'];

@@ -116,6 +116,7 @@ final class PNCP_Options {
 			'cdn_only',
 			'block_http_libs',
 			'monitor_mode',
+			'probe_ban',
 		);
 	}
 
@@ -174,7 +175,7 @@ final class PNCP_Options {
 	public static function sections() {
 		return array(
 			'general' => array( 'enabled', 'scope_posts', 'scope_pages', 'scope_home', 'scope_products', 'skip_woo_pages', 'excluded_ids', 'block_selection', 'block_context_menu', 'block_shortcuts', 'block_devtools', 'block_image_drag', 'block_text_drag', 'blur_on_capture', 'copy_mode', 'attribution_min_chars', 'print_mode', 'exempt_cap', 'show_message', 'message', 'block_framing', 'tdm_reservation', 'tdm_policy_url' ),
-			'bots'    => array( 'monitor_mode', 'block_bots', 'block_empty_ua', 'block_fake_crawlers', 'require_browser_headers', 'block_headless', 'trap_enabled', 'block_http_libs', 'block_archivers', 'ipv6_wide', 'bot_list', 'allow_list', 'allow_ips', 'allow_ai_search', 'verify_ai_bots', 'robots_ai_block', 'content_signal', 'block_ips', 'block_referrers', 'block_user_enum', 'rate_limit', 'rate_limit_search', 'rate_limit_rest', 'rate_limit_404', 'rate_limit_sitemap', 'human_check', 'rate_limit_unverified', 'geo_db', 'countries_block', 'countries_strict', 'rate_limit_country', 'rate_limit_datacenter', 'rate_limit_cart', 'rate_limit_coupon', 'ban_strikes', 'ban_minutes', 'auto_emergency', 'auto_emergency_mode', 'auto_emergency_min', 'early_mode', 'precheck', 'ip_header', 'trust_cloudflare', 'trust_bunny', 'trust_any_proxy', 'trusted_proxies', 'cdn_secret', 'cdn_only' ),
+			'bots'    => array( 'monitor_mode', 'block_bots', 'block_empty_ua', 'block_fake_crawlers', 'require_browser_headers', 'block_headless', 'trap_enabled', 'probe_ban', 'block_http_libs', 'block_archivers', 'ipv6_wide', 'bot_list', 'allow_list', 'allow_ips', 'allow_ai_search', 'verify_ai_bots', 'robots_ai_block', 'content_signal', 'block_ips', 'block_referrers', 'block_user_enum', 'rate_limit', 'rate_limit_search', 'rate_limit_rest', 'rate_limit_404', 'rate_limit_sitemap', 'human_check', 'rate_limit_unverified', 'geo_db', 'countries_block', 'countries_strict', 'rate_limit_country', 'rate_limit_datacenter', 'rate_limit_cart', 'rate_limit_coupon', 'ban_strikes', 'ban_minutes', 'auto_emergency', 'auto_emergency_mode', 'auto_emergency_min', 'early_mode', 'precheck', 'ip_header', 'trust_cloudflare', 'trust_bunny', 'trust_any_proxy', 'trusted_proxies', 'cdn_secret', 'cdn_only' ),
 			'content' => array( 'rest_hide_content', 'hide_rest_discovery', 'graphql_hide_content', 'feed_mode', 'feed_source_link', 'list_excerpts', 'private_paths', 'private_ips', 'disable_pingback', 'hide_versions', 'block_upload_php' ),
 			'images'  => array( 'watermark_enabled', 'watermark_full', 'watermark_products', 'watermark_image_id', 'watermark_opacity', 'watermark_size', 'watermark_position', 'watermark_min_width' ),
 			// Log tab: how long the log is kept, and the addresses that count as "Pages" in it (until 3.3 on the
@@ -556,6 +557,8 @@ final class PNCP_Options {
 			'monitor_mode'            => 0,
 			// When the first-week monitoring ends (timestamp, 0 = no end: switched on by hand). Not a form field.
 			'monitor_until'           => 0,
+			// 3.5: off on new and existing sites (opt-in: a false positive bans a visitor).
+			'probe_ban'               => 0,
 		);
 	}
 
@@ -777,6 +780,9 @@ final class PNCP_Options {
 		if ( '' !== self::ban_refusal( $ip ) ) {
 			return 'refused';
 		}
+		// Saved as it is checked: "203.0.113.7:443", "[2001:db8::1]" or "::ffff:203.0.113.7" become the plain
+		// address, which the list matches (and keeps on the next save of the Bots tab).
+		$ip     = PNCP_Ip::normalize( $ip );
 		$stored = self::stored();
 		$list   = self::parse_list( $stored['block_ips'] );
 		if ( in_array( $ip, $list, true ) ) {
@@ -1071,7 +1077,9 @@ final class PNCP_Options {
 			'human_check'             => 1,
 			'rate_limit_unverified'   => $min( $s['rate_limit_unverified'], 10 ),
 			'block_user_enum'         => 1,
-			'ban_strikes'             => 2,
+			// 3.4.3: never looser than the stored setting: 1 violation stays 1, and 0 (never block) stays the
+			// owner's choice. Before, it was always 2.
+			'ban_strikes'             => (int) $s['ban_strikes'] > 0 ? min( (int) $s['ban_strikes'], 2 ) : 0,
 			'ban_minutes'             => max( (int) $s['ban_minutes'], 360 ),
 			'list_excerpts'           => 1,
 			'ipv6_wide'               => 1,
@@ -1238,6 +1246,9 @@ final class PNCP_Options {
 			'list_excerpts',
 			'feed_mode',
 			'feed_source_link',
+			// 3.4.3: which image sizes the pages link (watermarked stand-ins or the clean files).
+			'watermark_enabled',
+			'watermark_products',
 			'watermark_full',
 			'rest_hide_content',
 			'graphql_hide_content',
@@ -1397,6 +1408,13 @@ final class PNCP_Options {
 		$input    = is_array( $input ) ? $input : array();
 		$defaults = self::defaults();
 		$clean    = array();
+		// 3.4.3: every setting is a single value. A list or an object (a crafted form post, or another plugin's
+		// update_option()) counts as not sent, instead of "Array to string conversion" warnings and "Array" saved.
+		foreach ( $input as $key => $value ) {
+			if ( '_sections' !== $key && ! is_scalar( $value ) ) {
+				unset( $input[ $key ] );
+			}
+		}
 
 		foreach ( self::bool_keys() as $key ) {
 			$clean[ $key ] = empty( $input[ $key ] ) ? 0 : 1;
@@ -1408,8 +1426,18 @@ final class PNCP_Options {
 		}
 
 		foreach ( self::int_ranges() as $key => $range ) {
-			$value         = isset( $input[ $key ] ) && '' !== $input[ $key ] ? (int) $input[ $key ] : $defaults[ $key ];
-			$clean[ $key ] = max( $range[0], min( $range[1], $value ) );
+			$value = isset( $input[ $key ] ) && '' !== $input[ $key ] ? $input[ $key ] : $defaults[ $key ];
+			// 3.4.3: a number written as text ("1e999", "1e30") is read as a number first, so it gets the same
+			// limits: (int) "1e999" is 0, which is "no limit" for the page limits, not the maximum.
+			if ( is_string( $value ) && is_numeric( trim( $value ) ) ) {
+				$value = 0 + trim( $value );
+			}
+			// A number too large for an integer (from an import: JSON numbers can be floats) is limited before it is
+			// made an integer, which would wrap it around, e.g. to a negative number and so to 0 (no limit).
+			if ( is_float( $value ) ) {
+				$value = $value >= $range[1] ? $range[1] : ( $value <= $range[0] ? $range[0] : (int) $value );
+			}
+			$clean[ $key ] = max( $range[0], min( $range[1], (int) $value ) );
 		}
 
 		$ids                   = isset( $input['excluded_ids'] ) ? (string) $input['excluded_ids'] : '';
@@ -1422,6 +1450,11 @@ final class PNCP_Options {
 
 		foreach ( self::list_keys() as $key ) {
 			$clean[ $key ] = implode( "\n", self::parse_list( isset( $input[ $key ] ) ? (string) $input[ $key ] : '' ) );
+		}
+		// 3.5: addresses after "@" that are not IPs are ignored at runtime (split_allow_entry()); the line is saved
+		// as before, and the administrator is told which addresses do nothing.
+		if ( self::saved_here( 'allow_list', $input ) ) {
+			self::report_allow_pins( $clean['allow_list'] );
 		}
 		// Private URLs: a line that would match the homepage or every page ("/", "*") would answer 403 to every
 		// visitor. Such lines are not saved, and the administrator is told which.
@@ -1440,12 +1473,23 @@ final class PNCP_Options {
 			add_settings_error( PNCP_OPTION, 'pncp_private_paths', sprintf( __( 'These private URLs were not saved, because they would block the homepage or every page for all visitors: %s. Use the path of the feed (e.g. /skroutz.xml) or its query (e.g. /?feed=skroutz).', 'scrapelock' ), implode( ', ', $refused ) ) );
 		}
 
+		// 3.5: the lines that are not an IP or a CIDR range are still dropped, but the administrator is told which,
+		// and that a list keeps only its first 200 lines.
 		foreach ( self::ip_list_keys() as $key ) {
-			$clean[ $key ] = implode( "\n", self::parse_ip_list( isset( $input[ $key ] ) ? (string) $input[ $key ] : '' ) );
+			$raw           = isset( $input[ $key ] ) ? (string) $input[ $key ] : '';
+			$rejected      = array();
+			$clean[ $key ] = implode( "\n", self::parse_ip_list( $raw, $rejected ) );
+			if ( self::saved_here( $key, $input ) ) {
+				self::report_ip_list( $key, $raw, $rejected );
+			}
 		}
 
 		foreach ( array( 'countries_block', 'countries_strict' ) as $key ) {
-			$clean[ $key ] = implode( "\n", self::parse_countries( isset( $input[ $key ] ) ? (string) $input[ $key ] : '' ) );
+			$raw           = isset( $input[ $key ] ) ? (string) $input[ $key ] : '';
+			$clean[ $key ] = implode( "\n", self::parse_countries( $raw ) );
+			if ( self::saved_here( $key, $input ) ) {
+				self::report_countries( $key, $raw );
+			}
 		}
 		self::guard_block_lists( $clean, $input );
 
@@ -1709,7 +1753,8 @@ final class PNCP_Options {
 		$lines = preg_split( '/\r\n|\r|\n/', (string) $raw );
 		$out   = array();
 		foreach ( $lines as $line ) {
-			$line = trim( sanitize_text_field( $line ) );
+			// 3.4.3: sanitize_text_field() keeps control characters other than tabs and line breaks (\x01, \x7f).
+			$line = trim( (string) preg_replace( '/[\x00-\x1F\x7F]+/', '', sanitize_text_field( $line ) ) );
 			if ( '' !== $line ) {
 				$out[ strtolower( $line ) ] = mb_substr( $line, 0, 100 );
 			}
@@ -1720,17 +1765,198 @@ final class PNCP_Options {
 	/**
 	 * IP / CIDR list: keeps only valid values.
 	 *
-	 * @param string $raw Text with one value per line.
+	 * @param string        $raw      Text with one value per line.
+	 * @param string[]|null $rejected 3.5: optional, receives the lines that are not an IP or a CIDR range.
 	 * @return string[]
 	 */
-	public static function parse_ip_list( $raw ) {
-		$out = array();
+	public static function parse_ip_list( $raw, &$rejected = null ) {
+		$out  = array();
+		$skip = array();
 		foreach ( self::parse_list( $raw ) as $range ) {
 			if ( PNCP_Ip::valid_range( $range ) ) {
 				$out[] = self::unmap_range( $range );
+			} else {
+				$skip[] = $range;
 			}
 		}
+		// 3.5: the caller can ask for the lines that were dropped (to name them in a message).
+		$rejected = $skip;
 		return array_values( array_unique( $out ) );
+	}
+
+	/**
+	 * 3.5: the names of the IP lists in the messages about lines that were not saved.
+	 *
+	 * @return array<string, string>
+	 */
+	private static function ip_list_names() {
+		return array(
+			'allow_ips'        => __( 'Always allowed IPs', 'scrapelock' ),
+			'block_ips'        => __( 'Always blocked IPs', 'scrapelock' ),
+			'trusted_proxies'  => __( 'Other trusted proxies', 'scrapelock' ),
+			'private_ips'      => __( 'Allowed IPs of the private URLs', 'scrapelock' ),
+			'countries_block'  => __( 'Blocked countries', 'scrapelock' ),
+			'countries_strict' => __( 'Countries with a stricter page limit', 'scrapelock' ),
+		);
+	}
+
+	/**
+	 * 3.5: tells which lines of an IP list were not saved (not an IP or a CIDR range), and that only the first 200
+	 * lines were kept.
+	 *
+	 * @param string   $key      Field.
+	 * @param string   $raw      What was sent.
+	 * @param string[] $rejected The lines parse_ip_list() dropped.
+	 */
+	private static function report_ip_list( $key, $raw, $rejected ) {
+		$names = self::ip_list_names();
+		$name  = isset( $names[ $key ] ) ? $names[ $key ] : $key;
+		if ( $rejected ) {
+			self::notify(
+				'pncp_' . $key . '_invalid',
+				/* translators: 1: name of the setting, 2: the lines that were not saved */
+				sprintf( __( 'These lines of “%1$s” were not saved, because they are not an IP address or a CIDR range (e.g. 203.0.113.7 or 203.0.113.0/24): %2$s.', 'scrapelock' ), $name, self::name_lines( $rejected ) )
+			);
+		}
+		if ( self::count_lines( $raw ) > 200 ) {
+			self::notify(
+				'pncp_' . $key . '_long',
+				/* translators: %s: name of the setting */
+				sprintf( __( 'Only the first 200 lines of “%s” were saved: a list holds at most 200 entries.', 'scrapelock' ), $name ),
+				'warning'
+			);
+		}
+	}
+
+	/**
+	 * 3.5: tells which entries of a country list were not saved (not a two-letter code). parse_countries() itself
+	 * is not changed: it also runs on the front end.
+	 *
+	 * @param string $key Field.
+	 * @param string $raw What was sent.
+	 */
+	private static function report_countries( $key, $raw ) {
+		$bad = array();
+		foreach ( preg_split( '/[\s,;]+/', $raw ) as $token ) {
+			if ( '' !== $token && ! preg_match( '/^[A-Za-z]{2}$/', $token ) ) {
+				$bad[ $token ] = $token;
+			}
+		}
+		if ( ! $bad ) {
+			return;
+		}
+		$names = self::ip_list_names();
+		self::notify(
+			'pncp_' . $key . '_invalid',
+			/* translators: 1: name of the setting, 2: the entries that were not saved */
+			sprintf( __( 'These entries of “%1$s” were not saved, because they are not two-letter country codes (e.g. CN, RU): %2$s.', 'scrapelock' ), $names[ $key ], self::name_lines( array_values( $bad ) ) )
+		);
+	}
+
+	/**
+	 * 3.5: tells which addresses after "@" in the always-allowed User-Agents are not IPs. The lines are saved as
+	 * they are; split_allow_entry() ignores those addresses.
+	 *
+	 * @param string $list The sanitized list.
+	 */
+	private static function report_allow_pins( $list ) {
+		$bad = array();
+		foreach ( self::parse_list( $list ) as $entry ) {
+			$parts = explode( '@', $entry, 2 );
+			if ( ! isset( $parts[1] ) ) {
+				continue;
+			}
+			foreach ( preg_split( '/[\s,]+/', $parts[1] ) as $range ) {
+				if ( '' !== $range && ! PNCP_Ip::valid_range( $range ) ) {
+					$bad[ $range ] = $range;
+				}
+			}
+		}
+		if ( $bad ) {
+			self::notify(
+				'pncp_allow_list_pins',
+				/* translators: %s: the addresses that are ignored */
+				sprintf( __( 'In “Always allowed User-Agents”, these addresses after “@” are not valid IPs and are ignored: %s. An entry whose addresses are all invalid is never accepted.', 'scrapelock' ), self::name_lines( array_values( $bad ) ) ),
+				'warning'
+			);
+		}
+	}
+
+	/**
+	 * 3.5: the number of distinct non-empty lines, counted the way parse_list() builds them but without its limit
+	 * of 200.
+	 *
+	 * @param string $raw Text with one value per line.
+	 * @return int
+	 */
+	private static function count_lines( $raw ) {
+		$seen = array();
+		foreach ( preg_split( '/\r\n|\r|\n/', (string) $raw ) as $line ) {
+			$line = trim( (string) preg_replace( '/[\x00-\x1F\x7F]+/', '', sanitize_text_field( $line ) ) );
+			if ( '' !== $line ) {
+				$seen[ strtolower( $line ) ] = true;
+			}
+		}
+		return count( $seen );
+	}
+
+	/**
+	 * 3.5: a line from the form, safe in any output: settings_errors() prints messages without escaping them,
+	 * render_messages() escapes them and WP-CLI prints plain text. Every character that is not a letter, a digit
+	 * or one of . : / @ % _ - [ ] * and space becomes "?", so nothing needs escaping (and nothing is escaped
+	 * twice), and the line is cut to 60 characters.
+	 *
+	 * @param string $line Line.
+	 * @return string
+	 */
+	private static function display_line( $line ) {
+		$line = (string) $line;
+		$safe = preg_replace( '/[^A-Za-z0-9.:\/@%_\-\[\]* ]/u', '?', $line );
+		if ( null === $safe ) {
+			$safe = (string) preg_replace( '/[^A-Za-z0-9.:\/@%_\-\[\]* ]/', '?', $line ); // Not valid UTF-8.
+		}
+		return mb_strlen( $safe ) > 60 ? mb_substr( $safe, 0, 60 ) . '…' : $safe;
+	}
+
+	/**
+	 * 3.5: up to 10 lines in quotes, separated by commas, then "and N more".
+	 *
+	 * @param string[] $lines Lines.
+	 * @return string
+	 */
+	private static function name_lines( $lines ) {
+		$named = array();
+		foreach ( array_slice( array_values( $lines ), 0, 10 ) as $line ) {
+			/* translators: %s: a line the administrator entered */
+			$named[] = sprintf( __( '“%s”', 'scrapelock' ), self::display_line( $line ) );
+		}
+		$text = implode( ', ', $named );
+		$more = count( $lines ) - count( $named );
+		if ( $more > 0 ) {
+			/* translators: 1: a list of lines, 2: how many more there are */
+			$text = sprintf( __( '%1$s and %2$d more', 'scrapelock' ), $text, $more );
+		}
+		return $text;
+	}
+
+	/**
+	 * 3.5: adds a settings message once. When the option does not exist yet, update_option() goes through
+	 * add_option() and the values are sanitized twice: the second time must not repeat the message.
+	 *
+	 * @param string $code    Message code.
+	 * @param string $message Message (safe: built with display_line()).
+	 * @param string $type    "error" or "warning".
+	 */
+	private static function notify( $code, $message, $type = 'error' ) {
+		if ( ! function_exists( 'add_settings_error' ) ) {
+			return;
+		}
+		foreach ( (array) ( isset( $GLOBALS['wp_settings_errors'] ) ? $GLOBALS['wp_settings_errors'] : array() ) as $error ) {
+			if ( isset( $error['setting'], $error['code'] ) && PNCP_OPTION === $error['setting'] && $code === $error['code'] ) {
+				return;
+			}
+		}
+		add_settings_error( PNCP_OPTION, $code, $message, $type );
 	}
 
 	/**

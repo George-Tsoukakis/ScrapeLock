@@ -73,7 +73,7 @@ final class PNCP_Rest {
 	 */
 	public static function strip_store_api( $result, $server, $request ) {
 		$route = (string) $request->get_route();
-		if ( ! $result instanceof WP_HTTP_Response || ! preg_match( '#^/wc/store(/v\d+)?/(products|cart|batch)#i', $route, $m ) ) {
+		if ( ! $result instanceof WP_HTTP_Response || ! preg_match( '#^/wc/store(/v\d+)?/(products|cart|batch|order|checkout)#i', $route, $m ) ) {
 			return $result;
 		}
 		if ( PNCP_Lockdown::can( 'edit_posts' ) || PNCP_Options::user_is_exempt( PNCP_Options::get() ) ) {

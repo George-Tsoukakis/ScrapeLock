@@ -93,6 +93,10 @@ final class PNCP_Watermark {
 		add_filter( 'rest_prepare_attachment', array( __CLASS__, 'rest_attachment' ), 20, 3 );
 		add_filter( 'wp_get_attachment_link', array( __CLASS__, 'attachment_link' ), 20, 2 );
 		add_filter( 'redirect_canonical', array( __CLASS__, 'attachment_redirect' ), 20, 2 );
+		// 3.4.3: an image inserted at "Full Size" in a post (its src, the "link to media file" around it, the
+		// lightbox's uploadedSrc). After core's lightbox (priority 15).
+		add_filter( 'wp_content_img_tag', array( __CLASS__, 'content_img' ), 20, 3 );
+		add_filter( 'render_block_core/image', array( __CLASS__, 'image_block' ), 20, 2 );
 	}
 
 	/**
@@ -217,7 +221,11 @@ final class PNCP_Watermark {
 		// restore the clean image and regenerate sizes from a clean source, otherwise they would get a double watermark.
 		$regen = false;
 		if ( $state['full'] ) {
-			self::restore_full( $attachment_id, $state );
+			if ( ! self::restore_full( $attachment_id, $state ) ) {
+				// The clean file could not be put back: the full size is still watermarked. Going on would draw a
+				// second watermark on the sizes and overwrite the clean backup with the watermarked file.
+				return $metadata;
+			}
 			$state['full'] = array();
 			$regen         = true;
 		}
@@ -265,7 +273,10 @@ final class PNCP_Watermark {
 
 		$s     = PNCP_Options::get();
 		$state = self::state( $attachment_id );
-		self::restore_full( $attachment_id, $state );
+		if ( ! self::restore_full( $attachment_id, $state ) ) {
+			// The full size is still watermarked: dropping the backups or rebuilding from it would lose the clean image.
+			return 'error';
+		}
 		$state = array(
 			'full'  => array(),
 			'sizes' => array(),
@@ -361,6 +372,12 @@ final class PNCP_Watermark {
 			if ( '' !== $tmp ) {
 				$marked = self::apply_to_file( $tmp, $mime, $s, $path, $source );
 				wp_delete_file( $tmp );
+				// The watermark could not be drawn: the size WordPress made was not regenerated from a clean source
+				// either (it was skipped above), so it is done now.
+				if ( ! $marked && $regen && ( '' === $source || ! self::resize_from( $source, $path, (int) $size['width'], (int) $size['height'], $crop, $mime ) ) ) {
+					++self::$errors;
+					continue;
+				}
 			} elseif ( $mark ) {
 				$marked = self::apply_to_file( $path, $mime, $s, null, '' !== $source ? $source : null );
 			}
@@ -430,8 +447,10 @@ final class PNCP_Watermark {
 	 *
 	 * @param int                  $attachment_id ID.
 	 * @param array<string, mixed> $state         State.
+	 * @return bool false when a watermarked file could not be replaced by its clean backup.
 	 */
 	private static function restore_full( $attachment_id, $state ) {
+		$ok       = true;
 		$paths    = array();
 		$original = function_exists( 'wp_get_original_image_path' ) ? (string) wp_get_original_image_path( $attachment_id, true ) : '';
 		$attached = (string) get_attached_file( $attachment_id, true );
@@ -464,7 +483,10 @@ final class PNCP_Watermark {
 					copy( $backup, $path );
 				}
 			} elseif ( $ours ) {
-				copy( $backup, $path );
+				if ( ! copy( $backup, $path ) ) {
+					$ok = false; // The file on disk is still the watermarked one.
+					continue;
+				}
 				self::drop_stale_copies( $path );
 			} elseif ( '' !== $hash ) {
 				wp_delete_file( $backup ); // A new file replaced the one we wrote: the backup is no longer valid.
@@ -472,6 +494,7 @@ final class PNCP_Watermark {
 			// No record of the file (e.g. the record was lost): nothing can prove the backup is stale, and it may
 			// be the only clean copy. It is left alone, never deleted.
 		}
+		return $ok;
 	}
 
 	/**
@@ -514,7 +537,8 @@ final class PNCP_Watermark {
 	 * The classic image editor (Media → Edit image → crop, rotate, Save) writes the new image and its sizes from
 	 * the clean copy and saves the metadata without generating sizes the usual way, so on_generate() never sees
 	 * them: the edited image would be published without a watermark. After it saves, the image is rebuilt once,
-	 * with the watermark if it is allowed.
+	 * with the watermark if it is allowed. 3.4.3: the same after «Restore original image», which put back the
+	 * pre-edit files (the full size clean) while the record still described the edited ones.
 	 *
 	 * @param int    $meta_id   Meta ID.
 	 * @param int    $object_id Attachment ID.
@@ -523,7 +547,7 @@ final class PNCP_Watermark {
 	public static function on_edited( $meta_id, $object_id, $meta_key ) {
 		static $queued = array();
 		// phpcs:disable WordPress.Security.NonceVerification -- Only reads which core action is running; core checked its nonce.
-		if ( '_wp_attachment_metadata' !== $meta_key || ! wp_doing_ajax() || ! isset( $_REQUEST['action'], $_REQUEST['do'] ) || 'image-editor' !== $_REQUEST['action'] || 'save' !== $_REQUEST['do'] ) {
+		if ( '_wp_attachment_metadata' !== $meta_key || ! wp_doing_ajax() || ! isset( $_REQUEST['action'], $_REQUEST['do'] ) || 'image-editor' !== $_REQUEST['action'] || ! in_array( $_REQUEST['do'], array( 'save', 'restore' ), true ) ) {
 			return;
 		}
 		// phpcs:enable
@@ -931,20 +955,68 @@ final class PNCP_Watermark {
 				}
 			}
 		}
+		if ( isset( $data['media_details'] ) && is_array( $data['media_details'] ) && ! PNCP_Lockdown::can( 'upload_files' ) && ! PNCP_Lockdown::can( 'edit_post', $id ) ) {
+			$data['media_details'] = self::public_media_details( $data['media_details'], $id );
+		}
 		$response->set_data( $data );
 		return $response;
+	}
+
+	/**
+	 * 3.4.3: media_details for a visitor. file (the relative path of the clean full size), original_image and the
+	 * full width and height are enough to build the clean full-size URL, so they go: width, height, filesize and
+	 * sizes.full become those of the stand-in, as wp_get_attachment_image_src() already gives it.
+	 *
+	 * @param array<string, mixed> $details       media_details.
+	 * @param int                  $attachment_id Attachment ID.
+	 * @return array<string, mixed>
+	 */
+	private static function public_media_details( $details, $attachment_id ) {
+		$image = wp_get_attachment_image_src( $attachment_id, 'full' );
+		if ( ! is_array( $image ) || empty( $image[0] ) || empty( $image[3] ) ) {
+			return $details; // No stand-in for this request: the real data stays.
+		}
+		unset( $details['file'], $details['original_image'] );
+		$details['width']  = (int) $image[1];
+		$details['height'] = (int) $image[2];
+		unset( $details['filesize'] );
+		$file = wp_basename( (string) wp_parse_url( (string) $image[0], PHP_URL_PATH ) );
+		$full = array(
+			'file'       => $file,
+			'width'      => (int) $image[1],
+			'height'     => (int) $image[2],
+			'mime_type'  => (string) get_post_mime_type( $attachment_id ),
+			'source_url' => (string) $image[0],
+		);
+		if ( isset( $details['sizes'] ) && is_array( $details['sizes'] ) ) {
+			foreach ( $details['sizes'] as $name => $size ) {
+				if ( 'full' !== $name && is_array( $size ) && isset( $size['file'] ) && $file === $size['file'] ) {
+					if ( isset( $size['filesize'] ) ) {
+						$details['filesize'] = (int) $size['filesize'];
+					}
+					if ( ! empty( $size['mime_type'] ) ) {
+						$full['mime_type'] = (string) $size['mime_type'];
+					}
+					break;
+				}
+			}
+			$details['sizes']['full'] = $full;
+		}
+		return $details;
 	}
 
 	/**
 	 * 3.4.2: the link to the file on an attachment page (wp_get_attachment_link(), its href is the attachment
 	 * URL, the clean full-size file).
 	 *
-	 * @param string $html HTML.
-	 * @param int    $id   Attachment ID.
+	 * @param string      $html HTML.
+	 * @param int|WP_Post $id   Attachment ID or post (as passed to wp_get_attachment_link()).
 	 * @return string
 	 */
 	public static function attachment_link( $html, $id = 0 ) {
-		$id = (int) $id > 0 ? (int) $id : (int) get_the_ID();
+		// 3.4.3: themes pass a WP_Post; casting it to int warned and gave 1.
+		$id = $id instanceof WP_Post ? (int) $id->ID : ( is_numeric( $id ) ? (int) $id : 0 );
+		$id = $id > 0 ? $id : (int) get_the_ID();
 		return $id > 0 ? self::replace_in( $html, $id ) : $html;
 	}
 
@@ -962,6 +1034,56 @@ final class PNCP_Watermark {
 			return $redirect_url;
 		}
 		return self::public_url( $redirect_url, (int) get_queried_object_id() );
+	}
+
+	/**
+	 * 3.4.3: an <img> in post content (classic or block) that points at the clean full-size file, e.g. an image
+	 * inserted at "Full Size": its src was left as it is, and only srcset lost the full size.
+	 *
+	 * @param string $html          The img tag.
+	 * @param string $context       Context.
+	 * @param int    $attachment_id Attachment ID (0 when unknown).
+	 * @return string
+	 */
+	public static function content_img( $html, $context = '', $attachment_id = 0 ) {
+		unset( $context );
+		return (int) $attachment_id > 0 ? self::replace_in( $html, (int) $attachment_id ) : $html;
+	}
+
+	/**
+	 * 3.4.3: the Image block: its "link to media file" (<a href>) and the lightbox's full-size source.
+	 *
+	 * @param string               $content Block HTML.
+	 * @param array<string, mixed> $block   Block.
+	 * @return string
+	 */
+	public static function image_block( $content, $block = array() ) {
+		$id = is_array( $block ) && isset( $block['attrs']['id'] ) ? (int) $block['attrs']['id'] : 0;
+		if ( $id <= 0 || ! self::public_view() || null === self::stand_in( $id ) ) {
+			return $content;
+		}
+		// The lightbox (WordPress 6.5+) keeps the full-size URL in the Interactivity API state, printed in the footer.
+		if ( function_exists( 'wp_interactivity_state' ) ) {
+			$state = wp_interactivity_state( 'core/image' );
+			$fix   = array();
+			foreach ( isset( $state['metadata'] ) && is_array( $state['metadata'] ) ? $state['metadata'] : array() as $key => $item ) {
+				if ( is_array( $item ) && isset( $item['uploadedSrc'] ) && is_string( $item['uploadedSrc'] ) ) {
+					$url = self::public_url( $item['uploadedSrc'], $id );
+					if ( $url !== $item['uploadedSrc'] ) {
+						$stand_in    = self::stand_in( $id );
+						$fix[ $key ] = array(
+							'uploadedSrc'  => $url,
+							'targetWidth'  => $stand_in[1],
+							'targetHeight' => $stand_in[2],
+						);
+					}
+				}
+			}
+			if ( $fix ) {
+				wp_interactivity_state( 'core/image', array( 'metadata' => $fix ) );
+			}
+		}
+		return self::replace_in( $content, $id );
 	}
 
 	/**
@@ -1116,12 +1238,24 @@ final class PNCP_Watermark {
 	/**
 	 * Deletes the backups of an image.
 	 *
-	 * @param int $attachment_id ID.
+	 * @param int  $attachment_id ID.
+	 * @param bool $edits         Also those of the versions the image editor kept (deletion only).
 	 */
-	private static function drop_backups( $attachment_id ) {
+	private static function drop_backups( $attachment_id, $edits = false ) {
 		$paths = self::full_files( $attachment_id );
 		foreach ( array_keys( self::state( $attachment_id )['full'] ) as $rel ) {
 			$paths[] = self::absolute( (string) $rel );
+		}
+		// 3.4.3: on deletion, also the backups of the other versions the image editor kept (pre-edit and edited
+		// full sizes): WordPress deletes those files, their clean copies must not stay behind.
+		$versions = $edits ? get_post_meta( $attachment_id, '_wp_attachment_backup_sizes', true ) : array();
+		if ( is_array( $versions ) && $versions ) {
+			$dir = trailingslashit( dirname( (string) get_attached_file( $attachment_id, true ) ) );
+			foreach ( $versions as $key => $version ) {
+				if ( 0 === strpos( (string) $key, 'full-' ) && ! empty( $version['file'] ) ) {
+					$paths[] = $dir . wp_basename( (string) $version['file'] );
+				}
+			}
 		}
 		foreach ( array_unique( $paths ) as $path ) {
 			$backup = self::backup_path( $path );
@@ -1137,8 +1271,9 @@ final class PNCP_Watermark {
 	 * @param int $attachment_id ID.
 	 */
 	public static function on_delete( $attachment_id ) {
-		if ( get_post_meta( $attachment_id, self::META, true ) ) {
-			self::drop_backups( (int) $attachment_id );
+		$edited = get_post_meta( $attachment_id, '_wp_attachment_backup_sizes', true );
+		if ( get_post_meta( $attachment_id, self::META, true ) || ( $edited && get_option( 'pncp_backup_dir' ) ) ) {
+			self::drop_backups( (int) $attachment_id, true );
 		}
 	}
 

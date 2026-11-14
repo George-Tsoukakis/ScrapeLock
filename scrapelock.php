@@ -2,7 +2,7 @@
 /**
  * Plugin Name:       ScrapeLock – Content & AI Bot Protection
  * Description:       Protects your content: makes copying text and images harder, hides the text in the REST API, GraphQL and RSS, blocks scrapers, AI bots and fake Googlebots, temporarily blocks persistent IPs, protects XML feeds with a token and adds an optional watermark. Lockdown freezes every change to the site until it is unlocked with an authenticator app. Forms, cart, checkout and search engines are not affected.
- * Version:           3.4.2
+ * Version:           3.5.0
  * Requires at least: 6.2
  * Requires PHP:      7.4
  * Author:            CodeBunny
@@ -19,7 +19,7 @@ if ( defined( 'PNCP_VERSION' ) ) {
 	return;
 }
 
-define( 'PNCP_VERSION', '3.4.2' );
+define( 'PNCP_VERSION', '3.5.0' );
 define( 'PNCP_FILE', __FILE__ );
 define( 'PNCP_DIR', plugin_dir_path( __FILE__ ) );
 define( 'PNCP_URL', plugin_dir_url( __FILE__ ) );
@@ -36,6 +36,7 @@ require_once PNCP_DIR . 'includes/class-pncp-rest.php';
 require_once PNCP_DIR . 'includes/class-pncp-graphql.php';
 require_once PNCP_DIR . 'includes/class-pncp-feed.php';
 require_once PNCP_DIR . 'includes/class-pncp-bots.php';
+require_once PNCP_DIR . 'includes/class-pncp-probe.php';
 require_once PNCP_DIR . 'includes/class-pncp-surge.php';
 require_once PNCP_DIR . 'includes/class-pncp-edge.php';
 require_once PNCP_DIR . 'includes/class-pncp-origin.php';
@@ -54,6 +55,7 @@ require_once PNCP_DIR . 'includes/class-pncp-integrity.php';
 require_once PNCP_DIR . 'includes/class-pncp-surface.php';
 require_once PNCP_DIR . 'includes/class-pncp-health.php';
 require_once PNCP_DIR . 'includes/class-pncp-abilities.php';
+require_once PNCP_DIR . 'includes/class-pncp-tester.php';
 
 if ( is_admin() ) {
 	require_once PNCP_DIR . 'includes/class-pncp-admin.php';
@@ -82,6 +84,7 @@ PNCP_Integrity::init();
 PNCP_Surface::init();
 PNCP_Health::init();
 PNCP_Abilities::init();
+PNCP_Tester::init();
 
 if ( defined( 'WP_CLI' ) && WP_CLI ) {
 	require_once PNCP_DIR . 'includes/class-pncp-cli.php';
@@ -304,11 +307,23 @@ function pncp_upgrade() {
 	if ( ! wp_next_scheduled( 'pncp_upgrade_files' ) ) {
 		wp_schedule_single_event( time(), 'pncp_upgrade_files' );
 	}
-	if ( function_exists( 'spawn_cron' ) && did_action( 'init' ) ) {
-		spawn_cron();
-	} elseif ( function_exists( 'spawn_cron' ) ) {
-		add_action( 'init', 'spawn_cron', 99 );
+	if ( did_action( 'init' ) ) {
+		pncp_spawn_cron();
+	} else {
+		add_action( 'init', 'pncp_spawn_cron', 99 );
 	}
+}
+
+/**
+ * 3.4.3: starts due scheduled events in a background request (a loopback to wp-cron.php, or the redirect of
+ * ALTERNATE_WP_CRON), as WordPress does on each request, and like WordPress not where DISABLE_WP_CRON is set:
+ * there the owner's real cron runs them. spawn_cron() itself runs every due event, not only ours.
+ */
+function pncp_spawn_cron() {
+	if ( ( defined( 'DISABLE_WP_CRON' ) && DISABLE_WP_CRON ) || ! function_exists( 'spawn_cron' ) ) {
+		return;
+	}
+	spawn_cron();
 }
 
 /**
@@ -445,7 +460,7 @@ add_action( 'plugins_loaded', 'pncp_maybe_upgrade', -100 );
 
 /**
  * Clears the page cache so visitors see the new settings immediately.
- * Covers WP Rocket, WP Super Cache, W3 Total Cache, LiteSpeed Cache, WP Fastest Cache, SiteGround Optimizer,
+ * Covers WP Rocket, WP Super Cache, W3 Total Cache, LiteSpeed Cache, Cache Enabler, WP Fastest Cache, SiteGround Optimizer,
  * Nginx Helper (FastCGI cache) and the Cloudflare plugin, whichever are present.
  */
 function pncp_purge_page_cache() {
@@ -470,6 +485,7 @@ function pncp_purge_page_cache() {
 	// phpcs:disable WordPress.NamingConventions.PrefixAllGlobals.NonPrefixedHooknameFound -- Hooks of other plugins.
 	do_action( 'rt_nginx_helper_purge_all' ); // Nginx Helper (FastCGI cache).
 	do_action( 'litespeed_purge_all' ); // LiteSpeed Cache.
+	do_action( 'cache_enabler_clear_complete_cache' ); // 3.4.3: Cache Enabler.
 	// phpcs:enable
 	if ( function_exists( 'wp_cache_clear_cache' ) ) {
 		wp_cache_clear_cache( is_multisite() ? get_current_blog_id() : 0 ); // WP Super Cache (on multisite, only this site).
@@ -513,14 +529,13 @@ add_action( 'update_option_' . PNCP_OPTION, 'pncp_settings_purge', 10, 2 );
  * Empties the page cache in a background request (a scheduled event started right away with a loopback to
  * wp-cron.php that this request does not wait for), e.g. after Emergency Mode starts or ends. Several calls
  * before it runs empty the cache once.
+ * 3.4.3: where DISABLE_WP_CRON is set it is only scheduled, and runs with the site's real cron.
  */
 function pncp_schedule_purge() {
 	if ( ! wp_next_scheduled( 'pncp_background_purge' ) ) {
 		wp_schedule_single_event( time(), 'pncp_background_purge' );
 	}
-	if ( function_exists( 'spawn_cron' ) ) {
-		spawn_cron();
-	}
+	pncp_spawn_cron(); // 3.4.3: not where DISABLE_WP_CRON is set.
 }
 add_action( 'pncp_background_purge', 'pncp_purge_page_cache' );
 

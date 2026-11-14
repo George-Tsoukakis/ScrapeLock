@@ -34,6 +34,7 @@ final class PNCP_Lockdown {
 	const DB_FOREIGN    = 'pncp_lockdown_dblock'; // 3.4.2: the connection last found holding the database lock for itself.
 	const MUTEX_PRI     = 'pncp_lockdown_mutex_pri'; // 3.4.2: set while a correct code waits for the code-check lock.
 	const PRI_TTL       = 9; // 3.4.2: seconds a correct code waits for the code-check lock at most (see fallback_lock()).
+	const UPDATES_MAILED = 'pncp_lockdown_updates_mailed'; // 3.4.3: the updates waiting that were last emailed about (see mail_updates()).
 
 	/**
 	 * Inside can(): the lock does not take capabilities away.
@@ -226,12 +227,33 @@ final class PNCP_Lockdown {
 	private static $queued = array();
 
 	/**
+	 * 3.4.3: the WordPress version before a minor update that WordPress installs by itself while the site is
+	 * locked (filter pncp_lockdown_allow_core_minor), '' when none was allowed in this request.
+	 *
+	 * @var string
+	 */
+	private static $core_from = '';
+
+	/**
 	 * Registers the hooks.
 	 */
 	public static function init() {
 		add_filter( 'map_meta_cap', array( __CLASS__, 'map_meta_cap' ), 9999, 4 );
-		add_filter( 'file_mod_allowed', array( __CLASS__, 'file_mod_allowed' ) );
+		add_filter( 'file_mod_allowed', array( __CLASS__, 'file_mod_allowed' ), 10, 2 );
+		// 3.4.3: file_mod_allowed is only asked by wp-admin's checks. WP-CLI, and code that runs WordPress's
+		// upgrader or delete_plugins() directly, never ask it: the upgrader and the deletions are stopped too.
+		add_filter( 'upgrader_pre_download', array( __CLASS__, 'upgrader_refuse' ), 9999, 3 );
+		add_filter( 'upgrader_pre_install', array( __CLASS__, 'upgrader_refuse_install' ), 9999 );
+		add_action( 'delete_plugin', array( __CLASS__, 'refuse_delete' ), 0 );
+		add_action( 'delete_theme', array( __CLASS__, 'refuse_delete' ), 0 );
 		add_filter( 'automatic_updater_disabled', array( __CLASS__, 'updater_disabled' ) );
+		// 3.4.3: with the filter pncp_lockdown_allow_core_minor, WordPress may install a minor release of itself
+		// while locked; plugins, themes and translations still wait (see core_minor_window()).
+		add_filter( 'auto_update_core', array( __CLASS__, 'auto_update_core' ), 9999, 2 );
+		foreach ( array( 'auto_update_plugin', 'auto_update_theme', 'auto_update_translation', 'async_update_translation' ) as $hook ) {
+			add_filter( $hook, array( __CLASS__, 'no_auto_update' ), 9999 );
+		}
+		add_action( 'automatic_updates_complete', array( __CLASS__, 'core_updated' ) );
 		foreach ( self::protected_options() as $option ) {
 			add_filter( 'pre_update_option_' . $option, array( __CLASS__, 'keep_option' ), 9999, 3 );
 		}
@@ -273,6 +295,7 @@ final class PNCP_Lockdown {
 		add_action( 'plugins_loaded', array( __CLASS__, 'expire_window' ), 0 );
 		add_action( PNCP_Log::CRON, array( __CLASS__, 'expire_window' ), 5 );
 		add_action( PNCP_Log::CRON, array( __CLASS__, 'maintain_files' ), 6 );
+		add_action( PNCP_Log::CRON, array( __CLASS__, 'mail_updates' ), 7 );
 		if ( is_admin() ) {
 			add_action( 'admin_post_' . self::ACTION, array( __CLASS__, 'handle' ) );
 			add_action( 'admin_notices', array( __CLASS__, 'notices' ) );
@@ -403,7 +426,8 @@ final class PNCP_Lockdown {
 	 * @return array<string, mixed>
 	 */
 	private static function stored() {
-		$stored = get_site_option( self::OPTION, array() );
+		// 3.4.3: the row as it is now, not a copy kept by a persistent object cache (see PNCP_Seal::fresh_option()).
+		$stored = PNCP_Seal::fresh_option( self::OPTION, true, array() );
 		return is_array( $stored ) ? $stored : array();
 	}
 
@@ -1050,6 +1074,20 @@ final class PNCP_Lockdown {
 	}
 
 	/**
+	 * A {prefix}capabilities value as given to the meta filters and actions: an array as it is, a serialized
+	 * string read as data only (no objects, unlike maybe_unserialize()), anything else as it is.
+	 *
+	 * @param mixed $value Value.
+	 * @return mixed
+	 */
+	private static function caps_value( $value ) {
+		if ( is_string( $value ) && is_serialized( $value ) ) {
+			return @unserialize( trim( $value ), array( 'allowed_classes' => false ) ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged, WordPress.PHP.DiscouragedPHPFunctions.serialize_unserialize -- Data only, no objects.
+		}
+		return $value;
+	}
+
+	/**
 	 * Can these stored capabilities administer the site?
 	 *
 	 * @param mixed $caps {prefix}capabilities value.
@@ -1092,7 +1130,7 @@ final class PNCP_Lockdown {
 		$user_id = (int) $user_id;
 		$before  = ! empty( self::$caps_before[ $user_id ] );
 		unset( self::$caps_before[ $user_id ], self::$staff[ $user_id ] );
-		$value = maybe_unserialize( $value );
+		$value = self::caps_value( $value );
 		$kind  = self::grants_control( $value ) ? ( $before ? -1 : 2 ) : ( self::grants_staff( $value ) ? 1 : 0 );
 		if ( -1 !== $kind ) {
 			PNCP_Seal::window_note_user( $user_id, $kind );
@@ -1198,6 +1236,7 @@ final class PNCP_Lockdown {
 					'resume_themes',
 					// Users and data of the whole site.
 					'add_users',
+					'create_customers', // 3.4.3: WooCommerce's own, for wc/v3/customers (a new user account).
 					'import',
 					'export',
 					'manage_privacy_options',
@@ -1581,23 +1620,240 @@ final class PNCP_Lockdown {
 	}
 
 	/**
-	 * No installs, updates, deletions or file editing (plugins, themes, core, translations).
+	 * No installs, updates, deletions or file editing (plugins, themes, core, translations). 3.4.3: except the
+	 * automatic updater itself while it installs a minor release of WordPress, when the filter
+	 * pncp_lockdown_allow_core_minor allows it (see core_minor_window()).
 	 *
-	 * @param bool $allowed Allowed.
+	 * @param bool   $allowed Allowed.
+	 * @param string $context What asks (wp_is_file_mod_allowed()).
 	 * @return bool
 	 */
-	public static function file_mod_allowed( $allowed ) {
-		return self::is_locked() ? false : $allowed;
+	public static function file_mod_allowed( $allowed, $context = '' ) {
+		if ( ! self::is_locked() ) {
+			return $allowed;
+		}
+		return 'automatic_updater' === $context && self::core_minor_window() ? $allowed : false;
 	}
 
 	/**
-	 * No automatic updates.
+	 * 3.4.3: is installing, updating or deleting files refused now? The same rule as file_mod_allowed():
+	 * while locked, except WordPress's own minor release when core_minor_window() allows it.
+	 *
+	 * @param WP_Upgrader|null $upgrader The upgrader that asks, if any.
+	 * @return bool
+	 */
+	private static function files_frozen( $upgrader = null ) {
+		if ( ! self::is_locked() ) {
+			return false;
+		}
+		return ! ( $upgrader instanceof Core_Upgrader && self::core_minor_window() );
+	}
+
+	/**
+	 * 3.4.3: the message of a refused install, update or deletion.
+	 *
+	 * @return string
+	 */
+	private static function frozen_message() {
+		return __( 'This site is locked: plugins, themes and WordPress cannot be installed, updated or deleted until it is unlocked on the Lockdown page.', 'scrapelock' );
+	}
+
+	/**
+	 * 3.4.3: WordPress's upgrader (wp-admin, WP-CLI or code calling it directly) gets nothing to install while
+	 * locked. WordPress asks this filter before every package, a local .zip included.
+	 *
+	 * @param bool|WP_Error|string $reply    False, or what another filter decided.
+	 * @param string               $package  The package (URL or file).
+	 * @param WP_Upgrader|null     $upgrader The upgrader.
+	 * @return bool|WP_Error|string
+	 */
+	public static function upgrader_refuse( $reply, $package = '', $upgrader = null ) {
+		if ( ! self::files_frozen( $upgrader ) ) {
+			return $reply;
+		}
+		self::refused( 'install:' . sanitize_file_name( wp_basename( (string) $package ) ) );
+		return new WP_Error( 'pncp_locked', self::frozen_message() );
+	}
+
+	/**
+	 * 3.4.3: the same right before the files are copied, for an upgrader that got its package another way.
+	 *
+	 * @param bool|WP_Error $response True, or an error.
+	 * @return bool|WP_Error
+	 */
+	public static function upgrader_refuse_install( $response ) {
+		if ( is_wp_error( $response ) || ! self::files_frozen() || self::core_minor_window() ) {
+			return $response;
+		}
+		self::refused( 'install' );
+		return new WP_Error( 'pncp_locked', self::frozen_message() );
+	}
+
+	/**
+	 * 3.4.3: delete_plugins() and delete_theme() (wp-admin, WP-CLI, or code calling them) stop before the first
+	 * file is removed. WordPress gives them no filter, only this action: the request ends here.
+	 *
+	 * @param string $item The plugin file or theme folder.
+	 */
+	public static function refuse_delete( $item ) {
+		if ( ! self::files_frozen() ) {
+			return;
+		}
+		self::refused( 'delete:' . sanitize_text_field( (string) $item ) );
+		wp_die( esc_html( self::frozen_message() ), esc_html__( 'Locked', 'scrapelock' ), array( 'response' => 403 ) );
+	}
+
+	/**
+	 * No automatic updates. 3.4.3: except a minor release of WordPress, see file_mod_allowed().
 	 *
 	 * @param bool $disabled Disabled.
 	 * @return bool
 	 */
 	public static function updater_disabled( $disabled ) {
-		return self::is_locked() ? true : $disabled;
+		if ( ! self::is_locked() ) {
+			return $disabled;
+		}
+		return self::core_minor_window() ? $disabled : true;
+	}
+
+	/**
+	 * 3.4.3: may WordPress update itself now, while the site is locked? Only with the filter
+	 * pncp_lockdown_allow_core_minor (off by default), only from WordPress's own automatic updater (the
+	 * scheduled wp_maybe_auto_update, never from wp-admin), only while the Lockdown data is in order, and only
+	 * when a newer release of the same branch is offered (6.8.1 to 6.8.2: security and maintenance fixes, not
+	 * 6.9). The updater then also asks for plugins, themes and translations: those are refused one by one
+	 * (no_auto_update()), and a major release by auto_update_core().
+	 *
+	 * @return bool
+	 */
+	private static function core_minor_window() {
+		if ( ! doing_action( 'wp_maybe_auto_update' ) || ! self::is_locked() || self::server_unlocked() || '' !== self::tampered() ) {
+			return false;
+		}
+		/**
+		 * Lets WordPress install minor releases of itself (same branch, e.g. 6.8.1 to 6.8.2) while the site is
+		 * locked. The files they change are taken into the file fingerprint when they match the official
+		 * checksums of the new version. Plugin and theme updates still wait for an unlock.
+		 *
+		 * @since 3.4.3
+		 *
+		 * @param bool $allow Allow (default false).
+		 */
+		if ( true !== apply_filters( 'pncp_lockdown_allow_core_minor', false ) ) {
+			return false;
+		}
+		return '' !== self::core_minor_offer();
+	}
+
+	/**
+	 * 3.4.3: the newest release of the branch this site runs that WordPress.org offers ('' = none).
+	 *
+	 * @return string
+	 */
+	private static function core_minor_offer() {
+		$current = (string) get_bloginfo( 'version' );
+		$core    = get_site_transient( 'update_core' );
+		$best    = '';
+		if ( ! is_object( $core ) || empty( $core->updates ) ) {
+			return '';
+		}
+		foreach ( (array) $core->updates as $offer ) {
+			if ( ! is_object( $offer ) || empty( $offer->current ) || ! isset( $offer->response ) || ! in_array( $offer->response, array( 'upgrade', 'autoupdate' ), true ) ) {
+				continue;
+			}
+			$to = (string) $offer->current;
+			if ( self::same_branch( $current, $to ) && version_compare( $to, $current, '>' ) && ( '' === $best || version_compare( $to, $best, '>' ) ) ) {
+				$best = $to;
+			}
+		}
+		return $best;
+	}
+
+	/**
+	 * 3.4.3: are both stable releases of the same branch (6.8, 6.8.1, 6.8.2)? A beta, RC or nightly never is.
+	 *
+	 * @param string $a Version.
+	 * @param string $b Version.
+	 * @return bool
+	 */
+	private static function same_branch( $a, $b ) {
+		if ( ! preg_match( '/^(\d+)\.(\d+)(?:\.\d+)?$/', (string) $a, $one ) || ! preg_match( '/^(\d+)\.(\d+)(?:\.\d+)?$/', (string) $b, $two ) ) {
+			return false;
+		}
+		return $one[1] === $two[1] && $one[2] === $two[2];
+	}
+
+	/**
+	 * 3.4.3: while the site is locked, WordPress's automatic updater installs only a minor release of the
+	 * branch it runs (see core_minor_window()), never a major or development release.
+	 *
+	 * @param bool|null $update Update.
+	 * @param object    $item   The offer.
+	 * @return bool|null
+	 */
+	public static function auto_update_core( $update, $item ) {
+		if ( ! self::is_locked() ) {
+			return $update;
+		}
+		$current = (string) get_bloginfo( 'version' );
+		$to      = is_object( $item ) && isset( $item->current ) ? (string) $item->current : '';
+		if ( ! self::core_minor_window() || ! self::same_branch( $current, $to ) || ! version_compare( $to, $current, '>' ) ) {
+			return false;
+		}
+		if ( $update ) {
+			self::$core_from = $current; // Before the update: compared after it (core_updated()).
+		}
+		return $update;
+	}
+
+	/**
+	 * 3.4.3: no plugin, theme or translation updates while WordPress updates itself on a locked site (they would
+	 * change files that stay in the fingerprint taken when it was locked). Outside that run the updater is off
+	 * anyway, and the value is left as it is.
+	 *
+	 * @param bool|null $update Update.
+	 * @return bool|null
+	 */
+	public static function no_auto_update( $update ) {
+		return self::core_minor_window() ? false : $update;
+	}
+
+	/**
+	 * 3.4.3: after WordPress updated itself to a minor release while locked: the files of WordPress that match
+	 * the official checksums of the new version are taken into the fingerprint (nothing else), and the event is
+	 * logged. A failed update is logged too.
+	 *
+	 * @param array<string, mixed> $results What the automatic updater did, per type.
+	 */
+	public static function core_updated( $results ) {
+		$from            = self::$core_from;
+		self::$core_from = '';
+		if ( '' === $from || ! is_array( $results ) || empty( $results['core'] ) || ! self::is_locked() ) {
+			return;
+		}
+		foreach ( (array) $results['core'] as $row ) {
+			if ( ! is_object( $row ) || ! isset( $row->result ) ) {
+				continue;
+			}
+			$to = isset( $row->item->current ) ? (string) $row->item->current : '';
+			if ( is_wp_error( $row->result ) ) {
+				self::event( 'core_update_failed', $from . ' → ' . $to . ': ' . $row->result->get_error_code() );
+				continue;
+			}
+			if ( ! $row->result || '' === $to ) {
+				continue;
+			}
+			$done = PNCP_Integrity::accept_core_update( $from, $to );
+			if ( null === $done ) {
+				$detail = __( 'the files were not taken into the fingerprint: no genuine fingerprint, or no official checksums for the new version', 'scrapelock' );
+			} elseif ( ! empty( $done['new'] ) ) {
+				$detail = __( 'a new fingerprint is being taken', 'scrapelock' );
+			} else {
+				/* translators: 1: number of files, 2: number of files */
+				$detail = sprintf( __( '%1$d files taken into the fingerprint, %2$d removed from it', 'scrapelock' ), $done['accepted'], $done['removed'] );
+			}
+			self::event( 'core_updated', $from . ' → ' . $to . ', ' . $detail );
+		}
 	}
 
 	/**
@@ -1645,7 +1901,7 @@ final class PNCP_Lockdown {
 			return $check;
 		}
 		$old = get_user_meta( $user_id, $meta_key, true );
-		$new = maybe_unserialize( $value );
+		$new = self::caps_value( $value );
 		if ( ( ! self::grants_staff( $old ) && ! self::grants_staff( $new ) ) || self::privileged( $new ) === self::privileged( $old ) ) {
 			return $check;
 		}
@@ -3354,12 +3610,13 @@ final class PNCP_Lockdown {
 	 *
 	 * @param string $subject Subject.
 	 * @param string $message Message.
+	 * @return bool 3.4.3: whether wp_mail() accepted it (false too when there is no valid address).
 	 */
 	private static function mail( $subject, $message ) {
 		$user = wp_get_current_user();
 		$to   = self::alert_to();
 		if ( ! is_email( $to ) ) {
-			return;
+			return false;
 		}
 		$body = $message . "\n\n"
 			/* translators: %s: user name */
@@ -3367,7 +3624,7 @@ final class PNCP_Lockdown {
 			/* translators: %s: IP address */
 			. sprintf( __( 'IP: %s', 'scrapelock' ), PNCP_Ip::client_ip() ) . "\n"
 			. self::page_url() . "\n";
-		wp_mail( $to, '[' . wp_specialchars_decode( get_bloginfo( 'name' ), ENT_QUOTES ) . '] ScrapeLock: ' . $subject, $body );
+		return (bool) wp_mail( $to, '[' . wp_specialchars_decode( get_bloginfo( 'name' ), ENT_QUOTES ) . '] ScrapeLock: ' . $subject, $body );
 	}
 
 	/**
@@ -3446,6 +3703,20 @@ final class PNCP_Lockdown {
 		} elseif ( $owner && ! self::is_locked() && ! self::unlocked_until() && 'stale' === PNCP_Seal::config_status() ) {
 			echo '<div class="notice notice-warning"><p>' . esc_html( self::config_remove_text() ) . '</p></div>';
 		}
+		if ( $owner && self::is_locked() ) {
+			// 3.4.3: updates cannot be installed while locked, security releases of WordPress among them. The
+			// count was only on the Lockdown tab, so a site locked "until I lock it again" missed them for months.
+			$updates = self::pending_updates();
+			if ( $updates ) {
+				$core = '' !== self::core_minor_offer();
+				/* translators: %d: number of updates */
+				$text = sprintf( _n( '%d update is waiting and cannot be installed while the site is locked.', '%d updates are waiting and cannot be installed while the site is locked.', $updates, 'scrapelock' ), $updates );
+				if ( $core ) {
+					$text .= ' ' . __( 'One of them is a security and maintenance release of WordPress: install it soon.', 'scrapelock' );
+				}
+				echo '<div class="notice ' . ( $core ? 'notice-error' : 'notice-warning' ) . '"><p><strong>ScrapeLock:</strong> ' . esc_html( $text ) . ' ' . esc_html__( 'Unlock for a while, update, then lock again.', 'scrapelock' ) . ' <a href="' . esc_url( self::page_url() ) . '">' . esc_html__( 'Unlock', 'scrapelock' ) . '</a></p></div>';
+			}
+		}
 		if ( self::is_locked() && self::is_staff( $user ) ) {
 			$text = 1 === self::staff_level( $user ) ? __( 'You can keep working on orders, products, coupons, reports and content. Plugins, themes, menus and widgets, users, settings, import and export stay frozen until an administrator unlocks the site with the authenticator app.', 'scrapelock' ) : __( 'Changes from wp-admin are disabled until an administrator unlocks the site with the authenticator app.', 'scrapelock' );
 			echo '<div class="notice notice-warning"><p><strong>' . esc_html__( 'This site is locked.', 'scrapelock' ) . '</strong> ' . esc_html( $text );
@@ -3515,9 +3786,25 @@ final class PNCP_Lockdown {
 		// phpcs:ignore WordPress.Security.NonceVerification -- Only skips the page for the lock's own pages.
 		$own = self::on_tab() || ( isset( $_REQUEST['action'] ) && self::ACTION === $_REQUEST['action'] );
 		if ( $user && ! $own && self::is_locked() && self::is_staff( $user ) ) {
+			// 3.4.3: a page that stops before themes are set up (the Customizer, on setup_theme) would load the
+			// translations "just in time", which WordPress reports as too early. The site language's file is
+			// loaded here directly; without one, the page is in English for this request, with no notice.
+			$early = ! did_action( 'after_setup_theme' ) && ! is_textdomain_loaded( 'scrapelock' );
+			if ( $early ) {
+				$locale = determine_locale();
+				load_textdomain( 'scrapelock', WP_LANG_DIR . '/plugins/scrapelock-' . $locale . '.mo', $locale );
+				$early = ! is_textdomain_loaded( 'scrapelock' );
+				if ( $early ) {
+					$GLOBALS['l10n_unloaded']               = isset( $GLOBALS['l10n_unloaded'] ) ? (array) $GLOBALS['l10n_unloaded'] : array(); // phpcs:ignore WordPress.WP.GlobalVariablesOverride.Prohibited -- Only for this page, put back below.
+					$GLOBALS['l10n_unloaded']['scrapelock'] = true; // phpcs:ignore WordPress.WP.GlobalVariablesOverride.Prohibited -- See above.
+				}
+			}
 			$detail  = is_wp_error( $message ) ? $message->get_error_message() : (string) $message;
 			$message = self::locked_page( self::is_owner( $user ), $detail );
 			$title   = __( 'The site is locked', 'scrapelock' );
+			if ( $early ) {
+				unset( $GLOBALS['l10n_unloaded']['scrapelock'] );
+			}
 			if ( is_array( $args ) && empty( $args['response'] ) ) {
 				$args['response'] = 403;
 			}
@@ -3536,10 +3823,15 @@ final class PNCP_Lockdown {
 	private static function locked_page( $owner, $detail ) {
 		$lock  = '<svg viewBox="0 0 24 24" width="40" height="40" aria-hidden="true" focusable="false"><path fill="currentColor" d="M12 2a5 5 0 0 0-5 5v3H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8a2 2 0 0 0-2-2h-1V7a5 5 0 0 0-5-5zm-3 5a3 3 0 1 1 6 0v3H9V7zm3 7a1.5 1.5 0 0 1 .75 2.8V18a.75.75 0 0 1-1.5 0v-1.2A1.5 1.5 0 0 1 12 14z"/></svg>';
 		// WordPress' error page prints no enqueued styles: the registered stylesheet is printed with the page.
-		wp_register_style( 'pncp-locked', PNCP_URL . 'assets/css/locked.css', array(), PNCP_VERSION );
-		ob_start();
-		wp_print_styles( 'pncp-locked' );
-		$style = (string) ob_get_clean();
+		// 3.4.3: before init (a page that stops that early) the styles API may not be used yet: a plain link then.
+		if ( did_action( 'init' ) ) {
+			wp_register_style( 'pncp-locked', PNCP_URL . 'assets/css/locked.css', array(), PNCP_VERSION );
+			ob_start();
+			wp_print_styles( 'pncp-locked' );
+			$style = (string) ob_get_clean();
+		} else {
+			$style = '<link rel="stylesheet" id="pncp-locked-css" href="' . esc_url( add_query_arg( 'ver', PNCP_VERSION, PNCP_URL . 'assets/css/locked.css' ) ) . '" media="all" />'; // phpcs:ignore WordPress.WP.EnqueuedResources.NonEnqueuedStylesheet -- See above.
+		}
 		$html  = $style . '<div class="pncp-locked">'
 			. '<div class="pncp-locked-icon">' . $lock . '</div>'
 			. '<h1>' . esc_html__( 'The site is locked', 'scrapelock' ) . '</h1>'
@@ -3583,6 +3875,153 @@ final class PNCP_Lockdown {
 	}
 
 	/**
+	 * 3.4.3: the updates waiting, WordPress first (its releases of the branch the site runs, the security and
+	 * maintenance ones, before a major release), then plugins and themes.
+	 *
+	 * @return array<int, array{kind:string, key:string, name:string, from:string, to:string}>
+	 */
+	private static function update_list() {
+		$current = (string) get_bloginfo( 'version' );
+		$minor   = array();
+		$major   = array();
+		$core    = get_site_transient( 'update_core' );
+		if ( is_object( $core ) && ! empty( $core->updates ) ) {
+			foreach ( (array) $core->updates as $offer ) {
+				if ( ! is_object( $offer ) || empty( $offer->current ) || ! isset( $offer->response ) || ! in_array( $offer->response, array( 'upgrade', 'autoupdate' ), true ) ) {
+					continue;
+				}
+				$to = (string) $offer->current;
+				if ( ! version_compare( $to, $current, '>' ) ) {
+					continue;
+				}
+				$row = array(
+					'kind' => self::same_branch( $current, $to ) ? 'core_minor' : 'core',
+					'key'  => 'wordpress',
+					'name' => 'WordPress',
+					'from' => $current,
+					'to'   => $to,
+				);
+				if ( 'core_minor' === $row['kind'] ) {
+					$minor[ $to ] = $row;
+				} else {
+					$major[ $to ] = $row;
+				}
+			}
+		}
+		$out     = array_merge( array_values( $minor ), array_values( $major ) );
+		$plugins = get_site_transient( 'update_plugins' );
+		if ( is_object( $plugins ) && ! empty( $plugins->response ) ) {
+			if ( ! function_exists( 'get_plugins' ) ) {
+				require_once ABSPATH . 'wp-admin/includes/plugin.php';
+			}
+			$installed = get_plugins();
+			foreach ( (array) $plugins->response as $file => $item ) {
+				$item  = (object) $item;
+				$file  = (string) $file;
+				$out[] = array(
+					'kind' => 'plugin',
+					'key'  => $file,
+					'name' => isset( $installed[ $file ]['Name'] ) && '' !== $installed[ $file ]['Name'] ? wp_strip_all_tags( (string) $installed[ $file ]['Name'] ) : $file,
+					'from' => isset( $installed[ $file ]['Version'] ) ? (string) $installed[ $file ]['Version'] : '',
+					'to'   => isset( $item->new_version ) && is_scalar( $item->new_version ) ? (string) $item->new_version : '',
+				);
+			}
+		}
+		$themes = get_site_transient( 'update_themes' );
+		if ( is_object( $themes ) && ! empty( $themes->response ) ) {
+			foreach ( (array) $themes->response as $slug => $item ) {
+				$item  = (array) $item;
+				$slug  = (string) $slug;
+				$theme = wp_get_theme( $slug );
+				$out[] = array(
+					'kind' => 'theme',
+					'key'  => $slug,
+					'name' => $theme->exists() ? wp_strip_all_tags( (string) $theme->get( 'Name' ) ) : $slug,
+					'from' => $theme->exists() ? (string) $theme->get( 'Version' ) : '',
+					'to'   => isset( $item['new_version'] ) && is_scalar( $item['new_version'] ) ? (string) $item['new_version'] : '',
+				);
+			}
+		}
+		return $out;
+	}
+
+	/**
+	 * 3.4.3: while the site is locked, emails the alert address the updates that are waiting (from the hourly
+	 * cron, at most once a day, and only when the list is not the one emailed last). Nothing can install them
+	 * while locked, and the count on the Lockdown tab is easy to miss on a site locked "until I lock it again".
+	 * Only the main site of a network (the updates are the network's).
+	 */
+	public static function mail_updates() {
+		if ( ( is_multisite() && ! is_main_site() ) || self::server_unlocked() || ! self::is_locked() ) {
+			return;
+		}
+		$list = self::update_list();
+		$sent = get_option( self::UPDATES_MAILED, array() );
+		$sent = is_array( $sent ) ? $sent : array();
+		if ( ! $list ) {
+			if ( $sent ) {
+				delete_option( self::UPDATES_MAILED ); // Installed (or withdrawn): the next waiting update is emailed.
+			}
+			return;
+		}
+		$keys = array();
+		foreach ( $list as $row ) {
+			$keys[] = $row['kind'] . '|' . $row['key'] . '|' . $row['to'];
+		}
+		sort( $keys );
+		$hash = md5( implode( "\n", $keys ) );
+		if ( isset( $sent['hash'] ) && is_string( $sent['hash'] ) && hash_equals( $sent['hash'], $hash ) ) {
+			return; // The same updates as in the last email.
+		}
+		$last = isset( $sent['time'] ) ? (int) $sent['time'] : 0;
+		if ( $last <= time() && time() - $last < DAY_IN_SECONDS ) {
+			return; // At most one email a day: the new list goes out tomorrow.
+		}
+		$groups = array(
+			'core_minor' => __( 'WordPress security and maintenance release (install it soon):', 'scrapelock' ),
+			'core'       => __( 'WordPress:', 'scrapelock' ),
+			'plugin'     => __( 'Plugins:', 'scrapelock' ),
+			'theme'      => __( 'Themes:', 'scrapelock' ),
+		);
+		$lines = array();
+		foreach ( $groups as $kind => $title ) {
+			$rows = wp_list_filter( $list, array( 'kind' => $kind ) );
+			if ( ! $rows ) {
+				continue;
+			}
+			$lines[] = '';
+			$lines[] = $title;
+			foreach ( array_slice( $rows, 0, 50 ) as $row ) {
+				$lines[] = '- ' . $row['name'] . ( '' !== $row['from'] ? ' ' . $row['from'] : '' ) . ( '' !== $row['to'] ? ' → ' . $row['to'] : '' );
+			}
+			if ( count( $rows ) > 50 ) {
+				/* translators: %d: number of updates */
+				$lines[] = sprintf( __( '… and %d more.', 'scrapelock' ), count( $rows ) - 50 );
+			}
+		}
+		$text = __( 'These updates are waiting, and WordPress cannot install them while the site is locked: not even its own security releases. To install them, unlock the site for a while on the Lockdown page (30 minutes is usually enough), install the updates, then lock it again (or let it lock again by itself).', 'scrapelock' );
+		/** This filter is documented in includes/class-pncp-lockdown.php (core_minor_window()). */
+		if ( true === apply_filters( 'pncp_lockdown_allow_core_minor', false ) && wp_list_filter( $list, array( 'kind' => 'core_minor' ) ) ) {
+			$text .= ' ' . __( 'The filter pncp_lockdown_allow_core_minor is on: WordPress may install its security and maintenance release by itself, if its automatic updates are on. Plugins and themes still wait for an unlock.', 'scrapelock' );
+		}
+		$mailed = self::mail( __( 'Updates are waiting while the site is locked', 'scrapelock' ), $text . "\n" . implode( "\n", $lines ) );
+		// 3.4.3: the list counts as emailed only once it was sent. When sending failed, the previous hash is kept
+		// and the time set so that the next try is in an hour (not on every cron run of a broken mailer).
+		$record = $mailed ? array(
+			'hash' => $hash,
+			'time' => time(),
+		) : array(
+			'hash' => isset( $sent['hash'] ) && is_string( $sent['hash'] ) ? $sent['hash'] : '',
+			'time' => time() - DAY_IN_SECONDS + HOUR_IN_SECONDS,
+		);
+		if ( false === get_option( self::UPDATES_MAILED, false ) ) {
+			add_option( self::UPDATES_MAILED, $record, '', false );
+		} else {
+			update_option( self::UPDATES_MAILED, $record, false );
+		}
+	}
+
+	/**
 	 * A form to admin-post with nonce and operation.
 	 *
 	 * @param string $op Operation.
@@ -3590,7 +4029,7 @@ final class PNCP_Lockdown {
 	private static function form_open( $op ) {
 		printf( '<form method="post" action="%s" class="pncp-ld-form">', esc_url( admin_url( 'admin-post.php' ) ) );
 		printf( '<input type="hidden" name="action" value="%s"><input type="hidden" name="op" value="%s">', esc_attr( self::ACTION ), esc_attr( $op ) );
-		wp_nonce_field( self::ACTION );
+		self::nonce_field( self::ACTION );
 	}
 
 	/**
@@ -3629,9 +4068,13 @@ final class PNCP_Lockdown {
 				echo '<div class="notice notice-error inline"><p>' . esc_html__( 'The app secret cannot be read: the security keys in wp-config.php have changed. Unlock with a recovery code, or from the server, then connect the app again.', 'scrapelock' ) . '</p></div>';
 			}
 			$codes = get_site_transient( 'pncp_ld_codes_' . get_current_user_id() );
+			if ( is_string( $codes ) && '' !== $codes ) {
+				delete_site_transient( 'pncp_ld_codes_' . get_current_user_id() );
+				$codes = json_decode( self::unseal( $codes ), true );
+			}
 			if ( is_array( $codes ) ) {
 				delete_site_transient( 'pncp_ld_codes_' . get_current_user_id() );
-				self::render_codes( $codes );
+				self::render_codes( array_map( 'strval', $codes ) );
 			}
 			self::render_config();
 			if ( ! self::is_locked() ) {
@@ -4003,7 +4446,7 @@ final class PNCP_Lockdown {
 			<p><?php esc_html_e( 'Install an authenticator app on your phone (Google Authenticator, Microsoft Authenticator, Authy, 1Password or similar). Then click the button: a QR code appears for the app to scan.', 'scrapelock' ); ?></p>
 			<?php
 			self::form_open( 'setup' );
-			submit_button( __( 'Connect the app', 'scrapelock' ), 'primary', 'submit', false );
+			submit_button( __( 'Connect the app', 'scrapelock' ), 'primary', 'submit', false, self::submit_attrs() );
 			echo '</form>';
 			?>
 		</div>
@@ -4026,10 +4469,10 @@ final class PNCP_Lockdown {
 			<?php
 			self::form_open( 'confirm' );
 			self::code_field();
-			submit_button( __( 'Confirm', 'scrapelock' ), 'primary', 'submit', false );
+			submit_button( __( 'Confirm', 'scrapelock' ), 'primary', 'submit', false, self::submit_attrs() );
 			echo '</form>';
 			self::form_open( 'cancel' );
-			submit_button( __( 'Cancel', 'scrapelock' ), 'link', 'submit', false );
+			submit_button( __( 'Cancel', 'scrapelock' ), 'link', 'submit', false, self::submit_attrs() );
 			echo '</form>';
 			?>
 		</div>
@@ -4116,17 +4559,21 @@ final class PNCP_Lockdown {
 				}
 				echo '</select></p>';
 				echo '<p><label><input type="checkbox" name="others" value="1"> ' . esc_html__( 'Also sign out all other sessions of this account', 'scrapelock' ) . '</label></p>';
-				submit_button( __( 'Unlock', 'scrapelock' ), 'primary', 'submit', false );
+				submit_button( __( 'Unlock', 'scrapelock' ), 'primary', 'submit', false, self::submit_attrs() );
 				echo '</form>';
 			} elseif ( $until ) {
 				self::form_open( 'relock' );
-				submit_button( __( 'Lock again now', 'scrapelock' ), 'primary', 'submit', false );
+				submit_button( __( 'Lock again now', 'scrapelock' ), 'primary', 'submit', false, self::submit_attrs() );
 				echo '</form>';
 			} elseif ( ! self::server_unlocked() ) {
 				self::form_open( 'lock' );
 				self::code_field();
 				if ( empty( $state['ack'] ) ) {
 					echo '<p><label><input type="checkbox" name="ack" value="1" required> ' . esc_html__( 'I have printed or saved my recovery codes, and I understand that only the app, a recovery code or access to the server files can unlock the site.', 'scrapelock' ) . '</label></p>';
+				}
+				if ( ! PNCP_Seal::keys_in_config() && ! ( defined( 'SCRAPELOCK_KEY' ) && is_string( SCRAPELOCK_KEY ) && strlen( SCRAPELOCK_KEY ) >= 32 ) ) {
+					// The keys the lock is encrypted and signed with are then kept by WordPress in the database.
+					echo '<div class="notice notice-warning inline"><p>' . esc_html__( 'AUTH_KEY and AUTH_SALT are not defined in wp-config.php, and neither is SCRAPELOCK_KEY, so WordPress keeps the keys Lockdown encrypts and signs its data with in the database: someone who can change the database directly could also read them and get around the lock. You can still lock, but for full protection add the keys to wp-config.php (from https://api.wordpress.org/secret-key/1.1/salt/) and connect the authenticator app again.', 'scrapelock' ) . '</p></div>';
 				}
 				if ( ! PNCP_Seal::can_write_guard() ) {
 					$beacon = PNCP_Seal::beacon_writable_dir();
@@ -4140,7 +4587,7 @@ final class PNCP_Lockdown {
 					echo '</p></div>';
 					echo '<p><label><input type="checkbox" name="weak" value="1"> ' . esc_html__( 'Lock without the guard file (weaker)', 'scrapelock' ) . '</label></p>';
 				}
-				submit_button( __( 'Lock the site', 'scrapelock' ), 'primary', 'submit', false );
+				submit_button( __( 'Lock the site', 'scrapelock' ), 'primary', 'submit', false, self::submit_attrs() );
 				echo '</form>';
 			}
 			?>
@@ -4155,7 +4602,7 @@ final class PNCP_Lockdown {
 				<?php
 				self::form_open( 'codes' );
 				self::code_field();
-				submit_button( __( 'Create new recovery codes', 'scrapelock' ), 'secondary', 'submit', false );
+				submit_button( __( 'Create new recovery codes', 'scrapelock' ), 'secondary', 'submit', false, self::submit_attrs() );
 				echo '</form>';
 				if ( ! $until ) {
 					echo '<hr>';
@@ -4163,7 +4610,7 @@ final class PNCP_Lockdown {
 					if ( ! self::server_unlocked() ) {
 						self::code_field();
 					}
-					submit_button( __( 'Remove the authenticator app', 'scrapelock' ), 'delete', 'submit', false );
+					submit_button( __( 'Remove the authenticator app', 'scrapelock' ), 'delete', 'submit', false, self::submit_attrs() );
 					echo '</form>';
 				}
 				?>
@@ -4193,7 +4640,7 @@ final class PNCP_Lockdown {
 			<?php
 			self::form_open( 'sessions' );
 			self::code_field( true );
-			submit_button( __( 'Sign out all other sessions of this account', 'scrapelock' ), 'secondary', 'submit', false );
+			submit_button( __( 'Sign out all other sessions of this account', 'scrapelock' ), 'secondary', 'submit', false, self::submit_attrs() );
 			echo '</form>';
 			?>
 		</div>
@@ -4243,7 +4690,7 @@ final class PNCP_Lockdown {
 			</ul>
 			<?php
 			self::code_field();
-			submit_button( __( 'Save frozen roles', 'scrapelock' ), 'secondary', 'submit', false );
+			submit_button( __( 'Save frozen roles', 'scrapelock' ), 'secondary', 'submit', false, self::submit_attrs() );
 			echo '</form>';
 			?>
 		</div>
@@ -4264,7 +4711,7 @@ final class PNCP_Lockdown {
 			<p class="description"><?php esc_html_e( 'Nothing is deleted. A deactivated plugin may be one your site needs (for example the shop or the forms), so it stays off until you check it, unlock and activate it again. ScrapeLock itself is never deactivated. Off by default: you are emailed either way.', 'scrapelock' ); ?></p>
 			<?php
 			self::code_field();
-			submit_button( __( 'Save quarantine', 'scrapelock' ), 'secondary', 'submit', false );
+			submit_button( __( 'Save quarantine', 'scrapelock' ), 'secondary', 'submit', false, self::submit_attrs() );
 			echo '</form>';
 			?>
 		</div>
@@ -4303,6 +4750,8 @@ final class PNCP_Lockdown {
 			'stale_file'    => __( 'Old lock file from before the last unlock removed', 'scrapelock' ),
 			'lock_file'     => __( 'Signed copy of the lock written outside the database', 'scrapelock' ),
 			'db_lock'       => __( 'Code-check lock held from outside; ScrapeLock\'s own lock used', 'scrapelock' ),
+			'core_updated'  => __( 'WordPress installed a minor release while locked', 'scrapelock' ),
+			'core_update_failed' => __( 'WordPress could not install a minor release while locked', 'scrapelock' ),
 		);
 		?>
 		<h2><?php esc_html_e( 'Recent lockdown events', 'scrapelock' ); ?></h2>
@@ -4379,6 +4828,7 @@ final class PNCP_Lockdown {
 			$state['unlock_session'] = '';
 			self::save( $state );
 			self::event( 'relocked' );
+			self::mail( __( 'The site was locked again', 'scrapelock' ), __( 'The site was locked again on the Lockdown page after being unlocked for a while.', 'scrapelock' ) ); // 3.4.3.
 			PNCP_Integrity::snapshot(); // Updates may have run while it was open: a new fingerprint.
 			// Staff could not add application passwords while it was open either: new ones on the accounts the
 			// last snapshot knew were added in the database. Removed before the new snapshot would accept them.
@@ -4472,7 +4922,7 @@ final class PNCP_Lockdown {
 			PNCP_Seal::forget_snapshots();
 			PNCP_Seal::forget_window();
 			PNCP_Integrity::forget();
-			set_site_transient( 'pncp_ld_codes_' . $user, $codes, 2 * MINUTE_IN_SECONDS );
+			set_site_transient( 'pncp_ld_codes_' . $user, self::seal( (string) wp_json_encode( $codes ) ), 2 * MINUTE_IN_SECONDS ); // Encrypted, as the secret: not readable from a copy of the database or the object cache.
 			self::event( 'connected' );
 			self::back( 'connected' );
 		}
@@ -4551,6 +5001,8 @@ final class PNCP_Lockdown {
 				$how = __( 'without the guard file, without any signed copy outside the database until the lock line SCRAPELOCK_LOCKED is added to wp-config.php', 'scrapelock' );
 			}
 			self::event( 'locked', $how );
+			// 3.4.3: every lock is emailed too, as every unlock is.
+			self::mail( __( 'The site was locked', 'scrapelock' ), __( 'The site was locked on the Lockdown page. Plugins, themes, users, roles and settings cannot be changed until it is unlocked with the authenticator app or a recovery code.', 'scrapelock' ) . ( '' !== $how ? "\n\n" . $how : '' ) );
 			// The snapshot of the protected options first: the file fingerprint starts a background request
 			// (the official checksums), which must find the snapshot of this lock already there.
 			PNCP_Seal::take_snapshot();
@@ -4619,7 +5071,7 @@ final class PNCP_Lockdown {
 			$codes          = self::new_codes();
 			$state['codes'] = array_map( array( __CLASS__, 'hash_code' ), $codes );
 			self::save( $state );
-			set_site_transient( 'pncp_ld_codes_' . $user, $codes, 2 * MINUTE_IN_SECONDS );
+			set_site_transient( 'pncp_ld_codes_' . $user, self::seal( (string) wp_json_encode( $codes ) ), 2 * MINUTE_IN_SECONDS ); // Encrypted, as the secret: not readable from a copy of the database or the object cache.
 			self::event( 'codes' );
 			self::back( 'codes' );
 		}
@@ -4657,5 +5109,26 @@ final class PNCP_Lockdown {
 		self::event( 'removed' );
 		self::mail( __( 'The authenticator app was removed', 'scrapelock' ), __( 'The authenticator app was removed from the Lockdown page and the lock is off. If it was not you, change the administrators\' passwords.', 'scrapelock' ) );
 		self::back( 'removed' );
+	}
+	/**
+	 * 3.4.3: wp_nonce_field() without its id="_wpnonce", which repeated on every form of a page. The field name
+	 * and the referer field stay the same, so the nonce is checked as before.
+	 *
+	 * @param string $action Nonce action.
+	 */
+	private static function nonce_field( $action ) {
+		echo preg_replace( '/ id="_wpnonce"/', '', wp_nonce_field( $action, '_wpnonce', true, false ), 1 ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Core markup.
+	}
+
+	/**
+	 * 3.4.3: a unique id for a submit button (submit_button() gives every one id="submit"). The button keeps the
+	 * name "submit".
+	 *
+	 * @return array<string, string> Attributes for submit_button().
+	 */
+	private static function submit_attrs() {
+		static $n = 0;
+		++$n;
+		return array( 'id' => 'pncp-lockdown-submit-' . $n );
 	}
 }

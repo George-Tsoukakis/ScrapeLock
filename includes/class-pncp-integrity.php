@@ -564,10 +564,19 @@ final class PNCP_Integrity {
 	/**
 	 * Reads a stored value (a site option on multisite).
 	 *
-	 * @param string $name Option.
+	 * @param string $name  Option.
+	 * @param bool   $fresh 3.4.3: read from the database, not the copy cached earlier in this request (a long
+	 *                      run reads the report again before it stores it).
 	 * @return mixed
 	 */
-	private static function get( $name ) {
+	private static function get( $name, $fresh = false ) {
+		if ( $fresh ) {
+			if ( is_multisite() ) {
+				wp_cache_delete( get_current_network_id() . ':' . $name, 'site-options' );
+			} else {
+				wp_cache_delete( $name, 'options' );
+			}
+		}
 		return is_multisite() ? get_site_option( $name, array() ) : get_option( $name, array() );
 	}
 
@@ -595,7 +604,7 @@ final class PNCP_Integrity {
 	 * @return array{time:int, files:array<string,string>, complete:bool, stale:bool}
 	 */
 	public static function baseline() {
-		$stored   = self::get( self::BASELINE );
+		$stored   = self::get( self::BASELINE, true ); // 3.4.3: the row, also with a persistent object cache.
 		$files    = array();
 		$tampered = false;
 		if ( is_array( $stored ) && $stored ) {
@@ -682,10 +691,11 @@ final class PNCP_Integrity {
 	/**
 	 * The last report.
 	 *
+	 * @param bool $fresh 3.4.3: read from the database (see get()).
 	 * @return array<string, mixed>
 	 */
-	public static function report() {
-		$report = self::get( self::REPORT );
+	public static function report( $fresh = false ) {
+		$report = self::get( self::REPORT, $fresh );
 		return array_merge(
 			array(
 				'time'     => 0,
@@ -853,9 +863,7 @@ final class PNCP_Integrity {
 		if ( ! wp_next_scheduled( self::RESUME ) ) {
 			wp_schedule_single_event( time(), self::RESUME );
 		}
-		if ( function_exists( 'spawn_cron' ) ) {
-			spawn_cron();
-		}
+		pncp_spawn_cron(); // 3.4.3: not where DISABLE_WP_CRON is set (the owner's cron runs it).
 	}
 
 	/**
@@ -891,9 +899,7 @@ final class PNCP_Integrity {
 		if ( ! wp_next_scheduled( self::OFFICIAL ) ) {
 			wp_schedule_single_event( time(), self::OFFICIAL );
 		}
-		if ( function_exists( 'spawn_cron' ) ) {
-			spawn_cron();
-		}
+		pncp_spawn_cron(); // 3.4.3: not where DISABLE_WP_CRON is set (the owner's cron runs it).
 	}
 
 	/**
@@ -907,8 +913,12 @@ final class PNCP_Integrity {
 			return;
 		}
 		// 3.4.2: goes on with the plugins an earlier run had no time for, or starts a new comparison.
-		$prev               = (array) $report['official'];
-		$report['official'] = self::official( $base['files'], null, ! empty( $prev['left'] ) && empty( $prev['pending'] ) ? $prev : null );
+		$prev     = (array) $report['official'];
+		$official = self::official( $base['files'], null, ! empty( $prev['left'] ) && empty( $prev['pending'] ) ? $prev : null );
+		// 3.4.3: the comparison can take a minute; the report is read again before it is stored, so a check that
+		// ran meanwhile ("Check now", WP-CLI, another cron run) keeps the files it found.
+		$report             = self::report( true );
+		$report['official'] = $official;
 		self::put( self::REPORT, $report );
 		self::alert( $report );
 		if ( ! empty( $report['official']['left'] ) ) {
@@ -930,16 +940,119 @@ final class PNCP_Integrity {
 	}
 
 	/**
+	 * 3.4.3: WordPress updated itself to a minor release while the site was locked (only with the filter
+	 * pncp_lockdown_allow_core_minor, see PNCP_Lockdown::core_minor_window()). The code files of WordPress itself
+	 * (wp-admin, wp-includes and its own folder, not wp-content) that now match the official checksums of the new
+	 * version are taken into the fingerprint, and the code files of the old version that the update removed are
+	 * taken out of it. Nothing else is accepted: a file of WordPress that differs from the official copy keeps
+	 * its old hash and is reported, and the plugins, themes and uploads keep the fingerprint taken when the site
+	 * was locked. The time of the fingerprint stays the same (the signed lock state notes it), and the
+	 * comparison with the official checksums is taken again, for the new version.
+	 *
+	 * @param string $from Version before the update.
+	 * @param string $to   Version installed.
+	 * @return array{accepted:int, removed:int, new:bool}|null Null when nothing was taken: no genuine fingerprint
+	 *                                                        (the hourly check handles that), or no official
+	 *                                                        checksums for the new version (the changed files
+	 *                                                        are then reported).
+	 */
+	public static function accept_core_update( $from, $to ) {
+		$scan = self::scan();
+		if ( null !== $scan && 'snapshot' === $scan['mode'] ) {
+			// A fingerprint was still being taken, with some files of the old version read: it starts again from
+			// the files as they are now (what the pass would have taken anyway).
+			self::snapshot();
+			return array(
+				'accepted' => 0,
+				'removed'  => 0,
+				'new'      => true,
+			);
+		}
+		self::drop_scan(); // A check still going on read some files from before the update: it starts again.
+		$base = self::baseline();
+		if ( $base['tampered'] || ! $base['time'] || $base['stale'] || ! $base['files'] ) {
+			return null;
+		}
+		global $wp_local_package;
+		$package = isset( $wp_local_package ) && is_string( $wp_local_package ) && '' !== $wp_local_package ? $wp_local_package : 'en_US';
+		$sums    = static function ( $version ) use ( $package ) {
+			$found = self::core_checksums( (string) $version, $package );
+			if ( null === $found && 'en_US' !== $package ) {
+				$found = self::core_checksums( (string) $version, 'en_US' );
+			}
+			return is_array( $found ) ? $found : array();
+		};
+		$new = $sums( $to );
+		if ( ! $new ) {
+			return null;
+		}
+		$old      = '' !== (string) $from ? $sums( $from ) : array();
+		$root     = trailingslashit( self::locations()['core'] );
+		$files    = $base['files'];
+		$accepted = 0;
+		$removed  = 0;
+		foreach ( $new as $rel => $expected ) {
+			$rel  = (string) $rel;
+			$path = $root . $rel;
+			if ( ! is_string( $expected ) || 0 === strpos( $rel, 'wp-content/' ) || ! self::is_code( $rel ) || ! is_file( $path ) ) {
+				continue;
+			}
+			if ( isset( $files[ $path ] ) && self::volatile( $files[ $path ] ) ) {
+				continue;
+			}
+			$hashes = self::hash_both( $path );
+			if ( null === $hashes || ! hash_equals( strtolower( $expected ), $hashes[1] ) ) {
+				continue; // Not the official copy: keeps its old hash, so the check reports it.
+			}
+			if ( ! isset( $files[ $path ] ) || $files[ $path ] !== $hashes[0] ) {
+				$files[ $path ] = $hashes[0];
+				++$accepted;
+			}
+		}
+		// Removed by the update: part of the old version, not of the new one, and gone. Without the checksums of
+		// the old version nothing is taken out (a removed file is then reported once).
+		foreach ( array_keys( $files ) as $path ) {
+			$path = (string) $path;
+			$rel  = 0 === strpos( $path, $root ) ? substr( $path, strlen( $root ) ) : '';
+			if ( '' !== $rel && isset( $old[ $rel ] ) && ! isset( $new[ $rel ] ) && ! file_exists( $path ) ) {
+				unset( $files[ $path ] );
+				++$removed;
+			}
+		}
+		if ( $accepted || $removed ) {
+			$stored = self::get( self::BASELINE );
+			ksort( $files );
+			$stored['files'] = base64_encode( (string) gzcompress( (string) wp_json_encode( $files ), 6 ) ); // phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.obfuscation_base64_encode -- Compressed list of file hashes, stored as text.
+			self::put_baseline( $stored );
+		}
+		$report             = self::report();
+		$report['official'] = array( 'pending' => true );
+		self::put( self::REPORT, $report );
+		self::schedule_official();
+		return array(
+			'accepted' => $accepted,
+			'removed'  => $removed,
+			'new'      => false,
+		);
+	}
+
+	/**
 	 * Deletes the fingerprint when the lock ends for good (the app removed, or a new app connected): the next lock
 	 * takes a new one, and a fingerprint left behind would still say "the site was locked"
 	 * (fingerprint_while_locked()).
 	 */
 	public static function forget() {
 		self::drop_scan();
-		if ( is_multisite() ) {
-			delete_site_option( self::BASELINE );
-		} else {
-			delete_option( self::BASELINE );
+		// 3.4.3: with the app removed (Lockdown no longer set up), the report goes too: its files belong to the
+		// fingerprint deleted here, and without Lockdown the box that lists them (and "Take a new fingerprint")
+		// is not shown, so Site Health and the notice on every wp-admin page would report them for good.
+		$names = PNCP_Lockdown::configured() ? array( self::BASELINE ) : array( self::BASELINE, self::REPORT );
+		foreach ( $names as $name ) {
+			if ( is_multisite() ) {
+				delete_site_option( $name );
+			} else {
+				delete_option( $name );
+			}
 		}
 	}
 
@@ -1026,16 +1139,19 @@ final class PNCP_Integrity {
 				$changed[] = $path;
 			}
 		}
-		$report             = self::report();
+		// The official checksums once a day: each plugin is one request to WordPress.org. 3.4.3: compared before
+		// the report is read, so what another run stored meanwhile is not overwritten with an older copy.
+		$official = self::report( true )['official'];
+		$official = empty( $official['time'] ) || time() - (int) $official['time'] > DAY_IN_SECONDS ? self::official( $now['files'], $now['md5'] ) : null;
+		$report   = self::report( true );
+		if ( null !== $official ) {
+			$report['official'] = $official;
+		}
 		$report['time']     = time();
 		$report['added']    = $added;
 		$report['changed']  = $changed;
 		$report['removed']  = $removed;
 		$report['complete'] = $now['complete'] && $base['complete'];
-		// The official checksums once a day: each plugin is one request to WordPress.org.
-		if ( empty( $report['official']['time'] ) || time() - (int) $report['official']['time'] > DAY_IN_SECONDS ) {
-			$report['official'] = self::official( $now['files'], $now['md5'] );
-		}
 		self::put( self::REPORT, $report );
 		if ( ! empty( $report['official']['left'] ) && empty( $report['official']['pending'] ) ) {
 			self::schedule_official(); // The plugins it had no time for, in the next run (3.4.2).
@@ -1211,9 +1327,14 @@ final class PNCP_Integrity {
 		$base   = trailingslashit( $where['core'] );
 		$worked = false; // At least one plugin per run, so the comparison always moves on.
 
-		// WordPress itself: wp-admin, wp-includes and the files in its root folder (in the first run).
-		$core = null === $todo ? self::core_checksums( get_bloginfo( 'version' ), get_locale() ) : null;
-		if ( null === $todo && null === $core && 'en_US' !== get_locale() ) {
+		// WordPress itself: wp-admin, wp-includes and the files in its root folder (in the first run). The
+		// checksums are those of the package WordPress was installed from ($wp_local_package, as WordPress's own
+		// updater and "wp core verify-checksums" use), not of the language the site is set to now: a site
+		// installed in English and switched to another language later has the English wp-includes/version.php.
+		global $wp_local_package;
+		$package = isset( $wp_local_package ) && is_string( $wp_local_package ) && '' !== $wp_local_package ? $wp_local_package : 'en_US';
+		$core    = null === $todo ? self::core_checksums( get_bloginfo( 'version' ), $package ) : null;
+		if ( null === $todo && null === $core && 'en_US' !== $package ) {
 			$core = self::core_checksums( get_bloginfo( 'version' ), 'en_US' );
 		}
 		if ( is_array( $core ) && $core ) {
@@ -1439,7 +1560,8 @@ final class PNCP_Integrity {
 		unset( $slugs[ $own ] );
 		$active = array();
 		foreach ( (array) get_option( 'active_plugins', array() ) as $file ) {
-			if ( isset( $slugs[ dirname( (string) $file ) ] ) ) {
+			// A plugin in a folder of its own by its folder, a single-file plugin (e.g. hello.php) by its file.
+			if ( isset( $slugs[ '.' === dirname( (string) $file ) ? (string) $file : dirname( (string) $file ) ] ) ) {
 				$active[] = (string) $file;
 			}
 		}
@@ -1585,10 +1707,31 @@ final class PNCP_Integrity {
 			<?php endif; ?>
 			<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>">
 				<input type="hidden" name="action" value="<?php echo esc_attr( self::ACTION ); ?>">
-				<?php wp_nonce_field( self::ACTION ); ?>
-				<?php submit_button( PNCP_Lockdown::is_locked() ? __( 'Check now', 'scrapelock' ) : __( 'Take a new fingerprint', 'scrapelock' ), 'secondary', 'submit', false ); ?>
+				<?php self::nonce_field( self::ACTION ); ?>
+				<?php submit_button( PNCP_Lockdown::is_locked() ? __( 'Check now', 'scrapelock' ) : __( 'Take a new fingerprint', 'scrapelock' ), 'secondary', 'submit', false, self::submit_attrs() ); ?>
 			</form>
 		</div>
 		<?php
+	}
+	/**
+	 * 3.4.3: wp_nonce_field() without its id="_wpnonce", which repeated on every form of a page. The field name
+	 * and the referer field stay the same, so the nonce is checked as before.
+	 *
+	 * @param string $action Nonce action.
+	 */
+	private static function nonce_field( $action ) {
+		echo preg_replace( '/ id="_wpnonce"/', '', wp_nonce_field( $action, '_wpnonce', true, false ), 1 ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Core markup.
+	}
+
+	/**
+	 * 3.4.3: a unique id for a submit button (submit_button() gives every one id="submit"). The button keeps the
+	 * name "submit".
+	 *
+	 * @return array<string, string> Attributes for submit_button().
+	 */
+	private static function submit_attrs() {
+		static $n = 0;
+		++$n;
+		return array( 'id' => 'pncp-integrity-submit-' . $n );
 	}
 }

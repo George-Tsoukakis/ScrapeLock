@@ -88,7 +88,7 @@ final class PNCP_Feed {
 			/* translators: 1: site name, 2: article link */
 			__( 'Read the full article at %1$s: %2$s', 'scrapelock' ),
 			wp_strip_all_tags( get_bloginfo( 'name' ) ),
-			get_permalink()
+			esc_url( get_permalink() )
 		);
 		return trim( $excerpt ) . ' ' . $text;
 	}
@@ -122,7 +122,8 @@ final class PNCP_Feed {
 	 */
 	private static function excerpt_text() {
 		$post = get_post();
-		if ( ! $post ) {
+		// A password-protected article gives nothing away: neither its excerpt nor the start of its text.
+		if ( ! $post || post_password_required( $post ) ) {
 			return '';
 		}
 		if ( has_excerpt( $post ) ) {
@@ -167,7 +168,7 @@ final class PNCP_Feed {
 	 */
 	public static function note_post_content( $content ) {
 		$post                 = get_post();
-		self::$post_content[] = $post instanceof WP_Post && ! is_singular() && '' !== (string) $content && get_the_content( null, false, $post ) === (string) $content;
+		self::$post_content[] = $post instanceof WP_Post && ! is_singular() && '' !== (string) $content && (string) $content === get_the_content( null, false, $post );
 		return $content;
 	}
 

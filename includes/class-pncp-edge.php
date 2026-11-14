@@ -925,6 +925,7 @@ final class PNCP_Edge {
 				$res  = self::remove( $c, $key, $rule, $calls );
 				if ( 'ok' === $res['status'] ) {
 					self::commit_queue_item( $id, $key, null );
+					unset( $items[ $key ] ); // Gone: never listed below as left at the CDN.
 				} elseif ( 'wait' === $res['status'] ) {
 					$wait = self::wait_for( $res['status'] );
 					break 2;
@@ -942,11 +943,15 @@ final class PNCP_Edge {
 					if ( $rule['fails'] >= self::TRIES ) {
 						self::commit_queue_item( $id, $key, null );
 						self::record_dropped( $c['provider'], $key, $res['message'] );
+						unset( $items[ $key ] ); // Listed once already.
 					} else {
 						self::commit_queue_item( $id, $key, $rule );
 					}
 				} else {
-					break 2; // Network or server error: next run.
+					// Network or server error: the next run in a few minutes (3.4.3: not every minute, each with a
+					// call that may wait 10 seconds, while the CDN cannot be reached), as for the current blocks.
+					$wait = self::wait_for( $res['status'] );
+					break 2;
 				}
 			}
 		}
@@ -1682,10 +1687,13 @@ final class PNCP_Edge {
 	 * 3.4.2: why the CDN could not be reached, in words an owner (or their host) can act on.
 	 *
 	 * @param WP_Error $error The error of the HTTP request.
+	 * @param string   $token The token, never part of the message.
 	 * @return string
 	 */
-	private static function network_message( $error ) {
-		$text = (string) $error->get_error_message();
+	private static function network_message( $error, $token = '' ) {
+		// 3.4.3: the token is taken out before the text is cut to 200 characters; cut first, a token across the cut
+		// was no longer found whole and its first part was saved and shown.
+		$text = self::redact( (string) $error->get_error_message(), $token );
 		$hint = '';
 		if ( 'http_request_not_executed' === $error->get_error_code() ) {
 			$hint = __( 'WordPress blocks requests to other sites on this server (WP_HTTP_BLOCK_EXTERNAL in wp-config.php): add the CDN\'s API host (api.cloudflare.com or api.bunny.net) to WP_ACCESSIBLE_HOSTS.', 'scrapelock' );
@@ -1701,6 +1709,19 @@ final class PNCP_Edge {
 		/* translators: %s: error message */
 		$message = sprintf( __( 'The CDN could not be reached: %s', 'scrapelock' ), substr( sanitize_text_field( $text ), 0, 200 ) );
 		return '' !== $hint ? $message . ' ' . $hint : $message;
+	}
+
+	/**
+	 * Replaces the token in a text from the CDN or the HTTP layer with "[token]".
+	 *
+	 * @param string $text  Text.
+	 * @param string $token Token.
+	 * @return string
+	 */
+	private static function redact( $text, $token ) {
+		$text  = (string) $text;
+		$token = (string) $token;
+		return strlen( $token ) >= 8 ? str_replace( $token, '[token]', $text ) : $text;
 	}
 
 	/**
@@ -1774,7 +1795,7 @@ final class PNCP_Edge {
 				'status'  => 'error',
 				'code'    => 0,
 				'json'    => array(),
-				'message' => self::network_message( $response ),
+				'message' => self::redact( self::network_message( $response, $c['token'] ), $c['token'] ),
 				'kind'    => 'network',
 			);
 		}
@@ -1811,7 +1832,8 @@ final class PNCP_Edge {
 		} elseif ( isset( $json['Message'] ) && is_scalar( $json['Message'] ) ) {
 			$detail = (string) $json['Message']; // Bunny.
 		}
-		$detail = substr( sanitize_text_field( $detail ), 0, 200 );
+		// Never the token, even if an answer quoted it back: the message is saved (last error) and shown.
+		$detail = substr( sanitize_text_field( self::redact( $detail, $c['token'] ) ), 0, 200 );
 		$kind   = '';
 		if ( 429 === $code ) {
 			$status  = 'wait';

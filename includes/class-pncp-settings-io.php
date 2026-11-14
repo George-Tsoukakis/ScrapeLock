@@ -190,8 +190,10 @@ final class PNCP_Settings_Io {
 	 * @return string
 	 */
 	public static function reason_label( $item ) {
-		$parts = explode( ':', (string) $item['reason'], 2 );
-		$what  = isset( $parts[1] ) ? $parts[1] : '';
+		// 3.4.3: a version without a reason (a damaged option) is listed without warnings.
+		$reason = isset( $item['reason'] ) ? (string) $item['reason'] : '';
+		$parts  = explode( ':', $reason, 2 );
+		$what   = isset( $parts[1] ) ? $parts[1] : '';
 		switch ( $parts[0] ) {
 			case 'profile':
 				$names = array(
@@ -213,7 +215,7 @@ final class PNCP_Settings_Io {
 				/* translators: %s: WP-CLI command */
 				return sprintf( __( 'Before “wp scrapelock settings %s”', 'scrapelock' ), $what );
 		}
-		return (string) $item['reason'];
+		return $reason;
 	}
 
 	/**
@@ -295,7 +297,8 @@ final class PNCP_Settings_Io {
 		$ignored  = array();
 		foreach ( $data as $key => $value ) {
 			$key = (string) $key;
-			if ( ! in_array( $key, $known, true ) || ! is_scalar( $value ) ) {
+			$value = in_array( $key, $known, true ) ? self::import_value( $key, $value ) : null;
+			if ( null === $value ) {
 				$ignored[] = sanitize_key( $key );
 				continue;
 			}
@@ -308,6 +311,40 @@ final class PNCP_Settings_Io {
 			'settings' => $settings,
 			'ignored'  => array_values( array_filter( $ignored ) ),
 		);
+	}
+
+	/**
+	 * One value of an import file as the settings form would send it, or null when it cannot be one (it is then
+	 * left out and named, and the setting keeps its current value). An on/off setting written by hand as "false"
+	 * or "off" would otherwise be read as on, a number written as text ("sixty") as 0 (no limit), and a choice
+	 * that does not exist as its default.
+	 *
+	 * @param string $key   Setting.
+	 * @param mixed  $value Value from the file.
+	 * @return mixed|null
+	 */
+	private static function import_value( $key, $value ) {
+		if ( ! is_scalar( $value ) ) {
+			return null;
+		}
+		if ( in_array( $key, PNCP_Options::bool_keys(), true ) ) {
+			if ( is_string( $value ) ) {
+				$value = filter_var( trim( $value ), FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE );
+				if ( null === $value ) {
+					return null;
+				}
+			}
+			return empty( $value ) ? 0 : 1;
+		}
+		if ( isset( PNCP_Options::int_ranges()[ $key ] ) ) {
+			$value = is_string( $value ) ? trim( $value ) : $value;
+			return is_bool( $value ) || ! is_numeric( $value ) ? null : $value;
+		}
+		$choices = PNCP_Options::choices();
+		if ( isset( $choices[ $key ] ) && ! in_array( sanitize_key( (string) $value ), $choices[ $key ], true ) ) {
+			return null;
+		}
+		return $value;
 	}
 
 	/**
