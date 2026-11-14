@@ -4,7 +4,7 @@ Tags: ai crawlers, anti-scraping, bot protection, rate limit, content protection
 Requires at least: 6.2
 Tested up to: 7.2
 Requires PHP: 7.4
-Stable tag: 3.5.0
+Stable tag: 3.5.1
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -267,6 +267,14 @@ No, on purpose: only an app code, a recovery code or the SCRAPELOCK_UNLOCK line 
 6. Dashboard widget with the protection status and the last 24 hours.
 
 == Changelog ==
+
+= 3.5.1 =
+* Security: a loopback or server address in the "Real visitor IP" header no longer counts as the server itself. With "Trust Bunny CDN addresses" on and no CDN secret, anyone could point a Bunny pull zone of their own at the site, send `X-Real-IP: 127.0.0.1` and skip every check (blocks, bans, the bot list and the limits), also in the early and pre-cache checks. A request now counts as the server itself only when every address on its way is the server or its private network and the IP can be trusted (cron, cache preload and a local Nginx or Varnish work as before). The same holds for "Trust every proxy".
+* Security: a CDN edge trusted for the "Real visitor IP" header that sends no IP in it (header missing or not an IP) is no longer treated as a shared edge exempt from the per-IP checks: this site's own CDN always writes the header, so such a request came through someone else's zone. It is now limited and blocked like any other address.
+* Security: the DNS lookups that verify Applebot, YandexBot and the other crawlers are taken from the per-minute budget with an atomic increment. Before, many requests at the same moment read the same count and all started a lookup, each holding a PHP worker.
+* Fix: a real crawler whose DNS verification could not finish (a DNS failure, or the budget used up by fake ones) is no longer refused for lacking browser headers ("Browsers only", also turned on by Emergency Mode). The limits still apply to it.
+* Lockdown: the hourly file and administrator checks are scheduled again when their event was moved more than 2 hours ahead, or to a longer interval, directly in the database (the "cron" option). This is noted in the lockdown log.
+* Performance: with a persistent object cache (Redis, Memcached), Lockdown no longer rewrites the whole "alloptions" cache entry on every request, only when a value changed. This also stops it from overwriting a newer copy written by another request.
 
 = 3.5.0 =
 * New: "Check a request" on the Log tab. Pick a preset (GPTBot, a fake Googlebot, curl, python-requests, a browser without browser headers, a real browser, your own request) or type an IP, User-Agent and address, and see whether ScrapeLock would allow, block or limit it, the reason, why, and a link to the setting. It runs the same side-effect-free check as `wp scrapelock check`: nothing is counted, logged or banned. The card says what it does not simulate (the 404 limit, cart and checkout limits, the early and pre-cache checks, the bot trap, server and CDN rules) and gives copy-ready curl lines built from the site's public address (never a token). Administrators only (nonce and `manage_options`), and not while the site is locked.
