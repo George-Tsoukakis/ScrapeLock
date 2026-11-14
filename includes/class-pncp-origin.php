@@ -136,7 +136,7 @@ final class PNCP_Origin {
 		if ( ! self::forwarded() ) {
 			return true;
 		}
-		return PNCP_Ip::is_local( PNCP_Ip::client_ip() );
+		return PNCP_Ip::is_local_request();
 	}
 
 	/**

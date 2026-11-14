@@ -392,6 +392,38 @@ wp_set_current_user( 1 );
 t( 'διαχειριστής: μόνο read', current_user_can( 'read' ) && ! current_user_can( 'manage_options' ) && ! current_user_can( 'edit_posts' ) && ! current_user_can( 'edit_user', 1 ) );
 t( 'διαχειριστής: το ScrapeLock τον βλέπει ακόμη ως διαχειριστή (εξαιρέσεις)', PNCP_Lockdown::can( 'manage_options' ) );
 
+/* ---------- 3.5.1: ο ωριαίος έλεγχος δεν σωπαίνει από τη βάση (επιλογή cron) ---------- */
+$pncp_cron_next = static function () {
+	$e = wp_get_scheduled_event( PNCP_Log::CRON );
+	return $e ? (int) $e->timestamp : 0;
+};
+PNCP_Integrity::ensure_cron();
+$pncp_cron_before = $pncp_cron_next();
+PNCP_Integrity::ensure_cron();
+t( 'cron (3.5.1): ένας κανονικός ωριαίος έλεγχος μένει όπως είναι', $pncp_cron_before > 0 && $pncp_cron_before === $pncp_cron_next() );
+// Μετάθεση στο 2100 κατευθείαν στην επιλογή cron (όπως με SQL injection).
+$pncp_cron = _get_cron_array();
+foreach ( $pncp_cron as $pncp_ts => $pncp_hooks ) {
+	if ( isset( $pncp_hooks[ PNCP_Log::CRON ] ) ) {
+		$pncp_cron[4102444800][ PNCP_Log::CRON ] = $pncp_hooks[ PNCP_Log::CRON ];
+		unset( $pncp_cron[ $pncp_ts ][ PNCP_Log::CRON ] );
+		if ( array() === $pncp_cron[ $pncp_ts ] ) {
+			unset( $pncp_cron[ $pncp_ts ] );
+		}
+	}
+}
+_set_cron_array( $pncp_cron );
+t( 'cron (3.5.1): η μετάθεση στο 2100 έγινε', 4102444800 === $pncp_cron_next() );
+PNCP_Integrity::ensure_cron();
+t( 'cron (3.5.1): ξαναπρογραμματίζεται μέσα στις επόμενες 2 ώρες, ωριαίος', $pncp_cron_next() > 0 && $pncp_cron_next() <= time() + 2 * HOUR_IN_SECONDS && 'hourly' === wp_get_scheduled_event( PNCP_Log::CRON )->schedule, (string) $pncp_cron_next() );
+$pncp_ld_log = get_site_option( PNCP_Lockdown::LOG_OPTION, array() );
+t( 'cron (3.5.1): σημειώνεται στο ημερολόγιο του Lockdown', isset( $pncp_ld_log[0]['event'] ) && 'tampered' === $pncp_ld_log[0]['event'] && false !== strpos( (string) $pncp_ld_log[0]['detail'], 'cron' ) );
+// Κανονικό χρονικό σημείο αλλά διάστημα ενός έτους: επίσης ξαναπρογραμματίζεται.
+wp_clear_scheduled_hook( PNCP_Log::CRON );
+wp_schedule_event( time() + 600, 'daily', PNCP_Log::CRON );
+PNCP_Integrity::ensure_cron();
+t( 'cron (3.5.1): με διάστημα μεγαλύτερο της ώρας ξαναγίνεται ωριαίος', 'hourly' === wp_get_scheduled_event( PNCP_Log::CRON )->schedule );
+
 /* ---------- Κλειδωμένο: μέλος που ανεβάζει περιεχόμενο (π.χ. αγγελίες) ---------- */
 fresh();
 t( 'μέλος: δεν είναι «προσωπικό»', ! PNCP_Lockdown::is_staff( $member_id ) );

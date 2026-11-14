@@ -632,7 +632,8 @@ final class PNCP_Bots {
 		$ua = null !== self::$dry ? (string) self::$dry['ua'] : self::user_agent();
 		$ip = null !== self::$dry ? (string) self::$dry['ip'] : PNCP_Ip::client_ip();
 
-		if ( '' === $ip || PNCP_Ip::is_local( $ip ) ) {
+		// 3.5.1: the server itself only when the address did not come from far away (PNCP_Ip::is_local_request()).
+		if ( '' === $ip || ( null !== self::$dry ? PNCP_Ip::is_local( $ip ) : PNCP_Ip::is_local_request() ) ) {
 			return self::pass( 'local' );
 		}
 		// Always-allowed IPs: only if the IP cannot be spoofed (not "trust every proxy").
@@ -734,9 +735,14 @@ final class PNCP_Bots {
 		// bot list, the limits and the other checks still apply to them.
 		$feed = 'page' === $context && ( null !== self::$dry ? ! empty( self::$dry['feed'] ) : did_action( 'parse_query' ) && is_feed() );
 
+		// 3.5.1: a search engine whose verification could not finish (a DNS failure, or the DNS budget used up by
+		// a flood of fake ones) is not refused for lacking browser headers: crawlers never send them, and Emergency
+		// Mode turns that check on during the very attack that uses up the budget. The limits still apply to it.
+		$unverified_crawler = '' !== $family && $per_ip && self::$verify_inconclusive;
+
 		// Every browser sends Accept-Language and "Mozilla/" in the User-Agent; most scripts do not.
 		// Not on wc-ajax: some payment gateways / extensions call them server-side, without Accept-Language.
-		if ( ! empty( $s['require_browser_headers'] ) && ! $allowed_ua && ! $feed && in_array( $context, array( 'page', 'search' ), true ) && ! self::is_wc_ajax() && '' === self::wc_admin_ajax_action() && ! self::looks_like_browser( $ua ) ) {
+		if ( ! empty( $s['require_browser_headers'] ) && ! $allowed_ua && ! $feed && ! $unverified_crawler && in_array( $context, array( 'page', 'search' ), true ) && ! self::is_wc_ajax() && '' === self::wc_admin_ajax_action() && ! self::looks_like_browser( $ua ) ) {
 			return self::verdict( 403, 'no_browser', $ip );
 		}
 
@@ -1478,15 +1484,19 @@ final class PNCP_Bots {
 		// so a flood of one fake family cannot starve verification of another). Beyond that, treated as
 		// unverified (Google and Bing are already verified via the IP lists, without DNS).
 		$budget = 'pncp_dns_' . $family . '_' . (int) floor( time() / MINUTE_IN_SECONDS );
-		$used   = (int) PNCP_Log::cache_get( $budget );
-		if ( $used >= (int) apply_filters( 'pncp_dns_lookups_per_minute', 20 ) ) {
+		$max    = (int) apply_filters( 'pncp_dns_lookups_per_minute', 20 );
+		if ( (int) PNCP_Log::cache_get( $budget ) >= $max ) {
 			self::$verify_inconclusive = true;
 			return false;
 		}
 		// An explained request (explain()) looks the name up, but stores nothing: no budget, no verdict.
 		$store = null === self::$dry;
-		if ( $store ) {
-			PNCP_Log::cache_set( $budget, $used + 1, 2 * MINUTE_IN_SECONDS );
+		// 3.5.1: the lookup is taken from the budget with an atomic increment, and only one that is still within
+		// it goes ahead. Before, the budget was read and then written: many requests at the same moment all read
+		// the same count and all started a DNS lookup, each holding a PHP worker until the resolver answered.
+		if ( $store && self::dns_budget_take( $budget ) > $max ) {
+			self::$verify_inconclusive = true;
+			return false;
 		}
 
 		// 3.4.3: a family with an official IP list that is loaded (Google: its crawlers, special crawlers and
@@ -1727,6 +1737,24 @@ final class PNCP_Bots {
 			// The first count of this minute (3.4.3: the first sample): it closes the previous minute.
 			PNCP_Surge::observe( 1, $minute, self::peek( 'surge', 'site', $minute - 1 ), $s );
 		}
+	}
+
+	/**
+	 * 3.5.1: takes one DNS lookup from this minute's budget of a crawler family and returns how many have been
+	 * taken, this one included. Atomic with an object cache or APCu (PNCP_Log::cache_incr()), and in the database
+	 * otherwise (db_incr(), the same row PNCP_Log::cache_get() reads as a transient).
+	 *
+	 * @param string $budget Counter key.
+	 * @return int
+	 */
+	private static function dns_budget_take( $budget ) {
+		if ( ! wp_using_ext_object_cache() && ! PNCP_Log::apcu_ok() ) {
+			$count = self::db_incr( $budget, 2 * MINUTE_IN_SECONDS );
+			if ( null !== $count ) {
+				return (int) $count;
+			}
+		}
+		return PNCP_Log::cache_incr( $budget, 2 * MINUTE_IN_SECONDS );
 	}
 
 	/**

@@ -3795,8 +3795,8 @@ final class PNCP_Lockdown {
 				load_textdomain( 'scrapelock', WP_LANG_DIR . '/plugins/scrapelock-' . $locale . '.mo', $locale );
 				$early = ! is_textdomain_loaded( 'scrapelock' );
 				if ( $early ) {
-					$GLOBALS['l10n_unloaded']               = isset( $GLOBALS['l10n_unloaded'] ) ? (array) $GLOBALS['l10n_unloaded'] : array(); // phpcs:ignore WordPress.WP.GlobalVariablesOverride.Prohibited -- Only for this page, put back below.
-					$GLOBALS['l10n_unloaded']['scrapelock'] = true; // phpcs:ignore WordPress.WP.GlobalVariablesOverride.Prohibited -- See above.
+					$GLOBALS['l10n_unloaded']               = isset( $GLOBALS['l10n_unloaded'] ) ? (array) $GLOBALS['l10n_unloaded'] : array(); // phpcs:ignore WordPress.WP.GlobalVariablesOverride.Prohibited, WordPress.NamingConventions.PrefixAllGlobals.NonPrefixedVariableFound -- WordPress's own global. Only for this page, put back below.
+					$GLOBALS['l10n_unloaded']['scrapelock'] = true; // phpcs:ignore WordPress.WP.GlobalVariablesOverride.Prohibited, WordPress.NamingConventions.PrefixAllGlobals.NonPrefixedVariableFound -- See above.
 				}
 			}
 			$detail  = is_wp_error( $message ) ? $message->get_error_message() : (string) $message;

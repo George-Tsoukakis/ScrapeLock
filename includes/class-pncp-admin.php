@@ -182,7 +182,7 @@ final class PNCP_Admin {
 			esc_attr( PNCP_OPTION ),
 			esc_attr( $key ),
 			checked( ! empty( $s[ $key ] ), true, false ),
-			PNCP_Admin_Fields::describedby_attr( $key, (bool) $help ),
+			PNCP_Admin_Fields::describedby_attr( $key, (bool) $help ), // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Escaped in describedby_attr().
 			PNCP_Admin_Fields::requires_attr( $key, $s ), // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Escaped in requires_attr().
 			esc_html( $label )
 		);
@@ -241,7 +241,7 @@ final class PNCP_Admin {
 			esc_attr( $id ),
 			esc_attr( PNCP_OPTION ),
 			esc_attr( $key ),
-			PNCP_Admin_Fields::describedby_attr( $key, (bool) $help ),
+			PNCP_Admin_Fields::describedby_attr( $key, (bool) $help ), // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Escaped in describedby_attr().
 			PNCP_Admin_Fields::requires_attr( $key, $s ) // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Escaped in requires_attr().
 		);
 		foreach ( $options as $value => $label ) {
@@ -285,7 +285,7 @@ final class PNCP_Admin {
 			(int) $s[ $key ],
 			(int) $range[0],
 			PHP_INT_MAX === $range[1] ? '' : ' max="' . (int) $range[1] . '"',
-			PNCP_Admin_Fields::describedby_attr( $key, (bool) $help ),
+			PNCP_Admin_Fields::describedby_attr( $key, (bool) $help ), // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Escaped in describedby_attr().
 			PNCP_Admin_Fields::requires_attr( $key, $s ), // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Escaped in requires_attr().
 			PNCP_Admin_Fields::risk_tag( $key ) . PNCP_Admin_Fields::default_note( $key, $s ) // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Escaped in PNCP_Admin_Fields.
 		);
@@ -365,7 +365,7 @@ final class PNCP_Admin {
 			esc_attr( $id ),
 			esc_attr( PNCP_OPTION ),
 			esc_attr( $key ),
-			PNCP_Admin_Fields::describedby_attr( $key, (bool) $help ),
+			PNCP_Admin_Fields::describedby_attr( $key, (bool) $help ), // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Escaped in describedby_attr().
 			PNCP_Admin_Fields::requires_attr( $key, $s ), // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Escaped in requires_attr().
 			esc_textarea( (string) $s[ $key ] )
 		);

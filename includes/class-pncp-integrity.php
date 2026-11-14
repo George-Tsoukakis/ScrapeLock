@@ -1079,9 +1079,21 @@ final class PNCP_Integrity {
 	 * or lost), it is scheduled again.
 	 */
 	public static function ensure_cron() {
-		if ( PNCP_Lockdown::is_locked() && ! wp_next_scheduled( PNCP_Log::CRON ) ) {
-			wp_schedule_event( time() + 5 * MINUTE_IN_SECONDS, 'hourly', PNCP_Log::CRON );
+		if ( ! PNCP_Lockdown::is_locked() ) {
+			return;
 		}
+		// 3.5.1: also when it is still there but would not run within 2 hours, or no longer every hour. The event
+		// lives in the "cron" option, which Lockdown does not keep: moved to the year 2100 through the database,
+		// it silenced the file check and the administrator checks without a word.
+		$event = wp_get_scheduled_event( PNCP_Log::CRON );
+		if ( $event && (int) $event->timestamp <= time() + 2 * HOUR_IN_SECONDS && ! empty( $event->interval ) && (int) $event->interval <= HOUR_IN_SECONDS ) {
+			return;
+		}
+		if ( $event ) {
+			wp_clear_scheduled_hook( PNCP_Log::CRON );
+			PNCP_Lockdown::record( 'tampered', 'cron: ' . PNCP_Log::CRON );
+		}
+		wp_schedule_event( time() + 5 * MINUTE_IN_SECONDS, 'hourly', PNCP_Log::CRON );
 	}
 
 	/**
@@ -1561,7 +1573,8 @@ final class PNCP_Integrity {
 		$active = array();
 		foreach ( (array) get_option( 'active_plugins', array() ) as $file ) {
 			// A plugin in a folder of its own by its folder, a single-file plugin (e.g. hello.php) by its file.
-			if ( isset( $slugs[ '.' === dirname( (string) $file ) ? (string) $file : dirname( (string) $file ) ] ) ) {
+			$folder = dirname( (string) $file );
+			if ( isset( $slugs[ '.' === $folder ? (string) $file : $folder ] ) ) {
 				$active[] = (string) $file;
 			}
 		}

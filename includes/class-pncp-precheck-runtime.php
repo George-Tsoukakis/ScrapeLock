@@ -38,6 +38,21 @@ final class PNCP_Precheck_Runtime {
 	public static $monitored = false;
 
 	/**
+	 * 3.5.1: the addresses the request passed through (REMOTE_ADDR and the trusted proxies after the visitor), as
+	 * found by client_ip(). See is_local_request().
+	 *
+	 * @var string[]
+	 */
+	public static $hops = array();
+
+	/**
+	 * 3.5.1: a trusted CDN edge connected without a usable "Real visitor IP" header, as in PNCP_Ip::is_cdn_edge().
+	 *
+	 * @var bool
+	 */
+	public static $no_visitor_ip = false;
+
+	/**
 	 * Called by the line in wp-config.php: reads the configuration from the data folder and runs the check.
 	 *
 	 * @param string $dir The data folder.
@@ -171,7 +186,7 @@ final class PNCP_Precheck_Runtime {
 			return array( 403, 'not_via_cdn', $direct );
 		}
 		$ip = self::client_ip( $c, $reliable );
-		if ( '' === $ip || self::is_local( $ip ) ) {
+		if ( '' === $ip || self::is_local_request( $ip, $reliable ) ) {
 			return null;
 		}
 		if ( $reliable && self::in_any( $ip, $c['allow'] ) ) {
@@ -182,7 +197,8 @@ final class PNCP_Precheck_Runtime {
 		// account at the CDN, and is limited like any other address.
 		// 3.4.1: only the edge that connected (REMOTE_ADDR). A Cloudflare address from the real-IP header is a client of
 		// its own (a Cloudflare Worker, which a scraper can rent), as in PNCP_Ip::is_cdn_edge().
-		if ( self::is_cdn( $ip, $c ) && self::cdn_trust_ok( $c ) && self::normalize_ip( isset( $_SERVER['REMOTE_ADDR'] ) ? (string) $_SERVER['REMOTE_ADDR'] : '' ) === $ip ) {
+		// 3.5.1: not when the edge sent no visitor IP: this site's own CDN always does.
+		if ( ! self::$no_visitor_ip && self::is_cdn( $ip, $c ) && self::cdn_trust_ok( $c ) && self::normalize_ip( isset( $_SERVER['REMOTE_ADDR'] ) ? (string) $_SERVER['REMOTE_ADDR'] : '' ) === $ip ) {
 			return null;
 		}
 		if ( self::in_any( $ip, $c['block'] ) ) {
@@ -453,7 +469,7 @@ final class PNCP_Precheck_Runtime {
 		foreach ( array( 'HTTP_X_FORWARDED_FOR', 'HTTP_FORWARDED', 'HTTP_X_REAL_IP', 'HTTP_CF_CONNECTING_IP' ) as $header ) {
 			if ( ! empty( $_SERVER[ $header ] ) ) {
 				$ip = self::client_ip( $c, $reliable );
-				return '' !== $ip && ! self::is_local( $ip ) ? $ip : '';
+				return '' !== $ip && ! self::is_local_request( $ip, $reliable ) ? $ip : '';
 			}
 		}
 		return '';
@@ -568,10 +584,15 @@ final class PNCP_Precheck_Runtime {
 	 * @return string
 	 */
 	public static function client_ip( $c, &$reliable ) {
-		$reliable = true;
-		$remote   = self::normalize_ip( isset( $_SERVER['REMOTE_ADDR'] ) ? (string) $_SERVER['REMOTE_ADDR'] : '' );
-		$ip       = $remote;
-		$header   = (string) $c['header'];
+		$reliable            = true;
+		$remote              = self::normalize_ip( isset( $_SERVER['REMOTE_ADDR'] ) ? (string) $_SERVER['REMOTE_ADDR'] : '' );
+		$ip                  = $remote;
+		$header              = (string) $c['header'];
+		self::$hops          = array( $remote );
+		self::$no_visitor_ip = false;
+		if ( '' !== $header && empty( $_SERVER[ $header ] ) && self::trusted( $remote, $c ) && self::is_cdn( $remote, $c ) ) {
+			self::$no_visitor_ip = true; // 3.5.1: a trusted CDN edge without the header (see PNCP_Ip::client_ip()).
+		}
 		if ( '' !== $header && ! empty( $_SERVER[ $header ] ) ) {
 			$trusted = self::trusted( $remote, $c );
 			$legacy  = ! empty( $c['trust_any'] ) && ! $trusted;
@@ -591,6 +612,10 @@ final class PNCP_Precheck_Runtime {
 				}
 				if ( $legacy && $ip !== $remote ) {
 					$reliable = false;
+				}
+				self::$hops = $hops;
+				if ( ! $legacy && $ip === $remote && self::is_cdn( $remote, $c ) ) {
+					self::$no_visitor_ip = true; // 3.5.1: the header held no IP.
 				}
 				// 3.4.3: a Bunny CDN edge without the CDN secret, as in PNCP_Ip::client_ip(): counted, but not trusted
 				// for the always-allowed IPs. Also behind a local proxy (Nginx in front of PHP: REMOTE_ADDR is
@@ -742,6 +767,29 @@ final class PNCP_Precheck_Runtime {
 	 */
 	public static function is_local( $ip ) {
 		return in_array( $ip, array( '127.0.0.1', '::1' ), true ) || ( isset( $_SERVER['SERVER_ADDR'] ) && (string) $_SERVER['SERVER_ADDR'] === $ip );
+	}
+
+	/**
+	 * 3.5.1: the server itself, as in PNCP_Ip::is_local_request(): a local address that can be trusted and came
+	 * only through addresses on the server or its private network (REMOTE_ADDR included). Call after client_ip().
+	 *
+	 * @param string $ip       The visitor IP from client_ip().
+	 * @param bool   $reliable The reliability client_ip() gave.
+	 * @return bool
+	 */
+	public static function is_local_request( $ip, $reliable ) {
+		if ( '' === $ip || ! self::is_local( $ip ) ) {
+			return false;
+		}
+		if ( ! $reliable ) {
+			return false;
+		}
+		foreach ( self::$hops as $hop ) {
+			if ( ! self::is_local( $hop ) && false !== filter_var( $hop, FILTER_VALIDATE_IP, FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE ) ) {
+				return false;
+			}
+		}
+		return true;
 	}
 
 	/**

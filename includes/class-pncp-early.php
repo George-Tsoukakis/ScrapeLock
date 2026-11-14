@@ -100,7 +100,7 @@ final class PNCP_Early {
 		}
 
 		$ip = PNCP_Ip::client_ip();
-		if ( '' === $ip || PNCP_Ip::is_local( $ip ) ) {
+		if ( '' === $ip || PNCP_Ip::is_local_request() ) {
 			return null;
 		}
 		if ( PNCP_Ip::reliable() && PNCP_Ip::in_any( $ip, PNCP_Options::parse_list( $s['allow_ips'] ) ) ) {
@@ -117,7 +117,8 @@ final class PNCP_Early {
 		// own CDN account, and the address is limited like any other (see PNCP_Ip::is_cdn_edge()).
 		// 3.4.1: only the edge that connected (REMOTE_ADDR); a Cloudflare address from the real-IP header is a
 		// client of its own (a Cloudflare Worker, which a scraper can rent).
-		$per_ip = ! ( PNCP_Ip::remote_addr() === $ip && PNCP_Ip::in_any( $ip, PNCP_Ip::list_of( 'cloudflare' ) ) && PNCP_Ip::cdn_secret_ok( $s ) );
+		// 3.5.1: and not when the edge sent no visitor IP (PNCP_Ip::is_cdn_edge()).
+		$per_ip = ! ( PNCP_Ip::is_cdn_edge( $ip ) && PNCP_Ip::in_any( $ip, PNCP_Ip::list_of( 'cloudflare' ) ) );
 
 		if ( $per_ip && PNCP_Ip::in_any( $ip, PNCP_Options::parse_list( $s['block_ips'] ) ) ) {
 			return array( 403, 'blocked_ip', $ip );

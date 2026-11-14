@@ -1626,9 +1626,9 @@ settings( array( 'auto_emergency' => 1, 'auto_emergency_min' => 100000 ) );
 same_minute();
 $pncp_min = (int) floor( time() / 60 );
 foreach ( array( '192.0.2.231', '192.0.2.232', '192.0.2.233' ) as $pncp_ip ) {
-	req( $url, browser( $pncp_ip ) );
+	req( $url, browser( $pncp_ip, array( 'X-Test-Surge-Exact' => '1' ) ) );
 }
-req( $url, browser( '192.0.2.234', array( 'Cookie' => login_cookie( test_user( 'pncp_editor', 'editor' ) ) ) ) );
+req( $url, browser( '192.0.2.234', array( 'Cookie' => login_cookie( test_user( 'pncp_editor', 'editor' ) ), 'X-Test-Surge-Exact' => '1' ) ) );
 wp_cache_flush();
 t( 'αυτόματο Emergency: 3 σελίδες από 3 IP μετρώνται για όλο το site, όχι το προσωπικό', 3 === $pncp_peek( $pncp_min ), (string) $pncp_peek( $pncp_min ) );
 settings( array( 'auto_emergency' => 0 ) );
