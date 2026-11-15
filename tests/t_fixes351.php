@@ -329,6 +329,63 @@ $pncp_v = $pncp_check( '198.18.8.4', $pncp_apple );
 t( 'Applebot με λάθος όνομα στο DNS: 403 fake_crawler όπως πριν', is_array( $pncp_v ) && 'fake_crawler' === $pncp_v['reason'], wp_json_encode( $pncp_v ) );
 remove_filter( 'pncp_reverse_dns', $pncp_fake, 20 );
 
+/* ---------- 6. Pre-cache check χωρίς APCu: όριο νέων αρχείων ανά λεπτό ---------- */
+$pncp_tmp = get_temp_dir() . 'pncp-t351-' . wp_generate_password( 8, false );
+wp_mkdir_p( $pncp_tmp );
+$pncp_cc  = array(
+	'dir'       => $pncp_tmp,
+	'apcu'      => false,
+	'new_files' => 3,
+);
+$pncp_now = time();
+if ( 57 <= $pncp_now % 60 ) {
+	sleep( 4 );
+	$pncp_now = time();
+}
+for ( $pncp_i = 1; $pncp_i <= 5; $pncp_i++ ) {
+	PNCP_Precheck_Runtime::hit( $pncp_cc, 'k' . $pncp_i, $pncp_now );
+}
+$pncp_hdir  = $pncp_tmp . '/hits/' . (int) floor( $pncp_now / 60 );
+$pncp_files = array_values( array_diff( (array) scandir( $pncp_hdir ), array( '.', '..', '.new' ) ) );
+t( 'pre-cache: 5 νέες διευθύνσεις με όριο 3: μόνο 3 αρχεία μετρητών', 3 === count( $pncp_files ), (string) count( $pncp_files ) );
+t( 'pre-cache: πάνω από το όριο η νέα διεύθυνση μετρά ως 1η σελίδα (χωρίς αρχείο)', 1 === PNCP_Precheck_Runtime::hit( $pncp_cc, 'k9', $pncp_now ) && ! is_file( $pncp_hdir . '/' . md5( 'k9' ) ) );
+t( 'pre-cache: μια διεύθυνση που ήδη μετριέται συνεχίζει κανονικά', 2 === PNCP_Precheck_Runtime::hit( $pncp_cc, 'k1', $pncp_now ) );
+$pncp_cc['new_files'] = 0;
+t( 'pre-cache: όριο 0 = χωρίς όριο', 1 === PNCP_Precheck_Runtime::hit( $pncp_cc, 'k10', $pncp_now ) && is_file( $pncp_hdir . '/' . md5( 'k10' ) ) );
+foreach ( (array) glob( $pncp_hdir . '/{,.}*', GLOB_BRACE ) as $pncp_f ) {
+	if ( is_file( $pncp_f ) ) {
+		unlink( $pncp_f );
+	}
+}
+@rmdir( $pncp_hdir );
+@rmdir( $pncp_tmp . '/hits' );
+@rmdir( $pncp_tmp );
+t( 'pre-cache: η ρύθμιση γράφεται στο αρχείο ρυθμίσεων (φίλτρο pncp_precheck_new_files_per_minute)', ( function () {
+	$f = static function () {
+		return 77;
+	};
+	add_filter( 'pncp_precheck_new_files_per_minute', $f );
+	$c = PNCP_Precheck::config();
+	remove_filter( 'pncp_precheck_new_files_per_minute', $f );
+	return is_array( $c ) && isset( $c['new_files'] ) && 77 === $c['new_files'];
+} )() );
+
+/* ---------- 7. Applebot / YandexBot από IP χωρίς εγγραφή PTR ---------- */
+$pncp_none = static function () {
+	return false; // Καμία εγγραφή PTR (απάντηση του DNS, όχι αποτυχία).
+};
+add_filter( 'pncp_reverse_dns', $pncp_none, 20 );
+t( 'Applebot χωρίς PTR: όχι επαληθευμένος, και όχι «αναπάντητο» (ψεύτικος)', ! PNCP_Bots::is_verified_crawler( 'apple', '198.18.10.1' ) && ! ( function () {
+	return self::$verify_inconclusive;
+} )->bindTo( null, 'PNCP_Bots' )() );
+t( 'YandexBot χωρίς PTR: ψεύτικος', ! PNCP_Bots::is_verified_crawler( 'yandex', '198.18.10.2' ) && ! ( function () {
+	return self::$verify_inconclusive;
+} )->bindTo( null, 'PNCP_Bots' )() );
+settings( array( 'block_fake_crawlers' => 1, 'require_browser_headers' => 0 ) );
+$pncp_v = $pncp_check( '198.18.10.3', $pncp_apple );
+t( 'check(): Applebot χωρίς PTR → 403 fake_crawler', is_array( $pncp_v ) && 'fake_crawler' === $pncp_v['reason'], wp_json_encode( $pncp_v ) );
+remove_filter( 'pncp_reverse_dns', $pncp_none, 20 );
+
 /* ---------- Καθάρισμα ---------- */
 update_option( PNCP_OPTION, $pncp_saved );
 PNCP_Options::flush();

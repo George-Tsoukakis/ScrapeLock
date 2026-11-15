@@ -29,6 +29,10 @@ if ( isset( $_SERVER['HTTP_X_TEST_SURGE_EXACT'] ) ) {
 add_filter(
 	'pncp_reverse_dns',
 	static function ( $host, $ip ) {
+		// 3.5.1: "nxdomain" = no PTR record at all (a definite answer); the IP itself = the DNS did not answer.
+		if ( isset( $_SERVER['HTTP_X_TEST_RDNS'] ) && 'nxdomain' === $_SERVER['HTTP_X_TEST_RDNS'] ) {
+			return false;
+		}
 		return isset( $_SERVER['HTTP_X_TEST_RDNS'] ) ? $_SERVER['HTTP_X_TEST_RDNS'] : 'unknown.invalid';
 	},
 	10,

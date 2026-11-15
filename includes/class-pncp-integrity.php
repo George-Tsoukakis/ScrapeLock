@@ -28,6 +28,11 @@ final class PNCP_Integrity {
 	const OFFICIAL = 'pncp_integrity_official';
 
 	/**
+	 * 3.5.1: the signed fingerprint of the code that plugins keep in the database and run (see db_code()).
+	 */
+	const DB_CODE = 'pncp_integrity_dbcode';
+
+	/**
 	 * The pass that is not finished yet (signed, not autoloaded), and the scheduled event that goes on with it.
 	 */
 	const SCAN   = 'pncp_integrity_scan';
@@ -737,6 +742,14 @@ final class PNCP_Integrity {
 			return;
 		}
 		self::drop_scan();
+		// 3.5.1: the fingerprint of before a temporary unlock is compared with the files as they are now, before it is
+		// replaced. Before, everything written while the site was open (by an update, or by a backdoor that came in
+		// meanwhile) went into the new fingerprint without a word.
+		$old     = self::baseline();
+		$changes = null;
+		if ( $old['stale'] && ! $old['tampered'] && $old['time'] && $old['files'] ) {
+			$changes = self::diff_files( $old['scope'] < self::SCOPE ? self::widen( $old['files'], $now['files'] ) : $old['files'], $now['files'], $now['complete'] && $old['complete'] );
+		}
 		$raw  = gzcompress( (string) wp_json_encode( $now['files'] ), 6 );
 		$time = time();
 		self::put_baseline(
@@ -753,6 +766,9 @@ final class PNCP_Integrity {
 			)
 		);
 		PNCP_Lockdown::note_fingerprint( $time );
+		if ( PNCP_Lockdown::is_locked() ) {
+			self::store_db_code(); // 3.5.1: the code kept in the database, as it is when the site is locked.
+		}
 		$report             = self::report();
 		$report['tampered'] = false;
 		$report['time']     = time();
@@ -764,9 +780,81 @@ final class PNCP_Integrity {
 		// The official checksums (one request to WordPress.org per plugin) are compared right after, from a
 		// scheduled event: locking the site does not wait for them. Until then the report says "pending".
 		$report['official'] = array( 'pending' => true );
+		$report['unlocked'] = null !== $changes ? $changes + array(
+			'since' => (int) $old['time'],
+			'time'  => $time,
+		) : array();
 		self::put( self::REPORT, $report );
 		delete_option( 'pncp_integrity_alerted' ); // A new fingerprint: what is flagged from now on is new.
 		self::schedule_official();
+		if ( null !== $changes && ( $changes['added'] || $changes['changed'] || $changes['removed'] ) ) {
+			self::alert_unlocked( $changes );
+		}
+	}
+
+	/**
+	 * 3.5.1: the code files added, changed and removed between two fingerprints (files of caches and the updater's
+	 * folders only when they are new, as in check()). At most 500 of each.
+	 *
+	 * @param array<string, string> $before   Fingerprint before.
+	 * @param array<string, string> $after    Fingerprint now.
+	 * @param bool                  $complete Whether both passes read every folder (removed files only then).
+	 * @return array{added:string[], changed:string[], removed:string[]}
+	 */
+	public static function diff_files( $before, $after, $complete ) {
+		$added   = array_keys( array_diff_key( $after, $before ) );
+		$changed = array();
+		foreach ( array_intersect_key( $after, $before ) as $path => $hash ) {
+			if ( $before[ $path ] !== $hash && ! ( self::volatile( $hash ) && self::volatile( $before[ $path ] ) ) ) {
+				$changed[] = (string) $path;
+			}
+		}
+		$removed = array();
+		if ( $complete ) {
+			foreach ( array_diff_key( $before, $after ) as $path => $hash ) {
+				if ( ! self::volatile( $hash ) ) {
+					$removed[] = (string) $path;
+				}
+			}
+		}
+		return array(
+			'added'   => array_slice( array_map( 'strval', $added ), 0, 500 ),
+			'changed' => array_slice( $changed, 0, 500 ),
+			'removed' => array_slice( $removed, 0, 500 ),
+		);
+	}
+
+	/**
+	 * 3.5.1: emails the administration address the code files that changed while the site was unlocked for a
+	 * while, and notes them in the lockdown log. Not an alarm: updates change files on purpose. The list lets the
+	 * owner see a file that no update explains.
+	 *
+	 * @param array{added:string[], changed:string[], removed:string[]} $changes Changes.
+	 */
+	private static function alert_unlocked( $changes ) {
+		$lines = array();
+		foreach ( array( 'added', 'changed', 'removed' ) as $kind ) {
+			foreach ( $changes[ $kind ] as $path ) {
+				if ( count( $lines ) >= 50 ) {
+					break 2;
+				}
+				$lines[] = '- ' . self::kind_label( 'unlocked_' . $kind ) . ': ' . self::relative( $path );
+			}
+		}
+		$total = count( $changes['added'] ) + count( $changes['changed'] ) + count( $changes['removed'] );
+		if ( $total > 50 ) {
+			/* translators: %d: number of files */
+			$lines[] = sprintf( __( '… and %d more.', 'scrapelock' ), $total - 50 );
+		}
+		PNCP_Lockdown::record( 'unlocked_files', (string) $total );
+		$to = is_multisite() ? get_site_option( 'admin_email' ) : get_option( 'admin_email' );
+		if ( is_email( $to ) ) {
+			wp_mail(
+				$to,
+				'[' . wp_specialchars_decode( get_bloginfo( 'name' ), ENT_QUOTES ) . '] ScrapeLock: ' . __( 'Files changed while the site was unlocked', 'scrapelock' ),
+				__( 'The site is locked again. These code files were added, changed or removed while it was unlocked. Updates and installations you made explain most of them; a file that none of them explains (for example a new PHP file in the uploads folder or in a theme) may have been written by an attacker while the site was open. They are now part of the new fingerprint. WordPress and the plugins from WordPress.org are compared with their official copies in the background, and you are emailed if any file differs.', 'scrapelock' ) . "\n\n" . implode( "\n", $lines ) . "\n\n" . PNCP_Lockdown::page_url()
+			);
+		}
 	}
 
 	/* ---------- A pass in several parts (3.4.2) ---------- */
@@ -1046,7 +1134,7 @@ final class PNCP_Integrity {
 		// 3.4.3: with the app removed (Lockdown no longer set up), the report goes too: its files belong to the
 		// fingerprint deleted here, and without Lockdown the box that lists them (and "Take a new fingerprint")
 		// is not shown, so Site Health and the notice on every wp-admin page would report them for good.
-		$names = PNCP_Lockdown::configured() ? array( self::BASELINE ) : array( self::BASELINE, self::REPORT );
+		$names = PNCP_Lockdown::configured() ? array( self::BASELINE, self::DB_CODE ) : array( self::BASELINE, self::REPORT, self::DB_CODE );
 		foreach ( $names as $name ) {
 			if ( is_multisite() ) {
 				delete_site_option( $name );
@@ -1064,6 +1152,7 @@ final class PNCP_Integrity {
 	public static function cron() {
 		if ( PNCP_Lockdown::is_locked() ) {
 			self::check();
+			self::check_db_code(); // 3.5.1.
 			PNCP_Seal::check_admins();
 			// Multisite: the main site checks every site the lock covers (the others only themselves).
 			if ( is_multisite() && is_main_site() ) {
@@ -1280,6 +1369,10 @@ final class PNCP_Integrity {
 			'removed'           => __( 'Removed while locked', 'scrapelock' ),
 			'official_modified' => __( 'Differs from WordPress.org', 'scrapelock' ),
 			'official_unknown'  => __( 'Not part of the WordPress.org copy', 'scrapelock' ),
+			// 3.5.1: between the fingerprint of before a temporary unlock and the one taken when it ended.
+			'unlocked_added'    => __( 'New while unlocked', 'scrapelock' ),
+			'unlocked_changed'  => __( 'Changed while unlocked', 'scrapelock' ),
+			'unlocked_removed'  => __( 'Removed while unlocked', 'scrapelock' ),
 		);
 		return isset( $labels[ $kind ] ) ? $labels[ $kind ] : $kind;
 	}
@@ -1543,6 +1636,146 @@ final class PNCP_Integrity {
 		return is_array( $data ) && isset( $data['files'] ) && is_array( $data['files'] ) ? $data['files'] : null;
 	}
 
+	/* ---------- 3.5.1: code kept in the database ---------- */
+
+	/**
+	 * The code that plugins keep in the database and run on the site, as source => [ item => hash ]: the active
+	 * snippets of Code Snippets (its table), the published snippets of WPCode (post type "wpcode"). Such code is
+	 * not a file, so the file fingerprint never sees it, and SQL injection in another plugin could add a PHP
+	 * snippet that then runs on every page. Filter `pncp_lockdown_db_code` adds sources of other plugins (the same
+	 * shape; each source may also be given to the filter `pncp_lockdown_db_code_plugins` with the folders of the
+	 * plugins that run it, for the quarantine).
+	 *
+	 * @return array<string, array<string, string>>
+	 */
+	public static function db_code() {
+		global $wpdb;
+		$out = array();
+		// phpcs:disable WordPress.DB.DirectDatabaseQuery -- Other plugins' own data, read once an hour while locked.
+		$tables = array( 'code-snippets' => $wpdb->prefix . 'snippets' );
+		if ( is_multisite() ) {
+			$tables['code-snippets-network'] = $wpdb->base_prefix . 'ms_snippets';
+		}
+		foreach ( $tables as $source => $table ) {
+			if ( $wpdb->get_var( $wpdb->prepare( 'SHOW TABLES LIKE %s', $wpdb->esc_like( $table ) ) ) !== $table ) {
+				continue;
+			}
+			$suppress = $wpdb->suppress_errors( true );
+			$rows     = $wpdb->get_results( $wpdb->prepare( 'SELECT id, code FROM %i WHERE active = 1', $table ), ARRAY_A );
+			$wpdb->suppress_errors( $suppress );
+			foreach ( (array) $rows as $row ) {
+				$out[ $source ][ (string) $row['id'] ] = md5( (string) $row['code'] );
+			}
+		}
+		$rows = $wpdb->get_results( $wpdb->prepare( "SELECT ID, post_content FROM {$wpdb->posts} WHERE post_type = %s AND post_status = %s", 'wpcode', 'publish' ), ARRAY_A );
+		// phpcs:enable
+		foreach ( (array) $rows as $row ) {
+			$out['wpcode'][ (string) $row['ID'] ] = md5( (string) $row['post_content'] );
+		}
+		/**
+		 * Filters the code that plugins keep in the database and run, which Lockdown checks every hour.
+		 *
+		 * @param array<string, array<string, string>> $out source => [ item => hash ].
+		 */
+		$out = apply_filters( 'pncp_lockdown_db_code', $out );
+		$out = is_array( $out ) ? $out : array();
+		ksort( $out );
+		foreach ( $out as $source => $items ) {
+			$items = is_array( $items ) ? array_map( 'strval', $items ) : array();
+			ksort( $items );
+			$out[ $source ] = $items;
+		}
+		return $out;
+	}
+
+	/**
+	 * Stores the signed fingerprint of the code kept in the database (when the site is locked).
+	 */
+	public static function store_db_code() {
+		$value = array(
+			'time' => time(),
+			'code' => self::db_code(),
+		);
+		$value['sig'] = PNCP_Seal::sign( $value );
+		self::put( self::DB_CODE, $value );
+	}
+
+	/**
+	 * The hourly comparison, while locked: code kept in the database that is new or changed since the site was
+	 * locked is emailed about (PNCP_Lockdown::tamper_alert()), noted in the lockdown log and, with the
+	 * quarantine on, the plugin that would run it is deactivated. Nothing is deleted. A fingerprint changed in
+	 * the database is reported as such; none at all (a site locked before 3.5.1) is taken now.
+	 *
+	 * @return string[] What was found ("source #item").
+	 */
+	public static function check_db_code() {
+		$stored = self::get( self::DB_CODE, true );
+		if ( ! is_array( $stored ) || ! isset( $stored['sig'], $stored['code'], $stored['time'] ) ) {
+			self::store_db_code();
+			return array();
+		}
+		$sig = $stored['sig'];
+		unset( $stored['sig'] );
+		if ( ! PNCP_Seal::valid( $stored, $sig ) || ! is_array( $stored['code'] ) ) {
+			PNCP_Lockdown::tamper_alert( 'db_code', __( 'The saved fingerprint of this code was changed in the database.', 'scrapelock' ) );
+			return array( 'fingerprint' );
+		}
+		$found   = array();
+		$sources = array();
+		foreach ( self::db_code() as $source => $items ) {
+			$before = isset( $stored['code'][ $source ] ) && is_array( $stored['code'][ $source ] ) ? $stored['code'][ $source ] : array();
+			foreach ( $items as $item => $hash ) {
+				if ( ! isset( $before[ $item ] ) || $before[ $item ] !== $hash ) {
+					$found[]              = $source . ' #' . $item;
+					$sources[ $source ] = true;
+				}
+			}
+		}
+		if ( ! $found ) {
+			return array();
+		}
+		PNCP_Lockdown::record( 'db_code', implode( ', ', array_slice( $found, 0, 10 ) ) );
+		PNCP_Lockdown::tamper_alert( 'db_code', implode( ', ', array_slice( $found, 0, 20 ) ) );
+		if ( PNCP_Lockdown::quarantine_on() ) {
+			$folders = array(
+				'code-snippets'         => array( 'code-snippets', 'code-snippets-pro' ),
+				'code-snippets-network' => array( 'code-snippets', 'code-snippets-pro' ),
+				'wpcode'                => array( 'insert-headers-and-footers', 'wpcode-premium' ),
+			);
+			/**
+			 * Filters the plugin folders that run each source of pncp_lockdown_db_code, for the quarantine.
+			 *
+			 * @param array<string, string[]> $folders source => plugin folders.
+			 */
+			$folders = (array) apply_filters( 'pncp_lockdown_db_code_plugins', $folders );
+			$want    = array();
+			foreach ( array_keys( $sources ) as $source ) {
+				foreach ( isset( $folders[ $source ] ) ? (array) $folders[ $source ] : array() as $folder ) {
+					$want[ (string) $folder ] = true;
+				}
+			}
+			$active = array();
+			foreach ( (array) get_option( 'active_plugins', array() ) as $file ) {
+				if ( isset( $want[ dirname( (string) $file ) ] ) ) {
+					$active[] = (string) $file;
+				}
+			}
+			if ( $active ) {
+				PNCP_Lockdown::deactivate_for_quarantine( $active );
+				$report  = self::report( true );
+				$handled = (array) $report['handled'];
+				foreach ( $active as $file ) {
+					/* translators: %s: plugin file */
+					$handled[] = sprintf( __( 'Deactivated %s', 'scrapelock' ), $file );
+				}
+				$report['handled'] = array_values( array_unique( $handled ) );
+				self::put( self::REPORT, $report );
+				PNCP_Lockdown::record( 'quarantine', implode( ', ', $active ) );
+			}
+		}
+		return $found;
+	}
+
 	/* ---------- Quarantine ---------- */
 
 	/**
@@ -1700,6 +1933,34 @@ final class PNCP_Integrity {
 				</table>
 			<?php elseif ( $report['time'] ) : ?>
 				<p class="pncp-ld-ok"><span class="dashicons dashicons-yes-alt" aria-hidden="true"></span> <?php esc_html_e( 'No changed files.', 'scrapelock' ); ?></p>
+			<?php endif; ?>
+			<?php
+			$unlocked = isset( $report['unlocked'] ) && is_array( $report['unlocked'] ) ? $report['unlocked'] : array();
+			$changes  = array();
+			foreach ( array( 'added', 'changed', 'removed' ) as $kind ) {
+				foreach ( isset( $unlocked[ $kind ] ) ? (array) $unlocked[ $kind ] : array() as $path ) {
+					$changes[ (string) $path ] = 'unlocked_' . $kind;
+				}
+			}
+			?>
+			<?php if ( $changes ) : ?>
+				<details class="pncp-ld-unlocked">
+					<summary>
+						<?php
+						/* translators: 1: number of files, 2: date */
+						echo esc_html( sprintf( _n( '%1$d code file changed while the site was unlocked, before %2$s (now part of the fingerprint).', '%1$d code files changed while the site was unlocked, before %2$s (now part of the fingerprint).', count( $changes ), 'scrapelock' ), count( $changes ), wp_date( $fmt, (int) $unlocked['time'] ) ) );
+						?>
+					</summary>
+					<p class="description"><?php esc_html_e( 'Updates and installations explain most of them. Check a file that none of them explains, such as a new PHP file in the uploads folder or in a theme.', 'scrapelock' ); ?></p>
+					<table class="widefat striped">
+						<thead><tr><th><?php esc_html_e( 'File', 'scrapelock' ); ?></th><th><?php esc_html_e( 'What', 'scrapelock' ); ?></th></tr></thead>
+						<tbody>
+							<?php foreach ( array_slice( $changes, 0, 100, true ) as $path => $kind ) : ?>
+								<tr><td><code><?php echo esc_html( self::relative( $path ) ); ?></code></td><td><?php echo esc_html( self::kind_label( $kind ) ); ?></td></tr>
+							<?php endforeach; ?>
+						</tbody>
+					</table>
+				</details>
 			<?php endif; ?>
 			<?php if ( ! empty( $report['handled'] ) ) : ?>
 				<p><strong><?php esc_html_e( 'Quarantine:', 'scrapelock' ); ?></strong> <?php echo esc_html( implode( '; ', (array) $report['handled'] ) ); ?></p>

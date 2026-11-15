@@ -48,7 +48,7 @@ update_option( PNCP_OPTION, array_merge( PNCP_Options::stored(), array( 'monitor
 PNCP_Options::flush();
 
 /* ---------- Χρήστες και συνδέσεις ---------- */
-foreach ( array( 'ld_editor', 'ld_customer', 'ld_newadmin', 'ld_shopper', 'ld_member', 'ld_member2', 'ld_shop', 'ld_evil' ) as $login ) {
+foreach ( array( 'ld_editor', 'ld_customer', 'ld_newadmin', 'ld_shopper', 'ld_member', 'ld_member2', 'ld_shop', 'ld_evil', 'ld_sub351' ) as $login ) {
 	$old = get_user_by( 'login', $login );
 	if ( $old ) {
 		require_once ABSPATH . 'wp-admin/includes/user.php';
@@ -123,6 +123,7 @@ function fresh() {
 	( function () {
 		self::$state        = null;
 		self::$staff        = array();
+		self::$own          = array(); // 3.5.1
 		self::$limited_caps = null; // 3.4.2
 		self::$session_ok   = array();
 	} )->bindTo( null, 'PNCP_Lockdown' )();
@@ -423,6 +424,69 @@ wp_clear_scheduled_hook( PNCP_Log::CRON );
 wp_schedule_event( time() + 600, 'daily', PNCP_Log::CRON );
 PNCP_Integrity::ensure_cron();
 t( 'cron (3.5.1): με διάστημα μεγαλύτερο της ώρας ξαναγίνεται ωριαίος', 'hourly' === wp_get_scheduled_event( PNCP_Log::CRON )->schedule );
+
+/* ---------- 3.5.1: δικαιώματα ενός χρήστη έξω από τον ρόλο του, widgets / πληρωμές, κώδικας στη βάση ---------- */
+// Subscriber που πήρε δικαιώματα κατευθείαν στη βάση (SQL injection σε άλλο plugin): όσο είναι κλειδωμένο δεν τα έχει.
+$pncp_sub = wp_insert_user( array( 'user_login' => 'ld_sub351', 'user_pass' => wp_generate_password(), 'user_email' => 'ld_sub351@example.com', 'role' => 'subscriber' ) );
+$wpdb->update( $wpdb->usermeta, array( 'meta_value' => maybe_serialize( array( 'subscriber' => true, 'edit_posts' => true, 'delete_others_posts' => true, 'delete_published_posts' => true, 'read_private_posts' => true ) ) ), array( 'user_id' => $pncp_sub, 'meta_key' => $wpdb->get_blog_prefix() . 'capabilities' ) );
+clean_user_cache( $pncp_sub );
+fresh();
+// Κανένα από αυτά δεν είναι δικαίωμα προσωπικού (staff_caps): πριν ο χρήστης δεν πάγωνε καθόλου.
+t( 'δικαιώματα (3.5.1): ο χρήστης δεν είναι «προσωπικό» (όπως πριν)', ! PNCP_Lockdown::is_staff( $pncp_sub ) );
+t( 'δικαιώματα (3.5.1): όσα δεν δίνει ο ρόλος του φαίνονται ως «δικά του»', array( 'delete_others_posts', 'delete_published_posts', 'edit_posts', 'read_private_posts' ) === ( function ( $c ) {
+	sort( $c );
+	return $c;
+} )( PNCP_Lockdown::own_caps( $pncp_sub ) ), wp_json_encode( PNCP_Lockdown::own_caps( $pncp_sub ) ) );
+wp_set_current_user( $pncp_sub );
+t( 'δικαιώματα (3.5.1): κλειδωμένο → ο subscriber δεν τα έχει (edit_posts, delete_others_posts)', ! current_user_can( 'edit_posts' ) && ! current_user_can( 'delete_others_posts' ) && ! current_user_can( 'read_private_posts' ) );
+t( 'δικαιώματα (3.5.1): κρατά ό,τι δίνει ο ρόλος του (read, το προφίλ του)', current_user_can( 'read' ) && current_user_can( 'edit_user', $pncp_sub ) );
+wp_set_current_user( $member_id );
+t( 'δικαιώματα (3.5.1): το μέλος κρατά τα δικαιώματα του ρόλου του', current_user_can( 'edit_posts' ) && current_user_can( 'upload_files' ) );
+wp_set_current_user( 1 );
+// Widgets, theme mods και πληρωμές: κρατιούνται όπως όταν κλείδωσε (και από τον κώδικα).
+$pncp_sw = get_option( 'sidebars_widgets' );
+update_option( 'sidebars_widgets', array( 'wp_inactive_widgets' => array( 'custom_html-99' ), 'array_version' => 3 ) );
+wp_cache_delete( 'alloptions', 'options' );
+t( 'widgets (3.5.1): το sidebars_widgets δεν αλλάζει όσο είναι κλειδωμένο', get_option( 'sidebars_widgets' ) == $pncp_sw, wp_json_encode( get_option( 'sidebars_widgets' ) ) );
+$pncp_bacs = get_option( 'woocommerce_bacs_accounts', false );
+update_option( 'woocommerce_bacs_accounts', array( array( 'account_name' => 'x', 'iban' => 'XX00' . wp_rand() ) ) );
+t( 'πληρωμές (3.5.1): οι λογαριασμοί τραπεζικής κατάθεσης δεν αλλάζουν', get_option( 'woocommerce_bacs_accounts', false ) === $pncp_bacs );
+t( 'widgets / πληρωμές (3.5.1): στις ρυθμίσεις που κρατιούνται', array() === array_diff( array( 'sidebars_widgets', 'woocommerce_bacs_accounts', 'theme_mods_' . get_option( 'stylesheet' ) ), PNCP_Lockdown::sealed_options() ) );
+$pncp_extra = static function ( $names ) {
+	$names[] = 'pncp_test_gateway_settings';
+	return $names;
+};
+add_filter( 'pncp_lockdown_protected_options', $pncp_extra );
+t( 'φίλτρο pncp_lockdown_protected_options (3.5.1): προσθέτει ρυθμίσεις άλλων plugins', ( function () {
+	return in_array( 'pncp_test_gateway_settings', PNCP_Lockdown::extra_options(), true ) || in_array( 'pncp_test_gateway_settings', apply_filters( 'pncp_lockdown_protected_options', array() ), true );
+} )() );
+remove_filter( 'pncp_lockdown_protected_options', $pncp_extra );
+// Κατευθείαν στη βάση (SQL injection): ξαναμπαίνει από το αντίγραφο του κλειδώματος.
+raw_set( 'sidebars_widgets', array( 'wp_inactive_widgets' => array( 'custom_html-98' ), 'array_version' => 3 ) );
+add_filter( 'pre_wp_mail', '__return_true' );
+PNCP_Seal::verify_options();
+remove_filter( 'pre_wp_mail', '__return_true' );
+t( 'widgets (3.5.1): αλλαγή κατευθείαν στη βάση → ξαναμπαίνει η τιμή του κλειδώματος', raw_get( 'sidebars_widgets' ) == $pncp_sw, wp_json_encode( raw_get( 'sidebars_widgets' ) ) );
+// Κώδικας που κρατά ένα plugin στη βάση και τρέχει (snippet του WPCode): αναφέρεται στον ωριαίο έλεγχο.
+t( 'κώδικας στη βάση (3.5.1): αμέσως μετά το κλείδωμα τίποτα νέο', array() === PNCP_Integrity::check_db_code() );
+$wpdb->insert( $wpdb->posts, array( 'post_type' => 'wpcode', 'post_status' => 'publish', 'post_title' => 'x', 'post_content' => '<?php echo 1;', 'post_date' => current_time( 'mysql' ), 'post_date_gmt' => current_time( 'mysql', true ), 'post_modified' => current_time( 'mysql' ), 'post_modified_gmt' => current_time( 'mysql', true ), 'post_excerpt' => '', 'to_ping' => '', 'pinged' => '', 'post_content_filtered' => '' ) );
+$pncp_snip = (int) $wpdb->insert_id;
+add_filter( 'pre_wp_mail', '__return_true' );
+$pncp_db_found = PNCP_Integrity::check_db_code();
+remove_filter( 'pre_wp_mail', '__return_true' );
+t( 'κώδικας στη βάση (3.5.1): νέο snippet του WPCode → αναφέρεται', array( 'wpcode #' . $pncp_snip ) === $pncp_db_found, wp_json_encode( $pncp_db_found ) );
+$pncp_ld_log = get_site_option( PNCP_Lockdown::LOG_OPTION, array() );
+t( 'κώδικας στη βάση (3.5.1): στο ημερολόγιο του Lockdown', in_array( 'db_code', wp_list_pluck( (array) $pncp_ld_log, 'event' ), true ) );
+$pncp_dbc = raw_get( PNCP_Integrity::DB_CODE );
+$pncp_dbc2 = $pncp_dbc;
+$pncp_dbc2['time'] = 1;
+raw_set( PNCP_Integrity::DB_CODE, $pncp_dbc2 );
+add_filter( 'pre_wp_mail', '__return_true' );
+t( 'κώδικας στη βάση (3.5.1): το αποτύπωμα αλλαγμένο στη βάση → αναφέρεται', array( 'fingerprint' ) === PNCP_Integrity::check_db_code() );
+remove_filter( 'pre_wp_mail', '__return_true' );
+raw_set( PNCP_Integrity::DB_CODE, $pncp_dbc );
+$wpdb->delete( $wpdb->posts, array( 'ID' => $pncp_snip ) );
+t( 'κώδικας στη βάση (3.5.1): το snippet έφυγε → τίποτα', array() === PNCP_Integrity::check_db_code() );
 
 /* ---------- Κλειδωμένο: μέλος που ανεβάζει περιεχόμενο (π.χ. αγγελίες) ---------- */
 fresh();
@@ -789,6 +853,11 @@ add_filter( 'pre_http_request', static function () {
 } );
 $pncp_rep = PNCP_Integrity::check();
 // 3.4: η σύγκριση με τις επίσημες λίστες γίνεται αμέσως μετά, από προγραμματισμένη εκτέλεση («pending» ως τότε).
+$pncp_unl = isset( $pncp_rep['unlocked'] ) ? $pncp_rep['unlocked'] : array();
+t( 'ακεραιότητα (3.5.1): ό,τι άλλαξε όσο ήταν ξεκλείδωτο καταγράφεται πριν το νέο αποτύπωμα', isset( $pncp_unl['changed'] ) && in_array( wp_normalize_path( $pncp_pdir . '/extra.php' ), $pncp_unl['changed'], true ), wp_json_encode( $pncp_unl ) );
+t( 'ακεραιότητα (3.5.1): και στέλνεται email', in_array( true, array_map( static function ( $m ) {
+	return false !== strpos( (string) $m['subject'], 'unlocked' ) && false !== strpos( (string) $m['message'], 'extra.php' );
+}, $pncp_mails ), true ) );
 t( 'ακεραιότητα: μετά το ξεκλείδωμα νέο αποτύπωμα, χωρίς ευρήματα, επίσημες λίστες σε αναμονή (3.4)', PNCP_Lockdown::is_locked() && array() === PNCP_Integrity::findings( $pncp_rep ) && ! PNCP_Integrity::baseline()['stale'] && ! empty( $pncp_rep['official']['pending'] ) && wp_next_scheduled( PNCP_Integrity::OFFICIAL ), wp_json_encode( $pncp_rep['official'] ) );
 forget_checksums();
 PNCP_Integrity::run_official();
@@ -796,6 +865,8 @@ $pncp_rep = PNCP_Integrity::report();
 t( '… η προγραμματισμένη σύγκριση χωρίς δίκτυο: τίποτα συγκρίσιμο, κανένα εύρημα', array() === PNCP_Integrity::findings( $pncp_rep ) && false === $pncp_rep['official']['core'] && empty( $pncp_rep['official']['pending'] ), wp_json_encode( $pncp_rep['official'] ) );
 $pncp_hh = PNCP_Health::test_integrity();
 t( 'ακεραιότητα: Site Health → good', 'good' === $pncp_hh['status'] );
+list( , $body ) = http( $page );
+t( 'ακεραιότητα (3.5.1): η καρτέλα Lockdown δείχνει τα αρχεία που άλλαξαν όσο ήταν ξεκλείδωτο', false !== strpos( $body, 'changed while the site was unlocked' ) && false !== strpos( $body, 'extra.php' ) && ! php_errors( $body ) );
 // 3.3: το αποτύπωμα είναι υπογεγραμμένο και η ώρα του σημειώνεται στην (υπογεγραμμένη) κατάσταση.
 $pncp_fp  = raw_get( PNCP_Integrity::BASELINE );
 $pncp_fp2 = $pncp_fp;

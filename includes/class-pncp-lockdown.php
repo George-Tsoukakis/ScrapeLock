@@ -117,6 +117,14 @@ final class PNCP_Lockdown {
 	private static $staff = array();
 
 	/**
+	 * 3.5.1: per user, the capabilities stored for the user alone, which none of the user's roles grants (see
+	 * own_caps()).
+	 *
+	 * @var array<int, string[]>
+	 */
+	private static $own = array();
+
+	/**
 	 * The capabilities refused to working roles while locked (limited_caps()), per request.
 	 *
 	 * @var string[]|null
@@ -254,9 +262,11 @@ final class PNCP_Lockdown {
 			add_filter( $hook, array( __CLASS__, 'no_auto_update' ), 9999 );
 		}
 		add_action( 'automatic_updates_complete', array( __CLASS__, 'core_updated' ) );
-		foreach ( self::protected_options() as $option ) {
+		foreach ( self::base_options() as $option ) {
 			add_filter( 'pre_update_option_' . $option, array( __CLASS__, 'keep_option' ), 9999, 3 );
 		}
+		// 3.5.1: the widgets, the theme's settings, payment methods and the options of the filter (extra_options()).
+		add_filter( 'pre_update_option', array( __CLASS__, 'keep_extra_option' ), 9999, 3 );
 		// Multisite: the network options too (3.4: also the super admins and who may register).
 		foreach ( array( 'active_sitewide_plugins', 'admin_email', 'site_admins', 'registration', self::OPTION ) as $option ) {
 			add_filter( 'pre_update_site_option_' . $option, array( __CLASS__, 'keep_option' ), 9999, 3 );
@@ -852,6 +862,7 @@ final class PNCP_Lockdown {
 			'fingerprint'   => __( 'The fingerprint of the code files was changed or removed in the database while the site was locked, so new or changed files might have been hidden. Check the files with a security scanner; a new fingerprint is taken the next time you lock the site.', 'scrapelock' ),
 			'apps'          => __( 'Application passwords were added to staff accounts behind WordPress\'s back while the site was locked. They were refused and removed; check these accounts and change their passwords:', 'scrapelock' ),
 			'replay'        => __( 'An older copy of the Lockdown data (for example from a database backup) was put back in the database while the site was locked. It was not accepted: the site stays locked, and the active plugins and the theme stay as they were when it was locked. If you did not restore a backup yourself, someone changed the database directly: check the site with a security scanner and change the database password. Found:', 'scrapelock' ),
+			'db_code'       => __( 'Code that a plugin keeps in the database and runs on the site (a PHP snippet of Code Snippets or WPCode, for example) was added or changed while the site was locked. Nobody can do that from wp-admin while it is locked: it was written straight into the database, often through a vulnerable plugin. Check it and remove it; with the quarantine on, the plugin that runs it was deactivated. Found:', 'scrapelock' ),
 			'version'       => __( 'The ScrapeLock version stored in the database was set back to an older one, while the Lockdown data had already been signed by a newer version. Nothing was signed again and changed protected settings are put back. If you did not install an older ScrapeLock yourself, someone changed the database directly: check the site with a security scanner and change the database password. Version found:', 'scrapelock' ),
 		);
 		$text = isset( $texts[ $kind ] ) ? $texts[ $kind ] : $texts['state'];
@@ -1049,6 +1060,7 @@ final class PNCP_Lockdown {
 	 */
 	public static function forget_staff() {
 		self::$staff = array();
+		self::$own   = array();
 	}
 
 	/**
@@ -1480,10 +1492,44 @@ final class PNCP_Lockdown {
 	}
 
 	/**
-	 * The stored capabilities of a user ({prefix}capabilities: roles and single capabilities).
+	 * 3.5.1: the capabilities stored for this user alone ({prefix}capabilities) that none of the user's roles
+	 * grants: refused while locked (map_meta_cap()). Reading and the user levels are not counted.
 	 *
 	 * @param int $user_id User.
-	 * @return array<string, bool>
+	 * @return string[]
+	 */
+	public static function own_caps( $user_id ) {
+		$user_id = (int) $user_id;
+		if ( $user_id < 1 ) {
+			return array();
+		}
+		if ( ! isset( self::$own[ $user_id ] ) ) {
+			self::$own[ $user_id ] = array(); // While computing: wp_roles() and get_user_meta() may ask for capabilities.
+			$stored                = self::user_caps( $user_id );
+			$roles                 = wp_roles();
+			$granted               = array();
+			$single                = array();
+			foreach ( $stored as $name => $grant ) {
+				$name = (string) $name;
+				if ( ! $grant ) {
+					continue;
+				}
+				if ( $roles->is_role( $name ) ) {
+					$granted = array_merge( $granted, self::role_caps( $name ) );
+				} elseif ( ! in_array( $name, array( 'read', 'exist' ), true ) && 0 !== strpos( $name, 'level_' ) ) {
+					$single[] = $name;
+				}
+			}
+			self::$own[ $user_id ] = array_values( array_diff( $single, $granted ) );
+		}
+		return self::$own[ $user_id ];
+	}
+
+	/**
+	 * The capabilities stored for a user ({prefix}capabilities): roles and single capabilities.
+	 *
+	 * @param int $user_id User.
+	 * @return array<string, mixed>
 	 */
 	private static function user_caps( $user_id ) {
 		global $wpdb;
@@ -1543,6 +1589,13 @@ final class PNCP_Lockdown {
 		$by     = (int) self::state()['unlocked_by'];
 		$frozen = self::is_locked() || ( $by > 0 && self::unlocked_until() && ( (int) $user_id !== $by || ! self::unlocking_session( (int) $user_id ) ) );
 		$level  = $frozen ? self::staff_level( $user_id ) : 0;
+		// 3.5.1: a capability stored for the user alone, which none of the user's roles grants, is refused while
+		// locked, whoever the user is. Before, a subscriber given edit_posts, delete_others_posts or a plugin's own
+		// capability directly in the database (SQL injection in another plugin) was not staff, so not frozen, and
+		// could use them. The rights that come with the user's roles stay as they are.
+		if ( $frozen && $level < 2 && array() !== self::own_caps( (int) $user_id ) && array() !== array_intersect( array_merge( array( (string) $cap ), array_map( 'strval', (array) $caps ) ), self::own_caps( (int) $user_id ) ) ) {
+			return array( 'do_not_allow' );
+		}
 		if ( $level < 1 ) {
 			return $caps;
 		}
@@ -1862,10 +1915,75 @@ final class PNCP_Lockdown {
 	 * @return string[]
 	 */
 	private static function protected_options() {
+		return array_values( array_unique( array_merge( self::base_options(), self::extra_options() ) ) );
+	}
+
+	/**
+	 * The options kept while locked since before 3.5.1, each with a filter of its own (init()).
+	 *
+	 * @return string[]
+	 */
+	private static function base_options() {
 		global $wpdb;
 		// 3.3: also the uploads folder and its address (a folder where PHP runs) and whether search engines
 		// may index the site.
 		return array( 'active_plugins', 'template', 'stylesheet', 'siteurl', 'home', 'admin_email', 'new_admin_email', 'users_can_register', 'default_role', $wpdb->get_blog_prefix() . 'user_roles', 'upload_path', 'upload_url_path', 'blog_public', PNCP_OPTION, PNCP_Edge::CONFIG, self::OPTION );
+	}
+
+	/**
+	 * 3.5.1: more options kept while locked: what can put code on every page or change where payments go, and
+	 * that only an administrator changes. The widgets (widget_* and sidebars_widgets: a Custom HTML widget runs
+	 * scripts on every page), the active theme's settings (theme_mods_*), and WooCommerce's own payment methods
+	 * with the bank accounts of "Direct bank transfer". Filter `pncp_lockdown_protected_options` adds options of
+	 * other plugins (e.g. a payment gateway's settings); it cannot take any out. Read again until plugins_loaded,
+	 * so that the filter of every plugin is seen.
+	 *
+	 * @return string[]
+	 */
+	public static function extra_options() {
+		static $cache = null;
+		if ( null !== $cache ) {
+			return $cache;
+		}
+		$names = array( 'sidebars_widgets', 'woocommerce_bacs_accounts', 'woocommerce_bacs_settings', 'woocommerce_cheque_settings', 'woocommerce_cod_settings', 'woocommerce_paypal_settings' );
+		$theme = (string) get_option( 'stylesheet' );
+		if ( '' !== $theme ) {
+			$names[] = 'theme_mods_' . $theme;
+		}
+		foreach ( array_keys( (array) wp_load_alloptions() ) as $option ) {
+			if ( 0 === strpos( (string) $option, 'widget_' ) ) {
+				$names[] = (string) $option;
+			}
+		}
+		/**
+		 * Filters the options of other plugins that keep their value while the site is locked, and are put back
+		 * when they are changed in the database. Options can only be added.
+		 *
+		 * @param string[] $names Option names.
+		 */
+		$more  = apply_filters( 'pncp_lockdown_protected_options', $names );
+		$names = array_merge( $names, array_filter( array_map( 'strval', is_array( $more ) ? $more : array() ), 'strlen' ) );
+		$names = array_values( array_unique( $names ) );
+		if ( did_action( 'plugins_loaded' ) ) {
+			$cache = $names;
+		}
+		return $names;
+	}
+
+	/**
+	 * 3.5.1: keep_option() for the options of extra_options(), through the generic pre_update_option filter (their
+	 * names are known only once every plugin has loaded).
+	 *
+	 * @param mixed  $value     New value.
+	 * @param string $option    Option.
+	 * @param mixed  $old_value Old value.
+	 * @return mixed
+	 */
+	public static function keep_extra_option( $value, $option, $old_value ) {
+		if ( self::$writing || $value === $old_value || ! in_array( (string) $option, self::extra_options(), true ) || ! self::is_locked() ) {
+			return $value;
+		}
+		return self::keep_option( $value, $old_value, $option );
 	}
 
 	/**
@@ -4752,6 +4870,8 @@ final class PNCP_Lockdown {
 			'db_lock'       => __( 'Code-check lock held from outside; ScrapeLock\'s own lock used', 'scrapelock' ),
 			'core_updated'  => __( 'WordPress installed a minor release while locked', 'scrapelock' ),
 			'core_update_failed' => __( 'WordPress could not install a minor release while locked', 'scrapelock' ),
+			'unlocked_files' => __( 'Files changed while unlocked (emailed)', 'scrapelock' ),
+			'db_code'       => __( 'Code stored in the database changed', 'scrapelock' ),
 		);
 		?>
 		<h2><?php esc_html_e( 'Recent lockdown events', 'scrapelock' ); ?></h2>

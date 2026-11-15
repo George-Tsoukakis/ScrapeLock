@@ -19,7 +19,7 @@ ScrapeLock — δοκιμές σε πραγματικό WordPress (όχι stubs)
                     Emergency Mode, Trusted Proxy, headers iframe, σειρά scripts στο <head>
   t_fixes351.php    3.5.1: πλαστή τοπική IP στο header από edge του CDN (WordPress, early, pre-cache, HTTP), edge
                     χωρίς IP επισκέπτη, alloptions στο object cache, ατομικός προϋπολογισμός DNS, crawler με
-                    αναπάντητο DNS και «Browsers only»
+                    αναπάντητο DNS και «Browsers only», Applebot / YandexBot χωρίς PTR, όριο αρχείων του pre-cache
   t_watermark.php   υδατογράφημα: ποτέ διπλό (Regenerate, update subsizes, εικόνες 1.4), πλήρες μέγεθος με καθαρό
                     αντίγραφο, -scaled, αφαίρεση, εικονίδιο/λογότυπο/προϊόντα/εικόνα υδατογραφήματος, θέσεις, JPEG/WebP
   t_admin.php       καρτέλες χωρίς PHP warnings, απενεργοποίηση μόνο με επιβεβαίωση, φόρμα καρτέλας που δεν σβήνει

@@ -1503,18 +1503,23 @@ final class PNCP_Bots {
 		// user-triggered fetchers, all three in one list; Bing) has every real crawler IP on it. An IP outside the
 		// list whose reverse DNS answers "no such name" is then a fake, not a "perhaps": before, a fake Googlebot
 		// from a server without a PTR record was never blocked, never banned by the trap. Only a real DNS failure
-		// (timeout, server error) stays inconclusive; so does a family without a list, or a list not loaded yet.
-		$listed   = '' !== $def['list'] && array() !== PNCP_Ip::list_of( $def['list'] );
+		// (timeout, server error) stays inconclusive. 3.5.1: the same for the families without a list (see below).
 		$verified = false;
 		$pre      = apply_filters( 'pncp_reverse_dns', null, $ip ); // 3.4.3: false = "no PTR record" (a definite answer).
 		$host     = is_string( $pre ) ? $pre : '';
 		if ( false === $pre ) {
 			$host = null;
 		} elseif ( '' === $host ) {
-			$host = $listed ? self::reverse_dns( $ip ) : (string) gethostbyaddr( $ip );
+			// 3.5.1: for every family, so that "no PTR record" can be told apart from a DNS failure. Before, Applebot
+			// and YandexBot used gethostbyaddr(), which answers both with the IP itself.
+			$host = self::reverse_dns( $ip );
 		}
-		if ( null === $host && $listed ) {
+		if ( null === $host ) {
 			// 3.4.3: no PTR record at all, and not on the official list: fake (cached like any "no", 1 hour).
+			// 3.5.1: also for the families without a list (Applebot, YandexBot): Apple and Yandex give every one of
+			// their crawler addresses a PTR record in their own domain, so an address without one is never theirs.
+			// Before, such a fake was "inconclusive" for ever: never blocked as a fake crawler, never banned by
+			// the trap or the probe ban.
 			if ( $store ) {
 				PNCP_Log::cache_set( $key, 'no', HOUR_IN_SECONDS );
 			}

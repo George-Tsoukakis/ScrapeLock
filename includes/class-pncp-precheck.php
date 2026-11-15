@@ -318,6 +318,8 @@ final class PNCP_Precheck {
 			'block'           => self::set( PNCP_Options::parse_list( $s['block_ips'] ) ),
 			'crawlers'        => $crawlers,
 			'apcu'            => (bool) apply_filters( 'pncp_precheck_apcu', true ),
+			// 3.5.1: most new files a minute without APCu (PNCP_Precheck_Runtime::NEW_FILES, new_file_ok()).
+			'new_files'       => max( 0, (int) apply_filters( 'pncp_precheck_new_files_per_minute', 2000 ) ),
 			// "Monitor only": log what would be refused, refuse nothing (with the end of the first-week monitoring).
 			'monitor'         => ! empty( $s['monitor_mode'] ),
 			'monitor_until'   => (int) $s['monitor_until'],
