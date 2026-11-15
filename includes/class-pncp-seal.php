@@ -283,7 +283,7 @@ final class PNCP_Seal {
 		} else {
 			// The cache holds the stored text (get_option() unserializes it): in "alloptions" for an autoloaded
 			// option, under its own name otherwise.
-			// 3.5.1: written back only when the row differs from the cached copy. Before, the whole "alloptions" entry
+			// 3.6: written back only when the row differs from the cached copy. Before, the whole "alloptions" entry
 			// (often hundreds of KB) was rewritten on every request, from this request's copy, which could also
 			// overwrite a newer one written meanwhile by another request.
 			$all = wp_cache_get( 'alloptions', 'options' );

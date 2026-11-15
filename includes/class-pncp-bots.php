@@ -632,7 +632,7 @@ final class PNCP_Bots {
 		$ua = null !== self::$dry ? (string) self::$dry['ua'] : self::user_agent();
 		$ip = null !== self::$dry ? (string) self::$dry['ip'] : PNCP_Ip::client_ip();
 
-		// 3.5.1: the server itself only when the address did not come from far away (PNCP_Ip::is_local_request()).
+		// 3.6: the server itself only when the address did not come from far away (PNCP_Ip::is_local_request()).
 		if ( '' === $ip || ( null !== self::$dry ? PNCP_Ip::is_local( $ip ) : PNCP_Ip::is_local_request() ) ) {
 			return self::pass( 'local' );
 		}
@@ -735,7 +735,7 @@ final class PNCP_Bots {
 		// bot list, the limits and the other checks still apply to them.
 		$feed = 'page' === $context && ( null !== self::$dry ? ! empty( self::$dry['feed'] ) : did_action( 'parse_query' ) && is_feed() );
 
-		// 3.5.1: a search engine whose verification could not finish (a DNS failure, or the DNS budget used up by
+		// 3.6: a search engine whose verification could not finish (a DNS failure, or the DNS budget used up by
 		// a flood of fake ones) is not refused for lacking browser headers: crawlers never send them, and Emergency
 		// Mode turns that check on during the very attack that uses up the budget. The limits still apply to it.
 		$unverified_crawler = '' !== $family && $per_ip && self::$verify_inconclusive;
@@ -848,6 +848,15 @@ final class PNCP_Bots {
 			$wide = PNCP_Ip::limit_key( $ip, 56 );
 			if ( PNCP_Ip::limit_key( $ip ) !== $wide && false !== strpos( $wide, '/56' ) && self::hit( $ip, 'rate_page56', $wide ) > 4 * (int) $s['rate_limit'] ) {
 				return self::verdict( 429, 'rate_page56', $ip );
+			}
+		}
+		// 3.6: pages per minute per signed-in account, whatever addresses it uses. The other limits count per IP, so a
+		// member could run a script from many addresses with one account. Exempt staff never get here. No violation:
+		// a ban is per IP, and the account is not an IP.
+		$account = null === self::$dry ? get_current_user_id() : 0;
+		if ( $count && $account > 0 && in_array( $context, array( 'page', 'search' ), true ) && (int) $s['rate_limit_account'] > 0 ) {
+			if ( self::hit( $ip, 'rate_account', 'u' . $account ) > (int) $s['rate_limit_account'] ) {
+				return self::verdict( 429, 'rate_account', $ip );
 			}
 		}
 		if ( $count && isset( $limits[ $context ] ) ) {
@@ -1491,7 +1500,7 @@ final class PNCP_Bots {
 		}
 		// An explained request (explain()) looks the name up, but stores nothing: no budget, no verdict.
 		$store = null === self::$dry;
-		// 3.5.1: the lookup is taken from the budget with an atomic increment, and only one that is still within
+		// 3.6: the lookup is taken from the budget with an atomic increment, and only one that is still within
 		// it goes ahead. Before, the budget was read and then written: many requests at the same moment all read
 		// the same count and all started a DNS lookup, each holding a PHP worker until the resolver answered.
 		if ( $store && self::dns_budget_take( $budget ) > $max ) {
@@ -1503,20 +1512,20 @@ final class PNCP_Bots {
 		// user-triggered fetchers, all three in one list; Bing) has every real crawler IP on it. An IP outside the
 		// list whose reverse DNS answers "no such name" is then a fake, not a "perhaps": before, a fake Googlebot
 		// from a server without a PTR record was never blocked, never banned by the trap. Only a real DNS failure
-		// (timeout, server error) stays inconclusive. 3.5.1: the same for the families without a list (see below).
+		// (timeout, server error) stays inconclusive. 3.6: the same for the families without a list (see below).
 		$verified = false;
 		$pre      = apply_filters( 'pncp_reverse_dns', null, $ip ); // 3.4.3: false = "no PTR record" (a definite answer).
 		$host     = is_string( $pre ) ? $pre : '';
 		if ( false === $pre ) {
 			$host = null;
 		} elseif ( '' === $host ) {
-			// 3.5.1: for every family, so that "no PTR record" can be told apart from a DNS failure. Before, Applebot
+			// 3.6: for every family, so that "no PTR record" can be told apart from a DNS failure. Before, Applebot
 			// and YandexBot used gethostbyaddr(), which answers both with the IP itself.
 			$host = self::reverse_dns( $ip );
 		}
 		if ( null === $host ) {
 			// 3.4.3: no PTR record at all, and not on the official list: fake (cached like any "no", 1 hour).
-			// 3.5.1: also for the families without a list (Applebot, YandexBot): Apple and Yandex give every one of
+			// 3.6: also for the families without a list (Applebot, YandexBot): Apple and Yandex give every one of
 			// their crawler addresses a PTR record in their own domain, so an address without one is never theirs.
 			// Before, such a fake was "inconclusive" for ever: never blocked as a fake crawler, never banned by
 			// the trap or the probe ban.
@@ -1745,7 +1754,7 @@ final class PNCP_Bots {
 	}
 
 	/**
-	 * 3.5.1: takes one DNS lookup from this minute's budget of a crawler family and returns how many have been
+	 * 3.6: takes one DNS lookup from this minute's budget of a crawler family and returns how many have been
 	 * taken, this one included. Atomic with an object cache or APCu (PNCP_Log::cache_incr()), and in the database
 	 * otherwise (db_incr(), the same row PNCP_Log::cache_get() reads as a transient).
 	 *
@@ -2200,6 +2209,58 @@ final class PNCP_Bots {
 	}
 
 	/**
+	 * 3.6: is a request that names one of trap_exempt_agents() likely that search engine? When it documents the
+	 * DNS names of its crawlers, the reverse DNS must be in its domain and point back to the IP (taken from the
+	 * same per-minute DNS budget as the other crawlers, cached for an hour). Otherwise, as for an unpinned
+	 * "Always allowed" entry, only when the address is not a data center's: a scanner that copies the name
+	 * usually runs on a cloud server. The search engines themselves follow robots.txt, so they do not open the
+	 * trap in the first place.
+	 *
+	 * @param string $ua User-Agent.
+	 * @param string $ip IP.
+	 * @return bool
+	 */
+	private static function trap_exempt_real( $ua, $ip ) {
+		$domains = array(
+			'baiduspider' => array( '.baidu.com', '.baidu.jp' ),
+			'seznambot'   => array( '.seznam.cz' ),
+			'petalbot'    => array( '.petalsearch.com' ),
+			'yeti'        => array( '.naver.com' ),
+		);
+		$lc = strtolower( $ua );
+		foreach ( $domains as $name => $suffixes ) {
+			if ( false === strpos( $lc, $name ) ) {
+				continue;
+			}
+			$key    = 'pncp_tx_' . md5( $name . '|' . $ip );
+			$cached = PNCP_Log::cache_get( $key );
+			if ( false !== $cached ) {
+				return 'yes' === $cached;
+			}
+			$budget = 'pncp_dns_trap_' . (int) floor( time() / MINUTE_IN_SECONDS );
+			if ( null !== self::$dry || self::dns_budget_take( $budget ) > (int) apply_filters( 'pncp_dns_lookups_per_minute', 20 ) ) {
+				return '' === PNCP_Ip::datacenter( $ip ); // No lookup possible now: as for the others.
+			}
+			$pre  = apply_filters( 'pncp_reverse_dns', null, $ip );
+			$host = is_string( $pre ) ? $pre : ( false === $pre ? null : self::reverse_dns( $ip ) );
+			$ok   = false;
+			if ( is_string( $host ) && '' !== $host && $host !== $ip ) {
+				$host = strtolower( rtrim( $host, '.' ) );
+				foreach ( $suffixes as $suffix ) {
+					if ( substr( $host, -strlen( $suffix ) ) === $suffix ) {
+						$forward = self::forward_ips( $host );
+						$ok      = is_array( $forward ) && in_array( PNCP_Ip::normalize( $ip ), $forward, true );
+						break;
+					}
+				}
+			}
+			PNCP_Log::cache_set( $key, $ok ? 'yes' : 'no', HOUR_IN_SECONDS );
+			return $ok;
+		}
+		return '' === PNCP_Ip::datacenter( $ip );
+	}
+
+	/**
 	 * Should the IP that opened the trap be blocked?
 	 *
 	 * Never: logged-in users, the server, always-allowed IPs, Google / Bing IPs, search engines,
@@ -2236,8 +2297,13 @@ final class PNCP_Bots {
 		if ( 'verified' === self::ai_verdict( $ua, $ip, $s ) ) {
 			return false; // A verified AI search bot is treated like a search engine.
 		}
-		if ( ( '' !== $family && ( self::is_verified_crawler( $family, $ip ) || self::$verify_inconclusive ) ) || self::ua_in_list( $ua, self::trap_exempt_agents() ) ) {
+		if ( '' !== $family && ( self::is_verified_crawler( $family, $ip ) || self::$verify_inconclusive ) ) {
 			return false; // Verified, or not verifiable right now: a real search engine is never banned.
+		}
+		// 3.6: the other search engines of trap_exempt_agents() only when it is likely them (trap_exempt_real()):
+		// before, putting "DuckDuckBot" in its User-Agent was enough for any scanner never to be banned.
+		if ( self::ua_in_list( $ua, self::trap_exempt_agents() ) && self::trap_exempt_real( $ua, $ip ) ) {
+			return false;
 		}
 		// Allowed bots (link previews such as facebookexternalhit, price-comparison, monitoring) and allowed
 		// AI search bots are never banned by the trap: a page elsewhere embedding the trap URL (e.g. a link

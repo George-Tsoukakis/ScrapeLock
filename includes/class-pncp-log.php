@@ -251,6 +251,7 @@ final class PNCP_Log {
 			'rate_404'        => __( '“Page not found” (404) per minute', 'scrapelock' ),
 			'rate_cart'       => __( 'WooCommerce cart / checkout actions per minute', 'scrapelock' ),
 			'rate_coupon'     => __( 'WooCommerce coupon attempts per minute', 'scrapelock' ),
+			'rate_account'    => __( 'Pages per minute per signed-in account', 'scrapelock' ), // 3.6.
 			'blocked_ip'      => __( 'IP in the always-blocked list', 'scrapelock' ),
 			'blocked_ref'     => __( 'Referrer in the always-blocked list', 'scrapelock' ),
 			'trap'            => __( 'Bot trap', 'scrapelock' ),

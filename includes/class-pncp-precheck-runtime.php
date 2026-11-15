@@ -30,7 +30,7 @@ final class PNCP_Precheck_Runtime {
 	const BURST = 10;
 
 	/**
-	 * 3.5.1: at most this many new files a minute (counters, probe memory, probe bans) without APCu, as
+	 * 3.6: at most this many new files a minute (counters, probe memory, probe bans) without APCu, as
 	 * PNCP_Bots::DB_NEW_KEYS_PER_MINUTE for the database. Filter `pncp_precheck_new_files_per_minute` (0 = no cap).
 	 */
 	const NEW_FILES = 2000;
@@ -44,7 +44,7 @@ final class PNCP_Precheck_Runtime {
 	public static $monitored = false;
 
 	/**
-	 * 3.5.1: the addresses the request passed through (REMOTE_ADDR and the trusted proxies after the visitor), as
+	 * 3.6: the addresses the request passed through (REMOTE_ADDR and the trusted proxies after the visitor), as
 	 * found by client_ip(). See is_local_request().
 	 *
 	 * @var string[]
@@ -52,7 +52,7 @@ final class PNCP_Precheck_Runtime {
 	public static $hops = array();
 
 	/**
-	 * 3.5.1: a trusted CDN edge connected without a usable "Real visitor IP" header, as in PNCP_Ip::is_cdn_edge().
+	 * 3.6: a trusted CDN edge connected without a usable "Real visitor IP" header, as in PNCP_Ip::is_cdn_edge().
 	 *
 	 * @var bool
 	 */
@@ -203,7 +203,7 @@ final class PNCP_Precheck_Runtime {
 		// account at the CDN, and is limited like any other address.
 		// 3.4.1: only the edge that connected (REMOTE_ADDR). A Cloudflare address from the real-IP header is a client of
 		// its own (a Cloudflare Worker, which a scraper can rent), as in PNCP_Ip::is_cdn_edge().
-		// 3.5.1: not when the edge sent no visitor IP: this site's own CDN always does.
+		// 3.6: not when the edge sent no visitor IP: this site's own CDN always does.
 		if ( ! self::$no_visitor_ip && self::is_cdn( $ip, $c ) && self::cdn_trust_ok( $c ) && self::normalize_ip( isset( $_SERVER['REMOTE_ADDR'] ) ? (string) $_SERVER['REMOTE_ADDR'] : '' ) === $ip ) {
 			return null;
 		}
@@ -250,7 +250,7 @@ final class PNCP_Precheck_Runtime {
 		// not exist, and never for what the normal check exempts and this one cannot verify (a login cookie, a
 		// crawler without a list, an allowed User-Agent, an IP that may be forged): those are left to WordPress.
 		if ( isset( $c['probe'] ) && is_array( $c['probe'] ) && self::probe( $c, $ua, $ip, $bankey, $reliable, $allowed, $unverified ) ) {
-			// 3.5.1: a new probe memory and ban only within the cap on new files (new_file_ok()); the 403 stays.
+			// 3.6: a new probe memory and ban only within the cap on new files (new_file_ok()); the 403 stays.
 			$known = is_file( $dir . '/probes/' . md5( $bankey ) ) || is_file( $dir . '/bans/' . md5( $bankey ) );
 			if ( ! self::monitoring( $c, $now ) && (int) $c['ban_strikes'] > 0 && ( $known || self::new_file_ok( $c, $now ) ) ) {
 				$full    = self::probe_seen( $dir, $bankey, $now );
@@ -599,7 +599,7 @@ final class PNCP_Precheck_Runtime {
 		self::$hops          = array( $remote );
 		self::$no_visitor_ip = false;
 		if ( '' !== $header && empty( $_SERVER[ $header ] ) && self::trusted( $remote, $c ) && self::is_cdn( $remote, $c ) ) {
-			self::$no_visitor_ip = true; // 3.5.1: a trusted CDN edge without the header (see PNCP_Ip::client_ip()).
+			self::$no_visitor_ip = true; // 3.6: a trusted CDN edge without the header (see PNCP_Ip::client_ip()).
 		}
 		if ( '' !== $header && ! empty( $_SERVER[ $header ] ) ) {
 			$trusted = self::trusted( $remote, $c );
@@ -623,7 +623,7 @@ final class PNCP_Precheck_Runtime {
 				}
 				self::$hops = $hops;
 				if ( ! $legacy && $ip === $remote && self::is_cdn( $remote, $c ) ) {
-					self::$no_visitor_ip = true; // 3.5.1: the header held no IP.
+					self::$no_visitor_ip = true; // 3.6: the header held no IP.
 				}
 				// 3.4.3: a Bunny CDN edge without the CDN secret, as in PNCP_Ip::client_ip(): counted, but not trusted
 				// for the always-allowed IPs. Also behind a local proxy (Nginx in front of PHP: REMOTE_ADDR is
@@ -778,7 +778,7 @@ final class PNCP_Precheck_Runtime {
 	}
 
 	/**
-	 * 3.5.1: the server itself, as in PNCP_Ip::is_local_request(): a local address that can be trusted and came
+	 * 3.6: the server itself, as in PNCP_Ip::is_local_request(): a local address that can be trusted and came
 	 * only through addresses on the server or its private network (REMOTE_ADDR included). Call after client_ip().
 	 *
 	 * @param string $ip       The visitor IP from client_ip().
@@ -987,13 +987,13 @@ final class PNCP_Precheck_Runtime {
 		}
 		$file = $dir . '/' . md5( $key );
 		if ( ! is_file( $file ) && ! self::new_file_ok( $c, $now ) ) {
-			return 1; // 3.5.1: over the cap: counted as this key's first page of the minute, nothing written.
+			return 1; // 3.6: over the cap: counted as this key's first page of the minute, nothing written.
 		}
 		return self::increment( $file );
 	}
 
 	/**
-	 * 3.5.1: may one more new file be created this minute? Without a cap, an attack that changes address on every
+	 * 3.6: may one more new file be created this minute? Without a cap, an attack that changes address on every
 	 * request (an IPv6 /48 holds 65,536 /64 keys) created a counter file per address, millions an hour, enough to
 	 * use up the inodes or the disk quota of a shared host. The count is kept in the minute's hits folder, so it
 	 * is removed with it. A failure to count allows the file, as before.

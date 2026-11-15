@@ -766,6 +766,22 @@ final class PNCP_Admin {
 				?>
 			</td>
 		</tr>
+		<tr id="pncp-readers">
+			<th scope="row"><?php esc_html_e( 'Members and readers', 'scrapelock' ); ?></th>
+			<td>
+				<p class="description"><?php esc_html_e( 'No web page can stop a screenshot, a screen recording or a photo of the screen. These options make copies traceable instead, and stop accounts that are shared or used to copy everything. Staff who are exempt (“Who is excluded”) never see or trigger them.', 'scrapelock' ); ?></p>
+				<?php
+				self::checkbox( $s, 'user_mark', __( 'Show who is reading over protected pages', 'scrapelock' ), __( 'A faint line repeated over the page with the account\'s user name and the date and time, so every screenshot, recording or photo shows whose account it came from. It never gets in the way of clicks, taps or selecting text, and appears again if it is removed.', 'scrapelock' ) );
+				self::checkbox( $s, 'user_mark_guests', __( 'Also for visitors who are not signed in (their IP address and the time)', 'scrapelock' ), __( 'Their line is fetched by the page, so cached pages work as before. Search engines do not see it.', 'scrapelock' ) );
+				self::number( $s, 'user_mark_opacity', __( 'How visible (percent):', 'scrapelock' ), __( '10 is faint but readable on a screenshot.', 'scrapelock' ) );
+				self::checkbox( $s, 'text_trace', __( 'Hide an invisible trace of the account in the text', 'scrapelock' ), __( 'For signed-in accounts: invisible characters, different for each account, are placed in the text of protected pages. When the text turns up somewhere else, paste it under Log → “Find whose copy this is” to see the account and when. Visitors who are not signed in get the text without a trace.', 'scrapelock' ) );
+				self::number( $s, 'rate_limit_account', __( 'Pages per minute per signed-in account (0 = off):', 'scrapelock' ), __( 'The other limits count per IP address; a member could run a script from many addresses with one account. For example 30.', 'scrapelock' ) );
+				self::checkbox( $s, 'shared_alert', __( 'Email me when one account is used from several addresses at once', 'scrapelock' ), __( 'Counted within 10 minutes. Mobile phones change address often, so one alert at most per account a day.', 'scrapelock' ) );
+				self::number( $s, 'shared_ips', __( 'Addresses at once:', 'scrapelock' ) );
+				self::checkbox( $s, 'shared_logout', __( 'Then sign the account out everywhere else', 'scrapelock' ), __( 'The session on the newest address stays signed in; the others must sign in again. Never for staff.', 'scrapelock' ) );
+				?>
+			</td>
+		</tr>
 		<tr>
 			<th scope="row"><?php esc_html_e( 'When someone copies', 'scrapelock' ); ?></th>
 			<td>
@@ -1722,6 +1738,7 @@ final class PNCP_Admin {
 		<tr>
 			<th scope="row"><?php esc_html_e( 'Versions', 'scrapelock' ); ?></th>
 			<td>
+				<?php self::checkbox( $s, 'hide_fingerprint', __( 'Hide that the site runs on WordPress, as far as possible', 'scrapelock' ), __( 'For visitors who are not signed in: everything “Hide the versions” below does, plus no REST API, oEmbed, RSD and shortlink links in the page head and headers, no emoji script, no X-Pingback and “X-Redirect-By: WordPress” headers. Tools such as BuiltWith and Wappalyzer, and scanners, look for these first. Everything keeps working. It cannot hide everything: the addresses of themes and plugins (/wp-content/…) still show it, and the hosting and DNS of a site are public anyway. Add the Nginx or Apache rules (Server rules tab) to refuse readme.html and license.txt too.', 'scrapelock' ) ); ?>
 				<?php self::checkbox( $s, 'hide_versions', __( 'Hide the versions of WordPress, PHP and the plugins', 'scrapelock' ), __( 'Scanners read these versions and look them up in lists of known vulnerabilities. This removes the “generator” tag from the page head and the feeds, the X-Powered-By header with the PHP version, and replaces “?ver=7.1.3” on CSS and JS files with a code that changes when the version changes, so caches still work. The readme and changelog files of WordPress and the plugins are static files: the Nginx and Apache rules in the “Server rules” tab refuse them. It does not fix any vulnerability: keep WordPress and the plugins updated.', 'scrapelock' ) ); ?>
 			</td>
 		</tr>
@@ -2167,6 +2184,7 @@ final class PNCP_Admin {
 		// 3.5: "Check a request": what ScrapeLock would answer, without counting or logging anything.
 		require_once PNCP_DIR . 'includes/class-pncp-tester-view.php';
 		PNCP_Tester_View::render( $s );
+		PNCP_Trace::render(); // 3.6: "Find whose copy this is".
 		$views = array(
 			'all'     => __( 'All events', 'scrapelock' ),
 			'blocked' => __( 'Blocked', 'scrapelock' ),

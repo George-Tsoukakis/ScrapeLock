@@ -117,7 +117,7 @@ final class PNCP_Lockdown {
 	private static $staff = array();
 
 	/**
-	 * 3.5.1: per user, the capabilities stored for the user alone, which none of the user's roles grants (see
+	 * 3.6: per user, the capabilities stored for the user alone, which none of the user's roles grants (see
 	 * own_caps()).
 	 *
 	 * @var array<int, string[]>
@@ -265,8 +265,12 @@ final class PNCP_Lockdown {
 		foreach ( self::base_options() as $option ) {
 			add_filter( 'pre_update_option_' . $option, array( __CLASS__, 'keep_option' ), 9999, 3 );
 		}
-		// 3.5.1: the widgets, the theme's settings, payment methods and the options of the filter (extra_options()).
+		// 3.6: the widgets, the theme's settings, payment methods and the options of the filter (extra_options()).
 		add_filter( 'pre_update_option', array( __CLASS__, 'keep_extra_option' ), 9999, 3 );
+		// 3.6: the Site Editor's templates and template parts (keep_templates()).
+		add_filter( 'wp_insert_post_empty_content', array( __CLASS__, 'keep_templates' ), 9999, 2 );
+		add_filter( 'pre_delete_post', array( __CLASS__, 'keep_template_post' ), 9999, 2 );
+		add_filter( 'pre_trash_post', array( __CLASS__, 'keep_template_post' ), 9999, 2 );
 		// Multisite: the network options too (3.4: also the super admins and who may register).
 		foreach ( array( 'active_sitewide_plugins', 'admin_email', 'site_admins', 'registration', self::OPTION ) as $option ) {
 			add_filter( 'pre_update_site_option_' . $option, array( __CLASS__, 'keep_option' ), 9999, 3 );
@@ -1492,7 +1496,7 @@ final class PNCP_Lockdown {
 	}
 
 	/**
-	 * 3.5.1: the capabilities stored for this user alone ({prefix}capabilities) that none of the user's roles
+	 * 3.6: the capabilities stored for this user alone ({prefix}capabilities) that none of the user's roles
 	 * grants: refused while locked (map_meta_cap()). Reading and the user levels are not counted.
 	 *
 	 * @param int $user_id User.
@@ -1589,7 +1593,7 @@ final class PNCP_Lockdown {
 		$by     = (int) self::state()['unlocked_by'];
 		$frozen = self::is_locked() || ( $by > 0 && self::unlocked_until() && ( (int) $user_id !== $by || ! self::unlocking_session( (int) $user_id ) ) );
 		$level  = $frozen ? self::staff_level( $user_id ) : 0;
-		// 3.5.1: a capability stored for the user alone, which none of the user's roles grants, is refused while
+		// 3.6: a capability stored for the user alone, which none of the user's roles grants, is refused while
 		// locked, whoever the user is. Before, a subscriber given edit_posts, delete_others_posts or a plugin's own
 		// capability directly in the database (SQL injection in another plugin) was not staff, so not frozen, and
 		// could use them. The rights that come with the user's roles stay as they are.
@@ -1919,7 +1923,7 @@ final class PNCP_Lockdown {
 	}
 
 	/**
-	 * The options kept while locked since before 3.5.1, each with a filter of its own (init()).
+	 * The options kept while locked since before 3.6, each with a filter of its own (init()).
 	 *
 	 * @return string[]
 	 */
@@ -1931,7 +1935,7 @@ final class PNCP_Lockdown {
 	}
 
 	/**
-	 * 3.5.1: more options kept while locked: what can put code on every page or change where payments go, and
+	 * 3.6: more options kept while locked: what can put code on every page or change where payments go, and
 	 * that only an administrator changes. The widgets (widget_* and sidebars_widgets: a Custom HTML widget runs
 	 * scripts on every page), the active theme's settings (theme_mods_*), and WooCommerce's own payment methods
 	 * with the bank accounts of "Direct bank transfer". Filter `pncp_lockdown_protected_options` adds options of
@@ -1971,7 +1975,56 @@ final class PNCP_Lockdown {
 	}
 
 	/**
-	 * 3.5.1: keep_option() for the options of extra_options(), through the generic pre_update_option filter (their
+	 * 3.6: the post types of the Site Editor that only an administrator changes and that are printed on every
+	 * page: templates and template parts (a Custom HTML block in the header runs on the whole site).
+	 * wp_navigation is not here: WordPress creates a fallback menu by itself when a page shows one.
+	 *
+	 * @return string[]
+	 */
+	public static function template_types() {
+		return array( 'wp_template', 'wp_template_part' );
+	}
+
+	/**
+	 * 3.6: while locked, no template or template part is created or changed, also by code (a bug in another
+	 * plugin). wp_insert_post() then stops as for an empty post.
+	 *
+	 * @param bool                 $maybe_empty Whether WordPress treats the post as empty.
+	 * @param array<string, mixed> $postarr     The post being saved.
+	 * @return bool
+	 */
+	public static function keep_templates( $maybe_empty, $postarr ) {
+		if ( self::$writing || ! is_array( $postarr ) ) {
+			return $maybe_empty;
+		}
+		$type = isset( $postarr['post_type'] ) ? (string) $postarr['post_type'] : '';
+		if ( '' === $type && ! empty( $postarr['ID'] ) ) {
+			$type = (string) get_post_type( (int) $postarr['ID'] );
+		}
+		if ( ! in_array( $type, self::template_types(), true ) || ! self::is_locked() ) {
+			return $maybe_empty;
+		}
+		self::refused( 'post:' . $type );
+		return true;
+	}
+
+	/**
+	 * 3.6: nor deleted or trashed while locked.
+	 *
+	 * @param mixed   $check Null to go on, anything else stops it.
+	 * @param WP_Post $post  Post.
+	 * @return mixed
+	 */
+	public static function keep_template_post( $check, $post ) {
+		if ( null !== $check || self::$writing || ! $post instanceof WP_Post || ! in_array( $post->post_type, self::template_types(), true ) || ! self::is_locked() ) {
+			return $check;
+		}
+		self::refused( 'post:' . $post->post_type );
+		return false;
+	}
+
+	/**
+	 * 3.6: keep_option() for the options of extra_options(), through the generic pre_update_option filter (their
 	 * names are known only once every plugin has loaded).
 	 *
 	 * @param mixed  $value     New value.

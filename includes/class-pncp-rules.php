@@ -512,7 +512,7 @@ final class PNCP_Rules {
 			$lines   = array_merge( $lines, $data );
 			$lines[] = '';
 		}
-		if ( $s['hide_versions'] ) {
+		if ( $s['hide_versions'] || ! empty( $s['hide_fingerprint'] ) ) {
 			$lines[] = '# Hide versions: readme / changelog files that give the version of WordPress, plugins and themes away (404).';
 			foreach ( self::version_regexes() as $regex ) {
 				$lines[] = 'location ~* ' . self::nginx_arg( $regex ) . ' { return 404; }';
@@ -691,7 +691,7 @@ final class PNCP_Rules {
 			$lines[] = '# Clean originals: never public (there is also an .htaccess inside the folder).';
 			$lines[] = 'RewriteRule ' . self::apache_regex( '^' . preg_quote( $uploads . '/' . $backup, '#' ) . '/' ) . ' - [F,L]';
 		}
-		if ( $s['hide_versions'] ) {
+		if ( $s['hide_versions'] || ! empty( $s['hide_fingerprint'] ) ) {
 			$lines[] = '# Hide versions: readme / changelog files that give the version of WordPress, plugins and themes away (404).';
 			foreach ( self::version_regexes() as $regex ) {
 				$lines[] = 'RewriteRule ' . self::apache_regex( $regex ) . ' - [R=404,NC,L]';

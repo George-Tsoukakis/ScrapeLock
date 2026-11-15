@@ -257,12 +257,12 @@ t( 'Applebot όταν το DNS δεν απαντά: 200 (κανονικά όρι
 list( $code ) = req( $url, array( 'X-Test-IP' => '17.58.101.11', 'User-Agent' => $ab, 'X-Test-RDNS' => '17.58.101.11' ) );
 wp_cache_flush(); PNCP_Log::reset_cache();
 t( 'Applebot όταν το DNS δεν απαντά, 2ο αίτημα (από την cache): πάλι χωρίς αποκλεισμό', 200 === $code && ! isset( PNCP_Log::active_bans()['17.58.101.11'] ), (string) $code );
-// 3.5.1: καμία εγγραφή PTR (απάντηση, όχι αποτυχία): η Apple και η Yandex δίνουν PTR σε κάθε crawler τους.
+// 3.6: καμία εγγραφή PTR (απάντηση, όχι αποτυχία): η Apple και η Yandex δίνουν PTR σε κάθε crawler τους.
 fresh();
 list( $code ) = req( $url, array( 'X-Test-IP' => '198.18.9.11', 'User-Agent' => $ab, 'X-Test-RDNS' => 'nxdomain' ) );
-t( 'Applebot από IP χωρίς εγγραφή PTR: 403 ψεύτικος crawler (3.5.1)', 403 === $code && in_array( 'fake_crawler', log_reasons(), true ), $code . ' ' . implode( ',', log_reasons() ) );
+t( 'Applebot από IP χωρίς εγγραφή PTR: 403 ψεύτικος crawler (3.6)', 403 === $code && in_array( 'fake_crawler', log_reasons(), true ), $code . ' ' . implode( ',', log_reasons() ) );
 list( $code ) = req( $url, array( 'X-Test-IP' => '198.18.9.12', 'User-Agent' => 'Mozilla/5.0 (compatible; YandexBot/3.0; +http://yandex.com/bots)', 'X-Test-RDNS' => 'nxdomain' ) );
-t( 'YandexBot από IP χωρίς εγγραφή PTR: 403 ψεύτικος crawler (3.5.1)', 403 === $code, (string) $code );
+t( 'YandexBot από IP χωρίς εγγραφή PTR: 403 ψεύτικος crawler (3.6)', 403 === $code, (string) $code );
 fresh();
 list( $code ) = req( $url, array( 'X-Test-IP' => '17.58.101.12', 'User-Agent' => $ab, 'X-Test-RDNS' => '17-58-101-12.applebot.apple.com', 'X-Test-FDNS' => '17.58.101.12' ) );
 t( 'πραγματικό Applebot (rDNS + forward DNS): 200', 200 === $code, (string) $code );

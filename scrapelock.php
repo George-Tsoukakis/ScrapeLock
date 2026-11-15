@@ -2,7 +2,7 @@
 /**
  * Plugin Name:       ScrapeLock – Content & AI Bot Protection
  * Description:       Protects your content: makes copying text and images harder, hides the text in the REST API, GraphQL and RSS, blocks scrapers, AI bots and fake Googlebots, temporarily blocks persistent IPs, protects XML feeds with a token and adds an optional watermark. Lockdown freezes every change to the site until it is unlocked with an authenticator app. Forms, cart, checkout and search engines are not affected.
- * Version:           3.5.1
+ * Version:           3.6.0
  * Requires at least: 6.2
  * Requires PHP:      7.4
  * Author:            CodeBunny
@@ -19,43 +19,26 @@ if ( defined( 'PNCP_VERSION' ) ) {
 	return;
 }
 
-define( 'PNCP_VERSION', '3.5.1' );
+define( 'PNCP_VERSION', '3.6.0' );
 define( 'PNCP_FILE', __FILE__ );
 define( 'PNCP_DIR', plugin_dir_path( __FILE__ ) );
 define( 'PNCP_URL', plugin_dir_url( __FILE__ ) );
 defined( 'PNCP_OPTION' ) || define( 'PNCP_OPTION', 'pncp_settings' ); // Also defined by the early check (mu-plugin).
 
-require_once PNCP_DIR . 'includes/class-pncp-paths.php';
-require_once PNCP_DIR . 'includes/class-pncp-time.php';
-require_once PNCP_DIR . 'includes/class-pncp-options.php';
-require_once PNCP_DIR . 'includes/class-pncp-settings-io.php';
-require_once PNCP_DIR . 'includes/class-pncp-ip.php';
-require_once PNCP_DIR . 'includes/class-pncp-log.php';
-require_once PNCP_DIR . 'includes/class-pncp-frontend.php';
-require_once PNCP_DIR . 'includes/class-pncp-rest.php';
-require_once PNCP_DIR . 'includes/class-pncp-graphql.php';
-require_once PNCP_DIR . 'includes/class-pncp-feed.php';
-require_once PNCP_DIR . 'includes/class-pncp-bots.php';
-require_once PNCP_DIR . 'includes/class-pncp-probe.php';
-require_once PNCP_DIR . 'includes/class-pncp-surge.php';
-require_once PNCP_DIR . 'includes/class-pncp-edge.php';
-require_once PNCP_DIR . 'includes/class-pncp-origin.php';
-require_once PNCP_DIR . 'includes/class-pncp-watermark.php';
-require_once PNCP_DIR . 'includes/class-pncp-private-urls.php';
-require_once PNCP_DIR . 'includes/class-pncp-rules.php';
-require_once PNCP_DIR . 'includes/class-pncp-status.php';
-require_once PNCP_DIR . 'includes/class-pncp-early.php';
-require_once PNCP_DIR . 'includes/class-pncp-human.php';
-require_once PNCP_DIR . 'includes/class-pncp-geo.php';
-require_once PNCP_DIR . 'includes/class-pncp-precheck.php';
-require_once PNCP_DIR . 'includes/class-pncp-totp.php';
-require_once PNCP_DIR . 'includes/class-pncp-lockdown.php';
-require_once PNCP_DIR . 'includes/class-pncp-seal.php';
-require_once PNCP_DIR . 'includes/class-pncp-integrity.php';
-require_once PNCP_DIR . 'includes/class-pncp-surface.php';
-require_once PNCP_DIR . 'includes/class-pncp-health.php';
-require_once PNCP_DIR . 'includes/class-pncp-abilities.php';
-require_once PNCP_DIR . 'includes/class-pncp-tester.php';
+// 3.6: each class is loaded when it is first used (PNCP_Foo_Bar → includes/class-pncp-foo-bar.php). A page for a
+// visitor no longer reads the code it never runs (the server rules, settings import and export, Site Health, the
+// "Check a request" card, the file check unless the site is locked).
+spl_autoload_register(
+	static function ( $class ) {
+		if ( 0 !== strpos( $class, 'PNCP_' ) ) {
+			return;
+		}
+		$file = PNCP_DIR . 'includes/class-' . str_replace( '_', '-', strtolower( $class ) ) . '.php';
+		if ( is_readable( $file ) ) {
+			require_once $file;
+		}
+	}
+);
 
 if ( is_admin() ) {
 	require_once PNCP_DIR . 'includes/class-pncp-admin.php';
@@ -80,11 +63,43 @@ PNCP_Geo::init();
 PNCP_Precheck::init();
 PNCP_Lockdown::init();
 PNCP_Seal::init();
-PNCP_Integrity::init();
 PNCP_Surface::init();
-PNCP_Health::init();
-PNCP_Abilities::init();
-PNCP_Tester::init();
+// 3.6: what only wp-admin, admin-ajax, scheduled events, WP-CLI or the REST API use is loaded there only.
+$pncp_backend = is_admin() || wp_doing_cron() || ( defined( 'WP_CLI' ) && WP_CLI );
+if ( $pncp_backend ) {
+	PNCP_Integrity::init();
+	PNCP_Health::init();
+} else {
+	// The file check's hourly event is kept scheduled while the site is locked (PNCP_Integrity::ensure_cron()).
+	add_action(
+		'init',
+		static function () {
+			if ( PNCP_Lockdown::is_locked() ) {
+				PNCP_Integrity::ensure_cron();
+			}
+		}
+	);
+	// Site Health's tests also run through the REST API (wp-site-health/v1).
+	add_action( 'rest_api_init', array( 'PNCP_Health', 'init' ) );
+}
+unset( $pncp_backend );
+if ( function_exists( 'wp_register_ability' ) ) {
+	add_action( 'wp_abilities_api_categories_init', array( 'PNCP_Abilities', 'category' ) );
+	add_action( 'wp_abilities_api_init', array( 'PNCP_Abilities', 'register' ) );
+}
+// "Check a request": its admin-ajax action, and the admin bar entry for signed-in staff.
+add_action(
+	'init',
+	static function () {
+		if ( is_admin() || is_user_logged_in() ) {
+			PNCP_Tester::init();
+		}
+	},
+	0
+);
+PNCP_Mark::init();
+PNCP_Accounts::init();
+PNCP_Trace::init();
 
 if ( defined( 'WP_CLI' ) && WP_CLI ) {
 	require_once PNCP_DIR . 'includes/class-pncp-cli.php';

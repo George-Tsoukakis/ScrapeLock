@@ -28,7 +28,7 @@ final class PNCP_Integrity {
 	const OFFICIAL = 'pncp_integrity_official';
 
 	/**
-	 * 3.5.1: the signed fingerprint of the code that plugins keep in the database and run (see db_code()).
+	 * 3.6: the signed fingerprint of the code that plugins keep in the database and run (see db_code()).
 	 */
 	const DB_CODE = 'pncp_integrity_dbcode';
 
@@ -742,7 +742,7 @@ final class PNCP_Integrity {
 			return;
 		}
 		self::drop_scan();
-		// 3.5.1: the fingerprint of before a temporary unlock is compared with the files as they are now, before it is
+		// 3.6: the fingerprint of before a temporary unlock is compared with the files as they are now, before it is
 		// replaced. Before, everything written while the site was open (by an update, or by a backdoor that came in
 		// meanwhile) went into the new fingerprint without a word.
 		$old     = self::baseline();
@@ -767,7 +767,7 @@ final class PNCP_Integrity {
 		);
 		PNCP_Lockdown::note_fingerprint( $time );
 		if ( PNCP_Lockdown::is_locked() ) {
-			self::store_db_code(); // 3.5.1: the code kept in the database, as it is when the site is locked.
+			self::store_db_code(); // 3.6: the code kept in the database, as it is when the site is locked.
 		}
 		$report             = self::report();
 		$report['tampered'] = false;
@@ -793,7 +793,7 @@ final class PNCP_Integrity {
 	}
 
 	/**
-	 * 3.5.1: the code files added, changed and removed between two fingerprints (files of caches and the updater's
+	 * 3.6: the code files added, changed and removed between two fingerprints (files of caches and the updater's
 	 * folders only when they are new, as in check()). At most 500 of each.
 	 *
 	 * @param array<string, string> $before   Fingerprint before.
@@ -825,7 +825,7 @@ final class PNCP_Integrity {
 	}
 
 	/**
-	 * 3.5.1: emails the administration address the code files that changed while the site was unlocked for a
+	 * 3.6: emails the administration address the code files that changed while the site was unlocked for a
 	 * while, and notes them in the lockdown log. Not an alarm: updates change files on purpose. The list lets the
 	 * owner see a file that no update explains.
 	 *
@@ -1152,7 +1152,7 @@ final class PNCP_Integrity {
 	public static function cron() {
 		if ( PNCP_Lockdown::is_locked() ) {
 			self::check();
-			self::check_db_code(); // 3.5.1.
+			self::check_db_code(); // 3.6.
 			PNCP_Seal::check_admins();
 			// Multisite: the main site checks every site the lock covers (the others only themselves).
 			if ( is_multisite() && is_main_site() ) {
@@ -1171,7 +1171,7 @@ final class PNCP_Integrity {
 		if ( ! PNCP_Lockdown::is_locked() ) {
 			return;
 		}
-		// 3.5.1: also when it is still there but would not run within 2 hours, or no longer every hour. The event
+		// 3.6: also when it is still there but would not run within 2 hours, or no longer every hour. The event
 		// lives in the "cron" option, which Lockdown does not keep: moved to the year 2100 through the database,
 		// it silenced the file check and the administrator checks without a word.
 		$event = wp_get_scheduled_event( PNCP_Log::CRON );
@@ -1369,7 +1369,7 @@ final class PNCP_Integrity {
 			'removed'           => __( 'Removed while locked', 'scrapelock' ),
 			'official_modified' => __( 'Differs from WordPress.org', 'scrapelock' ),
 			'official_unknown'  => __( 'Not part of the WordPress.org copy', 'scrapelock' ),
-			// 3.5.1: between the fingerprint of before a temporary unlock and the one taken when it ended.
+			// 3.6: between the fingerprint of before a temporary unlock and the one taken when it ended.
 			'unlocked_added'    => __( 'New while unlocked', 'scrapelock' ),
 			'unlocked_changed'  => __( 'Changed while unlocked', 'scrapelock' ),
 			'unlocked_removed'  => __( 'Removed while unlocked', 'scrapelock' ),
@@ -1636,7 +1636,7 @@ final class PNCP_Integrity {
 		return is_array( $data ) && isset( $data['files'] ) && is_array( $data['files'] ) ? $data['files'] : null;
 	}
 
-	/* ---------- 3.5.1: code kept in the database ---------- */
+	/* ---------- 3.6: code kept in the database ---------- */
 
 	/**
 	 * The code that plugins keep in the database and run on the site, as source => [ item => hash ]: the active
@@ -1668,9 +1668,16 @@ final class PNCP_Integrity {
 			}
 		}
 		$rows = $wpdb->get_results( $wpdb->prepare( "SELECT ID, post_content FROM {$wpdb->posts} WHERE post_type = %s AND post_status = %s", 'wpcode', 'publish' ), ARRAY_A );
-		// phpcs:enable
 		foreach ( (array) $rows as $row ) {
 			$out['wpcode'][ (string) $row['ID'] ] = md5( (string) $row['post_content'] );
+		}
+		// 3.6: the Site Editor's templates, template parts and global styles (scripts in a Custom HTML block of the
+		// header run on every page). Changed by code they are refused (PNCP_Lockdown::keep_templates()); this finds
+		// a change written straight into the database.
+		$rows = $wpdb->get_results( $wpdb->prepare( "SELECT ID, post_content FROM {$wpdb->posts} WHERE post_type IN (%s, %s, %s) AND post_status = %s", 'wp_template', 'wp_template_part', 'wp_global_styles', 'publish' ), ARRAY_A );
+		// phpcs:enable
+		foreach ( (array) $rows as $row ) {
+			$out['site-editor'][ (string) $row['ID'] ] = md5( (string) $row['post_content'] );
 		}
 		/**
 		 * Filters the code that plugins keep in the database and run, which Lockdown checks every hour.
@@ -1704,7 +1711,7 @@ final class PNCP_Integrity {
 	 * The hourly comparison, while locked: code kept in the database that is new or changed since the site was
 	 * locked is emailed about (PNCP_Lockdown::tamper_alert()), noted in the lockdown log and, with the
 	 * quarantine on, the plugin that would run it is deactivated. Nothing is deleted. A fingerprint changed in
-	 * the database is reported as such; none at all (a site locked before 3.5.1) is taken now.
+	 * the database is reported as such; none at all (a site locked before 3.6) is taken now.
 	 *
 	 * @return string[] What was found ("source #item").
 	 */

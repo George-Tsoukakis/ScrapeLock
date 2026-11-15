@@ -1,6 +1,6 @@
 <?php
 /**
- * ScrapeLock — δοκιμές των διορθώσεων της 3.5.1 σε πραγματικό WordPress.
+ * ScrapeLock — δοκιμές των διορθώσεων της 3.6 σε πραγματικό WordPress.
  *
  *   WP_DIR=/path/to/wordpress BASE=http://127.0.0.1:8099 php t_fixes351.php
  *

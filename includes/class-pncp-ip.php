@@ -38,7 +38,7 @@ final class PNCP_Ip {
 	private static $reliable = true;
 
 	/**
-	 * 3.5.1: the addresses the request passed through on its way here (REMOTE_ADDR and the proxies after the
+	 * 3.6: the addresses the request passed through on its way here (REMOTE_ADDR and the proxies after the
 	 * visitor in the real-IP header). See is_local_request().
 	 *
 	 * @var string[]
@@ -46,7 +46,7 @@ final class PNCP_Ip {
 	private static $hops = array();
 
 	/**
-	 * 3.5.1: a CDN edge trusted for the "Real visitor IP" header connected, but the header was missing or not
+	 * 3.6: a CDN edge trusted for the "Real visitor IP" header connected, but the header was missing or not
 	 * an IP, so the edge's own address stands in. See is_cdn_edge().
 	 *
 	 * @var bool
@@ -667,7 +667,7 @@ final class PNCP_Ip {
 		if ( '' === $ip || self::remote_addr() !== $ip ) {
 			return false;
 		}
-		// 3.5.1: not when the edge was trusted for the real-IP header but sent none (or not an IP): this site's own
+		// 3.6: not when the edge was trusted for the real-IP header but sent none (or not an IP): this site's own
 		// CDN always writes it, so such a request came through someone else's zone at the same CDN.
 		self::client_ip();
 		if ( self::$no_visitor_ip && $ip === self::$client_ip ) {
@@ -907,7 +907,7 @@ final class PNCP_Ip {
 				if ( $legacy && $ip !== $remote ) {
 					self::$reliable = false;
 				}
-				// 3.5.1: the proxies after the visitor in the chain, as far as they were read.
+				// 3.6: the proxies after the visitor in the chain, as far as they were read.
 				$links = count( $chain );
 				for ( $h = max( 0, $i + 1 ); $h < $links; $h++ ) {
 					$hop = self::normalize( $chain[ $h ] );
@@ -915,7 +915,7 @@ final class PNCP_Ip {
 						self::$hops[] = $hop;
 					}
 				}
-				// 3.5.1: the header of a trusted CDN edge held no IP. The edge's address is not shared by real
+				// 3.6: the header of a trusted CDN edge held no IP. The edge's address is not shared by real
 				// visitors then (this site's own CDN always writes it), so it is limited like any other client.
 				if ( ! $legacy && $ip === $remote && self::is_cdn( $remote ) ) {
 					self::$no_visitor_ip = true;
@@ -936,7 +936,7 @@ final class PNCP_Ip {
 				}
 			}
 		} elseif ( isset( $headers[ $setting ] ) && self::is_cdn( $remote ) && self::is_trusted_proxy( $remote, $s, $setting ) ) {
-			// 3.5.1: a trusted CDN edge sent no "Real visitor IP" header at all (see above).
+			// 3.6: a trusted CDN edge sent no "Real visitor IP" header at all (see above).
 			self::$no_visitor_ip = true;
 		} elseif ( 'remote_addr' === $setting && ! empty( $_SERVER['HTTP_CF_CONNECTING_IP'] ) && self::is_trusted_proxy( $remote, $s, 'cf_connecting_ip' ) ) {
 			// "Real visitor IP" left at the default but the request comes from a Cloudflare edge (checked against
@@ -977,7 +977,7 @@ final class PNCP_Ip {
 	}
 
 	/**
-	 * 3.5.1: is this request from the server itself (cron, cache preload, loopback)? The visitor IP must be the
+	 * 3.6: is this request from the server itself (cron, cache preload, loopback)? The visitor IP must be the
 	 * loopback or the server's own address AND it must not have come from far away: the IP is reliable and
 	 * every address on its way (REMOTE_ADDR and each proxy read in the header) is on the server or its private
 	 * network. Being equal to REMOTE_ADDR is not enough: behind Nginx on 127.0.0.1, X-Forwarded-For can end

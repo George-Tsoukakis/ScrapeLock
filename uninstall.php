@@ -182,7 +182,7 @@ delete_site_option( 'pncp_lockdown_dblock' );
 delete_site_option( 'pncp_integrity' );
 delete_site_option( 'pncp_integrity_report' );
 delete_site_option( 'pncp_integrity_scan' );
-delete_site_option( 'pncp_integrity_dbcode' ); // 3.5.1.
+delete_site_option( 'pncp_integrity_dbcode' ); // 3.6.
 delete_metadata( 'user', 0, 'pncp_lockdown_pending', '', true );
 delete_site_option( 'pncp_lockdown_digests' );
 // 3.4, multisite: the snapshot of the whole network, its fingerprints and the changes noted while unlocked for a while.

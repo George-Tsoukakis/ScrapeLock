@@ -85,6 +85,9 @@ final class PNCP_Admin_Fields {
 			'on',
 			__( 'Watermark new images', 'scrapelock' )
 		);
+		// 3.6.
+		$add( array( 'user_mark_guests', 'user_mark_opacity' ), 'user_mark', 'on', __( 'Show who is reading over protected pages', 'scrapelock' ) );
+		$add( array( 'shared_ips', 'shared_logout' ), 'shared_alert', 'on', __( 'Email me when one account is used from several addresses at once', 'scrapelock' ) );
 		return $map;
 	}
 

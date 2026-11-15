@@ -117,6 +117,13 @@ final class PNCP_Options {
 			'block_http_libs',
 			'monitor_mode',
 			'probe_ban',
+			// 3.6.
+			'user_mark',
+			'user_mark_guests',
+			'shared_alert',
+			'shared_logout',
+			'hide_fingerprint',
+			'text_trace',
 		);
 	}
 
@@ -145,6 +152,10 @@ final class PNCP_Options {
 			'watermark_opacity'     => array( 10, 100 ),
 			'watermark_size'        => array( 5, 60 ),
 			'watermark_min_width'   => array( 0, 5000 ),
+			// 3.6.
+			'user_mark_opacity'     => array( 2, 60 ),
+			'rate_limit_account'    => array( 0, 10000 ),
+			'shared_ips'            => array( 2, 50 ),
 		);
 	}
 
@@ -174,9 +185,9 @@ final class PNCP_Options {
 	 */
 	public static function sections() {
 		return array(
-			'general' => array( 'enabled', 'scope_posts', 'scope_pages', 'scope_home', 'scope_products', 'skip_woo_pages', 'excluded_ids', 'block_selection', 'block_context_menu', 'block_shortcuts', 'block_devtools', 'block_image_drag', 'block_text_drag', 'blur_on_capture', 'copy_mode', 'attribution_min_chars', 'print_mode', 'exempt_cap', 'show_message', 'message', 'block_framing', 'tdm_reservation', 'tdm_policy_url' ),
+			'general' => array( 'enabled', 'scope_posts', 'scope_pages', 'scope_home', 'scope_products', 'skip_woo_pages', 'excluded_ids', 'block_selection', 'block_context_menu', 'block_shortcuts', 'block_devtools', 'block_image_drag', 'block_text_drag', 'blur_on_capture', 'copy_mode', 'attribution_min_chars', 'print_mode', 'exempt_cap', 'show_message', 'message', 'block_framing', 'tdm_reservation', 'tdm_policy_url', 'user_mark', 'user_mark_guests', 'user_mark_opacity', 'text_trace', 'rate_limit_account', 'shared_alert', 'shared_ips', 'shared_logout' ),
 			'bots'    => array( 'monitor_mode', 'block_bots', 'block_empty_ua', 'block_fake_crawlers', 'require_browser_headers', 'block_headless', 'trap_enabled', 'probe_ban', 'block_http_libs', 'block_archivers', 'ipv6_wide', 'bot_list', 'allow_list', 'allow_ips', 'allow_ai_search', 'verify_ai_bots', 'robots_ai_block', 'content_signal', 'block_ips', 'block_referrers', 'block_user_enum', 'rate_limit', 'rate_limit_search', 'rate_limit_rest', 'rate_limit_404', 'rate_limit_sitemap', 'human_check', 'rate_limit_unverified', 'geo_db', 'countries_block', 'countries_strict', 'rate_limit_country', 'rate_limit_datacenter', 'rate_limit_cart', 'rate_limit_coupon', 'ban_strikes', 'ban_minutes', 'auto_emergency', 'auto_emergency_mode', 'auto_emergency_min', 'early_mode', 'precheck', 'ip_header', 'trust_cloudflare', 'trust_bunny', 'trust_any_proxy', 'trusted_proxies', 'cdn_secret', 'cdn_only' ),
-			'content' => array( 'rest_hide_content', 'hide_rest_discovery', 'graphql_hide_content', 'feed_mode', 'feed_source_link', 'list_excerpts', 'private_paths', 'private_ips', 'disable_pingback', 'hide_versions', 'block_upload_php' ),
+			'content' => array( 'rest_hide_content', 'hide_rest_discovery', 'graphql_hide_content', 'feed_mode', 'feed_source_link', 'list_excerpts', 'private_paths', 'private_ips', 'disable_pingback', 'hide_versions', 'hide_fingerprint', 'block_upload_php' ),
 			'images'  => array( 'watermark_enabled', 'watermark_full', 'watermark_products', 'watermark_image_id', 'watermark_opacity', 'watermark_size', 'watermark_position', 'watermark_min_width' ),
 			// Log tab: how long the log is kept, and the addresses that count as "Pages" in it (until 3.3 on the
 			// Bots and limits tab, same keys).
@@ -559,6 +570,21 @@ final class PNCP_Options {
 			'monitor_until'           => 0,
 			// 3.5: off on new and existing sites (opt-in: a false positive bans a visitor).
 			'probe_ban'               => 0,
+			// 3.6, all off on new and existing sites: they show or embed who is reading, or change what is sent.
+			// The reader's mark: who is reading and when, faintly over protected pages (PNCP_Mark).
+			'user_mark'               => 0,
+			'user_mark_guests'        => 0,
+			'user_mark_opacity'       => 10,
+			// An invisible trace of the account in the text of protected pages (PNCP_Trace, PNCP_Trace::find()).
+			'text_trace'              => 0,
+			// Pages per minute per signed-in account (0 = off), and one account used from many addresses at once
+			// (PNCP_Accounts, PNCP_Bots::check()).
+			'rate_limit_account'      => 0,
+			'shared_alert'            => 0,
+			'shared_ips'              => 3,
+			'shared_logout'           => 0,
+			// Fewer signs of WordPress in pages and headers (PNCP_Surface::fingerprint()); includes hide_versions.
+			'hide_fingerprint'        => 0,
 		);
 	}
 
@@ -1213,6 +1239,12 @@ final class PNCP_Options {
 	 */
 	public static function cache_keys() {
 		return array(
+			// 3.6: the reader's mark and the trace are printed into the page; the fingerprint changes its head.
+			'user_mark',
+			'user_mark_guests',
+			'user_mark_opacity',
+			'text_trace',
+			'hide_fingerprint',
 			// Whether and where the protection script and its settings are printed into the page.
 			'enabled',
 			'scope_posts',

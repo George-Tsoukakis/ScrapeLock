@@ -4,7 +4,7 @@ Tags: ai crawlers, anti-scraping, bot protection, rate limit, content protection
 Requires at least: 6.2
 Tested up to: 7.2
 Requires PHP: 7.4
-Stable tag: 3.5.1
+Stable tag: 3.6.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -85,6 +85,13 @@ Whatever a visitor sees has already reached their device, so nothing stops a det
 * AI opt-out declaration (TDM): header, meta, `/.well-known/tdmrep.json`, `noai`.
 * Watermark in a corner, the centre or repeated diagonally, optionally on the full-size image too; otherwise visitors get the largest watermarked size, also in the WooCommerce zoom, lightbox and Store API. The clean original is kept, so the watermark can always be removed. Product images are not watermarked by default, because Google Merchant Center rejects them.
 
+= Members, courses and paid content (3.6) =
+
+* **Who is reading, on every screenshot:** a faint line over the page with the member's user name and the time, so a screenshot, a screen recording or a photo of the screen shows whose account it came from. No web page can block screenshots; this makes them traceable.
+* **An invisible trace in the text:** copied text carries the account and the day, hidden in invisible characters. Paste it under Log → "Find whose copy this is".
+* **Shared accounts:** a page limit per account, and an email when one account is used from several addresses at once, optionally signing it out everywhere else.
+* **Fewer signs of WordPress** for tools such as BuiltWith and for scanners.
+
 = Lockdown =
 
 * Freeze the site with a code from your authenticator app (Google Authenticator, Microsoft Authenticator, Authy and the like). While it is locked, nobody can change plugins, themes, WordPress core, users, roles or settings from wp-admin, the REST API or XML-RPC, not even an administrator or someone who stole a password.
@@ -92,7 +99,8 @@ Whatever a visitor sees has already reached their device, so nothing stops a det
 * Also enforced against code: a bug in another plugin cannot be used to activate plugins, change the site address or the admin email, add an administrator or unlock the lock. Code that can run its own PHP on your server can get around any plugin, ScrapeLock included. While the site is unlocked for a while, these rules are off for code too: unlock only for as long as you need.
 * Sealed: the lock is signed with the keys in wp-config.php and kept outside the database (a guard file, a lock file, or a line in wp-config.php), so SQL injection in another plugin cannot unlock the site.
 * What is put back when it is changed straight in the database: the active plugins and theme, the site address, the admin email, registration and the default role, the roles, the uploads folder, search engine visibility, the widgets, the theme's settings, WooCommerce's own payment methods and bank accounts, and ScrapeLock's own settings (more with the filter `pncp_lockdown_protected_options`). New administrators, new application passwords for staff and changed staff passwords are refused at sign-in and emailed. A capability given to one user alone, outside their role, does not work while the site is locked.
-* What it does not keep: posts, pages, products, orders, comments and media, block templates and global styles, scheduled events, and the settings and tables of other plugins (a payment gateway of another plugin, for example; add its option to the filter). Code that other plugins keep in the database and run (snippets of Code Snippets or WPCode) is checked every hour: new or changed code is emailed to you, and the quarantine deactivates the plugin that runs it.
+* The Site Editor's templates and template parts cannot be changed by code while locked; templates, template parts and global styles changed straight in the database are found every hour.
+* What it does not keep: posts, pages, products, orders, comments and media, navigation menus, scheduled events, and the settings and tables of other plugins (a payment gateway of another plugin, for example; add its option to the filter). Code that other plugins keep in the database and run (snippets of Code Snippets or WPCode) is checked every hour: new or changed code is emailed to you, and the quarantine deactivates the plugin that runs it.
 * File integrity: every PHP, .htaccess and .user.ini file is fingerprinted and checked every hour while locked, and WordPress and the plugins from WordPress.org are compared with their official checksums. New or changed files are emailed to you and shown in Site Health; optional quarantine. When the site is locked again after an unlock, the files that changed while it was open are emailed to you too, before they become part of the new fingerprint.
 * Unlock for 15 minutes to 2 hours for yourself only, or until you lock it again; every lock and unlock is logged and emailed. Ten one-time recovery codes for a lost phone. The QR code is drawn in your browser and the secret is stored encrypted, never sent anywhere.
 
@@ -162,6 +170,10 @@ Verified search engines are never limited or blocked, there is no captcha, and t
 = Isn't robots.txt enough? =
 
 No. robots.txt is a request that only polite bots follow. ScrapeLock writes those lines for you and also enforces them on the server, where impolite bots get a 403.
+
+= Can it stop screenshots or screen recording? =
+
+No, and no plugin can: the screenshot is taken by the phone's or the computer's own system, and a web page is not even told about it. (A black screen happens only with DRM-protected video, and even then a photo of the screen works.) What ScrapeLock does instead: "Show who is reading over protected pages" puts the member's user name and the time on every screenshot, recording and photo, and "Hide an invisible trace of the account in the text" marks copied text. Both are on the "On the page" tab, under Members and readers.
 
 = Does blocking right click stop AI scrapers? =
 
@@ -270,7 +282,15 @@ No, on purpose: only an app code, a recovery code or the SCRAPELOCK_UNLOCK line 
 
 == Changelog ==
 
-= 3.5.1 =
+= 3.6.0 =
+* New: "Show who is reading over protected pages" (On the page → Members and readers, off by default). A faint line repeated over the page with the signed-in account's user name and the date and time, so every screenshot, screen recording or photo of the screen shows whose account it came from. No web page can stop those; this makes them traceable. It never takes clicks, taps or selections, comes back when it is removed or hidden, and the page is sent as private (not cached). Optional for visitors who are not signed in (their IP and the time, fetched by the page so cached pages still work). Filters: `pncp_mark_user_line`, `pncp_mark_guest_line`.
+* New: "Hide an invisible trace of the account in the text" (off by default). For signed-in accounts, invisible characters that spell the account and the day, signed with this site's keys, are placed in each paragraph of protected pages. Paste text found elsewhere under Log → "Find whose copy this is" to see the account and the day. Visitors and search engines get the text as it is.
+* New: "Pages per minute per signed-in account" (0 = off). The other limits count per IP; one account used by a script from many addresses is now limited too (log reason "rate_account", no IP ban).
+* New: "Email me when one account is used from several addresses at once" (within 10 minutes, at most one email a day per account), optionally signing the account out everywhere else. Never for staff. Action: `pncp_shared_account`.
+* New: "Hide that the site runs on WordPress, as far as possible" (Feeds and API tab, off by default). For visitors: everything "Hide the versions" does, plus no REST API, oEmbed, RSD and shortlink links, no emoji script, no X-Pingback and "X-Redirect-By: WordPress" headers. The addresses of themes and plugins still show it; that cannot be hidden by a plugin.
+* Lockdown: the Site Editor's templates and template parts cannot be created, changed or deleted while locked, also by code, and templates, template parts and global styles changed straight in the database are found by the hourly check.
+* Bot trap and probe ban: DuckDuckBot, Baiduspider, SeznamBot and the other search engines that are never banned now have to be likely real: their reverse DNS in their own domain where they document one, otherwise an address that is not a data center's. Before, the name in the User-Agent was enough.
+* Performance: classes are loaded when they are first used. A page for a visitor loads about a fifth less of ScrapeLock's code (no server rules, settings import and export, Site Health, "Check a request", or the file check unless the site is locked).
 * Security: a loopback or server address in the "Real visitor IP" header no longer counts as the server itself. With "Trust Bunny CDN addresses" on and no CDN secret, anyone could point a Bunny pull zone of their own at the site, send `X-Real-IP: 127.0.0.1` and skip every check (blocks, bans, the bot list and the limits), also in the early and pre-cache checks. A request now counts as the server itself only when every address on its way is the server or its private network and the IP can be trusted (cron, cache preload and a local Nginx or Varnish work as before). The same holds for "Trust every proxy".
 * Security: a CDN edge trusted for the "Real visitor IP" header that sends no IP in it (header missing or not an IP) is no longer treated as a shared edge exempt from the per-IP checks: this site's own CDN always writes the header, so such a request came through someone else's zone. It is now limited and blocked like any other address.
 * Security: the DNS lookups that verify Applebot, YandexBot and the other crawlers are taken from the per-minute budget with an atomic increment. Before, many requests at the same moment read the same count and all started a lookup, each holding a PHP worker.
@@ -285,18 +305,5 @@ No, on purpose: only an app code, a recovery code or the SCRAPELOCK_UNLOCK line 
 * Pre-cache check without APCu: at most 2,000 new files a minute (counters, probe memory, probe bans). An attack that changes address on every request could create millions of files an hour and use up the inodes of a shared host. Filter: `pncp_precheck_new_files_per_minute`.
 * Readme: the Lockdown section now lists what is put back when it is changed in the database, and what is not kept.
 
-= 3.5.0 =
-* New: "Check a request" on the Log tab. Pick a preset (GPTBot, a fake Googlebot, curl, python-requests, a browser without browser headers, a real browser, your own request) or type an IP, User-Agent and address, and see whether ScrapeLock would allow, block or limit it, the reason, why, and a link to the setting. It runs the same side-effect-free check as `wp scrapelock check`: nothing is counted, logged or banned. The card says what it does not simulate (the 404 limit, cart and checkout limits, the early and pre-cache checks, the bot trap, server and CDN rules) and gives copy-ready curl lines built from the site's public address (never a token). Administrators only (nonce and `manage_options`), and not while the site is locked.
-* New: the admin bar's "Protection" menu links to "Check a request" and reminds exempt staff to test in a private window.
-* New: Site Health checks that crawlers get ScrapeLock's robots.txt lines (a robots.txt or llms.txt file in the site's root replaces the one WordPress makes; the lines to paste are shown, the file is never written), that the private folders (clean watermark originals, pre-cache data, country database) cannot be downloaded over HTTP (a throwaway test file, removed afterwards; the secret folder names are never shown), whether text is still open through the REST API, full-text feeds or WPGraphQL while copy protection is on, and whether another copy-protection, watermark or bot-blocking plugin is active while ScrapeLock's own feature for that job is on (filter `pncp_conflicting_plugins`). The two web checks only request the site itself, are cached for a day (an hour when the site could not be fetched) and can be run again with "Check again now".
-* New: "Ban scanners on their first probe" (Bots tab, off by default). An IP asking for a file only attack scanners look for (.env, .git, wp-config.php backup copies, database dumps and backup archives at the top of the site, SSH keys, phpMyAdmin, Adminer, PHP files in uploads; the last three only when the web server passes the request to WordPress, which most Nginx setups and "No PHP in uploads" do not) that does not exist is blocked for 10 minutes, and for the full time on a second probe within 24 hours. Staff, verified search engines, always-allowed IPs and User-Agents and people who click a link are never banned, and "Monitor only" only logs it. Outside Monitor only, every request on the list that reaches WordPress gets the same 403, also for a file that exists, so the answer does not tell a scanner which files are on disk. The log reason is "probe". Also applied by the pre-cache check and by the generated Nginx / Apache rules (unchanged while the option is off). Filters: `pncp_probe_trap_paths`, `pncp_probe_ban`, `pncp_probe_first_ban_minutes`.
-* Change: an anonymous REST API read of a list (wp/v2 posts, pages and other lists, WooCommerce products) counts 2 toward the REST limit above 20 items per page and 3 above 50. Up to 20 items, single items, logged-in users and the WooCommerce cart and checkout count as before. Filter: `pncp_rest_cost`.
-* Fix: only the visitor's own REST request counts toward the REST limit. The reads WordPress makes inside it for `_embed` (categories, tags, replies of every post) and those other plugins make (e.g. WooCommerce Admin while /wp-json/ is built) counted too, so one headless page view with `_embed` could reach the limit; they are still checked for blocks and bans.
-* Fix: a scanner's parallel first requests (bot trap, first probe) got the full block instead of the short first one.
-* Fix: the generated Nginx rules now refuse the pre-cache check's data folder and the country database folder (uploads/scrapelock/, uploads/scrapelock-geo/), which Nginx served because it ignores their .htaccess files. Update the rules on the "Server rules" tab.
-* Change: every JSON 429 answer (REST API, WooCommerce cart and coupon limits, wc-ajax / admin-ajax cart actions, WPGraphQL, the human check) carries `retry_after`, the same seconds as its Retry-After header. REST, wc-ajax and WPGraphQL 429s now send the real seconds left in the minute instead of a fixed 60, and the human check's 429 now sends Retry-After.
-* New: settings form: after saving, rejected lines of the IP lists, the country lists and the allowed User-Agents are named in a notice; unsaved changes are marked next to Save and the browser asks before leaving; options that only work when another one is on are dimmed with a note (their values are still saved); defaults are labelled; options that may affect visitors or SEO are tagged; and "Off" status pills link to their setting.
-* Readme: rewritten for WordPress.org (what it stops and what it cannot, who it is for, common questions).
-
-The changes of 3.4.3 and earlier versions are in changelog.txt in the plugin folder.
+The changes of 3.5.0 and earlier versions are in changelog.txt in the plugin folder.
 
