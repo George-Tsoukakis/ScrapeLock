@@ -7,6 +7,8 @@
 
 defined( 'ABSPATH' ) || exit;
 
+require_once __DIR__ . '/class-pncp-admin-fields.php';
+
 /**
  * Admin UI. Settings go through the Settings API (options.php checks nonce and capability).
  * Actions (profiles, token, bans, image tool) go through admin-post / AJAX with a nonce.
@@ -22,6 +24,21 @@ final class PNCP_Admin {
 	 * @var string
 	 */
 	private static $form_section = '';
+
+	/**
+	 * 3.4.3: the action of the admin-post form opened last, so every action form gets its own button id
+	 * (submit_button() prints id="submit" on all of them).
+	 *
+	 * @var string
+	 */
+	private static $action_form = '';
+
+	/**
+	 * 3.4.3: submit button ids used so far, per action.
+	 *
+	 * @var int[]
+	 */
+	private static $submit_ids = array();
 
 	/**
 	 * Registers the hooks.
@@ -158,18 +175,22 @@ final class PNCP_Admin {
 	private static function checkbox( $s, $key, $label, $help = '' ) {
 		$id = 'pncp-' . $key;
 		echo '<div class="pncp-field pncp-field--toggle">';
+		// 3.5: the requirement (dimmed, never disabled), the risk tag and the default are added around the field.
 		printf(
-			'<label for="%1$s"><input type="checkbox" class="pncp-toggle" id="%1$s" name="%2$s[%3$s]" value="1"%4$s%5$s> <span class="pncp-field__label">%6$s</span></label>',
+			'<label for="%1$s"><input type="checkbox" class="pncp-toggle" id="%1$s" name="%2$s[%3$s]" value="1"%4$s%5$s%6$s> <span class="pncp-field__label">%7$s</span></label>',
 			esc_attr( $id ),
 			esc_attr( PNCP_OPTION ),
 			esc_attr( $key ),
 			checked( ! empty( $s[ $key ] ), true, false ),
-			$help ? ' aria-describedby="' . esc_attr( $id . '-help' ) . '"' : '',
+			PNCP_Admin_Fields::describedby_attr( $key, (bool) $help ), // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Escaped in describedby_attr().
+			PNCP_Admin_Fields::requires_attr( $key, $s ), // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Escaped in requires_attr().
 			esc_html( $label )
 		);
+		echo PNCP_Admin_Fields::risk_tag( $key ) . PNCP_Admin_Fields::default_note( $key, $s ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Escaped in PNCP_Admin_Fields.
 		if ( $help ) {
 			printf( '<p class="description" id="%s">%s</p>', esc_attr( $id . '-help' ), esc_html( $help ) );
 		}
+		echo PNCP_Admin_Fields::requires_note( $key, $s ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Escaped in requires_note().
 		echo '</div>';
 	}
 
@@ -182,20 +203,27 @@ final class PNCP_Admin {
 	 * @param array<string, string> $options value => label.
 	 */
 	private static function radios( $s, $key, $legend, $options ) {
-		echo '<fieldset><legend class="screen-reader-text">' . esc_html( $legend ) . '</legend>';
+		// 3.5: the fieldset carries the requirement (none of the radio groups has one today).
+		echo '<fieldset' . PNCP_Admin_Fields::requires_attr( $key, $s ) . '><legend class="screen-reader-text">' . esc_html( $legend ) . '</legend>'; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Escaped in requires_attr().
 		foreach ( $options as $value => $label ) {
-			$id = 'pncp-' . $key . '-' . $value;
+			$id    = 'pncp-' . $key . '-' . $value;
+			$risky = PNCP_Admin_Fields::is_risky_choice( $key, (string) $value );
+			// 3.5: the default choice gets a "Default" badge, a choice that can affect visitors or SEO the risk tag.
 			printf(
-				'<label for="%1$s"><input type="radio" id="%1$s" name="%2$s[%3$s]" value="%4$s"%5$s> %6$s</label><br>',
+				'<label for="%1$s"><input type="radio" id="%1$s" name="%2$s[%3$s]" value="%4$s"%5$s%6$s> %7$s%8$s%9$s</label><br>',
 				esc_attr( $id ),
 				esc_attr( PNCP_OPTION ),
 				esc_attr( $key ),
 				esc_attr( $value ),
 				checked( (string) $s[ $key ], (string) $value, false ),
-				esc_html( $label )
+				$risky ? ' aria-describedby="' . esc_attr( PNCP_Admin_Fields::risk_id( $key, (string) $value ) ) . '"' : '',
+				esc_html( $label ),
+				PNCP_Admin_Fields::is_default( $key, (string) $value ) ? ' <span class="pncp-tag pncp-tag--default">' . esc_html__( 'Default', 'scrapelock' ) . '</span>' : '',
+				$risky ? ' ' . PNCP_Admin_Fields::risk_tag( $key, (string) $value ) : '' // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Escaped in risk_tag().
 			);
 		}
 		echo '</fieldset>';
+		echo PNCP_Admin_Fields::requires_note( $key, $s ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Escaped in requires_note().
 	}
 
 	/**
@@ -208,14 +236,31 @@ final class PNCP_Admin {
 	 */
 	private static function select( $s, $key, $options, $help = '' ) {
 		$id = 'pncp-' . $key;
-		printf( '<select id="%1$s" name="%2$s[%3$s]"%4$s>', esc_attr( $id ), esc_attr( PNCP_OPTION ), esc_attr( $key ), $help ? ' aria-describedby="' . esc_attr( $id . '-help' ) . '"' : '' );
+		printf(
+			'<select id="%1$s" name="%2$s[%3$s]"%4$s%5$s>',
+			esc_attr( $id ),
+			esc_attr( PNCP_OPTION ),
+			esc_attr( $key ),
+			PNCP_Admin_Fields::describedby_attr( $key, (bool) $help ), // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Escaped in describedby_attr().
+			PNCP_Admin_Fields::requires_attr( $key, $s ) // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Escaped in requires_attr().
+		);
 		foreach ( $options as $value => $label ) {
+			// 3.5: options hold no markup, so the default and the risky choices are marked in the text.
+			if ( PNCP_Admin_Fields::is_default( $key, (string) $value ) ) {
+				/* translators: %s: label of the default choice of a drop-down */
+				$label = sprintf( __( '%s (default)', 'scrapelock' ), $label );
+			}
+			if ( PNCP_Admin_Fields::is_risky_choice( $key, (string) $value ) ) {
+				/* translators: %s: label of a choice of a drop-down */
+				$label = sprintf( __( '%s (may affect visitors/SEO)', 'scrapelock' ), $label );
+			}
 			printf( '<option value="%s"%s>%s</option>', esc_attr( $value ), selected( (string) $s[ $key ], (string) $value, false ), esc_html( $label ) );
 		}
 		echo '</select>';
 		if ( $help ) {
 			printf( '<p class="description" id="%s">%s</p>', esc_attr( $id . '-help' ), esc_html( $help ) );
 		}
+		echo PNCP_Admin_Fields::requires_note( $key, $s ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Escaped in requires_note().
 	}
 
 	/**
@@ -230,8 +275,9 @@ final class PNCP_Admin {
 		$range = PNCP_Options::int_ranges()[ $key ];
 		$id    = 'pncp-' . $key;
 		echo '<div class="pncp-field pncp-field--number">';
+		// 3.5: the requirement, the risk tag and the default are added around the field.
 		printf(
-			'<p><label for="%1$s">%2$s</label> <input type="number" class="small-text" id="%1$s" name="%3$s[%4$s]" value="%5$d" min="%6$d"%7$s%8$s></p>',
+			'<p><label for="%1$s">%2$s</label> <input type="number" class="small-text" id="%1$s" name="%3$s[%4$s]" value="%5$d" min="%6$d"%7$s%8$s%9$s>%10$s</p>',
 			esc_attr( $id ),
 			esc_html( $label ),
 			esc_attr( PNCP_OPTION ),
@@ -239,11 +285,14 @@ final class PNCP_Admin {
 			(int) $s[ $key ],
 			(int) $range[0],
 			PHP_INT_MAX === $range[1] ? '' : ' max="' . (int) $range[1] . '"',
-			$help ? ' aria-describedby="' . esc_attr( $id . '-help' ) . '"' : ''
+			PNCP_Admin_Fields::describedby_attr( $key, (bool) $help ), // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Escaped in describedby_attr().
+			PNCP_Admin_Fields::requires_attr( $key, $s ), // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Escaped in requires_attr().
+			PNCP_Admin_Fields::risk_tag( $key ) . PNCP_Admin_Fields::default_note( $key, $s ) // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Escaped in PNCP_Admin_Fields.
 		);
 		if ( $help ) {
 			printf( '<p class="description" id="%s">%s</p>', esc_attr( $id . '-help' ), esc_html( $help ) );
 		}
+		echo PNCP_Admin_Fields::requires_note( $key, $s ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Escaped in requires_note().
 		echo '</div>';
 	}
 
@@ -299,25 +348,31 @@ final class PNCP_Admin {
 		echo '<div class="pncp-field pncp-field--text">';
 		if ( $fold ) {
 			$count = count( PNCP_Options::parse_list( (string) $s[ $key ] ) );
+			// 3.5: a folded list shows its risk tag on the summary too (without the id, which the tag below has).
+			$risk = isset( PNCP_Admin_Fields::risky()[ $key ] ) ? ' <span class="pncp-tag pncp-tag--risk">' . esc_html__( 'May affect visitors/SEO', 'scrapelock' ) . '</span>' : '';
 			printf(
-				'<details class="pncp-fold"><summary>%s <span class="pncp-badge">%s</span></summary>',
+				'<details class="pncp-fold"><summary>%s <span class="pncp-badge">%s</span>%s</summary>',
 				esc_html( $label ),
-				esc_html( sprintf( /* translators: %s: number of entries */ _n( '%s entry', '%s entries', $count, 'scrapelock' ), number_format_i18n( $count ) ) )
+				esc_html( sprintf( /* translators: %s: number of entries */ _n( '%s entry', '%s entries', $count, 'scrapelock' ), number_format_i18n( $count ) ) ),
+				$risk // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Escaped above.
 			);
 		}
 		printf( '<p><label for="%s"%s>%s</label></p>', esc_attr( $id ), $fold ? ' class="screen-reader-text"' : '', esc_html( $label ) );
+		echo PNCP_Admin_Fields::risk_tag( $key ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Escaped in risk_tag().
 		printf(
-			'<textarea class="large-text code" rows="%1$d" id="%2$s" name="%3$s[%4$s]"%5$s>%6$s</textarea>',
+			'<textarea class="large-text code" rows="%1$d" id="%2$s" name="%3$s[%4$s]"%5$s%6$s>%7$s</textarea>',
 			(int) $rows,
 			esc_attr( $id ),
 			esc_attr( PNCP_OPTION ),
 			esc_attr( $key ),
-			$help ? ' aria-describedby="' . esc_attr( $id . '-help' ) . '"' : '',
+			PNCP_Admin_Fields::describedby_attr( $key, (bool) $help ), // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Escaped in describedby_attr().
+			PNCP_Admin_Fields::requires_attr( $key, $s ), // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Escaped in requires_attr().
 			esc_textarea( (string) $s[ $key ] )
 		);
 		if ( $help ) {
 			printf( '<p class="description" id="%s">%s</p>', esc_attr( $id . '-help' ), esc_html( $help ) );
 		}
+		echo PNCP_Admin_Fields::requires_note( $key, $s ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Escaped in requires_note().
 		echo $fold ? '</details></div>' : '</div>';
 	}
 
@@ -418,14 +473,16 @@ final class PNCP_Admin {
 	 */
 	private static function render_status_bar( $s ) {
 		$emergency = PNCP_Options::emergency_until();
-		$items     = array(
-			array( ! empty( $s['enabled'] ), __( 'Protection', 'scrapelock' ) ),
-			array( ! empty( $s['early_mode'] ) && PNCP_Early::installed(), __( 'Early check', 'scrapelock' ) ),
-			array( ! empty( $s['precheck'] ) && PNCP_Precheck::active(), __( 'Pre-cache check', 'scrapelock' ) ),
-			array( ! empty( $s['human_check'] ), __( 'Human check', 'scrapelock' ) ),
-			array( ! empty( $s['allow_ai_search'] ) && ! empty( $s['verify_ai_bots'] ), __( 'AI bots verified', 'scrapelock' ) ),
-			array( ! empty( $s['block_headless'] ), __( 'Headless browsers', 'scrapelock' ) ),
-			array( '' !== $s['countries_block'] || '' !== $s['countries_strict'], __( 'Countries', 'scrapelock' ) ),
+		// 3.5: the third element is where the setting is (tab and anchor): an "Off" pill links to it.
+		$items = array(
+			array( ! empty( $s['enabled'] ), __( 'Protection', 'scrapelock' ), array( 'general', 'pncp-enabled' ) ),
+			array( ! empty( $s['early_mode'] ) && PNCP_Early::installed(), __( 'Early check', 'scrapelock' ), array( 'bots', 'pncp-sec-early' ) ),
+			// The row, not the checkbox: the checkbox is not there on multisite.
+			array( ! empty( $s['precheck'] ) && PNCP_Precheck::active(), __( 'Pre-cache check', 'scrapelock' ), array( 'bots', 'pncp-sec-early' ) ),
+			array( ! empty( $s['human_check'] ), __( 'Human check', 'scrapelock' ), array( 'bots', 'pncp-sec-human' ) ),
+			array( ! empty( $s['allow_ai_search'] ) && ! empty( $s['verify_ai_bots'] ), __( 'AI bots verified', 'scrapelock' ), array( 'bots', 'pncp-sec-ai' ) ),
+			array( ! empty( $s['block_headless'] ), __( 'Headless browsers', 'scrapelock' ), array( 'bots', 'pncp-block_headless' ) ),
+			array( '' !== $s['countries_block'] || '' !== $s['countries_strict'], __( 'Countries', 'scrapelock' ), array( 'bots', 'pncp-sec-countries' ) ),
 		);
 		echo '<ul class="pncp-status-bar" aria-label="' . esc_attr__( 'Protection status', 'scrapelock' ) . '">';
 		if ( ! empty( $s['enabled'] ) && PNCP_Options::monitoring( $s ) ) {
@@ -439,10 +496,18 @@ final class PNCP_Admin {
 			echo '<li class="pncp-pill pncp-pill--alert">' . esc_html__( 'Emergency Mode', 'scrapelock' ) . '</li>';
 		}
 		foreach ( $items as $item ) {
+			if ( $item[0] ) {
+				printf(
+					'<li class="pncp-pill pncp-pill--on"><span class="screen-reader-text">%1$s </span>%2$s</li>',
+					esc_html__( 'On:', 'scrapelock' ),
+					esc_html( $item[1] )
+				);
+				continue;
+			}
 			printf(
-				'<li class="pncp-pill %1$s"><span class="screen-reader-text">%2$s </span>%3$s</li>',
-				$item[0] ? 'pncp-pill--on' : 'pncp-pill--off',
-				esc_html( $item[0] ? __( 'On:', 'scrapelock' ) : __( 'Off:', 'scrapelock' ) ),
+				'<li class="pncp-pill pncp-pill--off"><a href="%1$s"><span class="screen-reader-text">%2$s </span>%3$s</a></li>',
+				esc_url( PNCP_Status::settings_url( array( 'tab' => $item[2][0] ) ) . '#' . $item[2][1] ),
+				esc_html__( 'Off:', 'scrapelock' ),
 				esc_html( $item[1] )
 			);
 		}
@@ -508,7 +573,8 @@ final class PNCP_Admin {
 	 */
 	private static function form_open( $section ) {
 		self::$form_section = $section;
-		echo '<form method="post" action="options.php" class="pncp-settings-form">';
+		// 3.5: data-pncp-watch: the script shows "Unsaved changes" and warns before leaving with changes.
+		echo '<form method="post" action="options.php" class="pncp-settings-form" data-pncp-watch="1">';
 		settings_fields( self::GROUP );
 		printf( '<input type="hidden" name="%s[_sections][]" value="%s">', esc_attr( PNCP_OPTION ), esc_attr( $section ) );
 		echo '<table class="form-table" role="presentation">';
@@ -523,7 +589,10 @@ final class PNCP_Admin {
 		if ( $table ) {
 			echo '</table>';
 		}
-		submit_button( __( 'Save changes', 'scrapelock' ) );
+		// 3.5: "Unsaved changes" next to the button, shown by the script while the form differs from the page load.
+		echo '<p class="submit">';
+		submit_button( __( 'Save changes', 'scrapelock' ), 'primary', 'submit', false );
+		echo ' <span class="pncp-unsaved" role="status" hidden>' . esc_html__( 'Unsaved changes', 'scrapelock' ) . '</span></p>';
 		if ( isset( PNCP_Settings_Io::tab_names()[ self::$form_section ] ) ) {
 			// A link, not a button: it opens a confirmation that lists what would change (render_reset_confirm()).
 			printf(
@@ -552,7 +621,32 @@ final class PNCP_Admin {
 	private static function action_form_open( $action, $nonce, $classes = '' ) {
 		printf( '<form method="post" action="%s" class="%s">', esc_url( admin_url( 'admin-post.php' ) ), esc_attr( $classes ) );
 		printf( '<input type="hidden" name="action" value="%s">', esc_attr( $action ) );
-		wp_nonce_field( $nonce );
+		self::$action_form = $action;
+		self::nonce_field( $nonce );
+	}
+
+	/**
+	 * 3.4.3: wp_nonce_field() without its id="_wpnonce", which repeated on every action form of a page. The
+	 * field name and the referer field stay the same, so the handlers check the nonce as before.
+	 *
+	 * @param string $nonce Nonce action.
+	 */
+	private static function nonce_field( $nonce ) {
+		echo preg_replace( '/ id="_wpnonce"/', '', wp_nonce_field( $nonce, '_wpnonce', true, false ), 1 ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Core markup.
+	}
+
+	/**
+	 * 3.4.3: a unique id for the submit button of the action form opened last: pncp-submit-<action>, then
+	 * pncp-submit-<action>-2 and so on. The button keeps the name "submit".
+	 *
+	 * @return array Attributes for submit_button().
+	 */
+	private static function submit_attrs() {
+		$key = '' !== self::$action_form ? self::$action_form : 'form';
+		$n   = isset( self::$submit_ids[ $key ] ) ? self::$submit_ids[ $key ] + 1 : 1;
+
+		self::$submit_ids[ $key ] = $n;
+		return array( 'id' => 'pncp-submit-' . str_replace( '_', '-', $key ) . ( $n > 1 ? '-' . $n : '' ) );
 	}
 
 	/* ---------- Page ---------- */
@@ -672,6 +766,22 @@ final class PNCP_Admin {
 				?>
 			</td>
 		</tr>
+		<tr id="pncp-readers">
+			<th scope="row"><?php esc_html_e( 'Members and readers', 'scrapelock' ); ?></th>
+			<td>
+				<p class="description"><?php esc_html_e( 'No web page can stop a screenshot, a screen recording or a photo of the screen. These options make copies traceable instead, and stop accounts that are shared or used to copy everything. Staff who are exempt (“Who is excluded”) never see or trigger them.', 'scrapelock' ); ?></p>
+				<?php
+				self::checkbox( $s, 'user_mark', __( 'Show who is reading over protected pages', 'scrapelock' ), __( 'A faint line repeated over the page with the account\'s user name and the date and time, so every screenshot, recording or photo shows whose account it came from. It never gets in the way of clicks, taps or selecting text, and appears again if it is removed.', 'scrapelock' ) );
+				self::checkbox( $s, 'user_mark_guests', __( 'Also for visitors who are not signed in (their IP address and the time)', 'scrapelock' ), __( 'Their line is fetched by the page, so cached pages work as before. Search engines do not see it.', 'scrapelock' ) );
+				self::number( $s, 'user_mark_opacity', __( 'How visible (percent):', 'scrapelock' ), __( '10 is faint but readable on a screenshot.', 'scrapelock' ) );
+				self::checkbox( $s, 'text_trace', __( 'Hide an invisible trace of the account in the text', 'scrapelock' ), __( 'For signed-in accounts: invisible characters, different for each account, are placed in the text of protected pages. When the text turns up somewhere else, paste it under Log → “Find whose copy this is” to see the account and when. Visitors who are not signed in get the text without a trace.', 'scrapelock' ) );
+				self::number( $s, 'rate_limit_account', __( 'Pages per minute per signed-in account (0 = off):', 'scrapelock' ), __( 'The other limits count per IP address; a member could run a script from many addresses with one account. For example 30.', 'scrapelock' ) );
+				self::checkbox( $s, 'shared_alert', __( 'Email me when one account is used from several addresses at once', 'scrapelock' ), __( 'Counted within 10 minutes. Mobile phones change address often, so one alert at most per account a day.', 'scrapelock' ) );
+				self::number( $s, 'shared_ips', __( 'Addresses at once:', 'scrapelock' ) );
+				self::checkbox( $s, 'shared_logout', __( 'Then sign the account out everywhere else', 'scrapelock' ), __( 'The session on the newest address stays signed in; the others must sign in again. Never for staff.', 'scrapelock' ) );
+				?>
+			</td>
+		</tr>
 		<tr>
 			<th scope="row"><?php esc_html_e( 'When someone copies', 'scrapelock' ); ?></th>
 			<td>
@@ -730,9 +840,13 @@ final class PNCP_Admin {
 			<th scope="row"><?php esc_html_e( 'Message to the visitor', 'scrapelock' ); ?></th>
 			<td>
 				<?php self::checkbox( $s, 'show_message', __( 'Show a message when something is blocked', 'scrapelock' ) ); ?>
+				<?php // 3.5: a wrapper of its own, so dimming the text does not dim the checkbox above. ?>
+				<div class="pncp-field">
 				<label for="pncp-message" class="screen-reader-text"><?php esc_html_e( 'Message text', 'scrapelock' ); ?></label>
-				<input type="text" class="large-text" id="pncp-message" name="<?php echo esc_attr( PNCP_OPTION ); ?>[message]" value="<?php echo esc_attr( $s['message'] ); ?>" placeholder="<?php echo esc_attr( PNCP_Options::message( array() ) ); ?>" maxlength="200" aria-describedby="pncp-message-help">
+				<input type="text" class="large-text" id="pncp-message" name="<?php echo esc_attr( PNCP_OPTION ); ?>[message]" value="<?php echo esc_attr( $s['message'] ); ?>" placeholder="<?php echo esc_attr( PNCP_Options::message( array() ) ); ?>" maxlength="200" aria-describedby="pncp-message-help pncp-message-requires"<?php echo PNCP_Admin_Fields::requires_attr( 'message', $s ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Escaped in requires_attr(). ?>>
 				<p class="description" id="pncp-message-help"><?php esc_html_e( 'Leave empty for the default message, which is shown in the language of the site.', 'scrapelock' ); ?></p>
+				<?php echo PNCP_Admin_Fields::requires_note( 'message', $s ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Escaped in requires_note(). ?>
+				</div>
 			</td>
 		</tr>
 		<tr>
@@ -743,7 +857,8 @@ final class PNCP_Admin {
 				self::checkbox( $s, 'tdm_reservation', __( 'Opt-out declaration from AI training and text and data mining (TDM)', 'scrapelock' ), __( 'tdm-reservation header and meta, /.well-known/tdmrep.json and noai/noimageai. Legal basis: Directive (EU) 2019/790, Article 4(3): reservation of rights in a machine-readable format.', 'scrapelock' ) );
 				?>
 				<p><label for="pncp-tdm_policy_url"><?php esc_html_e( 'Page with the licensing terms (optional):', 'scrapelock' ); ?></label>
-				<input type="url" class="regular-text code" id="pncp-tdm_policy_url" name="<?php echo esc_attr( PNCP_OPTION ); ?>[tdm_policy_url]" value="<?php echo esc_attr( $s['tdm_policy_url'] ); ?>" placeholder="https://"></p>
+				<input type="url" class="regular-text code" id="pncp-tdm_policy_url" name="<?php echo esc_attr( PNCP_OPTION ); ?>[tdm_policy_url]" value="<?php echo esc_attr( $s['tdm_policy_url'] ); ?>" placeholder="https://" aria-describedby="pncp-tdm_policy_url-requires"<?php echo PNCP_Admin_Fields::requires_attr( 'tdm_policy_url', $s ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Escaped in requires_attr(). ?>></p>
+				<?php echo PNCP_Admin_Fields::requires_note( 'tdm_policy_url', $s ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Escaped in requires_note(). ?>
 			</td>
 		</tr>
 		<?php
@@ -767,7 +882,7 @@ final class PNCP_Admin {
 			<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>" enctype="multipart/form-data">
 				<input type="hidden" name="action" value="pncp_settings">
 				<input type="hidden" name="op" value="import_preview">
-				<?php wp_nonce_field( 'pncp_settings' ); ?>
+				<?php self::nonce_field( 'pncp_settings' ); ?>
 				<p>
 					<label for="pncp-import-file"><?php esc_html_e( 'Import settings from a file:', 'scrapelock' ); ?></label>
 					<input type="file" id="pncp-import-file" name="pncp_import_file" accept=".json,application/json" required aria-describedby="pncp-import-help">
@@ -1105,6 +1220,8 @@ final class PNCP_Admin {
 				self::checkbox( $s, 'require_browser_headers', __( 'Browsers only: 403 for pages without Accept-Language or without “Mozilla/” in the User-Agent', 'scrapelock' ), __( 'Stops most scripts. Link previews (Facebook, Viber, WhatsApp etc.) in the “Always allowed” list pass.', 'scrapelock' ) );
 				self::checkbox( $s, 'block_headless', __( 'Block headless and fake browsers', 'scrapelock' ), __( 'Blocks Chrome running without a window when it says so in its headers (“HeadlessChrome”), and, on HTTPS, scripts that copy the User-Agent of Chrome, Edge or Firefox without the Sec-Fetch headers every modern browser sends. It catches common tools and cheap scrapers, not every automated browser: one that is carefully disguised (e.g. Puppeteer with “stealth”, or Selenium with a visible Chrome) sends the same headers as a person. The page limits, the human check and the bot trap still apply to those. In-app browsers (Android WebView) are not checked.', 'scrapelock' ) );
 				self::checkbox( $s, 'trap_enabled', __( 'Bot trap', 'scrapelock' ), __( 'Invisible link on every page, disallowed in robots.txt. Whoever opens it is blocked temporarily, even if it pretends to be a browser. Visitors do not see it, and another site cannot trap them.', 'scrapelock' ) );
+				// 3.5: opt-in ban of vulnerability scanners on their first probe (PNCP_Bots::probe_guard()).
+				self::checkbox( $s, 'probe_ban', __( 'Ban scanners on their first probe', 'scrapelock' ), __( 'Blocks an IP for 10 minutes the first time it asks for a file that only attack scanners look for and that does not exist on this site: .env, .git, backup copies of wp-config.php, database dumps and backup archives at the top of the site, SSH keys, phpMyAdmin, Adminer, and PHP files in the uploads folder. A second probe within 24 hours gets the full temporary block. phpMyAdmin, Adminer and PHP files in uploads are caught only when the web server passes those requests to WordPress: Nginx usually answers a missing .php file itself, and “No PHP in uploads” refuses them first. Staff, verified search engines, the always-allowed IPs and User-Agents, and people who click a link or type the address in a browser are never blocked. On Nginx, add the updated rules from the “Server rules” tab so that requests for hidden files (.env, .git) reach WordPress.', 'scrapelock' ) );
 				self::textarea( $s, 'bot_list', __( 'User-Agents to block (one per line, matches anywhere in the User-Agent, case-insensitive):', 'scrapelock' ), __( 'It contains two AI categories: training crawlers (GPTBot, ClaudeBot, CCBot, Google-Extended etc.) and AI search / assistants (OAI-SearchBot, ChatGPT-User, Claude-SearchBot, PerplexityBot etc.). You can allow the second one in the next section.', 'scrapelock' ) . ' ' . sprintf( /* translators: %s: number of AI crawlers */ __( 'In addition, %s more AI crawlers and agents (DeepSeek, Grok, Qwen, Mistral, NotebookLM and others) are blocked by name: that list is built into ScrapeLock and updated with each version, so it is not shown here. A line that starts with “=” must be the whole User-Agent, e.g. “=node”.', 'scrapelock' ), number_format_i18n( count( PNCP_Bots::known_ai_agents() ) ) ), 10, true );
 				self::checkbox( $s, 'block_http_libs', __( 'Also block generic HTTP libraries (strict)', 'scrapelock' ), __( 'Blocks the User-Agent that programming libraries send by default: curl, Wget, python-requests, Go, Java, okhttp, Dart, node-fetch, axios, Guzzle and others. Many cheap scrapers use them, but so do WooCommerce mobile apps (Flutter, Android), headless front ends, ERP and price sync, and uptime monitors. Turn it on only if nothing like that reads your site, or add those services to “Always allowed” first.', 'scrapelock' ) );
 				$libraries = PNCP_Options::http_libraries_in_list( $s );
@@ -1149,7 +1266,7 @@ final class PNCP_Admin {
 				<?php
 				self::number( $s, 'rate_limit', __( 'Pages per minute (0 = off):', 'scrapelock' ), __( 'Starting value: 60. Above the limit it returns 429. Be careful with networks that share an IP (companies, mobile carriers) and with CDNs: set the “Real visitor IP” correctly first.', 'scrapelock' ) );
 				self::number( $s, 'rate_limit_search', __( 'Searches (?s=) per minute (0 = off):', 'scrapelock' ), __( 'Search is heavy for the server and a favourite of scrapers. Starting value: 20.', 'scrapelock' ) );
-				self::number( $s, 'rate_limit_rest', __( 'REST API (/wp-json/) and GraphQL requests per minute (0 = off):', 'scrapelock' ), __( 'Only read requests from visitors. Cart, checkout and forms (POST) do not count. Starting value: 60.', 'scrapelock' ) );
+				self::number( $s, 'rate_limit_rest', __( 'REST API (/wp-json/) and GraphQL requests per minute (0 = off):', 'scrapelock' ), __( 'Only read requests from visitors. Cart, checkout and forms (POST) do not count. A list of more than 20 items (per_page) counts as 2 requests, more than 50 as 3. Starting value: 60.', 'scrapelock' ) );
 				self::number( $s, 'rate_limit_404', __( '“Page not found” (404) per minute (0 = off):', 'scrapelock' ), __( 'Scrapers guess addresses (?p=1, 2, 3…, old product URLs) to find content. Missing images, CSS, scripts and the favicon do not count. Starting value: 30.', 'scrapelock' ) );
 				self::number( $s, 'rate_limit_sitemap', __( 'Sitemaps per minute (0 = off):', 'scrapelock' ), __( 'Scrapers read the sitemap first to find every page. Covers the sitemaps of WordPress, Rank Math, Yoast and similar plugins. Google, Bing and the other verified search engines are never limited. Starting value: 5.', 'scrapelock' ) );
 				self::checkbox( $s, 'ipv6_wide', __( 'IPv6: also limit the whole /56 network (four times the page limit)', 'scrapelock' ), __( 'Pages are counted per /64, because one connection usually gets a whole /64. A server or a home connection often has a /56 or more, so a scraper can take a new /64 for every request. This also counts the /56 the /64 belongs to, up to four times the page limit (429 above it, without a block). Some mobile networks give neighbouring phones addresses of the same /56: on a site with many visitors from them, keep it off. Always on in Emergency Mode.', 'scrapelock' ) );
@@ -1169,7 +1286,7 @@ final class PNCP_Admin {
 					$s,
 					'auto_emergency_mode',
 					array(
-						'notify' => __( 'Email me and show a notice with a “Start Emergency Mode” button (recommended)', 'scrapelock' ),
+						'notify' => __( 'Email me and show a notice with a “Start Emergency Mode” button', 'scrapelock' ), // 3.5: "(default)" is added.
 						'start'  => __( 'Start Emergency Mode for 1 hour on its own, and email me', 'scrapelock' ),
 					),
 					__( 'A rush of real visitors (a newsletter, a link on a popular site) looks the same as an attack. Emergency Mode changes many settings at once, listed in its box on the first tab, e.g. excerpts instead of full text in lists and stricter limits for data centers, where some services in “Always allowed” run. Feeds stay open to feed readers and podcast apps.', 'scrapelock' )
@@ -1180,7 +1297,7 @@ final class PNCP_Admin {
 		<?php self::row_close(); ?>
 		<?php self::row_open( 'human', __( 'Human check', 'scrapelock' ) ); ?>
 				<?php
-				self::checkbox( $s, 'human_check', __( 'Stricter page limit for visitors who have not shown they are people', 'scrapelock' ), __( 'A small script waits for the visitor\'s first real interaction (scroll, tap, key or mouse movement), solves a light challenge in the background and receives a cookie for 7 days. Nobody sees a captcha or a window. Visitors without the cookie (scripts, and people with JavaScript turned off) get the limit below instead of the normal page limit. Search engines and verified AI search bots are not affected. It works with page caches such as WP Rocket. A determined scraper can repeat the steps, but each of its IPs has to do the work.', 'scrapelock' ) );
+				self::checkbox( $s, 'human_check', __( 'Stricter page limit for visitors who have not shown they are people', 'scrapelock' ), __( 'A small script waits for the visitor\'s first real interaction (scroll, tap, key or mouse movement), solves a light challenge in the background and receives a cookie for 7 days. Nobody sees a captcha or a window. Visitors without the cookie (scripts, and people with JavaScript turned off) get the limit below instead of the normal page limit. Search engines and verified AI search bots are not affected. With a page cache plugin, turn on the pre-cache check so that cached pages get this limit too. A determined scraper can repeat the steps, but each of its IPs has to do the work.', 'scrapelock' ) );
 				self::number( $s, 'rate_limit_unverified', __( 'Pages per minute without the cookie (0 = off):', 'scrapelock' ), __( 'Starting value: 20. A person reads far fewer pages per minute, and gets the cookie with the first scroll or tap.', 'scrapelock' ) );
 				?>
 		<?php self::row_close(); ?>
@@ -1195,7 +1312,7 @@ final class PNCP_Admin {
 		<?php self::row_close(); ?>
 		<?php self::row_open( 'ban', __( 'Temporary block', 'scrapelock' ) ); ?>
 				<?php
-				self::number( $s, 'ban_strikes', __( 'Block after this many violations within 10 minutes (0 = never):', 'scrapelock' ), __( 'Violation: every minute in which the IP exceeded a limit, and every fake Googlebot. The trap blocks immediately.', 'scrapelock' ) );
+				self::number( $s, 'ban_strikes', __( 'Block after this many violations within 10 minutes (0 = never):', 'scrapelock' ), __( 'Violation: every minute in which the IP exceeded a limit, and every fake Googlebot. The trap blocks immediately: for 10 minutes the first time, for the full time if the same IP falls into it again within 24 hours.', 'scrapelock' ) );
 				self::number( $s, 'ban_minutes', __( 'Block duration (minutes):', 'scrapelock' ) );
 				?>
 				<p class="description"><?php esc_html_e( 'How long the log is kept is set on the Log tab.', 'scrapelock' ); ?></p>
@@ -1354,7 +1471,7 @@ final class PNCP_Admin {
 				</tr>
 			</table>
 			<?php if ( ! $locked ) : ?>
-				<p><?php submit_button( __( 'Save and test the connection', 'scrapelock' ), 'secondary', 'submit', false ); ?></p>
+				<p><?php submit_button( __( 'Save and test the connection', 'scrapelock' ), 'secondary', 'submit', false, self::submit_attrs() ); ?></p>
 			<?php endif; ?>
 		</form>
 		<?php
@@ -1366,7 +1483,7 @@ final class PNCP_Admin {
 			self::action_form_open( 'pncp_edge', 'pncp_edge', 'pncp-edge-test' );
 			echo '<input type="hidden" name="op" value="diagnose">';
 			echo '<p>';
-			submit_button( __( 'Test connection', 'scrapelock' ), 'secondary', 'submit', false );
+			submit_button( __( 'Test connection', 'scrapelock' ), 'secondary', 'submit', false, self::submit_attrs() );
 			echo '</p><p class="description">' . esc_html__( 'Checks step by step that the CDN can be reached, that the token is valid, active and has the permissions needed, that the zone exists and is active, and how much of the API rate limit is left. Then blocks the address 203.0.113.x (reserved for documentation, it belongs to nobody) at the CDN, checks that the CDN lists it and removes it again. No setting changes and no visitor is affected.', 'scrapelock' ) . '</p></form>';
 		}
 		self::render_diagnosis();
@@ -1411,7 +1528,7 @@ final class PNCP_Admin {
 				<p><strong><?php esc_html_e( 'The site is behind Cloudflare, but all visitors appear with a Cloudflare address.', 'scrapelock' ); ?></strong>
 				<?php esc_html_e( 'Then limits and blocks hit Cloudflare itself, i.e. many visitors at once. Use the CF-Connecting-IP header, trusted only when the request comes from Cloudflare.', 'scrapelock' ); ?></p>
 				<?php self::action_form_open( 'pncp_cf_ip', 'pncp_cf_ip' ); ?>
-					<p><?php submit_button( __( 'Use CF-Connecting-IP (recommended)', 'scrapelock' ), 'primary', 'submit', false ); ?></p>
+					<p><?php submit_button( __( 'Use CF-Connecting-IP (recommended)', 'scrapelock' ), 'primary', 'submit', false, self::submit_attrs() ); ?></p>
 				</form>
 			</div>
 			<?php
@@ -1480,7 +1597,7 @@ final class PNCP_Admin {
 			<p><strong><?php esc_html_e( 'The site is behind Bunny CDN, but all visitors appear with a Bunny address.', 'scrapelock' ); ?></strong>
 			<?php esc_html_e( 'Then limits and blocks hit Bunny itself, i.e. many visitors at once. Use the X-Real-IP header, trusted only when the request comes from a Bunny edge server (the official list is downloaded now).', 'scrapelock' ); ?></p>
 			<?php self::action_form_open( 'pncp_bunny_ip', 'pncp_bunny_ip' ); ?>
-				<p><?php submit_button( __( 'Use X-Real-IP from Bunny (recommended)', 'scrapelock' ), 'primary', 'submit', false ); ?></p>
+				<p><?php submit_button( __( 'Use X-Real-IP from Bunny (recommended)', 'scrapelock' ), 'primary', 'submit', false, self::submit_attrs() ); ?></p>
 			</form>
 		</div>
 		<?php
@@ -1544,14 +1661,14 @@ final class PNCP_Admin {
 		</ul>
 		<?php self::action_form_open( 'pncp_log', 'pncp_log' ); ?>
 			<input type="hidden" name="op" value="refresh_lists">
-			<?php submit_button( __( 'Refresh lists now', 'scrapelock' ), 'secondary', 'submit', false ); ?>
+			<?php submit_button( __( 'Refresh lists now', 'scrapelock' ), 'secondary', 'submit', false, self::submit_attrs() ); ?>
 		</form>
 		<?php if ( PNCP_Geo::needed() ) : ?>
 			<h3><?php esc_html_e( 'Country database', 'scrapelock' ); ?></h3>
 			<?php self::action_form_open( 'pncp_log', 'pncp_log' ); ?>
 				<input type="hidden" name="op" value="refresh_geo">
 				<p class="description"><?php esc_html_e( 'Downloads DB-IP Lite now (about 5 MB, it may take up to a minute). It is also refreshed automatically once a month.', 'scrapelock' ); ?></p>
-				<?php submit_button( __( 'Download now', 'scrapelock' ), 'secondary', 'submit', false ); ?>
+				<?php submit_button( __( 'Download now', 'scrapelock' ), 'secondary', 'submit', false, self::submit_attrs() ); ?>
 			</form>
 		<?php endif; ?>
 		<?php
@@ -1621,6 +1738,7 @@ final class PNCP_Admin {
 		<tr>
 			<th scope="row"><?php esc_html_e( 'Versions', 'scrapelock' ); ?></th>
 			<td>
+				<?php self::checkbox( $s, 'hide_fingerprint', __( 'Hide that the site runs on WordPress, as far as possible', 'scrapelock' ), __( 'For visitors who are not signed in: everything “Hide the versions” below does, plus no REST API, oEmbed, RSD and shortlink links in the page head and headers, no emoji script, no X-Pingback and “X-Redirect-By: WordPress” headers. Tools such as BuiltWith and Wappalyzer, and scanners, look for these first. Everything keeps working. It cannot hide everything: the addresses of themes and plugins (/wp-content/…) still show it, and the hosting and DNS of a site are public anyway. Add the Nginx or Apache rules (Server rules tab) to refuse readme.html and license.txt too.', 'scrapelock' ) ); ?>
 				<?php self::checkbox( $s, 'hide_versions', __( 'Hide the versions of WordPress, PHP and the plugins', 'scrapelock' ), __( 'Scanners read these versions and look them up in lists of known vulnerabilities. This removes the “generator” tag from the page head and the feeds, the X-Powered-By header with the PHP version, and replaces “?ver=7.1.3” on CSS and JS files with a code that changes when the version changes, so caches still work. The readme and changelog files of WordPress and the plugins are static files: the Nginx and Apache rules in the “Server rules” tab refuse them. It does not fix any vulnerability: keep WordPress and the plugins updated.', 'scrapelock' ) ); ?>
 			</td>
 		</tr>
@@ -1727,7 +1845,7 @@ final class PNCP_Admin {
 				</p>
 				<?php self::action_form_open( 'pncp_token', 'pncp_token' ); ?>
 					<input type="hidden" name="op" value="revoke_prev">
-					<?php submit_button( __( 'Revoke the previous one now', 'scrapelock' ), 'secondary', 'submit', false ); ?>
+					<?php submit_button( __( 'Revoke the previous one now', 'scrapelock' ), 'secondary', 'submit', false, self::submit_attrs() ); ?>
 				</form>
 			<?php endif; ?>
 			<?php self::action_form_open( 'pncp_token', 'pncp_token', 'pncp-token-form' ); ?>
@@ -1813,7 +1931,8 @@ final class PNCP_Admin {
 				<?php
 				self::number( $s, 'watermark_image_id', __( 'PNG image ID from the Media Library (0 = the site\'s domain as text):', 'scrapelock' ), __( 'A PNG with a transparent background is recommended (e.g. the logo). The ID appears in the address when you open the image in the Library.', 'scrapelock' ) );
 				?>
-				<p><label for="pncp-watermark_position"><?php esc_html_e( 'Position:', 'scrapelock' ); ?></label>
+				<?php // 3.5: a <div>, not a <p>: select() now prints the requirement note (a <p>) after the select. ?>
+				<div class="pncp-field"><label for="pncp-watermark_position"><?php esc_html_e( 'Position:', 'scrapelock' ); ?></label>
 				<?php
 				self::select(
 					$s,
@@ -1828,7 +1947,7 @@ final class PNCP_Admin {
 					)
 				);
 				?>
-				</p>
+				</div>
 				<?php
 				self::number( $s, 'watermark_size', __( 'Size (% of the image width):', 'scrapelock' ), __( 'With diagonal repeat, the size of each repetition.', 'scrapelock' ) );
 				self::number( $s, 'watermark_opacity', __( 'Opacity (%):', 'scrapelock' ) );
@@ -1913,6 +2032,9 @@ final class PNCP_Admin {
 		$done = count( $ids ) < max( 1, $batch );
 		if ( $done ) {
 			delete_option( 'pncp_wm_cursor_' . $mode );
+			// 3.4.3: cached pages still linked the images as they were before the run (clean files after
+			// "Apply", watermarked ones after "Remove").
+			pncp_purge_page_cache();
 		}
 		// phpcs:ignore WordPress.DB.DirectDatabaseQuery -- Tool progress.
 		$position = (int) $wpdb->get_var( $wpdb->prepare( "SELECT COUNT(*) FROM {$wpdb->posts} WHERE post_type = 'attachment' AND post_mime_type IN ('image/jpeg','image/png','image/webp') AND ID <= %d", $cursor ) );
@@ -2059,6 +2181,10 @@ final class PNCP_Admin {
 			</div>
 			<?php
 		endif;
+		// 3.5: "Check a request": what ScrapeLock would answer, without counting or logging anything.
+		require_once PNCP_DIR . 'includes/class-pncp-tester-view.php';
+		PNCP_Tester_View::render( $s );
+		PNCP_Trace::render(); // 3.6: "Find whose copy this is".
 		$views = array(
 			'all'     => __( 'All events', 'scrapelock' ),
 			'blocked' => __( 'Blocked', 'scrapelock' ),
@@ -2187,7 +2313,7 @@ final class PNCP_Admin {
 			</table>
 			<?php self::action_form_open( 'pncp_log', 'pncp_log' ); ?>
 				<input type="hidden" name="op" value="unban_all">
-				<?php submit_button( __( 'Unblock all', 'scrapelock' ), 'secondary', 'submit', true ); ?>
+				<?php submit_button( __( 'Unblock all', 'scrapelock' ), 'secondary', 'submit', true, self::submit_attrs() ); ?>
 			</form>
 		<?php endif; ?>
 
@@ -2290,7 +2416,7 @@ final class PNCP_Admin {
 		</p>
 		<?php self::action_form_open( 'pncp_log', 'pncp_log' ); ?>
 			<input type="hidden" name="op" value="clear_log">
-			<?php submit_button( __( 'Delete log', 'scrapelock' ), 'delete', 'submit', false ); ?>
+			<?php submit_button( __( 'Delete log', 'scrapelock' ), 'delete', 'submit', false, self::submit_attrs() ); ?>
 		</form>
 		<?php
 		self::render_log_settings( $s );

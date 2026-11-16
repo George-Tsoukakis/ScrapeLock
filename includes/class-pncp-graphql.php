@@ -61,16 +61,25 @@ final class PNCP_Graphql {
 		PNCP_Bots::no_cache();
 		status_header( $verdict['code'] );
 		if ( 429 === $verdict['code'] ) {
-			header( 'Retry-After: 60' );
+			// 3.5: when the per-minute counters start again, the same in the header and in the body.
+			$retry = PNCP_Bots::retry_after();
+			header( 'Retry-After: ' . $retry );
+			$error = array(
+				'message'    => __( 'Too many requests. Please try again in a minute.', 'scrapelock' ),
+				'extensions' => array(
+					'code'        => 'pncp_rate_limited',
+					'retry_after' => $retry,
+				),
+			);
+		} else {
+			$error = array(
+				'message' => __( 'Access denied.', 'scrapelock' ),
+			);
 		}
 		header( 'Content-Type: application/json; charset=utf-8' );
 		echo wp_json_encode(
 			array(
-				'errors' => array(
-					array(
-						'message' => 429 === $verdict['code'] ? __( 'Too many requests. Please try again in a minute.', 'scrapelock' ) : __( 'Access denied.', 'scrapelock' ),
-					),
-				),
+				'errors' => array( $error ),
 			)
 		);
 		exit;

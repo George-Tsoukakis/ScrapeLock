@@ -34,6 +34,67 @@ final class PNCP_Frontend {
 		add_filter( 'wp_script_attributes', array( __CLASS__, 'script_attributes' ) );
 		add_filter( 'wp_inline_script_attributes', array( __CLASS__, 'script_attributes' ) );
 		add_action( 'init', array( __CLASS__, 'tdmrep_json' ), 1 );
+		add_filter( 'do_parse_request', array( __CLASS__, 'drop_array_vars' ), 1 );
+		add_filter( 'request', array( __CLASS__, 'scalar_query_vars' ), 1 );
+	}
+
+	/**
+	 * 3.4.3: a single-value query variable sent as an array was found in this request.
+	 *
+	 * @var bool
+	 */
+	private static $array_vars = false;
+
+	/**
+	 * 3.4.3: before WordPress reads the request (some of its own steps there, e.g. for ?year[]=1, already stop
+	 * with a fatal error), the single-value query variables sent as arrays are taken out of it. The request
+	 * then gets "not found" (scalar_query_vars()).
+	 *
+	 * @param bool $parse Whether WordPress parses the request (passed on unchanged).
+	 * @return bool
+	 */
+	public static function drop_array_vars( $parse ) {
+		// phpcs:disable WordPress.Security.NonceVerification -- Only removes malformed values, reads nothing.
+		foreach ( self::SCALAR_VARS as $key ) {
+			if ( ( isset( $_GET[ $key ] ) && ! is_scalar( $_GET[ $key ] ) ) || ( isset( $_POST[ $key ] ) && ! is_scalar( $_POST[ $key ] ) ) ) {
+				unset( $_GET[ $key ], $_POST[ $key ], $_REQUEST[ $key ] );
+				self::$array_vars = true;
+			}
+		}
+		// phpcs:enable
+		return $parse;
+	}
+
+	/**
+	 * 3.4.3: the public query variables WordPress reads as a single value. Given as an array (?feed[]=x,
+	 * ?year[]=1, ?author_name[]=x), WordPress itself stops with a fatal error (a 500) in WP_Query: scanners
+	 * use that to fill the error log, and a cached 500 can reach visitors.
+	 *
+	 * @var string[]
+	 */
+	const SCALAR_VARS = array( 'feed', 'author_name', 'category_name', 'tag', 'year', 'monthnum', 'day', 'w', 'm', 'hour', 'minute', 'second', 'name', 'pagename', 'page_id', 'p', 'page', 'paged', 'cpage', 'attachment', 'attachment_id', 'subpost', 'subpost_id', 'static', 'embed', 'preview', 'sentence', 'exact', 'error', 'withcomments', 'withoutcomments', 'more', 'rest_route', 'robots', 'favicon', 'sitemap', 'sitemap-subtype', 'sitemap-stylesheet' );
+
+	/**
+	 * 3.4.3: such a request gets a plain "not found" instead of WordPress's fatal error.
+	 *
+	 * @param array<string, mixed> $vars Query variables of the request.
+	 * @return array<string, mixed>
+	 */
+	public static function scalar_query_vars( $vars ) {
+		if ( ! is_array( $vars ) ) {
+			return $vars;
+		}
+		$bad = self::$array_vars;
+		foreach ( self::SCALAR_VARS as $key ) {
+			if ( isset( $vars[ $key ] ) && ! is_scalar( $vars[ $key ] ) ) {
+				unset( $vars[ $key ] );
+				$bad = true;
+			}
+		}
+		if ( $bad ) {
+			$vars['error'] = '404';
+		}
+		return $vars;
 	}
 
 	/**

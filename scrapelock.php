@@ -2,7 +2,7 @@
 /**
  * Plugin Name:       ScrapeLock – Content & AI Bot Protection
  * Description:       Protects your content: makes copying text and images harder, hides the text in the REST API, GraphQL and RSS, blocks scrapers, AI bots and fake Googlebots, temporarily blocks persistent IPs, protects XML feeds with a token and adds an optional watermark. Lockdown freezes every change to the site until it is unlocked with an authenticator app. Forms, cart, checkout and search engines are not affected.
- * Version:           3.4.2
+ * Version:           3.6.0
  * Requires at least: 6.2
  * Requires PHP:      7.4
  * Author:            CodeBunny
@@ -19,41 +19,26 @@ if ( defined( 'PNCP_VERSION' ) ) {
 	return;
 }
 
-define( 'PNCP_VERSION', '3.4.2' );
+define( 'PNCP_VERSION', '3.6.0' );
 define( 'PNCP_FILE', __FILE__ );
 define( 'PNCP_DIR', plugin_dir_path( __FILE__ ) );
 define( 'PNCP_URL', plugin_dir_url( __FILE__ ) );
 defined( 'PNCP_OPTION' ) || define( 'PNCP_OPTION', 'pncp_settings' ); // Also defined by the early check (mu-plugin).
 
-require_once PNCP_DIR . 'includes/class-pncp-paths.php';
-require_once PNCP_DIR . 'includes/class-pncp-time.php';
-require_once PNCP_DIR . 'includes/class-pncp-options.php';
-require_once PNCP_DIR . 'includes/class-pncp-settings-io.php';
-require_once PNCP_DIR . 'includes/class-pncp-ip.php';
-require_once PNCP_DIR . 'includes/class-pncp-log.php';
-require_once PNCP_DIR . 'includes/class-pncp-frontend.php';
-require_once PNCP_DIR . 'includes/class-pncp-rest.php';
-require_once PNCP_DIR . 'includes/class-pncp-graphql.php';
-require_once PNCP_DIR . 'includes/class-pncp-feed.php';
-require_once PNCP_DIR . 'includes/class-pncp-bots.php';
-require_once PNCP_DIR . 'includes/class-pncp-surge.php';
-require_once PNCP_DIR . 'includes/class-pncp-edge.php';
-require_once PNCP_DIR . 'includes/class-pncp-origin.php';
-require_once PNCP_DIR . 'includes/class-pncp-watermark.php';
-require_once PNCP_DIR . 'includes/class-pncp-private-urls.php';
-require_once PNCP_DIR . 'includes/class-pncp-rules.php';
-require_once PNCP_DIR . 'includes/class-pncp-status.php';
-require_once PNCP_DIR . 'includes/class-pncp-early.php';
-require_once PNCP_DIR . 'includes/class-pncp-human.php';
-require_once PNCP_DIR . 'includes/class-pncp-geo.php';
-require_once PNCP_DIR . 'includes/class-pncp-precheck.php';
-require_once PNCP_DIR . 'includes/class-pncp-totp.php';
-require_once PNCP_DIR . 'includes/class-pncp-lockdown.php';
-require_once PNCP_DIR . 'includes/class-pncp-seal.php';
-require_once PNCP_DIR . 'includes/class-pncp-integrity.php';
-require_once PNCP_DIR . 'includes/class-pncp-surface.php';
-require_once PNCP_DIR . 'includes/class-pncp-health.php';
-require_once PNCP_DIR . 'includes/class-pncp-abilities.php';
+// 3.6: each class is loaded when it is first used (PNCP_Foo_Bar → includes/class-pncp-foo-bar.php). A page for a
+// visitor no longer reads the code it never runs (the server rules, settings import and export, Site Health, the
+// "Check a request" card, the file check unless the site is locked).
+spl_autoload_register(
+	static function ( $class ) {
+		if ( 0 !== strpos( $class, 'PNCP_' ) ) {
+			return;
+		}
+		$file = PNCP_DIR . 'includes/class-' . str_replace( '_', '-', strtolower( $class ) ) . '.php';
+		if ( is_readable( $file ) ) {
+			require_once $file;
+		}
+	}
+);
 
 if ( is_admin() ) {
 	require_once PNCP_DIR . 'includes/class-pncp-admin.php';
@@ -78,10 +63,43 @@ PNCP_Geo::init();
 PNCP_Precheck::init();
 PNCP_Lockdown::init();
 PNCP_Seal::init();
-PNCP_Integrity::init();
 PNCP_Surface::init();
-PNCP_Health::init();
-PNCP_Abilities::init();
+// 3.6: what only wp-admin, admin-ajax, scheduled events, WP-CLI or the REST API use is loaded there only.
+$pncp_backend = is_admin() || wp_doing_cron() || ( defined( 'WP_CLI' ) && WP_CLI );
+if ( $pncp_backend ) {
+	PNCP_Integrity::init();
+	PNCP_Health::init();
+} else {
+	// The file check's hourly event is kept scheduled while the site is locked (PNCP_Integrity::ensure_cron()).
+	add_action(
+		'init',
+		static function () {
+			if ( PNCP_Lockdown::is_locked() ) {
+				PNCP_Integrity::ensure_cron();
+			}
+		}
+	);
+	// Site Health's tests also run through the REST API (wp-site-health/v1).
+	add_action( 'rest_api_init', array( 'PNCP_Health', 'init' ) );
+}
+unset( $pncp_backend );
+if ( function_exists( 'wp_register_ability' ) ) {
+	add_action( 'wp_abilities_api_categories_init', array( 'PNCP_Abilities', 'category' ) );
+	add_action( 'wp_abilities_api_init', array( 'PNCP_Abilities', 'register' ) );
+}
+// "Check a request": its admin-ajax action, and the admin bar entry for signed-in staff.
+add_action(
+	'init',
+	static function () {
+		if ( is_admin() || is_user_logged_in() ) {
+			PNCP_Tester::init();
+		}
+	},
+	0
+);
+PNCP_Mark::init();
+PNCP_Accounts::init();
+PNCP_Trace::init();
 
 if ( defined( 'WP_CLI' ) && WP_CLI ) {
 	require_once PNCP_DIR . 'includes/class-pncp-cli.php';
@@ -304,11 +322,23 @@ function pncp_upgrade() {
 	if ( ! wp_next_scheduled( 'pncp_upgrade_files' ) ) {
 		wp_schedule_single_event( time(), 'pncp_upgrade_files' );
 	}
-	if ( function_exists( 'spawn_cron' ) && did_action( 'init' ) ) {
-		spawn_cron();
-	} elseif ( function_exists( 'spawn_cron' ) ) {
-		add_action( 'init', 'spawn_cron', 99 );
+	if ( did_action( 'init' ) ) {
+		pncp_spawn_cron();
+	} else {
+		add_action( 'init', 'pncp_spawn_cron', 99 );
 	}
+}
+
+/**
+ * 3.4.3: starts due scheduled events in a background request (a loopback to wp-cron.php, or the redirect of
+ * ALTERNATE_WP_CRON), as WordPress does on each request, and like WordPress not where DISABLE_WP_CRON is set:
+ * there the owner's real cron runs them. spawn_cron() itself runs every due event, not only ours.
+ */
+function pncp_spawn_cron() {
+	if ( ( defined( 'DISABLE_WP_CRON' ) && DISABLE_WP_CRON ) || ! function_exists( 'spawn_cron' ) ) {
+		return;
+	}
+	spawn_cron();
 }
 
 /**
@@ -445,7 +475,7 @@ add_action( 'plugins_loaded', 'pncp_maybe_upgrade', -100 );
 
 /**
  * Clears the page cache so visitors see the new settings immediately.
- * Covers WP Rocket, WP Super Cache, W3 Total Cache, LiteSpeed Cache, WP Fastest Cache, SiteGround Optimizer,
+ * Covers WP Rocket, WP Super Cache, W3 Total Cache, LiteSpeed Cache, Cache Enabler, WP Fastest Cache, SiteGround Optimizer,
  * Nginx Helper (FastCGI cache) and the Cloudflare plugin, whichever are present.
  */
 function pncp_purge_page_cache() {
@@ -470,6 +500,7 @@ function pncp_purge_page_cache() {
 	// phpcs:disable WordPress.NamingConventions.PrefixAllGlobals.NonPrefixedHooknameFound -- Hooks of other plugins.
 	do_action( 'rt_nginx_helper_purge_all' ); // Nginx Helper (FastCGI cache).
 	do_action( 'litespeed_purge_all' ); // LiteSpeed Cache.
+	do_action( 'cache_enabler_clear_complete_cache' ); // 3.4.3: Cache Enabler.
 	// phpcs:enable
 	if ( function_exists( 'wp_cache_clear_cache' ) ) {
 		wp_cache_clear_cache( is_multisite() ? get_current_blog_id() : 0 ); // WP Super Cache (on multisite, only this site).
@@ -513,14 +544,13 @@ add_action( 'update_option_' . PNCP_OPTION, 'pncp_settings_purge', 10, 2 );
  * Empties the page cache in a background request (a scheduled event started right away with a loopback to
  * wp-cron.php that this request does not wait for), e.g. after Emergency Mode starts or ends. Several calls
  * before it runs empty the cache once.
+ * 3.4.3: where DISABLE_WP_CRON is set it is only scheduled, and runs with the site's real cron.
  */
 function pncp_schedule_purge() {
 	if ( ! wp_next_scheduled( 'pncp_background_purge' ) ) {
 		wp_schedule_single_event( time(), 'pncp_background_purge' );
 	}
-	if ( function_exists( 'spawn_cron' ) ) {
-		spawn_cron();
-	}
+	pncp_spawn_cron(); // 3.4.3: not where DISABLE_WP_CRON is set.
 }
 add_action( 'pncp_background_purge', 'pncp_purge_page_cache' );
 

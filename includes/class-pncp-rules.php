@@ -86,6 +86,21 @@ final class PNCP_Rules {
 	}
 
 	/**
+	 * 3.4.3: a location argument for Nginx. A private path with a space ("/price list.xml"), or WordPress in a
+	 * folder with one, broke nginx -t ("invalid number of arguments in location"): such an argument is quoted.
+	 *
+	 * @param string $arg Path or regex.
+	 * @return string
+	 */
+	private static function nginx_arg( $arg ) {
+		if ( ! preg_match( '/[\s;"\'{}]/', $arg ) ) {
+			return $arg; // As before: rules already installed stay "current".
+		}
+		// Nginx reads \\ as \ and \" as ", and keeps any other backslash: every backslash is doubled.
+		return '"' . str_replace( array( '\\', '"' ), array( '\\\\', '\\"' ), $arg ) . '"';
+	}
+
+	/**
 	 * PHP in the uploads folder: files people and plugins upload must never run. A backdoor uploaded through a
 	 * vulnerable plugin usually lands there.
 	 *
@@ -225,6 +240,19 @@ final class PNCP_Rules {
 	}
 
 	/**
+	 * 3.4.3: alternation() for a quoted Nginx string. Nginx reads \\ in a string as one backslash, so a backslash
+	 * typed in a list (preg_quote() makes it \\) reached the regex alone and escaped the next character: the
+	 * entry stopped matching, and one at the end of a word could break the regex. Lists without a backslash give
+	 * the same lines (and fingerprints) as before.
+	 *
+	 * @param string[] $words Words.
+	 * @return string
+	 */
+	private static function nginx_alternation( $words ) {
+		return str_replace( '\\\\', '\\\\\\\\', self::alternation( $words ) );
+	}
+
+	/**
 	 * The site's own suffix for the Nginx names (variables, limit zone): several WordPress sites can share one
 	 * Nginx, and the same name defined twice in http { } stops nginx -t.
 	 *
@@ -347,9 +375,9 @@ final class PNCP_Rules {
 			$lines[] = 'map $http_user_agent $' . self::nv( 'bad_bot' ) . ' {';
 			$lines[] = '    default 0;';
 			if ( self::allowed() ) {
-				$lines[] = '    "~*' . self::alternation( self::allowed() ) . '" 0;'; // First: it matches first.
+				$lines[] = '    "~*' . self::nginx_alternation( self::allowed() ) . '" 0;'; // First: it matches first.
 			}
-			$lines[] = '    "~*' . self::alternation( self::bots() ) . '" 1;';
+			$lines[] = '    "~*' . self::nginx_alternation( self::bots() ) . '" 1;';
 			if ( $s['block_empty_ua'] ) {
 				$lines[] = '    "" 1;';
 			}
@@ -373,7 +401,7 @@ final class PNCP_Rules {
 			$lines[] = '    "~; wv\\)" 0;';
 			// Search engines and other bots also write "Chrome/" in their User-Agent and send no browser headers: they
 			// are not fake browsers (WordPress verifies them by IP / DNS). Bot User-Agents name themselves or a URL.
-			$lines[] = '    "~*^[^|]*\\|[^|]*\\|[^|]*\\|.*' . self::alternation( self::not_fake_browsers() ) . '" 0;';
+			$lines[] = '    "~*^[^|]*\\|[^|]*\\|[^|]*\\|.*' . self::nginx_alternation( self::not_fake_browsers() ) . '" 0;';
 			$lines[] = '    "~^on\\|\\|\\|.*\\b(Chrome|Chromium)/(9[0-9]|[1-9][0-9]{2})\\." 1;';
 			$lines[] = '    "~^on\\|\\|[^|]*\\|.*\\bFirefox/(9[0-9]|[1-9][0-9]{2})\\." 1;';
 			$lines[] = '}';
@@ -394,8 +422,28 @@ final class PNCP_Rules {
 			$lines[] = '    "~^[01]*1[01]*:0$" 1;';
 			$lines[] = '}';
 		}
-		$rate    = (int) $s['rate_limit'] > 0 ? (int) $s['rate_limit'] : 60;
-		$lines[] = 'limit_req_zone $binary_remote_addr zone=' . self::nv( 'pages' ) . ':10m rate=' . $rate . 'r/m;';
+		$rate = (int) $s['rate_limit'] > 0 ? (int) $s['rate_limit'] : 60;
+		$key  = '$binary_remote_addr';
+		// 3.4.3: the "Always allowed IPs" are not limited by Nginx either (an empty key is not counted). The
+		// Google and Bing lists change every day, so they are not written here: the comment in part 2 says so.
+		$exempt = array();
+		foreach ( PNCP_Options::parse_list( $s['allow_ips'] ) as $range ) {
+			$range = trim( (string) $range );
+			if ( PNCP_Ip::valid_range( $range ) ) {
+				$exempt[] = PNCP_Options::unmap_range( $range );
+			}
+		}
+		if ( $exempt ) {
+			$lines[] = 'geo $' . self::nv( 'limit_exempt' ) . ' {';
+			$lines[] = '    default 0;';
+			foreach ( array_unique( $exempt ) as $range ) {
+				$lines[] = '    ' . $range . ' 1;';
+			}
+			$lines[] = '}';
+			$lines[] = 'map $' . self::nv( 'limit_exempt' ) . ' $' . self::nv( 'limit_key' ) . ' { 1 ""; default $binary_remote_addr; }';
+			$key     = '$' . self::nv( 'limit_key' );
+		}
+		$lines[] = 'limit_req_zone ' . $key . ' zone=' . self::nv( 'pages' ) . ':10m rate=' . $rate . 'r/m;';
 		// Lets the plugin see that this part is installed and matches the current settings.
 		$lines[] = 'map $host $' . self::nv( 'rules' ) . ' { default "' . self::nginx_hash( $lines ) . '"; }';
 		return implode( "\n", $lines ) . "\n";
@@ -439,34 +487,68 @@ final class PNCP_Rules {
 		$lines[] = '# (PHP / page cache), NOT where CSS, JS, images and fonts are served: one page loads dozens of them.';
 		$lines[] = '# Behind Cloudflare: set real_ip_header CF-Connecting-IP first (see the plugin FAQ).';
 		$lines[] = '# Behind Bunny CDN: real_ip_header X-Real-IP, with set_real_ip_from for each Bunny edge server.';
+		$lines[] = '# Search engines are limited like everyone here (Nginx cannot verify them): on a large site, leave the line';
+		$lines[] = '# out, or add the Google / Bing ranges to "Always allowed IPs". The always allowed IPs are not limited.';
 		$lines[] = '#   limit_req zone=' . self::nv( 'pages' ) . ' burst=20 nodelay;';
 		$lines[] = 'limit_req_status 429;';
 		$lines[] = '';
 		if ( '' !== $backup ) {
 			$lines[] = '# Clean originals of watermarked images: never public.';
-			$lines[] = 'location ^~ ' . $uploads . '/' . $backup . '/ { deny all; return 404; }';
+			$lines[] = 'location ^~ ' . self::nginx_arg( $uploads . '/' . $backup . '/' ) . ' { deny all; return 404; }';
 			$lines[] = '';
 		}
-		if ( $s['hide_versions'] ) {
+		// 3.5: the pre-cache check's data (counters, bans, visitor IPs) and the country database: Nginx ignores the
+		// .htaccess files in them. Fixed names only, as Site Health prints them (PNCP_Health::folders_fix()), and
+		// only for a folder that exists, so the rules of a site that never used them stay as they were.
+		$data = array();
+		if ( '' !== (string) get_option( PNCP_Precheck::KEY, '' ) ) {
+			$data[] = 'location ^~ ' . self::nginx_arg( $uploads . '/' . PNCP_Precheck::DIR . '/' ) . ' { deny all; return 404; }';
+		}
+		if ( is_dir( PNCP_Geo::dir() ) ) {
+			$data[] = 'location ^~ ' . self::nginx_arg( $uploads . '/' . PNCP_Geo::DIR . '/' ) . ' { deny all; return 404; }';
+		}
+		if ( $data ) {
+			$lines[] = '# ScrapeLock\'s data folders (pre-cache check, country database): never public.';
+			$lines   = array_merge( $lines, $data );
+			$lines[] = '';
+		}
+		if ( $s['hide_versions'] || ! empty( $s['hide_fingerprint'] ) ) {
 			$lines[] = '# Hide versions: readme / changelog files that give the version of WordPress, plugins and themes away (404).';
 			foreach ( self::version_regexes() as $regex ) {
-				$lines[] = 'location ~* ' . $regex . ' { return 404; }';
+				$lines[] = 'location ~* ' . self::nginx_arg( $regex ) . ' { return 404; }';
 			}
+			$lines[] = '';
+		}
+		// 3.5: "Ban scanners on their first probe": the probe paths go to WordPress, which bans (only when on).
+		$probe   = self::probe_regex();
+		$missing = self::probe_regex( 'server_missing' );
+		if ( '' !== $probe ) {
+			$lines[] = '# Scanner probes (.env, .git, wp-config.php backups, SSH keys): sent to WordPress, which bans the IP';
+			$lines[] = '# ("Ban scanners on their first probe"). These files are never served, even if they exist. Put it ABOVE any';
+			$lines[] = '# location that denies hidden files (location ~ /\\.): Nginx uses the first regex location that matches.';
+			$lines[] = 'location ~* ' . self::nginx_arg( $probe ) . ' { rewrite ^ ' . self::url_path( home_url() ) . '/index.php last; }';
+			$lines[] = '';
+		}
+		// 3.5: dumps and archives at the top of the site only when no such file exists (a real download is served).
+		if ( '' !== $missing ) {
+			$lines[] = '# Scanner probes for database dumps and backup archives: sent to WordPress only when the file does not exist.';
+			$lines[] = 'location ~* ' . self::nginx_arg( $missing ) . ' { try_files $uri ' . self::url_path( home_url() ) . '/index.php?$args; }';
 			$lines[] = '';
 		}
 		if ( $s['block_upload_php'] ) {
 			$lines[] = '# No PHP in the uploads folder. Put it ABOVE the location that passes .php files to PHP: Nginx uses the';
 			$lines[] = '# first regex location that matches.';
-			$lines[] = 'location ~* ' . self::upload_php_regex() . ' { deny all; }';
+			$lines[] = 'location ~* ' . self::nginx_arg( self::upload_php_regex() ) . ' { deny all; }';
 			$lines[] = '';
 		}
 		$lines[] = '# Hotlink: images load only from your site and from search engines / price comparison platforms.';
 		$lines[] = '# (If a location for images already exists, e.g. for expires, put the two lines inside it.)';
-		$lines[] = 'location ~* ^' . preg_quote( $uploads, '#' ) . '/.*\.(jpe?g|png|webp|gif|avif)$ {';
+		$lines[] = 'location ~* ' . self::nginx_arg( '^' . preg_quote( $uploads, '#' ) . '/.*\.(jpe?g|png|webp|gif|avif)$' ) . ' {';
 		// The domain as regex: as a plain name it would clash with server_names ("conflicting parameter" in nginx -t).
+		// Quoted: "google." becomes [a-z]{2,3}, and an unquoted { starts a block for Nginx (nginx -t fails).
 		$allowed = array();
 		foreach ( self::hotlink_allowed() as $domain ) {
-			$allowed[] = '~^' . self::referer_host_regex( $domain );
+			$allowed[] = '"~^' . self::referer_host_regex( $domain ) . '"';
 		}
 		$lines[] = '    valid_referers none blocked server_names ~^([^/]*\\.)?' . self::nginx_referer( $host ) . '(:|/|$) ' . implode( ' ', $allowed ) . ';';
 		$lines[] = '    if ($invalid_referer) { return 403; }';
@@ -478,7 +560,7 @@ final class PNCP_Rules {
 			$lines[] = '# go to WordPress, which checks the token, Bearer, allowed IPs and administrator.';
 			$lines[] = '# (Only return inside the ifs: otherwise the Nginx "if is evil" problem would lose try_files.)';
 			foreach ( $regexes as $regex ) {
-				$lines[] = 'location ~* ' . $regex . ' {';
+				$lines[] = 'location ~* ' . self::nginx_arg( $regex ) . ' {';
 				$lines[] = '    error_page 418 = @pncp_static_feed;';
 				$lines[] = '    if (-f $request_filename) { return 418; }';
 				$lines[] = '    try_files $uri /index.php?$args;';
@@ -529,6 +611,36 @@ final class PNCP_Rules {
 	}
 
 	/**
+	 * 3.4.3: a regex of the request path (with the leading slash) for a RewriteRule in the .htaccess of the
+	 * WordPress rules. Apache matches a RewriteRule there against the path without the folder of that .htaccess,
+	 * which is the site's home folder: with WordPress in a subfolder (/blog) the rules kept "^blog/..." and never
+	 * matched. At the root of the domain the result is the same as before.
+	 *
+	 * @param string $regex Regex starting with ^/.
+	 * @return string
+	 */
+	private static function apache_regex( $regex ) {
+		$head = '^' . preg_quote( self::url_path( home_url() ) . '/', '#' );
+		return 0 === strpos( $regex, $head ) ? '^' . substr( $regex, strlen( $head ) ) : str_replace( '^/', '^', $regex );
+	}
+
+	/**
+	 * 3.5: the scanner probe paths for the server rules (PNCP_Probe::SERVER_KEYS), as a regex of the full request
+	 * path, or '' when "Ban scanners on their first probe" is off.
+	 *
+	 * @param string $where 'server' (always sent to WordPress) or 'server_missing' (only when no such file exists).
+	 * @return string
+	 */
+	private static function probe_regex( $where = 'server' ) {
+		$s = PNCP_Options::get();
+		if ( empty( $s['enabled'] ) || empty( $s['probe_ban'] ) ) {
+			return '';
+		}
+		$body = PNCP_Probe::body( $where );
+		return '' === $body ? '' : '^' . preg_quote( self::url_path( home_url() ) . '/', '#' ) . $body . '$';
+	}
+
+	/**
 	 * Apache rules (.htaccess, above the WordPress rules).
 	 *
 	 * @return string
@@ -536,7 +648,7 @@ final class PNCP_Rules {
 	public static function apache() {
 		$s       = PNCP_Options::get();
 		$host    = self::host();
-		$uploads = ltrim( self::uploads_path(), '/' );
+		$uploads = self::uploads_path();
 		$backup  = (string) get_option( 'pncp_backup_dir' );
 		$lines   = array();
 
@@ -577,17 +689,30 @@ final class PNCP_Rules {
 		}
 		if ( '' !== $backup ) {
 			$lines[] = '# Clean originals: never public (there is also an .htaccess inside the folder).';
-			$lines[] = 'RewriteRule ^' . preg_quote( $uploads . '/' . $backup, '#' ) . '/ - [F,L]';
+			$lines[] = 'RewriteRule ' . self::apache_regex( '^' . preg_quote( $uploads . '/' . $backup, '#' ) . '/' ) . ' - [F,L]';
 		}
-		if ( $s['hide_versions'] ) {
+		if ( $s['hide_versions'] || ! empty( $s['hide_fingerprint'] ) ) {
 			$lines[] = '# Hide versions: readme / changelog files that give the version of WordPress, plugins and themes away (404).';
 			foreach ( self::version_regexes() as $regex ) {
-				$lines[] = 'RewriteRule ' . str_replace( '^/', '^', $regex ) . ' - [R=404,NC,L]';
+				$lines[] = 'RewriteRule ' . self::apache_regex( $regex ) . ' - [R=404,NC,L]';
 			}
+		}
+		// 3.5: "Ban scanners on their first probe" (only when on).
+		$probe   = self::probe_regex();
+		$missing = self::probe_regex( 'server_missing' );
+		if ( '' !== $probe ) {
+			$lines[] = '# Scanner probes (.env, .git, wp-config.php backups, SSH keys): sent to WordPress, which bans the IP.';
+			$lines[] = 'RewriteRule ' . self::apache_regex( $probe ) . ' ' . self::url_path( home_url() ) . '/index.php [NC,L]';
+		}
+		// 3.5: dumps and archives at the top of the site only when no such file exists (a real download is served).
+		if ( '' !== $missing ) {
+			$lines[] = '# Scanner probes for database dumps and backup archives: sent to WordPress only when the file does not exist.';
+			$lines[] = 'RewriteCond %{REQUEST_FILENAME} !-f';
+			$lines[] = 'RewriteRule ' . self::apache_regex( $missing ) . ' ' . self::url_path( home_url() ) . '/index.php [NC,L]';
 		}
 		if ( $s['block_upload_php'] ) {
 			$lines[] = '# No PHP in the uploads folder (ScrapeLock also writes this into the .htaccess of the uploads folder).';
-			$lines[] = 'RewriteRule ' . str_replace( '^/', '^', self::upload_php_regex() ) . ' - [F,NC,L]';
+			$lines[] = 'RewriteRule ' . self::apache_regex( self::upload_php_regex() ) . ' - [F,NC,L]';
 		}
 		$lines[] = '# Image hotlinking.';
 		$lines[] = 'RewriteCond %{HTTP_REFERER} !^$';
@@ -595,14 +720,14 @@ final class PNCP_Rules {
 		foreach ( self::hotlink_allowed() as $domain ) {
 			$lines[] = 'RewriteCond %{HTTP_REFERER} !^https?://' . self::referer_host_regex( $domain ) . ' [NC]';
 		}
-		$lines[] = 'RewriteRule ^' . preg_quote( $uploads, '#' ) . '/.*\.(jpe?g|png|webp|gif|avif)$ - [F,NC,L]';
+		$lines[] = 'RewriteRule ' . self::apache_regex( '^' . preg_quote( $uploads, '#' ) . '/.*\.(jpe?g|png|webp|gif|avif)$' ) . ' - [F,NC,L]';
 		foreach ( self::private_regexes() as $regex ) {
 			$lines[] = '# Feed that is a static file: only with the token (put yours in place of YOUR_TOKEN).';
 			$lines[] = '# PHP feeds are checked by WordPress (token, Bearer, allowed IPs, administrator).';
 			$lines[] = 'RewriteCond %{REQUEST_FILENAME} -f';
 			$lines[] = 'RewriteCond %{QUERY_STRING} !(^|&)cp_token=YOUR_TOKEN(&|$)';
 			$lines[] = 'RewriteCond %{HTTP:X-ScrapeLock-Token} !^YOUR_TOKEN$';
-			$lines[] = 'RewriteRule ' . str_replace( '^/', '^', $regex ) . ' - [F,L]';
+			$lines[] = 'RewriteRule ' . self::apache_regex( $regex ) . ' - [F,L]';
 		}
 		$lines[] = '# Authorization: Bearer reaches PHP with PHP-FPM / CGI too.';
 		$lines[] = 'RewriteRule .* - [E=HTTP_AUTHORIZATION:%{HTTP:Authorization}]';

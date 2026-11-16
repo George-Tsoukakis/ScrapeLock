@@ -38,6 +38,22 @@ final class PNCP_Ip {
 	private static $reliable = true;
 
 	/**
+	 * 3.6: the addresses the request passed through on its way here (REMOTE_ADDR and the proxies after the
+	 * visitor in the real-IP header). See is_local_request().
+	 *
+	 * @var string[]
+	 */
+	private static $hops = array();
+
+	/**
+	 * 3.6: a CDN edge trusted for the "Real visitor IP" header connected, but the header was missing or not
+	 * an IP, so the edge's own address stands in. See is_cdn_edge().
+	 *
+	 * @var bool
+	 */
+	private static $no_visitor_ip = false;
+
+	/**
 	 * Per-request cache of the lists.
 	 *
 	 * @var array<string, string[]>
@@ -50,6 +66,14 @@ final class PNCP_Ip {
 	 * @var array{0:array<string, bool>, 1:string[]}|null
 	 */
 	private static $bunny = null;
+
+	/**
+	 * 3.4.3: official_owner() per IP for this request, forgotten with the lists (it was a static variable that
+	 * kept the answer of a list that store_list() had just replaced).
+	 *
+	 * @var array<string, string>
+	 */
+	private static $owners = array();
 
 	/**
 	 * Attaches the hooks.
@@ -142,11 +166,16 @@ final class PNCP_Ip {
 		if ( ! is_array( $known ) || ! in_array( $name, $known, true ) ) {
 			return '';
 		}
-		$group = PNCP_Log::apcu_ok() ? apcu_fetch( PNCP_Log::apcu_key( $name ) ) : false;
+		// 3.4.3: the stamp of the last rebuild is part of the APCu key. The lists are often refreshed from WP-CLI
+		// (cron run by "wp cron event run"), which cannot clear the web server's APCu: the old ranges stayed in
+		// use for up to an hour. Autoloaded, like the list of groups.
+		$apcu  = PNCP_Log::apcu_key( $name . '_' . (string) get_option( 'pncp_dc_stamp', '' ) );
+		$group = PNCP_Log::apcu_ok() ? apcu_fetch( $apcu ) : false;
 		if ( ! is_array( $group ) ) {
 			$group = get_option( $name, array() );
-			if ( PNCP_Log::apcu_ok() && is_array( $group ) ) {
-				apcu_store( PNCP_Log::apcu_key( $name ), $group, HOUR_IN_SECONDS );
+			// 3.5: not while a request is only explained ("Check a request" writes no cache entry).
+			if ( PNCP_Log::apcu_ok() && is_array( $group ) && ! ( class_exists( 'PNCP_Bots', false ) && PNCP_Bots::explaining() ) ) {
+				apcu_store( $apcu, $group, HOUR_IN_SECONDS );
 			}
 		}
 		foreach ( is_array( $group ) ? $group : array() as $row ) {
@@ -176,13 +205,21 @@ final class PNCP_Ip {
 	public static function build_datacenter_index() {
 		$groups = array();
 		foreach ( array_keys( self::datacenters() ) as $name ) {
-			foreach ( self::list_of( $name ) as $range ) {
+			// 3.4.3: sane_ranges() again, for a list written to the database some other way: a range wider than
+			// a group would only be put in the group of its first address.
+			foreach ( self::sane_ranges( self::list_of( $name ) ) as $range ) {
 				$parts = explode( '/', (string) $range, 2 );
 				$start = @inet_pton( $parts[0] ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged -- Validated when stored.
 				if ( false === $start ) {
 					continue;
 				}
 				$bits = isset( $parts[1] ) ? (int) $parts[1] : strlen( $start ) * 8;
+				// 3.4.3: an IPv4-mapped range (::ffff:54.0.0.0/104) in the IPv4 group, where datacenter() looks for
+				// its addresses (sane_ranges() keeps it at least /104).
+				if ( 16 === strlen( $start ) && 0 === strpos( $start, str_repeat( "\0", 10 ) . "\xff\xff" ) ) {
+					$start = substr( $start, 12 );
+					$bits  = max( 0, $bits - 96 );
+				}
 				$end  = $start;
 				for ( $i = 0, $len = strlen( $start ); $i < $len; $i++ ) {
 					$keep        = max( 0, min( 8, $bits - $i * 8 ) );
@@ -199,10 +236,8 @@ final class PNCP_Ip {
 		}
 		foreach ( $groups as $option => $rows ) {
 			update_option( $option, $rows, false );
-			if ( PNCP_Log::apcu_ok() ) {
-				apcu_delete( PNCP_Log::apcu_key( $option ) );
-			}
 		}
+		update_option( 'pncp_dc_stamp', (string) microtime( true ), true );
 		// Autoloaded (a short list of names): read on every page without a query of its own.
 		update_option( 'pncp_dc_groups', array_keys( $groups ), true );
 		if ( function_exists( 'wp_set_option_autoload' ) ) {
@@ -252,8 +287,10 @@ final class PNCP_Ip {
 		if ( ! isset( self::$lists[ $name ] ) ) {
 			// One option per list: the CDN lists are autoloaded (needed on every request behind the CDN); the
 			// large Google / Bing lists are read only when someone claims to be a crawler.
-			$list                 = get_option( self::LISTS_OPTION . '_' . $name, array() );
-			self::$lists[ $name ] = is_array( $list ) ? $list : array();
+			$list = get_option( self::LISTS_OPTION . '_' . $name, array() );
+			// 3.4.3: only text entries. A list damaged in the database (an entry that is a list itself) made
+			// is_bunny() fail with a fatal error on every request.
+			self::$lists[ $name ] = is_array( $list ) ? array_values( array_filter( $list, 'is_string' ) ) : array();
 		}
 		$list = self::$lists[ $name ];
 		if ( ! $list && 'cloudflare' === $name ) {
@@ -276,7 +313,8 @@ final class PNCP_Ip {
 		$updated[ $name ] = time();
 		update_option( self::LISTS_OPTION . '_updated', $updated, false );
 		unset( self::$lists[ $name ] );
-		self::$bunny = null;
+		self::$bunny  = null;
+		self::$owners = array();
 		if ( isset( self::datacenters()[ $name ] ) ) {
 			self::build_datacenter_index();
 		}
@@ -298,16 +336,16 @@ final class PNCP_Ip {
 			if ( '' === $range || ! self::valid_range( $range ) ) {
 				continue;
 			}
-			$parts   = explode( '/', $range, 2 );
-			$is_ipv6 = (bool) filter_var( $parts[0], FILTER_VALIDATE_IP, FILTER_FLAG_IPV6 );
-			if ( isset( $parts[1] ) ) {
-				$prefix = (int) $parts[1];
-				$min    = $is_ipv6 ? 16 : 8;
-				if ( $prefix < $min ) {
-					continue; // Far too broad for an edge/crawler list.
-				}
+			$parts = explode( '/', $range, 2 );
+			// The same limits as for the "Trusted proxies", including an IPv4-mapped range (::ffff:0.0.0.0/96
+			// is every IPv4 address, as in_range() compares it).
+			if ( PNCP_Options::range_too_wide( $range ) ) {
+				continue; // Far too broad for an edge/crawler list.
 			}
 			$packed = @inet_pton( $parts[0] ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged -- Validated above.
+			if ( false !== $packed && 16 === strlen( $packed ) && 0 === strpos( $packed, str_repeat( "\0", 10 ) . "\xff\xff" ) ) {
+				$packed = substr( $packed, 12 ); // IPv4-mapped: its IPv4 part.
+			}
 			if ( false !== $packed && str_repeat( "\0", strlen( $packed ) ) === $packed ) {
 				continue; // 0.0.0.0 / :: base: reject.
 			}
@@ -364,10 +402,9 @@ final class PNCP_Ip {
 	 * @return string The owner, e.g. Anthropic; '' when it is in none of the lists.
 	 */
 	public static function official_owner( $ip ) {
-		static $seen = array();
-		$ip          = (string) $ip;
-		if ( isset( $seen[ $ip ] ) ) {
-			return $seen[ $ip ];
+		$ip = (string) $ip;
+		if ( isset( self::$owners[ $ip ] ) ) {
+			return self::$owners[ $ip ];
 		}
 		$owners = array(
 			'google'          => 'Google',
@@ -391,7 +428,7 @@ final class PNCP_Ip {
 				$owner = 'Bunny CDN';
 			}
 		}
-		$seen[ $ip ] = $owner;
+		self::$owners[ $ip ] = $owner;
 		return $owner;
 	}
 
@@ -449,7 +486,8 @@ final class PNCP_Ip {
 					$ok = false;
 					break;
 				}
-				$found = self::parse_ranges( (string) wp_remote_retrieve_body( $response ) );
+				// Only what would be stored counts: a source that sends nothing usable keeps the previous list.
+				$found = self::sane_ranges( self::parse_ranges( (string) wp_remote_retrieve_body( $response ) ) );
 				if ( ! $found ) {
 					$ok = false;
 					break;
@@ -626,7 +664,16 @@ final class PNCP_Ip {
 	 */
 	public static function is_cdn_edge( $ip ) {
 		$ip = (string) $ip;
-		return '' !== $ip && self::remote_addr() === $ip && self::is_cdn( $ip ) && self::cdn_secret_ok( PNCP_Options::get() );
+		if ( '' === $ip || self::remote_addr() !== $ip ) {
+			return false;
+		}
+		// 3.6: not when the edge was trusted for the real-IP header but sent none (or not an IP): this site's own
+		// CDN always writes it, so such a request came through someone else's zone at the same CDN.
+		self::client_ip();
+		if ( self::$no_visitor_ip && $ip === self::$client_ip ) {
+			return false;
+		}
+		return self::is_cdn( $ip ) && self::cdn_secret_ok( PNCP_Options::get() );
 	}
 
 	/**
@@ -666,19 +713,29 @@ final class PNCP_Ip {
 			return false;
 		}
 		if ( null === self::$bunny ) {
-			$exact = array();
-			$cidrs = array();
+			$exact  = array();
+			$cidrs  = array();
+			$mapped = str_repeat( "\0", 10 ) . "\xff\xff";
 			foreach ( self::list_of( 'bunny' ) as $range ) {
 				if ( false === strpos( $range, '/' ) ) {
-					$exact[ (string) inet_ntop( (string) inet_pton( $range ) ) ] = true;
+					// 3.4.3: in the spelling of normalize(), as the visitor IP is: an IPv4-mapped entry matches its
+					// IPv4 visitor, and an entry that is not an address is skipped instead of warning.
+					$bin = @inet_pton( $range ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged -- Invalid value = false.
+					if ( false === $bin ) {
+						continue;
+					}
+					if ( 16 === strlen( $bin ) && 0 === strpos( $bin, $mapped ) ) {
+						$bin = substr( $bin, 12 );
+					}
+					$exact[ (string) inet_ntop( $bin ) ] = true;
 				} else {
 					$cidrs[] = $range;
 				}
 			}
 			self::$bunny = array( $exact, $cidrs );
 		}
-		$packed = @inet_pton( $ip ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged -- Invalid value = false.
-		if ( false !== $packed && isset( self::$bunny[0][ (string) inet_ntop( $packed ) ] ) ) {
+		$key = self::normalize( (string) $ip );
+		if ( '' !== $key && isset( self::$bunny[0][ $key ] ) ) {
 			return true;
 		}
 		return self::in_any( $ip, self::$bunny[1] );
@@ -826,8 +883,10 @@ final class PNCP_Ip {
 		$remote         = self::remote_addr();
 		$ip             = $remote;
 		$headers        = self::ip_headers();
-		$setting        = (string) $s['ip_header'];
-		self::$reliable = true;
+		$setting             = (string) $s['ip_header'];
+		self::$reliable      = true;
+		self::$hops          = array( $remote );
+		self::$no_visitor_ip = false;
 
 		if ( isset( $headers[ $setting ] ) && ! empty( $_SERVER[ $headers[ $setting ] ] ) ) {
 			$legacy  = ! empty( $s['trust_any_proxy'] ) && ! self::is_trusted_proxy( $remote, $s, $setting );
@@ -848,7 +907,37 @@ final class PNCP_Ip {
 				if ( $legacy && $ip !== $remote ) {
 					self::$reliable = false;
 				}
+				// 3.6: the proxies after the visitor in the chain, as far as they were read.
+				$links = count( $chain );
+				for ( $h = max( 0, $i + 1 ); $h < $links; $h++ ) {
+					$hop = self::normalize( $chain[ $h ] );
+					if ( '' !== $hop ) {
+						self::$hops[] = $hop;
+					}
+				}
+				// 3.6: the header of a trusted CDN edge held no IP. The edge's address is not shared by real
+				// visitors then (this site's own CDN always writes it), so it is limited like any other client.
+				if ( ! $legacy && $ip === $remote && self::is_cdn( $remote ) ) {
+					self::$no_visitor_ip = true;
+				}
+				// 3.4.3: a Bunny CDN edge without the CDN secret. Anyone can point a pull zone of their own at this
+				// site and make it send any visitor IP: the IP still counts for the limits, but it does not unlock
+				// the always-allowed IPs or the private URL IPs, and does not get anyone banned by the trap or
+				// blocked at the CDN. Explicit "Trusted proxies" and the server's own network are not affected.
+				// Every hop between the visitor and this server is looked at, so it also holds behind a local proxy
+				// (Nginx or Varnish in front of PHP: REMOTE_ADDR is 127.0.0.1, the Bunny edge a hop further).
+				if ( ! $legacy && $ip !== $remote && '' === trim( (string) ( isset( $s['cdn_secret'] ) ? $s['cdn_secret'] : '' ) ) ) {
+					foreach ( self::$hops as $hop ) {
+						if ( $hop !== $ip && ! self::in_any( $hop, self::trusted_ranges( $s ) ) && ! self::is_private( $hop ) && self::is_bunny( $hop ) ) {
+							self::$reliable = false;
+							break;
+						}
+					}
+				}
 			}
+		} elseif ( isset( $headers[ $setting ] ) && self::is_cdn( $remote ) && self::is_trusted_proxy( $remote, $s, $setting ) ) {
+			// 3.6: a trusted CDN edge sent no "Real visitor IP" header at all (see above).
+			self::$no_visitor_ip = true;
 		} elseif ( 'remote_addr' === $setting && ! empty( $_SERVER['HTTP_CF_CONNECTING_IP'] ) && self::is_trusted_proxy( $remote, $s, 'cf_connecting_ip' ) ) {
 			// "Real visitor IP" left at the default but the request comes from a Cloudflare edge (checked against
 			// Cloudflare's list, and the CDN secret if one is set): Cloudflare always writes CF-Connecting-IP
@@ -878,10 +967,40 @@ final class PNCP_Ip {
 	 * Forgets the request IP (for tests and after a settings change).
 	 */
 	public static function reset() {
-		self::$client_ip = null;
-		self::$reliable  = true;
-		self::$lists     = array();
-		self::$bunny     = null;
+		self::$client_ip     = null;
+		self::$reliable      = true;
+		self::$hops          = array();
+		self::$no_visitor_ip = false;
+		self::$lists         = array();
+		self::$bunny         = null;
+		self::$owners        = array();
+	}
+
+	/**
+	 * 3.6: is this request from the server itself (cron, cache preload, loopback)? The visitor IP must be the
+	 * loopback or the server's own address AND it must not have come from far away: the IP is reliable and
+	 * every address on its way (REMOTE_ADDR and each proxy read in the header) is on the server or its private
+	 * network. Being equal to REMOTE_ADDR is not enough: behind Nginx on 127.0.0.1, X-Forwarded-For can end
+	 * in 127.0.0.1 after passing through a CDN edge.
+	 * Before, a loopback address in the real-IP header was enough, and anyone who could make a trusted CDN edge
+	 * send one (a Bunny pull zone of their own, without the CDN secret) skipped every check.
+	 *
+	 * @return bool
+	 */
+	public static function is_local_request() {
+		$ip = self::client_ip();
+		if ( '' === $ip || ! self::is_local( $ip ) ) {
+			return false;
+		}
+		if ( ! self::$reliable ) {
+			return false;
+		}
+		foreach ( self::$hops as $hop ) {
+			if ( ! self::is_local( $hop ) && ! self::is_private( $hop ) ) {
+				return false;
+			}
+		}
+		return true;
 	}
 
 	/**

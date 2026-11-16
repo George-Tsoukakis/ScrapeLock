@@ -1,0 +1,174 @@
+/* ScrapeLock – 3.5: "Check a request" card on the Log tab. Only .pncp-tester* selectors. */
+
+.pncp-tester {
+	margin: 16px 0;
+}
+
+.pncp-tester > .pncp-tester__summary {
+	cursor: pointer;
+}
+
+.pncp-tester > .pncp-tester__summary:focus-visible,
+.pncp-tester .pncp-tester__more > summary:focus-visible {
+	outline: 2px solid #2271b1;
+	outline-offset: 2px;
+}
+
+.pncp-tester .pncp-tester__title {
+	display: inline;
+	margin: 0;
+	font-size: 1.3em;
+}
+
+.pncp-tester .pncp-tester__state {
+	display: block;
+	margin: 4px 0 0 18px;
+	color: #50575e;
+	font-size: 13px;
+	font-weight: 400;
+}
+
+.pncp-tester[open] > .pncp-tester__summary {
+	margin-bottom: 12px;
+	padding-bottom: 12px;
+	border-bottom: 1px solid #dcdcde;
+}
+
+.pncp-tester .pncp-tester__presets {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 6px;
+	margin: 12px 0;
+}
+
+.pncp-tester .pncp-tester__try {
+	font-weight: 600;
+}
+
+.pncp-tester .pncp-tester__field label {
+	display: block;
+	margin-bottom: 4px;
+	font-weight: 600;
+}
+
+.pncp-tester .pncp-tester__field .description {
+	display: block;
+	margin-top: 4px;
+}
+
+.pncp-tester .pncp-tester__check label {
+	font-weight: 400;
+}
+
+.pncp-tester .pncp-tester__field input[aria-invalid="true"] {
+	border-color: #d63638;
+	box-shadow: 0 0 0 1px #d63638;
+}
+
+.pncp-tester .pncp-tester__more {
+	margin: 8px 0;
+}
+
+.pncp-tester .pncp-tester__more > summary {
+	cursor: pointer;
+}
+
+.pncp-tester .pncp-tester-preset:focus,
+.pncp-tester #pncp-tester-submit:focus,
+.pncp-tester .pncp-tester__result:focus {
+	outline: 2px solid #2271b1;
+	outline-offset: 2px;
+}
+
+.pncp-tester .pncp-tester__result:empty {
+	display: none;
+}
+
+.pncp-tester .pncp-tester__result {
+	margin: 12px 0 16px;
+	padding: 12px 16px;
+	border: 1px solid #dcdcde;
+	border-radius: 4px;
+	background: #f6f7f7;
+}
+
+.pncp-tester .pncp-tester__result > :first-child {
+	margin-top: 0;
+}
+
+.pncp-tester .pncp-tester__result > :last-child {
+	margin-bottom: 0;
+}
+
+.pncp-tester .pncp-tester__headline {
+	font-size: 14px;
+}
+
+.pncp-tester .pncp-tester-verdict {
+	display: inline-block;
+	margin-right: 4px;
+	padding: 2px 8px;
+	border: 1px solid currentColor;
+	border-radius: 10px;
+	font-size: 12px;
+	font-weight: 600;
+	line-height: 1.5;
+}
+
+.pncp-tester .pncp-tester-verdict--allowed {
+	color: #1a7f37;
+	background: #edfaef;
+}
+
+.pncp-tester .pncp-tester-verdict--blocked {
+	color: #8a2424;
+	background: #fcf0f1;
+}
+
+.pncp-tester .pncp-tester-verdict--limited,
+.pncp-tester .pncp-tester-verdict--monitor {
+	color: #6b3500;
+	background: #fcf3e6;
+}
+
+.pncp-tester .pncp-tester__error {
+	color: #8a2424;
+	font-weight: 600;
+}
+
+.pncp-tester .pncp-tester__notes {
+	margin-left: 1.5em;
+	list-style: disc;
+}
+
+.pncp-tester .pncp-tester__request {
+	max-width: 100%;
+	table-layout: fixed;
+}
+
+.pncp-tester .pncp-tester__request th {
+	width: 9em;
+	font-weight: 600;
+}
+
+.pncp-tester .pncp-tester__request td {
+	overflow-wrap: anywhere;
+}
+
+.pncp-tester .pncp-tester__headers code {
+	display: block;
+	margin: 0 0 2px;
+	background: transparent;
+}
+
+.pncp-tester .pncp-tester__limits {
+	margin-left: 1.5em;
+	list-style: disc;
+}
+
+.pncp-tester .pncp-tester__simulate {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 6px 16px;
+}

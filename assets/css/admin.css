@@ -851,3 +851,61 @@
 	margin-top: 2px;
 	color: #50575e;
 }
+
+/* 3.5: a field that does nothing in the current state is dimmed (aria-disabled), but stays clickable and saved. */
+.pncp-field.is-dimmed,
+.is-dimmed {
+	opacity: .55;
+}
+
+.pncp-requires-note {
+	margin-top: 2px;
+	font-style: italic;
+}
+
+/* 3.5: "Default" and "May affect visitors/SEO" tags, and the default value next to a changed field. */
+.pncp-tag {
+	display: inline-block;
+	margin-left: 6px;
+	padding: 0 6px;
+	border-radius: 3px;
+	font-size: 11px;
+	font-weight: 400;
+	line-height: 18px;
+	vertical-align: middle;
+}
+
+.pncp-tag--risk {
+	background: #fcf3e6;
+	color: #6b3500;
+	border: 1px solid #f0c8a0;
+}
+
+.pncp-tag--default {
+	background: #f0f0f1;
+	color: #50575e;
+}
+
+.pncp-default-note {
+	margin-left: 6px;
+	color: var(--pncp-muted);
+	font-size: 12px;
+}
+
+/* 3.5: "Unsaved changes" next to the Save button. */
+.pncp-unsaved {
+	margin-left: 10px;
+	color: #9a4f00; /* 4.5:1 also on the grey admin background. */
+	font-weight: 600;
+}
+
+/* 3.5: "Off" status pills link to their setting (generalises .pncp-pill--monitor a). */
+.pncp-pill a {
+	color: inherit;
+	text-decoration: none;
+}
+
+.pncp-pill a:hover,
+.pncp-pill a:focus {
+	text-decoration: underline;
+}

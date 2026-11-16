@@ -28,6 +28,9 @@ final class PNCP_Surface {
 		add_filter( 'style_loader_src', array( __CLASS__, 'asset_version' ), 99 );
 		add_filter( 'script_loader_src', array( __CLASS__, 'asset_version' ), 99 );
 		add_action( 'init', array( __CLASS__, 'powered_by' ) );
+		// 3.6: fewer signs of WordPress (hide_fingerprint).
+		add_action( 'init', array( __CLASS__, 'fingerprint' ), 20 );
+		add_filter( 'x_redirect_by', array( __CLASS__, 'redirect_by' ), 99 );
 	}
 
 	/**
@@ -38,7 +41,11 @@ final class PNCP_Surface {
 	 */
 	private static function on( $key ) {
 		$s = PNCP_Options::get();
-		return ! empty( $s['enabled'] ) && ! empty( $s[ $key ] );
+		if ( empty( $s['enabled'] ) ) {
+			return false;
+		}
+		// 3.6: "Hide that the site runs on WordPress" includes hiding the versions.
+		return ! empty( $s[ $key ] ) || ( 'hide_versions' === $key && ! empty( $s['hide_fingerprint'] ) );
 	}
 
 	/* ---------- Pingbacks ---------- */
@@ -65,7 +72,7 @@ final class PNCP_Surface {
 	 * @return array<string, string>
 	 */
 	public static function headers( $headers ) {
-		if ( self::on( 'disable_pingback' ) ) {
+		if ( self::on( 'disable_pingback' ) || ( self::on( 'hide_fingerprint' ) && ! is_user_logged_in() ) ) {
 			unset( $headers['X-Pingback'] );
 		}
 		return $headers;
@@ -166,6 +173,45 @@ final class PNCP_Surface {
 		}
 	}
 
+	/* ---------- 3.6: signs of WordPress ---------- */
+
+	/**
+	 * For visitors who are not signed in: no links and scripts in the page head that only WordPress prints (the
+	 * REST API and oEmbed links, RSD, Windows Live Writer, the shortlink, the emoji script and styles) and no
+	 * Link headers for them. Tools that tell what a site is built with (BuiltWith, Wappalyzer) and scanners look
+	 * for these first. Everything keeps working: the REST API, oEmbed and emoji (browsers show them by themselves).
+	 * It cannot hide everything: the addresses of themes and plugins (/wp-content/) still show it, and the site's
+	 * hosting and DNS are public anyway.
+	 */
+	public static function fingerprint() {
+		if ( ! self::on( 'hide_fingerprint' ) || is_admin() || is_user_logged_in() ) {
+			return;
+		}
+		remove_action( 'wp_head', 'rest_output_link_wp_head', 10 );
+		remove_action( 'wp_head', 'wp_oembed_add_discovery_links', 10 );
+		remove_action( 'template_redirect', 'rest_output_link_header', 11 );
+		remove_action( 'wp_head', 'rsd_link' );
+		remove_action( 'wp_head', 'wlwmanifest_link' );
+		remove_action( 'wp_head', 'wp_shortlink_wp_head', 10 );
+		remove_action( 'template_redirect', 'wp_shortlink_header', 11 );
+		remove_action( 'wp_head', 'print_emoji_detection_script', 7 );
+		remove_action( 'wp_print_styles', 'print_emoji_styles' );
+		remove_action( 'wp_enqueue_scripts', 'wp_enqueue_emoji_styles' );
+		remove_filter( 'the_content_feed', 'wp_staticize_emoji' );
+		remove_filter( 'comment_text_rss', 'wp_staticize_emoji' );
+		remove_filter( 'wp_mail', 'wp_staticize_emoji_for_email' );
+	}
+
+	/**
+	 * "X-Redirect-By: WordPress" on redirects gives the site away too.
+	 *
+	 * @param string|false $by Who redirects.
+	 * @return string|false
+	 */
+	public static function redirect_by( $by ) {
+		return self::on( 'hide_fingerprint' ) && 'WordPress' === $by ? false : $by;
+	}
+
 	/* ---------- Public REST routes ---------- */
 
 	/**
@@ -176,14 +222,21 @@ final class PNCP_Surface {
 	 * @return array<string, array<string, string[]>> namespace => route => methods
 	 */
 	public static function public_routes() {
-		$open = array();
-		foreach ( rest_get_server()->get_routes() as $route => $handlers ) {
+		$open   = array();
+		$server = rest_get_server();
+		foreach ( $server->get_routes() as $route => $handlers ) {
+			// The namespace the route was registered with (e.g. "wp/v2", "oembed/1.0"), not only its first part.
+			$options = $server->get_route_options( $route );
 			foreach ( (array) $handlers as $handler ) {
 				$check = isset( $handler['permission_callback'] ) ? $handler['permission_callback'] : null;
 				if ( null !== $check && '__return_true' !== $check ) {
 					continue;
 				}
-				$namespace = '/' === $route ? '/' : '/' . strtok( ltrim( $route, '/' ), '/' );
+				if ( is_array( $options ) && ! empty( $options['namespace'] ) ) {
+					$namespace = '/' . trim( (string) $options['namespace'], '/' );
+				} else {
+					$namespace = '/' === $route ? '/' : '/' . strtok( ltrim( $route, '/' ), '/' );
+				}
 				foreach ( array_keys( array_filter( isset( $handler['methods'] ) ? (array) $handler['methods'] : array() ) ) as $method ) {
 					$open[ $namespace ][ $route ][] = (string) $method;
 				}

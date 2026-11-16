@@ -151,9 +151,10 @@ final class PNCP_Surge {
 		// The email is sent from a scheduled event, not by the visitor whose request crossed the threshold.
 		wp_schedule_single_event( time(), self::MAIL, array( $count, $threshold, $hours ) );
 		// Started right away, in its own background request (a loopback to wp-cron.php that this request does
-		// not wait for), also on sites where DISABLE_WP_CRON turned off the automatic start.
-		if ( function_exists( 'spawn_cron' ) ) {
-			spawn_cron();
+		// not wait for). 3.4.3: not where DISABLE_WP_CRON is set: the owner's own cron sends it on its next run,
+		// as spawn_cron() would run every other due event of the site too.
+		if ( function_exists( 'pncp_spawn_cron' ) ) {
+			pncp_spawn_cron();
 		}
 	}
 
@@ -184,8 +185,8 @@ final class PNCP_Surge {
 		);
 		// Sent from a scheduled event in a background request, not by the visitor whose request crossed it.
 		wp_schedule_single_event( time(), self::MAIL_ALERT, array( $count, $threshold ) );
-		if ( function_exists( 'spawn_cron' ) ) {
-			spawn_cron();
+		if ( function_exists( 'pncp_spawn_cron' ) ) {
+			pncp_spawn_cron(); // 3.4.3: not where DISABLE_WP_CRON is set (see trigger()).
 		}
 	}
 

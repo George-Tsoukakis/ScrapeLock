@@ -16,9 +16,23 @@ add_filter(
 		return isset( $_SERVER['HTTP_X_TEST_IP'] ) ? $_SERVER['HTTP_X_TEST_IP'] : ( getenv( 'PNCP_TEST_IP' ) ?: $ip );
 	}
 );
+// 3.4.3: without an object cache the site-wide surge counter counts 1 page in 10 (as 10); X-Test-Surge-Exact
+// counts every page, so a test can check exact numbers.
+if ( isset( $_SERVER['HTTP_X_TEST_SURGE_EXACT'] ) ) {
+	add_filter(
+		'pncp_surge_sample',
+		static function () {
+			return 1;
+		}
+	);
+}
 add_filter(
 	'pncp_reverse_dns',
 	static function ( $host, $ip ) {
+		// 3.6: "nxdomain" = no PTR record at all (a definite answer); the IP itself = the DNS did not answer.
+		if ( isset( $_SERVER['HTTP_X_TEST_RDNS'] ) && 'nxdomain' === $_SERVER['HTTP_X_TEST_RDNS'] ) {
+			return false;
+		}
 		return isset( $_SERVER['HTTP_X_TEST_RDNS'] ) ? $_SERVER['HTTP_X_TEST_RDNS'] : 'unknown.invalid';
 	},
 	10,

@@ -44,6 +44,11 @@ final class PNCP_Log {
 	const BANS_UNTIL_OPTION = 'pncp_bans_until';
 
 	/**
+	 * 3.4.3: stamp of the last ban change made outside the web server (see bans_changed_elsewhere()).
+	 */
+	const BANS_STAMP_OPTION = 'pncp_bans_stamp';
+
+	/**
 	 * How long the summaries of the Log tab and the Dashboard widget are kept before they are counted again.
 	 */
 	const AGGREGATE_TTL = 300;
@@ -246,9 +251,11 @@ final class PNCP_Log {
 			'rate_404'        => __( '“Page not found” (404) per minute', 'scrapelock' ),
 			'rate_cart'       => __( 'WooCommerce cart / checkout actions per minute', 'scrapelock' ),
 			'rate_coupon'     => __( 'WooCommerce coupon attempts per minute', 'scrapelock' ),
+			'rate_account'    => __( 'Pages per minute per signed-in account', 'scrapelock' ), // 3.6.
 			'blocked_ip'      => __( 'IP in the always-blocked list', 'scrapelock' ),
 			'blocked_ref'     => __( 'Referrer in the always-blocked list', 'scrapelock' ),
 			'trap'            => __( 'Bot trap', 'scrapelock' ),
+			'probe'           => __( 'Scanner probe (.env, .git, backups…)', 'scrapelock' ), // 3.5: "Ban scanners on their first probe".
 			'ban'             => __( 'New temporary block', 'scrapelock' ),
 			'manual'          => __( 'Blocked by hand', 'scrapelock' ),
 			'banned'          => __( 'Request from a blocked IP', 'scrapelock' ),
@@ -318,22 +325,8 @@ final class PNCP_Log {
 		// The code is part of the key: a "would block" entry and a real block are never counted in the same row.
 		$minute = (int) floor( time() / MINUTE_IN_SECONDS );
 		$key    = 'pncp_lg_' . md5( $ip . '|' . $reason . '|' . (int) $code . '|' . $minute );
-		$id     = (int) self::cache_get( $key );
+		$id     = self::row_id( $key );
 		$ua     = isset( $_SERVER['HTTP_USER_AGENT'] ) ? sanitize_text_field( wp_unslash( $_SERVER['HTTP_USER_AGENT'] ) ) : '';
-		if ( $id <= 0 && 'ban' !== $reason && 'manual' !== $reason && self::rows_this_minute( $minute ) >= self::rows_per_minute() ) {
-			// Over the budget: this minute's row of the reason (and code) for "Many IPs".
-			$ip  = '';
-			$ua  = '';
-			$key = 'pncp_lo_' . md5( $reason . '|' . (int) $code . '|' . $minute );
-			$id  = (int) self::cache_get( $key );
-			if ( $id > 0 ) {
-				// phpcs:ignore WordPress.DB.DirectDatabaseQuery -- Counter, no cache.
-				$wpdb->query( $wpdb->prepare( 'UPDATE %i SET hits = hits + 1 WHERE id = %d', self::table(), $id ) );
-				return;
-			}
-		} elseif ( $id <= 0 ) {
-			self::count_row( $minute );
-		}
 		if ( $id > 0 ) {
 			// The row keeps the first User-Agent and counts how many different ones there were (bots that rotate it).
 			$seen = self::uas_column() ? self::cache_get( $key . '_u' ) : false;
@@ -341,12 +334,29 @@ final class PNCP_Log {
 				$seen[] = md5( $ua );
 				self::cache_set( $key . '_u', $seen, 2 * MINUTE_IN_SECONDS );
 				// phpcs:ignore WordPress.DB.DirectDatabaseQuery -- Counter, no cache.
-				$wpdb->query( $wpdb->prepare( 'UPDATE %i SET hits = hits + 1, uas = uas + 1 WHERE id = %d', self::table(), $id ) );
+				$done = $wpdb->query( $wpdb->prepare( 'UPDATE %i SET hits = hits + 1, uas = uas + 1 WHERE id = %d', self::table(), $id ) );
+			} else {
+				// phpcs:ignore WordPress.DB.DirectDatabaseQuery -- Counter, no cache.
+				$done = $wpdb->query( $wpdb->prepare( 'UPDATE %i SET hits = hits + 1 WHERE id = %d', self::table(), $id ) );
+			}
+			// 3.4.3: 0 rows changed means the cached row no longer exists (the "Clear log" button, within the
+			// 2 minutes the id is cached): the event goes on as a new one instead of being lost.
+			if ( 0 !== $done ) {
 				return;
 			}
+		}
+		if ( 'ban' !== $reason && 'manual' !== $reason && self::rows_this_minute( $minute ) >= self::rows_per_minute() ) {
+			// Over the budget: this minute's row of the reason (and code) for "Many IPs".
+			$ip  = '';
+			$ua  = '';
+			$key = 'pncp_lo_' . md5( $reason . '|' . (int) $code . '|' . $minute );
+			$id  = self::row_id( $key );
 			// phpcs:ignore WordPress.DB.DirectDatabaseQuery -- Counter, no cache.
-			$wpdb->query( $wpdb->prepare( 'UPDATE %i SET hits = hits + 1 WHERE id = %d', self::table(), $id ) );
-			return;
+			if ( $id > 0 && 0 !== $wpdb->query( $wpdb->prepare( 'UPDATE %i SET hits = hits + 1 WHERE id = %d', self::table(), $id ) ) ) {
+				return;
+			}
+		} else {
+			self::count_row( $minute );
 		}
 
 		$path = '' !== $ip ? (string) wp_parse_url( self::request_uri(), PHP_URL_PATH ) : '';
@@ -365,12 +375,45 @@ final class PNCP_Log {
 			),
 			array( '%s', '%s', '%s', '%d', '%d', '%s', '%s' )
 		);
-		if ( $wpdb->insert_id ) {
+		if ( ! $wpdb->insert_id ) {
+			self::cache_delete( $key . '_c' ); // The next event of the minute tries again.
+		} else {
 			self::cache_set( $key, (int) $wpdb->insert_id, 2 * MINUTE_IN_SECONDS );
 			if ( '' !== $ip && self::uas_column() ) {
 				self::cache_set( $key . '_u', array( md5( $ua ) ), 2 * MINUTE_IN_SECONDS );
 			}
 		}
+	}
+
+	/**
+	 * 3.4.3: the cached id of this minute's row, or 0 when this request is the one to write it. Read-then-insert
+	 * was not atomic: under PHP-FPM, 50 parallel hits of the same IP wrote 2-3 rows of the same minute. The
+	 * first request claims the key (an atomic add); the others wait up to 0.2 s for its id and count in its
+	 * row. Without APCu or an object cache (transients) there is no atomic add, and nothing changes.
+	 *
+	 * @param string $key Cache key of the row id.
+	 * @return int
+	 */
+	private static function row_id( $key ) {
+		$id = (int) self::cache_get( $key );
+		if ( $id > 0 ) {
+			return $id;
+		}
+		if ( wp_using_ext_object_cache() ) {
+			$claimed = wp_cache_add( $key . '_c', 1, 'pncp', 5 );
+		} elseif ( self::apcu_ok() ) {
+			$claimed = apcu_add( self::apcu_key( $key . '_c' ), 1, 5 );
+		} else {
+			return 0;
+		}
+		for ( $i = 0; ! $claimed && $i < 10; $i++ ) {
+			usleep( 20000 );
+			$id = (int) self::cache_get( $key );
+			if ( $id > 0 ) {
+				return $id;
+			}
+		}
+		return 0;
 	}
 
 	/**
@@ -1056,7 +1099,7 @@ final class PNCP_Log {
 			}
 		} elseif ( self::apcu_ok() ) {
 			$found = false;
-			$until = apcu_fetch( self::apcu_key( $key ), $found );
+			$until = apcu_fetch( self::apcu_ban_key( $bankey ), $found );
 			if ( $found ) {
 				self::$banned[ $bankey ] = (int) $until > time();
 				return self::$banned[ $bankey ];
@@ -1064,15 +1107,62 @@ final class PNCP_Log {
 		}
 		// phpcs:ignore WordPress.DB.DirectDatabaseQuery -- Plugin table; the cache is above.
 		$until = (int) $wpdb->get_var( $wpdb->prepare( 'SELECT until_ts FROM %i WHERE ip = %s', self::bans_table(), $bankey ) );
+		if ( class_exists( 'PNCP_Bots', false ) && PNCP_Bots::explaining() ) {
+			// 3.5: a check (PNCP_Bots::explain()) writes no cache entry; the answer is kept for this request only.
+			self::$banned[ $bankey ] = $until > time();
+			return self::$banned[ $bankey ];
+		}
 		if ( wp_using_ext_object_cache() ) {
 			wp_cache_set( $key, $until, 'pncp', $until > time() ? $until - time() : 5 * MINUTE_IN_SECONDS );
 		} elseif ( self::apcu_ok() ) {
 			// At most a minute: APCu belongs to one server, and a ban or an unblock made on another server of the
 			// same site reaches this one only through the table.
-			apcu_store( self::apcu_key( $key ), $until, self::apcu_ban_ttl( $until ) );
+			apcu_store( self::apcu_ban_key( $bankey ), $until, self::apcu_ban_ttl( $until ) );
 		}
 		self::$banned[ $bankey ] = $until > time();
 		return self::$banned[ $bankey ];
+	}
+
+	/**
+	 * 3.4.3: a ban stored or lifted from WP-CLI (or another process without the web server's APCu) did not reach
+	 * the answers that PHP-FPM keeps in APCu: "wp scrapelock block" took effect, and "unblock" ended, only after
+	 * up to a minute. Such a change now writes a new stamp, which is part of the APCu key of every answer
+	 * (is_banned()): the web server asks the table again on the next request. Autoloaded, so reading it costs
+	 * no query.
+	 */
+	private static function bans_changed_elsewhere() {
+		if ( 'cli' !== PHP_SAPI || wp_using_ext_object_cache() || self::apcu_ok() ) {
+			return;
+		}
+		$stamp = (string) microtime( true );
+		if ( ! add_option( self::BANS_STAMP_OPTION, $stamp, '', true ) ) {
+			update_option( self::BANS_STAMP_OPTION, $stamp, true );
+		}
+	}
+
+	/**
+	 * 3.4.3: the APCu key of the ban answer of an IP key. The stamp of the last change made from WP-CLI is part
+	 * of it (see bans_changed_elsewhere()).
+	 *
+	 * @param string $bankey Ban key (IPv6: the /64).
+	 * @return string
+	 */
+	private static function apcu_ban_key( $bankey ) {
+		return self::apcu_key( 'pncp_ban_' . md5( $bankey ) . '_' . (string) get_option( self::BANS_STAMP_OPTION, '' ) );
+	}
+
+	/**
+	 * 3.5: the cache key of the probe ban's 24-hour memory of an IP key (PNCP_Bots::probe_ban_minutes()). Without
+	 * an object cache the stamp of the last ban change made from WP-CLI is part of it, as for the ban answers
+	 * (apcu_ban_key()): "wp scrapelock unblock" cannot reach the web server's APCu, and the new stamp gives a
+	 * lifted IP a clean memory there.
+	 *
+	 * @param string $ip IP or ban key.
+	 * @return string
+	 */
+	public static function probe_memory_key( $ip ) {
+		$key = 'pncp_pk_' . md5( PNCP_Ip::limit_key( (string) $ip ) );
+		return wp_using_ext_object_cache() ? $key : $key . '_' . (string) get_option( self::BANS_STAMP_OPTION, '' );
 	}
 
 	/**
@@ -1178,8 +1268,9 @@ final class PNCP_Log {
 		if ( wp_using_ext_object_cache() ) {
 			wp_cache_set( 'pncp_ban_' . md5( $ip ), $until, 'pncp', max( 1, $until - time() ) );
 		} elseif ( self::apcu_ok() ) {
-			apcu_store( self::apcu_key( 'pncp_ban_' . md5( $ip ) ), $until, self::apcu_ban_ttl( $until ) );
+			apcu_store( self::apcu_ban_key( $ip ), $until, self::apcu_ban_ttl( $until ) );
 		}
+		self::bans_changed_elsewhere();
 		PNCP_Precheck::mirror_ban( $ip, $until );
 		/**
 		 * A ban was added or renewed (blocking at the CDN follows it).
@@ -1200,7 +1291,8 @@ final class PNCP_Log {
 	 * @param int    $since  Since when.
 	 */
 	public static function import_ban( $ip, $until, $reason, $since ) {
-		if ( '' === $ip || ! filter_var( $ip, FILTER_VALIDATE_IP ) || $until <= time() || PNCP_Bots::is_official_crawler_ip( $ip ) ) {
+		// The same exceptions as ban(): never the Google / Bing IPs, and never the CDN edge that stands in for the visitors.
+		if ( '' === $ip || ! filter_var( $ip, FILTER_VALIDATE_IP ) || $until <= time() || PNCP_Bots::is_official_crawler_ip( $ip ) || PNCP_Ip::is_cdn_edge( $ip ) ) {
 			return;
 		}
 		self::store_ban( PNCP_Ip::limit_key( $ip ), (int) $until, $reason, (int) $since );
@@ -1215,16 +1307,20 @@ final class PNCP_Log {
 		global $wpdb;
 		// An IPv6 address is banned under its /64 (see ban()): lift that, not the exact address.
 		$ip = false === strpos( (string) $ip, '/' ) ? PNCP_Ip::limit_key( (string) $ip ) : (string) $ip;
+		// 3.4.3: the table first and the cached answers after it. The other way round, a request of the banned IP
+		// between the two read the row that was still there and cached the ban again (PHP-FPM: for a minute).
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery -- Plugin table.
+		$wpdb->delete( self::bans_table(), array( 'ip' => $ip ), array( '%s' ) );
+		PNCP_Precheck::forget_ban( $ip );
 		self::cache_delete( 'pncp_st_' . md5( PNCP_Ip::limit_key( $ip ) ) );
+		self::cache_delete( self::probe_memory_key( $ip ) ); // 3.5: the probe ban's 24-hour memory: a lifted IP starts clean.
 		if ( wp_using_ext_object_cache() ) {
 			wp_cache_delete( 'pncp_ban_' . md5( $ip ), 'pncp' );
 		} elseif ( self::apcu_ok() ) {
-			apcu_delete( self::apcu_key( 'pncp_ban_' . md5( $ip ) ) );
+			apcu_delete( self::apcu_ban_key( $ip ) );
 		}
 		unset( self::$banned[ $ip ] );
-		PNCP_Precheck::forget_ban( $ip );
-		// phpcs:ignore WordPress.DB.DirectDatabaseQuery -- Plugin table.
-		$wpdb->delete( self::bans_table(), array( 'ip' => $ip ), array( '%s' ) );
+		self::bans_changed_elsewhere();
 		/** This action is documented in includes/class-pncp-log.php */
 		do_action( 'pncp_bans_changed', $ip, 0 );
 	}
@@ -1234,18 +1330,22 @@ final class PNCP_Log {
 	 */
 	public static function unban_all() {
 		global $wpdb;
-		foreach ( array_keys( self::active_bans( 0 ) ) as $ip ) {
+		$ips = array_keys( self::active_bans( 0 ) );
+		// 3.4.3: the table first, the cached answers after it (see unban()).
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery -- Plugin table.
+		$wpdb->query( $wpdb->prepare( 'DELETE FROM %i', self::bans_table() ) );
+		PNCP_Precheck::forget_all_bans();
+		foreach ( $ips as $ip ) {
 			self::cache_delete( 'pncp_st_' . md5( PNCP_Ip::limit_key( (string) $ip ) ) );
+			self::cache_delete( self::probe_memory_key( (string) $ip ) ); // 3.5: the probe ban's memory.
 			if ( wp_using_ext_object_cache() ) {
 				wp_cache_delete( 'pncp_ban_' . md5( (string) $ip ), 'pncp' );
 			} elseif ( self::apcu_ok() ) {
-				apcu_delete( self::apcu_key( 'pncp_ban_' . md5( (string) $ip ) ) );
+				apcu_delete( self::apcu_ban_key( (string) $ip ) );
 			}
 		}
 		self::$banned = array();
-		PNCP_Precheck::forget_all_bans();
-		// phpcs:ignore WordPress.DB.DirectDatabaseQuery -- Plugin table.
-		$wpdb->query( $wpdb->prepare( 'DELETE FROM %i', self::bans_table() ) );
+		self::bans_changed_elsewhere();
 		/** This action is documented in includes/class-pncp-log.php */
 		do_action( 'pncp_bans_changed', '', 0 );
 	}
@@ -1396,6 +1496,54 @@ final class PNCP_Log {
 		} else {
 			set_transient( $key, $value, max( 1, (int) $ttl ) );
 		}
+	}
+
+	/**
+	 * 3.4.3: write only if the key is not there yet; atomic with an object cache or APCu.
+	 *
+	 * @param string $key   Key.
+	 * @param mixed  $value Value.
+	 * @param int    $ttl   Seconds.
+	 * @return bool Whether this call wrote it.
+	 */
+	public static function cache_add( $key, $value, $ttl ) {
+		if ( wp_using_ext_object_cache() ) {
+			return (bool) wp_cache_add( $key, $value, 'pncp', max( 1, (int) $ttl ) );
+		}
+		if ( self::apcu_ok() ) {
+			return (bool) apcu_add( self::apcu_key( $key ), $value, max( 1, (int) $ttl ) );
+		}
+		if ( false !== get_transient( $key ) ) {
+			return false;
+		}
+		set_transient( $key, $value, max( 1, (int) $ttl ) );
+		return true;
+	}
+
+	/**
+	 * 3.4.3: adds 1 to a counter and returns the new count; atomic with an object cache or APCu.
+	 *
+	 * @param string $key Key.
+	 * @param int    $ttl Seconds (from the first count).
+	 * @return int
+	 */
+	public static function cache_incr( $key, $ttl ) {
+		if ( wp_using_ext_object_cache() ) {
+			wp_cache_add( $key, 0, 'pncp', max( 1, (int) $ttl ) );
+			$count = wp_cache_incr( $key, 1, 'pncp' );
+			if ( false !== $count ) {
+				return (int) $count;
+			}
+		} elseif ( self::apcu_ok() ) {
+			apcu_add( self::apcu_key( $key ), 0, max( 1, (int) $ttl ) );
+			$count = apcu_inc( self::apcu_key( $key ) );
+			if ( false !== $count ) {
+				return (int) $count;
+			}
+		}
+		$count = (int) self::cache_get( $key ) + 1;
+		self::cache_set( $key, $count, $ttl );
+		return $count;
 	}
 
 	/**

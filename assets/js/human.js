@@ -12,7 +12,8 @@
 	if ( ! config || ! window.fetch || ! window.crypto || ! window.crypto.subtle || ! window.TextEncoder ) {
 		return;
 	}
-	if ( document.cookie.indexOf( config.cookie + '=' ) !== -1 ) {
+	// 3.4.3: the exact cookie name, not any cookie whose name ends in it (xpncp_hv=…) or a value that holds it.
+	if ( new RegExp( '(^|; )' + config.cookie.replace( /[.*+?^${}()|[\]\\]/g, '\\$&' ) + '=' ).test( document.cookie ) ) {
 		return; // Already verified.
 	}
 
@@ -88,7 +89,7 @@
 			window.removeEventListener( name, onEvent, true );
 		} );
 		window
-			.fetch( config.url + '?action=pncp_hv', { credentials: 'same-origin', cache: 'no-store' } )
+			.fetch( config.url + ( config.url.indexOf( '?' ) === -1 ? '?' : '&' ) + 'action=pncp_hv', { credentials: 'same-origin', cache: 'no-store' } )
 			.then( function ( response ) {
 				return response.json();
 			} )

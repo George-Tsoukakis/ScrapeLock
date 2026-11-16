@@ -186,7 +186,9 @@ final class PNCP_Geo {
 	 * @return string
 	 */
 	private static function from_cloudflare() {
-		if ( empty( $_SERVER['HTTP_CF_IPCOUNTRY'] ) || ! PNCP_Ip::remote_is_cloudflare() ) {
+		// 3.4.3: with a CDN secret set, an edge without it is someone else's zone pointed at this origin: not
+		// trusted for the visitor IP (PNCP_Ip::is_trusted_proxy()), so not for the country either.
+		if ( empty( $_SERVER['HTTP_CF_IPCOUNTRY'] ) || ! PNCP_Ip::remote_is_cloudflare() || ! PNCP_Ip::cdn_secret_ok( PNCP_Options::get() ) ) {
 			return '';
 		}
 		$code = strtoupper( sanitize_text_field( wp_unslash( $_SERVER['HTTP_CF_IPCOUNTRY'] ) ) );
@@ -201,7 +203,9 @@ final class PNCP_Geo {
 	 */
 	private static function from_bunny() {
 		$s = PNCP_Options::get();
-		if ( empty( $_SERVER['HTTP_CDN_REQUESTCOUNTRYCODE'] ) || empty( $s['trust_bunny'] ) || ! PNCP_Ip::remote_is_bunny() ) {
+		// 3.4.3: and with the CDN secret, when one is set (as for the visitor IP): an edge rule of someone else's
+		// pull zone can send any country.
+		if ( empty( $_SERVER['HTTP_CDN_REQUESTCOUNTRYCODE'] ) || empty( $s['trust_bunny'] ) || ! PNCP_Ip::cdn_secret_ok( $s ) || ! PNCP_Ip::remote_is_bunny() ) {
 			return '';
 		}
 		$code = strtoupper( sanitize_text_field( wp_unslash( $_SERVER['HTTP_CDN_REQUESTCOUNTRYCODE'] ) ) );
@@ -215,7 +219,7 @@ final class PNCP_Geo {
 	 * @return string
 	 */
 	public static function lookup( $ip ) {
-		$packed = inet_pton( $ip );
+		$packed = @inet_pton( (string) $ip ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged -- 3.4.3: invalid value = false, as in PNCP_Ip.
 		if ( false === $packed ) {
 			return '';
 		}
@@ -335,8 +339,9 @@ final class PNCP_Geo {
 			if ( count( $row ) < 3 || ! preg_match( '/^[A-Z]{2}$/', strtoupper( $row[2] ) ) ) {
 				continue;
 			}
-			$start = inet_pton( trim( $row[0] ) );
-			$end   = inet_pton( trim( $row[1] ) );
+			// 3.4.3: silenced as in PNCP_Ip, so a damaged file cannot log a warning per row on PHP versions that warn.
+			$start = @inet_pton( trim( $row[0] ) ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged -- Invalid value = false.
+			$end   = @inet_pton( trim( $row[1] ) ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged -- Invalid value = false.
 			if ( false === $start || false === $end || strlen( $start ) !== strlen( $end ) ) {
 				continue;
 			}
@@ -474,6 +479,10 @@ final class PNCP_Geo {
 			if ( file_exists( $file ) ) {
 				wp_delete_file( $file );
 			}
+		}
+		// The folder too, as on uninstall: rmdir only succeeds when it is empty.
+		if ( is_dir( self::dir() ) ) {
+			@rmdir( self::dir() ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged, WordPress.WP.AlternativeFunctions.file_system_operations_rmdir -- Only succeeds when empty; harmless otherwise.
 		}
 	}
 }
