@@ -157,11 +157,16 @@ delete_transient( PNCP_Hardening::LIVE );
 $pncp_ver_before = get_option( 'pncp_version' );
 set_transient( PNCP_Hardening::LIVE, array( 'headers' => array( 'state' => 'off' ) ), HOUR_IN_SECONDS );
 update_option( 'pncp_version', '3.9.1', true );
+// The SQLite drop-in prints Deprecated inside dbDelta (its own bug, not the plugin's).
+$pncp_er = error_reporting( error_reporting() & ~E_DEPRECATED );
 pncp_upgrade();
+error_reporting( $pncp_er );
 t( 'upgrade from 3.9.1: cached live results dropped', false === get_transient( PNCP_Hardening::LIVE ) );
 set_transient( PNCP_Hardening::LIVE, array( 'headers' => array( 'state' => 'off' ) ), HOUR_IN_SECONDS );
 update_option( 'pncp_version', '3.10.0', true );
+$pncp_er = error_reporting( error_reporting() & ~E_DEPRECATED );
 pncp_upgrade();
+error_reporting( $pncp_er );
 t( 'from 3.10.0: cached live results kept', false !== get_transient( PNCP_Hardening::LIVE ) );
 delete_transient( PNCP_Hardening::LIVE );
 update_option( 'pncp_version', $pncp_ver_before, true );
