@@ -93,6 +93,16 @@ final class PNCP_Health {
 			'has_rest'          => false,
 			'async_direct_test' => array( __CLASS__, 'test_folders' ),
 		);
+
+		// 3.7.
+		$tests['direct']['scrapelock_crowdsec'] = array(
+			'label' => __( 'ScrapeLock CrowdSec blocklist', 'scrapelock' ),
+			'test'  => array( __CLASS__, 'test_crowdsec' ),
+		);
+		$tests['direct']['scrapelock_api_only'] = array(
+			'label' => __( 'ScrapeLock limit for IPs that never opened a page', 'scrapelock' ),
+			'test'  => array( __CLASS__, 'test_api_only' ),
+		);
 		return $tests;
 	}
 
@@ -126,6 +136,45 @@ final class PNCP_Health {
 			'actions'     => $extra . $link,
 			'test'        => 'scrapelock_' . $key,
 		);
+	}
+
+	/**
+	 * 3.7: the CrowdSec blocklist is on but has not been updated for a while (the agent or the list cannot be
+	 * reached, or the key is refused): the addresses expire and protection fades without anyone noticing.
+	 *
+	 * @return array<string, mixed>
+	 */
+	public static function test_crowdsec() {
+		$s = PNCP_Options::stored();
+		if ( ! PNCP_Crowdsec::enabled( $s ) ) {
+			return self::result( 'crowdsec', 'good', __( 'The ScrapeLock CrowdSec blocklist is off', 'scrapelock' ), __( 'Nothing is downloaded from CrowdSec or another blocklist.', 'scrapelock' ) );
+		}
+		$state = PNCP_Crowdsec::state();
+		$stale = (int) $state['synced'] < time() - 6 * HOUR_IN_SECONDS;
+		if ( '' !== (string) $state['error'] && $stale ) {
+			/* translators: %s: error message */
+			return self::result( 'crowdsec', 'recommended', __( 'The ScrapeLock CrowdSec blocklist cannot be updated', 'scrapelock' ), sprintf( __( 'The last attempt failed: %s. Until it works again, the addresses already in the list expire one by one.', 'scrapelock' ), (string) $state['error'] ), 'bots', 'pncp-sec-crowdsec' );
+		}
+		/* translators: %s: number of addresses */
+		return self::result( 'crowdsec', 'good', __( 'The ScrapeLock CrowdSec blocklist is up to date', 'scrapelock' ), sprintf( __( '%s addresses are in the list.', 'scrapelock' ), number_format_i18n( (int) $state['count'] ) ) );
+	}
+
+	/**
+	 * 3.7: "API-only" limit with a page cache in front of WordPress and neither the pre-cache check nor the human
+	 * check: cached pages never reach the check, so real visitors look as if they never opened a page.
+	 *
+	 * @return array<string, mixed>
+	 */
+	public static function test_api_only() {
+		$s = PNCP_Options::stored();
+		if ( empty( $s['enabled'] ) || (int) $s['rate_limit_apionly'] <= 0 ) {
+			return self::result( 'api_only', 'good', __( 'The ScrapeLock limit for IPs that never opened a page is off', 'scrapelock' ), __( 'The REST API, the feeds and the sitemaps have only their usual limits.', 'scrapelock' ) );
+		}
+		$cache = defined( 'WP_CACHE' ) && WP_CACHE && file_exists( WP_CONTENT_DIR . '/advanced-cache.php' );
+		if ( $cache && ! PNCP_Precheck::active() && empty( $s['human_check'] ) && (int) $s['rate_limit_apionly'] < 20 ) {
+			return self::result( 'api_only', 'recommended', __( 'A page cache hides page views from the ScrapeLock API-only limit', 'scrapelock' ), __( 'A page cache plugin serves stored pages before WordPress loads, so ScrapeLock does not see that a visitor opened a page, and the visitor\'s own REST API reads (cart, search, forms that load data) count as if they came from a scraper. Turn on the pre-cache check or the human check, or raise the limit to 20 or more.', 'scrapelock' ), 'bots', 'pncp-sec-limits' );
+		}
+		return self::result( 'api_only', 'good', __( 'The ScrapeLock limit for IPs that never opened a page is on', 'scrapelock' ), __( 'IPs that read only the REST API, GraphQL, the feeds or the sitemaps, without ever opening a page, get the stricter limit.', 'scrapelock' ) );
 	}
 
 	/**
@@ -1627,6 +1676,14 @@ final class PNCP_Health {
 			'ipv6_wide'      => array( __( 'IPv6 /56 limit', 'scrapelock' ), $flag( 'ipv6_wide' ) ),
 			'archives'       => array( __( 'Web archives blocked', 'scrapelock' ), $flag( 'block_archivers' ) ),
 			'upload_php'     => array( __( 'No PHP in the uploads folder', 'scrapelock' ), $flag( 'block_upload_php' ) ),
+			// 3.7.
+			'seo_crawlers'   => array( __( 'SEO and marketing data crawlers blocked', 'scrapelock' ), $flag( 'block_seo_crawlers' ) ),
+			'ip_host'        => array( __( 'Site opened by IP address refused', 'scrapelock' ), $flag( 'block_ip_host' ) ),
+			'reputation'     => array( __( 'IP reputation', 'scrapelock' ), empty( $s['reputation'] ) ? $no : $per_min( 'rate_limit_lowrep' ) ),
+			'api_only'       => array( __( 'Limit for IPs that never opened a page', 'scrapelock' ), $per_min( 'rate_limit_apionly' ) ),
+			'crowdsec'       => array( __( 'CrowdSec blocklist', 'scrapelock' ), self::crowdsec_info( $s, $no ) ),
+			'syslog'         => array( __( 'Blocks written to the system log (fail2ban)', 'scrapelock' ), empty( $s['syslog_bans'] ) ? $no : ( PNCP_Fail2ban::available() ? $yes : __( 'On, but syslog() is disabled', 'scrapelock' ) ) ),
+			'ai_referrals'   => array( __( 'Visits from AI assistants counted', 'scrapelock' ), $flag( 'ai_referrals' ) ),
 			'auto_emergency' => array( __( 'Automatic Emergency Mode', 'scrapelock' ), empty( $s['auto_emergency'] ) ? $no : ( 'start' === $s['auto_emergency_mode'] ? __( 'Starts on its own', 'scrapelock' ) : __( 'Alerts only', 'scrapelock' ) ) ),
 			'edge'           => array( __( 'Blocking at the CDN', 'scrapelock' ), $edge ),
 			'cdn_only'       => array( __( 'Only through the CDN', 'scrapelock' ), PNCP_Origin::active( $s ) ? $yes : $no ),
@@ -1650,5 +1707,26 @@ final class PNCP_Health {
 		}
 		$info['scrapelock'] = $section;
 		return $info;
+	}
+
+	/**
+	 * 3.7: the CrowdSec line of the info: off, or the source, the size of the list and when it was updated.
+	 *
+	 * @param array<string, mixed> $s  Settings.
+	 * @param string               $no The "No" text.
+	 * @return string
+	 */
+	private static function crowdsec_info( $s, $no ) {
+		if ( ! PNCP_Crowdsec::enabled( $s ) ) {
+			return $no;
+		}
+		$state = PNCP_Crowdsec::state();
+		$text  = ( 'lapi' === $s['crowdsec_mode'] ? 'LAPI' : __( 'list', 'scrapelock' ) ) . ', ' . ( 'block' === $s['crowdsec_action'] ? '403' : (int) $s['rate_limit_crowdsec'] . '/min' );
+		$text .= ', ' . sprintf( /* translators: 1: addresses, 2: ranges */ __( '%1$d addresses, %2$d ranges', 'scrapelock' ), (int) $state['count'], (int) $state['ranges'] );
+		$text .= $state['synced'] ? ', ' . wp_date( 'Y-m-d H:i', (int) $state['synced'] ) : '';
+		if ( '' !== (string) $state['error'] ) {
+			$text .= ' — ' . sprintf( /* translators: %s: error message */ __( 'last error: %s', 'scrapelock' ), (string) $state['error'] );
+		}
+		return $text;
 	}
 }

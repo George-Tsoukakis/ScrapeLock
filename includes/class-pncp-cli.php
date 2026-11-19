@@ -1,6 +1,7 @@
 <?php
 /**
- * WP-CLI: wp scrapelock status | block | unblock | blocked | emergency | lockdown status | check | log | settings.
+ * WP-CLI: wp scrapelock status | block | unblock | blocked | emergency | lockdown status | check | log | settings |
+ * reputation | crowdsec | ai-referrals (3.7).
  * Lockdown cannot be unlocked from here: it opens only with the authenticator app (or SCRAPELOCK_UNLOCK in
  * wp-config.php).
  *
@@ -786,6 +787,202 @@ final class PNCP_Cli {
 	 * @param bool                  $count      Is "count" allowed?
 	 * @return string
 	 */
+	/**
+	 * 3.7: shows (or forgets) the reputation of an IP: its score and the events that make it.
+	 *
+	 * ## OPTIONS
+	 *
+	 * <ip>
+	 * : The IP address.
+	 *
+	 * [--reset]
+	 * : Forget everything recorded about it.
+	 *
+	 * [--format=<format>]
+	 * : table, json, csv or yaml.
+	 * ---
+	 * default: table
+	 * ---
+	 *
+	 * ## EXAMPLES
+	 *
+	 *     wp scrapelock reputation 203.0.113.5
+	 *     wp scrapelock reputation 203.0.113.5 --reset
+	 *
+	 * @param string[]              $args       Arguments.
+	 * @param array<string, string> $assoc_args Options.
+	 */
+	public function reputation( $args, $assoc_args ) {
+		$ip = PNCP_Ip::normalize( isset( $args[0] ) ? (string) $args[0] : '' );
+		if ( '' === $ip ) {
+			WP_CLI::error( __( 'Give a valid IP address.', 'scrapelock' ) );
+		}
+		if ( ! empty( $assoc_args['reset'] ) ) {
+			PNCP_Reputation::forget( $ip );
+			/* translators: %s: IP address */
+			WP_CLI::success( sprintf( __( 'The reputation of %s was forgotten.', 'scrapelock' ), $ip ) );
+			return;
+		}
+		$s = PNCP_Options::get();
+		if ( ! PNCP_Reputation::active( $s ) ) {
+			WP_CLI::warning( __( 'Nothing is recorded: the reputation and the limit for IPs that never opened a page are both off.', 'scrapelock' ) );
+		}
+		$rep     = PNCP_Reputation::describe( $ip );
+		$labels  = PNCP_Reputation::event_labels();
+		$weights = PNCP_Reputation::weights();
+		$items   = array();
+		foreach ( $rep['events'] as $event => $when ) {
+			$recent  = time() - (int) $when <= (int) $weights[ $event ][0];
+			$items[] = array(
+				'event' => isset( $labels[ $event ] ) ? $labels[ $event ] : $event,
+				'when'  => wp_date( 'Y-m-d H:i', (int) $when ),
+				'value' => (string) ( $recent ? $weights[ $event ][1] : $weights[ $event ][2] ),
+			);
+		}
+		$items[] = array(
+			'event' => __( 'Score', 'scrapelock' ),
+			'when'  => $rep['level'],
+			'value' => (string) $rep['score'],
+		);
+		WP_CLI\Utils\format_items( self::format( $assoc_args ), $items, array( 'event', 'when', 'value' ) );
+	}
+
+	/**
+	 * 3.7: the CrowdSec blocklist: its state, a sync now, or whether an IP is listed.
+	 *
+	 * ## OPTIONS
+	 *
+	 * <action>
+	 * : status, sync or check.
+	 * ---
+	 * options:
+	 *   - status
+	 *   - sync
+	 *   - check
+	 * ---
+	 *
+	 * [<ip>]
+	 * : With "check": the IP address.
+	 *
+	 * ## EXAMPLES
+	 *
+	 *     wp scrapelock crowdsec status
+	 *     wp scrapelock crowdsec sync
+	 *     wp scrapelock crowdsec check 203.0.113.5
+	 *
+	 * @param string[]              $args       Arguments.
+	 * @param array<string, string> $assoc_args Options.
+	 */
+	public function crowdsec( $args, $assoc_args ) { // phpcs:ignore Generic.CodeAnalysis.UnusedFunctionParameter.FoundAfterLastUsed -- WP-CLI signature.
+		$action = isset( $args[0] ) ? (string) $args[0] : 'status';
+		$s      = PNCP_Options::get();
+		if ( ! PNCP_Crowdsec::enabled( $s ) ) {
+			WP_CLI::error( __( 'The CrowdSec blocklist is off (Bots and limits → CrowdSec blocklist).', 'scrapelock' ) );
+		}
+		if ( 'sync' === $action ) {
+			$result = PNCP_Crowdsec::sync( true );
+			if ( is_wp_error( $result ) ) {
+				WP_CLI::error( $result->get_error_message() );
+			}
+			$state = PNCP_Crowdsec::state();
+			/* translators: 1: number of addresses, 2: number of ranges */
+			WP_CLI::success( sprintf( __( 'Updated: %1$d addresses, %2$d ranges.', 'scrapelock' ), (int) $state['count'], (int) $state['ranges'] ) );
+			return;
+		}
+		if ( 'check' === $action ) {
+			$ip = PNCP_Ip::normalize( isset( $args[1] ) ? (string) $args[1] : '' );
+			if ( '' === $ip ) {
+				WP_CLI::error( __( 'Give a valid IP address.', 'scrapelock' ) );
+			}
+			/* translators: %s: IP address */
+			WP_CLI::log( sprintf( PNCP_Crowdsec::listed( $ip ) ? __( '%s is in the blocklist.', 'scrapelock' ) : __( '%s is not in the blocklist.', 'scrapelock' ), $ip ) );
+			return;
+		}
+		$state = PNCP_Crowdsec::state();
+		$items = array(
+			array(
+				'setting' => __( 'Source', 'scrapelock' ),
+				'value'   => 'lapi' === $s['crowdsec_mode'] ? 'LAPI ' . $s['crowdsec_url'] : $s['crowdsec_url'],
+			),
+			array(
+				'setting' => __( 'What a listed IP gets', 'scrapelock' ),
+				'value'   => 'block' === $s['crowdsec_action'] ? '403' : (int) $s['rate_limit_crowdsec'] . '/min',
+			),
+			array(
+				'setting' => __( 'Addresses', 'scrapelock' ),
+				'value'   => (string) (int) $state['count'],
+			),
+			array(
+				'setting' => __( 'Ranges', 'scrapelock' ),
+				'value'   => (string) (int) $state['ranges'],
+			),
+			array(
+				'setting' => __( 'Updated', 'scrapelock' ),
+				'value'   => $state['synced'] ? wp_date( 'Y-m-d H:i', (int) $state['synced'] ) : '-',
+			),
+			array(
+				'setting' => __( 'Last error', 'scrapelock' ),
+				'value'   => '' !== (string) $state['error'] ? wp_date( 'Y-m-d H:i', (int) $state['error_at'] ) . ' ' . $state['error'] : '-',
+			),
+		);
+		WP_CLI\Utils\format_items( 'table', $items, array( 'setting', 'value' ) );
+	}
+
+	/**
+	 * 3.7: visits from AI assistants (ChatGPT, Perplexity, Claude, Gemini…): per assistant, or the pages they
+	 * sent readers to.
+	 *
+	 * ## OPTIONS
+	 *
+	 * [--days=<days>]
+	 * : How many days back, 1 to 90.
+	 * ---
+	 * default: 30
+	 * ---
+	 *
+	 * [--pages]
+	 * : List the pages instead of the assistants.
+	 *
+	 * [--format=<format>]
+	 * : table, json, csv or yaml.
+	 * ---
+	 * default: table
+	 * ---
+	 *
+	 * ## EXAMPLES
+	 *
+	 *     wp scrapelock ai-referrals
+	 *     wp scrapelock ai-referrals --pages --days=7
+	 *
+	 * @subcommand ai-referrals
+	 *
+	 * @param string[]              $args       Arguments.
+	 * @param array<string, string> $assoc_args Options.
+	 */
+	public function ai_referrals( $args, $assoc_args ) { // phpcs:ignore Generic.CodeAnalysis.UnusedFunctionParameter.FoundBeforeLastUsed -- WP-CLI signature.
+		$days      = max( 1, min( PNCP_Ai_Referrals::KEEP_DAYS, isset( $assoc_args['days'] ) ? (int) $assoc_args['days'] : 30 ) );
+		$platforms = PNCP_Ai_Referrals::platforms();
+		$items     = array();
+		if ( ! empty( $assoc_args['pages'] ) ) {
+			foreach ( PNCP_Ai_Referrals::top_pages( $days, 50 ) as $row ) {
+				$items[] = array(
+					'page'   => PNCP_Log::display_path( $row['path'] ),
+					'visits' => $row['visits'],
+					'from'   => $row['platforms'],
+				);
+			}
+			WP_CLI\Utils\format_items( self::format( $assoc_args ), $items, array( 'page', 'visits', 'from' ) );
+			return;
+		}
+		foreach ( PNCP_Ai_Referrals::totals( $days ) as $key => $visits ) {
+			$items[] = array(
+				'assistant' => isset( $platforms[ $key ]['name'] ) ? $platforms[ $key ]['name'] : $key,
+				'visits'    => $visits,
+			);
+		}
+		WP_CLI\Utils\format_items( self::format( $assoc_args ), $items, array( 'assistant', 'visits' ) );
+	}
+
 	private static function format( $assoc_args, $count = false ) {
 		$format  = isset( $assoc_args['format'] ) ? (string) $assoc_args['format'] : 'table';
 		$allowed = array( 'table', 'json', 'csv', 'yaml' );

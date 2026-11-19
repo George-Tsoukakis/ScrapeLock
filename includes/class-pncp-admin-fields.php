@@ -34,6 +34,7 @@ final class PNCP_Admin_Fields {
 			'cdn_only'                => true,
 			'watermark_products'      => true,
 			'hide_rest_discovery'     => true,
+			'rate_limit_apionly'      => true, // 3.7: feed readers, apps and headless front ends that never open a page.
 		);
 	}
 
@@ -48,6 +49,7 @@ final class PNCP_Admin_Fields {
 			'print_mode'          => array( 'block' ),
 			'feed_mode'           => array( 'disabled' ),
 			'auto_emergency_mode' => array( 'start' ),
+			'crowdsec_action'     => array( 'block' ), // 3.7: a recycled address may now belong to a real visitor.
 		);
 	}
 
@@ -88,6 +90,9 @@ final class PNCP_Admin_Fields {
 		// 3.6.
 		$add( array( 'user_mark_guests', 'user_mark_opacity' ), 'user_mark', 'on', __( 'Show who is reading over protected pages', 'scrapelock' ) );
 		$add( array( 'shared_ips', 'shared_logout' ), 'shared_alert', 'on', __( 'Email me when one account is used from several addresses at once', 'scrapelock' ) );
+		// 3.7.
+		$add( 'rate_limit_lowrep', 'reputation', 'on', __( 'Remember how each IP behaves (reputation)', 'scrapelock' ) );
+		$add( 'rate_limit_crowdsec', 'crowdsec_action', 'choice', __( 'The stricter page limit below', 'scrapelock' ), 'limit' );
 		return $map;
 	}
 

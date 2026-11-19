@@ -1330,6 +1330,11 @@ fieldset + .pncp-field {
 	font-style: italic;
 }
 
+/* 3.7: the note of a requirement that is met carries "hidden"; the display rules of the field types above showed it anyway. */
+.pncp-admin .pncp-requires-note[hidden] {
+	display: none !important;
+}
+
 /* 3.5: "Default" and "May affect visitors/SEO" tags, and the default value next to a changed field. */
 .pncp-tag {
 	display: inline-block;

@@ -1311,18 +1311,20 @@ final class PNCP_Admin {
 		self::render_cloudflare_hint( $s );
 		self::section_nav(
 			array(
-				'monitor'   => __( 'Monitor only', 'scrapelock' ),
-				'bots'      => __( 'Bots', 'scrapelock' ),
-				'ai'        => __( 'AI', 'scrapelock' ),
-				'allowed'   => __( 'Always allowed', 'scrapelock' ),
-				'blocked'   => __( 'Always blocked', 'scrapelock' ),
-				'limits'    => __( 'Limits', 'scrapelock' ),
-				'human'     => __( 'Human check', 'scrapelock' ),
-				'countries' => __( 'Countries', 'scrapelock' ),
-				'ban'       => __( 'Temporary block', 'scrapelock' ),
-				'network'   => __( 'Network and CDN', 'scrapelock' ),
-				'edge'      => __( 'Blocking at the CDN', 'scrapelock' ),
-				'lists'     => __( 'IP lists', 'scrapelock' ),
+				'monitor'    => __( 'Monitor only', 'scrapelock' ),
+				'bots'       => __( 'Bots', 'scrapelock' ),
+				'ai'         => __( 'AI', 'scrapelock' ),
+				'allowed'    => __( 'Always allowed', 'scrapelock' ),
+				'blocked'    => __( 'Always blocked', 'scrapelock' ),
+				'limits'     => __( 'Limits', 'scrapelock' ),
+				'human'      => __( 'Human check', 'scrapelock' ),
+				'reputation' => __( 'Reputation', 'scrapelock' ),
+				'countries'  => __( 'Countries', 'scrapelock' ),
+				'crowdsec'   => __( 'CrowdSec', 'scrapelock' ),
+				'ban'        => __( 'Temporary block', 'scrapelock' ),
+				'network'    => __( 'Network and CDN', 'scrapelock' ),
+				'edge'       => __( 'Blocking at the CDN', 'scrapelock' ),
+				'lists'      => __( 'IP lists', 'scrapelock' ),
 			)
 		);
 		// One form in three parts: Bots, Limits, and "Network and CDN" (folded: most sites never change it).
@@ -1373,6 +1375,19 @@ final class PNCP_Admin {
 						)
 					);
 				}
+				// 3.7.
+				self::checkbox( $s, 'block_seo_crawlers', __( 'Block SEO and marketing data crawlers (Ahrefs, Semrush, Majestic…)', 'scrapelock' ), sprintf( /* translators: %s: list of User-Agents */ __( 'They are not search engines: backlink indexes and competitor research tools crawl hard and sell what they collect, to your competitors too. Blocked and asked in robots.txt: %s. Leave it off if you use one of these tools for your own site, or add its audit bot to “Always allowed”.', 'scrapelock' ), implode( ', ', PNCP_Bots::seo_agents() ) ) );
+				self::checkbox( $s, 'block_ip_host', __( 'Refuse requests that open the site by its IP address instead of its name', 'scrapelock' ), __( 'Scanners that sweep whole address ranges ask for http://203.0.113.5/ instead of your domain; people and search engines follow links, which carry the name. Requests for a private address (a load balancer\'s health check, a reverse proxy) and a site that is set up with its IP as its address are never refused. Always on in Emergency Mode.', 'scrapelock' ) );
+				printf(
+					'<p class="description">%s</p>',
+					esc_html(
+						sprintf(
+							/* translators: %s: number of programs */
+							__( 'With the bot list on, %s site rippers and address harvesters (HTTrack, WebCopier, Teleport Pro, Offline Explorer, SiteSucker, Octoparse…) are blocked too, and so is any User-Agent that carries an attack instead of a name (HTML tags, Shellshock, Log4Shell, SQL injection): no browser or crawler sends one.', 'scrapelock' ),
+							number_format_i18n( count( PNCP_Bots::ripper_agents() ) )
+						)
+					)
+				);
 				?>
 		<?php self::row_close(); ?>
 		<?php self::row_open( 'ai', __( 'AI search and training', 'scrapelock' ) ); ?>
@@ -1405,6 +1420,8 @@ final class PNCP_Admin {
 				self::number( $s, 'rate_limit_rest', __( 'REST API (/wp-json/) and GraphQL requests per minute (0 = off):', 'scrapelock' ), __( 'Only read requests from visitors. Cart, checkout and forms (POST) do not count. A list of more than 20 items (per_page) counts as 2 requests, more than 50 as 3. Starting value: 60.', 'scrapelock' ) );
 				self::number( $s, 'rate_limit_404', __( '“Page not found” (404) per minute (0 = off):', 'scrapelock' ), __( 'Scrapers guess addresses (?p=1, 2, 3…, old product URLs) to find content. Missing images, CSS, scripts and the favicon do not count. Starting value: 30.', 'scrapelock' ) );
 				self::number( $s, 'rate_limit_sitemap', __( 'Sitemaps per minute (0 = off):', 'scrapelock' ), __( 'Scrapers read the sitemap first to find every page. Covers the sitemaps of WordPress, Rank Math, Yoast and similar plugins. Google, Bing and the other verified search engines are never limited. Starting value: 5.', 'scrapelock' ) );
+				// 3.7.
+				self::number( $s, 'rate_limit_apionly', __( 'REST API, GraphQL, feeds and sitemaps per minute for IPs that never opened a page (0 = off):', 'scrapelock' ), __( 'Many scrapers skip the HTML and read only the API, the feeds or the sitemaps. A visitor opens a page first; such a scraper never does. An IP that has not opened a page of the site in the last 24 hours (nor passed the human check, nor signed in) gets this limit on those addresses, on top of the others. Feed readers and apps that read the API from their own servers count here too: add them to “Always allowed”. A headless front end that reads the REST API from its server needs its IP in “Always allowed IPs”. With a page cache plugin, cached pages do not reach WordPress and so are not seen: turn on the pre-cache check or the human check, or keep this limit at 20 or more. Suggested value: 10.', 'scrapelock' ) );
 				self::checkbox( $s, 'ipv6_wide', __( 'IPv6: also limit the whole /56 network (four times the page limit)', 'scrapelock' ), __( 'Pages are counted per /64, because one connection usually gets a whole /64. A server or a home connection often has a /56 or more, so a scraper can take a new /64 for every request. This also counts the /56 the /64 belongs to, up to four times the page limit (429 above it, without a block). Some mobile networks give neighbouring phones addresses of the same /56: on a site with many visitors from them, keep it off. Always on in Emergency Mode.', 'scrapelock' ) );
 				self::number( $s, 'rate_limit_datacenter', __( 'Pages per minute from data centers (0 = off):', 'scrapelock' ), __( 'People rarely browse from a server; scrapers very often run on one. Visitors from the published addresses of AWS, Google Cloud, Oracle Cloud, DigitalOcean and Akamai / Linode get this stricter limit instead of the normal one. The lists are downloaded from the providers once a day. Some VPNs use these providers, so their users get this limit too: it is meant for reading, not for blocking. The always-allowed User-Agents (monitoring, price platforms) and verified search engines are not affected. Starting value: 15. 5 in Emergency Mode.', 'scrapelock' ) );
 				if ( class_exists( 'WooCommerce' ) ) {
@@ -1437,6 +1454,13 @@ final class PNCP_Admin {
 				self::number( $s, 'rate_limit_unverified', __( 'Pages per minute without the cookie (0 = off):', 'scrapelock' ), __( 'Starting value: 20. A person reads far fewer pages per minute, and gets the cookie with the first scroll or tap.', 'scrapelock' ) );
 				?>
 		<?php self::row_close(); ?>
+		<?php self::row_open( 'reputation', __( 'Reputation', 'scrapelock' ) ); ?>
+				<?php
+				// 3.7: PNCP_Reputation.
+				self::checkbox( $s, 'reputation', __( 'Remember how each IP behaves (reputation)', 'scrapelock' ), __( 'Each IP gets a score from what it did here in the last 7 days, recent events counting more: someone signed in from it, it passed the human check, it reads pages (good); the bot trap, a scanner probe, a fake search engine, an attack in the request, limits exceeded, a temporary block (bad). An IP with a good score (someone signed in and passed the human check) is never blocked temporarily for exceeding a limit: it still gets “too many requests”, but an office, a school or a mobile network behind one address is not locked out because of one fast reader. An IP with a bad score gets the stricter limit below for days, instead of starting from zero when its block ends. Stored like the per-minute counters; no data leaves the server.', 'scrapelock' ) );
+				self::number( $s, 'rate_limit_lowrep', __( 'Pages per minute for IPs with a bad reputation (0 = off):', 'scrapelock' ), __( 'Starting value: 10.', 'scrapelock' ) );
+				?>
+		<?php self::row_close(); ?>
 		<?php self::row_open( 'countries', __( 'Countries', 'scrapelock' ) ); ?>
 				<?php
 				self::checkbox( $s, 'geo_db', __( 'Download the free country database (DB-IP Lite, once a month)', 'scrapelock' ), __( 'Needed when the site is not behind Cloudflare or Bunny CDN. About 5 MB to download, stored as two small files in uploads/scrapelock-geo. Behind Cloudflare the country that Cloudflare sends is used, behind Bunny the one Bunny sends (when it reaches the site directly from Bunny), and the database is not needed.', 'scrapelock' ) );
@@ -1446,10 +1470,51 @@ final class PNCP_Admin {
 				self::render_geo_status( $s );
 				?>
 		<?php self::row_close(); ?>
+		<?php self::row_open( 'crowdsec', __( 'CrowdSec blocklist', 'scrapelock' ) ); ?>
+				<?php
+				// 3.7: PNCP_Crowdsec.
+				echo '<div class="pncp-field"><label for="pncp-crowdsec_mode">' . esc_html__( 'Use the CrowdSec blocklist:', 'scrapelock' ) . '</label> ';
+				self::select(
+					$s,
+					'crowdsec_mode',
+					array(
+						'off'  => __( 'Off', 'scrapelock' ),
+						'lapi' => __( 'From my CrowdSec agent (LAPI, bouncer key)', 'scrapelock' ),
+						'list' => __( 'From a blocklist address (plain text, one IP or CIDR per line)', 'scrapelock' ),
+					),
+					__( 'CrowdSec is a free, open source security engine whose users share the IPs that attack them. Its community blocklist holds scanners, brute-forcers and scrapers seen on many sites, residential proxies among them, which the limits of a single site cannot recognise in time. With your own CrowdSec agent (on a VPS: install CrowdSec, then run “cscli bouncers add scrapelock” for the key), ScrapeLock asks it every 15 minutes for what changed. Without one, use the address of a CrowdSec Console blocklist integration (key: user:password) or of another plain-text list; it is downloaded once an hour. Private addresses, ranges wider than /16 (IPv6 /32), this server, CDN edges and official search engine addresses are never taken from a list.', 'scrapelock' )
+				);
+				echo '</div>';
+				printf(
+					'<div class="pncp-field"><p><label for="pncp-crowdsec_url">%1$s</label><br><input type="url" class="regular-text code" id="pncp-crowdsec_url" name="%2$s[crowdsec_url]" value="%3$s" placeholder="http://127.0.0.1:8080" spellcheck="false"></p></div>',
+					esc_html__( 'Address of the CrowdSec agent (LAPI) or of the list:', 'scrapelock' ),
+					esc_attr( PNCP_OPTION ),
+					esc_attr( (string) $s['crowdsec_url'] )
+				);
+				self::password( $s, 'crowdsec_key', __( 'Bouncer key (LAPI), or user:password for a list (optional for a public list):', 'scrapelock' ), __( 'Kept in the database and never shown or exported. To keep it out of the database, define SCRAPELOCK_CROWDSEC_KEY in wp-config.php instead.', 'scrapelock' ) );
+				echo '<div class="pncp-field"><label for="pncp-crowdsec_action">' . esc_html__( 'What a listed IP gets:', 'scrapelock' ) . '</label> ';
+				self::select(
+					$s,
+					'crowdsec_action',
+					array(
+						'limit' => __( 'The stricter page limit below', 'scrapelock' ),
+						'block' => __( 'A 403 on every request', 'scrapelock' ),
+					),
+					__( 'Addresses change hands (mobile networks, home connections that get a new address every day, VPNs), so a list is never certain. The stricter limit lets a real visitor read on slowly; the 403 refuses outright. A listed IP earns no violation either way.', 'scrapelock' )
+				);
+				echo '</div>';
+				self::number( $s, 'rate_limit_crowdsec', __( 'Pages per minute for listed IPs (0 = off):', 'scrapelock' ), __( 'Starting value: 10.', 'scrapelock' ) );
+				?>
+		<?php self::row_close(); ?>
 		<?php self::row_open( 'ban', __( 'Temporary block', 'scrapelock' ) ); ?>
 				<?php
 				self::number( $s, 'ban_strikes', __( 'Block after this many violations within 10 minutes (0 = never):', 'scrapelock' ), __( 'Violation: every minute in which the IP exceeded a limit, and every fake Googlebot. The trap blocks immediately: for 10 minutes the first time, for the full time if the same IP falls into it again within 24 hours.', 'scrapelock' ) );
 				self::number( $s, 'ban_minutes', __( 'Block duration (minutes):', 'scrapelock' ) );
+				// 3.7: PNCP_Fail2ban.
+				self::checkbox( $s, 'syslog_bans', __( 'Write each temporary block to the system log, for fail2ban', 'scrapelock' ), __( 'On a VPS or a dedicated server, fail2ban can read these lines and block the IP in the server\'s firewall for the same time, so a blocked scraper no longer reaches PHP at all. The filter and the jail to copy are on the “Server rules” tab. On shared hosting leave it off: nobody reads that log.', 'scrapelock' ) );
+				if ( ! empty( $s['syslog_bans'] ) && ! PNCP_Fail2ban::available() ) {
+					echo '<p class="description pncp-inline-warning">' . esc_html__( 'PHP cannot write to the system log on this server (openlog() or syslog() is disabled): nothing is written.', 'scrapelock' ) . '</p>';
+				}
 				?>
 				<p class="description"><?php esc_html_e( 'How long the log is kept is set on the Log tab.', 'scrapelock' ); ?></p>
 		<?php self::row_close(); ?>
@@ -1740,6 +1805,53 @@ final class PNCP_Admin {
 	}
 
 	/**
+	 * 3.7: the state of the CrowdSec blocklist, with "Sync now", in the card of the IP lists (outside the settings
+	 * form, so its button is a form of its own).
+	 */
+	private static function render_crowdsec_status() {
+		$s = PNCP_Options::get();
+		if ( ! PNCP_Crowdsec::enabled( $s ) ) {
+			return;
+		}
+		$state  = PNCP_Crowdsec::state();
+		$format = get_option( 'date_format' ) . ' ' . get_option( 'time_format' );
+		echo '<h3>' . esc_html__( 'CrowdSec blocklist', 'scrapelock' ) . '</h3><p>';
+		if ( $state['synced'] ) {
+			echo esc_html(
+				sprintf(
+					/* translators: 1: number of addresses, as words and figures; 2: number of ranges, likewise; 3: date */
+					__( '%1$s and %2$s, updated %3$s.', 'scrapelock' ),
+					/* translators: %s: number of IP addresses */
+					sprintf( _n( '%s address', '%s addresses', (int) $state['count'], 'scrapelock' ), number_format_i18n( (int) $state['count'] ) ),
+					/* translators: %s: number of IP ranges */
+					sprintf( _n( '%s range', '%s ranges', (int) $state['ranges'], 'scrapelock' ), number_format_i18n( (int) $state['ranges'] ) ),
+					wp_date( $format, (int) $state['synced'] )
+				)
+			);
+		} else {
+			esc_html_e( 'Not downloaded yet.', 'scrapelock' );
+		}
+		echo '</p>';
+		if ( '' !== (string) $state['error'] ) {
+			printf(
+				'<p class="pncp-inline-warning">%s</p>',
+				esc_html(
+					sprintf(
+						/* translators: 1: date, 2: error message */
+						__( 'Last attempt failed (%1$s): %2$s', 'scrapelock' ),
+						wp_date( $format, (int) $state['error_at'] ),
+						(string) $state['error']
+					)
+				)
+			);
+		}
+		self::action_form_open( 'pncp_log', 'pncp_log' );
+		echo '<input type="hidden" name="op" value="crowdsec_sync">';
+		submit_button( __( 'Sync now', 'scrapelock' ), 'secondary', 'submit', false, self::submit_attrs() );
+		echo '</form>';
+	}
+
+	/**
 	 * Status of the official IP lists.
 	 */
 	private static function render_ip_lists() {
@@ -1800,6 +1912,7 @@ final class PNCP_Admin {
 			<input type="hidden" name="op" value="refresh_lists">
 			<?php submit_button( __( 'Refresh lists now', 'scrapelock' ), 'secondary', 'submit', false, self::submit_attrs() ); ?>
 		</form>
+		<?php self::render_crowdsec_status(); ?>
 		<?php if ( PNCP_Geo::needed() ) : ?>
 			<h3><?php esc_html_e( 'Country database', 'scrapelock' ); ?></h3>
 			<?php self::action_form_open( 'pncp_log', 'pncp_log' ); ?>
@@ -2248,6 +2361,28 @@ final class PNCP_Admin {
 		</div>
 		<p class="description"><?php esc_html_e( '3) Run nginx -t: only if it says “test is successful”, reload Nginx (nginx -s reload or systemctl reload nginx). If it shows an error, nothing has changed yet: remove what you added. 4) Check the status above. After every change of the settings that changes the rules, it says “out of date”: copy the part it names again.', 'scrapelock' ); ?></p>
 		</section>
+
+		<?php // 3.7: fail2ban (PNCP_Fail2ban). ?>
+		<section class="pncp-card pncp-card--wide pncp-rules-card" aria-labelledby="pncp-rules-fail2ban">
+		<h2 id="pncp-rules-fail2ban"><?php esc_html_e( 'fail2ban (VPS and dedicated servers)', 'scrapelock' ); ?></h2>
+		<p class="description"><?php esc_html_e( 'With “Write each temporary block to the system log” on (Bots and limits → Temporary block), every block ScrapeLock makes is also written to the system log, and fail2ban blocks the IP in the firewall for the same time: the scraper no longer reaches the web server at all. 1) Save the filter, 2) save the jail (check logpath for your system), 3) run fail2ban-client reload, 4) fail2ban-client status scrapelock shows the blocked IPs.', 'scrapelock' ); ?></p>
+		<?php
+		$pncp_settings = PNCP_Options::get();
+		if ( empty( $pncp_settings['syslog_bans'] ) ) {
+			echo '<p class="pncp-inline-warning">' . esc_html__( 'The option is off: nothing is written to the system log yet.', 'scrapelock' ) . '</p>';
+		} elseif ( ! PNCP_Fail2ban::available() ) {
+			echo '<p class="pncp-inline-warning">' . esc_html__( 'PHP cannot write to the system log on this server (openlog() or syslog() is disabled).', 'scrapelock' ) . '</p>';
+		}
+		?>
+		<div class="pncp-rules-steps">
+		<div class="pncp-rules-step">
+		<?php self::code_block( 'pncp-f2b-filter', PNCP_Fail2ban::filter_conf(), 5 ); ?>
+		</div>
+		<div class="pncp-rules-step">
+		<?php self::code_block( 'pncp-f2b-jail', PNCP_Fail2ban::jail_conf( $pncp_settings ), 12 ); ?>
+		</div>
+		</div>
+		</section>
 		</div>
 		<?php
 	}
@@ -2595,7 +2730,75 @@ final class PNCP_Admin {
 		</div>
 		</section>
 		<?php
+		self::render_ai_referrals( $s );
 		self::render_log_settings( $s );
+	}
+
+	/**
+	 * 3.7: visits from AI assistants (PNCP_Ai_Referrals), last 30 days.
+	 *
+	 * @param array<string, mixed> $s Settings.
+	 */
+	private static function render_ai_referrals( $s ) {
+		$platforms = PNCP_Ai_Referrals::platforms();
+		$totals    = PNCP_Ai_Referrals::totals( 30 );
+		$pages     = PNCP_Ai_Referrals::top_pages( 30, 10 );
+		$sum       = array_sum( $totals );
+		$name      = static function ( $key ) use ( $platforms ) {
+			return isset( $platforms[ $key ]['name'] ) ? (string) $platforms[ $key ]['name'] : (string) $key;
+		};
+		?>
+		<section class="pncp-card pncp-card--wide pncp-ai-referrals" aria-labelledby="pncp-sec-ai-referrals">
+		<h2 id="pncp-sec-ai-referrals"><?php esc_html_e( 'Visitors from AI assistants (last 30 days)', 'scrapelock' ); ?></h2>
+		<?php if ( empty( $s['ai_referrals'] ) ) : ?>
+			<p class="description"><?php esc_html_e( 'Not counted: “Count visitors who come from AI assistants” is off in “Log settings” below.', 'scrapelock' ); ?></p>
+		<?php elseif ( ! $sum ) : ?>
+			<p class="pncp-empty"><?php esc_html_e( 'No visits from ChatGPT, Perplexity, Claude, Gemini, Copilot or other assistants yet. They are counted when a reader clicks a link to your site in an answer.', 'scrapelock' ); ?></p>
+		<?php else : ?>
+			<p>
+				<?php
+				echo esc_html(
+					sprintf(
+						/* translators: %s: number of visits */
+						_n( '%s visit from AI assistants.', '%s visits from AI assistants.', $sum, 'scrapelock' ),
+						number_format_i18n( $sum )
+					)
+				);
+				?>
+				<?php if ( empty( $s['allow_ai_search'] ) ) : ?>
+					<?php esc_html_e( 'AI search bots are blocked on this site (“Allow AI search engines and assistants” is off), so these readers came from answers based on older copies or other sources.', 'scrapelock' ); ?>
+				<?php endif; ?>
+			</p>
+			<div class="pncp-table-wrap"><table class="widefat striped"><thead><tr>
+				<th scope="col"><?php esc_html_e( 'Assistant', 'scrapelock' ); ?></th>
+				<th scope="col" class="num"><?php esc_html_e( 'Visits', 'scrapelock' ); ?></th>
+			</tr></thead><tbody>
+			<?php foreach ( $totals as $key => $visits ) : ?>
+				<tr><td><?php echo esc_html( $name( $key ) ); ?></td><td class="num"><?php echo esc_html( number_format_i18n( $visits ) ); ?></td></tr>
+			<?php endforeach; ?>
+			</tbody></table></div>
+			<h3><?php esc_html_e( 'Pages they sent readers to', 'scrapelock' ); ?></h3>
+			<div class="pncp-table-wrap"><table class="widefat striped"><thead><tr>
+				<th scope="col"><?php esc_html_e( 'Page', 'scrapelock' ); ?></th>
+				<th scope="col" class="num"><?php esc_html_e( 'Visits', 'scrapelock' ); ?></th>
+				<th scope="col"><?php esc_html_e( 'From', 'scrapelock' ); ?></th>
+			</tr></thead><tbody>
+			<?php foreach ( $pages as $row ) : ?>
+				<tr>
+					<td><a href="<?php echo esc_url( home_url( $row['path'] ) ); ?>"><code><?php echo esc_html( PNCP_Log::display_path( $row['path'] ) ); ?></code></a></td>
+					<td class="num"><?php echo esc_html( number_format_i18n( $row['visits'] ) ); ?></td>
+					<td><?php echo esc_html( implode( ', ', array_map( $name, array_filter( explode( ',', $row['platforms'] ) ) ) ) ); ?></td>
+				</tr>
+			<?php endforeach; ?>
+			</tbody></table></div>
+			<?php self::action_form_open( 'pncp_log', 'pncp_log' ); ?>
+				<input type="hidden" name="op" value="clear_ai_refs">
+				<?php submit_button( __( 'Delete these counts', 'scrapelock' ), 'delete', 'submit', false, self::submit_attrs() ); ?>
+			</form>
+		<?php endif; ?>
+		<p class="description"><?php esc_html_e( 'Counted on this server, without cookies or personal data: one count per day and page, for a page view whose referrer is an AI assistant or whose address carries its utm_source. Pages served by a page cache without reaching WordPress are not counted. Kept for 90 days.', 'scrapelock' ); ?></p>
+		</section>
+		<?php
 	}
 
 	/**
@@ -2630,6 +2833,12 @@ final class PNCP_Admin {
 			<th scope="row"><?php esc_html_e( 'Content addresses', 'scrapelock' ); ?></th>
 			<td>
 				<?php self::textarea( $s, 'content_paths', __( 'Content addresses: path prefixes of pages that other plugins show, one per line, e.g. /hub/space/', 'scrapelock' ), __( 'Only for the log: blocked requests under these addresses count as “Pages”. Routes that plugins register as WordPress rewrite rules, and all posts, pages, products and terms, are found without this. Nothing is blocked or allowed because of it.', 'scrapelock' ), 2 ); ?>
+			</td>
+		</tr>
+		<tr id="pncp-sec-ai-referrals-setting">
+			<th scope="row"><?php esc_html_e( 'AI assistants', 'scrapelock' ); ?></th>
+			<td>
+				<?php self::checkbox( $s, 'ai_referrals', __( 'Count visitors who come from AI assistants (ChatGPT, Perplexity, Claude, Gemini, Copilot…)', 'scrapelock' ), __( 'One count per day, assistant and page; no IP, User-Agent or cookie is stored. Shown above.', 'scrapelock' ) ); ?>
 			</td>
 		</tr>
 		<?php
@@ -3079,6 +3288,14 @@ final class PNCP_Admin {
 				$result = PNCP_Ip::refresh_lists();
 				self::back( 'bots', in_array( 0, $result, true ) ? 'lists_partial' : 'lists' );
 				break;
+			case 'crowdsec_sync': // 3.7.
+				$result = PNCP_Crowdsec::sync( true );
+				self::back( 'bots', is_wp_error( $result ) ? 'crowdsec_failed' : 'crowdsec' );
+				break;
+			case 'clear_ai_refs': // 3.7.
+				PNCP_Ai_Referrals::clear();
+				self::back( 'log', 'ai_cleared' );
+				break;
 			case 'refresh_geo':
 				// Only while the setting is on: otherwise the files would be deleted again by the next daily task.
 				self::back( 'bots', PNCP_Geo::needed() && PNCP_Geo::refresh() ? 'geo' : 'geo_failed' );
@@ -3278,6 +3495,9 @@ final class PNCP_Admin {
 			'allow_ua_refused' => array( 'error', __( 'This User-Agent part was not added: it is empty, too short or too generic (it would also match ordinary browsers, e.g. “Mozilla” or “Chrome”), or contains “@”. Use the name of the app or service, e.g. “Dart/” or “okhttp”.', 'scrapelock' ) ),
 			'perm_refused'     => array( 'error', __( 'This IP cannot be blocked permanently: it is the server itself, your own IP, a private address, an always-allowed IP or an address in an official list (Google, Bing, AI search services, Cloudflare, Bunny CDN).', 'scrapelock' ) ),
 			'lists'            => array( 'success', __( 'IP lists refreshed.', 'scrapelock' ) ),
+			'crowdsec'         => array( 'success', __( 'CrowdSec blocklist updated.', 'scrapelock' ) ),
+			'crowdsec_failed'  => array( 'error', __( 'The CrowdSec blocklist could not be updated; the previous one was kept. The reason is shown under “Official IP lists”.', 'scrapelock' ) ),
+			'ai_cleared'       => array( 'success', __( 'The counts of visits from AI assistants were deleted.', 'scrapelock' ) ),
 			'geo'              => array( 'success', __( 'Country database downloaded.', 'scrapelock' ) ),
 			'geo_failed'       => array( 'error', __( 'The country database could not be downloaded or read; the previous one (if any) was kept. It will try again tomorrow.', 'scrapelock' ) ),
 			'cf_ip'            => array( 'success', __( 'The real visitor IP is now read from CF-Connecting-IP, only for requests from Cloudflare.', 'scrapelock' ) ),

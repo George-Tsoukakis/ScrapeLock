@@ -4,7 +4,7 @@ Tags: ai crawlers, anti-scraping, bot protection, rate limit, content protection
 Requires at least: 6.2
 Tested up to: 7.2
 Requires PHP: 7.4
-Stable tag: 3.6.1
+Stable tag: 3.7.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -25,7 +25,9 @@ Most content protection plugins disable right click in the browser. Scrapers and
 | Fake Googlebot or Bingbot | Stopped | Official IP lists plus reverse and forward DNS |
 | Fast scrapers from one IP (IPv6: one /64) | Stopped | Per-IP limits and temporary blocks |
 | Scanners asking for .env, .git or backups | Stopped (optional) | Ban on the first probe |
-| Scrapers spread over many IPs | Slowed | Data center limit, surge email, Emergency Mode |
+| Site rippers (HTTrack, WebCopier, Offline Explorer…) and attacks in the User-Agent | Stopped | Built-in list, 403 |
+| Scrapers that read only the REST API, feeds or sitemaps | Slowed (optional) | Limit for IPs that never opened a page |
+| Scrapers spread over many IPs | Slowed | Data center limit, CrowdSec blocklist, IP reputation, surge email, Emergency Mode |
 | Headless browsers on home connections | Slowed | Human check, bot trap, limits |
 | Copying by hand, screenshots, logged-in scraping | Cannot be stopped | Watermark, source link and TDM leave traces |
 | Attackers who can run PHP on your server | Out of scope | No plugin can stop them |
@@ -48,6 +50,8 @@ Whatever a visitor sees has already reached their device, so nothing stops a det
 * Generic HTTP libraries (curl, python-requests and the like, used by apps and integrations) pass by default; a strict option blocks them too, and the Log has an "Always allow this User-Agent" button.
 * Optional blocking of headless browsers and of scripts that copy a browser's User-Agent but not its headers. A carefully disguised automated browser is not detected this way; the limits, the human check and the bot trap still apply to it.
 * **New in 3.5, optional (off by default):** ban scanners on their first request for .env, .git, wp-config.php backups, database dumps and backup archives.
+* **3.7:** site rippers and address harvesters (HTTrack, WebCopier, Teleport Pro, Offline Explorer, SiteSucker, Octoparse and more) are blocked with the bot list, and so is any User-Agent that carries an attack instead of a name (HTML tags, Shellshock, Log4Shell, SQL injection).
+* **3.7, optional:** block the crawlers of SEO and marketing data tools (AhrefsBot, SemrushBot, MJ12bot, DotBot, DataForSeoBot and more), and refuse requests that open the site by its IP address instead of its name (scanners that sweep address ranges).
 
 = Limits and blocks =
 
@@ -56,6 +60,10 @@ Whatever a visitor sees has already reached their device, so nothing stops a det
 * IPs that keep exceeding the limits are blocked for a while, optionally also at Cloudflare or Bunny CDN ("Test connection" checks the token, the zone and the permissions).
 * **Emergency Mode:** stricter limits for 1 hour to 3 days, then your settings return on their own. When traffic suddenly jumps, ScrapeLock emails you a one-click button to start it.
 * Optional human check without a captcha: visitors who have not scrolled, tapped or typed get a stricter page limit.
+* **3.7, optional: IP reputation.** Each IP gets a score from what it did in the last 7 days (signed in, passed the human check and read pages are good; the bot trap, scanner probes, fake crawlers, limits exceeded and blocks are bad), recent events counting more. A good IP (an office or a school behind one address) is never blocked for a limit; a bad one gets a stricter page limit for days after its block ends.
+* **3.7, optional:** a limit for IPs that read the REST API, GraphQL, feeds or sitemaps without ever opening a page: the scrapers that skip the HTML.
+* **3.7, optional: CrowdSec blocklist.** The community blocklist of CrowdSec (scanners, brute-forcers and scrapers seen on many sites, residential proxies among them), from your own CrowdSec agent or from a blocklist address. Listed IPs get a stricter page limit or a 403.
+* **3.7, optional: fail2ban.** Each temporary block is also written to the system log, and fail2ban blocks the IP in the server's firewall; the filter and the jail are on the Server rules tab.
 * Optional country rules, from Cloudflare's or Bunny CDN's country header or the free DB-IP Lite database.
 * Optional pre-cache check (the bot list, the limits and the blocks also apply to pages served by WP Super Cache, W3 Total Cache, Cache Enabler, WP Rocket and the like) and early check (stops known bots and blocked IPs before the theme and the other plugins load).
 * Always-blocked IPs / CIDR and referrers, usernames hidden from visitors, and trusted proxies (Cloudflare, Bunny CDN, your own), so the real IP cannot be spoofed.
@@ -75,7 +83,8 @@ Whatever a visitor sees has already reached their device, so nothing stops a det
 * **Site Health** warns about settings that do not work as intended. New in 3.5: it checks that crawlers really get ScrapeLock's robots.txt lines (a robots.txt file in the site's root replaces the one WordPress makes) and shows the lines to paste, that ScrapeLock's private folders cannot be read from the web, whether your text is still open through the REST API, full-text feeds or WPGraphQL while copy protection is on, and whether another plugin does the same job. These tests only fetch addresses of your own site and never write robots.txt.
 * Settings that explain themselves (3.5): rejected IP lines are named after saving, unsaved changes are flagged, defaults are labelled, options that may affect visitors or SEO are tagged, and "Off" status pills link to their setting.
 * Presets (Balanced, Strict, Maximum) with undo, settings export and import, and a block log with a 24-hour summary and automatic deletion.
-* WP-CLI: `wp scrapelock status`, `block`, `unblock`, `blocked`, `emergency`, `log`, `check --ip=<ip>` (what ScrapeLock would answer, without side effects), `settings` and `lockdown status`.
+* **3.7: visitors from AI assistants.** How many readers ChatGPT, Perplexity, Claude, Gemini, Copilot and others sent you in the last 30 days, and to which pages, counted on your server without cookies or personal data. It shows whether allowing the AI search bots brings readers.
+* WP-CLI: `wp scrapelock status`, `block`, `unblock`, `blocked`, `emergency`, `log`, `check --ip=<ip>` (what ScrapeLock would answer, without side effects), `settings`, `lockdown status` and, 3.7, `reputation <ip>`, `crowdsec status|sync|check` and `ai-referrals`.
 * Abilities API (WordPress 6.9+) for administrators: read the summary, block or unblock an IP and start Emergency Mode from an AI agent or MCP client. None of them unlocks Lockdown.
 
 = On the page and images =
@@ -126,6 +135,11 @@ The five data center lists below are used only for the "Data center limit" (Bots
 * **Akamai Cloud (Linode)** IP ranges, from https://geoip.linode.com/. Provided by Akamai Technologies, Inc.: [Terms of service](https://www.akamai.com/legal/msa), [Privacy policy](https://www.akamai.com/legal/privacy-statement).
 
 Lockdown's file check also compares WordPress and the plugins hosted on WordPress.org with their official checksums. This happens when you lock the site or press "Check now" on the Lockdown tab, and then at most once a day while the site stays locked, through the same WordPress.org services WordPress itself uses for updates. The requests contain the WordPress version and language (https://api.wordpress.org/core/checksums/1.0/) and, for each installed plugin, its slug and version (https://downloads.wordpress.org/plugin-checksums/SLUG/VERSION.json); no other data about your site, your content or your visitors is sent. Provided by WordPress.org: [Privacy policy](https://wordpress.org/about/privacy/).
+
+**CrowdSec blocklist (3.7, off by default).** Only when you turn it on, ScrapeLock downloads a list of IP addresses from the address you enter, with the key you enter, and checks visitors against it on your server. No data about your site's visitors is sent; the request carries only your key (in the X-Api-Key header, or as HTTP Basic authentication) and the User-Agent "ScrapeLock/version".
+
+* **Your own CrowdSec agent (LAPI)**, usually on the same server (for example http://127.0.0.1:8080): every 15 minutes, GET /v1/decisions/stream. The agent itself is CrowdSec software you install and run; whether it exchanges data with CrowdSec's central service is set in the agent. CrowdSec is provided by CrowdSec SAS: [Terms of use](https://www.crowdsec.net/terms), [Privacy policy](https://www.crowdsec.net/privacy-policy).
+* **A blocklist address** you choose, for example a CrowdSec Console blocklist integration (https://admin.api.crowdsec.net/…) or another provider's plain-text list: downloaded once an hour. The provider is the one you choose; their terms and privacy policy apply.
 
 Optional blocking at the CDN (off by default) uses the API of the CDN you choose, with your token. It sends only the IPs ScrapeLock blocks temporarily (IPv4, IPv6 or an IPv6 /64), each with the reason and end time, and removes them when the block ends. Saving the setting, or "Test connection", checks the token and the zone; with Cloudflare it also adds a test block for a documentation address (203.0.113.x) and removes it again.
 
@@ -243,13 +257,29 @@ No. A small script waits for the first scroll, tap, key or mouse movement, solve
 
 Yes. robots.txt, llms.txt and llms-full.txt are never blocked, so every bot can read the rules it is asked to follow. If a robots.txt file in your site's root replaces the one WordPress makes, Site Health shows the lines to add to it.
 
+= Which visitors from AI assistants are counted? =
+
+A page view by a visitor (not your staff) whose referrer is ChatGPT, Perplexity, Claude, Gemini, Copilot, DeepSeek, Grok, Le Chat, Meta AI, You.com, Phind or Kagi, or whose address carries their utm_source (ChatGPT adds utm_source=chatgpt.com). One count per day, assistant and page; no IP, User-Agent or cookie is stored. Pages served by a page cache without reaching WordPress are not counted. Filter `pncp_ai_referrers` adds others. Turn it off under Log → Log settings.
+
+= How does the IP reputation work? =
+
+Off by default (Bots and limits → Reputation). For each IP (IPv6: its /64) ScrapeLock keeps, for 7 days, when it last did something that tells about it: signed in (+80), passed the human check (+60), read pages (+10); the bot trap (−100), a scanner probe or an attack in the request (−80), a fake search engine (−70), a temporary block (−60), a bot-list refusal (−40), a limit exceeded (−20). Older events count about half. At 100 or more the IP is never blocked temporarily for exceeding a limit (it still gets "too many requests"); at −40 or less it gets the stricter page limit. `wp scrapelock reputation <ip>` shows the score; unblocking an IP by hand forgets it. Filters: `pncp_reputation_weights`, `pncp_reputation_good`, `pncp_reputation_bad`.
+
+= How do I connect CrowdSec? =
+
+On a VPS: install CrowdSec (it subscribes to the community blocklist on its own), run `cscli bouncers add scrapelock`, and in Bots and limits → CrowdSec blocklist choose "From my CrowdSec agent", enter http://127.0.0.1:8080 and the key. Without your own agent (shared hosting), create a blocklist integration in the CrowdSec Console and enter its address with user:password as the key. "Stricter page limit" is the safer choice: addresses change hands. Private addresses, ranges wider than /16 (IPv6 /32), your server, CDN edges and official search engine addresses are never taken from a list. `wp scrapelock crowdsec status` shows the state.
+
+= How do I use fail2ban with ScrapeLock? =
+
+Turn on "Write each temporary block to the system log" (Bots and limits → Temporary block), then copy the filter and the jail from the Server rules tab to /etc/fail2ban/filter.d/scrapelock.conf and /etc/fail2ban/jail.d/scrapelock.local, check logpath (/var/log/auth.log on Debian and Ubuntu, /var/log/secure on Red Hat) and run `fail2ban-client reload`. The line looks like `scrapelock[1234]: ban 203.0.113.5 for 60 minutes reason=rate_page site=example.com`. Blocks made by the pre-cache check before WordPress loads are not written.
+
 = Can I customise it in code? =
 
-Yes, with filters such as `pncp_client_ip`, `pncp_skip_guard`, `pncp_should_protect`, `pncp_known_ai_agents`, `pncp_ai_search_agents`, `pncp_rest_post_types`, `pncp_rest_hide_content`, `pncp_404_exempt`, `pncp_trap_exempt_agents`, `pncp_trap_first_ban_minutes`, `pncp_watermark_attachment`, `pncp_hotlink_allowed`, `pncp_use_apcu` and `pncp_log_rows_per_minute`; 3.5 adds `pncp_rest_cost`, `pncp_probe_trap_paths` and `pncp_conflicting_plugins`. The early and pre-cache checks run before plugins load, so filters in plugins and themes do not apply there. There is also WP-CLI and settings export and import.
+Yes, with filters such as `pncp_client_ip`, `pncp_skip_guard`, `pncp_should_protect`, `pncp_known_ai_agents`, `pncp_ai_search_agents`, `pncp_rest_post_types`, `pncp_rest_hide_content`, `pncp_404_exempt`, `pncp_trap_exempt_agents`, `pncp_trap_first_ban_minutes`, `pncp_watermark_attachment`, `pncp_hotlink_allowed`, `pncp_use_apcu` and `pncp_log_rows_per_minute`; 3.5 adds `pncp_rest_cost`, `pncp_probe_trap_paths` and `pncp_conflicting_plugins`; 3.7 adds `pncp_ripper_agents`, `pncp_seo_agents`, `pncp_malicious_ua_patterns`, `pncp_host_is_foreign_ip`, `pncp_reputation_weights`, `pncp_reputation_good`, `pncp_reputation_bad`, `pncp_crowdsec_listed`, `pncp_crowdsec_max`, `pncp_crowdsec_range_ok`, `pncp_ai_referrers` and `pncp_syslog_facility`. The early and pre-cache checks run before plugins load, so filters in plugins and themes do not apply there. There is also WP-CLI and settings export and import.
 
 = What personal data does it store? =
 
-For a blocked request: the IP, User-Agent, page and time, deleted after 1, 7 or 30 days. With the human check, visitors who interact get a 7-day cookie, `pncp_hv`, holding only an expiry and a signature tied to their IP network and browser; it is not used for tracking. The country database is a local file.
+For a blocked request: the IP, User-Agent, page and time, deleted after 1, 7 or 30 days. With IP reputation (3.7, off by default): for each IP, stored under a hash, when it last read pages, passed the human check, signed in or was refused, for 7 days. Visits from AI assistants are counted per day and page only. With the human check, visitors who interact get a 7-day cookie, `pncp_hv`, holding only an expiry and a signature tied to their IP network and browser; it is not used for tracking. The country database is a local file.
 
 = Does it guarantee legal protection of my content? =
 
@@ -281,6 +311,20 @@ No, on purpose: only an app code, a recovery code or the SCRAPELOCK_UNLOCK line 
 6. Dashboard widget with the protection status and the last 24 hours.
 
 == Changelog ==
+
+= 3.7.0 =
+* New: site rippers and address harvesters (HTTrack, WebCopier, Teleport Pro, Offline Explorer, SiteSucker, Cyotek WebCopy, Octoparse, ParseHub and more, 30 names) are blocked with the bot list. Built in, like the AI crawlers; an entry in "Always allowed" still passes. Filter `pncp_ripper_agents`.
+* New: a User-Agent that carries an attack instead of a name (HTML or PHP tags, Shellshock, Log4Shell and its obfuscations, SQL injection, control characters) gets a 403 and a violation, even with an always-allowed name in it. Log reason "bad_ua". Filter `pncp_malicious_ua_patterns`.
+* New, optional (off by default): "Block SEO and marketing data crawlers": AhrefsBot, SemrushBot, MJ12bot, DotBot, rogerbot, BLEXBot, DataForSeoBot, Barkrowler, serpstatbot, ZoominfoBot and more are blocked and asked in robots.txt. Filter `pncp_seo_agents`.
+* New, optional (off by default, on in Emergency Mode): "Refuse requests that open the site by its IP address instead of its name". Private addresses (health checks, reverse proxies) and a site set up with its IP are never refused. Log reason "host_ip".
+* New, optional (off by default): IP reputation (Bots and limits → Reputation). Good and bad events of the last 7 days make a score per IP; a good IP is never blocked for a limit alone, a bad one gets "Pages per minute for IPs with a bad reputation" (10). Unblocking an IP by hand forgets its reputation. `wp scrapelock reputation <ip> [--reset]`; "Check a request" shows the score.
+* New, optional (0 = off): "REST API, GraphQL, feeds and sitemaps per minute for IPs that never opened a page". Site Health warns when a page cache would hide the page views from it.
+* New, optional (off by default): the CrowdSec blocklist, from your own CrowdSec agent (LAPI decisions stream, every 15 minutes) or from a plain-text blocklist address (CrowdSec Console integration or another list, hourly). A listed IP gets a stricter page limit (default) or a 403; private addresses, ranges wider than /16 (IPv6 /32), this server, CDN edges and official crawler addresses are never taken from a list; a failed download keeps the previous list. The key can go in wp-config.php (`SCRAPELOCK_CROWDSEC_KEY`) and is never exported. "Sync now" under Official IP lists, `wp scrapelock crowdsec status|sync|check`, a Site Health test.
+* New, optional (off by default): "Write each temporary block to the system log, for fail2ban" (syslog, facility AUTH). The Server rules tab gives the fail2ban filter and jail. Filter `pncp_syslog_facility`.
+* New: Log tab → "Visitors from AI assistants": visits that ChatGPT, Perplexity, Claude, Gemini, Copilot, DeepSeek, Grok, Le Chat, Meta AI and others sent, per assistant and page, last 30 days, counted on this server without cookies or personal data (on by default; Log settings). `wp scrapelock ai-referrals [--pages]`. Filter `pncp_ai_referrers`.
+* New: Site Health info and `wp scrapelock status` list the new settings; the suggested privacy policy text covers them.
+* Fix: on the settings screens, the note "Takes effect only when … is on" was shown even when that option was on.
+* Database: two new tables, `pncp_crowdsec` and `pncp_airef` (schema version 5), removed on uninstall.
 
 = 3.6.1 =
 * New: completely redesigned settings screens. The plugin now uses the full width of wp-admin, with a header showing the protection state and quick actions, overview figures (blocked in 24 hours, IPs blocked now, protection layers on, preset), sticky tabs with icons, settings grouped into cards with switches, a save bar that stays visible and marks unsaved changes, and colours that follow the admin colour scheme.

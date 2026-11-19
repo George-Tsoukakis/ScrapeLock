@@ -16,9 +16,10 @@ final class PNCP_Log {
 
 	/**
 	 * Table schema version. 3 (3.4.0): index (created, reason) for the summaries of the Log tab. 4 (3.6.1): the
-	 * table of short-lived values (kv_table()).
+	 * table of short-lived values (kv_table()). 5 (3.7.0): the CrowdSec blocklist (PNCP_Crowdsec::table()) and the
+	 * visits from AI assistants (PNCP_Ai_Referrals::table()).
 	 */
-	const DB_VERSION = '4';
+	const DB_VERSION = '5';
 
 	/**
 	 * 3.6.1: the lowest schema version that has the table of short-lived values (kv_table()).
@@ -244,6 +245,10 @@ final class PNCP_Log {
 			KEY expires (expires)
 			) {$charset};"
 		);
+		// 3.7: the CrowdSec blocklist and the visits from AI assistants. Each one fails quietly on its own (its
+		// queries suppress errors), so neither is required for the log and the bans.
+		PNCP_Crowdsec::install();
+		PNCP_Ai_Referrals::install();
 		// Only if the tables were actually created (e.g. the database user may lack CREATE).
 		// 3.6.1: compared without regard to case: with lower_case_table_names=1 (Windows, macOS) MySQL answers
 		// "wp_pncp_log" for a "WP_" prefix, and the log and the bans were never switched on.
@@ -322,6 +327,13 @@ final class PNCP_Log {
 			'banned'          => __( 'Request from a blocked IP', 'scrapelock' ),
 			'feed_denied'     => __( 'Private URL without token', 'scrapelock' ),
 			'not_via_cdn'     => __( 'Not through the CDN (straight to the server)', 'scrapelock' ),
+			// 3.7.
+			'bad_ua'          => __( 'Attack in the User-Agent (tags, Shellshock, Log4Shell, SQL)', 'scrapelock' ),
+			'host_ip'         => __( 'Site opened by IP address instead of its name', 'scrapelock' ),
+			'rate_lowrep'     => __( 'Pages per minute for IPs with a bad reputation', 'scrapelock' ),
+			'rate_apionly'    => __( 'API / feed / sitemap requests per minute without ever opening a page', 'scrapelock' ),
+			'crowdsec'        => __( 'IP in the CrowdSec blocklist', 'scrapelock' ),
+			'rate_crowdsec'   => __( 'Pages per minute for IPs in the CrowdSec blocklist', 'scrapelock' ),
 		);
 	}
 
@@ -606,6 +618,8 @@ final class PNCP_Log {
 		}
 		self::kv_cleanup( $budget );
 		self::purge_expired_transients();
+		PNCP_Crowdsec::cleanup(); // 3.7.
+		PNCP_Ai_Referrals::cleanup(); // 3.7.
 		update_option( self::CLEANED_OPTION, time(), true );
 	}
 
@@ -1318,6 +1332,8 @@ final class PNCP_Log {
 		// Stored under the ban key (IPv6: the /64); the log entry keeps the exact IP that tripped it.
 		self::store_ban( PNCP_Ip::limit_key( $ip ), $until, $reason, time() );
 		self::add( 'ban', 403, $ip );
+		PNCP_Fail2ban::log_ban( $ip, (int) $minutes, $reason ); // 3.7: for fail2ban, when that option is on.
+		PNCP_Reputation::on_ban( $ip, $reason ); // 3.7: a block lowers the IP's reputation, when that option is on.
 	}
 
 	/**
@@ -1428,6 +1444,7 @@ final class PNCP_Log {
 		PNCP_Precheck::forget_ban( $ip );
 		self::cache_delete( 'pncp_st_' . md5( PNCP_Ip::limit_key( $ip ) ) );
 		self::cache_delete( self::probe_memory_key( $ip ) ); // 3.5: the probe ban's 24-hour memory: a lifted IP starts clean.
+		PNCP_Reputation::forget( $ip ); // 3.7: and its reputation too: unblocking it by hand says it is fine.
 		if ( wp_using_ext_object_cache() ) {
 			wp_cache_delete( 'pncp_ban_' . md5( $ip ), 'pncp' );
 		} elseif ( self::apcu_ok() ) {
@@ -1958,6 +1975,9 @@ final class PNCP_Log {
 			'<p>' . esc_html__( 'To protect content from automated copying, when a request is blocked we record the IP address, the browser\'s User-Agent, the page and the time. This data is deleted automatically after a few days and is not used for any other purpose.', 'scrapelock' ) . '</p>'
 			. '<p>' . esc_html__( 'If blocking at the CDN is turned on, the IP addresses that are blocked temporarily are also sent to our CDN provider (Cloudflare or Bunny CDN), with a short note that gives the reason and the end of the block, so the CDN can refuse them before they reach our server. Each one is removed from the CDN when the block ends. Nothing else about visitors is sent.', 'scrapelock' ) . '</p>'
 			. '<p>' . esc_html__( 'So that administrators are never blocked by mistake, the IP addresses from which administrators used the site\'s dashboard in the last 30 days are kept; older ones are deleted automatically.', 'scrapelock' ) . '</p>'
+			// 3.7.
+			. '<p>' . esc_html__( 'If IP reputation is turned on, for each IP address (stored only as a one-way hash) we keep, for up to 7 days, when it last read pages, passed the automatic human check, was used to sign in, or was refused or blocked, to treat it more or less strictly. We count visits that come from AI assistants (such as ChatGPT or Perplexity) per day and page only, without any data about the visitor.', 'scrapelock' ) . '</p>'
+			. '<p>' . esc_html__( 'If the CrowdSec blocklist is turned on, we download a list of IP addresses known for attacks and check visitors against it on our server; no data about visitors is sent to CrowdSec or the list\'s provider. If writing blocks to the system log is turned on, the IP addresses that are blocked temporarily are also written to our server\'s system log, so the server\'s firewall can block them for the same time.', 'scrapelock' ) . '</p>'
 		);
 	}
 }

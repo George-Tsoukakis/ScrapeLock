@@ -314,6 +314,7 @@ final class PNCP_Human {
 		if ( ! self::check_answer( $challenge, $answer, $ip ) || ! self::spend( $challenge ) ) {
 			wp_send_json_error( null, 403 );
 		}
+		PNCP_Reputation::record( $ip, 'human' ); // 3.7: a person (or at least a browser that runs scripts) is behind it.
 		setcookie(
 			self::COOKIE,
 			self::cookie_value( $ip ),

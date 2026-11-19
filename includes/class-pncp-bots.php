@@ -729,6 +729,22 @@ final class PNCP_Bots {
 			return self::verdict( 403, 'banned', $ip );
 		}
 
+		// 3.7: the CrowdSec blocklist: a 403 ("block"), or the stricter page limit below ("limit"). No violation: the
+		// list is someone else's judgement, and a recycled address may have changed hands since.
+		$crowdsec = $per_ip && PNCP_Crowdsec::listed( $ip );
+		if ( $crowdsec && 'block' === $s['crowdsec_action'] ) {
+			return self::verdict( 403, 'crowdsec', $ip );
+		}
+
+		// 3.7: the site opened by a public IP address in the Host header instead of its name: scanners that sweep
+		// address ranges do that, people and search engines never (they follow links, which carry the name).
+		if ( ! empty( $s['block_ip_host'] ) && null === self::$dry && self::host_is_foreign_ip() ) {
+			if ( $per_ip ) {
+				self::strike_once_a_minute( $ip, 'host_ip' );
+			}
+			return self::verdict( 403, 'host_ip', $ip );
+		}
+
 		if ( 'fake' === $ai ) {
 			self::strike_once_a_minute( $ip, 'fake_ai_bot' );
 			return self::verdict( 403, 'fake_ai_bot', $ip );
@@ -752,6 +768,14 @@ final class PNCP_Bots {
 			if ( '' !== $ua && self::ua_in_list( $ua, PNCP_Options::blocked_agents( $s ) ) ) {
 				return self::verdict( 403, 'bot_ua', $ip );
 			}
+		}
+		// 3.7: a User-Agent that carries an attack (tags, Shellshock, Log4Shell, SQL). Not even an always-allowed
+		// name excuses it: the allow list matches part of the User-Agent, and the attack can sit next to it.
+		if ( ! empty( $s['block_bots'] ) && self::malicious_ua( self::raw_user_agent() ) ) {
+			if ( $per_ip ) {
+				self::strike_once_a_minute( $ip, 'bad_ua' );
+			}
+			return self::verdict( 403, 'bad_ua', $ip );
 		}
 
 		// Blocked countries. Link previews and AI search in the allowed lists are not affected (they come from
@@ -858,6 +882,14 @@ final class PNCP_Bots {
 			if ( ! $dc_exempt && (int) $s['rate_limit_datacenter'] > 0 && '' !== PNCP_Ip::datacenter( $ip ) ) {
 				$stricter['rate_datacenter'] = (int) $s['rate_limit_datacenter'];
 			}
+			// 3.7: an IP with a bad reputation (blocked before, trapped, refused as a bot in the last days).
+			if ( ! $dc_exempt && (int) $s['rate_limit_lowrep'] > 0 && PNCP_Reputation::suspect( $ip ) ) {
+				$stricter['rate_lowrep'] = (int) $s['rate_limit_lowrep'];
+			}
+			// 3.7: an IP in the CrowdSec blocklist, when it is set to "stricter limit".
+			if ( ! $dc_exempt && $crowdsec && (int) $s['rate_limit_crowdsec'] > 0 ) {
+				$stricter['rate_crowdsec'] = (int) $s['rate_limit_crowdsec'];
+			}
 			foreach ( $stricter as $bucket => $limit ) {
 				$current = self::hit( $ip, $bucket );
 				if ( $current > $limit ) {
@@ -898,6 +930,21 @@ final class PNCP_Bots {
 				return self::verdict( 429, 'rate_account', $ip );
 			}
 		}
+		// 3.7: the REST API, GraphQL, feeds and sitemaps read by an IP that has not opened a single page of the site
+		// in the last 24 hours (nor passed the human check, nor signed in): the scrapers that skip the HTML. Not for
+		// signed-in users, the always-allowed User-Agents (feed readers and apps can be added there) and verified
+		// search engines, which never get here.
+		$api_like = in_array( $context, array( 'rest', 'graphql', 'sitemap' ), true ) || $feed;
+		if ( $count && $per_ip && $api_like && ! $allowed_ua && (int) $s['rate_limit_apionly'] > 0 && 0 === ( null === self::$dry ? get_current_user_id() : 0 ) && ! PNCP_Reputation::seen_page( $ip ) ) {
+			$limit   = (int) $s['rate_limit_apionly'];
+			$current = self::hit( $ip, 'rate_apionly' );
+			if ( $current > $limit ) {
+				if ( $current === $limit + 1 ) {
+					self::strike( $ip, 'rate_apionly' );
+				}
+				return self::verdict( 429, 'rate_apionly', $ip );
+			}
+		}
 		if ( $count && isset( $limits[ $context ] ) ) {
 			$limit = (int) $s[ $limits[ $context ][0] ];
 			if ( $limit > 0 ) {
@@ -913,6 +960,12 @@ final class PNCP_Bots {
 					return self::verdict( 429, $limits[ $context ][1], $ip );
 				}
 			}
+		}
+
+		// 3.7: a page that passed: this IP reads the site (for the reputation and the API-only limit). Not a feed or
+		// a "page not found", and not when the request was only explained.
+		if ( null === self::$dry && in_array( $context, array( 'page', 'search' ), true ) && ! $feed && ! is_404() ) {
+			PNCP_Reputation::record( $ip, 'page' );
 		}
 
 		return self::pass( 'passed' );
@@ -941,7 +994,9 @@ final class PNCP_Bots {
 		// 3.6.1: not for an IP that may be spoofed (PNCP_Ip::reliable(): a Bunny or Cloudflare edge without the
 		// CDN secret, "trust every proxy"), as the trap never did: anyone could get someone else's IP banned and
 		// blocked at the CDN. And not for a count shared by a whole network (hit()).
-		if ( null === self::$dry && ! self::$shared_hit && PNCP_Ip::reliable() ) {
+		// 3.7: nor for an IP with a good reputation (someone signed in from it and passed the human check): it still
+		// gets the 429, but a limit alone never blocks it (an office or a school behind one address).
+		if ( null === self::$dry && ! self::$shared_hit && PNCP_Ip::reliable() && ! PNCP_Reputation::trusted( $ip ) ) {
 			PNCP_Log::strike( $ip, $reason );
 		}
 	}
@@ -1294,6 +1349,7 @@ final class PNCP_Bots {
 				'reason' => $reason,
 			);
 		}
+		PNCP_Reputation::record_reason( $ip, $reason ); // 3.7: what the IP did counts toward its reputation.
 		if ( PNCP_Options::monitoring() ) {
 			PNCP_Log::add( $reason, PNCP_Log::MONITOR_CODE, $ip );
 			return null;
@@ -2557,6 +2613,150 @@ final class PNCP_Bots {
 	}
 
 	/**
+	 * 3.7: site rippers, offline browsers and address harvesters: programs made to download a whole site, or to
+	 * collect the email addresses on it. Nobody needs them to read a site, so they are blocked with the bot list
+	 * ("Block bots"), like the AI crawlers, and are not shown in the editable list. An entry in "Always allowed"
+	 * still passes. Names only, each specific enough not to match a browser. Filter `pncp_ripper_agents`.
+	 *
+	 * @return string[]
+	 */
+	public static function ripper_agents() {
+		return (array) apply_filters(
+			'pncp_ripper_agents',
+			array(
+				// Offline browsers and site copiers.
+				'HTTrack',
+				'WebCopier',
+				'Teleport Pro',
+				'TeleportPro',
+				'WebZIP',
+				'Offline Explorer',
+				'Offline Navigator',
+				'WebStripper',
+				'BlackWidow',
+				'SiteSnagger',
+				'SiteSucker',
+				'WebReaper',
+				'WebWhacker',
+				'Website Quester',
+				'WebSauger',
+				'Web Downloader',
+				'Website Downloader',
+				'CyotekWebCopy',
+				'A1 Website Download',
+				'PageNest',
+				'grab-site',
+				'Web Data Extractor',
+				'WebCapture',
+				// Email address harvesters.
+				'EmailCollector',
+				'EmailSiphon',
+				'EmailWolf',
+				'Email Extractor',
+				'ExtractorPro',
+				// Point-and-click scraping services.
+				'Octoparse',
+				'ParseHub',
+			)
+		);
+	}
+
+	/**
+	 * 3.7: the crawlers of SEO and marketing data tools (backlink indexes, competitor research, company data).
+	 * They are not search engines: what they collect is sold to whoever pays, competitors included, and they
+	 * crawl hard. Blocked, and asked in robots.txt, only with "Block SEO and marketing data crawlers" (off by
+	 * default: many owners use these tools for their own site). Their site-audit bots run from the vendor's
+	 * servers when you start an audit, so they are in the list too; allow one in "Always allowed" to audit
+	 * your own site. Filter `pncp_seo_agents`.
+	 *
+	 * @return string[]
+	 */
+	public static function seo_agents() {
+		return (array) apply_filters(
+			'pncp_seo_agents',
+			array( 'AhrefsBot', 'AhrefsSiteAudit', 'SemrushBot', 'SiteAuditBot', 'SplitSignalBot', 'MJ12bot', 'DotBot', 'rogerbot', 'BLEXBot', 'DataForSeoBot', 'Barkrowler', 'serpstatbot', 'SEOkicks', 'MegaIndex', 'linkdexbot', 'spbot', 'ZoominfoBot', 'SenutoBot', 'Seobility', 'SEOlizer' )
+		);
+	}
+
+	/**
+	 * 3.7: a User-Agent that carries an attack instead of a name: HTML or PHP tags (stored XSS in log viewers),
+	 * Shellshock "() {", Log4Shell "${jndi:", SQL injection, or control characters. No browser or crawler sends
+	 * one. The raw header is checked: user_agent() removes tags, so it would hide them. Filter
+	 * `pncp_malicious_ua_patterns` (regular expressions).
+	 *
+	 * @param string $raw The User-Agent as sent.
+	 * @return bool
+	 */
+	public static function malicious_ua( $raw ) {
+		$raw = (string) $raw;
+		if ( '' === $raw ) {
+			return false;
+		}
+		$patterns = (array) apply_filters(
+			'pncp_malicious_ua_patterns',
+			array(
+				'#<\s*/?\s*(?:script|iframe|img|svg|body|object|embed|a\s|\?php|\?=)#i', // Tags.
+				'#\(\s*\)\s*\{#', // Shellshock: "() { :; };".
+				'#\$\{\s*(?:jndi|env|sys|lower|upper|date|ctx|main|::-)#i', // Log4Shell and its obfuscations.
+				'#\bunion\b[\s\S]{0,30}\bselect\b|\b(?:sleep|benchmark|pg_sleep)\s*\(\s*\d|\bwaitfor\s+delay\b|\bor\s+1\s*=\s*1\b#i', // SQL injection.
+				'#[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]#', // Control characters.
+			)
+		);
+		foreach ( $patterns as $pattern ) {
+			if ( 1 === @preg_match( (string) $pattern, $raw ) ) { // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged -- A pattern from a filter may be invalid.
+				return true;
+			}
+		}
+		return false;
+	}
+
+	/**
+	 * 3.7: is the Host header of this request a public IP address that is not the site's own address? Scanners
+	 * that sweep IP ranges send the address they connect to; browsers and crawlers send the name in the link.
+	 * Not for a private or local address (a load balancer's health check, a reverse proxy that passes its own
+	 * upstream address, a development copy), and not when the site itself is configured with that address.
+	 *
+	 * @return bool
+	 */
+	public static function host_is_foreign_ip() {
+		$host = isset( $_SERVER['HTTP_HOST'] ) ? strtolower( trim( sanitize_text_field( wp_unslash( $_SERVER['HTTP_HOST'] ) ) ) ) : '';
+		if ( '' === $host ) {
+			return false;
+		}
+		if ( '[' === $host[0] ) {
+			$end  = strpos( $host, ']' );
+			$host = false === $end ? '' : substr( $host, 1, $end - 1 ); // IPv6 in brackets, with or without a port.
+		} elseif ( 1 === substr_count( $host, ':' ) ) {
+			$host = substr( $host, 0, (int) strpos( $host, ':' ) ); // IPv4 with a port.
+		}
+		// Not PNCP_Ip::is_local(): it also matches SERVER_ADDR, which is the very public address a scanner types.
+		// Loopback is a reserved range, so is_private() covers it.
+		if ( ! filter_var( $host, FILTER_VALIDATE_IP ) || PNCP_Ip::is_private( $host ) ) {
+			return false;
+		}
+		foreach ( array( home_url(), site_url() ) as $url ) {
+			$own = strtolower( trim( (string) wp_parse_url( $url, PHP_URL_HOST ), '[]' ) );
+			if ( '' !== $own && PNCP_Ip::normalize( $own ) === PNCP_Ip::normalize( $host ) ) {
+				return false;
+			}
+		}
+		return (bool) apply_filters( 'pncp_host_is_foreign_ip', true, $host );
+	}
+
+	/**
+	 * 3.7: the raw User-Agent of this request (or of the explained one), tags and all, for malicious_ua().
+	 *
+	 * @return string
+	 */
+	private static function raw_user_agent() {
+		if ( null !== self::$dry ) {
+			return (string) self::$dry['ua'];
+		}
+		// phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- Only matched against patterns, never output or stored.
+		return isset( $_SERVER['HTTP_USER_AGENT'] ) ? (string) wp_unslash( $_SERVER['HTTP_USER_AGENT'] ) : '';
+	}
+
+	/**
 	 * AI crawlers, data scrapers and agents blocked by name (when "Block bots" is on), in addition to the editable
 	 * bot list. Built into the plugin and updated with each version, so the settings list keeps its 200 lines
 	 * for the site's own entries. Sources: ai.robots.txt and the operators' own pages; only names that appear in
@@ -2728,6 +2928,14 @@ final class PNCP_Bots {
 		if ( ! empty( $s['block_archivers'] ) ) {
 			$block = "\n# ScrapeLock: web archives\n";
 			foreach ( self::archive_agents() as $agent ) {
+				$block .= 'User-agent: ' . $agent . "\n";
+			}
+			$output = rtrim( $output ) . "\n" . $block . "Disallow: /\n";
+		}
+		// 3.7: SEO and marketing data crawlers, and the site rippers that read robots.txt at all.
+		if ( ! empty( $s['block_seo_crawlers'] ) ) {
+			$block = "\n# ScrapeLock: SEO and marketing data crawlers\n";
+			foreach ( self::seo_agents() as $agent ) {
 				$block .= 'User-agent: ' . $agent . "\n";
 			}
 			$output = rtrim( $output ) . "\n" . $block . "Disallow: /\n";

@@ -76,6 +76,9 @@ final class PNCP_Options {
 			// What the automatic Emergency Mode does when the site is hit far harder than usual: tell the
 			// administrator (email + notice with a "Start Emergency Mode" button), or start it on its own.
 			'auto_emergency_mode' => array( 'notify', 'start' ),
+			// 3.7: the CrowdSec blocklist (PNCP_Crowdsec): where it comes from, and what a listed IP gets.
+			'crowdsec_mode'       => array( 'off', 'lapi', 'list' ),
+			'crowdsec_action'     => array( 'limit', 'block' ),
 		);
 	}
 
@@ -145,6 +148,12 @@ final class PNCP_Options {
 			'shared_logout',
 			'hide_fingerprint',
 			'text_trace',
+			// 3.7.
+			'block_seo_crawlers',
+			'block_ip_host',
+			'reputation',
+			'syslog_bans',
+			'ai_referrals',
 		);
 	}
 
@@ -177,6 +186,10 @@ final class PNCP_Options {
 			'user_mark_opacity'     => array( 2, 60 ),
 			'rate_limit_account'    => array( 0, 10000 ),
 			'shared_ips'            => array( 2, 50 ),
+			// 3.7.
+			'rate_limit_lowrep'     => array( 0, 10000 ),
+			'rate_limit_apionly'    => array( 0, 10000 ),
+			'rate_limit_crowdsec'   => array( 0, 10000 ),
 		);
 	}
 
@@ -207,12 +220,12 @@ final class PNCP_Options {
 	public static function sections() {
 		return array(
 			'general' => array( 'enabled', 'scope_posts', 'scope_pages', 'scope_home', 'scope_products', 'skip_woo_pages', 'excluded_ids', 'block_selection', 'block_context_menu', 'block_shortcuts', 'block_devtools', 'block_image_drag', 'block_text_drag', 'blur_on_capture', 'copy_mode', 'attribution_min_chars', 'print_mode', 'exempt_cap', 'show_message', 'message', 'block_framing', 'tdm_reservation', 'tdm_policy_url', 'user_mark', 'user_mark_guests', 'user_mark_opacity', 'text_trace', 'rate_limit_account', 'shared_alert', 'shared_ips', 'shared_logout' ),
-			'bots'    => array( 'monitor_mode', 'block_bots', 'block_empty_ua', 'block_fake_crawlers', 'require_browser_headers', 'block_headless', 'trap_enabled', 'probe_ban', 'block_http_libs', 'block_archivers', 'ipv6_wide', 'bot_list', 'allow_list', 'allow_ips', 'allow_ai_search', 'verify_ai_bots', 'robots_ai_block', 'content_signal', 'block_ips', 'block_referrers', 'block_user_enum', 'rate_limit', 'rate_limit_search', 'rate_limit_rest', 'rate_limit_404', 'rate_limit_sitemap', 'human_check', 'rate_limit_unverified', 'geo_db', 'countries_block', 'countries_strict', 'rate_limit_country', 'rate_limit_datacenter', 'rate_limit_cart', 'rate_limit_coupon', 'ban_strikes', 'ban_minutes', 'auto_emergency', 'auto_emergency_mode', 'auto_emergency_min', 'early_mode', 'precheck', 'ip_header', 'trust_cloudflare', 'trust_bunny', 'trust_any_proxy', 'trusted_proxies', 'cdn_secret', 'cdn_only' ),
+			'bots'    => array( 'monitor_mode', 'block_bots', 'block_empty_ua', 'block_fake_crawlers', 'require_browser_headers', 'block_headless', 'trap_enabled', 'probe_ban', 'block_http_libs', 'block_archivers', 'block_seo_crawlers', 'block_ip_host', 'ipv6_wide', 'bot_list', 'allow_list', 'allow_ips', 'allow_ai_search', 'verify_ai_bots', 'robots_ai_block', 'content_signal', 'block_ips', 'block_referrers', 'block_user_enum', 'rate_limit', 'rate_limit_search', 'rate_limit_rest', 'rate_limit_404', 'rate_limit_sitemap', 'human_check', 'rate_limit_unverified', 'geo_db', 'countries_block', 'countries_strict', 'rate_limit_country', 'rate_limit_datacenter', 'rate_limit_cart', 'rate_limit_coupon', 'reputation', 'rate_limit_lowrep', 'rate_limit_apionly', 'crowdsec_mode', 'crowdsec_url', 'crowdsec_key', 'crowdsec_action', 'rate_limit_crowdsec', 'ban_strikes', 'ban_minutes', 'syslog_bans', 'auto_emergency', 'auto_emergency_mode', 'auto_emergency_min', 'early_mode', 'precheck', 'ip_header', 'trust_cloudflare', 'trust_bunny', 'trust_any_proxy', 'trusted_proxies', 'cdn_secret', 'cdn_only' ),
 			'content' => array( 'rest_hide_content', 'hide_rest_discovery', 'graphql_hide_content', 'feed_mode', 'feed_source_link', 'list_excerpts', 'private_paths', 'private_ips', 'disable_pingback', 'hide_versions', 'hide_fingerprint', 'block_upload_php' ),
 			'images'  => array( 'watermark_enabled', 'watermark_full', 'watermark_products', 'watermark_image_id', 'watermark_opacity', 'watermark_size', 'watermark_position', 'watermark_min_width' ),
 			// Log tab: how long the log is kept, and the addresses that count as "Pages" in it (until 3.3 on the
 			// Bots and limits tab, same keys).
-			'log'     => array( 'log_retention', 'content_paths' ),
+			'log'     => array( 'log_retention', 'content_paths', 'ai_referrals' ),
 		);
 	}
 
@@ -396,12 +409,13 @@ final class PNCP_Options {
 	 */
 	public static function blocked_agents( $s ) {
 		// 3.6.1: built once per request for the same settings (about 200 names, each lowercased).
-		$memo = is_string( $s['bot_list'] ) ? $s['bot_list'] . "\0" . ( empty( $s['block_archivers'] ) ? '0' : '1' ) . ( empty( $s['block_http_libs'] ) ? '0' : '1' ) : null;
+		$memo = is_string( $s['bot_list'] ) ? $s['bot_list'] . "\0" . ( empty( $s['block_archivers'] ) ? '0' : '1' ) . ( empty( $s['block_http_libs'] ) ? '0' : '1' ) . ( empty( $s['block_seo_crawlers'] ) ? '0' : '1' ) : null;
 		if ( null !== $memo && null !== self::$agents && $memo === self::$agents[0] ) {
 			return self::$agents[1];
 		}
 		$out = array();
-		foreach ( array_merge( self::parse_list( $s['bot_list'] ), PNCP_Bots::known_ai_agents(), empty( $s['block_archivers'] ) ? array() : PNCP_Bots::archive_agents(), empty( $s['block_http_libs'] ) ? array() : self::http_library_agents() ) as $agent ) {
+		// 3.7: the site rippers always (with the bot list), the SEO data crawlers with their option.
+		foreach ( array_merge( self::parse_list( $s['bot_list'] ), PNCP_Bots::known_ai_agents(), PNCP_Bots::ripper_agents(), empty( $s['block_archivers'] ) ? array() : PNCP_Bots::archive_agents(), empty( $s['block_seo_crawlers'] ) ? array() : PNCP_Bots::seo_agents(), empty( $s['block_http_libs'] ) ? array() : self::http_library_agents() ) as $agent ) {
 			$agent = trim( (string) $agent );
 			if ( '' !== $agent && '=' !== $agent ) {
 				$out[ strtolower( $agent ) ] = $agent;
@@ -628,6 +642,29 @@ final class PNCP_Options {
 			'shared_logout'           => 0,
 			// Fewer signs of WordPress in pages and headers (PNCP_Surface::fingerprint()); includes hide_versions.
 			'hide_fingerprint'        => 0,
+			// 3.7. Off on new and existing sites unless said otherwise.
+			// Block the crawlers of SEO and marketing data tools (PNCP_Bots::seo_agents()): many owners use them.
+			'block_seo_crawlers'      => 0,
+			// 403 for a request whose Host header is a bare IP address instead of the site's name (scanners).
+			'block_ip_host'           => 0,
+			// The reputation of each IP (PNCP_Reputation): good IPs are never banned for a limit, bad ones get the
+			// stricter limit below.
+			'reputation'              => 0,
+			'rate_limit_lowrep'       => 10,
+			// Pages of the REST API, GraphQL, feeds and sitemaps per minute for an IP that never opened a page of the
+			// site (0 = off): scrapers that read only the API.
+			'rate_limit_apionly'      => 0,
+			// The CrowdSec blocklist (PNCP_Crowdsec): off, a CrowdSec agent of your own (LAPI), or a list URL.
+			'crowdsec_mode'           => 'off',
+			'crowdsec_url'            => '',
+			'crowdsec_key'            => '',
+			'crowdsec_action'         => 'limit',
+			'rate_limit_crowdsec'     => 10,
+			// One line in the system log (syslog, AUTH) for each temporary block, for fail2ban.
+			'syslog_bans'             => 0,
+			// Visits that come from AI assistants (ChatGPT, Perplexity…), counted per day and page, on this server.
+			// On by default: no personal data, one row write per such visit.
+			'ai_referrals'            => 1,
 		);
 	}
 
@@ -1156,6 +1193,8 @@ final class PNCP_Options {
 			// Still several times what a shopper does in a minute (WooCommerce only).
 			'rate_limit_cart'         => $min( $s['rate_limit_cart'], 30 ),
 			'rate_limit_coupon'       => $min( $s['rate_limit_coupon'], 5 ),
+			// 3.7: scanners that sweep IP ranges never use the site's name.
+			'block_ip_host'           => 1,
 		);
 	}
 
@@ -1339,6 +1378,7 @@ final class PNCP_Options {
 			'bot_list',
 			'block_http_libs',
 			'block_archivers',
+			'block_seo_crawlers', // 3.7: robots.txt and the blocked User-Agents.
 			'precheck',
 		);
 	}
@@ -1582,6 +1622,22 @@ final class PNCP_Options {
 			$secret = (string) $stored['cdn_secret'];
 		}
 		$clean['cdn_secret'] = substr( $secret, 0, 100 );
+
+		// 3.7: CrowdSec. The address must be http(s); the key (a LAPI bouncer key, or "user:password" for a list) is
+		// a secret like the CDN one: never shown, an empty field keeps it, the "remove" box clears it.
+		$url                   = isset( $input['crowdsec_url'] ) ? esc_url_raw( trim( (string) $input['crowdsec_url'] ), array( 'https', 'http' ) ) : '';
+		$clean['crowdsec_url'] = substr( (string) $url, 0, 500 );
+		$key                   = isset( $input['crowdsec_key'] ) ? trim( (string) preg_replace( '/[\x00-\x1f\x7f]/', '', (string) $input['crowdsec_key'] ) ) : '';
+		if ( '' === $key && empty( $input['crowdsec_key_clear'] ) ) {
+			$key = isset( $stored['crowdsec_key'] ) ? (string) $stored['crowdsec_key'] : '';
+		}
+		$clean['crowdsec_key'] = substr( $key, 0, 300 );
+		if ( 'off' !== $clean['crowdsec_mode'] && '' === $clean['crowdsec_url'] ) {
+			$clean['crowdsec_mode'] = 'off';
+			if ( function_exists( 'add_settings_error' ) && self::saved_here( 'crowdsec_mode', $input ) ) {
+				add_settings_error( PNCP_OPTION, 'pncp_crowdsec', __( 'CrowdSec was not turned on: enter the address of your CrowdSec agent (LAPI) or of the blocklist first.', 'scrapelock' ) );
+			}
+		}
 
 		// "Only through the CDN" is turned on (or its secret changed) only from a request that brought the secret:
 		// that proves the CDN sends it. Otherwise the next request, and the administrator, would get a 403.
