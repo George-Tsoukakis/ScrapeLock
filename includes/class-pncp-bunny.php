@@ -2041,6 +2041,17 @@ final class PNCP_Bunny {
 				'evidence' => array( array( 'install', '' ), array( 'scanner', $core . 'readme.html' ) ),
 				'harden'   => 'core_files',
 			),
+			// 3.10: ScrapeLock's own private folders, for Nginx sites without access to the server's configuration
+			// (offered by Site Health's private folders test). Data only: the rule is built like any preset.
+			'private_folders' => array(
+				'label'    => __( 'ScrapeLock\'s private folders', 'scrapelock' ),
+				'blocks'   => __( 'Every request for the folders where ScrapeLock keeps its own data: the pre-cache check\'s counters and bans (visitor IP addresses), the country database, the clean originals of watermarked images and the Lockdown lock file. ScrapeLock reads them from the disk, never from the web.', 'scrapelock' ),
+				'breaks'   => __( 'Nothing a visitor uses. The rule protects only the requests that go through Bunny: a request sent straight to the server (its IP address) still reads the files, so also refuse the folders on the server when you can (Tools → Site Health shows the lines).', 'scrapelock' ),
+				'patterns' => self::private_folder_patterns(),
+				'except'   => array(),
+				'evidence' => array(),
+				'harden'   => '',
+			),
 		);
 		/**
 		 * Filters the presets of the "Lock at Bunny" buttons.
@@ -2048,6 +2059,57 @@ final class PNCP_Bunny {
 		 * @param array<string, array<string, mixed>> $presets Presets.
 		 */
 		return (array) apply_filters( 'pncp_bunny_presets', $out );
+	}
+
+	/**
+	 * 3.10: the URL patterns of ScrapeLock's private folders (PNCP_Health::private_folder_paths()), at most 5
+	 * (Bunny's limit of triggers per condition): the folders of uploads whose name starts with "scrapelock"
+	 * share one pattern ("…/uploads/scrapelock*\/*" needs a "/" after the name, so a media file named
+	 * scrapelock-….png in uploads is not hit).
+	 *
+	 * @return string[]
+	 */
+	public static function private_folder_patterns() {
+		if ( ! class_exists( 'PNCP_Health' ) || ! method_exists( 'PNCP_Health', 'private_folder_paths' ) ) {
+			return array();
+		}
+		$out = array();
+		foreach ( PNCP_Health::private_folder_paths() as $folder ) {
+			$path = (string) $folder['path'];
+			if ( preg_match( '#^(.*/)scrapelock[a-z-]*/$#', $path, $m ) && preg_match( '#/uploads/$#', $m[1] ) ) {
+				$pattern = '*' . $m[1] . 'scrapelock*/*';
+			} else {
+				$pattern = '*' . $path . '*';
+			}
+			$out[ $pattern ] = $pattern;
+		}
+		return array_values( $out );
+	}
+
+	/**
+	 * 3.10: a "Lock at Bunny…" button for another screen (Site Health): it opens the preview "What would be
+	 * blocked" like the button of the Bunny card; nothing is sent to Bunny before "Confirm" there.
+	 *
+	 * @param string $id    Preset.
+	 * @param string $label Button text.
+	 * @param string $back  Where Cancel and the result go (an address in wp-admin; '' = the Bunny card).
+	 * @return string HTML ('' for users who cannot manage options).
+	 */
+	public static function lock_button( $id, $label, $back = '' ) {
+		if ( ! current_user_can( 'manage_options' ) || ! isset( self::presets()[ $id ] ) ) {
+			return '';
+		}
+		$back = '' !== $back ? wp_validate_redirect( $back, '' ) : '';
+		$out  = sprintf( '<form method="post" action="%s" class="pncp-bunny-form" style="display:inline-block;margin:0 4px 4px 0">', esc_url( admin_url( 'admin-post.php' ) ) );
+		$out .= '<input type="hidden" name="action" value="' . esc_attr( self::ACTION ) . '">';
+		$out .= '<input type="hidden" name="op" value="lock">';
+		$out .= '<input type="hidden" name="id" value="' . esc_attr( sanitize_key( $id ) ) . '">';
+		$out .= '<input type="hidden" name="_wpnonce" value="' . esc_attr( wp_create_nonce( self::ACTION ) ) . '">';
+		if ( '' !== $back ) {
+			// The page the form is shown on may have been built by admin-ajax (Site Health's async tests).
+			$out .= '<input type="hidden" name="_wp_http_referer" value="' . esc_attr( $back ) . '">';
+		}
+		return $out . '<button type="submit" class="button">' . esc_html( $label ) . '</button></form>';
 	}
 
 	/**
