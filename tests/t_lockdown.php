@@ -768,7 +768,7 @@ t( 'αρχείο: συμβάντα στη σελίδα (κλείδωμα, κωδ
 $pncp_pdir = WP_PLUGIN_DIR . '/pncp-dummy';
 $pncp_up   = wp_get_upload_dir()['basedir'];
 // Ό,τι μπορεί να άφησε μια εκτέλεση που διακόπηκε: πρέπει να μην υπάρχει πριν από το κλείδωμα.
-foreach ( array( '/2026/pncp-test-shell.php', '/2026/pncp-test-shell.php.pncp-quarantine', '/.user.ini' ) as $pncp_f ) {
+foreach ( array( '/2026/pncp-test-shell.php', '/2026/pncp-test-shell_php.pncp-quarantine.txt', '/.user.ini' ) as $pncp_f ) {
 	@unlink( $pncp_up . $pncp_f );
 }
 delete_option( 'pncp_integrity_alerted' );
@@ -850,7 +850,7 @@ $pncp_mails = array();
 PNCP_Integrity::check();
 t( 'ακεραιότητα: ίδια ευρήματα → όχι δεύτερο email', array() === $pncp_mails );
 wp_cache_flush();
-t( 'ακεραιότητα: καραντίνα → το plugin απενεργοποιήθηκε (και κλειδωμένο), το PHP των uploads μετονομάστηκε', ! is_plugin_active( 'pncp-dummy/pncp-dummy.php' ) && ! file_exists( $pncp_shell ) && file_exists( $pncp_shell . '.pncp-quarantine' ) && is_plugin_active( plugin_basename( PNCP_FILE ) ) );
+t( 'ακεραιότητα: καραντίνα → το plugin απενεργοποιήθηκε (και κλειδωμένο), το PHP των uploads μετονομάστηκε', ! is_plugin_active( 'pncp-dummy/pncp-dummy.php' ) && ! file_exists( $pncp_shell ) && file_exists( dirname( $pncp_shell ) . '/pncp-test-shell_php.pncp-quarantine.txt' ) && is_plugin_active( plugin_basename( PNCP_FILE ) ) );
 $pncp_off = PNCP_Integrity::report()['official'];
 t( 'ακεραιότητα: επίσημες λίστες: αλλαγμένο αρχείο πυρήνα και αρχείο που δεν είναι στην επίσημη έκδοση του plugin', 'official_modified' === ( PNCP_Integrity::findings( PNCP_Integrity::report() )[ wp_normalize_path( ABSPATH . $pncp_core_file ) ] ?? '' ) && array( wp_normalize_path( ABSPATH . $pncp_core_file ) ) === $pncp_off['modified'] && array( wp_normalize_path( $pncp_pdir . '/extra.php' ) ) === $pncp_off['unknown'] && in_array( 'akismet', $pncp_off['unverified'], true ), wp_json_encode( $pncp_off ) );
 $pncp_hh = PNCP_Health::test_integrity();
@@ -864,7 +864,7 @@ t( 'ακεραιότητα: στο αρχείο του Κλειδώματος (�
 // Προσωρινό ξεκλείδωμα: οι ενημερώσεις επιτρέπονται, άρα νέο αποτύπωμα στον επόμενο έλεγχο, όχι συναγερμός.
 reset_fails( array( 1 ) );
 t( 'ακεραιότητα: ξεκλείδωμα → το αποτύπωμα σημειώνεται παλιό', 'unlocked' === ld( 'unlock', array( 'code' => app_code( $secret ), 'minutes' => 15 ) ) && ( wp_cache_flush() || true ) && PNCP_Integrity::baseline()['stale'] );
-@unlink( $pncp_shell . '.pncp-quarantine' );
+@unlink( dirname( $pncp_shell ) . '/pncp-test-shell_php.pncp-quarantine.txt' ); // 3.6.1: x.php -> x_php.pncp-quarantine.txt.
 @unlink( $pncp_up . '/.user.ini' );
 file_put_contents( $pncp_pdir . '/extra.php', "<?php // updated while open\n" );
 state_set( array( 'until' => time() - 1 ) );

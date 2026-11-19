@@ -39,6 +39,27 @@ final class PNCP_Options {
 	private static $cache = null;
 
 	/**
+	 * 3.6.1: parse_list() of this request, by the text it was given.
+	 *
+	 * @var array<string, string[]>
+	 */
+	private static $lists = array();
+
+	/**
+	 * 3.6.1: defaults() of this request (forgotten by flush(), e.g. once the theme's filters are added).
+	 *
+	 * @var array<string, mixed>|null
+	 */
+	private static $defaults = null;
+
+	/**
+	 * 3.6.1: blocked_agents() of this request: the settings it was built from (bot list and switches), and the list.
+	 *
+	 * @var array{0:string, 1:string[]}|null
+	 */
+	private static $agents = null;
+
+	/**
 	 * Allowed values for the choice fields.
 	 *
 	 * @return array<string, string[]>
@@ -55,6 +76,11 @@ final class PNCP_Options {
 			// What the automatic Emergency Mode does when the site is hit far harder than usual: tell the
 			// administrator (email + notice with a "Start Emergency Mode" button), or start it on its own.
 			'auto_emergency_mode' => array( 'notify', 'start' ),
+			// 3.7: the CrowdSec blocklist (PNCP_Crowdsec): where it comes from, and what a listed IP gets.
+			'crowdsec_mode'       => array( 'off', 'lapi', 'list' ),
+			'crowdsec_action'     => array( 'limit', 'block' ),
+			// 3.8: how long the attack record (PNCP_Attacks) is kept, in days.
+			'attack_retention'    => array( '7', '30', '90' ),
 		);
 	}
 
@@ -124,6 +150,27 @@ final class PNCP_Options {
 			'shared_logout',
 			'hide_fingerprint',
 			'text_trace',
+			// 3.7.
+			'block_seo_crawlers',
+			'block_ip_host',
+			'reputation',
+			'syslog_bans',
+			'ai_referrals',
+			// 3.8.
+			'attack_record',
+			'report_weekly',
+			'login_limit',
+			'login_user_email',
+			'login_generic_errors',
+			'bunny_import',
+			'bunny_all_lines',
+			'bunny_strikes',
+			'stealth_enabled',
+			'stealth_sitemap',
+			'stealth_block_files',
+			'stealth_endpoints',
+			// 3.9.
+			'edge_send_blocks',
 		);
 	}
 
@@ -156,6 +203,18 @@ final class PNCP_Options {
 			'user_mark_opacity'     => array( 2, 60 ),
 			'rate_limit_account'    => array( 0, 10000 ),
 			'shared_ips'            => array( 2, 50 ),
+			// 3.7.
+			'rate_limit_lowrep'     => array( 0, 10000 ),
+			'rate_limit_apionly'    => array( 0, 10000 ),
+			'rate_limit_crowdsec'   => array( 0, 10000 ),
+			// 3.8: sign-in protection (PNCP_Login) and the Bunny CDN logs (PNCP_Bunny).
+			'login_max'             => array( 2, 100 ),
+			'login_window'          => array( 1, 1440 ),
+			'login_ban_minutes'     => array( 1, 10080 ),
+			'login_user_max'        => array( 0, 1000 ),
+			'login_user_minutes'    => array( 1, 1440 ),
+			'bunny_flood_4xx'       => array( 0, 10000 ),
+			'bunny_rate'            => array( 0, 10000 ),
 		);
 	}
 
@@ -174,7 +233,7 @@ final class PNCP_Options {
 	 * @return string[]
 	 */
 	public static function ip_list_keys() {
-		return array( 'private_ips', 'allow_ips', 'trusted_proxies', 'block_ips' );
+		return array( 'private_ips', 'allow_ips', 'trusted_proxies', 'block_ips', 'bunny_login_allow' ); // 3.8: bunny_login_allow.
 	}
 
 	/**
@@ -186,12 +245,18 @@ final class PNCP_Options {
 	public static function sections() {
 		return array(
 			'general' => array( 'enabled', 'scope_posts', 'scope_pages', 'scope_home', 'scope_products', 'skip_woo_pages', 'excluded_ids', 'block_selection', 'block_context_menu', 'block_shortcuts', 'block_devtools', 'block_image_drag', 'block_text_drag', 'blur_on_capture', 'copy_mode', 'attribution_min_chars', 'print_mode', 'exempt_cap', 'show_message', 'message', 'block_framing', 'tdm_reservation', 'tdm_policy_url', 'user_mark', 'user_mark_guests', 'user_mark_opacity', 'text_trace', 'rate_limit_account', 'shared_alert', 'shared_ips', 'shared_logout' ),
-			'bots'    => array( 'monitor_mode', 'block_bots', 'block_empty_ua', 'block_fake_crawlers', 'require_browser_headers', 'block_headless', 'trap_enabled', 'probe_ban', 'block_http_libs', 'block_archivers', 'ipv6_wide', 'bot_list', 'allow_list', 'allow_ips', 'allow_ai_search', 'verify_ai_bots', 'robots_ai_block', 'content_signal', 'block_ips', 'block_referrers', 'block_user_enum', 'rate_limit', 'rate_limit_search', 'rate_limit_rest', 'rate_limit_404', 'rate_limit_sitemap', 'human_check', 'rate_limit_unverified', 'geo_db', 'countries_block', 'countries_strict', 'rate_limit_country', 'rate_limit_datacenter', 'rate_limit_cart', 'rate_limit_coupon', 'ban_strikes', 'ban_minutes', 'auto_emergency', 'auto_emergency_mode', 'auto_emergency_min', 'early_mode', 'precheck', 'ip_header', 'trust_cloudflare', 'trust_bunny', 'trust_any_proxy', 'trusted_proxies', 'cdn_secret', 'cdn_only' ),
+			'bots'    => array( 'monitor_mode', 'block_bots', 'block_empty_ua', 'block_fake_crawlers', 'require_browser_headers', 'block_headless', 'trap_enabled', 'probe_ban', 'block_http_libs', 'block_archivers', 'block_seo_crawlers', 'block_ip_host', 'ipv6_wide', 'bot_list', 'allow_list', 'allow_ips', 'allow_ai_search', 'verify_ai_bots', 'robots_ai_block', 'content_signal', 'block_ips', 'block_referrers', 'block_user_enum', 'rate_limit', 'rate_limit_search', 'rate_limit_rest', 'rate_limit_404', 'rate_limit_sitemap', 'human_check', 'rate_limit_unverified', 'geo_db', 'countries_block', 'countries_strict', 'rate_limit_country', 'rate_limit_datacenter', 'rate_limit_cart', 'rate_limit_coupon', 'reputation', 'rate_limit_lowrep', 'rate_limit_apionly', 'crowdsec_mode', 'crowdsec_url', 'crowdsec_key', 'crowdsec_action', 'rate_limit_crowdsec', 'ban_strikes', 'ban_minutes', 'syslog_bans', 'auto_emergency', 'auto_emergency_mode', 'auto_emergency_min', 'early_mode', 'precheck', 'ip_header', 'trust_cloudflare', 'trust_bunny', 'trust_any_proxy', 'trusted_proxies', 'cdn_secret', 'cdn_only', 'login_limit', 'login_max', 'login_window', 'login_ban_minutes', 'login_user_max', 'login_user_minutes', 'login_user_email', 'login_generic_errors', 'login_slug', 'bunny_import', 'bunny_all_lines', 'bunny_flood_4xx', 'bunny_strikes', 'bunny_rate', 'bunny_login_allow' ),
 			'content' => array( 'rest_hide_content', 'hide_rest_discovery', 'graphql_hide_content', 'feed_mode', 'feed_source_link', 'list_excerpts', 'private_paths', 'private_ips', 'disable_pingback', 'hide_versions', 'hide_fingerprint', 'block_upload_php' ),
 			'images'  => array( 'watermark_enabled', 'watermark_full', 'watermark_products', 'watermark_image_id', 'watermark_opacity', 'watermark_size', 'watermark_position', 'watermark_min_width' ),
 			// Log tab: how long the log is kept, and the addresses that count as "Pages" in it (until 3.3 on the
 			// Bots and limits tab, same keys).
-			'log'     => array( 'log_retention', 'content_paths' ),
+			'log'     => array( 'log_retention', 'content_paths', 'ai_referrals', 'attack_record', 'attack_retention', 'report_weekly' ),
+			// 3.8: Stealth has a form of its own (PNCP_Stealth::render_card()); no tab form submits this section,
+			// so saving a tab keeps these values.
+			'stealth' => array( 'stealth_enabled', 'stealth_base', 'stealth_rest_prefix', 'stealth_sitemap', 'stealth_block_files', 'stealth_endpoints' ),
+			// 3.9: the switch of "Blocking at the CDN" has a form of its own (PNCP_Edge::handle_switch()); saving a tab
+			// keeps it.
+			'edge'    => array( 'edge_send_blocks' ),
 		);
 	}
 
@@ -374,14 +439,24 @@ final class PNCP_Options {
 	 * @return string[]
 	 */
 	public static function blocked_agents( $s ) {
+		// 3.6.1: built once per request for the same settings (about 200 names, each lowercased).
+		$memo = is_string( $s['bot_list'] ) ? $s['bot_list'] . "\0" . ( empty( $s['block_archivers'] ) ? '0' : '1' ) . ( empty( $s['block_http_libs'] ) ? '0' : '1' ) . ( empty( $s['block_seo_crawlers'] ) ? '0' : '1' ) : null;
+		if ( null !== $memo && null !== self::$agents && $memo === self::$agents[0] ) {
+			return self::$agents[1];
+		}
 		$out = array();
-		foreach ( array_merge( self::parse_list( $s['bot_list'] ), PNCP_Bots::known_ai_agents(), empty( $s['block_archivers'] ) ? array() : PNCP_Bots::archive_agents(), empty( $s['block_http_libs'] ) ? array() : self::http_library_agents() ) as $agent ) {
+		// 3.7: the site rippers always (with the bot list), the SEO data crawlers with their option.
+		foreach ( array_merge( self::parse_list( $s['bot_list'] ), PNCP_Bots::known_ai_agents(), PNCP_Bots::ripper_agents(), empty( $s['block_archivers'] ) ? array() : PNCP_Bots::archive_agents(), empty( $s['block_seo_crawlers'] ) ? array() : PNCP_Bots::seo_agents(), empty( $s['block_http_libs'] ) ? array() : self::http_library_agents() ) as $agent ) {
 			$agent = trim( (string) $agent );
 			if ( '' !== $agent && '=' !== $agent ) {
 				$out[ strtolower( $agent ) ] = $agent;
 			}
 		}
-		return array_values( $out );
+		$out = array_values( $out );
+		if ( null !== $memo ) {
+			self::$agents = array( $memo, $out );
+		}
+		return $out;
 	}
 
 	/**
@@ -445,6 +520,19 @@ final class PNCP_Options {
 	 * @return array<string, mixed>
 	 */
 	public static function defaults() {
+		if ( null === self::$defaults ) {
+			self::$defaults = self::build_defaults();
+		}
+		return self::$defaults;
+	}
+
+	/**
+	 * The defaults, as defaults() returns them (built once per request: the bot and allow lists in them go
+	 * through filters and string building, and stored() needs them on every request).
+	 *
+	 * @return array<string, mixed>
+	 */
+	private static function build_defaults() {
 		return array(
 			'enabled'                 => 1,
 			'scope_posts'             => 1,
@@ -585,6 +673,63 @@ final class PNCP_Options {
 			'shared_logout'           => 0,
 			// Fewer signs of WordPress in pages and headers (PNCP_Surface::fingerprint()); includes hide_versions.
 			'hide_fingerprint'        => 0,
+			// 3.7. Off on new and existing sites unless said otherwise.
+			// Block the crawlers of SEO and marketing data tools (PNCP_Bots::seo_agents()): many owners use them.
+			'block_seo_crawlers'      => 0,
+			// 403 for a request whose Host header is a bare IP address instead of the site's name (scanners).
+			'block_ip_host'           => 0,
+			// The reputation of each IP (PNCP_Reputation): good IPs are never banned for a limit, bad ones get the
+			// stricter limit below.
+			'reputation'              => 0,
+			'rate_limit_lowrep'       => 10,
+			// Pages of the REST API, GraphQL, feeds and sitemaps per minute for an IP that never opened a page of the
+			// site (0 = off): scrapers that read only the API.
+			'rate_limit_apionly'      => 0,
+			// The CrowdSec blocklist (PNCP_Crowdsec): off, a CrowdSec agent of your own (LAPI), or a list URL.
+			'crowdsec_mode'           => 'off',
+			'crowdsec_url'            => '',
+			'crowdsec_key'            => '',
+			'crowdsec_action'         => 'limit',
+			'rate_limit_crowdsec'     => 10,
+			// One line in the system log (syslog, AUTH) for each temporary block, for fail2ban.
+			'syslog_bans'             => 0,
+			// Visits that come from AI assistants (ChatGPT, Perplexity…), counted per day and page, on this server.
+			// On by default: no personal data, one row write per such visit.
+			'ai_referrals'            => 1,
+			// 3.8. The attack record (PNCP_Attacks): where bots hit the site, also when nothing is refused. Only
+			// attack-looking requests are written; a normal page view writes nothing.
+			'attack_record'           => 1,
+			'attack_retention'        => '30',
+			// The weekly attack report by email (PNCP_Attack_Report). Off: it sends mail.
+			'report_weekly'           => 0,
+			// Sign-in protection (PNCP_Login): failed sign-ins per IP and per username, one error message, and an
+			// optional sign-in address of your own ('' = wp-login.php).
+			'login_limit'             => 1,
+			'login_max'               => 5,
+			'login_window'            => 15,
+			'login_ban_minutes'       => 30,
+			'login_user_max'          => 10,
+			'login_user_minutes'      => 15,
+			'login_user_email'        => 1,
+			'login_generic_errors'    => 1,
+			'login_slug'              => '',
+			// Bunny CDN logs (PNCP_Bunny): off, it needs logging on at the pull zone.
+			'bunny_import'            => 0,
+			'bunny_all_lines'         => 0,
+			'bunny_flood_4xx'         => 30,
+			'bunny_strikes'           => 0,
+			'bunny_rate'              => 120,
+			'bunny_login_allow'       => '',
+			// Stealth (PNCP_Stealth): off, it is turned on from its card and tested first.
+			'stealth_enabled'         => 0,
+			'stealth_base'            => 'assets',
+			'stealth_rest_prefix'     => '',
+			'stealth_sitemap'         => 1,
+			'stealth_block_files'     => 1,
+			'stealth_endpoints'       => 1,
+			// 3.9: send the temporary blocks to the CDN of "Blocking at the CDN" (PNCP_Edge). Off: connecting a CDN
+			// only connects and tests it. Existing sites that already sent them keep doing so (new_in_390()).
+			'edge_send_blocks'        => 0,
 		);
 	}
 
@@ -677,6 +822,65 @@ final class PNCP_Options {
 			// The default before 3.4. Every site stores it, so this only matters for settings that lack it.
 			'block_selection'     => 1,
 		);
+	}
+
+	/**
+	 * 3.9: the settings whose value on sites upgraded from an older version differs from the default of new
+	 * installs, with that value and the version that added them (new_in_240() to new_in_300()). The settings page
+	 * says so next to such a field, so "Default: on" does not read as if this site had been changed by hand.
+	 * E.g. "Trust Bunny CDN addresses": on for new installs, off on every site that existed before 2.6 (and on
+	 * every site upgraded from 1.x).
+	 *
+	 * @return array<string, array{value:int|string, since:string}>
+	 */
+	public static function upgrade_values() {
+		$defaults = self::defaults();
+		$out      = array();
+		$sets     = array(
+			'3.0' => self::new_in_300(),
+			'2.9' => self::new_in_290(),
+			'2.6' => self::new_in_260(),
+			'2.5' => self::new_in_250(),
+			'2.4' => self::new_in_240(),
+		);
+		foreach ( $sets as $since => $values ) {
+			foreach ( $values as $key => $value ) {
+				if ( isset( $defaults[ $key ] ) && (string) $defaults[ $key ] !== (string) $value ) {
+					$out[ $key ] = array(
+						'value' => $value,
+						'since' => (string) $since,
+					);
+				}
+			}
+		}
+		return $out;
+	}
+
+	/**
+	 * The setting added in 3.9, with the value existing sites get on upgrade. Up to 3.8 the temporary blocks went
+	 * to the CDN as soon as a connection was saved: a site with a saved connection keeps sending them (on), every
+	 * other site starts with the switch off, as new installs do.
+	 *
+	 * @return array<string, int>
+	 */
+	public static function new_in_390() {
+		return array(
+			'edge_send_blocks' => class_exists( 'PNCP_Edge' ) && PNCP_Edge::usable() ? 1 : 0,
+		);
+	}
+
+	/**
+	 * The settings added in 3.8, with the values existing sites get on upgrade. The attack record and the limit of
+	 * failed sign-ins are on, as on new installs: they only count attack-looking requests and wrong passwords
+	 * (an account's own earlier IPs never count toward a block). Everything that changes what visitors or other
+	 * services see (the sign-in address, Stealth, the Bunny import, the weekly email) stays off.
+	 *
+	 * @return array<string, int|string>
+	 */
+	public static function new_in_380() {
+		$defaults = self::defaults();
+		$keys     = array( 'attack_record', 'attack_retention', 'report_weekly', 'login_limit', 'login_max', 'login_window', 'login_ban_minutes', 'login_user_max', 'login_user_minutes', 'login_user_email', 'login_generic_errors', 'login_slug', 'bunny_import', 'bunny_all_lines', 'bunny_flood_4xx', 'bunny_strikes', 'bunny_rate', 'bunny_login_allow', 'stealth_enabled', 'stealth_base', 'stealth_rest_prefix', 'stealth_sitemap', 'stealth_block_files', 'stealth_endpoints' );
+		return array_intersect_key( $defaults, array_flip( $keys ) );
 	}
 
 	/**
@@ -1113,6 +1317,8 @@ final class PNCP_Options {
 			// Still several times what a shopper does in a minute (WooCommerce only).
 			'rate_limit_cart'         => $min( $s['rate_limit_cart'], 30 ),
 			'rate_limit_coupon'       => $min( $s['rate_limit_coupon'], 5 ),
+			// 3.7: scanners that sweep IP ranges never use the site's name.
+			'block_ip_host'           => 1,
 		);
 	}
 
@@ -1296,7 +1502,16 @@ final class PNCP_Options {
 			'bot_list',
 			'block_http_libs',
 			'block_archivers',
+			'block_seo_crawlers', // 3.7: robots.txt and the blocked User-Agents.
 			'precheck',
+			// 3.8: Stealth rewrites the addresses in every page sent to visitors; the sign-in address changes the
+			// links to wp-login.php in pages (comment forms, "Log in" links).
+			'stealth_enabled',
+			'stealth_base',
+			'stealth_rest_prefix',
+			'stealth_sitemap',
+			'stealth_endpoints',
+			'login_slug',
 		);
 	}
 
@@ -1396,6 +1611,10 @@ final class PNCP_Options {
 		if ( $stored && ! isset( $stored['auto_emergency_mode'] ) ) {
 			$stored += self::new_in_340( $stored );
 		}
+		// 3.9: likewise, a site whose upgrade could not store the switch keeps sending its blocks to the CDN.
+		if ( $stored && ! isset( $stored['edge_send_blocks'] ) ) {
+			$stored += self::new_in_390();
+		}
 		$defaults = self::defaults();
 		foreach ( $defaults as $key => $default ) {
 			// 3.4: a setting that should be a single value but is stored as a list or nothing (changed in the
@@ -1427,7 +1646,10 @@ final class PNCP_Options {
 	 * Forgets the request cache (after a settings change).
 	 */
 	public static function flush() {
-		self::$cache = null;
+		self::$cache    = null;
+		self::$defaults = null;
+		self::$lists    = array();
+		self::$agents   = null;
 	}
 
 	/**
@@ -1536,6 +1758,60 @@ final class PNCP_Options {
 			$secret = (string) $stored['cdn_secret'];
 		}
 		$clean['cdn_secret'] = substr( $secret, 0, 100 );
+
+		// 3.7: CrowdSec. The address must be http(s); the key (a LAPI bouncer key, or "user:password" for a list) is
+		// a secret like the CDN one: never shown, an empty field keeps it, the "remove" box clears it.
+		$url                   = isset( $input['crowdsec_url'] ) ? esc_url_raw( trim( (string) $input['crowdsec_url'] ), array( 'https', 'http' ) ) : '';
+		$clean['crowdsec_url'] = substr( (string) $url, 0, 500 );
+		$key                   = isset( $input['crowdsec_key'] ) ? trim( (string) preg_replace( '/[\x00-\x1f\x7f]/', '', (string) $input['crowdsec_key'] ) ) : '';
+		if ( '' === $key && empty( $input['crowdsec_key_clear'] ) ) {
+			$key = isset( $stored['crowdsec_key'] ) ? (string) $stored['crowdsec_key'] : '';
+		}
+		$clean['crowdsec_key'] = substr( $key, 0, 300 );
+		if ( 'off' !== $clean['crowdsec_mode'] && '' === $clean['crowdsec_url'] ) {
+			$clean['crowdsec_mode'] = 'off';
+			if ( function_exists( 'add_settings_error' ) && self::saved_here( 'crowdsec_mode', $input ) ) {
+				add_settings_error( PNCP_OPTION, 'pncp_crowdsec', __( 'CrowdSec was not turned on: enter the address of your CrowdSec agent (LAPI) or of the blocklist first.', 'scrapelock' ) );
+			}
+		}
+
+		// 3.8: Stealth's folder and REST prefix (PNCP_Stealth). One that cannot be used keeps the stored value,
+		// and the administrator is told why.
+		foreach ( array(
+			'stealth_base'        => 'sanitize_base',
+			'stealth_rest_prefix' => 'sanitize_rest_prefix',
+		) as $text_key => $method ) {
+			$why   = '';
+			$raw   = isset( $input[ $text_key ] ) ? (string) $input[ $text_key ] : (string) $stored[ $text_key ];
+			$value = PNCP_Stealth::$method( $raw, $why );
+			if ( '' !== $why ) {
+				$value = (string) $stored[ $text_key ];
+				if ( function_exists( 'add_settings_error' ) && isset( $input[ $text_key ] ) && self::saved_here( $text_key, $input ) ) {
+					/* translators: 1: what was typed, 2: why it cannot be used */
+					add_settings_error( PNCP_OPTION, 'pncp_' . $text_key, sprintf( __( 'Stealth: “%1$s” was not saved. %2$s', 'scrapelock' ), $raw, $why ) );
+				}
+			}
+			$clean[ $text_key ] = ( 'stealth_base' === $text_key && '' === $value ) ? 'assets' : $value;
+		}
+		// 3.8: the custom sign-in address (PNCP_Login). One that cannot be used is not saved: the address stays
+		// as it was (so a typo never opens wp-login.php again or hides it somewhere unknown), and the
+		// administrator is told why. It may not be Stealth's folder or REST prefix either.
+		// Only a new address is checked against the pages, posts and terms: the stored one is kept even when
+		// content made later has the same address (the administrator is warned instead).
+		$slug_reason         = '';
+		$slug_now            = PNCP_Login::usable_slug( isset( $stored['login_slug'] ) ? $stored['login_slug'] : '' );
+		$clean['login_slug'] = PNCP_Login::sanitize_slug( isset( $input['login_slug'] ) ? $input['login_slug'] : '', $slug_reason, $slug_now );
+		if ( '' === $slug_reason && '' !== $clean['login_slug'] && in_array( $clean['login_slug'], array( $clean['stealth_base'], $clean['stealth_rest_prefix'] ), true ) ) {
+			$slug_reason = __( 'Stealth uses this address for its files or the REST API: choose another one.', 'scrapelock' );
+		}
+		if ( '' !== $slug_reason ) {
+			$clean['login_slug'] = in_array( $slug_now, array( $clean['stealth_base'], $clean['stealth_rest_prefix'] ), true ) ? '' : $slug_now;
+			if ( function_exists( 'add_settings_error' ) && self::saved_here( 'login_slug', $input ) ) {
+				add_settings_error( PNCP_OPTION, 'pncp_login_slug', __( 'The sign-in address was not saved:', 'scrapelock' ) . ' ' . $slug_reason );
+			}
+		} elseif ( '' !== $clean['login_slug'] && $clean['login_slug'] === $slug_now && function_exists( 'add_settings_error' ) && self::saved_here( 'login_slug', $input ) && PNCP_Login::slug_taken( $slug_now ) ) {
+			add_settings_error( PNCP_OPTION, 'pncp_login_slug', __( 'A page, post or category now has the same address as the sign-in page, so visitors cannot open it there. The sign-in address was kept; choose another one when you can.', 'scrapelock' ), 'warning' );
+		}
 
 		// "Only through the CDN" is turned on (or its secret changed) only from a request that brought the secret:
 		// that proves the CDN sends it. Otherwise the next request, and the administrator, would get a 403.
@@ -1782,6 +2058,12 @@ final class PNCP_Options {
 		if ( ! is_scalar( $raw ) ) {
 			return array(); // Not text (a damaged setting): no lines.
 		}
+		// The same lists (allowed and blocked IPs, the bot and allow lists, the trusted proxies) are read several
+		// times on every request; each line goes through sanitize_text_field(). Read once per request.
+		$memo = is_string( $raw ) && strlen( $raw ) <= 65536;
+		if ( $memo && isset( self::$lists[ $raw ] ) ) {
+			return self::$lists[ $raw ];
+		}
 		$lines = preg_split( '/\r\n|\r|\n/', (string) $raw );
 		$out   = array();
 		foreach ( $lines as $line ) {
@@ -1791,7 +2073,14 @@ final class PNCP_Options {
 				$out[ strtolower( $line ) ] = mb_substr( $line, 0, 100 );
 			}
 		}
-		return array_slice( array_values( $out ), 0, 200 );
+		$out = array_slice( array_values( $out ), 0, 200 );
+		if ( $memo ) {
+			if ( count( self::$lists ) >= 64 ) {
+				self::$lists = array();
+			}
+			self::$lists[ $raw ] = $out;
+		}
+		return $out;
 	}
 
 	/**
@@ -1823,12 +2112,14 @@ final class PNCP_Options {
 	 */
 	private static function ip_list_names() {
 		return array(
-			'allow_ips'        => __( 'Always allowed IPs', 'scrapelock' ),
-			'block_ips'        => __( 'Always blocked IPs', 'scrapelock' ),
-			'trusted_proxies'  => __( 'Other trusted proxies', 'scrapelock' ),
-			'private_ips'      => __( 'Allowed IPs of the private URLs', 'scrapelock' ),
-			'countries_block'  => __( 'Blocked countries', 'scrapelock' ),
-			'countries_strict' => __( 'Countries with a stricter page limit', 'scrapelock' ),
+			'allow_ips'         => __( 'Always allowed IPs', 'scrapelock' ),
+			'block_ips'         => __( 'Always blocked IPs', 'scrapelock' ),
+			'trusted_proxies'   => __( 'Other trusted proxies', 'scrapelock' ),
+			'private_ips'       => __( 'Allowed IPs of the private URLs', 'scrapelock' ),
+			'countries_block'   => __( 'Blocked countries', 'scrapelock' ),
+			'countries_strict'  => __( 'Countries with a stricter page limit', 'scrapelock' ),
+			// 3.8.
+			'bunny_login_allow' => __( 'Allowed IPs for the login page at Bunny', 'scrapelock' ),
 		);
 	}
 

@@ -93,6 +93,33 @@ final class PNCP_Health {
 			'has_rest'          => false,
 			'async_direct_test' => array( __CLASS__, 'test_folders' ),
 		);
+
+		// 3.7.
+		$tests['direct']['scrapelock_crowdsec'] = array(
+			'label' => __( 'ScrapeLock CrowdSec blocklist', 'scrapelock' ),
+			'test'  => array( __CLASS__, 'test_crowdsec' ),
+		);
+		$tests['direct']['scrapelock_api_only'] = array(
+			'label' => __( 'ScrapeLock limit for IPs that never opened a page', 'scrapelock' ),
+			'test'  => array( __CLASS__, 'test_api_only' ),
+		);
+		// 3.8. (Stealth registers its own async test, only while it is turned on.)
+		$tests['direct']['pncp_attacks']         = array(
+			'label' => __( 'Attack record', 'scrapelock' ),
+			'test'  => array( 'PNCP_Attacks', 'health_test' ),
+		);
+		$tests['direct']['scrapelock_hardening'] = array(
+			'label' => __( 'Vulnerable points', 'scrapelock' ),
+			'test'  => array( 'PNCP_Hardening', 'health_test' ),
+		);
+		$tests['direct']['pncp_login']           = array(
+			'label' => __( 'ScrapeLock sign-in protection', 'scrapelock' ),
+			'test'  => array( 'PNCP_Login', 'health_test' ),
+		);
+		$tests['direct']['pncp_bunny']           = array(
+			'label' => __( 'ScrapeLock and Bunny CDN logs', 'scrapelock' ),
+			'test'  => array( 'PNCP_Bunny', 'health_test' ),
+		);
 		return $tests;
 	}
 
@@ -126,6 +153,45 @@ final class PNCP_Health {
 			'actions'     => $extra . $link,
 			'test'        => 'scrapelock_' . $key,
 		);
+	}
+
+	/**
+	 * 3.7: the CrowdSec blocklist is on but has not been updated for a while (the agent or the list cannot be
+	 * reached, or the key is refused): the addresses expire and protection fades without anyone noticing.
+	 *
+	 * @return array<string, mixed>
+	 */
+	public static function test_crowdsec() {
+		$s = PNCP_Options::stored();
+		if ( ! PNCP_Crowdsec::enabled( $s ) ) {
+			return self::result( 'crowdsec', 'good', __( 'The ScrapeLock CrowdSec blocklist is off', 'scrapelock' ), __( 'Nothing is downloaded from CrowdSec or another blocklist.', 'scrapelock' ) );
+		}
+		$state = PNCP_Crowdsec::state();
+		$stale = (int) $state['synced'] < time() - 6 * HOUR_IN_SECONDS;
+		if ( '' !== (string) $state['error'] && $stale ) {
+			/* translators: %s: error message */
+			return self::result( 'crowdsec', 'recommended', __( 'The ScrapeLock CrowdSec blocklist cannot be updated', 'scrapelock' ), sprintf( __( 'The last attempt failed: %s. Until it works again, the addresses already in the list expire one by one.', 'scrapelock' ), (string) $state['error'] ), 'bots', 'pncp-sec-crowdsec' );
+		}
+		/* translators: %s: number of addresses */
+		return self::result( 'crowdsec', 'good', __( 'The ScrapeLock CrowdSec blocklist is up to date', 'scrapelock' ), sprintf( __( '%s addresses are in the list.', 'scrapelock' ), number_format_i18n( (int) $state['count'] ) ) );
+	}
+
+	/**
+	 * 3.7: "API-only" limit with a page cache in front of WordPress and neither the pre-cache check nor the human
+	 * check: cached pages never reach the check, so real visitors look as if they never opened a page.
+	 *
+	 * @return array<string, mixed>
+	 */
+	public static function test_api_only() {
+		$s = PNCP_Options::stored();
+		if ( empty( $s['enabled'] ) || (int) $s['rate_limit_apionly'] <= 0 ) {
+			return self::result( 'api_only', 'good', __( 'The ScrapeLock limit for IPs that never opened a page is off', 'scrapelock' ), __( 'The REST API, the feeds and the sitemaps have only their usual limits.', 'scrapelock' ) );
+		}
+		$cache = defined( 'WP_CACHE' ) && WP_CACHE && file_exists( WP_CONTENT_DIR . '/advanced-cache.php' );
+		if ( $cache && ! PNCP_Precheck::active() && empty( $s['human_check'] ) && (int) $s['rate_limit_apionly'] < 20 ) {
+			return self::result( 'api_only', 'recommended', __( 'A page cache hides page views from the ScrapeLock API-only limit', 'scrapelock' ), __( 'A page cache plugin serves stored pages before WordPress loads, so ScrapeLock does not see that a visitor opened a page, and the visitor\'s own REST API reads (cart, search, forms that load data) count as if they came from a scraper. Turn on the pre-cache check or the human check, or raise the limit to 20 or more.', 'scrapelock' ), 'bots', 'pncp-sec-limits' );
+		}
+		return self::result( 'api_only', 'good', __( 'The ScrapeLock limit for IPs that never opened a page is on', 'scrapelock' ), __( 'IPs that read only the REST API, GraphQL, the feeds or the sitemaps, without ever opening a page, get the stricter limit.', 'scrapelock' ) );
 	}
 
 	/**
@@ -250,6 +316,11 @@ final class PNCP_Health {
 		if ( 'bunny' === $cdn ) {
 			return self::result( 'real_ip', 'critical', __( 'All visitors appear with a Bunny CDN address', 'scrapelock' ), __( 'The site is behind Bunny CDN, but ScrapeLock sees Bunny\'s address instead of the visitor\'s. Limits and blocks then hit Bunny itself, i.e. many visitors at once. Use X-Real-IP from Bunny (one click on the Bots tab).', 'scrapelock' ), 'bots' );
 		}
+		// 3.6.1: a proxy on the server or a private network that "Real visitor IP" does not trust (not only with
+		// "Only through the CDN", see test_origin()).
+		if ( PNCP_Origin::peer_problem() && ! PNCP_Origin::proxy_problem() ) {
+			return self::result( 'real_ip', 'critical', __( 'ScrapeLock sees a proxy\'s address for every visitor', 'scrapelock' ), PNCP_Origin::peer_message(), 'bots', 'pncp-sec-ip' );
+		}
 		$s    = PNCP_Options::stored();
 		$wide = array();
 		foreach ( PNCP_Options::parse_list( $s['trusted_proxies'] ) as $range ) {
@@ -274,6 +345,15 @@ final class PNCP_Health {
 			// 3.4: saved by an earlier version. They are ignored now, but the setting should be corrected.
 			/* translators: %s: the IP ranges */
 			return self::result( 'real_ip', 'recommended', __( 'ScrapeLock trusted proxies include ranges that are too wide', 'scrapelock' ), sprintf( __( 'These trusted proxy ranges cover a large part of the internet: %s. With them any visitor could choose its own IP with a header, so ScrapeLock ignores them. Remove them and list only the addresses of your own proxy or load balancer.', 'scrapelock' ), implode( ', ', $wide ) ), 'bots' );
+		}
+		// 3.6.1: a CDN edge is trusted for a header that anyone can make it send (an account of their own at the same
+		// CDN, a Cloudflare Worker), and no CDN shared secret tells this site's own CDN apart. Such IPs are treated
+		// as unreliable (no allowed or private IPs, no violations or bans for them), so the protection is weaker.
+		$header = (string) $s['ip_header'];
+		$bunny  = ! empty( $s['trust_bunny'] ) && in_array( $header, array( 'x_real_ip', 'x_forwarded_for' ), true );
+		$cf     = ! empty( $s['trust_cloudflare'] ) && 'x_forwarded_for' === $header;
+		if ( PNCP_Status::is_enabled() && ( $bunny || $cf ) && '' === trim( (string) $s['cdn_secret'] ) ) {
+			return self::result( 'real_ip', 'recommended', __( 'Set a CDN shared secret for ScrapeLock', 'scrapelock' ), $cf && ! $bunny ? __( '“Real visitor IP” is X-Forwarded-For with Cloudflare trusted, and no CDN shared secret is set. Anyone can send requests through Cloudflare (a Worker, a zone of their own) with any X-Forwarded-For, so ScrapeLock reads the visitor from CF-Connecting-IP and treats a request whose X-Forwarded-For does not match it as one whose IP may be forged: it is limited, but it earns no violations or bans and does not match the always-allowed or private IPs. Use CF-Connecting-IP as “Real visitor IP”, or have Cloudflare add the CDN shared secret to every request (a request header Transform Rule) and enter it on the Bots tab.', 'scrapelock' ) : __( '“Real visitor IP” trusts a CDN edge (Bunny CDN) for a header, and no CDN shared secret is set. Anyone can point a pull zone of their own at this server and make it send any visitor IP, so ScrapeLock treats these IPs as possibly forged: they are limited, but earn no violations or bans and do not match the always-allowed or private IPs. Have the CDN add the CDN shared secret to every request (an edge rule) and enter it on the Bots tab.', 'scrapelock' ), 'bots', 'pncp-sec-ip' );
 		}
 		return self::result( 'real_ip', 'good', __( 'ScrapeLock sees the real visitor IP', 'scrapelock' ), __( 'No CDN was found hiding the visitors\' addresses on this request.', 'scrapelock' ) );
 	}
@@ -1613,6 +1693,21 @@ final class PNCP_Health {
 			'ipv6_wide'      => array( __( 'IPv6 /56 limit', 'scrapelock' ), $flag( 'ipv6_wide' ) ),
 			'archives'       => array( __( 'Web archives blocked', 'scrapelock' ), $flag( 'block_archivers' ) ),
 			'upload_php'     => array( __( 'No PHP in the uploads folder', 'scrapelock' ), $flag( 'block_upload_php' ) ),
+			// 3.7.
+			'seo_crawlers'   => array( __( 'SEO and marketing data crawlers blocked', 'scrapelock' ), $flag( 'block_seo_crawlers' ) ),
+			'ip_host'        => array( __( 'Site opened by IP address refused', 'scrapelock' ), $flag( 'block_ip_host' ) ),
+			'reputation'     => array( __( 'IP reputation', 'scrapelock' ), empty( $s['reputation'] ) ? $no : $per_min( 'rate_limit_lowrep' ) ),
+			'api_only'       => array( __( 'Limit for IPs that never opened a page', 'scrapelock' ), $per_min( 'rate_limit_apionly' ) ),
+			'crowdsec'       => array( __( 'CrowdSec blocklist', 'scrapelock' ), self::crowdsec_info( $s, $no ) ),
+			'syslog'         => array( __( 'Blocks written to the system log (fail2ban)', 'scrapelock' ), empty( $s['syslog_bans'] ) ? $no : ( PNCP_Fail2ban::available() ? $yes : __( 'On, but syslog() is disabled', 'scrapelock' ) ) ),
+			'ai_referrals'   => array( __( 'Visits from AI assistants counted', 'scrapelock' ), $flag( 'ai_referrals' ) ),
+			// 3.8. The sign-in address itself is not shown (this list is often copied into support requests).
+			'attack_record'  => array( __( 'Attack record', 'scrapelock' ), empty( $s['attack_record'] ) ? $no : sprintf( '%s (%s d)', $yes, (string) $s['attack_retention'] ) ),
+			'login_limit'    => array( __( 'Failed sign-ins limited', 'scrapelock' ), empty( $s['login_limit'] ) ? $no : sprintf( '%d / %d min', (int) $s['login_max'], (int) $s['login_window'] ) ),
+			'login_moved'    => array( __( 'Sign-in address moved', 'scrapelock' ), '' !== PNCP_Login::slug() ? $yes : $no ),
+			'hardening'      => array( __( 'Vulnerable points locked', 'scrapelock' ), self::hardening_info() ),
+			'stealth'        => array( __( 'Stealth', 'scrapelock' ), PNCP_Stealth::active() ? $yes : ( empty( $s['stealth_enabled'] ) ? $no : __( 'On, not working', 'scrapelock' ) ) ),
+			'bunny_import'   => array( __( 'Attacks imported from Bunny CDN\'s logs', 'scrapelock' ), $flag( 'bunny_import' ) ),
 			'auto_emergency' => array( __( 'Automatic Emergency Mode', 'scrapelock' ), empty( $s['auto_emergency'] ) ? $no : ( 'start' === $s['auto_emergency_mode'] ? __( 'Starts on its own', 'scrapelock' ) : __( 'Alerts only', 'scrapelock' ) ) ),
 			'edge'           => array( __( 'Blocking at the CDN', 'scrapelock' ), $edge ),
 			'cdn_only'       => array( __( 'Only through the CDN', 'scrapelock' ), PNCP_Origin::active( $s ) ? $yes : $no ),
@@ -1636,5 +1731,41 @@ final class PNCP_Health {
 		}
 		$info['scrapelock'] = $section;
 		return $info;
+	}
+
+	/**
+	 * 3.8: the vulnerable points that are locked, by their IDs (PNCP_Hardening::points()).
+	 *
+	 * @return string
+	 */
+	private static function hardening_info() {
+		$on = array();
+		foreach ( array_keys( PNCP_Hardening::points() ) as $id ) {
+			if ( PNCP_Hardening::is_applied( $id ) ) {
+				$on[] = $id;
+			}
+		}
+		return $on ? implode( ', ', $on ) : '-';
+	}
+
+	/**
+	 * 3.7: the CrowdSec line of the info: off, or the source, the size of the list and when it was updated.
+	 *
+	 * @param array<string, mixed> $s  Settings.
+	 * @param string               $no The "No" text.
+	 * @return string
+	 */
+	private static function crowdsec_info( $s, $no ) {
+		if ( ! PNCP_Crowdsec::enabled( $s ) ) {
+			return $no;
+		}
+		$state = PNCP_Crowdsec::state();
+		$text  = ( 'lapi' === $s['crowdsec_mode'] ? 'LAPI' : __( 'list', 'scrapelock' ) ) . ', ' . ( 'block' === $s['crowdsec_action'] ? '403' : (int) $s['rate_limit_crowdsec'] . '/min' );
+		$text .= ', ' . sprintf( /* translators: 1: addresses, 2: ranges */ __( '%1$d addresses, %2$d ranges', 'scrapelock' ), (int) $state['count'], (int) $state['ranges'] );
+		$text .= $state['synced'] ? ', ' . wp_date( 'Y-m-d H:i', (int) $state['synced'] ) : '';
+		if ( '' !== (string) $state['error'] ) {
+			$text .= ' — ' . sprintf( /* translators: %s: error message */ __( 'last error: %s', 'scrapelock' ), (string) $state['error'] );
+		}
+		return $text;
 	}
 }

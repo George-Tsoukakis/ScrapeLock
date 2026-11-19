@@ -1,6 +1,7 @@
 <?php
 /**
- * WP-CLI: wp scrapelock status | block | unblock | blocked | emergency | lockdown status | check | log | settings.
+ * WP-CLI: wp scrapelock status | block | unblock | blocked | emergency | lockdown status | check | log | settings |
+ * reputation | crowdsec | ai-referrals (3.7) | attacks | attack-report | login | harden | bunny | stealth (3.8).
  * Lockdown cannot be unlocked from here: it opens only with the authenticator app (or SCRAPELOCK_UNLOCK in
  * wp-config.php).
  *
@@ -771,12 +772,28 @@ final class PNCP_Cli {
 			/* translators: %d: number of settings */
 			WP_CLI::confirm( sprintf( _n( 'Change this %d setting?', 'Change these %d settings?', count( $prepared['changes'] ), 'scrapelock' ), count( $prepared['changes'] ) ) );
 		}
+		$before = get_option( PNCP_OPTION, array() );
 		$result = PNCP_Settings_Io::apply( $prepared, $reason );
 		if ( is_wp_error( $result ) ) {
 			WP_CLI::error( $result->get_error_message() );
 		}
+		// 3.9.1: count what was really saved; a setting can be refused on saving (e.g. the allowed IPs of a
+		// locked login page at Bunny), with a warning printed above.
+		wp_cache_delete( PNCP_OPTION, 'options' );
+		$after   = get_option( PNCP_OPTION, array() );
+		$changed = 0;
+		foreach ( $prepared['changes'] as $change ) {
+			$key      = (string) $change['key'];
+			$was      = is_array( $before ) && array_key_exists( $key, $before ) ? $before[ $key ] : null;
+			$is       = is_array( $after ) && array_key_exists( $key, $after ) ? $after[ $key ] : null;
+			$changed += ( $was !== $is ) ? 1 : 0;
+		}
+		if ( ! $changed ) {
+			WP_CLI::warning( __( 'Nothing was changed.', 'scrapelock' ) );
+			return;
+		}
 		/* translators: %d: number of settings */
-		WP_CLI::success( sprintf( _n( '%d setting changed. The previous settings were kept: "wp scrapelock settings undo" puts them back.', '%d settings changed. The previous settings were kept: "wp scrapelock settings undo" puts them back.', count( $prepared['changes'] ), 'scrapelock' ), count( $prepared['changes'] ) ) );
+		WP_CLI::success( sprintf( _n( '%d setting changed. The previous settings were kept: "wp scrapelock settings undo" puts them back.', '%d settings changed. The previous settings were kept: "wp scrapelock settings undo" puts them back.', $changed, 'scrapelock' ), $changed ) );
 	}
 
 	/**
@@ -786,6 +803,434 @@ final class PNCP_Cli {
 	 * @param bool                  $count      Is "count" allowed?
 	 * @return string
 	 */
+	/**
+	 * 3.7: shows (or forgets) the reputation of an IP: its score and the events that make it.
+	 *
+	 * ## OPTIONS
+	 *
+	 * <ip>
+	 * : The IP address.
+	 *
+	 * [--reset]
+	 * : Forget everything recorded about it.
+	 *
+	 * [--format=<format>]
+	 * : table, json, csv or yaml.
+	 * ---
+	 * default: table
+	 * ---
+	 *
+	 * ## EXAMPLES
+	 *
+	 *     wp scrapelock reputation 203.0.113.5
+	 *     wp scrapelock reputation 203.0.113.5 --reset
+	 *
+	 * @param string[]              $args       Arguments.
+	 * @param array<string, string> $assoc_args Options.
+	 */
+	public function reputation( $args, $assoc_args ) {
+		$ip = PNCP_Ip::normalize( isset( $args[0] ) ? (string) $args[0] : '' );
+		if ( '' === $ip ) {
+			WP_CLI::error( __( 'Give a valid IP address.', 'scrapelock' ) );
+		}
+		if ( ! empty( $assoc_args['reset'] ) ) {
+			PNCP_Reputation::forget( $ip );
+			/* translators: %s: IP address */
+			WP_CLI::success( sprintf( __( 'The reputation of %s was forgotten.', 'scrapelock' ), $ip ) );
+			return;
+		}
+		$s = PNCP_Options::get();
+		if ( ! PNCP_Reputation::active( $s ) ) {
+			WP_CLI::warning( __( 'Nothing is recorded: the reputation and the limit for IPs that never opened a page are both off.', 'scrapelock' ) );
+		}
+		$rep     = PNCP_Reputation::describe( $ip );
+		$labels  = PNCP_Reputation::event_labels();
+		$weights = PNCP_Reputation::weights();
+		$items   = array();
+		foreach ( $rep['events'] as $event => $when ) {
+			$recent  = time() - (int) $when <= (int) $weights[ $event ][0];
+			$items[] = array(
+				'event' => isset( $labels[ $event ] ) ? $labels[ $event ] : $event,
+				'when'  => wp_date( 'Y-m-d H:i', (int) $when ),
+				'value' => (string) ( $recent ? $weights[ $event ][1] : $weights[ $event ][2] ),
+			);
+		}
+		$items[] = array(
+			'event' => __( 'Score', 'scrapelock' ),
+			'when'  => $rep['level'],
+			'value' => (string) $rep['score'],
+		);
+		WP_CLI\Utils\format_items( self::format( $assoc_args ), $items, array( 'event', 'when', 'value' ) );
+	}
+
+	/**
+	 * 3.7: the CrowdSec blocklist: its state, a sync now, or whether an IP is listed.
+	 *
+	 * ## OPTIONS
+	 *
+	 * <action>
+	 * : status, sync or check.
+	 * ---
+	 * options:
+	 *   - status
+	 *   - sync
+	 *   - check
+	 * ---
+	 *
+	 * [<ip>]
+	 * : With "check": the IP address.
+	 *
+	 * ## EXAMPLES
+	 *
+	 *     wp scrapelock crowdsec status
+	 *     wp scrapelock crowdsec sync
+	 *     wp scrapelock crowdsec check 203.0.113.5
+	 *
+	 * @param string[]              $args       Arguments.
+	 * @param array<string, string> $assoc_args Options.
+	 */
+	public function crowdsec( $args, $assoc_args ) { // phpcs:ignore Generic.CodeAnalysis.UnusedFunctionParameter.FoundAfterLastUsed -- WP-CLI signature.
+		$action = isset( $args[0] ) ? (string) $args[0] : 'status';
+		$s      = PNCP_Options::get();
+		if ( ! PNCP_Crowdsec::enabled( $s ) ) {
+			WP_CLI::error( __( 'The CrowdSec blocklist is off (Bots and limits → CrowdSec blocklist).', 'scrapelock' ) );
+		}
+		if ( 'sync' === $action ) {
+			$result = PNCP_Crowdsec::sync( true );
+			if ( is_wp_error( $result ) ) {
+				WP_CLI::error( $result->get_error_message() );
+			}
+			$state = PNCP_Crowdsec::state();
+			/* translators: 1: number of addresses, 2: number of ranges */
+			WP_CLI::success( sprintf( __( 'Updated: %1$d addresses, %2$d ranges.', 'scrapelock' ), (int) $state['count'], (int) $state['ranges'] ) );
+			return;
+		}
+		if ( 'check' === $action ) {
+			$ip = PNCP_Ip::normalize( isset( $args[1] ) ? (string) $args[1] : '' );
+			if ( '' === $ip ) {
+				WP_CLI::error( __( 'Give a valid IP address.', 'scrapelock' ) );
+			}
+			/* translators: %s: IP address */
+			WP_CLI::log( sprintf( PNCP_Crowdsec::listed( $ip ) ? __( '%s is in the blocklist.', 'scrapelock' ) : __( '%s is not in the blocklist.', 'scrapelock' ), $ip ) );
+			return;
+		}
+		$state = PNCP_Crowdsec::state();
+		$items = array(
+			array(
+				'setting' => __( 'Source', 'scrapelock' ),
+				'value'   => 'lapi' === $s['crowdsec_mode'] ? 'LAPI ' . $s['crowdsec_url'] : $s['crowdsec_url'],
+			),
+			array(
+				'setting' => __( 'What a listed IP gets', 'scrapelock' ),
+				'value'   => 'block' === $s['crowdsec_action'] ? '403' : (int) $s['rate_limit_crowdsec'] . '/min',
+			),
+			array(
+				'setting' => __( 'Addresses', 'scrapelock' ),
+				'value'   => (string) (int) $state['count'],
+			),
+			array(
+				'setting' => __( 'Ranges', 'scrapelock' ),
+				'value'   => (string) (int) $state['ranges'],
+			),
+			array(
+				'setting' => __( 'Updated', 'scrapelock' ),
+				'value'   => $state['synced'] ? wp_date( 'Y-m-d H:i', (int) $state['synced'] ) : '-',
+			),
+			array(
+				'setting' => __( 'Last error', 'scrapelock' ),
+				'value'   => '' !== (string) $state['error'] ? wp_date( 'Y-m-d H:i', (int) $state['error_at'] ) . ' ' . $state['error'] : '-',
+			),
+		);
+		WP_CLI\Utils\format_items( 'table', $items, array( 'setting', 'value' ) );
+	}
+
+	/**
+	 * 3.8: where bots and attackers hit the site (the attack record).
+	 *
+	 * ## OPTIONS
+	 *
+	 * [--days=<days>]
+	 * : Period in days, 1-90. Default 7.
+	 *
+	 * [--category=<key>]
+	 * : login_fail, login_probe, admin_probe, xmlrpc, user_enum, scanner, plugin_probe, install, injection, bot_block or edge.
+	 *
+	 * [--top=<what>]
+	 * : paths, ips, users (usernames tried) or details (of --category). Default: per category.
+	 *
+	 * [--format=<format>]
+	 * : table, json, csv, yaml or count.
+	 *
+	 * ## EXAMPLES
+	 *
+	 *     wp scrapelock attacks --days=30
+	 *     wp scrapelock attacks --top=users
+	 *     wp scrapelock attacks --top=paths --category=plugin_probe
+	 *
+	 * @subcommand attacks
+	 *
+	 * @param string[]              $args       Arguments.
+	 * @param array<string, string> $assoc_args Options.
+	 */
+	public function attacks( $args, $assoc_args ) {
+		PNCP_Attacks::cli( $args, $assoc_args );
+	}
+
+	/**
+	 * 3.8: the attack report: the weekly email's text, the report as CSV, or send the email now.
+	 *
+	 * ## OPTIONS
+	 *
+	 * [--days=<days>]
+	 * : Period, 1-90. Default 7.
+	 *
+	 * [--format=<format>]
+	 * : text (default) or csv.
+	 *
+	 * [--send]
+	 * : Send the email now to the administration email (filter pncp_attack_report_recipients).
+	 *
+	 * ## EXAMPLES
+	 *
+	 *     wp scrapelock attack-report
+	 *     wp scrapelock attack-report --days=30 --format=csv > report.csv
+	 *     wp scrapelock attack-report --send
+	 *
+	 * @subcommand attack-report
+	 *
+	 * @param string[]              $args       Arguments.
+	 * @param array<string, string> $assoc_args Options.
+	 */
+	public function attack_report( $args, $assoc_args ) {
+		PNCP_Attack_Report::cli( $args, $assoc_args );
+	}
+
+	/**
+	 * 3.8: sign-in protection: status, unlock an IP or a username, or print the sign-in address.
+	 *
+	 * ## OPTIONS
+	 *
+	 * <action>
+	 * : status, unlock or url.
+	 * ---
+	 * options:
+	 *   - status
+	 *   - unlock
+	 *   - url
+	 * ---
+	 *
+	 * [<what>]
+	 * : For unlock: an IP (lifts its block) or a username (ends its pause).
+	 *
+	 * [--format=<format>]
+	 * : For status: table, json, csv or yaml.
+	 * ---
+	 * default: table
+	 * ---
+	 *
+	 * ## EXAMPLES
+	 *
+	 *     wp scrapelock login status
+	 *     wp scrapelock login unlock 203.0.113.5
+	 *     wp scrapelock login unlock admin
+	 *     wp scrapelock login url
+	 *
+	 * @param string[]              $args       Arguments.
+	 * @param array<string, string> $assoc_args Options.
+	 */
+	public function login( $args, $assoc_args ) {
+		PNCP_Login::cli( $args, $assoc_args );
+	}
+
+	/**
+	 * 3.8: vulnerable points: list, check, lock and open them, and the server rules.
+	 *
+	 * ## OPTIONS
+	 *
+	 * [<action>]
+	 * : list (default), check, apply <id>, revert <id>, apply-low, rules, write-htaccess or remove-htaccess.
+	 *
+	 * [<id>]
+	 * : The point (see "list"), for apply and revert.
+	 *
+	 * [--server=<server>]
+	 * : For rules: apache or nginx.
+	 *
+	 * [--format=<format>]
+	 * : For list: table, json or csv.
+	 *
+	 * ## EXAMPLES
+	 *
+	 *     wp scrapelock harden list
+	 *     wp scrapelock harden apply xmlrpc
+	 *     wp scrapelock harden rules --server=nginx
+	 *
+	 * @param string[]              $args       Arguments.
+	 * @param array<string, string> $assoc_args Options.
+	 */
+	public function harden( $args, $assoc_args ) {
+		PNCP_Hardening::cli( $args, $assoc_args );
+	}
+
+	/**
+	 * 3.8: Bunny CDN: logs and Edge Rules.
+	 *
+	 * ## OPTIONS
+	 *
+	 * [<subcommand>]
+	 * : status, import, rules, presets, preview <preset|harden_point>, lock <preset>, unlock <preset|rule-id>, logging [--enable], parse <file>.
+	 *
+	 * [<arg>]
+	 * : Preset (login, xmlrpc, probes, core_files), rule ID or log file.
+	 *
+	 * [--enable]
+	 * : With "logging": turn logging on at the pull zone.
+	 *
+	 * [--format=<format>]
+	 * : table, json, csv, yaml or count.
+	 *
+	 * ## EXAMPLES
+	 *
+	 *     wp scrapelock bunny status
+	 *     wp scrapelock bunny lock probes
+	 *     wp scrapelock bunny unlock preset_login
+	 *
+	 * @param string[]              $args       Arguments.
+	 * @param array<string, string> $assoc_args Options.
+	 */
+	public function bunny( $args, $assoc_args ) {
+		PNCP_Bunny::cli( $args, $assoc_args );
+	}
+
+	/**
+	 * 3.8: Stealth (do not show that the site runs on WordPress): status, on, off, test, scan, rules.
+	 *
+	 * ## OPTIONS
+	 *
+	 * [<action>]
+	 * : status (default), on, off, test, scan or rules.
+	 *
+	 * [--base=<folder>]
+	 * : For on: the folder of the new addresses (default assets).
+	 *
+	 * [--rest=<prefix>]
+	 * : For on: the REST API prefix instead of wp-json ("" keeps wp-json).
+	 *
+	 * [--page=<url>]
+	 * : For scan: the page of this site to scan (default: the home page). (--url is WP-CLI's own option, which
+	 * chooses the site.)
+	 *
+	 * [--server=<server>]
+	 * : For rules: apache or nginx (default: the server last seen in wp-admin).
+	 *
+	 * [--format=<format>]
+	 * : For status and scan: table, json, csv or yaml.
+	 *
+	 * ## EXAMPLES
+	 *
+	 *     wp scrapelock stealth status
+	 *     wp scrapelock stealth on --base=static --rest=api
+	 *     wp scrapelock stealth rules --server=nginx
+	 *     wp scrapelock stealth scan --page=https://example.com/blog/
+	 *
+	 * @param string[]              $args       Arguments.
+	 * @param array<string, string> $assoc_args Options.
+	 */
+	public function stealth( $args, $assoc_args ) {
+		$action = isset( $args[0] ) ? (string) $args[0] : 'status';
+		$done   = static function ( $result, $text ) {
+			if ( is_wp_error( $result ) ) {
+				WP_CLI::error( $result->get_error_message() );
+			}
+			WP_CLI::success( $text );
+		};
+		switch ( $action ) {
+			case 'status':
+				$items = array();
+				foreach ( PNCP_Stealth::cli_status() as $key => $value ) {
+					$items[] = array(
+						'setting' => $key,
+						'value'   => $value,
+					);
+				}
+				WP_CLI\Utils\format_items( self::format( $assoc_args ), $items, array( 'setting', 'value' ) );
+				return;
+			case 'on':
+				$done( PNCP_Stealth::cli_enable( array_intersect_key( $assoc_args, array_flip( array( 'base', 'rest' ) ) ) ), __( 'Stealth is on: the new addresses were tested.', 'scrapelock' ) );
+				return;
+			case 'off':
+				$done( PNCP_Stealth::cli_disable(), __( 'Stealth is off.', 'scrapelock' ) );
+				return;
+			case 'test':
+				$done( PNCP_Stealth::cli_test(), __( 'The new addresses work.', 'scrapelock' ) );
+				return;
+			case 'scan':
+				$rows = PNCP_Stealth::cli_scan( isset( $assoc_args['page'] ) ? esc_url_raw( (string) $assoc_args['page'] ) : '' );
+				WP_CLI\Utils\format_items( self::format( $assoc_args ), $rows, array( 'sign', 'pages', 'hideable', 'found' ) );
+				return;
+			case 'rules':
+				$server = isset( $assoc_args['server'] ) ? sanitize_key( (string) $assoc_args['server'] ) : PNCP_Stealth::server();
+				WP_CLI::line( PNCP_Stealth::rules_text( $server ) );
+				return;
+		}
+		WP_CLI::error( __( 'Unknown action. Use: status, on, off, test, scan or rules.', 'scrapelock' ) );
+	}
+
+	/**
+	 * 3.7: visits from AI assistants (ChatGPT, Perplexity, Claude, Gemini…): per assistant, or the pages they
+	 * sent readers to.
+	 *
+	 * ## OPTIONS
+	 *
+	 * [--days=<days>]
+	 * : How many days back, 1 to 90.
+	 * ---
+	 * default: 30
+	 * ---
+	 *
+	 * [--pages]
+	 * : List the pages instead of the assistants.
+	 *
+	 * [--format=<format>]
+	 * : table, json, csv or yaml.
+	 * ---
+	 * default: table
+	 * ---
+	 *
+	 * ## EXAMPLES
+	 *
+	 *     wp scrapelock ai-referrals
+	 *     wp scrapelock ai-referrals --pages --days=7
+	 *
+	 * @subcommand ai-referrals
+	 *
+	 * @param string[]              $args       Arguments.
+	 * @param array<string, string> $assoc_args Options.
+	 */
+	public function ai_referrals( $args, $assoc_args ) { // phpcs:ignore Generic.CodeAnalysis.UnusedFunctionParameter.FoundBeforeLastUsed -- WP-CLI signature.
+		$days      = max( 1, min( PNCP_Ai_Referrals::KEEP_DAYS, isset( $assoc_args['days'] ) ? (int) $assoc_args['days'] : 30 ) );
+		$platforms = PNCP_Ai_Referrals::platforms();
+		$items     = array();
+		if ( ! empty( $assoc_args['pages'] ) ) {
+			foreach ( PNCP_Ai_Referrals::top_pages( $days, 50 ) as $row ) {
+				$items[] = array(
+					'page'   => PNCP_Log::display_path( $row['path'] ),
+					'visits' => $row['visits'],
+					'from'   => $row['platforms'],
+				);
+			}
+			WP_CLI\Utils\format_items( self::format( $assoc_args ), $items, array( 'page', 'visits', 'from' ) );
+			return;
+		}
+		foreach ( PNCP_Ai_Referrals::totals( $days ) as $key => $visits ) {
+			$items[] = array(
+				'assistant' => isset( $platforms[ $key ]['name'] ) ? $platforms[ $key ]['name'] : $key,
+				'visits'    => $visits,
+			);
+		}
+		WP_CLI\Utils\format_items( self::format( $assoc_args ), $items, array( 'assistant', 'visits' ) );
+	}
+
 	private static function format( $assoc_args, $count = false ) {
 		$format  = isset( $assoc_args['format'] ) ? (string) $assoc_args['format'] : 'table';
 		$allowed = array( 'table', 'json', 'csv', 'yaml' );

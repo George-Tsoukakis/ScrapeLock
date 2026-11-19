@@ -2,7 +2,7 @@
 /**
  * Plugin Name:       ScrapeLock – Content & AI Bot Protection
  * Description:       Protects your content: makes copying text and images harder, hides the text in the REST API, GraphQL and RSS, blocks scrapers, AI bots and fake Googlebots, temporarily blocks persistent IPs, protects XML feeds with a token and adds an optional watermark. Lockdown freezes every change to the site until it is unlocked with an authenticator app. Forms, cart, checkout and search engines are not affected.
- * Version:           3.6.0
+ * Version:           3.9.1
  * Requires at least: 6.2
  * Requires PHP:      7.4
  * Author:            CodeBunny
@@ -19,7 +19,7 @@ if ( defined( 'PNCP_VERSION' ) ) {
 	return;
 }
 
-define( 'PNCP_VERSION', '3.6.0' );
+define( 'PNCP_VERSION', '3.9.1' );
 define( 'PNCP_FILE', __FILE__ );
 define( 'PNCP_DIR', plugin_dir_path( __FILE__ ) );
 define( 'PNCP_URL', plugin_dir_url( __FILE__ ) );
@@ -53,6 +53,7 @@ PNCP_Graphql::init();
 PNCP_Feed::init();
 PNCP_Bots::init();
 PNCP_Edge::init();
+PNCP_Bunny::init(); // 3.8: Bunny CDN logs and Edge Rules.
 PNCP_Origin::init();
 PNCP_Watermark::init();
 PNCP_Private_Urls::init();
@@ -64,6 +65,9 @@ PNCP_Precheck::init();
 PNCP_Lockdown::init();
 PNCP_Seal::init();
 PNCP_Surface::init();
+// 3.8: both must run at plugin load (before plugins_loaded and init).
+PNCP_Stealth::init(); // Neutral asset addresses, REST prefix, sitemap (off by default).
+PNCP_Login::init(); // Failed sign-ins, generic errors, custom sign-in address.
 // 3.6: what only wp-admin, admin-ajax, scheduled events, WP-CLI or the REST API use is loaded there only.
 $pncp_backend = is_admin() || wp_doing_cron() || ( defined( 'WP_CLI' ) && WP_CLI );
 if ( $pncp_backend ) {
@@ -100,6 +104,14 @@ add_action(
 PNCP_Mark::init();
 PNCP_Accounts::init();
 PNCP_Trace::init();
+// 3.7.
+PNCP_Reputation::init();
+PNCP_Crowdsec::init();
+PNCP_Ai_Referrals::init();
+// 3.8.
+PNCP_Attacks::init(); // Where bots and attackers hit the site.
+PNCP_Attack_Report::init(); // The Attacks tab, the weekly email and the dashboard widget.
+PNCP_Hardening::init(); // Vulnerable points.
 
 if ( defined( 'WP_CLI' ) && WP_CLI ) {
 	require_once PNCP_DIR . 'includes/class-pncp-cli.php';
@@ -126,6 +138,7 @@ function pncp_activate( $network_wide = false ) {
 		return;
 	}
 	pncp_upgrade();
+	PNCP_Stealth::plugin_activated(); // 3.8: re-tests Stealth in 30 s when it is on (it cannot test during activation).
 }
 register_activation_hook( PNCP_FILE, 'pncp_activate' );
 register_deactivation_hook( PNCP_FILE, 'pncp_deactivate' );
@@ -182,12 +195,17 @@ function pncp_deactivate_site() {
 	// wp_unschedule_hook() removes every event of a hook, whatever its arguments: some carry some (the missing
 	// IP lists, the image to clean up, the numbers in the surge email), which wp_clear_scheduled_hook() would
 	// only remove when given the same ones.
-	foreach ( array( PNCP_Ip::CRON, PNCP_Log::CRON, PNCP_Log::CRON . '_more', PNCP_Integrity::OFFICIAL, PNCP_Integrity::RESUME, PNCP_Surge::MAIL, PNCP_Surge::MAIL_ALERT, PNCP_Watermark::CRON_UNMARK, 'pncp_background_purge', 'pncp_upgrade_files' ) as $pncp_hook ) {
+	foreach ( array( PNCP_Ip::CRON, PNCP_Log::CRON, PNCP_Log::CRON . '_more', PNCP_Integrity::OFFICIAL, PNCP_Integrity::RESUME, PNCP_Surge::MAIL, PNCP_Surge::MAIL_ALERT, PNCP_Watermark::CRON_UNMARK, 'pncp_background_purge', 'pncp_upgrade_files', PNCP_Crowdsec::CRON, PNCP_Bunny::CRON, 'pncp_attack_report_weekly' ) as $pncp_hook ) {
 		wp_unschedule_hook( $pncp_hook );
 	}
 	// The blocks ScrapeLock made at the CDN go away with it (the bans themselves end with the plugin).
 	PNCP_Edge::remove_all();
+	PNCP_Bunny::deactivate(); // 3.8: ScrapeLock's Edge Rules at Bunny (15 s at most) and the cron event.
 	PNCP_Rules::sync_uploads_htaccess( false );
+	// 3.8: the "ScrapeLock Hardening" and Stealth blocks of the site's .htaccess, Stealth's events and rules.
+	PNCP_Hardening::deactivate();
+	PNCP_Stealth::plugin_deactivated();
+	PNCP_Attack_Report::deactivate();
 	pncp_purge_page_cache();
 }
 
@@ -229,6 +247,19 @@ function pncp_upgrade() {
 		}
 		if ( version_compare( $from_settings, '3.0.0', '<' ) ) {
 			$added += PNCP_Options::new_in_300();
+		}
+		// 3.8: the attack record, the sign-in protection and the rest of 3.8 (Stealth, Bunny logs, the weekly
+		// email stay off). Stored now, so an export or a settings list shows them.
+		if ( version_compare( $from_settings, '3.8.0', '<' ) ) {
+			$added += PNCP_Options::new_in_380();
+		}
+		// 3.9: "Send temporary blocks to the CDN" is a switch of its own. A site with a saved CDN connection kept
+		// sending them, as up to 3.8, and is told about the new switch once (PNCP_Edge::render_upgrade_notice()).
+		if ( version_compare( $from_settings, '3.9.0', '<' ) && ! isset( $stored['edge_send_blocks'] ) ) {
+			$added += PNCP_Options::new_in_390();
+			if ( ! empty( $added['edge_send_blocks'] ) ) {
+				update_option( PNCP_Edge::NOTICE, 1, false );
+			}
 		}
 		$added = array_diff_key( $added, $stored );
 		// 3.4: the automatic Emergency Mode only tells the administrator on new installs; a site that had it on
@@ -281,6 +312,18 @@ function pncp_upgrade() {
 	PNCP_Log::install();
 	// Autoload: read on every request, without a separate query.
 	add_option( PNCP_Options::EMERGENCY_OPTION, 0, '', true );
+	// 3.8: the state of the vulnerable points is read on every request; a missing option would be a query each time.
+	add_option(
+		PNCP_Hardening::OPTION,
+		array(
+			'points'         => array(),
+			'edge'           => array(),
+			'xmlrpc_jetpack' => 0,
+			'htaccess'       => 0,
+		),
+		'',
+		true
+	);
 	if ( ! wp_next_scheduled( PNCP_Ip::CRON ) ) {
 		wp_schedule_event( time() + 60, 'daily', PNCP_Ip::CRON );
 	}
@@ -307,6 +350,8 @@ function pncp_upgrade() {
 	// 3.4: the country database state is autoloaded, and a database left behind while "Download the country
 	// database" is off is deleted (it used to be used anyway, and never refreshed).
 	PNCP_Geo::upgrade();
+	// 3.6.1: options that are read rarely but were autoloaded (or that older versions stored autoloaded) are not.
+	pncp_upgrade_autoload();
 	update_option( 'pncp_version', PNCP_VERSION, true ); // Autoloaded: read on every request by pncp_maybe_upgrade().
 	PNCP_Options::flush();
 	// The rest touches files (mu-plugins, wp-config.php, uploads/.htaccess), downloads lists and empties the
@@ -327,6 +372,45 @@ function pncp_upgrade() {
 	} else {
 		add_action( 'init', 'pncp_spawn_cron', 99 );
 	}
+}
+
+/**
+ * 3.6.1: autoload hygiene, once per upgrade. Every autoloaded option is read (and, with a persistent object
+ * cache, kept in the one "alloptions" entry) on every request; an option that changes often also rewrites that
+ * entry each time. Only what is needed on (nearly) every request stays autoloaded: the settings, the version
+ * numbers, Emergency Mode, the latest ban expiry, the CDN address lists and the data center index.
+ *
+ * - The surge state is written once a minute and read once a minute: not autoloaded (PNCP_Surge::save()).
+ * - The downloaded crawler, AI and data center lists, their dates and the data center groups are written with
+ *   autoload off, but WordPress changes the autoload flag of an existing option only when its value changes:
+ *   a list stored autoloaded by an older version, that has not changed since, stayed autoloaded.
+ * - The one-option copy of the lists of very old versions ("pncp_ip_lists") is read by nothing: deleted.
+ *
+ * Needs WordPress 6.4 (wp_set_options_autoload()); on older versions the flags change with the next write.
+ */
+function pncp_upgrade_autoload() {
+	if ( false !== get_option( PNCP_Ip::LISTS_OPTION, false ) ) {
+		delete_option( PNCP_Ip::LISTS_OPTION );
+	}
+	if ( ! function_exists( 'wp_set_options_autoload' ) ) {
+		return;
+	}
+	$off = array( PNCP_Surge::STATE, PNCP_Ip::LISTS_OPTION . '_updated' );
+	foreach ( array_keys( PNCP_Ip::sources() ) as $name ) {
+		if ( ! in_array( $name, array( 'cloudflare', 'bunny' ), true ) ) {
+			$off[] = PNCP_Ip::LISTS_OPTION . '_' . $name;
+		}
+	}
+	$groups = get_option( 'pncp_dc_groups', array() );
+	if ( is_array( $groups ) ) {
+		foreach ( isset( $groups[0] ) ? $groups : array_keys( $groups ) as $group ) {
+			if ( is_string( $group ) && 0 === strpos( $group, 'pncp_dc_' ) ) {
+				$off[] = $group;
+			}
+		}
+	}
+	// Only the options that exist are changed (wp_set_options_autoload() leaves out the others).
+	wp_set_options_autoload( $off, false );
 }
 
 /**
@@ -454,22 +538,61 @@ function pncp_maybe_upgrade() {
 	if ( $lock > time() - MINUTE_IN_SECONDS ) {
 		return;
 	}
-	if ( $lock ) {
-		delete_option( 'pncp_upgrade_lock' );
-	}
-	if ( ! add_option( 'pncp_upgrade_lock', time(), '', false ) ) {
+	$mine = pncp_upgrade_lock();
+	if ( false === $mine ) {
 		return;
 	}
 	// This request's autoloaded options may predate another request's finished upgrade: read the version again.
 	global $wpdb;
 	// phpcs:ignore WordPress.DB.DirectDatabaseQuery -- The value as it is now in the database, not the cached one.
 	if ( PNCP_VERSION === $wpdb->get_var( $wpdb->prepare( 'SELECT option_value FROM %i WHERE option_name = %s', $wpdb->options, 'pncp_version' ) ) ) {
-		delete_option( 'pncp_upgrade_lock' );
+		pncp_upgrade_unlock( $mine );
 		wp_cache_delete( 'alloptions', 'options' );
 		return;
 	}
 	pncp_upgrade();
-	delete_option( 'pncp_upgrade_lock' );
+	pncp_upgrade_unlock( $mine );
+}
+
+/**
+ * 3.6.1: takes the upgrade lock in one atomic step. Before, a stale lock (an upgrade that died holding it) was
+ * deleted and added again: two requests that both read it stale could each delete the other's new lock and both
+ * win add_option() (which WordPress writes with ON DUPLICATE KEY UPDATE, so it is no lock either), and both ran
+ * the upgrade. Now the row is created with INSERT IGNORE, and taken with one compare-and-set UPDATE (as
+ * PNCP_Edge::lock()): of any number of requests, only one changes it.
+ *
+ * @return string|false The value written (to release it with), or false when another request holds the lock.
+ */
+function pncp_upgrade_lock() {
+	global $wpdb;
+	$now   = time();
+	$value = (string) $now;
+	$suppress = $wpdb->suppress_errors( true );
+	// phpcs:ignore WordPress.DB.DirectDatabaseQuery -- Creates the lock row if missing; never overwrites one.
+	$made = $wpdb->query( $wpdb->prepare( "INSERT IGNORE INTO %i (option_name, option_value, autoload) VALUES ('pncp_upgrade_lock', '0', 'off')", $wpdb->options ) );
+	$wpdb->suppress_errors( $suppress );
+	if ( false === $made ) {
+		// A database without INSERT IGNORE (e.g. SQLite): the lock as before.
+		delete_option( 'pncp_upgrade_lock' );
+		return add_option( 'pncp_upgrade_lock', $value, '', false ) ? $value : false;
+	}
+	// phpcs:ignore WordPress.DB.DirectDatabaseQuery -- Atomic compare-and-set on our own row.
+	$rows = $wpdb->query( $wpdb->prepare( "UPDATE %i SET option_value = %s WHERE option_name = 'pncp_upgrade_lock' AND option_value + 0 < %d", $wpdb->options, $value, $now - MINUTE_IN_SECONDS ) );
+	wp_cache_delete( 'pncp_upgrade_lock', 'options' );
+	wp_cache_delete( 'notoptions', 'options' );
+	return 1 === (int) $rows ? $value : false;
+}
+
+/**
+ * 3.6.1: releases the upgrade lock, if this request still holds it.
+ *
+ * @param string $value The value pncp_upgrade_lock() wrote.
+ */
+function pncp_upgrade_unlock( $value ) {
+	global $wpdb;
+	// phpcs:ignore WordPress.DB.DirectDatabaseQuery -- Releases our own lock only.
+	$wpdb->query( $wpdb->prepare( "UPDATE %i SET option_value = '0' WHERE option_name = 'pncp_upgrade_lock' AND option_value = %s", $wpdb->options, (string) $value ) );
+	wp_cache_delete( 'pncp_upgrade_lock', 'options' );
 }
 add_action( 'plugins_loaded', 'pncp_maybe_upgrade', -100 );
 

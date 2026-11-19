@@ -24,6 +24,12 @@ final class PNCP_Ip {
 	const CRON = 'pncp_refresh_ip_lists';
 
 	/**
+	 * 3.6.1: autoloaded option with the fingerprint (list_sum()) of the Bunny list when all its addresses are
+	 * spelled as normalize() spells them ('' = they are not).
+	 */
+	const BUNNY_SUM = 'pncp_ip_lists_bunny_sum';
+
+	/**
 	 * Per-request cache of the IP.
 	 *
 	 * @var string|null
@@ -163,7 +169,18 @@ final class PNCP_Ip {
 		$name = self::dc_group_name( $bin );
 		// The list of groups is small and autoloaded: an address whose group does not exist costs no query.
 		$known = get_option( 'pncp_dc_groups', array() );
-		if ( ! is_array( $known ) || ! in_array( $name, $known, true ) ) {
+		if ( ! is_array( $known ) ) {
+			return '';
+		}
+		if ( isset( $known[0] ) ) {
+			// As stored before 3.6.1: only the names of the groups (until the lists are next refreshed).
+			if ( ! in_array( $name, $known, true ) ) {
+				return '';
+			}
+		} elseif ( ! isset( $known[ $name ] ) || ! self::dc_byte_listed( (string) $known[ $name ], ord( $bin[ strlen( $bin ) > 4 ? 2 : 1 ] ) ) ) {
+			// 3.6.1: the group also says which values of the next byte its ranges cover. Most visitors' addresses
+			// are in no range of their group: the group (an option of its own, often thousands of ranges) is
+			// then not read at all, where it was one query and a large unserialize() on every page.
 			return '';
 		}
 		// 3.4.3: the stamp of the last rebuild is part of the APCu key. The lists are often refreshed from WP-CLI
@@ -198,12 +215,28 @@ final class PNCP_Ip {
 	}
 
 	/**
+	 * 3.6.1: is a value of the byte after the group's own byte(s) covered by a range of the group? The group's
+	 * map is 256 bits as 64 hex digits, most significant bit first.
+	 *
+	 * @param string $map  Map (64 hex digits).
+	 * @param int    $byte The byte's value (0–255).
+	 * @return bool
+	 */
+	private static function dc_byte_listed( $map, $byte ) {
+		if ( 64 !== strlen( $map ) || ! ctype_xdigit( $map ) ) {
+			return true; // Not a map (changed elsewhere): the group decides.
+		}
+		return 0 !== ( hexdec( $map[ $byte >> 2 ] ) & ( 8 >> ( $byte & 3 ) ) );
+	}
+
+	/**
 	 * Rebuilds the groups from the downloaded data center lists: each range as its first and last address (hex,
 	 * so they compare as text), in the group of its first byte(s). Lists are at least /8 (IPv4) and /16 (IPv6)
 	 * (sane_ranges()), so a range never spans two groups.
 	 */
 	public static function build_datacenter_index() {
 		$groups = array();
+		$maps   = array();
 		foreach ( array_keys( self::datacenters() ) as $name ) {
 			// 3.4.3: sane_ranges() again, for a list written to the database some other way: a range wider than
 			// a group would only be put in the group of its first address.
@@ -227,19 +260,38 @@ final class PNCP_Ip {
 					$start[ $i ] = chr( ord( $start[ $i ] ) & $mask );
 					$end[ $i ]   = chr( ord( $start[ $i ] ) | ( ~$mask & 0xFF ) );
 				}
-				$groups[ self::dc_group_name( $start ) ][] = array( bin2hex( $start ), bin2hex( $end ), $name );
+				$group              = self::dc_group_name( $start );
+				$groups[ $group ][] = array( bin2hex( $start ), bin2hex( $end ), $name );
+				// 3.6.1: the values of the next byte the range covers (all of them in between its first and last).
+				$at = 4 === strlen( $start ) ? 1 : 2;
+				if ( ! isset( $maps[ $group ] ) ) {
+					$maps[ $group ] = array_fill( 0, 256, false );
+				}
+				for ( $b = ord( $start[ $at ] ), $last = ord( $end[ $at ] ); $b <= $last; $b++ ) {
+					$maps[ $group ][ $b ] = true;
+				}
 			}
 		}
 		$old = get_option( 'pncp_dc_groups', array() );
-		foreach ( array_diff( is_array( $old ) ? $old : array(), array_keys( $groups ) ) as $gone ) {
+		$old = is_array( $old ) ? ( isset( $old[0] ) ? $old : array_keys( $old ) ) : array();
+		foreach ( array_diff( $old, array_keys( $groups ) ) as $gone ) {
 			delete_option( $gone );
 		}
 		foreach ( $groups as $option => $rows ) {
 			update_option( $option, $rows, false );
 		}
 		update_option( 'pncp_dc_stamp', (string) microtime( true ), true );
-		// Autoloaded (a short list of names): read on every page without a query of its own.
-		update_option( 'pncp_dc_groups', array_keys( $groups ), true );
+		// Autoloaded (a short list of names, 3.6.1: each with the map of dc_byte_listed()): read on every page
+		// without a query of its own.
+		$index = array();
+		foreach ( $maps as $group => $bits ) {
+			$hex = '';
+			for ( $i = 0; $i < 256; $i += 4 ) {
+				$hex .= dechex( ( $bits[ $i ] ? 8 : 0 ) | ( $bits[ $i + 1 ] ? 4 : 0 ) | ( $bits[ $i + 2 ] ? 2 : 0 ) | ( $bits[ $i + 3 ] ? 1 : 0 ) );
+			}
+			$index[ $group ] = $hex;
+		}
+		update_option( 'pncp_dc_groups', $index, true );
 		if ( function_exists( 'wp_set_option_autoload' ) ) {
 			wp_set_option_autoload( 'pncp_dc_groups', true ); // Stored as not autoloaded before 3.3.2.
 		}
@@ -306,8 +358,20 @@ final class PNCP_Ip {
 	 * @param string[] $ranges CIDR.
 	 */
 	public static function store_list( $name, $ranges ) {
-		$ranges = self::sane_ranges( $ranges );
-		update_option( self::LISTS_OPTION . '_' . $name, array_values( $ranges ), in_array( $name, array( 'cloudflare', 'bunny' ), true ) );
+		$ranges = array_values( self::sane_ranges( $ranges ) );
+		update_option( self::LISTS_OPTION . '_' . $name, $ranges, in_array( $name, array( 'cloudflare', 'bunny' ), true ) );
+		if ( 'bunny' === $name ) {
+			// 3.6.1: the fingerprint of the list when every address in it is spelled as normalize() spells it,
+			// so is_bunny() can use the list as it is ('' = not so: is_bunny() builds its table as before).
+			$canonical = true;
+			foreach ( $ranges as $range ) {
+				if ( false === strpos( $range, '/' ) && self::normalize( $range ) !== $range ) {
+					$canonical = false;
+					break;
+				}
+			}
+			update_option( self::BUNNY_SUM, $canonical && $ranges ? self::list_sum( $ranges ) : '', true );
+		}
 		$updated          = get_option( self::LISTS_OPTION . '_updated', array() );
 		$updated          = is_array( $updated ) ? $updated : array();
 		$updated[ $name ] = time();
@@ -318,6 +382,17 @@ final class PNCP_Ip {
 		if ( isset( self::datacenters()[ $name ] ) ) {
 			self::build_datacenter_index();
 		}
+	}
+
+	/**
+	 * 3.6.1: a fingerprint of a list (its length and a CRC of its entries), to tell that it is the list a note
+	 * was made about.
+	 *
+	 * @param string[] $list List.
+	 * @return string
+	 */
+	private static function list_sum( $list ) {
+		return count( $list ) . ':' . sprintf( '%u', crc32( implode( "\n", $list ) ) );
 	}
 
 	/**
@@ -603,8 +678,17 @@ final class PNCP_Ip {
 	 * @return string
 	 */
 	public static function remote_addr() {
+		static $memo = array( null, '' ); // 3.6.1: REMOTE_ADDR as given and its normalized form (asked many times per request).
+		$raw = isset( $_SERVER['REMOTE_ADDR'] ) ? $_SERVER['REMOTE_ADDR'] : ''; // phpcs:ignore WordPress.Security.ValidatedSanitizedInput -- Only the memo key; sanitized below.
+		if ( is_string( $raw ) && $raw === $memo[0] ) {
+			return $memo[1];
+		}
 		$ip = isset( $_SERVER['REMOTE_ADDR'] ) ? sanitize_text_field( wp_unslash( $_SERVER['REMOTE_ADDR'] ) ) : '';
-		return self::normalize( $ip );
+		$ip = self::normalize( $ip );
+		if ( is_string( $raw ) ) {
+			$memo = array( $raw, $ip );
+		}
+		return $ip;
 	}
 
 	/**
@@ -713,26 +797,43 @@ final class PNCP_Ip {
 			return false;
 		}
 		if ( null === self::$bunny ) {
-			$exact  = array();
-			$cidrs  = array();
-			$mapped = str_repeat( "\0", 10 ) . "\xff\xff";
-			foreach ( self::list_of( 'bunny' ) as $range ) {
-				if ( false === strpos( $range, '/' ) ) {
-					// 3.4.3: in the spelling of normalize(), as the visitor IP is: an IPv4-mapped entry matches its
-					// IPv4 visitor, and an entry that is not an address is skipped instead of warning.
-					$bin = @inet_pton( $range ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged -- Invalid value = false.
-					if ( false === $bin ) {
-						continue;
+			$list = self::list_of( 'bunny' );
+			$sum  = $list ? get_option( self::BUNNY_SUM, false ) : '';
+			if ( is_string( $sum ) && '' !== $sum && self::list_sum( $list ) === $sum ) {
+				// 3.6.1: every address in the list is already written as normalize() writes it (checked when the
+				// list was stored, see BUNNY_SUM): the list itself is the lookup table. Building it took ~0.35 ms
+				// on every request (an inet_pton() and inet_ntop() per address).
+				self::$bunny = array( array_flip( $list ), array_values( preg_grep( '#/#', $list ) ) );
+			} else {
+				$exact     = array();
+				$cidrs     = array();
+				$mapped    = str_repeat( "\0", 10 ) . "\xff\xff";
+				$canonical = true;
+				foreach ( $list as $range ) {
+					if ( false === strpos( $range, '/' ) ) {
+						// 3.4.3: in the spelling of normalize(), as the visitor IP is: an IPv4-mapped entry matches its
+						// IPv4 visitor, and an entry that is not an address is skipped instead of warning.
+						$bin = @inet_pton( $range ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged -- Invalid value = false.
+						if ( false === $bin ) {
+							$canonical = false;
+							continue;
+						}
+						if ( 16 === strlen( $bin ) && 0 === strpos( $bin, $mapped ) ) {
+							$bin = substr( $bin, 12 );
+						}
+						$key           = (string) inet_ntop( $bin );
+						$exact[ $key ] = true;
+						$canonical     = $canonical && $key === $range;
+					} else {
+						$cidrs[] = $range;
 					}
-					if ( 16 === strlen( $bin ) && 0 === strpos( $bin, $mapped ) ) {
-						$bin = substr( $bin, 12 );
-					}
-					$exact[ (string) inet_ntop( $bin ) ] = true;
-				} else {
-					$cidrs[] = $range;
+				}
+				self::$bunny = array( $exact, $cidrs );
+				// A list stored before 3.6.1: its fingerprint is noted once (a later request takes the quick way).
+				if ( $list && false === $sum && ! ( class_exists( 'PNCP_Bots', false ) && PNCP_Bots::explaining() ) ) {
+					add_option( self::BUNNY_SUM, $canonical ? self::list_sum( $list ) : '', '', true );
 				}
 			}
-			self::$bunny = array( $exact, $cidrs );
 		}
 		$key = self::normalize( (string) $ip );
 		if ( '' !== $key && isset( self::$bunny[0][ $key ] ) ) {
@@ -837,11 +938,19 @@ final class PNCP_Ip {
 	 * @return string[]
 	 */
 	public static function trusted_ranges( $s ) {
+		static $memo = array( null, array() ); // 3.6.1: read several times per request (client_ip()).
+		$raw = isset( $s['trusted_proxies'] ) ? $s['trusted_proxies'] : '';
+		if ( is_string( $raw ) && $raw === $memo[0] ) {
+			return $memo[1];
+		}
 		$out = array();
-		foreach ( PNCP_Options::parse_list( isset( $s['trusted_proxies'] ) ? $s['trusted_proxies'] : '' ) as $range ) {
+		foreach ( PNCP_Options::parse_list( $raw ) as $range ) {
 			if ( ! PNCP_Options::range_too_wide( $range ) ) {
 				$out[] = $range;
 			}
+		}
+		if ( is_string( $raw ) ) {
+			$memo = array( $raw, $out );
 		}
 		return $out;
 	}
@@ -893,8 +1002,15 @@ final class PNCP_Ip {
 			$trusted = $legacy || self::is_trusted_proxy( $remote, $s, $setting );
 			if ( $trusted ) {
 				$chain = array_map( 'trim', explode( ',', sanitize_text_field( wp_unslash( $_SERVER[ $headers[ $setting ] ] ) ) ) );
+				// 3.6.1: a Cloudflare edge on the way (REMOTE_ADDR, or a hop that a proxy of this server wrote into
+				// X-Forwarded-For). Everything to its left in X-Forwarded-For came from whoever sent the request to
+				// Cloudflare: a Cloudflare Worker (which anyone can rent, and whose subrequests leave from Cloudflare's
+				// own addresses) can write any address there. The walk stops at the edge, and the visitor is the
+				// CF-Connecting-IP that Cloudflare writes itself (see cloudflare_hop()).
+				$cf_hop = ! $legacy && 'x_forwarded_for' === $setting && self::cloudflare_hop( $remote );
+				$i      = count( $chain ) - 1;
 				// From the end: the last value is the one written by our own proxy.
-				for ( $i = count( $chain ) - 1; $i >= 0; $i-- ) {
+				for ( ; ! $cf_hop && $i >= 0; $i-- ) {
 					$candidate = self::normalize( $chain[ $i ] );
 					if ( '' === $candidate ) {
 						break;
@@ -903,6 +1019,12 @@ final class PNCP_Ip {
 					if ( $legacy || 'x_forwarded_for' !== $setting || ! self::is_trusted_proxy( $candidate, $s, $setting ) ) {
 						break;
 					}
+					if ( self::cloudflare_hop( $candidate ) ) {
+						$cf_hop = true; // $i is moved left past the edge by the loop: the edge is a hop, not the visitor.
+					}
+				}
+				if ( $cf_hop ) {
+					$ip = self::cloudflare_visitor( $chain, $i, $ip, $s );
 				}
 				if ( $legacy && $ip !== $remote ) {
 					self::$reliable = false;
@@ -954,7 +1076,92 @@ final class PNCP_Ip {
 	}
 
 	/**
-	 * Can the request IP be spoofed? (false only with "trust every proxy")
+	 * 3.6.1: is the address a Cloudflare edge (from Cloudflare's published list, not a private address)?
+	 *
+	 * @param string $ip IP.
+	 * @return bool
+	 */
+	private static function cloudflare_hop( $ip ) {
+		return '' !== $ip && ! self::is_private( $ip ) && self::in_any( $ip, self::list_of( 'cloudflare' ) );
+	}
+
+	/**
+	 * 3.6.1: the visitor behind a Cloudflare edge found in X-Forwarded-For (or as REMOTE_ADDR). Cloudflare writes
+	 * CF-Connecting-IP itself and a Worker cannot set it, while everything left of the edge in X-Forwarded-For
+	 * came from the client: so CF-Connecting-IP is the visitor. On a normal Cloudflare site Cloudflare also
+	 * appended that same address to X-Forwarded-For, and the two agree. When they do not (or CF-Connecting-IP is
+	 * missing) and the request does not carry the CDN shared secret, someone wrote X-Forwarded-For through
+	 * Cloudflare (a Worker, their own zone): the IP is then unreliable, as for a Bunny edge without the secret
+	 * (counted for the limits, but it unlocks no allowed or private IPs, earns no violation and bans nobody).
+	 *
+	 * @param string[]             $chain    The X-Forwarded-For entries.
+	 * @param int                  $left     Index of the entry left of the Cloudflare edge (-1 = none).
+	 * @param string               $fallback The IP found so far.
+	 * @param array<string, mixed> $s        Settings.
+	 * @return string
+	 */
+	private static function cloudflare_visitor( $chain, $left, $fallback, $s ) {
+		$xff = $left >= 0 && isset( $chain[ $left ] ) ? self::normalize( $chain[ $left ] ) : '';
+		$cf  = isset( $_SERVER['HTTP_CF_CONNECTING_IP'] ) ? self::normalize( sanitize_text_field( wp_unslash( $_SERVER['HTTP_CF_CONNECTING_IP'] ) ) ) : '';
+		$own = '' !== trim( (string) ( isset( $s['cdn_secret'] ) ? $s['cdn_secret'] : '' ) ) && self::cdn_secret_ok( $s );
+		if ( ! $own && ( '' === $cf || $xff !== $cf ) ) {
+			self::$reliable = false;
+		}
+		if ( '' !== $cf ) {
+			return $cf;
+		}
+		return '' !== $xff ? $xff : $fallback;
+	}
+
+	/**
+	 * 3.6.1: the client address a forwarding header names, when it is not the server itself: the last address of
+	 * X-Forwarded-For (the one the nearest proxy wrote), X-Real-IP, CF-Connecting-IP or the last "for=" of
+	 * Forwarded. Only used to tell whether a proxy passes on visitors; never trusted as the visitor's IP.
+	 * (Moved here from PNCP_Origin, so that the early check, which loads no PNCP_Origin, can use it.)
+	 *
+	 * @return string The address, or '' when no header names an outside address.
+	 */
+	public static function forwarded_client() {
+		foreach ( array( 'HTTP_X_FORWARDED_FOR', 'HTTP_FORWARDED', 'HTTP_X_REAL_IP', 'HTTP_CF_CONNECTING_IP' ) as $header ) {
+			if ( empty( $_SERVER[ $header ] ) ) {
+				continue;
+			}
+			$value = sanitize_text_field( wp_unslash( $_SERVER[ $header ] ) );
+			if ( 'HTTP_FORWARDED' === $header ) {
+				$value = preg_match_all( '/for\s*=\s*"?([^";,\s]+)/i', $value, $found ) ? (string) end( $found[1] ) : '';
+			} else {
+				$parts = explode( ',', $value );
+				$value = (string) end( $parts );
+			}
+			$ip = self::normalize( $value );
+			if ( '' !== $ip && ! self::is_local( $ip ) ) {
+				return $ip;
+			}
+		}
+		return '';
+	}
+
+	/**
+	 * 3.6.1: does this request come from a reverse proxy that "Real visitor IP" does not trust? REMOTE_ADDR is
+	 * the server itself or a private address (a local Nginx / Varnish, a container network, a load balancer), a
+	 * forwarding header names an outside client, and the visitor IP is still REMOTE_ADDR. Then every visitor
+	 * shares that one address: nothing may be decided per IP (a ban on it would block the whole site), and the
+	 * administrator is told to set "Real visitor IP" (PNCP_Origin::notice(), Site Health).
+	 *
+	 * @return bool
+	 */
+	public static function untrusted_proxy_peer() {
+		$remote = self::remote_addr();
+		if ( '' === $remote || ! ( self::is_local( $remote ) || self::is_private( $remote ) ) ) {
+			return false;
+		}
+		return self::client_ip() === $remote && '' !== self::forwarded_client();
+	}
+
+	/**
+	 * Can the request IP be trusted? False when it may be spoofed: "trust every proxy", a Bunny edge without the
+	 * CDN shared secret, or (3.6.1) X-Forwarded-For through Cloudflare that does not match CF-Connecting-IP.
+	 * An unreliable IP is still counted for the limits, but unlocks nothing and earns no violation or ban.
 	 *
 	 * @return bool
 	 */
@@ -1036,6 +1243,27 @@ final class PNCP_Ip {
 	}
 
 	/**
+	 * 3.6.1: the network an address belongs to, for the per-network share of new counters
+	 * (PNCP_Bots::db_incr_capped()): IPv4 /24, IPv6 /48 (IPv4-mapped as IPv4).
+	 *
+	 * @param string $ip IP.
+	 * @return string e.g. 203.0.113.0/24 or 2001:db8:1::/48; '' when it is not an IP.
+	 */
+	public static function network_key( $ip ) {
+		$bin = @inet_pton( (string) $ip ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged -- Invalid value = false.
+		if ( false === $bin ) {
+			return '';
+		}
+		if ( 16 === strlen( $bin ) && 0 === strpos( $bin, str_repeat( "\0", 10 ) . "\xff\xff" ) ) {
+			$bin = substr( $bin, 12 );
+		}
+		if ( 4 === strlen( $bin ) ) {
+			return inet_ntop( substr( $bin, 0, 3 ) . "\0" ) . '/24';
+		}
+		return inet_ntop( substr( $bin, 0, 6 ) . str_repeat( "\0", 10 ) ) . '/48';
+	}
+
+	/**
 	 * Private, loopback or reserved IP?
 	 *
 	 * @param string $ip IP.
@@ -1085,12 +1313,99 @@ final class PNCP_Ip {
 	 * @return bool
 	 */
 	public static function in_any( $ip, $ranges ) {
+		// Same answers as in_range() for each range, but the address is read once and each range only once per
+		// request (compiled_range()): the official lists are compared on every request, several times.
+		$addr = @inet_pton( (string) $ip ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged -- Invalid value = false.
+		if ( false === $addr ) {
+			return false;
+		}
+		$len   = strlen( $addr );
+		$addr4 = null; // The IPv4 address an IPv4-mapped IPv6 address carries.
+		if ( 16 === $len && 0 === strpos( $addr, "\0\0\0\0\0\0\0\0\0\0\xff\xff" ) ) {
+			$addr4 = substr( $addr, 12 );
+		} elseif ( 4 === $len ) {
+			$addr4 = $addr;
+		}
 		foreach ( $ranges as $range ) {
-			if ( self::in_range( $ip, $range ) ) {
-				return true;
+			$range = (string) $range;
+			$c     = isset( self::$compiled[ $range ] ) ? self::$compiled[ $range ] : self::compiled_range( $range );
+			if ( 4 === $c[0] ) {
+				// An IPv4 range: an IPv4 address, or the IPv4 address an IPv4-mapped IPv6 address carries.
+				if ( null !== $c[1] && null !== $addr4 && ( $addr4 & $c[2] ) === $c[1] ) {
+					return true;
+				}
+			} elseif ( 16 === $c[0] ) {
+				if ( 16 === $len ) {
+					if ( null !== $c[1] && ( $addr & $c[2] ) === $c[1] ) {
+						return true;
+					}
+				} elseif ( null !== $c[3] && ( $addr & $c[4] ) === $c[3] ) {
+					return true; // An IPv4-mapped range (::ffff:198.51.100.0/120) for an IPv4 address.
+				}
 			}
 		}
 		return false;
+	}
+
+	/**
+	 * Ranges already read in this request: range as written => compiled_range().
+	 *
+	 * @var array<string, array{0:int, 1:string|null, 2:string, 3:string|null, 4:string}>
+	 */
+	private static $compiled = array();
+
+	/**
+	 * A range read once for in_any(), with exactly the rules of in_range(): the length of its address (0 = not
+	 * an address: never matches), its network and mask for an address of the same kind (null = invalid prefix:
+	 * never matches), and for an IPv4-mapped range (::ffff:a.b.c.d with no prefix or /96–/128) the IPv4 network
+	 * and mask it stands for (null = none).
+	 *
+	 * @param string $range IP or CIDR as written.
+	 * @return array{0:int, 1:string|null, 2:string, 3:string|null, 4:string}
+	 */
+	private static function compiled_range( $range ) {
+		if ( count( self::$compiled ) >= 50000 ) {
+			self::$compiled = array(); // A long-running process (WP-CLI) does not keep growing.
+		}
+		$parts  = explode( '/', trim( $range ), 2 );
+		$subnet = @inet_pton( $parts[0] ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged -- Invalid value = false.
+		$out    = array( 0, null, '', null, '' );
+		if ( false !== $subnet ) {
+			$len    = strlen( $subnet );
+			$out[0] = $len;
+			$bits   = $len * 8;
+			$valid  = true;
+			if ( isset( $parts[1] ) ) {
+				$valid = ctype_digit( $parts[1] ) && (int) $parts[1] <= $bits;
+				$bits  = (int) $parts[1];
+			}
+			if ( $valid ) {
+				$out[2] = self::mask( $bits, $len );
+				$out[1] = $subnet & $out[2];
+			}
+			if ( 16 === $len && 0 === strpos( $subnet, "\0\0\0\0\0\0\0\0\0\0\xff\xff" ) && ( ! isset( $parts[1] ) || ( ctype_digit( $parts[1] ) && (int) $parts[1] >= 96 && (int) $parts[1] <= 128 ) ) ) {
+				$out[4] = self::mask( isset( $parts[1] ) ? (int) $parts[1] - 96 : 32, 4 );
+				$out[3] = substr( $subnet, 12 ) & $out[4];
+			}
+		}
+		self::$compiled[ $range ] = $out;
+		return $out;
+	}
+
+	/**
+	 * A network mask of $bits ones, $len bytes long.
+	 *
+	 * @param int $bits Prefix length (0 to $len * 8).
+	 * @param int $len  4 or 16.
+	 * @return string
+	 */
+	private static function mask( $bits, $len ) {
+		$full = intdiv( $bits, 8 );
+		$mask = str_repeat( "\xff", $full );
+		if ( $bits % 8 ) {
+			$mask .= chr( 0xFF << ( 8 - $bits % 8 ) & 0xFF );
+		}
+		return str_pad( $mask, $len, "\0" );
 	}
 
 	/**

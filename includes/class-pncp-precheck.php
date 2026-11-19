@@ -37,6 +37,11 @@ final class PNCP_Precheck {
 	const FORMAT = 3;
 
 	/**
+	 * 3.6.1: transient set for an hour after maybe_sync() could not finish (see there).
+	 */
+	const RETRY = 'pncp_precheck_retry';
+
+	/**
 	 * Registers the hooks.
 	 */
 	public static function init() {
@@ -53,8 +58,20 @@ final class PNCP_Precheck {
 	 * wp-config.php line was deferred from a front-end upgrade request).
 	 */
 	public static function maybe_sync() {
-		if ( self::wanted() && 'ok' !== get_option( self::STATUS ) ) {
-			self::sync();
+		// 3.6.1: not on admin-ajax.php (every visitor's human check goes through it), and after a failed attempt at
+		// most once an hour: with a wp-config.php that cannot be changed (read-only, declare(strict_types=1)) the
+		// status stays "not_writable", and every admin request rebuilt the configuration, started WP_Filesystem and
+		// read wp-config.php twice. A "deferred" line (from a front-end upgrade) is still finished on the next
+		// admin page, and saving the settings always runs sync() itself.
+		if ( wp_doing_ajax() || ! self::wanted() ) {
+			return;
+		}
+		$status = get_option( self::STATUS );
+		if ( 'ok' === $status || ( 'deferred' !== $status && get_transient( self::RETRY ) ) ) {
+			return;
+		}
+		if ( 'ok' !== self::sync() ) {
+			set_transient( self::RETRY, 1, HOUR_IN_SECONDS );
 		}
 	}
 
@@ -318,8 +335,13 @@ final class PNCP_Precheck {
 			'block'           => self::set( PNCP_Options::parse_list( $s['block_ips'] ) ),
 			'crawlers'        => $crawlers,
 			'apcu'            => (bool) apply_filters( 'pncp_precheck_apcu', true ),
+			// 3.6.1: the PHP SAPIs where APCu is shared by every process (as PNCP_Log::apcu_ok()); elsewhere (CGI,
+			// LiteSpeed LSAPI) the page counters use the files, or each process would count on its own.
+			'apcu_sapis'      => array_values( array_map( 'strval', (array) apply_filters( 'pncp_precheck_apcu_sapis', array( 'fpm-fcgi', 'apache2handler' ) ) ) ),
 			// 3.6: most new files a minute without APCu (PNCP_Precheck_Runtime::NEW_FILES, new_file_ok()).
 			'new_files'       => max( 0, (int) apply_filters( 'pncp_precheck_new_files_per_minute', 2000 ) ),
+			// 3.6.1: new counter files one network (/24, /48) may take from them (PNCP_Precheck_Runtime::hit()).
+			'net_files'       => max( 1, (int) apply_filters( 'pncp_new_counters_per_network', PNCP_Bots::NET_NEW_KEYS_PER_MINUTE ) ),
 			// "Monitor only": log what would be refused, refuse nothing (with the end of the first-week monitoring).
 			'monitor'         => ! empty( $s['monitor_mode'] ),
 			'monitor_until'   => (int) $s['monitor_until'],
@@ -679,6 +701,16 @@ final class PNCP_Precheck {
 	 * @return bool
 	 */
 	private static function write_config( $path, $wanted, $original ) {
+		// 3.6.1: a symlinked wp-config.php (Deployer, Capistrano, some managed hosts link it to a shared file) is
+		// written where the link points. rename() replaces the link itself, so the release folder would get a
+		// private copy and stop following the shared file (rotated database credentials).
+		if ( is_link( $path ) ) {
+			$real = realpath( $path );
+			if ( false === $real || ! is_file( $real ) ) {
+				return false;
+			}
+			$path = $real;
+		}
 		$filesystem = self::filesystem( dirname( $path ) );
 		if ( ! $filesystem || ! $filesystem->is_writable( $path ) || ! $filesystem->is_writable( dirname( $path ) ) ) {
 			return false;
@@ -728,8 +760,28 @@ final class PNCP_Precheck {
 		// earned the ban, and starting WP_Filesystem (with its test file in uploads) there costs more than the write.
 		$dir = self::dir() . '/bans';
 		if ( is_dir( $dir ) || wp_mkdir_p( $dir ) ) {
-			@file_put_contents( $dir . '/' . md5( $ip ), (string) (int) $until, LOCK_EX ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged, WordPress.WP.AlternativeFunctions.file_system_operations_file_put_contents -- A tiny data file in the plugin's own folder.
+			// 3.6.1: never shorter than the ban the check already holds (a trap hit of an IP banned for longer, or
+			// the import of a longer Emergency Mode ban with the normal duration); an unban deletes the file.
+			$file = $dir . '/' . md5( $ip );
+			$old  = self::mirrored_until( $ip );
+			if ( $old < (int) $until ) {
+				@file_put_contents( $file, (string) (int) $until, LOCK_EX ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged, WordPress.WP.AlternativeFunctions.file_system_operations_file_put_contents -- A tiny data file in the plugin's own folder.
+			}
 		}
+	}
+
+	/**
+	 * 3.6.1: the expiry of the check's ban file of a ban key (0 = none).
+	 *
+	 * @param string $ip Ban key.
+	 * @return int
+	 */
+	public static function mirrored_until( $ip ) {
+		if ( ! self::has_dir() ) {
+			return 0;
+		}
+		$file = self::dir() . '/bans/' . md5( (string) $ip );
+		return is_file( $file ) ? (int) @file_get_contents( $file ) : 0; // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged, WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- A local file of the plugin's folder; removed in between = none.
 	}
 
 	/**
@@ -870,7 +922,10 @@ final class PNCP_Precheck {
 		$minutes = max( 1, (int) PNCP_Options::stored()['ban_minutes'] );
 		foreach ( $bans as $ip => $since ) {
 			// 3.5: an escalated probe ban (the second probe within 24 hours) is labelled as a probe.
-			PNCP_Log::import_ban( $ip, $since + $minutes * MINUTE_IN_SECONDS, isset( $probes[ $ip ] ) ? 'probe' : 'rate_page', $since );
+			// 3.6.1: with the expiry the check wrote, when that is later (Emergency Mode bans for longer than the
+			// stored duration): the stored one alone shortened the ban in the database and, mirrored back, in the check.
+			$until = max( $since + $minutes * MINUTE_IN_SECONDS, self::mirrored_until( PNCP_Ip::limit_key( (string) $ip ) ) );
+			PNCP_Log::import_ban( $ip, $until, isset( $probes[ $ip ] ) ? 'probe' : 'rate_page', $since );
 		}
 		// 3.5: the short first probe bans (only those without a full ban here: store_ban() mirrors the given expiry
 		// to the runtime's file, so a short one imported after a full one would shorten it).

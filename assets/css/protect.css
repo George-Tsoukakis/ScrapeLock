@@ -19,9 +19,15 @@ body.pncp-no-select .pncp-allow * {
 	-webkit-touch-callout: default;
 }
 
-/* Links keep the long-press menu on phones (open in new tab, copy link) */
-body.pncp-no-select a[href] {
+/* Links keep the long-press menu on phones only when the link menu is allowed (pncp_protect_allow_link_menu) */
+html:not(.pncp-no-menu) body.pncp-no-select a[href] {
 	-webkit-touch-callout: default;
+}
+
+/* Right-click blocked: no iOS long-press menu on links and images either (iOS shows it without a contextmenu event) */
+html.pncp-no-menu body.pncp-protected a[href],
+html.pncp-no-menu body.pncp-protected img {
+	-webkit-touch-callout: none;
 }
 
 body.pncp-protected img {
@@ -33,17 +39,35 @@ body.pncp-no-img-save img {
 	-webkit-touch-callout: none;
 }
 
-/* Blur while a screenshot tool is open (optional) */
-/* On the page's elements, not on body: a filter on body would move fixed headers, cookie bars and the
-   message, and the message stays readable */
-html.pncp-blurred body > *:not(.pncp-toast) {
-	filter: blur(14px);
+/* Blur while a screenshot is attempted (optional). Cannot stop an OS screenshot; it makes many of them unreadable.
+   Two layers, so nothing stays crisp:
+   1. .pncp-shield: a full-viewport layer whose backdrop-filter blurs everything under it (iframes, fixed bars,
+      canvas and video included);
+   2. a filter on every child of body as well, for browsers without backdrop-filter and for elements of the page
+      that sit above the shield (z-index at the maximum).
+   The reader's mark (mark.js) is a body child too, but its own inline filter: none !important wins and it stays
+   on top (z-index 2147483647, above the shield), so the IP / user and the date and time remain visible.
+   No transition: the blur must be painted in the very next frame, before a capture. */
+.pncp-shield {
+	display: none;
+	position: fixed;
+	inset: 0;
+	z-index: 2147483646;
+	pointer-events: none;
+	margin: 0;
+	padding: 0;
+	border: 0;
 }
 
-@media (prefers-reduced-motion: no-preference) {
-	html body.pncp-protected > * {
-		transition: filter 0.08s linear;
-	}
+html.pncp-blurred .pncp-shield {
+	display: block;
+	background: rgba(255, 255, 255, 0.12);
+	-webkit-backdrop-filter: blur(20px) saturate(0.9);
+	backdrop-filter: blur(20px) saturate(0.9);
+}
+
+html.pncp-blurred body > *:not(.pncp-toast):not(.pncp-shield) {
+	filter: blur(20px) !important;
 }
 
 /* Message: role="status", readable (contrast > 7:1), not in the middle of the screen */
@@ -103,6 +127,15 @@ html.pncp-blurred body > *:not(.pncp-toast) {
 	}
 
 	body.pncp-print-block > * {
+		display: none !important;
+	}
+
+	/* Printing off: should a theme or extension force the content visible again, it still prints blurred. */
+	body.pncp-print-block > *:not(.pncp-shield) {
+		filter: blur(20px) !important;
+	}
+
+	.pncp-shield {
 		display: none !important;
 	}
 

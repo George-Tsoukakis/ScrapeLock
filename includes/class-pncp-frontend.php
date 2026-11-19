@@ -239,22 +239,31 @@ final class PNCP_Frontend {
 		$title = is_singular() ? get_the_title() : wp_get_document_title();
 
 		$config = array(
-			'selection'   => (bool) $s['block_selection'],
-			'contextMenu' => (bool) $s['block_context_menu'],
-			'shortcuts'   => (bool) $s['block_shortcuts'],
-			'devtools'    => (bool) $s['block_devtools'],
-			'imageDrag'   => (bool) $s['block_image_drag'],
-			'textDrag'    => (bool) $s['block_text_drag'],
-			'blur'        => (bool) $s['blur_on_capture'],
-			'copyMode'    => $s['copy_mode'],
-			'minChars'    => (int) $s['attribution_min_chars'],
-			'printMode'   => $s['print_mode'],
-			'showMessage' => (bool) $s['show_message'],
-			'message'     => PNCP_Options::message( $s ),
-			'sourceTitle' => wp_strip_all_tags( html_entity_decode( $title, ENT_QUOTES, get_bloginfo( 'charset' ) ) ),
-			'sourceUrl'   => esc_url_raw( self::current_url() ),
-			'siteName'    => wp_strip_all_tags( get_bloginfo( 'name' ) ),
-			'i18n'        => array(
+			'selection'     => (bool) $s['block_selection'],
+			'contextMenu'   => (bool) $s['block_context_menu'],
+			'shortcuts'     => (bool) $s['block_shortcuts'],
+			'devtools'      => (bool) $s['block_devtools'],
+			'imageDrag'     => (bool) $s['block_image_drag'],
+			'textDrag'      => (bool) $s['block_text_drag'],
+			'blur'          => (bool) $s['blur_on_capture'],
+			/**
+			 * Filters whether links keep the browser's right-click menu ("Open in new tab", "Copy link address")
+			 * while right-click is blocked. Off by default: the menu is blocked on links and buttons
+			 * too, and only form fields, contenteditable and .pncp-allow keep it. Return true for the old behaviour.
+			 *
+			 * @param bool $allow Allow the menu on links.
+			 */
+			'allowLinkMenu' => (bool) apply_filters( 'pncp_protect_allow_link_menu', false ),
+			'blurTimeouts'  => self::blur_timeouts(),
+			'copyMode'      => $s['copy_mode'],
+			'minChars'      => (int) $s['attribution_min_chars'],
+			'printMode'     => $s['print_mode'],
+			'showMessage'   => (bool) $s['show_message'],
+			'message'       => PNCP_Options::message( $s ),
+			'sourceTitle'   => wp_strip_all_tags( html_entity_decode( $title, ENT_QUOTES, get_bloginfo( 'charset' ) ) ),
+			'sourceUrl'     => esc_url_raw( self::current_url() ),
+			'siteName'      => wp_strip_all_tags( get_bloginfo( 'name' ) ),
+			'i18n'          => array(
 				'source'     => __( 'Source', 'scrapelock' ),
 				'printBlock' => __( 'Printing this page is not allowed.', 'scrapelock' ),
 			),
@@ -264,20 +273,62 @@ final class PNCP_Frontend {
 	}
 
 	/**
-	 * The contents of one of the plugin's own minified files ('' if it cannot be read).
+	 * How long the screenshot blur lasts, in milliseconds: 'shot' after a screenshot shortcut (or until the visitor
+	 * clicks or types), 'away' while another window (snipping tool, screenshot app) has the focus (or until the
+	 * focus comes back). Both are capped, so the page is never left blurred.
+	 *
+	 * @return array{shot: int, away: int}
+	 */
+	private static function blur_timeouts() {
+		/**
+		 * Filters the screenshot blur durations (milliseconds, 500 to 60000).
+		 *
+		 * @param array{shot: int, away: int} $timeouts Durations.
+		 */
+		$t   = (array) apply_filters(
+			'pncp_blur_timeouts',
+			array(
+				'shot' => 5000,
+				'away' => 10000,
+			)
+		);
+		$out = array();
+		foreach ( array(
+			'shot' => 5000,
+			'away' => 10000,
+		) as $key => $default ) {
+			$out[ $key ] = isset( $t[ $key ] ) ? max( 500, min( 60000, (int) $t[ $key ] ) ) : $default;
+		}
+		return $out;
+	}
+
+	/**
+	 * The contents of one of the plugin's own minified files ('' if it cannot be read or is not the build of the current source).
 	 *
 	 * @param string $rel Path inside the plugin.
 	 * @return string
 	 */
 	private static function asset( $rel ) {
 		$file = PNCP_DIR . $rel;
-		// A minified file older than its readable source was not rebuilt after an edit: the readable file is
-		// loaded instead ('' here), so a fix never stays hidden behind an old build.
-		$source = PNCP_DIR . str_replace( '.min.', '.', $rel );
-		if ( ! is_readable( $file ) || ( is_file( $source ) && filemtime( $source ) > filemtime( $file ) ) ) {
+		if ( ! is_readable( $file ) ) {
 			return '';
 		}
-		return trim( (string) file_get_contents( $file ) ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- The plugin's own file.
+		$min = (string) file_get_contents( $file ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- The plugin's own file.
+		// The build (bin/build-min.sh) stamps every minified file with the SHA-1 of the readable source it was
+		// made from. The minified file is used only while that stamp matches the source, so an edit to the source
+		// without a rebuild can never ship an old build: the readable file is loaded instead ('' here). File times
+		// are not used: zip extraction, rsync and git give both files arbitrary, often equal, times.
+		$source = PNCP_DIR . str_replace( '.min.', '.', $rel );
+		if ( $source !== $file && is_readable( $source ) ) {
+			if ( ! preg_match( '#^/\*!\s*src-sha1:([0-9a-f]{40})\s*\*/#', $min, $m ) ) {
+				return '';
+			}
+			$text = (string) file_get_contents( $source ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- The plugin's own file.
+			if ( ! hash_equals( $m[1], sha1( str_replace( "\r", '', $text ) ) ) ) {
+				return '';
+			}
+		}
+		return trim( $min );
 	}
 
 	/**
@@ -298,7 +349,7 @@ final class PNCP_Frontend {
 	 * @return array<string, string>
 	 */
 	public static function script_attributes( $attributes ) {
-		if ( isset( $attributes['id'] ) && in_array( $attributes['id'], array( 'pncp-protect-js', 'pncp-protect-js-before', 'pncp-protect-js-after' ), true ) ) {
+		if ( isset( $attributes['id'] ) && in_array( $attributes['id'], array( 'pncp-protect-js', 'pncp-protect-js-before', 'pncp-protect-js-after', 'pncp-mark-js', 'pncp-mark-js-before', 'pncp-mark-js-after' ), true ) ) {
 			$attributes['data-cfasync']            = 'false';
 			$attributes['data-no-optimize']        = '1';
 			$attributes['data-no-defer']           = '1';

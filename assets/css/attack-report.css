@@ -1,0 +1,561 @@
+/*
+ * ScrapeLock – attack report (Attacks tab) and its dashboard widget.
+ *
+ * Every rule is scoped under .pncp-ar. Colours come from the tokens of admin.css (--pncp-*), which follow the
+ * admin colour scheme and the dark admin themes; the fallbacks are for the dashboard widget, where admin.css is
+ * not loaded.
+ */
+
+.pncp-ar {
+	--pncp-ar-bar: var(--pncp-accent, var(--wp-admin-theme-color, #2271b1));
+	--pncp-ar-bar-max: var(--pncp-bad, #d63638);
+	--pncp-ar-grid: var(--pncp-border, #dcdcde);
+	--pncp-ar-text: var(--pncp-text, #1d2327);
+	--pncp-ar-muted: var(--pncp-subtle, #646970);
+	--pncp-ar-surface: var(--pncp-surface-2, #f6f7f7);
+	--pncp-ar-line: var(--pncp-border, #dcdcde);
+	--pncp-ar-gap: var(--pncp-s4, 16px);
+}
+
+.pncp-ar .pncp-ar__notice {
+	margin: 0 0 var(--pncp-ar-gap);
+}
+
+.pncp-ar__warn {
+	padding: 8px 12px;
+	border-left: 4px solid var(--pncp-warn, #b35c00);
+	background: var(--pncp-warn-soft, #fcf3e6);
+	color: var(--pncp-warn-text, #7a3e00);
+}
+
+.pncp-ar__muted {
+	color: var(--pncp-ar-muted);
+}
+
+.pncp-ar__nowrap {
+	white-space: nowrap;
+}
+
+/* Period links */
+.pncp-ar__periods {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 6px;
+	margin: 12px 0 4px;
+}
+
+.pncp-ar__period {
+	display: inline-block;
+	padding: 4px 12px;
+	border: 1px solid var(--pncp-ar-line);
+	border-radius: 999px;
+	color: var(--pncp-ar-text);
+	text-decoration: none;
+	line-height: 1.6;
+}
+
+a.pncp-ar__period:hover,
+a.pncp-ar__period:focus {
+	border-color: var(--pncp-ar-bar);
+	color: var(--pncp-ar-bar);
+}
+
+.pncp-ar__period.is-current {
+	border-color: var(--pncp-ar-bar);
+	background: var(--pncp-ar-bar);
+	color: #fff;
+	font-weight: 600;
+}
+
+/* Key figures */
+.pncp-ar__kpis {
+	display: grid;
+	grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+	gap: 12px;
+	margin: 16px 0 0;
+	padding: 0;
+	list-style: none;
+}
+
+.pncp-ar__kpis--small {
+	grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+	margin: 8px 0 16px;
+}
+
+.pncp-ar__kpi {
+	display: flex;
+	flex-direction: column;
+	gap: 2px;
+	min-width: 0;
+	margin: 0;
+	padding: 12px 14px;
+	border: 1px solid var(--pncp-ar-line);
+	border-radius: var(--pncp-radius-sm, 8px);
+	background: var(--pncp-ar-surface);
+}
+
+.pncp-ar__kpi-value {
+	color: var(--pncp-ar-text);
+	font-size: 26px;
+	font-weight: 600;
+	line-height: 1.2;
+	font-variant-numeric: tabular-nums;
+}
+
+.pncp-ar__kpis--small .pncp-ar__kpi-value {
+	font-size: 20px;
+}
+
+.pncp-ar__kpi-label {
+	color: var(--pncp-muted, #50575e);
+	font-size: 13px;
+	overflow-wrap: anywhere;
+}
+
+.pncp-ar__kpi-hint {
+	color: var(--pncp-ar-muted);
+	font-size: 12px;
+}
+
+.pncp-ar__kpi--bad {
+	border-color: var(--pncp-bad-line, #f1b8bb);
+	background: var(--pncp-bad-soft, #fcf0f1);
+}
+
+.pncp-ar__kpi--bad .pncp-ar__kpi-value {
+	color: var(--pncp-bad-text, #8a2424);
+}
+
+.pncp-ar__kpi--good {
+	border-color: var(--pncp-on-line, #b5dfc5);
+	background: var(--pncp-on-soft, #e7f5ec);
+}
+
+.pncp-ar__kpi--good .pncp-ar__kpi-value {
+	color: var(--pncp-on-text, #005c32);
+}
+
+/* Charts */
+.pncp-ar__switch {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 6px;
+	margin: 0 0 12px;
+}
+
+.pncp-ar__switch .button[aria-pressed="true"] {
+	border-color: var(--pncp-ar-bar);
+	background: var(--pncp-ar-bar);
+	color: #fff;
+}
+
+.pncp-ar__chart {
+	margin: 0 0 20px;
+}
+
+.pncp-ar__chart:last-child {
+	margin-bottom: 0;
+}
+
+.pncp-ar__chart-title {
+	margin: 0 0 8px;
+	color: var(--pncp-ar-text);
+	font-weight: 600;
+}
+
+.pncp-ar__chart-desc {
+	display: block;
+	color: var(--pncp-ar-muted);
+	font-size: 12px;
+	font-weight: 400;
+}
+
+.pncp-ar__plot {
+	display: flex;
+	gap: 8px;
+	align-items: stretch;
+}
+
+.pncp-ar__yaxis {
+	display: flex;
+	flex-direction: column;
+	justify-content: space-between;
+	flex: 0 0 auto;
+	min-width: 2.5em;
+	height: 180px;
+	margin-top: -0.6em;
+	color: var(--pncp-ar-muted);
+	font-size: 11px;
+	line-height: 1.2;
+	text-align: right;
+	font-variant-numeric: tabular-nums;
+}
+
+.pncp-ar__canvas {
+	flex: 1 1 auto;
+	min-width: 0;
+}
+
+.pncp-ar__canvas svg {
+	display: block;
+	width: 100%;
+	height: 180px;
+	overflow: visible;
+}
+
+.pncp-ar__chart--small .pncp-ar__canvas svg {
+	height: 64px;
+}
+
+.pncp-ar__bar {
+	fill: var(--pncp-ar-bar);
+}
+
+.pncp-ar__bar.is-max {
+	fill: var(--pncp-ar-bar-max);
+}
+
+.pncp-ar__bar:hover {
+	opacity: 0.75;
+}
+
+.pncp-ar__grid {
+	stroke: var(--pncp-ar-grid);
+	stroke-width: 1;
+	stroke-dasharray: 3 3;
+}
+
+.pncp-ar__axis {
+	stroke: var(--pncp-border-strong, #c3c4c7);
+	stroke-width: 1;
+}
+
+.pncp-ar__xaxis {
+	display: flex;
+	justify-content: space-between;
+	gap: 8px;
+	margin-top: 4px;
+	color: var(--pncp-ar-muted);
+	font-size: 11px;
+	white-space: nowrap;
+}
+
+.pncp-ar__data {
+	margin-top: 8px;
+}
+
+.pncp-ar__data summary {
+	color: var(--pncp-ar-bar);
+	cursor: pointer;
+}
+
+.pncp-ar__data .pncp-table-wrap {
+	max-height: 320px;
+	overflow-y: auto;
+}
+
+/* Kinds of attack */
+.pncp-ar__col-bar {
+	width: 22%;
+	min-width: 140px;
+}
+
+.pncp-ar__meter {
+	display: inline-block;
+	width: calc(100% - 4em);
+	height: 8px;
+	margin-right: 6px;
+	overflow: hidden;
+	border-radius: 999px;
+	background: var(--pncp-ar-surface);
+	box-shadow: inset 0 0 0 1px var(--pncp-ar-line);
+	vertical-align: middle;
+}
+
+.pncp-ar__meter > span {
+	display: block;
+	height: 100%;
+	border-radius: 999px;
+	background: var(--pncp-ar-bar);
+}
+
+.pncp-ar__share {
+	color: var(--pncp-ar-muted);
+	font-size: 12px;
+	font-variant-numeric: tabular-nums;
+}
+
+.pncp-ar__advice {
+	min-width: 260px;
+	color: var(--pncp-muted, #50575e);
+	font-size: 12.5px;
+}
+
+.pncp-ar table tr.is-selected td {
+	background: var(--pncp-accent-soft, #eef4fb);
+}
+
+.pncp-ar .num {
+	text-align: right;
+	font-variant-numeric: tabular-nums;
+	white-space: nowrap;
+}
+
+.pncp-ar .pncp-ar__path code,
+.pncp-ar .pncp-ar__ua code {
+	word-break: break-all;
+}
+
+.pncp-ar__path {
+	min-width: 180px;
+	max-width: 420px;
+}
+
+.pncp-ar__ua {
+	min-width: 220px;
+}
+
+.pncp-ar__kinds {
+	min-width: 180px;
+	max-width: 380px;
+	font-size: 12.5px;
+}
+
+.pncp-ar__advice-inline {
+	display: none;
+}
+
+.pncp-ar__lock {
+	min-width: 120px;
+}
+
+.pncp-ar__lock-label {
+	display: block;
+	color: var(--pncp-ar-muted);
+	font-size: 11.5px;
+}
+
+.pncp-ar .pncp-harden-form,
+.pncp-ar__form {
+	display: inline-block;
+	margin: 0 4px 4px 0;
+}
+
+.pncp-ar__actions {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 4px;
+	align-items: center;
+}
+
+.pncp-ar__actions .pncp-ar__form {
+	margin: 0;
+}
+
+.pncp-ar__actions .pncp-badge {
+	margin-left: 0;
+}
+
+.pncp-ar__country {
+	font-weight: 600;
+	text-decoration: none;
+	letter-spacing: 0.03em;
+}
+
+.pncp-ar__rep {
+	display: inline-block;
+	padding: 0 8px;
+	border-radius: 999px;
+	font-size: 12px;
+	white-space: nowrap;
+}
+
+.pncp-ar__rep--bad {
+	background: var(--pncp-bad-soft, #fcf0f1);
+	color: var(--pncp-bad-text, #8a2424);
+}
+
+.pncp-ar__rep--good {
+	background: var(--pncp-on-soft, #e7f5ec);
+	color: var(--pncp-on-text, #005c32);
+}
+
+.pncp-ar__rep--neutral {
+	background: var(--pncp-ar-surface);
+	color: var(--pncp-muted, #50575e);
+}
+
+/* Two columns of tables (sign-in, CDN) */
+.pncp-ar__cols {
+	display: grid;
+	grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+	gap: 0 24px;
+}
+
+.pncp-ar__cols > div {
+	min-width: 0;
+}
+
+.pncp-ar__filter {
+	margin: 0 0 8px;
+}
+
+.pncp-ar__filter input[type="search"] {
+	max-width: 100%;
+}
+
+.pncp-ar__count {
+	margin-left: 8px;
+	color: var(--pncp-ar-muted);
+	font-size: 12px;
+}
+
+/* Export and email side by side */
+.pncp-ar__tools {
+	display: grid;
+	grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+	gap: var(--pncp-s5, 20px);
+	margin: 0 0 var(--pncp-s5, 20px);
+}
+
+/* Dashboard widget */
+.pncp-ar--widget .pncp-ar__kpis--small {
+	grid-template-columns: repeat(2, minmax(0, 1fr));
+	gap: 8px;
+	margin: 0 0 12px;
+}
+
+.pncp-ar--widget .pncp-ar__kpi {
+	padding: 8px 10px;
+}
+
+.pncp-ar--widget .pncp-ar__chart {
+	margin-bottom: 8px;
+}
+
+.pncp-ar--widget .pncp-ar__chart-title {
+	font-size: 12px;
+}
+
+.pncp-ar__widget-title {
+	margin: 8px 0 4px;
+}
+
+.pncp-ar__widget-list {
+	margin: 0 0 8px;
+}
+
+.pncp-ar__widget-list li {
+	display: flex;
+	justify-content: space-between;
+	gap: 8px;
+	margin: 0 0 4px;
+}
+
+.pncp-ar__widget-list code {
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+/* Small screens: the long tables keep readable columns and scroll inside their box; the kinds of attack show
+	their advice under the name instead of in a narrow column. */
+@media screen and (max-width: 782px) {
+	.pncp-ar__paths {
+		min-width: 640px;
+	}
+
+	.pncp-ar__ips {
+		min-width: 760px;
+	}
+
+	.pncp-ar__cats .pncp-ar__advice,
+	.pncp-ar__cats .pncp-ar__col-bar {
+		display: none;
+	}
+
+	.pncp-ar__cats td:first-child {
+		width: 100%;
+	}
+
+	.pncp-ar table.widefat.pncp-ar__cats th.num,
+	.pncp-ar table.widefat.pncp-ar__cats td.num {
+		padding-right: 6px;
+		padding-left: 6px;
+		font-size: 11px;
+	}
+
+	.pncp-ar table.widefat.pncp-ar__cats td.num {
+		font-size: 13px;
+	}
+
+	.pncp-ar__advice-inline {
+		display: block;
+		margin-top: 4px;
+		color: var(--pncp-muted, #50575e);
+		font-size: 12.5px;
+	}
+}
+
+/* Phones */
+@media screen and (max-width: 600px) {
+	.pncp-ar__kpis {
+		grid-template-columns: repeat(2, minmax(0, 1fr));
+		gap: 8px;
+	}
+
+	.pncp-ar__kpi {
+		padding: 10px;
+	}
+
+	.pncp-ar__kpi-value {
+		font-size: 20px;
+	}
+
+	.pncp-ar__canvas svg,
+	.pncp-ar__yaxis {
+		height: 140px;
+	}
+
+	.pncp-ar__cols,
+	.pncp-ar__tools {
+		grid-template-columns: minmax(0, 1fr);
+	}
+
+}
+
+@media (forced-colors: active) {
+	.pncp-ar__bar,
+	.pncp-ar__bar.is-max {
+		fill: CanvasText;
+	}
+
+	.pncp-ar__meter > span {
+		background: CanvasText;
+	}
+
+	.pncp-ar__period.is-current,
+	.pncp-ar__switch .button[aria-pressed="true"] {
+		border: 2px solid Highlight;
+	}
+}
+
+@media print {
+	.pncp-ar__switch,
+	.pncp-ar__filter,
+	.pncp-ar__form,
+	.pncp-ar__tools {
+		display: none !important;
+	}
+
+	.pncp-ar [data-pncp-ar-view][hidden] {
+		display: block !important;
+	}
+}
+
+/* An IP is never broken over lines (IPv6 is long, but still one word). */
+.pncp-ar .pncp-ar__ips td:first-child code {
+	white-space: nowrap;
+	word-break: normal;
+}

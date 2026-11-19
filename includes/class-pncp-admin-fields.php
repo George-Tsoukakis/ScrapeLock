@@ -34,6 +34,10 @@ final class PNCP_Admin_Fields {
 			'cdn_only'                => true,
 			'watermark_products'      => true,
 			'hide_rest_discovery'     => true,
+			'rate_limit_apionly'      => true, // 3.7: feed readers, apps and headless front ends that never open a page.
+			// 3.8: a new sign-in address must be written down; "Lost your password" links in old emails change.
+			'login_slug'              => true,
+			'bunny_strikes'           => true, // 3.8: an IP too fast at the CDN is blocked temporarily, also on cached pages.
 		);
 	}
 
@@ -48,6 +52,7 @@ final class PNCP_Admin_Fields {
 			'print_mode'          => array( 'block' ),
 			'feed_mode'           => array( 'disabled' ),
 			'auto_emergency_mode' => array( 'start' ),
+			'crowdsec_action'     => array( 'block' ), // 3.7: a recycled address may now belong to a real visitor.
 		);
 	}
 
@@ -88,6 +93,14 @@ final class PNCP_Admin_Fields {
 		// 3.6.
 		$add( array( 'user_mark_guests', 'user_mark_opacity' ), 'user_mark', 'on', __( 'Show who is reading over protected pages', 'scrapelock' ) );
 		$add( array( 'shared_ips', 'shared_logout' ), 'shared_alert', 'on', __( 'Email me when one account is used from several addresses at once', 'scrapelock' ) );
+		// 3.7.
+		$add( 'rate_limit_lowrep', 'reputation', 'on', __( 'Remember how each IP behaves (reputation)', 'scrapelock' ) );
+		$add( 'rate_limit_crowdsec', 'crowdsec_action', 'choice', __( 'The stricter page limit below', 'scrapelock' ), 'limit' );
+		// 3.8.
+		$add( array( 'login_max', 'login_window', 'login_ban_minutes', 'login_user_max', 'login_user_minutes', 'login_user_email' ), 'login_limit', 'on', __( 'Limit failed sign-ins', 'scrapelock' ) );
+		$add( array( 'bunny_all_lines', 'bunny_flood_4xx', 'bunny_strikes' ), 'bunny_import', 'on', __( 'Import attacks from Bunny CDN\'s logs', 'scrapelock' ) );
+		$add( 'bunny_rate', 'bunny_strikes', 'on', __( 'Count IPs that are too fast at the CDN toward a temporary block', 'scrapelock' ) );
+		$add( array( 'attack_retention', 'report_weekly' ), 'attack_record', 'on', __( 'Record where bots and attackers hit the site', 'scrapelock' ) );
 		return $map;
 	}
 
@@ -245,7 +258,37 @@ final class PNCP_Admin_Fields {
 		} else {
 			return '';
 		}
+		$text = self::upgrade_note( $key, $s, $text );
 		return sprintf( '<span class="pncp-default-note" id="%1$s">%2$s</span>', esc_attr( 'pncp-' . $key . '-default' ), esc_html( $text ) );
+	}
+
+	/**
+	 * 3.9: a setting that sites upgraded from an older version got with another value than new installs
+	 * (PNCP_Options::upgrade_values()), and that still has that value here: the note says both, e.g. "Default on
+	 * new installs: on. Sites installed before 2.6 got it off when they were upgraded." Otherwise the note as it is.
+	 *
+	 * @param string               $key  Field.
+	 * @param array<string, mixed> $s    Settings.
+	 * @param string               $text The note so far ("Default: on").
+	 * @return string
+	 */
+	private static function upgrade_note( $key, $s, $text ) {
+		$upgrade = PNCP_Options::upgrade_values();
+		if ( ! isset( $upgrade[ $key ] ) || (string) $s[ $key ] !== (string) $upgrade[ $key ]['value'] ) {
+			return $text;
+		}
+		$defaults = PNCP_Options::defaults();
+		if ( in_array( $key, PNCP_Options::bool_keys(), true ) ) {
+			$text = empty( $defaults[ $key ] )
+				/* translators: %s: version number, e.g. 2.6 */
+				? sprintf( __( 'Default on new installs: off. Sites installed before %s got it on when they were upgraded.', 'scrapelock' ), $upgrade[ $key ]['since'] )
+				/* translators: %s: version number, e.g. 2.6 */
+				: sprintf( __( 'Default on new installs: on. Sites installed before %s got it off when they were upgraded.', 'scrapelock' ), $upgrade[ $key ]['since'] );
+		} else {
+			/* translators: 1: the default number, 2: version number, e.g. 2.6, 3: the value upgraded sites got */
+			$text = sprintf( __( 'Default on new installs: %1$s. Sites installed before %2$s got %3$s when they were upgraded.', 'scrapelock' ), number_format_i18n( (int) $defaults[ $key ] ), $upgrade[ $key ]['since'], number_format_i18n( (int) $upgrade[ $key ]['value'] ) );
+		}
+		return $text;
 	}
 
 	/**

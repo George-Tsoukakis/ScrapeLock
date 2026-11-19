@@ -138,6 +138,8 @@ $saved_settings = PNCP_Options::stored();
 // 3.4: νέα εγκατάσταση = «Μόνο παρακολούθηση» για 7 ημέρες, που δεν στέλνει τίποτα ούτε στο CDN: κλειστό, όπως σε site
 // που ήδη υπήρχε.
 settings( array( 'enabled' => 1, 'trust_any_proxy' => 0, 'ban_strikes' => 3, 'monitor_mode' => 0, 'monitor_until' => 0 ) );
+// 3.9: temporary blocks reach the CDN only with "Send temporary blocks to the CDN" on (off on new installs).
+settings( array( 'edge_send_blocks' => 1 ) );
 // 3.4.1: και το όριο κλήσεων ανά 5 λεπτά (CALLS), η αναμονή μετά από 429 / λάθος token (NOT_BEFORE) και η κλειδαριά.
 foreach ( array( PNCP_Edge::CONFIG, PNCP_Edge::STATE, PNCP_Edge::RETIRE, PNCP_Edge::STAFF, PNCP_Edge::CALLS, PNCP_Edge::NOT_BEFORE, PNCP_Edge::DIRTY, PNCP_Edge::LOCK ) as $pncp_o ) {
 	delete_option( $pncp_o );

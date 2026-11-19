@@ -652,6 +652,31 @@ final class PNCP_Tester {
 					$why  = __( 'This IP is over the page limit for the stricter countries this minute.', 'scrapelock' );
 					$link = $countries;
 					break;
+				// 3.7.
+				case 'bad_ua':
+					$why  = __( 'The User-Agent carries an attack instead of a name (HTML or PHP tags, Shellshock, Log4Shell, SQL injection or control characters). No browser or crawler sends one; it is refused even for an always-allowed name.', 'scrapelock' );
+					$link = $bots;
+					break;
+				case 'host_ip':
+					$why  = __( 'The request opens the site by a public IP address instead of its name, as scanners that sweep address ranges do.', 'scrapelock' );
+					$link = $bots;
+					break;
+				case 'crowdsec':
+					$why  = __( 'The IP is in the CrowdSec blocklist, and listed IPs get a 403.', 'scrapelock' );
+					$link = array( 'bots', 'crowdsec', __( 'CrowdSec', 'scrapelock' ) );
+					break;
+				case 'rate_crowdsec':
+					$why  = __( 'The IP is in the CrowdSec blocklist and is over the stricter page limit for listed IPs this minute.', 'scrapelock' );
+					$link = array( 'bots', 'crowdsec', __( 'CrowdSec', 'scrapelock' ) );
+					break;
+				case 'rate_lowrep':
+					$why  = __( 'The IP has a bad reputation (it was blocked, trapped or refused as a bot in the last days) and is over the stricter page limit for such IPs this minute.', 'scrapelock' );
+					$link = array( 'bots', 'reputation', __( 'Reputation', 'scrapelock' ) );
+					break;
+				case 'rate_apionly':
+					$why  = __( 'The IP has not opened a page of the site in the last 24 hours and is over the limit for the REST API, GraphQL, feeds and sitemaps of such IPs this minute.', 'scrapelock' );
+					$link = $limits;
+					break;
 				default:
 					if ( 0 === strpos( $reason, 'rate_' ) ) {
 						$why = sprintf(
@@ -750,6 +775,25 @@ final class PNCP_Tester {
 		}
 		if ( PNCP_Ip::is_cdn_edge( $ip ) ) {
 			$notes[] = __( 'This address is a CDN edge shared by many visitors: per-IP checks (lists, temporary blocks, limits) are skipped for it.', 'scrapelock' );
+		}
+		// 3.7: the IP's reputation, when it is used (read only: the check records nothing).
+		if ( ! empty( $s['reputation'] ) && '' !== $ip ) {
+			$rep    = PNCP_Reputation::describe( $ip );
+			$levels = array(
+				'good'    => __( 'good: never blocked temporarily for a limit', 'scrapelock' ),
+				'bad'     => __( 'bad: the stricter page limit applies', 'scrapelock' ),
+				'neutral' => __( 'neutral', 'scrapelock' ),
+			);
+			$labels = PNCP_Reputation::event_labels();
+			$events = array();
+			foreach ( $rep['events'] as $event => $when ) {
+				$events[] = ( isset( $labels[ $event ] ) ? $labels[ $event ] : $event ) . ' (' . human_time_diff( (int) $when ) . ')';
+			}
+			/* translators: 1: score, 2: level, 3: list of events */
+			$notes[] = sprintf( __( 'Reputation of this IP: %1$d, %2$s. %3$s', 'scrapelock' ), $rep['score'], $levels[ $rep['level'] ], $events ? implode( ', ', $events ) . '.' : __( 'Nothing recorded in the last 7 days.', 'scrapelock' ) );
+		}
+		if ( PNCP_Crowdsec::enabled( $s ) && '' !== $ip && PNCP_Crowdsec::listed( $ip ) && empty( $result['code'] ) ) {
+			$notes[] = __( 'This IP is in the CrowdSec blocklist.', 'scrapelock' );
 		}
 		$until = PNCP_Options::emergency_until();
 		if ( $until ) {

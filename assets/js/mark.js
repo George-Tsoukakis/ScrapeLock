@@ -7,6 +7,9 @@
  *
  * It never takes a click, a tap or a selection (pointer-events: none), and is shown again when it is removed or
  * hidden (developer tools, an extension, a user style).
+ *
+ * While the page is blurred for a screenshot attempt (protect.js, html.pncp-blurred) the mark stays crisp on top
+ * of the blur (its own z-index and filter: none) and is drawn stronger, so the capture still shows the line.
  */
 ( function () {
 	'use strict';
@@ -17,7 +20,21 @@
 	}
 
 	var host = null;
+	var layer = null;
 	var text = '';
+	var base = Math.max( 0.02, Math.min( 0.6, Number( cfg.opacity ) || 0.1 ) );
+	// Over the blurred page the mark is the only readable thing: at least this strong.
+	var BLURRED = Math.max( base, Math.min( 0.6, Number( cfg.blurredOpacity ) || 0.35 ) );
+
+	function opacityNow() {
+		return document.documentElement.classList.contains( 'pncp-blurred' ) ? BLURRED : base;
+	}
+
+	function syncOpacity() {
+		if ( layer ) {
+			layer.style.opacity = String( opacityNow() );
+		}
+	}
 
 	function esc( value ) {
 		return String( value ).replace( /[&<>"']/g, function ( c ) {
@@ -48,10 +65,10 @@
 			el.style.setProperty( prop, css[ prop ], 'important' );
 		}
 		var root = el.attachShadow ? el.attachShadow( { mode: 'closed' } ) : el;
-		var layer = document.createElement( 'div' );
+		layer = document.createElement( 'div' );
 		layer.style.cssText =
 			'position:fixed;inset:0;pointer-events:none;' +
-			'opacity:' + Math.max( 0.02, Math.min( 0.6, Number( cfg.opacity ) || 0.1 ) ) + ';' +
+			'opacity:' + opacityNow() + ';' +
 			'background-image:' + tile( text ) + ';background-repeat:repeat;' +
 			'-webkit-print-color-adjust:exact;print-color-adjust:exact;';
 		root.appendChild( layer );
@@ -77,6 +94,7 @@
 			host = build();
 			document.body.appendChild( host );
 		}
+		syncOpacity();
 	}
 
 	// At most once per frame, however busy the page is.
@@ -100,6 +118,8 @@
 		}
 		window.setInterval( ensure, 2000 );
 		window.addEventListener( 'beforeprint', ensure );
+		// protect.js announces the screenshot blur: the mark is checked and strengthened in the same frame.
+		document.addEventListener( 'pncp:capture', ensure );
 	}
 
 	function run() {

@@ -20,6 +20,13 @@ final class PNCP_Origin {
 	const PROXY_OPTION = 'pncp_origin_proxy';
 
 	/**
+	 * 3.6.1: autoloaded option: when a request last came from a proxy that "Real visitor IP" does not trust (on
+	 * the server or a private network, PNCP_Ip::untrusted_proxy_peer()), whether or not "Only through the CDN" is
+	 * on (time).
+	 */
+	const PEER_OPTION = 'pncp_proxy_peer';
+
+	/**
 	 * Headers a reverse proxy adds with the address of the client it is passing on.
 	 */
 	const FORWARD_HEADERS = array( 'HTTP_X_FORWARDED_FOR', 'HTTP_FORWARDED', 'HTTP_X_REAL_IP', 'HTTP_CF_CONNECTING_IP' );
@@ -31,6 +38,9 @@ final class PNCP_Origin {
 		add_action( 'plugins_loaded', array( __CLASS__, 'guard' ), 0 );
 		add_action( 'admin_init', array( __CLASS__, 'sync_precheck' ) );
 		add_action( 'admin_notices', array( __CLASS__, 'notice' ) );
+		// 3.6.1: whenever protection is on; at the end of the request, so the visitor IP was found with every
+		// plugin's filters (cheap: returns at once unless REMOTE_ADDR is local or private).
+		add_action( 'shutdown', array( __CLASS__, 'note_peer' ) );
 		// After a settings change the warning is judged again from the next request through the proxy.
 		add_action( 'update_option_' . PNCP_OPTION, array( __CLASS__, 'forget_proxy' ) );
 	}
@@ -95,23 +105,7 @@ final class PNCP_Origin {
 	 * @return string The address, or '' when no header names an outside address.
 	 */
 	public static function forwarded_client() {
-		foreach ( self::FORWARD_HEADERS as $header ) {
-			if ( empty( $_SERVER[ $header ] ) ) {
-				continue;
-			}
-			$value = sanitize_text_field( wp_unslash( $_SERVER[ $header ] ) );
-			if ( 'HTTP_FORWARDED' === $header ) {
-				$value = preg_match_all( '/for\s*=\s*"?([^";,\s]+)/i', $value, $found ) ? (string) end( $found[1] ) : '';
-			} else {
-				$parts = explode( ',', $value );
-				$value = (string) end( $parts );
-			}
-			$ip = PNCP_Ip::normalize( $value );
-			if ( '' !== $ip && ! PNCP_Ip::is_local( $ip ) ) {
-				return $ip;
-			}
-		}
-		return '';
+		return PNCP_Ip::forwarded_client(); // 3.6.1: moved to PNCP_Ip (the early check uses it too).
 	}
 
 	/**
@@ -169,6 +163,55 @@ final class PNCP_Origin {
 	}
 
 	/**
+	 * 3.6.1: remembers (at most once a day) that requests come from a proxy on the server or a private network
+	 * that "Real visitor IP" does not trust, whenever protection is on (not only with "Only through the CDN"):
+	 * behind a local proxy every visitor then passes as the server itself, and behind a private one they all
+	 * share one address. Forgets it once the proxy is trusted.
+	 */
+	public static function note_peer() {
+		$remote = PNCP_Ip::remote_addr();
+		if ( '' === $remote || ! ( PNCP_Ip::is_local( $remote ) || PNCP_Ip::is_private( $remote ) ) || ! self::forwarded() ) {
+			return;
+		}
+		$s = PNCP_Options::stored();
+		if ( empty( $s['enabled'] ) ) {
+			return;
+		}
+		$all  = wp_load_alloptions();
+		$seen = isset( $all[ self::PEER_OPTION ] ) ? (int) $all[ self::PEER_OPTION ] : 0;
+		if ( PNCP_Ip::untrusted_proxy_peer() ) {
+			if ( $seen < time() - DAY_IN_SECONDS ) {
+				update_option( self::PEER_OPTION, time(), true );
+			}
+		} elseif ( $seen && '' !== PNCP_Ip::forwarded_client() ) {
+			delete_option( self::PEER_OPTION );
+		}
+	}
+
+	/**
+	 * 3.6.1: is "Real visitor IP" wrong for the proxy in front of this site? Judged from this request, or from
+	 * one in the last 7 days (note_peer()).
+	 *
+	 * @return bool
+	 */
+	public static function peer_problem() {
+		if ( ! PNCP_Status::is_enabled() ) {
+			return false;
+		}
+		$all = wp_load_alloptions();
+		return PNCP_Ip::untrusted_proxy_peer() || ( isset( $all[ self::PEER_OPTION ] ) && (int) $all[ self::PEER_OPTION ] > time() - 7 * DAY_IN_SECONDS );
+	}
+
+	/**
+	 * 3.6.1: the explanation of peer_problem(), for the admin notice and Site Health.
+	 *
+	 * @return string
+	 */
+	public static function peer_message() {
+		return __( 'Requests reach WordPress from a reverse proxy or load balancer on this server or a private network (REMOTE_ADDR is 127.0.0.1, the server\'s own address or a private address such as 10.x or 172.16-31.x, with a forwarding header such as X-Forwarded-For), but “Real visitor IP” does not read the visitor\'s address from it. Every visitor then has the proxy\'s address: on 127.0.0.1 they all pass as the server itself and are not checked, and on a private address nothing is limited or banned per IP (a ban would block the whole site). On the Bots tab, set “Real visitor IP” to the header the proxy sets (usually X-Forwarded-For or X-Real-IP); a proxy on the server or a private network is trusted for it.', 'scrapelock' );
+	}
+
+	/**
 	 * When an untrusted local proxy was last seen (0 = not seen). Read from the autoloaded options only, so a
 	 * site where the option does not exist pays no extra query on every request.
 	 *
@@ -185,6 +228,10 @@ final class PNCP_Origin {
 	public static function forget_proxy() {
 		if ( self::seen() ) {
 			delete_option( self::PROXY_OPTION );
+		}
+		$all = wp_load_alloptions();
+		if ( isset( $all[ self::PEER_OPTION ] ) ) {
+			delete_option( self::PEER_OPTION ); // 3.6.1.
 		}
 	}
 
@@ -215,7 +262,20 @@ final class PNCP_Origin {
 	 * untrusted local proxy.
 	 */
 	public static function notice() {
-		if ( ! current_user_can( 'manage_options' ) || ! PNCP_Status::notice_screen() || ! self::proxy_problem() ) {
+		if ( ! current_user_can( 'manage_options' ) || ! PNCP_Status::notice_screen() ) {
+			return;
+		}
+		if ( ! self::proxy_problem() ) {
+			if ( self::peer_problem() ) {
+				// 3.6.1: the same problem without "Only through the CDN".
+				printf(
+					'<div class="notice notice-warning"><p><strong>%1$s</strong> %2$s <a href="%3$s">%4$s</a></p></div>',
+					esc_html__( 'ScrapeLock cannot see your visitors\' addresses.', 'scrapelock' ),
+					esc_html( self::peer_message() ),
+					esc_url( PNCP_Status::settings_url( array( 'tab' => 'bots' ) ) . '#pncp-sec-ip' ),
+					esc_html__( 'Open the setting', 'scrapelock' )
+				);
+			}
 			return;
 		}
 		printf(

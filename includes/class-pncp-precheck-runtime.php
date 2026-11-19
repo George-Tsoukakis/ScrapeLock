@@ -36,6 +36,17 @@ final class PNCP_Precheck_Runtime {
 	const NEW_FILES = 2000;
 
 	/**
+	 * 3.6.1: new counter files one network (IPv4 /24, IPv6 /48) may take from NEW_FILES each minute, and how many
+	 * times the page limit its shared counter allows (see hit(); PNCP_Bots::NET_NEW_KEYS_PER_MINUTE).
+	 */
+	const NET_FILES = 64;
+
+	/**
+	 * 3.6.1: see NET_FILES.
+	 */
+	const NET_FACTOR = 4;
+
+	/**
 	 * Whether this request was logged here as "would block" ("Monitor only"): WordPress's own log then does
 	 * not log it a second time (PNCP_Log::add()).
 	 *
@@ -57,6 +68,14 @@ final class PNCP_Precheck_Runtime {
 	 * @var bool
 	 */
 	public static $no_visitor_ip = false;
+
+	/**
+	 * 3.6.1: whether the last hit() was counted under its network's shared counter (see hit()): such a count
+	 * limits, but earns no violation.
+	 *
+	 * @var bool
+	 */
+	public static $shared_hit = false;
 
 	/**
 	 * Called by the line in wp-config.php: reads the configuration from the data folder and runs the check.
@@ -207,7 +226,11 @@ final class PNCP_Precheck_Runtime {
 		if ( ! self::$no_visitor_ip && self::is_cdn( $ip, $c ) && self::cdn_trust_ok( $c ) && self::normalize_ip( isset( $_SERVER['REMOTE_ADDR'] ) ? (string) $_SERVER['REMOTE_ADDR'] : '' ) === $ip ) {
 			return null;
 		}
-		if ( self::in_any( $ip, $c['block'] ) ) {
+		// 3.6.1: behind a proxy that "Real visitor IP" does not trust, every visitor has the proxy's (private) address:
+		// a block, ban or limit on it would hit the whole site. Only the User-Agent checks below apply then;
+		// WordPress warns the administrator (PNCP_Origin::notice(), Site Health).
+		$per_ip = ! self::untrusted_proxy_peer( $ip );
+		if ( $per_ip && self::in_any( $ip, $c['block'] ) ) {
 			return array( 403, 'blocked_ip', $ip );
 		}
 
@@ -232,7 +255,7 @@ final class PNCP_Precheck_Runtime {
 
 		$dir    = (string) $c['dir'];
 		$bankey = self::limit_key( $ip, (int) $c['v6_prefix'] ); // IPv6: the /64, so a ban is not dodged by rotating addresses.
-		if ( self::banned( $dir, $bankey, $now ) ) {
+		if ( $per_ip && self::banned( $dir, $bankey, $now ) ) {
 			return array( 403, 'banned', $ip );
 		}
 		// 3.4.3: the bot list (and an empty User-Agent), as the normal check, unless "always allowed".
@@ -244,6 +267,9 @@ final class PNCP_Precheck_Runtime {
 			if ( '' !== $ua && ! empty( $c['bots'] ) && self::ua_listed( $ua, (array) $c['bots'] ) ) {
 				return array( 403, 'bot_ua', $ip );
 			}
+		}
+		if ( ! $per_ip ) {
+			return null;
 		}
 		// 3.5: a scanner probe (.env, .git, wp-config.php backups, dumps, backup archives at the top of the site):
 		// the configured paths can never be a WordPress page, so no 404 is needed to know. Only when the file does
@@ -277,45 +303,48 @@ final class PNCP_Precheck_Runtime {
 		// was not counted at all, so "Applebot" in the User-Agent read every cached page without limit. It now has
 		// four times the page limit, never a violation: far above what the real crawler asks of one site.
 		if ( $unverified ) {
-			return self::hit( $c, $bankey . '|crawler', $now ) > 4 * $limit ? array( 429, 'rate_page', $ip ) : null;
+			return self::hit( $c, $bankey . '|crawler', $now, $ip ) > 4 * $limit ? array( 429, 'rate_page', $ip ) : null;
 		}
 		// 3.4.3: a login cookie skipped this whole check before. Its name is public (a hash of the site address),
 		// and a page cache that serves stored pages to logged-in users (WP Super Cache "cache for known users")
 		// then served them without any limit. The check cannot verify the cookie, so it gets the blocks above
 		// and four times the page limit, never a violation; staff get their own rules from the normal check.
 		if ( self::login_cookie() ) {
-			return self::hit( $c, $bankey . '|login', $now ) > 4 * $limit ? array( 429, 'rate_page', $ip ) : null;
+			return self::hit( $c, $bankey . '|login', $now, $ip ) > 4 * $limit ? array( 429, 'rate_page', $ip ) : null;
 		}
 		// Prefetch: its own limit, three times the page limit, never a violation (as in the normal check).
 		if ( self::is_prefetch() ) {
-			return self::hit( $c, $bankey . '|prefetch', $now ) > 3 * $limit ? array( 429, 'rate_prefetch', $ip ) : null;
+			return self::hit( $c, $bankey . '|prefetch', $now, $ip ) > 3 * $limit ? array( 429, 'rate_prefetch', $ip ) : null;
 		}
 		// IPv6: also the /56, at four times the limit, without a violation (as in the normal check).
 		if ( ! empty( $c['v6_wide'] ) && false !== strpos( $ip, ':' ) && (int) $c['v6_prefix'] > 56 ) {
 			$wide = self::limit_key( $ip, 56 );
-			if ( false !== strpos( $wide, '/56' ) && self::hit( $c, $wide . '|56', $now ) > 4 * $limit ) {
+			if ( false !== strpos( $wide, '/56' ) && self::hit( $c, $wide . '|56', $now, $ip ) > 4 * $limit ) {
 				return array( 429, 'rate_page56', $ip );
 			}
 		}
 		// 3.4.3: the human check's stricter limit for visitors without its cookie, as in the normal check.
 		$human = isset( $c['human'] ) && is_array( $c['human'] ) ? (int) $c['human']['limit'] : 0;
 		if ( $human > 0 && ! $allowed && ! self::human_ok( $c, $ip, $bankey ) ) {
-			$unv = self::hit( $c, $bankey . '|unverified', $now );
+			$unv = self::hit( $c, $bankey . '|unverified', $now, $ip );
 			if ( $unv > $human ) {
-				if ( $unv === $human + 1 && ! self::monitoring( $c, $now ) && self::strike( $c, $bankey, $now ) ) {
+				// 3.6.1: no violation for an IP that may be spoofed, or for a count shared by a network (as the normal check).
+				if ( $unv === $human + 1 && $reliable && ! self::$shared_hit && ! self::monitoring( $c, $now ) && self::strike( $c, $bankey, $now ) ) {
 					self::ban( $dir, $bankey, $now + max( 1, (int) $c['ban_minutes'] ) * 60 );
 					self::event( $c, 403, 'ban', $ip );
 				}
 				return array( 429, 'rate_unverified', $ip );
 			}
 		}
-		$count = self::hit( $c, $bankey, $now );
+		$count = self::hit( $c, $bankey, $now, $ip );
 		if ( $count <= $limit ) {
 			return null;
 		}
 		// One "violation" per minute over the limit, as in the normal check; enough of them = a ban. Not in
-		// "Monitor only", which never bans.
-		if ( $count === $limit + 1 && ! self::monitoring( $c, $now ) && self::strike( $c, $bankey, $now ) ) {
+		// "Monitor only", which never bans. 3.6.1: never for an IP that may be spoofed (the normal check's
+		// PNCP_Ip::reliable(): a CDN edge without the CDN secret, "trust every proxy"), as the probe ban already
+		// did, and not for a count shared by a whole network (hit()).
+		if ( $count === $limit + 1 && $reliable && ! self::$shared_hit && ! self::monitoring( $c, $now ) && self::strike( $c, $bankey, $now ) ) {
 			self::ban( $dir, $bankey, $now + max( 1, (int) $c['ban_minutes'] ) * 60 );
 			self::event( $c, 403, 'ban', $ip ); // The event keeps the exact IP for the log.
 		}
@@ -607,7 +636,10 @@ final class PNCP_Precheck_Runtime {
 			if ( $trusted || $legacy ) {
 				$chain = array_map( 'trim', explode( ',', (string) $_SERVER[ $header ] ) );
 				$hops  = array( $remote ); // 3.4.3: the trusted proxies the address passed through.
-				for ( $i = count( $chain ) - 1; $i >= 0; $i-- ) {
+				// 3.6.1: stop at a Cloudflare edge and take CF-Connecting-IP, as PNCP_Ip::client_ip() does.
+				$cf_hop = ! $legacy && 'HTTP_X_FORWARDED_FOR' === $header && self::cf_hop( $remote, $c );
+				$i      = count( $chain ) - 1;
+				for ( ; ! $cf_hop && $i >= 0; $i-- ) {
 					$candidate = self::normalize_ip( $chain[ $i ] );
 					if ( '' === $candidate ) {
 						break;
@@ -617,6 +649,18 @@ final class PNCP_Precheck_Runtime {
 						break;
 					}
 					$hops[] = $ip;
+					if ( self::cf_hop( $ip, $c ) ) {
+						$cf_hop = true;
+					}
+				}
+				if ( $cf_hop ) {
+					$xff = $i >= 0 && isset( $chain[ $i ] ) ? self::normalize_ip( $chain[ $i ] ) : '';
+					$cf  = isset( $_SERVER['HTTP_CF_CONNECTING_IP'] ) ? self::normalize_ip( (string) $_SERVER['HTTP_CF_CONNECTING_IP'] ) : '';
+					$own = ! empty( $c['cdn_secret_hash'] ) && self::cdn_trust_ok( $c );
+					if ( ! $own && ( '' === $cf || $xff !== $cf ) ) {
+						$reliable = false;
+					}
+					$ip = '' !== $cf ? $cf : ( '' !== $xff ? $xff : $ip );
 				}
 				if ( $legacy && $ip !== $remote ) {
 					$reliable = false;
@@ -662,6 +706,54 @@ final class PNCP_Precheck_Runtime {
 			return false;
 		}
 		return self::in_any( $ip, $c['proxies'] ) || ( self::cdn_trust_ok( $c ) && self::in_any( $ip, $c['cdn_cf'] ) );
+	}
+
+	/**
+	 * 3.6.1: a Cloudflare edge (not a private address), as PNCP_Ip::cloudflare_hop().
+	 *
+	 * @param string               $ip IP.
+	 * @param array<string, mixed> $c  Configuration.
+	 * @return bool
+	 */
+	public static function cf_hop( $ip, $c ) {
+		return '' !== $ip && isset( $c['cdn_cf'] ) && is_array( $c['cdn_cf'] ) && self::in_any( $ip, $c['cdn_cf'] )
+			&& false !== filter_var( $ip, FILTER_VALIDATE_IP, FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE );
+	}
+
+	/**
+	 * 3.6.1: does the request come from a reverse proxy that "Real visitor IP" does not trust (REMOTE_ADDR on the
+	 * server or a private network, a forwarding header naming an outside client, and the visitor IP still
+	 * REMOTE_ADDR)? As PNCP_Ip::untrusted_proxy_peer(): every visitor shares that address, so nothing is decided
+	 * per IP. Call after client_ip().
+	 *
+	 * @param string $ip The visitor IP from client_ip().
+	 * @return bool
+	 */
+	public static function untrusted_proxy_peer( $ip ) {
+		$remote = self::normalize_ip( isset( $_SERVER['REMOTE_ADDR'] ) ? (string) $_SERVER['REMOTE_ADDR'] : '' );
+		if ( '' === $remote || $ip !== $remote ) {
+			return false;
+		}
+		if ( ! self::is_local( $remote ) && false !== filter_var( $remote, FILTER_VALIDATE_IP, FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE ) ) {
+			return false;
+		}
+		foreach ( array( 'HTTP_X_FORWARDED_FOR', 'HTTP_FORWARDED', 'HTTP_X_REAL_IP', 'HTTP_CF_CONNECTING_IP' ) as $header ) {
+			if ( empty( $_SERVER[ $header ] ) ) {
+				continue;
+			}
+			$value = (string) $_SERVER[ $header ];
+			if ( 'HTTP_FORWARDED' === $header ) {
+				$value = preg_match_all( '/for\s*=\s*"?([^";,\s]+)/i', $value, $found ) ? (string) end( $found[1] ) : '';
+			} else {
+				$parts = explode( ',', $value );
+				$value = (string) end( $parts );
+			}
+			$client = self::normalize_ip( $value );
+			if ( '' !== $client && ! self::is_local( $client ) ) {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	/**
@@ -966,14 +1058,23 @@ final class PNCP_Precheck_Runtime {
 	/**
 	 * Counts a page for the key in the current minute and returns the count.
 	 *
+	 * 3.6.1: without APCu a new key needs a new file, and new files are capped per minute (new_file_ok()). Past
+	 * the cap an address not seen yet that minute was not counted at all, so a burst of new addresses at the
+	 * start of each minute (cheap with IPv6) switched the page limit off for everyone. Now one network (IPv4 /24,
+	 * IPv6 /48) takes at most NET_FILES new files a minute, and its further new addresses, like every new address
+	 * once the cap is used up, are counted together under one file of their network, held to NET_FACTOR times
+	 * the limit (no violation: see $shared_hit). As PNCP_Bots::db_incr_capped().
+	 *
 	 * @param array<string, mixed> $c   Configuration.
 	 * @param string               $key Key.
 	 * @param int                  $now Time.
+	 * @param string               $ip  3.6.1: the visitor IP ('' = no network fallback).
 	 * @return int
 	 */
-	public static function hit( $c, $key, $now ) {
+	public static function hit( $c, $key, $now, $ip = '' ) {
+		self::$shared_hit = false;
 		$minute = (int) floor( $now / 60 );
-		if ( ! empty( $c['apcu'] ) && function_exists( 'apcu_enabled' ) && apcu_enabled() ) {
+		if ( self::apcu_usable( $c ) ) {
 			$name = 'pncp_pc_' . md5( $c['dir'] . '|' . $key . '|' . $minute );
 			apcu_add( $name, 0, 120 );
 			$count = apcu_inc( $name );
@@ -986,10 +1087,69 @@ final class PNCP_Precheck_Runtime {
 			self::cleanup( $c['dir'] . '/hits', $minute );
 		}
 		$file = $dir . '/' . md5( $key );
-		if ( ! is_file( $file ) && ! self::new_file_ok( $c, $now ) ) {
-			return 1; // 3.6: over the cap: counted as this key's first page of the minute, nothing written.
+		if ( is_file( $file ) ) {
+			return self::increment( $file );
 		}
-		return self::increment( $file );
+		$net = '' !== $ip && ( ! isset( $c['new_files'] ) || (int) $c['new_files'] > 0 ) ? self::network_key( $ip ) : '';
+		if ( '' === $net ) {
+			return self::new_file_ok( $c, $now ) ? self::increment( $file ) : 1;
+		}
+		// The network's share of new files this minute (its own small file counts as one of them).
+		$share_file = $dir . '/.net-' . md5( $net );
+		$share      = is_file( $share_file ) || self::new_file_ok( $c, $now ) ? self::increment( $share_file ) : PHP_INT_MAX;
+		$per_net    = isset( $c['net_files'] ) ? max( 1, (int) $c['net_files'] ) : self::NET_FILES;
+		if ( $share <= $per_net && self::new_file_ok( $c, $now ) ) {
+			return self::increment( $file );
+		}
+		// Counted with the other new addresses of its network (per kind of count: the key's "|..." part).
+		$suffix = strstr( $key, '|' );
+		$shared = $dir . '/' . md5( 'net|' . $net . ( false === $suffix ? '' : $suffix ) );
+		if ( ! is_file( $shared ) && ! self::new_file_ok( $c, $now, 2 ) ) {
+			return 1; // Too many networks at once: as before 3.6.1, counted as the first page, nothing written.
+		}
+		$count = self::increment( $shared );
+		if ( $count < 1 ) {
+			return 1;
+		}
+		self::$shared_hit = true;
+		return (int) ceil( $count / self::NET_FACTOR );
+	}
+
+	/**
+	 * 3.6.1: the network of an address (IPv4 /24, IPv6 /48), as PNCP_Ip::network_key().
+	 *
+	 * @param string $ip IP.
+	 * @return string
+	 */
+	public static function network_key( $ip ) {
+		$bin = @inet_pton( (string) $ip );
+		if ( false === $bin ) {
+			return '';
+		}
+		if ( 16 === strlen( $bin ) && 0 === strpos( $bin, str_repeat( "\0", 10 ) . "\xff\xff" ) ) {
+			$bin = substr( $bin, 12 );
+		}
+		if ( 4 === strlen( $bin ) ) {
+			return inet_ntop( substr( $bin, 0, 3 ) . "\0" ) . '/24';
+		}
+		return inet_ntop( substr( $bin, 0, 6 ) . str_repeat( "\0", 10 ) ) . '/48';
+	}
+
+	/**
+	 * 3.6.1: may the page counters use APCu? Only where APCu is shared by every PHP process of the site (PHP-FPM,
+	 * Apache mod_php), as PNCP_Log::apcu_ok(): under CGI or LiteSpeed LSAPI each process may have its own, and a
+	 * scraper spread over N processes got N times the page limit. The SAPIs come from the configuration
+	 * (filter `pncp_precheck_apcu_sapis`).
+	 *
+	 * @param array<string, mixed> $c Configuration.
+	 * @return bool
+	 */
+	public static function apcu_usable( $c ) {
+		if ( empty( $c['apcu'] ) || ! function_exists( 'apcu_enabled' ) || ! apcu_enabled() ) {
+			return false;
+		}
+		$sapis = isset( $c['apcu_sapis'] ) && is_array( $c['apcu_sapis'] ) ? $c['apcu_sapis'] : array( 'fpm-fcgi', 'apache2handler' );
+		return in_array( PHP_SAPI, $sapis, true );
 	}
 
 	/**
@@ -998,11 +1158,13 @@ final class PNCP_Precheck_Runtime {
 	 * use up the inodes or the disk quota of a shared host. The count is kept in the minute's hits folder, so it
 	 * is removed with it. A failure to count allows the file, as before.
 	 *
-	 * @param array<string, mixed> $c   Configuration.
-	 * @param int                  $now Time.
+	 * @param array<string, mixed> $c     Configuration.
+	 * @param int                  $now   Time.
+	 * @param int                  $times 3.6.1: allow up to this many times the cap (2: the shared network
+	 *                                    counters' own allowance once the cap is used up, see hit()).
 	 * @return bool
 	 */
-	public static function new_file_ok( $c, $now ) {
+	public static function new_file_ok( $c, $now, $times = 1 ) {
 		$cap = isset( $c['new_files'] ) ? (int) $c['new_files'] : self::NEW_FILES;
 		if ( $cap <= 0 ) {
 			return true;
@@ -1012,7 +1174,7 @@ final class PNCP_Precheck_Runtime {
 			@mkdir( $dir, 0755, true );
 		}
 		$count = self::increment( $dir . '/.new' );
-		return 0 === $count || $count <= $cap;
+		return 0 === $count || $count <= $cap * max( 1, (int) $times );
 	}
 
 	/**

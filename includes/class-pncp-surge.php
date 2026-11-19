@@ -308,12 +308,14 @@ final class PNCP_Surge {
 	}
 
 	/**
-	 * Saves the state (autoloaded: it is read once a minute, by the first request of the minute).
+	 * Saves the state. 3.6.1: not autoloaded. It is read and written once a minute, by the first request of the
+	 * minute; autoloaded, every write also rewrote the whole "alloptions" entry of a persistent object cache
+	 * (and every page loaded it). A site that has it autoloaded switches with its next write.
 	 *
 	 * @param array{minute:int, avg:float, samples:int, streak:int} $state State.
 	 */
 	private static function save( $state ) {
-		update_option( self::STATE, $state, true );
+		update_option( self::STATE, $state, false );
 	}
 
 	/**

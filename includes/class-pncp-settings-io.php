@@ -44,7 +44,7 @@ final class PNCP_Settings_Io {
 	 * @return string[]
 	 */
 	public static function secret_keys() {
-		return array( 'cdn_secret' );
+		return array( 'cdn_secret', 'crowdsec_key' ); // 3.7: the CrowdSec key.
 	}
 
 	/**
@@ -253,7 +253,7 @@ final class PNCP_Settings_Io {
 			'exported' => gmdate( 'c' ),
 			'site'     => home_url( '/' ),
 			// Told in the file too, so whoever imports it knows what to set again by hand.
-			'excluded' => array( 'cdn_secret', 'edge_api_token', 'private_feed_tokens' ),
+			'excluded' => array( 'cdn_secret', 'crowdsec_key', 'edge_api_token', 'private_feed_tokens' ),
 			'settings' => $settings,
 		);
 	}
@@ -363,10 +363,13 @@ final class PNCP_Settings_Io {
 		foreach ( array_merge( self::secret_keys(), self::internal_keys() ) as $key ) {
 			unset( $input[ $key ] );
 		}
-		if ( isset( $values['cdn_secret'] ) ) {
-			$input['cdn_secret'] = (string) $values['cdn_secret']; // Only from WP-CLI "settings set".
-			if ( '' === $input['cdn_secret'] ) {
-				$input['cdn_secret_clear'] = 1;
+		// Only from WP-CLI "settings set": an empty value clears the secret.
+		foreach ( self::secret_keys() as $key ) {
+			if ( isset( $values[ $key ] ) ) {
+				$input[ $key ] = (string) $values[ $key ];
+				if ( '' === $input[ $key ] ) {
+					$input[ $key . '_clear' ] = 1;
+				}
 			}
 		}
 		// As if every tab were saved at once: the form's checks apply.
