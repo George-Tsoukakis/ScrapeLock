@@ -155,6 +155,7 @@ final class PNCP_Bunny {
 		add_action( 'admin_menu', array( __CLASS__, 'preview_menu' ) ); // 3.9: "What would be blocked".
 		add_action( 'admin_init', array( __CLASS__, 'maybe_schedule' ) );
 		add_action( 'update_option_' . PNCP_OPTION, array( __CLASS__, 'settings_changed' ), 20, 2 );
+		add_filter( 'pre_update_option_' . PNCP_OPTION, array( __CLASS__, 'guard_login_allow' ), 20, 2 ); // 3.9.1.
 		add_action( 'update_option_' . PNCP_Edge::CONFIG, array( __CLASS__, 'edge_config_changed' ), 10, 2 );
 	}
 
@@ -327,9 +328,12 @@ final class PNCP_Bunny {
 			self::maybe_schedule();
 			return;
 		}
-		$was = is_array( $old ) && isset( $old['login_slug'] ) ? (string) $old['login_slug'] : '';
-		$now = is_array( $value ) && isset( $value['login_slug'] ) ? (string) $value['login_slug'] : '';
-		if ( $was !== $now && self::preset_locked( 'login' ) ) {
+		$was       = is_array( $old ) && isset( $old['login_slug'] ) ? (string) $old['login_slug'] : '';
+		$now       = is_array( $value ) && isset( $value['login_slug'] ) ? (string) $value['login_slug'] : '';
+		$allow_was = is_array( $old ) && isset( $old['bunny_login_allow'] ) ? (string) $old['bunny_login_allow'] : '';
+		$allow_now = is_array( $value ) && isset( $value['bunny_login_allow'] ) ? (string) $value['bunny_login_allow'] : '';
+		if ( ( $was !== $now || $allow_was !== $allow_now ) && self::preset_locked( 'login' ) ) {
+			// 3.9.1: also when "Allowed IPs for the login page at Bunny" changed: the rule gets the new list now.
 			// The sign-in address changed while wp-login.php is locked at Bunny: the rule follows now, not at
 			// the next run, so nobody is left without a way to sign in.
 			self::login_changed();
@@ -1306,6 +1310,61 @@ final class PNCP_Bunny {
 	}
 
 	/**
+	 * 3.9.1: while wp-login.php is locked at Bunny with the explicit list (a lock made since 3.9), the list
+	 * "Allowed IPs for the login page at Bunny" cannot be emptied, nor changed so that it no longer holds the IP
+	 * of the administrator who saves it. Before, an emptied list left the rule at Bunny with the previous list,
+	 * without a word. The stored list is kept and the reason is shown; any other setting in the same save is
+	 * saved as usual. To empty the list, remove the lock first. From WP-CLI only the empty list is refused.
+	 *
+	 * @param mixed $value New value of the settings.
+	 * @param mixed $old   Previous value.
+	 * @return mixed
+	 */
+	public static function guard_login_allow( $value, $old ) {
+		if ( ! is_array( $value ) || ! is_array( $old ) || ! get_option( self::LOGIN_STRICT, false ) || ! self::preset_locked( 'login' ) ) {
+			return $value;
+		}
+		$was = PNCP_Options::parse_list( isset( $old['bunny_login_allow'] ) ? (string) $old['bunny_login_allow'] : '' );
+		$now = PNCP_Options::parse_list( isset( $value['bunny_login_allow'] ) ? (string) $value['bunny_login_allow'] : '' );
+		if ( $was === $now ) {
+			return $value;
+		}
+		$why = '';
+		if ( ! $now ) {
+			$why = __( '“Allowed IPs for the login page at Bunny” was not emptied: wp-login.php is locked at Bunny with this list, and an empty list would leave the rule there with the old one. Remove the lock of the login page in the Bunny card first, then empty the list.', 'scrapelock' );
+		} else {
+			$ip = ( defined( 'WP_CLI' ) && WP_CLI ) ? '' : self::current_admin_ip();
+			if ( '' !== $ip && ! PNCP_Ip::in_any( $ip, $now ) ) {
+				$why = sprintf(
+					/* translators: %s: the administrator's IP */
+					__( '“Allowed IPs for the login page at Bunny” was not changed: the new list does not hold your IP now (%s), and wp-login.php is locked at Bunny with this list, so you would be kept out. Keep your IP (or its IPv6 /64) in the list.', 'scrapelock' ),
+					$ip
+				);
+			}
+		}
+		if ( '' === $why ) {
+			return $value;
+		}
+		$value['bunny_login_allow'] = isset( $old['bunny_login_allow'] ) ? $old['bunny_login_allow'] : '';
+		if ( defined( 'WP_CLI' ) && WP_CLI && class_exists( 'WP_CLI' ) ) {
+			WP_CLI::warning( $why );
+		} elseif ( function_exists( 'add_settings_error' ) ) {
+			add_settings_error( PNCP_OPTION, 'pncp_bunny_login_allow', $why );
+		}
+		return $value;
+	}
+
+	/**
+	 * 3.9.1: the IPs the login rule at Bunny was last sent with (empty = not locked or not known).
+	 *
+	 * @return string[]
+	 */
+	private static function login_rule_sent() {
+		$rules = self::rules();
+		return isset( $rules['preset_login']['allow'] ) ? array_values( (array) $rules['preset_login']['allow'] ) : array();
+	}
+
+	/**
 	 * Locks wp-login.php at Bunny with the explicit list, after the checks of login_lock_blockers().
 	 *
 	 * @param array<string, mixed> $preset  The login preset.
@@ -1375,6 +1434,16 @@ final class PNCP_Bunny {
 					/* translators: %s: IP */
 					: sprintf( __( 'Your IP now (%s) is not in the list.', 'scrapelock' ), $ip )
 			) . ( $is && ! $covered && $strict ? ' ' . esc_html__( 'The lock at Bunny keeps you out of wp-login.php from here: add it below.', 'scrapelock' ) : '' ) . '</p>';
+		}
+		if ( $is && $strict && $list && self::login_rule_sent() !== array_values( self::login_rule_allow() ) ) {
+			// 3.9.1: the list changed but the rule at Bunny was not sent again yet (or sending failed).
+			echo '<p class="pncp-edge-error">' . esc_html(
+				sprintf(
+					/* translators: %s: list of IPs and ranges */
+					__( 'The rule at Bunny still lets through the previous list (%s). ScrapeLock sends the new list at its next run, within 15 minutes; if this stays, check the connection above.', 'scrapelock' ),
+					implode( ', ', self::login_rule_sent() )
+				)
+			) . '</p>';
 		}
 		if ( $is && ! $strict ) {
 			echo '<p class="description">' . esc_html__( 'This lock was made before ScrapeLock 3.9: it also lets in the IPs administrators used in the last 30 days, without asking. To use only this list, remove the lock and lock again.', 'scrapelock' ) . '</p>';
@@ -1708,8 +1777,10 @@ final class PNCP_Bunny {
 	 * @return bool
 	 */
 	public static function preset_locked( $id ) {
-		$rules = self::rules();
-		return isset( $rules[ self::preset_rule_id( $id ) ] ) || isset( $rules[ 'preset_' . $id ] );
+		$rules   = self::rules();
+		$presets = self::presets();
+		$harden  = ! empty( $presets[ $id ]['harden'] ) ? 'harden_' . $presets[ $id ]['harden'] : '';
+		return isset( $rules[ self::preset_rule_id( $id ) ] ) || isset( $rules[ 'preset_' . $id ] ) || ( '' !== $harden && isset( $rules[ $harden ] ) );
 	}
 
 	/**
@@ -1747,6 +1818,11 @@ final class PNCP_Bunny {
 		$presets = self::presets();
 		if ( isset( $presets[ $id ] ) && self::via_hardening( $presets[ $id ] ) && isset( self::rules()[ 'harden_' . $presets[ $id ]['harden'] ] ) ) {
 			return PNCP_Hardening::edge( (string) $presets[ $id ]['harden'], false );
+		}
+		$rules = self::rules();
+		if ( ! isset( $rules[ 'preset_' . $id ] ) && ! empty( $presets[ $id ]['harden'] ) && isset( $rules[ 'harden_' . $presets[ $id ]['harden'] ] ) ) {
+			// 3.9.1: locked from the hardening card, while that point no longer goes to the edge: remove it here.
+			return self::edge_unblock( 'harden_' . $presets[ $id ]['harden'] );
 		}
 		return self::edge_unblock( 'preset_' . $id );
 	}
@@ -4105,12 +4181,26 @@ final class PNCP_Bunny {
 				return;
 			case 'unlock':
 				$id = isset( $args[1] ) ? sanitize_key( $args[1] ) : '';
+				// 3.9.1: "preset_xmlrpc" (as `bunny rules` lists it) means the preset "xmlrpc", whichever rule ID
+				// holds it (preset_… or harden_…).
+				if ( 0 === strpos( $id, 'preset_' ) && isset( self::presets()[ substr( $id, 7 ) ] ) && ! isset( self::rules()[ $id ] ) ) {
+					$id = substr( $id, 7 );
+				}
 				if ( isset( self::presets()[ $id ] ) ) {
+					if ( ! self::preset_locked( $id ) ) {
+						/* translators: %s: preset */
+						WP_CLI::error( sprintf( __( '%s is not locked at Bunny CDN by ScrapeLock. See: wp scrapelock bunny rules', 'scrapelock' ), $id ) );
+					}
 					$fail( self::unlock_preset( $id ), __( 'Removed at Bunny CDN.', 'scrapelock' ) );
 					return;
 				}
 				// A rule ID; also while the site is locked, so a locked-out owner can open the login page again.
-				$fail( self::remove( self::clean_id( $id ) ), __( 'Removed at Bunny CDN.', 'scrapelock' ) );
+				$rid = self::clean_id( $id );
+				if ( ! isset( self::rules()[ $rid ] ) ) {
+					/* translators: %s: rule ID */
+					WP_CLI::error( sprintf( __( 'No rule “%s” made by ScrapeLock. See: wp scrapelock bunny rules', 'scrapelock' ), $rid ) );
+				}
+				$fail( self::remove( $rid ), __( 'Removed at Bunny CDN.', 'scrapelock' ) );
 				return;
 			case 'logging':
 				if ( isset( $assoc_args['enable'] ) ) {

@@ -772,12 +772,28 @@ final class PNCP_Cli {
 			/* translators: %d: number of settings */
 			WP_CLI::confirm( sprintf( _n( 'Change this %d setting?', 'Change these %d settings?', count( $prepared['changes'] ), 'scrapelock' ), count( $prepared['changes'] ) ) );
 		}
+		$before = get_option( PNCP_OPTION, array() );
 		$result = PNCP_Settings_Io::apply( $prepared, $reason );
 		if ( is_wp_error( $result ) ) {
 			WP_CLI::error( $result->get_error_message() );
 		}
+		// 3.9.1: count what was really saved; a setting can be refused on saving (e.g. the allowed IPs of a
+		// locked login page at Bunny), with a warning printed above.
+		wp_cache_delete( PNCP_OPTION, 'options' );
+		$after   = get_option( PNCP_OPTION, array() );
+		$changed = 0;
+		foreach ( $prepared['changes'] as $change ) {
+			$key      = (string) $change['key'];
+			$was      = is_array( $before ) && array_key_exists( $key, $before ) ? $before[ $key ] : null;
+			$is       = is_array( $after ) && array_key_exists( $key, $after ) ? $after[ $key ] : null;
+			$changed += ( $was !== $is ) ? 1 : 0;
+		}
+		if ( ! $changed ) {
+			WP_CLI::warning( __( 'Nothing was changed.', 'scrapelock' ) );
+			return;
+		}
 		/* translators: %d: number of settings */
-		WP_CLI::success( sprintf( _n( '%d setting changed. The previous settings were kept: "wp scrapelock settings undo" puts them back.', '%d settings changed. The previous settings were kept: "wp scrapelock settings undo" puts them back.', count( $prepared['changes'] ), 'scrapelock' ), count( $prepared['changes'] ) ) );
+		WP_CLI::success( sprintf( _n( '%d setting changed. The previous settings were kept: "wp scrapelock settings undo" puts them back.', '%d settings changed. The previous settings were kept: "wp scrapelock settings undo" puts them back.', $changed, 'scrapelock' ), $changed ) );
 	}
 
 	/**
