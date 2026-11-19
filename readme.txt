@@ -50,8 +50,7 @@ Whatever a visitor sees has already reached their device, so nothing stops a det
 * Generic HTTP libraries (curl, python-requests and the like, used by apps and integrations) pass by default; a strict option blocks them too, and the Log has an "Always allow this User-Agent" button.
 * Optional blocking of headless browsers and of scripts that copy a browser's User-Agent but not its headers. A carefully disguised automated browser is not detected this way; the limits, the human check and the bot trap still apply to it.
 * **New in 3.5, optional (off by default):** ban scanners on their first request for .env, .git, wp-config.php backups, database dumps and backup archives.
-* **3.7:** site rippers and address harvesters (HTTrack, WebCopier, Teleport Pro, Offline Explorer, SiteSucker, Octoparse and more) are blocked with the bot list, and so is any User-Agent that carries an attack instead of a name (HTML tags, Shellshock, Log4Shell, SQL injection).
-* **3.7, optional:** block the crawlers of SEO and marketing data tools (AhrefsBot, SemrushBot, MJ12bot, DotBot, DataForSeoBot and more), and refuse requests that open the site by its IP address instead of its name (scanners that sweep address ranges).
+* **3.7:** site rippers (HTTrack, WebCopier, Offline Explorer…) and attacks in the User-Agent are blocked; optional: SEO data crawlers (Ahrefs, Semrush, Majestic…) and requests that use the site's IP instead of its name.
 
 = Limits and blocks =
 
@@ -60,10 +59,7 @@ Whatever a visitor sees has already reached their device, so nothing stops a det
 * IPs that keep exceeding the limits are blocked for a while, optionally also at Cloudflare or Bunny CDN ("Test connection" checks the token, the zone and the permissions).
 * **Emergency Mode:** stricter limits for 1 hour to 3 days, then your settings return on their own. When traffic suddenly jumps, ScrapeLock emails you a one-click button to start it.
 * Optional human check without a captcha: visitors who have not scrolled, tapped or typed get a stricter page limit.
-* **3.7, optional: IP reputation.** Each IP gets a score from what it did in the last 7 days (signed in, passed the human check and read pages are good; the bot trap, scanner probes, fake crawlers, limits exceeded and blocks are bad), recent events counting more. A good IP (an office or a school behind one address) is never blocked for a limit; a bad one gets a stricter page limit for days after its block ends.
-* **3.7, optional:** a limit for IPs that read the REST API, GraphQL, feeds or sitemaps without ever opening a page: the scrapers that skip the HTML.
-* **3.7, optional: CrowdSec blocklist.** The community blocklist of CrowdSec (scanners, brute-forcers and scrapers seen on many sites, residential proxies among them), from your own CrowdSec agent or from a blocklist address. Listed IPs get a stricter page limit or a 403.
-* **3.7, optional: fail2ban.** Each temporary block is also written to the system log, and fail2ban blocks the IP in the server's firewall; the filter and the jail are on the Server rules tab.
+* **3.7, optional:** IP reputation (good IPs are never blocked for a limit, bad ones stay slowed for days), a limit for IPs that read only the API, feeds or sitemaps, the CrowdSec community blocklist, and fail2ban. See the FAQ.
 * Optional country rules, from Cloudflare's or Bunny CDN's country header or the free DB-IP Lite database.
 * Optional pre-cache check (the bot list, the limits and the blocks also apply to pages served by WP Super Cache, W3 Total Cache, Cache Enabler, WP Rocket and the like) and early check (stops known bots and blocked IPs before the theme and the other plugins load).
 * Always-blocked IPs / CIDR and referrers, usernames hidden from visitors, and trusted proxies (Cloudflare, Bunny CDN, your own), so the real IP cannot be spoofed.
@@ -78,13 +74,13 @@ Whatever a visitor sees has already reached their device, so nothing stops a det
 
 = Check, test and tune =
 
-* **Check a request (3.5, Log tab):** pick GPTBot, a fake Googlebot, curl, python-requests, a browser without browser headers, a real browser or your own request, or type an IP, User-Agent and address. ScrapeLock shows whether it would allow, block or limit it, why, and where it is set. Nothing is counted, logged or blocked. Copy-ready curl lines let you test for real from another computer, and the card lists what it does not simulate (the 404 limit, the cart, the early and pre-cache checks, the bot trap).
+* **Check a request (Log tab):** pick GPTBot, a fake Googlebot, curl, a real browser or your own IP, User-Agent and address, and see whether ScrapeLock would allow, block or limit it, and why. Nothing is counted, logged or blocked; copy-ready curl lines test it for real.
 * Staff are exempt while logged in (by default), so the admin bar reminds you: test in a private window.
-* **Site Health** warns about settings that do not work as intended. New in 3.5: it checks that crawlers really get ScrapeLock's robots.txt lines (a robots.txt file in the site's root replaces the one WordPress makes) and shows the lines to paste, that ScrapeLock's private folders cannot be read from the web, whether your text is still open through the REST API, full-text feeds or WPGraphQL while copy protection is on, and whether another plugin does the same job. These tests only fetch addresses of your own site and never write robots.txt.
-* Settings that explain themselves (3.5): rejected IP lines are named after saving, unsaved changes are flagged, defaults are labelled, options that may affect visitors or SEO are tagged, and "Off" status pills link to their setting.
+* **Site Health** warns about settings that do not work as intended: robots.txt lines that crawlers do not get, private folders readable from the web, text still open through the REST API, feeds or WPGraphQL, another plugin doing the same job. These tests only fetch your own site.
+* Settings that explain themselves: rejected lines are named, unsaved changes flagged, defaults labelled, options that may affect visitors or SEO tagged.
 * Presets (Balanced, Strict, Maximum) with undo, settings export and import, and a block log with a 24-hour summary and automatic deletion.
-* **3.7: visitors from AI assistants.** How many readers ChatGPT, Perplexity, Claude, Gemini, Copilot and others sent you in the last 30 days, and to which pages, counted on your server without cookies or personal data. It shows whether allowing the AI search bots brings readers.
-* WP-CLI: `wp scrapelock status`, `block`, `unblock`, `blocked`, `emergency`, `log`, `check --ip=<ip>` (what ScrapeLock would answer, without side effects), `settings`, `lockdown status` and, 3.7, `reputation <ip>`, `crowdsec status|sync|check` and `ai-referrals`.
+* **3.7:** visitors from AI assistants (ChatGPT, Perplexity, Claude, Gemini…) per assistant and page, counted on your server without personal data.
+* WP-CLI: `wp scrapelock status`, `block`, `unblock`, `blocked`, `emergency`, `log`, `check --ip=<ip>` (what ScrapeLock would answer, without side effects), `settings`, `lockdown status`, `reputation`, `crowdsec` and `ai-referrals`.
 * Abilities API (WordPress 6.9+) for administrators: read the summary, block or unblock an IP and start Emergency Mode from an AI agent or MCP client. None of them unlocks Lockdown.
 
 = On the page and images =
@@ -325,6 +321,8 @@ No, on purpose: only an app code, a recovery code or the SCRAPELOCK_UNLOCK line 
 * New: Site Health info and `wp scrapelock status` list the new settings; the suggested privacy policy text covers them.
 * Fix: on the settings screens, the note "Takes effect only when … is on" was shown even when that option was on.
 * Database: two new tables, `pncp_crowdsec` and `pncp_airef` (schema version 5), removed on uninstall.
+* Change: Lockdown no longer hooks the automatic updates of plugins, themes and translations. Nothing changes while the site is locked: WordPress's automatic updater stays off, and every package is still refused before it is downloaded and before it is copied (tested). Plugins and themes refused during the optional window for a minor release of WordPress (filter `pncp_lockdown_allow_core_minor`) are no longer logged as attempts to change the site.
+* Readme: the Description is shorter (the details of 3.7 are in the FAQ), within the 2,500-word limit of WordPress.org.
 
 = 3.6.1 =
 * New: completely redesigned settings screens. The plugin now uses the full width of wp-admin, with a header showing the protection state and quick actions, overview figures (blocked in 24 hours, IPs blocked now, protection layers on, preset), sticky tabs with icons, settings grouped into cards with switches, a save bar that stays visible and marks unsaved changes, and colours that follow the admin colour scheme.

@@ -273,9 +273,12 @@ final class PNCP_Lockdown {
 		// 3.4.3: with the filter pncp_lockdown_allow_core_minor, WordPress may install a minor release of itself
 		// while locked; plugins, themes and translations still wait (see core_minor_window()).
 		add_filter( 'auto_update_core', array( __CLASS__, 'auto_update_core' ), 9999, 2 );
-		foreach ( array( 'auto_update_plugin', 'auto_update_theme', 'auto_update_translation', 'async_update_translation' ) as $hook ) {
-			add_filter( $hook, array( __CLASS__, 'no_auto_update' ), 9999 );
-		}
+		// 3.7: no filter on the automatic updates of plugins, themes and translations any more (Plugin Check reads
+		// one as "changes how other plugins update"). While locked, WordPress's whole automatic updater is off
+		// (updater_disabled()), and every package, also one the updater asks for in the window of a minor release
+		// of WordPress, is refused before it is downloaded (upgrader_refuse()) and before it is copied
+		// (upgrader_refuse_install()).
+
 		add_action( 'automatic_updates_complete', array( __CLASS__, 'core_updated' ) );
 		foreach ( self::base_options() as $option ) {
 			add_filter( 'pre_update_option_' . $option, array( __CLASS__, 'keep_option' ), 9999, 3 );
@@ -1859,7 +1862,11 @@ final class PNCP_Lockdown {
 		if ( ! self::files_frozen( $upgrader ) ) {
 			return $reply;
 		}
-		self::refused( 'install:' . sanitize_file_name( wp_basename( (string) $package ) ) );
+		// 3.7: in the window of a minor release of WordPress the updater also asks for the plugins and themes with
+		// automatic updates on: refused as always, but expected, so not logged as an attempt to change the site.
+		if ( ! self::core_minor_window() ) {
+			self::refused( 'install:' . sanitize_file_name( wp_basename( (string) $package ) ) );
+		}
 		return new WP_Error( 'pncp_locked', self::frozen_message() );
 	}
 
@@ -2003,7 +2010,7 @@ final class PNCP_Lockdown {
 	 * @return bool|null
 	 */
 	public static function no_auto_update( $update ) {
-		return self::core_minor_window() ? false : $update;
+		return self::core_minor_window() ? false : $update; // 3.7: no longer hooked (see init()); kept for code that called it.
 	}
 
 	/**

@@ -498,17 +498,18 @@ final class PNCP_Crowdsec {
 		if ( ! $rows ) {
 			return;
 		}
-		$table = self::table();
 		foreach ( array_chunk( $rows, self::CHUNK, true ) as $chunk ) {
-			$values = array();
-			$args   = array( $table );
+			// One multi-row INSERT per chunk (a list can hold 200,000 addresses: one query each would take minutes).
+			// The SQL holds only fixed text: the table goes through %i, and every address and expiry through its own
+			// %s / %d placeholder in $wpdb->prepare(). $placeholders is "(%s, %d)" repeated, never a value.
+			$placeholders = implode( ', ', array_fill( 0, count( $chunk ), '(%s, %d)' ) );
+			$args         = array( self::table() );
 			foreach ( $chunk as $ip => $until ) {
-				$values[] = '(%s, %d)';
-				$args[]   = (string) $ip;
-				$args[]   = (int) $until;
+				$args[] = (string) $ip;
+				$args[] = (int) $until;
 			}
-			// phpcs:ignore WordPress.DB.DirectDatabaseQuery, WordPress.DB.PreparedSQL.NotPrepared, WordPress.DB.PreparedSQLPlaceholders -- Plugin table; placeholders built above.
-			$wpdb->query( $wpdb->prepare( 'INSERT INTO %i (ip, until_ts) VALUES ' . implode( ', ', $values ) . ' ON DUPLICATE KEY UPDATE until_ts = VALUES(until_ts)', $args ) );
+			// phpcs:ignore WordPress.DB.DirectDatabaseQuery, WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.PreparedSQL.NotPrepared, WordPress.DB.PreparedSQLPlaceholders, PluginCheck.Security.DirectDB.UnescapedDBParameter -- Plugin table; only placeholders are added to the SQL, every value is prepared.
+			$wpdb->query( $wpdb->prepare( "INSERT INTO %i (ip, until_ts) VALUES {$placeholders} ON DUPLICATE KEY UPDATE until_ts = VALUES(until_ts)", $args ) );
 		}
 	}
 
@@ -521,7 +522,7 @@ final class PNCP_Crowdsec {
 		global $wpdb;
 		foreach ( array_chunk( array_values( array_unique( $ips ) ), self::CHUNK ) as $chunk ) {
 			$marks = implode( ', ', array_fill( 0, count( $chunk ), '%s' ) );
-			// phpcs:ignore WordPress.DB.DirectDatabaseQuery, WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.PreparedSQLPlaceholders -- Plugin table; placeholders built above.
+			// phpcs:ignore WordPress.DB.DirectDatabaseQuery, WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.PreparedSQLPlaceholders, PluginCheck.Security.DirectDB.UnescapedDBParameter -- Plugin table; $marks is only "%s" placeholders, every IP is prepared.
 			$wpdb->query( $wpdb->prepare( "DELETE FROM %i WHERE ip IN ({$marks})", array_merge( array( self::table() ), $chunk ) ) );
 		}
 	}
