@@ -711,6 +711,11 @@ final class PNCP_Bots {
 		if ( '' !== $family && $per_ip && self::is_verified_crawler( $family, $ip ) ) {
 			return self::pass( 'search_engine' ); // Verified search engines: never blocked, never limited.
 		}
+		// 3.10: Google's other fetchers (GoogleAssociationService, the Chrome prefetch proxy…) and DuckDuckBot, from
+		// an address on their owner's official list: as a verified search engine.
+		if ( $per_ip && '' !== self::listed_fetcher( $ua, $ip, $s ) ) {
+			return self::pass( 'search_engine' );
+		}
 		$ai = self::ai_verdict( $ua, $ip, $s );
 		if ( 'verified' === $ai ) {
 			return self::pass( 'ai_search' ); // Verified AI search bots, as above.
@@ -805,7 +810,9 @@ final class PNCP_Bots {
 
 		// Every browser sends Accept-Language and "Mozilla/" in the User-Agent; most scripts do not.
 		// Not on wc-ajax: some payment gateways / extensions call them server-side, without Accept-Language.
-		if ( ! empty( $s['require_browser_headers'] ) && ! $allowed_ua && ! $feed && ! $unverified_crawler && in_array( $context, array( 'page', 'search' ), true ) && ! self::is_wc_ajax() && '' === self::wc_admin_ajax_action() && ! self::looks_like_browser( $ua ) ) {
+		// 3.10: never for an address on Google's official lists (its crawlers, special crawlers and user-triggered
+		// fetchers): those never send browser headers, whatever their User-Agent.
+		if ( ! empty( $s['require_browser_headers'] ) && ! $allowed_ua && ! $feed && ! $unverified_crawler && in_array( $context, array( 'page', 'search' ), true ) && ! self::is_wc_ajax() && '' === self::wc_admin_ajax_action() && ! self::looks_like_browser( $ua ) && ! ( $per_ip && PNCP_Ip::in_any( $ip, PNCP_Ip::list_of( 'google' ) ) ) ) {
 			return self::verdict( 403, 'no_browser', $ip );
 		}
 
@@ -1613,6 +1620,10 @@ final class PNCP_Bots {
 		if ( '' !== $def['list'] && PNCP_Ip::in_any( $ip, PNCP_Ip::list_of( $def['list'] ) ) ) {
 			return true;
 		}
+		// 3.10: Applebot's official list, before reverse DNS (an address off the list is still checked with DNS).
+		if ( 'apple' === $family && PNCP_Ip::in_any( $ip, PNCP_Ip::list_of( 'apple' ) ) ) {
+			return true;
+		}
 
 		$key    = 'pncp_se_' . md5( $family . '|' . $ip );
 		$cached = PNCP_Log::cache_get( $key );
@@ -1736,7 +1747,60 @@ final class PNCP_Bots {
 	 * @return bool
 	 */
 	public static function is_official_crawler_ip( $ip ) {
-		return PNCP_Ip::in_any( $ip, PNCP_Ip::list_of( 'google' ) ) || PNCP_Ip::in_any( $ip, PNCP_Ip::list_of( 'bing' ) );
+		foreach ( array( 'google', 'bing', 'apple', 'duckduckgo' ) as $list ) { // 3.10: also Applebot and DuckDuckBot.
+			if ( PNCP_Ip::in_any( $ip, PNCP_Ip::list_of( $list ) ) ) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	/**
+	 * 3.10: the fetchers verified only by their owner's official IP list: list => User-Agent words. Google's own
+	 * lists (crawlers, special crawlers, user-triggered fetchers) also hold the services that do not call
+	 * themselves Googlebot: GoogleAssociationService reads /.well-known/assetlinks.json for Android app links,
+	 * "Chrome Privacy Preserving Prefetch Proxy" reads /.well-known/traffic-advice. DuckDuckBot has no reverse DNS
+	 * of its own: only its list (https://duckduckgo.com/duckduckbot.json) can tell the real one. Such a User-Agent
+	 * from an address off the list is checked like any visitor, as before (never refused as a fake for it).
+	 * Filter `pncp_listed_fetchers`.
+	 *
+	 * @return array<string, string[]>
+	 */
+	public static function listed_fetchers() {
+		$fetchers = array(
+			'google'     => array_merge(
+				self::$crawlers['google']['ua'],
+				array( 'googleassociationservice', 'chrome privacy preserving prefetch proxy', 'googleproducer', 'google-pagerenderer', 'google-cloudvertexbot', 'google-cws', 'google-notebooklm', 'google-pinpoint', 'google favicon', 'googleimageproxy', 'duplexweb-google', 'google-adwords-instant', 'google web preview' )
+			),
+			'duckduckgo' => array( 'duckduckbot' ),
+		);
+		$fetchers = apply_filters( 'pncp_listed_fetchers', $fetchers );
+		return is_array( $fetchers ) ? $fetchers : array();
+	}
+
+	/**
+	 * 3.10: which official list verifies this request (listed_fetchers()): its name, or '' (none). Not when the
+	 * administrator's bot list names the User-Agent (with "Block bots" on): that choice is kept.
+	 *
+	 * @param string               $ua User-Agent.
+	 * @param string               $ip IP.
+	 * @param array<string, mixed> $s  Settings.
+	 * @return string
+	 */
+	public static function listed_fetcher( $ua, $ip, $s ) {
+		if ( '' === trim( (string) $ua ) || '' === (string) $ip ) {
+			return '';
+		}
+		foreach ( self::listed_fetchers() as $list => $needles ) {
+			if ( ! self::ua_in_list( $ua, (array) $needles ) || ! PNCP_Ip::in_any( $ip, PNCP_Ip::list_of( (string) $list ) ) ) {
+				continue;
+			}
+			if ( ! empty( $s['block_bots'] ) && self::ua_in_list( $ua, PNCP_Options::blocked_agents( $s ) ) ) {
+				return '';
+			}
+			return (string) $list;
+		}
+		return '';
 	}
 
 	/**
