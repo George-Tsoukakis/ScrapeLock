@@ -116,6 +116,10 @@ final class PNCP_Ip {
 				'https://developers.google.com/static/search/apis/ipranges/user-triggered-fetchers-google.json',
 			),
 			'bing'            => array( 'https://www.bing.com/toolbox/bingbot.json' ),
+			// 3.10: Applebot and DuckDuckBot publish their addresses too. Applebot is also verified by reverse DNS
+			// (*.applebot.apple.com); DuckDuckBot has no reverse DNS of its own, so its list is the only proof.
+			'apple'           => array( 'https://search.developer.apple.com/applebot.json' ),
+			'duckduckgo'      => array( 'https://duckduckgo.com/duckduckbot.json' ),
 			// AI search bots and assistants (since 2.5), one list per User-Agent.
 			'openai_search'   => array( 'https://openai.com/searchbot.json' ),
 			'openai_user'     => array( 'https://openai.com/chatgpt-user.json' ),
@@ -453,6 +457,8 @@ final class PNCP_Ip {
 		if ( ! empty( $s['enabled'] ) ) {
 			$needed[] = 'google';
 			$needed[] = 'bing';
+			$needed[] = 'apple';
+			$needed[] = 'duckduckgo';
 		}
 		if ( ! empty( $s['trust_cloudflare'] ) && in_array( $s['ip_header'], array( 'cf_connecting_ip', 'x_forwarded_for' ), true ) ) {
 			$needed[] = 'cloudflare';
@@ -484,6 +490,8 @@ final class PNCP_Ip {
 		$owners = array(
 			'google'          => 'Google',
 			'bing'            => 'Bing',
+			'apple'           => 'Apple',
+			'duckduckgo'      => 'DuckDuckGo',
 			'openai_search'   => 'OpenAI',
 			'openai_user'     => 'OpenAI',
 			'perplexity_bot'  => 'Perplexity',
@@ -494,7 +502,7 @@ final class PNCP_Ip {
 		$owner  = '';
 		if ( filter_var( $ip, FILTER_VALIDATE_IP ) ) {
 			foreach ( $owners as $list => $name ) {
-				if ( self::in_any( $ip, self::list_of( $list ) ) ) {
+				if ( self::in_any( $ip, self::list_of( $list ) ) || self::in_any( $ip, self::extra_ranges( $list ) ) ) {
 					$owner = $name;
 					break;
 				}
@@ -505,6 +513,74 @@ final class PNCP_Ip {
 		}
 		self::$owners[ $ip ] = $owner;
 		return $owner;
+	}
+
+	/**
+	 * 3.10: ranges an official list may lack, used next to it only to recognize that company's own bots (the AI
+	 * search verification and official_owner()), never to block anything.
+	 *
+	 * Built in: Anthropic's outbound range 160.79.104.0/21, from its API documentation ("IP addresses",
+	 * https://docs.anthropic.com/en/api/ip-addresses), which Claude-User also fetches from on behalf of users,
+	 * while https://claude.com/crawling/bots.json lists only some single addresses (14 in November 2026). To be
+	 * confirmed against that page from time to time; the filter can remove or change it.
+	 *
+	 * Filter `pncp_ip_extra_ranges` ( string[] $ranges, string $name ). The result goes through sane_ranges().
+	 *
+	 * @param string $name List name (PNCP_Ip::sources()).
+	 * @return string[]
+	 */
+	public static function extra_ranges( $name ) {
+		$built_in = array(
+			'anthropic' => array( '160.79.104.0/21' ),
+		);
+		$ranges   = isset( $built_in[ $name ] ) ? $built_in[ $name ] : array();
+		$ranges   = apply_filters( 'pncp_ip_extra_ranges', $ranges, (string) $name );
+		return is_array( $ranges ) ? array_values( self::sane_ranges( array_filter( $ranges, 'is_string' ) ) ) : array();
+	}
+
+	/**
+	 * 3.10: is a downloaded list too old to call a bot fake? The lists are refreshed every day and a failed
+	 * download keeps the previous one, so a list that has not been refreshed for a week means its source keeps
+	 * failing (or the option that needs it was off): the service may use new addresses since. A list with no
+	 * date is not stale. Filter `pncp_ip_list_max_age` (seconds, default a week; 0 = never stale).
+	 *
+	 * @param string $name List name.
+	 * @return bool
+	 */
+	public static function list_stale( $name ) {
+		$max = (int) apply_filters( 'pncp_ip_list_max_age', WEEK_IN_SECONDS, (string) $name );
+		if ( $max <= 0 ) {
+			return false;
+		}
+		$updated = self::lists_updated();
+		return ! empty( $updated[ $name ] ) && time() - $updated[ $name ] > $max;
+	}
+
+	/**
+	 * 3.10: a short description of a list for an explanation: how many entries it has, when it was updated, and
+	 * the built-in extra ranges used with it, e.g. "14 entries, updated 18 November 2026 (plus 160.79.104.0/21)".
+	 *
+	 * @param string $name List name.
+	 * @return string '' when the list has not been downloaded.
+	 */
+	public static function list_note( $name ) {
+		$updated = self::lists_updated();
+		$list    = self::list_of( $name );
+		if ( ! $list || empty( $updated[ $name ] ) ) {
+			return '';
+		}
+		$note = sprintf(
+			/* translators: 1: number of entries, 2: date */
+			_n( '%1$s entry, updated %2$s', '%1$s entries, updated %2$s', count( $list ), 'scrapelock' ),
+			number_format_i18n( count( $list ) ),
+			wp_date( get_option( 'date_format' ), $updated[ $name ] )
+		);
+		$extra = self::extra_ranges( $name );
+		if ( $extra ) {
+			/* translators: %s: IP ranges, e.g. 160.79.104.0/21 */
+			$note .= ' ' . sprintf( __( '(plus %s)', 'scrapelock' ), implode( ', ', $extra ) );
+		}
+		return $note;
 	}
 
 	/**
@@ -604,7 +680,9 @@ final class PNCP_Ip {
 			return $out;
 		}
 		// AWS (ip-ranges.json): only the servers (EC2), not CloudFront and the other services.
-		if ( is_array( $json ) && isset( $json['prefixes'][0]['ip_prefix'] ) ) {
+		// 3.10: only when the entries name their service, as AWS's do: a list of {"ip_prefix": …} without one
+		// (another publisher using the same key) is read by the generic branch below instead of coming out empty.
+		if ( is_array( $json ) && isset( $json['prefixes'][0]['ip_prefix'], $json['prefixes'][0]['service'] ) ) {
 			$keys = array(
 				'prefixes'      => 'ip_prefix',
 				'ipv6_prefixes' => 'ipv6_prefix',
@@ -632,12 +710,14 @@ final class PNCP_Ip {
 		if ( is_array( $json ) && isset( $json['prefixes'] ) && is_array( $json['prefixes'] ) ) {
 			foreach ( $json['prefixes'] as $prefix ) {
 				foreach ( array( 'ipv4Prefix', 'ipv6Prefix' ) as $key ) {
-					if ( isset( $prefix[ $key ] ) && self::valid_range( (string) $prefix[ $key ] ) ) {
+					if ( isset( $prefix[ $key ] ) && is_scalar( $prefix[ $key ] ) && self::valid_range( (string) $prefix[ $key ] ) ) {
 						$out[] = (string) $prefix[ $key ];
 					}
 				}
 			}
-			return $out;
+			if ( $out ) {
+				return $out;
+			}
 		}
 		if ( is_array( $json ) && array_values( $json ) === $json ) {
 			foreach ( $json as $range ) {
@@ -645,7 +725,14 @@ final class PNCP_Ip {
 					$out[] = $range;
 				}
 			}
-			return $out;
+			if ( $out ) {
+				return $out;
+			}
+		}
+		// 3.10: any other JSON (the AI services' lists: "prefixes" as plain strings, "ip_ranges", "ipv4" / "ipv6",
+		// {"cidr": …}, …): every text value that is an address or a CIDR, at any depth.
+		if ( is_array( $json ) ) {
+			return self::json_ranges( $json );
 		}
 		// Plain text, one per line, the values of an XML list, or a geofeed CSV (DigitalOcean, Linode: the range
 		// is the first field; comment lines start with #).
@@ -1285,6 +1372,32 @@ final class PNCP_Ip {
 		}
 		$server = isset( $_SERVER['SERVER_ADDR'] ) ? sanitize_text_field( wp_unslash( $_SERVER['SERVER_ADDR'] ) ) : '';
 		return '' !== $ip && $ip === $server;
+	}
+
+	/**
+	 * 3.10: every text value of a decoded JSON document that is an address or a CIDR, at any depth (at most 8
+	 * levels and 100000 values, so a hostile source cannot make a refresh run forever).
+	 *
+	 * @param array<mixed> $json  Decoded JSON.
+	 * @param int          $depth Current depth.
+	 * @return string[]
+	 */
+	public static function json_ranges( $json, $depth = 0 ) {
+		$out = array();
+		if ( $depth > 8 ) {
+			return $out;
+		}
+		foreach ( $json as $value ) {
+			if ( count( $out ) >= 100000 ) {
+				break;
+			}
+			if ( is_array( $value ) ) {
+				$out = array_merge( $out, self::json_ranges( $value, $depth + 1 ) );
+			} elseif ( is_string( $value ) && self::valid_range( trim( $value ) ) ) {
+				$out[] = trim( $value );
+			}
+		}
+		return $out;
 	}
 
 	/**

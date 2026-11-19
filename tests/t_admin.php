@@ -746,5 +746,86 @@ t( 'PNCP_Paths::config() = το wp-config.php που φορτώνεται', is_f
 $pncp_cf = print_r( PNCP_Rules::cloudflare(), true ); // phpcs:ignore
 t( 'κανόνας Cloudflare: οι διαδρομές από admin_url / includes_url / content_url', false !== strpos( $pncp_cf, 'starts_with(http.request.uri.path, "/wp-admin")' ) && false !== strpos( $pncp_cf, 'starts_with(http.request.uri.path, "/wp-includes/")' ) && false !== strpos( $pncp_cf, 'starts_with(http.request.uri.path, "/wp-content/")' ), substr( $pncp_cf, 0, 200 ) );
 
+/* ---------- 3.10: καρτέλες με άλλο όνομα στη διεύθυνση, άγνωστη καρτέλα ---------- */
+$pncp_tabs = array(
+	'general'   => 'On the page',
+	'bots'      => 'Bots',
+	'rules'     => 'Server rules',
+	'attacks'   => 'Attacks',
+	'hardening' => 'Vulnerable points',
+);
+$pncp_map  = array(
+	'vulnerable'        => 'hardening',
+	'vulnerable-points' => 'hardening',
+	'hardening'         => 'hardening',
+	'server'            => 'rules',
+	'rules'             => 'rules',
+	'attack'            => 'attacks',
+	'attacks'           => 'attacks',
+	'VULNERABLE'        => 'hardening',
+	''                  => 'general',
+);
+foreach ( $pncp_map as $pncp_in => $pncp_want ) {
+	$pncp_r = PNCP_Admin_Tabs::resolve( $pncp_in, $pncp_tabs );
+	t( "3.10 καρτέλα «{$pncp_in}» → {$pncp_want}", $pncp_want === $pncp_r['tab'] && '' === $pncp_r['unknown'], wp_json_encode( $pncp_r ) );
+}
+$pncp_r = PNCP_Admin_Tabs::resolve( 'nosuchtab', $pncp_tabs );
+t( '3.10 άγνωστη καρτέλα → η πρώτη, με το όνομα για την ειδοποίηση', 'general' === $pncp_r['tab'] && 'nosuchtab' === $pncp_r['unknown'], wp_json_encode( $pncp_r ) );
+$pncp_r = PNCP_Admin_Tabs::resolve( 'server', array( 'general' => 'x' ) );
+t( '3.10 alias προς καρτέλα που δεν υπάρχει → άγνωστη', 'general' === $pncp_r['tab'] && 'server' === $pncp_r['unknown'], wp_json_encode( $pncp_r ) );
+foreach ( PNCP_Admin_Tabs::aliases() as $pncp_alias => $pncp_target ) {
+	if ( ! in_array( $pncp_target, array( 'general', 'bots', 'content', 'images', 'rules', 'log', 'attacks', 'hardening', 'lockdown' ), true ) || sanitize_key( $pncp_alias ) !== $pncp_alias ) {
+		t( "3.10 alias «{$pncp_alias}» δείχνει σε πραγματική καρτέλα", false, $pncp_target );
+	}
+}
+foreach ( array( 'vulnerable' => 'hardening', 'server' => 'rules', 'attack' => 'attacks' ) as $pncp_in => $pncp_want ) {
+	list( $code, $body ) = http( $page . '&tab=' . $pncp_in );
+	t( "3.10 σελίδα &tab={$pncp_in}: ανοίγει η καρτέλα {$pncp_want}, χωρίς ειδοποίηση", 200 === $code && false !== strpos( $body, 'pncp-admin--' . $pncp_want ) && false === strpos( $body, 'pncp-unknown-tab' ) && ! php_errors( $body ), (string) $code );
+}
+list( $code, $body ) = http( $page . '&tab=' . rawurlencode( 'bogus"><script>alert(1)</script>' ) );
+t( '3.10 σελίδα με άγνωστη καρτέλα: η πρώτη καρτέλα και ειδοποίηση «Unknown tab»', 200 === $code && false !== strpos( $body, 'pncp-admin--general' ) && false !== strpos( $body, 'pncp-unknown-tab' ) && false !== strpos( $body, 'Unknown tab “bogusscriptalert1script”' ) && false === strpos( $body, '<script>alert(1)' ), (string) $code );
+list( $code, $body ) = http( $page . '&tab=bots' );
+t( '3.10 γνωστή καρτέλα: καμία ειδοποίηση', 200 === $code && false !== strpos( $body, 'pncp-admin--bots' ) && false === strpos( $body, 'pncp-unknown-tab' ) );
+
+/* ---------- 3.10: τα ανοιχτά <details> μένουν ανοιχτά μετά από Save ---------- */
+t( '3.10 keys(): μόνο έγκυρα κλειδιά, χωρίς διπλά', array( 'pncp-sec-network', 'in.pncp-bot_list', 'pncp-sec-edge.d.2' ) === PNCP_Admin_Sections::keys( 'pncp-sec-network,in.pncp-bot_list,,pncp-sec-network,"><script>,pncp-sec-edge.d.2' ), wp_json_encode( PNCP_Admin_Sections::keys( 'pncp-sec-network,in.pncp-bot_list,,pncp-sec-network,"><script>,pncp-sec-edge.d.2' ) ) );
+t( '3.10 keys(): το πολύ ' . PNCP_Admin_Sections::MAX, PNCP_Admin_Sections::MAX === count( PNCP_Admin_Sections::keys( implode( ',', array_map( 'strval', range( 1, 200 ) ) ) ) ) );
+t( '3.10 key(): απορρίπτει ό,τι δεν είναι κλειδί', '' === PNCP_Admin_Sections::key( 'a b' ) && '' === PNCP_Admin_Sections::key( str_repeat( 'a', 101 ) ) && '' === PNCP_Admin_Sections::key( array( 'x' ) ) && 'page.f2.b0' === PNCP_Admin_Sections::key( 'page.f2.b0' ) );
+t( '3.10 is_settings_url(): μόνο η σελίδα ρυθμίσεων', PNCP_Admin_Sections::is_settings_url( admin_url( 'options-general.php?page=scrapelock&tab=bots' ) ) && PNCP_Admin_Sections::is_settings_url( '/wp-admin/options-general.php?page=scrapelock' ) && ! PNCP_Admin_Sections::is_settings_url( admin_url( 'options-general.php?page=other' ) ) && ! PNCP_Admin_Sections::is_settings_url( admin_url( 'plugins.php?page=scrapelock' ) ) );
+$pncp_u = PNCP_Admin_Sections::with_state( '/wp-admin/options-general.php?page=scrapelock&tab=bots&pncp_sections=old&pncp_focus=old#pncp-hardening', array( 'a', 'b' ), 'submit' );
+t( '3.10 with_state(): αντικαθιστά τα παλιά, κρατά το #anchor', false === strpos( $pncp_u, 'old' ) && false !== strpos( $pncp_u, 'pncp_sections=a,b' ) && false !== strpos( $pncp_u, 'pncp_focus=submit' ) && '#pncp-hardening' === substr( $pncp_u, -15 ), $pncp_u );
+$pncp_u = PNCP_Admin_Sections::with_state( '/wp-admin/options-general.php?page=scrapelock&pncp_sections=old', array(), '' );
+t( '3.10 with_state(): τίποτα ανοιχτό → καμία παράμετρος', false === strpos( $pncp_u, 'pncp_sections' ), $pncp_u );
+t( '3.10 removable_query_args: η γραμμή διεύθυνσης καθαρίζει', array( 'x', 'pncp_sections', 'pncp_focus' ) === PNCP_Admin_Sections::removable( array( 'x' ) ) );
+
+$pncp_post = array(
+	'option_page'      => 'pncp_settings_group',
+	'action'           => 'update',
+	'_wpnonce'         => wp_create_nonce( 'pncp_settings_group-options' ),
+	'_wp_http_referer' => '/wp-admin/options-general.php?page=scrapelock&tab=bots',
+	'pncp_settings'    => array( '_sections' => array( 'bots' ) ),
+	'pncp_sections'    => 'pncp-sec-network,in.pncp-bot_list,bad"key',
+	'pncp_focus'       => 'submit',
+);
+list( $code, , $loc ) = http( '/wp-admin/options.php', $pncp_post );
+t( '3.10 Save (options.php): το redirect κρατά τα ανοιχτά μέρη και το κουμπί', 302 === $code && false !== strpos( $loc, 'tab=bots' ) && false !== strpos( $loc, 'settings-updated=true' ) && false !== strpos( $loc, 'pncp_sections=pncp-sec-network,in.pncp-bot_list' ) && false === strpos( $loc, 'bad' ) && false !== strpos( $loc, 'pncp_focus=submit' ), $code . ' ' . $loc );
+$pncp_post['pncp_sections'] = '';
+$pncp_post['pncp_focus']    = '';
+$pncp_post['_wp_http_referer'] = '/wp-admin/options-general.php?page=scrapelock&tab=bots&pncp_sections=pncp-sec-network&pncp_focus=submit';
+list( $code, , $loc ) = http( '/wp-admin/options.php', $pncp_post );
+t( '3.10 Save με όλα κλειστά: τα παλιά pncp_sections του referer φεύγουν', 302 === $code && false === strpos( $loc, 'pncp_sections' ) && false === strpos( $loc, 'pncp_focus' ), $loc );
+unset( $pncp_post['pncp_sections'], $pncp_post['pncp_focus'] );
+$pncp_post['_wp_http_referer'] = '/wp-admin/options-general.php?page=scrapelock&tab=bots';
+list( $code, , $loc ) = http( '/wp-admin/options.php', $pncp_post );
+t( '3.10 Save χωρίς το πεδίο (χωρίς JS): το redirect όπως πριν', 302 === $code && false === strpos( $loc, 'pncp_' ), $loc );
+list( $code, , $loc ) = http( '/wp-admin/admin-post.php', array( 'action' => 'pncp_edge', '_wpnonce' => wp_create_nonce( 'pncp_edge' ), 'pncp_sections' => 'pncp-sec-network,pncp-sec-edge', 'pncp_focus' => 'pncp-submit-pncp-edge' ) );
+t( '3.10 φόρμα «Blocking at the CDN»: pncp_open=edge της 3.9 και τα ανοιχτά μέρη', 302 === $code && false !== strpos( $loc, 'pncp_open=edge' ) && false !== strpos( $loc, 'pncp_sections=pncp-sec-network,pncp-sec-edge' ) && false !== strpos( $loc, 'pncp_focus=pncp-submit-pncp-edge' ) && false !== strpos( $loc, '#pncp-sec-edge' ), $code . ' ' . $loc );
+list( $code, $body ) = http( $page . '&tab=bots&pncp_sections=pncp-sec-network' );
+t( '3.10 ?pncp_sections=pncp-sec-network: η PHP το τυπώνει ανοιχτό, το script φορτώνεται', 200 === $code && (bool) preg_match( '/<details class="pncp-advanced" id="pncp-sec-network" open>/', $body ) && false !== strpos( $body, 'admin-sections.js' ) && false !== strpos( $body, '"returned":"1"' ) && ! php_errors( $body ) );
+list( $code, $body ) = http( $page . '&tab=bots&pncp_sections=pncp-sec-edge' );
+t( '3.10 ?pncp_sections=pncp-sec-edge: και το «Blocking at the CDN» ανοιχτό', 200 === $code && (bool) preg_match( '/id="pncp-sec-edge" open>/', $body ) );
+list( $code, $body ) = http( $page . '&tab=bots' );
+t( '3.10 χωρίς pncp_sections: τα μέρη κλειστά όπως πριν', 200 === $code && ! preg_match( '/id="pncp-sec-network" open/', $body ) && ! preg_match( '/id="pncp-sec-edge" open/', $body ) && false !== strpos( $body, '"returned":"0"' ) );
+
 echo $fails ? "\n$fails FAIL\n" : "\nΟΛΑ PASS\n";
 exit( $fails ? 1 : 0 );

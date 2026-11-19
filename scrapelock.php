@@ -2,7 +2,7 @@
 /**
  * Plugin Name:       ScrapeLock – Content & AI Bot Protection
  * Description:       Protects your content: makes copying text and images harder, hides the text in the REST API, GraphQL and RSS, blocks scrapers, AI bots and fake Googlebots, temporarily blocks persistent IPs, protects XML feeds with a token and adds an optional watermark. Lockdown freezes every change to the site until it is unlocked with an authenticator app. Forms, cart, checkout and search engines are not affected.
- * Version:           3.9.1
+ * Version:           3.10.0
  * Requires at least: 6.2
  * Requires PHP:      7.4
  * Author:            CodeBunny
@@ -19,7 +19,7 @@ if ( defined( 'PNCP_VERSION' ) ) {
 	return;
 }
 
-define( 'PNCP_VERSION', '3.9.1' );
+define( 'PNCP_VERSION', '3.10.0' );
 define( 'PNCP_FILE', __FILE__ );
 define( 'PNCP_DIR', plugin_dir_path( __FILE__ ) );
 define( 'PNCP_URL', plugin_dir_url( __FILE__ ) );
@@ -112,6 +112,7 @@ PNCP_Ai_Referrals::init();
 PNCP_Attacks::init(); // Where bots and attackers hit the site.
 PNCP_Attack_Report::init(); // The Attacks tab, the weekly email and the dashboard widget.
 PNCP_Hardening::init(); // Vulnerable points.
+PNCP_Plugin_Bots::init(); // 3.10: the service bots of active plugins (WP Rocket and others) are allowed.
 
 if ( defined( 'WP_CLI' ) && WP_CLI ) {
 	require_once PNCP_DIR . 'includes/class-pncp-cli.php';
@@ -310,6 +311,13 @@ function pncp_upgrade() {
 	}
 
 	PNCP_Log::install();
+	// 3.10: rows that counted /llms.txt, /.well-known/* and other site-metadata files as scanner probes (once).
+	PNCP_Attacks::purge_site_metadata();
+	// 3.10: the Vulnerable points live results cached by 3.9 read the first answer of the home page (often a
+	// redirect): checked again with the public home page at the next visit of the tab.
+	if ( '' !== $from && version_compare( $from, '3.10.0', '<' ) ) {
+		delete_transient( PNCP_Hardening::LIVE );
+	}
 	// Autoload: read on every request, without a separate query.
 	add_option( PNCP_Options::EMERGENCY_OPTION, 0, '', true );
 	// 3.8: the state of the vulnerable points is read on every request; a missing option would be a query each time.

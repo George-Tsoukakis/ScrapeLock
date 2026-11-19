@@ -57,6 +57,7 @@ final class PNCP_Admin {
 		add_action( 'admin_post_pncp_edge', array( __CLASS__, 'handle_edge' ) );
 		add_action( 'wp_ajax_pncp_wm_batch', array( __CLASS__, 'ajax_wm_batch' ) );
 		add_action( 'admin_notices', array( __CLASS__, 'upgrade_notices' ) );
+		PNCP_Admin_Sections::init(); // 3.10: folded parts stay open after a Save.
 	}
 
 	/**
@@ -164,12 +165,11 @@ final class PNCP_Admin {
 	 * @return string
 	 */
 	private static function current_tab() {
-		// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Only selects a tab.
-		$tab = isset( $_GET['tab'] ) ? sanitize_key( wp_unslash( $_GET['tab'] ) ) : 'general';
 		if ( PNCP_Lockdown::is_locked() ) {
 			return 'lockdown'; // Nothing else can be changed while locked.
 		}
-		return array_key_exists( $tab, self::tabs() ) ? $tab : 'general';
+		// 3.10: aliases (e.g. "vulnerable", "server") and a notice for an unknown tab: PNCP_Admin_Tabs.
+		return PNCP_Admin_Tabs::current( self::tabs() )['tab'];
 	}
 
 	/* ---------- Fields ---------- */
@@ -698,6 +698,9 @@ final class PNCP_Admin {
 			<?php self::render_header( $stored, $locked ); ?>
 			<hr class="wp-header-end">
 			<?php
+			if ( ! $locked ) {
+				PNCP_Admin_Tabs::render_notice( self::tabs() ); // 3.10: unknown ?tab= in the address.
+			}
 			// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Only displays the confirmation.
 			if ( isset( $_GET['pncp_confirm'] ) && PNCP_Status::is_enabled() && ! $locked ) {
 				self::render_disable_confirm();
@@ -1314,6 +1317,7 @@ final class PNCP_Admin {
 	 */
 	private static function tab_bots( $s ) {
 		self::render_cloudflare_hint( $s );
+		PNCP_Plugin_Bots::render_notice_and_form(); // 3.10: before the settings form (the buttons have a form of their own).
 		self::section_nav(
 			array(
 				'monitor'    => __( 'Monitor only', 'scrapelock' ),
@@ -1409,6 +1413,7 @@ final class PNCP_Admin {
 				<?php
 				self::textarea( $s, 'allow_list', __( 'Always allowed User-Agents (link previews, price comparison platforms, monitoring):', 'scrapelock' ), __( 'They override the bot list and “Browsers only”. The page limit applies to them too, because the User-Agent is easy to spoof. To accept an entry only from specific IPs, add @ and the addresses, e.g. Skroutz@203.0.113.0/24.', 'scrapelock' ), 5, true );
 				self::textarea( $s, 'allow_ips', __( 'Always allowed IPs / CIDR (office, ERP, monitoring), one per line:', 'scrapelock' ), __( 'They are never checked, never count towards limits and are never blocked.', 'scrapelock' ), 3 );
+				PNCP_Plugin_Bots::render_panel(); // 3.10.
 				?>
 		<?php self::row_close(); ?>
 		<?php self::row_open( 'blocked', __( 'Always blocked', 'scrapelock' ) ); ?>
@@ -1526,7 +1531,7 @@ final class PNCP_Admin {
 				<p class="description"><?php esc_html_e( 'How long the log is kept is set on the Log tab.', 'scrapelock' ); ?></p>
 		<?php self::row_close(); ?>
 		</table>
-		<details class="pncp-advanced" id="pncp-sec-network"<?php echo self::network_needs_attention( $s ) ? ' open' : ''; ?>>
+		<details class="pncp-advanced" id="pncp-sec-network"<?php echo self::network_needs_attention( $s ) || PNCP_Admin_Sections::requested( 'pncp-sec-network' ) ? ' open' : ''; ?>>
 			<summary>
 				<h2 class="pncp-advanced__title"><?php esc_html_e( 'Network and CDN (advanced)', 'scrapelock' ); ?></h2>
 				<span class="pncp-advanced__state"><?php echo esc_html( self::network_summary( $s ) ); ?></span>
@@ -1627,7 +1632,8 @@ final class PNCP_Admin {
 		$open    = 0 === strpos( $message, 'edge' ) || ( $usable && ( '' !== $edge['error'] || ! empty( $s['trust_any_proxy'] ) ) )
 			|| false !== get_transient( 'pncp_bunny_msg_' . get_current_user_id() ) // 3.8: after a click on the Bunny card.
 			|| PNCP_Edge::trust_warning_due( $s ) // 3.9: Bunny in use, its addresses not trusted.
-			|| PNCP_Edge::section_requested(); // 3.9: back from one of its own buttons (Save, Test, Import now, Lock…).
+			|| PNCP_Edge::section_requested() // 3.9: back from one of its own buttons (Save, Test, Import now, Lock…).
+			|| PNCP_Admin_Sections::requested( 'pncp-sec-edge' ); // 3.10: open when the settings form was saved.
 		printf(
 			'<details class="pncp-advanced" id="pncp-sec-edge"%1$s><summary><h2 class="pncp-advanced__title">%2$s</h2> <span class="pncp-advanced__state">%3$s</span></summary>',
 			$open ? ' open' : '',
@@ -1890,6 +1896,8 @@ final class PNCP_Admin {
 		$names   = array(
 			'google'          => 'Google',
 			'bing'            => 'Bing',
+			'apple'           => 'Applebot',
+			'duckduckgo'      => 'DuckDuckBot',
 			'cloudflare'      => 'Cloudflare',
 			'bunny'           => 'Bunny CDN',
 			'openai_search'   => 'OpenAI OAI-SearchBot',
@@ -1920,7 +1928,7 @@ final class PNCP_Admin {
 							echo esc_html__( 'built-in list (not downloaded yet)', 'scrapelock' );
 						} elseif ( 'bunny' === $key && ! in_array( 'bunny', $needed, true ) ) {
 							echo esc_html__( 'not used with the current settings', 'scrapelock' );
-						} elseif ( in_array( $key, PNCP_Bots::ai_bot_lists(), true ) ) {
+						} elseif ( 'duckduckgo' === $key || in_array( $key, PNCP_Bots::ai_bot_lists(), true ) ) {
 							echo esc_html__( 'not downloaded yet, no verification until then', 'scrapelock' );
 						} else {
 							echo esc_html__( 'not downloaded yet, only DNS is used', 'scrapelock' );
@@ -1934,6 +1942,7 @@ final class PNCP_Admin {
 								wp_date( get_option( 'date_format' ) . ' ' . get_option( 'time_format' ), $updated[ $key ] )
 							)
 						);
+						self::ai_list_extra_note( $key );
 					}
 					?>
 				</li>
@@ -3054,6 +3063,26 @@ final class PNCP_Admin {
 			printf( '<li><span>%s</span> <strong>%s</strong></li>', esc_html( isset( $labels[ $key ] ) ? $labels[ $key ] : (string) $key ), esc_html( number_format_i18n( $count ) ) );
 		}
 		echo '</ol>';
+	}
+
+	/**
+	 * 3.10: after an AI search list in "Official IP lists": the built-in extra ranges used with it, and a warning
+	 * when it is stale (no AI bot is then called fake until it is refreshed).
+	 *
+	 * @param string $key List name.
+	 */
+	private static function ai_list_extra_note( $key ) {
+		if ( ! in_array( $key, PNCP_Bots::ai_bot_lists(), true ) ) {
+			return;
+		}
+		$extra = PNCP_Ip::extra_ranges( $key );
+		if ( $extra ) {
+			/* translators: %s: IP ranges, e.g. 160.79.104.0/21 */
+			echo ' ' . esc_html( sprintf( __( '(plus the published outbound range %s)', 'scrapelock' ), implode( ', ', $extra ) ) );
+		}
+		if ( PNCP_Ip::list_stale( $key ) ) {
+			echo ' <span class="pncp-badge pncp-badge--monitor">' . esc_html__( 'Not refreshed for over a week: bots not on it are let through instead of being called fake until it is refreshed', 'scrapelock' ) . '</span>';
+		}
 	}
 
 	/**

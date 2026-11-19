@@ -93,6 +93,16 @@ final class PNCP_Bunny {
 	const MAX_AGGREGATES = 3000;
 
 	/**
+	 * 3.10: Bunny's limits for one Edge Rule. The real API refuses a trigger ("condition") with more than 5
+	 * patterns: HTTP 400 "Maximum 5 triggers are allowed per condition.". ScrapeLock therefore sends at most
+	 * PART_PATTERNS patterns (URL patterns or IPs) in each trigger, and at most PART_TRIGGERS triggers in each
+	 * rule (whether Bunny also limits the triggers of a rule is not documented: 5 is the safe guess). Filter
+	 * `pncp_bunny_edge_limits` changes both. How a lock is split into rules, see plan().
+	 */
+	const PART_PATTERNS = 5;
+	const PART_TRIGGERS = 5;
+
+	/**
 	 * 3.9: the fewest log lines the check "full or anonymized IPs" decides on (fewer are added up over runs).
 	 */
 	const IP_SAMPLE_MIN = 20;
@@ -613,7 +623,7 @@ final class PNCP_Bunny {
 	/**
 	 * The Edge Rules ScrapeLock manages, for the card, WP-CLI and other components.
 	 *
-	 * @return array<string, array{id:string, label:string, patterns:string[], allow:string[], guid:string, zone:string, enabled:bool, created:int, updated:int, missing:bool}>
+	 * @return array<string, array{id:string, label:string, patterns:string[], allow:string[], guid:string, zone:string, enabled:bool, created:int, updated:int, missing:bool, guids:string[], parts:int, needs_split:bool}>
 	 */
 	public static function list_ours() {
 		$out = array();
@@ -630,6 +640,10 @@ final class PNCP_Bunny {
 				'updated'  => isset( $rule['updated'] ) ? (int) $rule['updated'] : 0,
 				'missing'  => ! empty( $rule['missing'] ),
 			);
+			// 3.10: a lock can be several rules at Bunny (see plan()); they are one lock everywhere.
+			$out[ (string) $id ]['guids']       = self::guids_of( $rule );
+			$out[ (string) $id ]['parts']       = count( $out[ (string) $id ]['guids'] );
+			$out[ (string) $id ]['needs_split'] = self::needs_split( $rule );
 		}
 		return $out;
 	}
@@ -669,46 +683,194 @@ final class PNCP_Bunny {
 	 * The Description of a rule at Bunny: "ScrapeLock: <label> [<id>]", which also finds it again after it was
 	 * created.
 	 *
+	 * 3.10: a lock of several rules numbers them: "ScrapeLock: <label> (2/3) [<id>]".
+	 *
 	 * @param string $id    ID.
 	 * @param string $label Label.
+	 * @param int    $k     Part, from 1.
+	 * @param int    $n     Parts.
 	 * @return string
 	 */
-	private static function description( $id, $label ) {
+	private static function description( $id, $label, $k = 1, $n = 1 ) {
 		$label = trim( preg_replace( '/^ScrapeLock\s*(?:hardening)?\s*:\s*/i', '', sanitize_text_field( (string) $label ) ) );
 		$label = function_exists( 'mb_substr' ) ? mb_substr( $label, 0, 120 ) : substr( $label, 0, 120 );
-		return self::PREFIX . ( '' !== $label ? $label : $id ) . ' [' . $id . ']';
+		return self::PREFIX . ( '' !== $label ? $label : $id ) . ( $n > 1 ? ' (' . (int) $k . '/' . (int) $n . ')' : '' ) . ' [' . $id . ']';
 	}
 
 	/**
-	 * The JSON body of a rule for addOrUpdate.
+	 * 3.10: Bunny's limits for one Edge Rule: patterns per trigger and triggers per rule.
 	 *
-	 * @param string               $id      ID.
-	 * @param array<string, mixed> $rule    Rule (label, patterns, allow, except, guid).
-	 * @param bool                 $enabled Whether it blocks.
-	 * @return array<string, mixed>
+	 * @return array{patterns:int, triggers:int}
 	 */
-	private static function body( $id, $rule, $enabled ) {
-		$triggers = array(
+	public static function edge_limits() {
+		/**
+		 * Filters Bunny's limits for one Edge Rule (5 and 5 by default): the most patterns or IPs in one
+		 * trigger ("condition"), and the most triggers in one rule.
+		 *
+		 * @param array{patterns:int, triggers:int} $limits Limits.
+		 */
+		$limits = (array) apply_filters(
+			'pncp_bunny_edge_limits',
 			array(
-				'Type'                => self::TRIGGER_URL,
-				'PatternMatches'      => array_values( (array) $rule['patterns'] ),
-				'PatternMatchingType' => self::MATCH_ANY,
-				'Parameter1'          => '',
-			),
+				'patterns' => self::PART_PATTERNS,
+				'triggers' => self::PART_TRIGGERS,
+			)
 		);
-		if ( ! empty( $rule['allow'] ) ) {
-			$triggers[] = array(
-				'Type'                => self::TRIGGER_IP,
-				'PatternMatches'      => array_values( (array) $rule['allow'] ),
-				'PatternMatchingType' => self::MATCH_NONE,
-				'Parameter1'          => '',
+		return array(
+			'patterns' => max( 1, min( 50, isset( $limits['patterns'] ) ? (int) $limits['patterns'] : self::PART_PATTERNS ) ),
+			'triggers' => max( 2, min( 20, isset( $limits['triggers'] ) ? (int) $limits['triggers'] : self::PART_TRIGGERS ) ),
+		);
+	}
+
+	/**
+	 * 3.10: how a lock is sent to Bunny within its limits (edge_limits()): the list of rules ("parts") it takes.
+	 *
+	 * - Without exceptions (allowed IPs, URL patterns let through): the URL patterns go in groups of at most
+	 *   `patterns`, one "Request URL" trigger per group, and the triggers of one rule are matched with
+	 *   "Match Any". When there are more groups than `triggers`, the next groups go in the next rule.
+	 * - With exceptions: "any of these URL groups AND NOT an allowed IP AND NOT an excepted URL" cannot be
+	 *   written in one rule (a rule matches its triggers either all with Any or all with All). So every URL
+	 *   group gets a rule of its own, matched with "Match All": its URL trigger (Match Any of the group's
+	 *   patterns) and the exceptions, each also in groups of at most `patterns`, as triggers with "Match None".
+	 *   "NOT in group 1 AND NOT in group 2" is "NOT in any group", so the exceptions keep their meaning. The
+	 *   rules together block what the one rule of 3.9 meant to block. All exceptions must fit in every rule:
+	 *   when they need more than `triggers` - 1 triggers, the lock is refused (WP_Error).
+	 *
+	 * @param array<string, mixed> $rule patterns, allow, except.
+	 * @return array<int, array{match:int, triggers:array<int, array{type:int, patterns:string[], match:int}>}>|WP_Error
+	 */
+	public static function plan( $rule ) {
+		$lim    = self::edge_limits();
+		$groups = array_chunk( array_values( array_map( 'strval', (array) ( isset( $rule['patterns'] ) ? $rule['patterns'] : array() ) ) ), $lim['patterns'] );
+		if ( ! $groups ) {
+			return new WP_Error( 'pncp_bad_rule', __( 'This rule has no address to block.', 'scrapelock' ) );
+		}
+		$neg = array();
+		foreach ( array_chunk( array_values( array_map( 'strval', (array) ( isset( $rule['allow'] ) ? $rule['allow'] : array() ) ) ), $lim['patterns'] ) as $group ) {
+			$neg[] = array(
+				'type'     => self::TRIGGER_IP,
+				'patterns' => $group,
+				'match'    => self::MATCH_NONE,
 			);
 		}
-		if ( ! empty( $rule['except'] ) ) {
+		foreach ( array_chunk( array_values( array_map( 'strval', (array) ( isset( $rule['except'] ) ? $rule['except'] : array() ) ) ), $lim['patterns'] ) as $group ) {
+			$neg[] = array(
+				'type'     => self::TRIGGER_URL,
+				'patterns' => $group,
+				'match'    => self::MATCH_NONE,
+			);
+		}
+		$url = array();
+		foreach ( $groups as $group ) {
+			$url[] = array(
+				'type'     => self::TRIGGER_URL,
+				'patterns' => $group,
+				'match'    => self::MATCH_ANY,
+			);
+		}
+		$parts = array();
+		if ( ! $neg ) {
+			foreach ( array_chunk( $url, $lim['triggers'] ) as $triggers ) {
+				$parts[] = array(
+					'match'    => self::MATCH_ANY,
+					'triggers' => $triggers,
+				);
+			}
+			return $parts;
+		}
+		if ( count( $neg ) + 1 > $lim['triggers'] ) {
+			return new WP_Error(
+				'pncp_bunny_limit',
+				sprintf(
+					/* translators: 1: most entries in one condition, 2: most conditions in one rule, 3: most allowed IPs */
+					__( 'Bunny accepts at most %1$d entries in one condition and %2$d conditions in one Edge Rule, so the IPs and addresses let through do not fit in the rule. Keep at most %3$d IPs and ranges in “Allowed IPs for the login page at Bunny”, then lock again.', 'scrapelock' ),
+					$lim['patterns'],
+					$lim['triggers'],
+					self::login_allow_max()
+				)
+			);
+		}
+		foreach ( $url as $trigger ) {
+			$parts[] = array(
+				'match'    => self::MATCH_ALL,
+				'triggers' => array_merge( array( $trigger ), $neg ),
+			);
+		}
+		return $parts;
+	}
+
+	/**
+	 * 3.10: the most IPs and ranges "Allowed IPs for the login page at Bunny" may hold: what fits in one rule
+	 * next to the login page's URL trigger and its exceptions (40 at most, as before).
+	 *
+	 * @return int
+	 */
+	public static function login_allow_max() {
+		$lim     = self::edge_limits();
+		$presets = self::presets();
+		$except  = isset( $presets['login']['except'] ) ? count( (array) $presets['login']['except'] ) : 0;
+		$slots   = $lim['triggers'] - 1 - (int) ceil( $except / $lim['patterns'] );
+		return max( 0, min( self::MAX_ALLOW_IPS, $slots * $lim['patterns'] ) );
+	}
+
+	/**
+	 * 3.10: the GUIDs of the rules a lock is at Bunny, in the order of plan(). A lock made by 3.8 or 3.9 has
+	 * one ("guid").
+	 *
+	 * @param array<string, mixed> $rule Stored rule.
+	 * @return string[]
+	 */
+	private static function guids_of( $rule ) {
+		$out  = array();
+		$list = isset( $rule['guids'] ) && is_array( $rule['guids'] ) ? $rule['guids'] : ( isset( $rule['guid'] ) ? array( $rule['guid'] ) : array() );
+		foreach ( $list as $guid ) {
+			$guid = self::clean_guid( is_scalar( $guid ) ? (string) $guid : '' );
+			if ( '' !== $guid ) {
+				$out[] = $guid;
+			}
+		}
+		return $out;
+	}
+
+	/**
+	 * 3.10: a lock stored by 3.8 or 3.9 with more patterns or IPs in one trigger than Bunny accepts: it is sent
+	 * again, split, by the next run (sync_rules()).
+	 *
+	 * @param array<string, mixed> $rule Stored rule.
+	 * @return bool
+	 */
+	private static function needs_split( $rule ) {
+		if ( isset( $rule['guids'] ) ) {
+			return false;
+		}
+		$max = self::edge_limits()['patterns'];
+		foreach ( array( 'patterns', 'allow', 'except' ) as $key ) {
+			if ( isset( $rule[ $key ] ) && count( (array) $rule[ $key ] ) > $max ) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	/**
+	 * The JSON body of one rule (one part of a lock, see plan()) for addOrUpdate.
+	 *
+	 * @param string               $id      ID.
+	 * @param array<string, mixed> $rule    Rule (label, patterns, allow, except).
+	 * @param array<string, mixed> $part    The part, from plan().
+	 * @param int                  $k       Its number, from 1.
+	 * @param int                  $n       Parts of the lock.
+	 * @param bool                 $enabled Whether it blocks.
+	 * @param string               $guid    GUID at Bunny ('' = create).
+	 * @return array<string, mixed>
+	 */
+	private static function body( $id, $rule, $part, $k, $n, $enabled, $guid = '' ) {
+		$triggers = array();
+		foreach ( $part['triggers'] as $trigger ) {
 			$triggers[] = array(
-				'Type'                => self::TRIGGER_URL,
-				'PatternMatches'      => array_values( (array) $rule['except'] ),
-				'PatternMatchingType' => self::MATCH_NONE,
+				'Type'                => (int) $trigger['type'],
+				'PatternMatches'      => array_values( (array) $trigger['patterns'] ),
+				'PatternMatchingType' => (int) $trigger['match'],
 				'Parameter1'          => '',
 			);
 		}
@@ -717,20 +879,22 @@ final class PNCP_Bunny {
 			'ActionParameter1'    => '',
 			'ActionParameter2'    => '',
 			'Triggers'            => $triggers,
-			'TriggerMatchingType' => count( $triggers ) > 1 ? self::MATCH_ALL : self::MATCH_ANY,
-			'Description'         => self::description( $id, (string) $rule['label'] ),
+			'TriggerMatchingType' => (int) $part['match'],
+			'Description'         => self::description( $id, (string) $rule['label'], $k, $n ),
 			'Enabled'             => (bool) $enabled,
 		);
-		if ( ! empty( $rule['guid'] ) ) {
-			$body = array( 'Guid' => (string) $rule['guid'] ) + $body;
+		if ( '' !== $guid ) {
+			$body = array( 'Guid' => $guid ) + $body;
 		}
 		/**
 		 * Filters an Edge Rule before ScrapeLock sends it to Bunny (addOrUpdate).
 		 *
 		 * @param array<string, mixed> $body The rule as JSON.
 		 * @param string               $id   ScrapeLock's ID of the rule.
+		 * @param int                  $k    3.10: the part of the lock, from 1.
+		 * @param int                  $n    3.10: parts of the lock (rules at Bunny).
 		 */
-		return (array) apply_filters( 'pncp_bunny_edge_rule', $body, $id );
+		return (array) apply_filters( 'pncp_bunny_edge_rule', $body, $id, $k, $n );
 	}
 
 	/**
@@ -818,8 +982,15 @@ final class PNCP_Bunny {
 	}
 
 	/**
-	 * Sends a rule to Bunny (update when ScrapeLock has its GUID for this pull zone, otherwise create) and keeps
-	 * its GUID.
+	 * Sends a lock to Bunny and keeps the GUIDs of its rules. 3.10: a lock can be several rules (plan()).
+	 *
+	 * When ScrapeLock has as many GUIDs for this pull zone as the lock now takes rules, each rule is updated in
+	 * place (one that was removed in the Bunny dashboard is made again). Otherwise every rule is created new
+	 * and the old ones are removed after the new ones exist.
+	 *
+	 * All or nothing: when a rule fails (HTTP 400, 401, 404, 429, timeout…), the rules this call created are
+	 * removed again, those it updated are sent back as they were (best effort), nothing is stored, and the
+	 * error is returned. So no half lock is left at Bunny.
 	 *
 	 * @param string               $id      ID.
 	 * @param array<string, mixed> $rule    label, patterns, allow, except.
@@ -830,27 +1001,94 @@ final class PNCP_Bunny {
 		$c     = self::credentials();
 		$rules = self::rules();
 		$old   = isset( $rules[ $id ] ) ? $rules[ $id ] : null;
-		$url   = self::base( 'api' ) . '/pullzone/' . rawurlencode( $c['zone'] ) . '/edgerules/addOrUpdate';
-		if ( $old && ! empty( $old['guid'] ) && isset( $old['zone'] ) && $old['zone'] === $c['zone'] ) {
-			$rule['guid'] = (string) $old['guid'];
-			$res          = self::call( $c, 'POST', $url, self::body( $id, $rule, $enabled ) );
-			if ( 'ok' === $res['status'] ) {
-				return self::keep( $id, $rule, $enabled, $c['zone'], $old );
-			}
-			if ( 'missing' !== $res['status'] ) {
-				return new WP_Error( 'pncp_bunny_' . $res['status'], $res['message'] );
-			}
-			unset( $rule['guid'] ); // Removed in the Bunny dashboard: made again.
-		} elseif ( $old && ! empty( $old['guid'] ) ) {
-			// Another pull zone now: the old rule is removed first (same account, same key).
+		$parts = self::plan( $rule );
+		if ( is_wp_error( $parts ) ) {
+			return $parts;
+		}
+		$n         = count( $parts );
+		$url       = self::base( 'api' ) . '/pullzone/' . rawurlencode( $c['zone'] ) . '/edgerules/addOrUpdate';
+		$old_guids = $old ? self::guids_of( $old ) : array();
+		$same_zone = $old && isset( $old['zone'] ) && (string) $old['zone'] === $c['zone'];
+		$stale     = $old && isset( $old['stale'] ) && $same_zone ? self::guids_of( array( 'guids' => $old['stale'] ) ) : array();
+		if ( $old_guids && ! $same_zone ) {
+			// Another pull zone now: the old rules are removed first (same account, same key).
 			self::delete_rule( $c, $old );
+			$old_guids = array();
 		}
-		$before = self::pull_zone( $c );
-		if ( 'ok' !== $before['status'] ) {
-			return new WP_Error( 'pncp_bunny_' . $before['status'], $before['message'] );
+		$reuse   = $old_guids && count( $old_guids ) === $n;
+		$guids   = array();
+		$created = array();
+		$updated = array();
+		$known   = null;
+		$error   = null;
+		foreach ( $parts as $i => $part ) {
+			if ( $reuse ) {
+				$res = self::call( $c, 'POST', $url, self::body( $id, $rule, $part, $i + 1, $n, $enabled, $old_guids[ $i ] ) );
+				if ( 'ok' === $res['status'] ) {
+					$guids[ $i ] = $old_guids[ $i ];
+					$updated[]   = $i;
+					continue;
+				}
+				if ( 'missing' !== $res['status'] ) {
+					$error = new WP_Error( 'pncp_bunny_' . $res['status'], $res['message'] );
+					break;
+				}
+				// Removed in the Bunny dashboard: made again.
+			}
+			if ( null === $known ) {
+				$before = self::pull_zone( $c );
+				if ( 'ok' !== $before['status'] ) {
+					$error = new WP_Error( 'pncp_bunny_' . $before['status'], $before['message'] );
+					break;
+				}
+				$known = self::zone_rules( $before['json'] );
+			}
+			$guid = self::create_part( $c, $url, $id, $rule, $part, $i + 1, $n, $enabled, $known );
+			if ( is_wp_error( $guid ) ) {
+				$error = $guid;
+				break;
+			}
+			$known[ $guid ] = array(
+				'description' => '',
+				'enabled'     => (bool) $enabled,
+			);
+			$created[]      = $guid;
+			$guids[ $i ]    = $guid;
 		}
-		$known = self::zone_rules( $before['json'] );
-		$res   = self::call( $c, 'POST', $url, self::body( $id, $rule, $enabled ) );
+		if ( $error ) {
+			self::roll_back( $c, $id, $created, $updated, $old_guids, $old );
+			return $error;
+		}
+		ksort( $guids );
+		$rule['guids'] = array_values( $guids );
+		$rule['stale'] = $stale;
+		if ( ! $reuse ) {
+			// The new rules exist: the old ones go. One that cannot be removed now is tried again by the next run.
+			foreach ( $old_guids as $guid ) {
+				if ( true !== self::delete_rule( $c, array( 'guid' => $guid ) ) ) {
+					$rule['stale'][] = $guid;
+				}
+			}
+		}
+		return self::keep( $id, $rule, $enabled, $c['zone'], $old );
+	}
+
+	/**
+	 * 3.10: creates one rule of a lock at Bunny and finds its GUID.
+	 *
+	 * @param array{zone:string, token:string}                       $c       Credentials.
+	 * @param string                                                 $url     addOrUpdate address.
+	 * @param string                                                 $id      ID.
+	 * @param array<string, mixed>                                   $rule    Rule.
+	 * @param array<string, mixed>                                   $part    Part, from plan().
+	 * @param int                                                    $k       Its number, from 1.
+	 * @param int                                                    $n       Parts.
+	 * @param bool                                                   $enabled Whether it blocks.
+	 * @param array<string, array{description:string, enabled:bool}> $known   The rules of the pull zone before.
+	 * @return string|WP_Error GUID.
+	 */
+	private static function create_part( $c, $url, $id, $rule, $part, $k, $n, $enabled, $known ) {
+		$res = self::call( $c, 'POST', $url, self::body( $id, $rule, $part, $k, $n, $enabled ) );
 		if ( 'ok' !== $res['status'] ) {
 			return new WP_Error( 'pncp_bunny_' . $res['status'], $res['message'] );
 		}
@@ -858,7 +1096,7 @@ final class PNCP_Bunny {
 		if ( '' === $guid ) {
 			// addOrUpdate answers without a body: the new rule is the one with this Description that was not there before.
 			$after = self::pull_zone( $c );
-			$want  = self::description( $id, (string) $rule['label'] );
+			$want  = self::description( $id, (string) $rule['label'], $k, $n );
 			if ( 'ok' === $after['status'] ) {
 				foreach ( self::zone_rules( $after['json'] ) as $g => $found ) {
 					if ( ! isset( $known[ $g ] ) && $found['description'] === $want ) {
@@ -871,15 +1109,57 @@ final class PNCP_Bunny {
 		if ( '' === $guid ) {
 			return new WP_Error( 'pncp_bunny_guid', __( 'Bunny accepted the rule, but ScrapeLock could not find it again to manage it. Check the Edge Rules of the pull zone in the bunny.net dashboard (its description starts with “ScrapeLock:”).', 'scrapelock' ) );
 		}
-		$rule['guid'] = $guid;
-		return self::keep( $id, $rule, $enabled, $c['zone'], $old );
+		return $guid;
 	}
 
 	/**
-	 * Notes a rule that Bunny confirmed.
+	 * 3.10: undoes a lock that failed halfway: removes the rules made by this call and any other rule of this
+	 * lock at Bunny that ScrapeLock does not keep (one saved by Bunny although the call timed out), and sends
+	 * the rules it updated back as they were stored (when the stored lock still takes as many rules).
+	 *
+	 * @param array{zone:string, token:string} $c         Credentials.
+	 * @param string                           $id        ID.
+	 * @param string[]                         $created   GUIDs created now.
+	 * @param int[]                            $updated   Parts updated now.
+	 * @param string[]                         $old_guids GUIDs of the stored lock.
+	 * @param array<string, mixed>|null        $old       Stored lock.
+	 */
+	private static function roll_back( $c, $id, $created, $updated, $old_guids, $old ) {
+		foreach ( $created as $guid ) {
+			self::delete_rule( $c, array( 'guid' => $guid ) );
+		}
+		// A part can exist at Bunny although its call failed (a timeout after Bunny saved it, or a rule whose GUID
+		// could not be found): every rule of this lock that ScrapeLock does not keep is removed too.
+		$keep = array_merge( $old_guids, $old && isset( $old['stale'] ) ? self::guids_of( array( 'guids' => $old['stale'] ) ) : array(), $created );
+		$zone = self::pull_zone( $c );
+		if ( 'ok' === $zone['status'] ) {
+			$suffix = ' [' . $id . ']';
+			foreach ( self::zone_rules( $zone['json'] ) as $guid => $found ) {
+				$guid = self::clean_guid( $guid );
+				if ( '' !== $guid && ! in_array( $guid, $keep, true ) && 0 === strpos( $found['description'], self::PREFIX ) && substr( $found['description'], -strlen( $suffix ) ) === $suffix ) {
+					self::delete_rule( $c, array( 'guid' => $guid ) );
+				}
+			}
+		}
+		if ( ! $updated || ! $old ) {
+			return;
+		}
+		$old_parts = self::plan( $old );
+		if ( is_wp_error( $old_parts ) || count( $old_parts ) !== count( $old_guids ) ) {
+			return;
+		}
+		$url = self::base( 'api' ) . '/pullzone/' . rawurlencode( $c['zone'] ) . '/edgerules/addOrUpdate';
+		$old = $old + array( 'label' => $id );
+		foreach ( $updated as $i ) {
+			self::call( $c, 'POST', $url, self::body( $id, $old, $old_parts[ $i ], $i + 1, count( $old_parts ), ! empty( $old['enabled'] ), $old_guids[ $i ] ) );
+		}
+	}
+
+	/**
+	 * Notes a lock that Bunny confirmed.
 	 *
 	 * @param string                    $id      ID.
-	 * @param array<string, mixed>      $rule    Rule with guid.
+	 * @param array<string, mixed>      $rule    Rule with guids.
 	 * @param bool                      $enabled Whether it blocks.
 	 * @param string                    $zone    Pull zone.
 	 * @param array<string, mixed>|null $old     Previous record.
@@ -887,8 +1167,11 @@ final class PNCP_Bunny {
 	 */
 	private static function keep( $id, $rule, $enabled, $zone, $old ) {
 		$rules        = self::rules();
+		$guids        = self::guids_of( $rule );
 		$rules[ $id ] = array(
-			'guid'     => (string) $rule['guid'],
+			'guid'     => isset( $guids[0] ) ? $guids[0] : '',
+			'guids'    => $guids,
+			'stale'    => isset( $rule['stale'] ) ? array_values( array_unique( (array) $rule['stale'] ) ) : array(),
 			'zone'     => (string) $zone,
 			'label'    => (string) $rule['label'],
 			'patterns' => array_values( (array) $rule['patterns'] ),
@@ -943,23 +1226,28 @@ final class PNCP_Bunny {
 	}
 
 	/**
-	 * DELETE of one rule at Bunny ("not found" counts as removed).
+	 * DELETE of the rules of a lock at Bunny ("not found" counts as removed). 3.10: every part, and the old
+	 * rules still to remove ("stale"). All are tried; the first error is returned, and the stored lock stays,
+	 * so that a later try removes what is left.
 	 *
 	 * @param array{zone:string, token:string} $c    Credentials (the key; the pull zone of the rule is used).
 	 * @param array<string, mixed>             $rule Stored rule.
 	 * @return true|WP_Error
 	 */
 	private static function delete_rule( $c, $rule ) {
-		$guid = self::clean_guid( isset( $rule['guid'] ) ? (string) $rule['guid'] : '' );
-		$zone = isset( $rule['zone'] ) && '' !== (string) $rule['zone'] ? (string) $rule['zone'] : $c['zone'];
-		if ( '' === $guid ) {
-			return true;
+		$zone  = isset( $rule['zone'] ) && '' !== (string) $rule['zone'] ? (string) $rule['zone'] : $c['zone'];
+		$guids = self::guids_of( $rule );
+		if ( isset( $rule['stale'] ) ) {
+			$guids = array_merge( $guids, self::guids_of( array( 'guids' => $rule['stale'] ) ) );
 		}
-		$res = self::call( $c, 'DELETE', self::base( 'api' ) . '/pullzone/' . rawurlencode( $zone ) . '/edgerules/' . rawurlencode( $guid ) );
-		if ( 'ok' === $res['status'] || 'missing' === $res['status'] ) {
-			return true;
+		$error = null;
+		foreach ( array_unique( $guids ) as $guid ) {
+			$res = self::call( $c, 'DELETE', self::base( 'api' ) . '/pullzone/' . rawurlencode( $zone ) . '/edgerules/' . rawurlencode( $guid ) );
+			if ( 'ok' !== $res['status'] && 'missing' !== $res['status'] && null === $error ) {
+				$error = new WP_Error( 'pncp_bunny_' . $res['status'], $res['message'] );
+			}
 		}
-		return new WP_Error( 'pncp_bunny_' . $res['status'], $res['message'] );
+		return $error ? $error : true;
 	}
 
 	/**
@@ -1051,12 +1339,31 @@ final class PNCP_Bunny {
 			if ( microtime( true ) > $end || $sent >= 10 ) {
 				break;
 			}
-			if ( null !== $live && isset( $rule['zone'] ) && $rule['zone'] === $c['zone'] && ! empty( $rule['guid'] ) && ! isset( $live[ (string) $rule['guid'] ] ) ) {
+			$here  = isset( $rule['zone'] ) && $rule['zone'] === $c['zone'];
+			$guids = self::guids_of( $rule );
+			$gone  = null !== $live && $here ? array_diff( $guids, array_keys( $live ) ) : array();
+			if ( $guids && count( $gone ) === count( $guids ) ) {
 				// Removed in the Bunny dashboard: the owner decided, so ScrapeLock forgets it instead of making it again.
+				// 3.10: only when every rule of the lock is gone; when some are, they are made again (no half lock).
 				unset( $rules[ $id ] );
 				self::save_rules( $rules );
 				continue;
 			}
+			if ( $here && ! empty( $rule['stale'] ) ) {
+				// 3.10: old rules of a lock sent again split, which could not be removed then.
+				$left = array();
+				foreach ( self::guids_of( array( 'guids' => $rule['stale'] ) ) as $guid ) {
+					if ( true !== self::delete_rule( $c, array( 'guid' => $guid ) ) ) {
+						$left[] = $guid;
+					}
+				}
+				$rules[ $id ]['stale'] = $left;
+				self::save_rules( $rules );
+				$rule['stale'] = $left;
+			}
+			// 3.10: some rules of the lock removed in the dashboard, or a lock of 3.8/3.9 with more entries in one
+			// trigger than Bunny accepts: sent again, split.
+			$resend  = ( $gone && $here ) || self::needs_split( $rule );
 			$want    = $rule;
 			$rule_on = $on;
 			if ( 'preset_login' === $id ) {
@@ -1073,7 +1380,7 @@ final class PNCP_Bunny {
 			}
 			$same_allow = ( isset( $rule['allow'] ) ? (array) $rule['allow'] : array() ) === ( isset( $want['allow'] ) ? (array) $want['allow'] : array() );
 			// Only ScrapeLock's own record is compared: a rule switched off by hand in the Bunny dashboard stays off.
-			if ( ( ! empty( $rule['enabled'] ) ) === $rule_on && $same_allow ) {
+			if ( ( ! empty( $rule['enabled'] ) ) === $rule_on && $same_allow && ! $resend ) {
 				continue;
 			}
 			++$sent;
@@ -1149,7 +1456,7 @@ final class PNCP_Bunny {
 		}
 		$out = array_values( $out );
 		sort( $out );
-		return array_slice( $out, 0, self::MAX_ALLOW_IPS );
+		return array_slice( $out, 0, self::login_allow_max() );
 	}
 
 	/* ---------- 3.9: the login page lock follows an explicit list ---------- */
@@ -1168,7 +1475,7 @@ final class PNCP_Bunny {
 	 * @return string[]
 	 */
 	public static function login_allow_list() {
-		return array_slice( self::settings()['allow'], 0, self::MAX_ALLOW_IPS );
+		return array_slice( self::settings()['allow'], 0, self::login_allow_max() );
 	}
 
 	/**
@@ -1215,6 +1522,15 @@ final class PNCP_Bunny {
 		$ip   = $cli ? '' : self::current_admin_ip();
 		if ( ! $cli && '' === $ip ) {
 			$out[] = __( 'ScrapeLock cannot see your real IP (it appears as the address of a proxy, of Bunny or of this server), so it cannot check that the lock leaves you a way in. Set “Real visitor IP” in Bots first, then lock again.', 'scrapelock' );
+		}
+		if ( count( self::settings()['allow'] ) > self::login_allow_max() ) {
+			// 3.10: more entries than fit in one rule at Bunny; the ones after the limit would not be let through.
+			$out[] = sprintf(
+				/* translators: 1: entries in the list, 2: most entries */
+				__( '“Allowed IPs for the login page at Bunny” holds %1$d IPs and ranges, but one Edge Rule at Bunny can let through at most %2$d. Remove old entries in Bots → Bunny CDN logs (an IPv6 /64 covers a whole connection), then lock again.', 'scrapelock' ),
+				count( self::settings()['allow'] ),
+				self::login_allow_max()
+			);
 		}
 		if ( ! $list ) {
 			$out[] = __( 'The list “Allowed IPs for the login page at Bunny” is empty, so the lock would refuse everyone at wp-login.php, you included. Add your IP with “Add selected” under the suggestions in this card (or type it in Bots → Bunny CDN logs and save), then lock again.', 'scrapelock' );
@@ -1288,9 +1604,9 @@ final class PNCP_Bunny {
 		}
 		$stored = PNCP_Options::stored();
 		$list   = PNCP_Options::parse_list( isset( $stored['bunny_login_allow'] ) ? (string) $stored['bunny_login_allow'] : '' );
-		if ( count( $list ) + count( $add ) > self::MAX_ALLOW_IPS ) {
+		if ( count( $list ) + count( $add ) > self::login_allow_max() ) {
 			/* translators: %d: most entries */
-			return new WP_Error( 'pncp_full', sprintf( __( 'The list may hold at most %d IPs and ranges (what Bunny accepts in one rule): remove old ones in Bots → Bunny CDN logs first.', 'scrapelock' ), self::MAX_ALLOW_IPS ) );
+			return new WP_Error( 'pncp_full', sprintf( __( 'The list may hold at most %d IPs and ranges (what Bunny accepts in one rule): remove old ones in Bots → Bunny CDN logs first.', 'scrapelock' ), self::login_allow_max() ) );
 		}
 		$stored['bunny_login_allow'] = implode( "\n", array_values( array_unique( array_merge( $list, array_values( $add ) ) ) ) );
 		// As PNCP_Options::block_ip_permanently(): a change of this list does not need the page cache purged.
@@ -1330,7 +1646,13 @@ final class PNCP_Bunny {
 			return $value;
 		}
 		$why = '';
-		if ( ! $now ) {
+		if ( count( $now ) > self::login_allow_max() ) {
+			$why = sprintf(
+				/* translators: %d: most entries */
+				__( '“Allowed IPs for the login page at Bunny” was not changed: wp-login.php is locked at Bunny with this list, and one Edge Rule at Bunny can let through at most %d IPs and ranges.', 'scrapelock' ),
+				self::login_allow_max()
+			);
+		} elseif ( ! $now ) {
 			$why = __( '“Allowed IPs for the login page at Bunny” was not emptied: wp-login.php is locked at Bunny with this list, and an empty list would leave the rule there with the old one. Remove the lock of the login page in the Bunny card first, then empty the list.', 'scrapelock' );
 		} else {
 			$ip = ( defined( 'WP_CLI' ) && WP_CLI ) ? '' : self::current_admin_ip();
@@ -1733,6 +2055,17 @@ final class PNCP_Bunny {
 				'evidence' => array( array( 'install', '' ), array( 'scanner', $core . 'readme.html' ) ),
 				'harden'   => 'core_files',
 			),
+			// 3.10: ScrapeLock's own private folders, for Nginx sites without access to the server's configuration
+			// (offered by Site Health's private folders test). Data only: the rule is built like any preset.
+			'private_folders' => array(
+				'label'    => __( 'ScrapeLock\'s private folders', 'scrapelock' ),
+				'blocks'   => __( 'Every request for the folders where ScrapeLock keeps its own data: the pre-cache check\'s counters and bans (visitor IP addresses), the country database, the clean originals of watermarked images and the Lockdown lock file. ScrapeLock reads them from the disk, never from the web.', 'scrapelock' ),
+				'breaks'   => __( 'Nothing a visitor uses. The rule protects only the requests that go through Bunny: a request sent straight to the server (its IP address) still reads the files, so also refuse the folders on the server when you can (Tools → Site Health shows the lines).', 'scrapelock' ),
+				'patterns' => self::private_folder_patterns(),
+				'except'   => array(),
+				'evidence' => array(),
+				'harden'   => '',
+			),
 		);
 		/**
 		 * Filters the presets of the "Lock at Bunny" buttons.
@@ -1740,6 +2073,58 @@ final class PNCP_Bunny {
 		 * @param array<string, array<string, mixed>> $presets Presets.
 		 */
 		return (array) apply_filters( 'pncp_bunny_presets', $out );
+	}
+
+	/**
+	 * 3.10: the URL patterns of ScrapeLock's private folders (PNCP_Health::private_folder_paths()), usually 4, so
+	 * the lock fits in one trigger; more (a filter) are split by plan() like any preset. The folders of uploads
+	 * whose name starts with "scrapelock"
+	 * share one pattern ("…/uploads/scrapelock*\/*" needs a "/" after the name, so a media file named
+	 * scrapelock-….png in uploads is not hit).
+	 *
+	 * @return string[]
+	 */
+	public static function private_folder_patterns() {
+		if ( ! class_exists( 'PNCP_Health' ) || ! method_exists( 'PNCP_Health', 'private_folder_paths' ) ) {
+			return array();
+		}
+		$out = array();
+		foreach ( PNCP_Health::private_folder_paths() as $folder ) {
+			$path = (string) $folder['path'];
+			if ( preg_match( '#^(.*/)scrapelock[a-z-]*/$#', $path, $m ) && preg_match( '#/uploads/$#', $m[1] ) ) {
+				$pattern = '*' . $m[1] . 'scrapelock*/*';
+			} else {
+				$pattern = '*' . $path . '*';
+			}
+			$out[ $pattern ] = $pattern;
+		}
+		return array_values( $out );
+	}
+
+	/**
+	 * 3.10: a "Lock at Bunny…" button for another screen (Site Health): it opens the preview "What would be
+	 * blocked" like the button of the Bunny card; nothing is sent to Bunny before "Confirm" there.
+	 *
+	 * @param string $id    Preset.
+	 * @param string $label Button text.
+	 * @param string $back  Where Cancel and the result go (an address in wp-admin; '' = the Bunny card).
+	 * @return string HTML ('' for users who cannot manage options).
+	 */
+	public static function lock_button( $id, $label, $back = '' ) {
+		if ( ! current_user_can( 'manage_options' ) || ! isset( self::presets()[ $id ] ) ) {
+			return '';
+		}
+		$back = '' !== $back ? wp_validate_redirect( $back, '' ) : '';
+		$out  = sprintf( '<form method="post" action="%s" class="pncp-bunny-form" style="display:inline-block;margin:0 4px 4px 0">', esc_url( admin_url( 'admin-post.php' ) ) );
+		$out .= '<input type="hidden" name="action" value="' . esc_attr( self::ACTION ) . '">';
+		$out .= '<input type="hidden" name="op" value="lock">';
+		$out .= '<input type="hidden" name="id" value="' . esc_attr( sanitize_key( $id ) ) . '">';
+		$out .= '<input type="hidden" name="_wpnonce" value="' . esc_attr( wp_create_nonce( self::ACTION ) ) . '">';
+		if ( '' !== $back ) {
+			// The page the form is shown on may have been built by admin-ajax (Site Health's async tests).
+			$out .= '<input type="hidden" name="_wp_http_referer" value="' . esc_attr( $back ) . '">';
+		}
+		return $out . '<button type="submit" class="button">' . esc_html( $label ) . '</button></form>';
 	}
 
 	/**
@@ -2237,8 +2622,9 @@ final class PNCP_Bunny {
 		if ( preg_match( '/(?:^|&)author=\d/', $query ) || ( false !== strpos( $path, '/wp-json/wp/v2/users' ) || false !== strpos( $path, '/' . rest_get_url_prefix() . '/wp/v2/users' ) ) || false !== strpos( $query, 'rest_route=/wp/v2/users' ) ) {
 			return 'user enumeration';
 		}
+		// 3.10: a site-metadata file (/llms.txt, /.well-known/*, icons, service workers…) is never a scanner probe.
 		// phpcs:ignore WordPress.WP.CapitalPDangit.MisspelledInText -- File names, lowercased.
-		if ( preg_match( '#/\.(?:env|git|svn|hg|aws|ssh|docker|htpasswd|ds_store)|/wp-config\.(?:php[~._\-].*|bak|old|orig|save|txt|swp)$|\.(?:sql|sql\.gz|sqlite|bak|swp)$|/(?:phpmyadmin|pma|myadmin|adminer)(?:/|\.php|$)|/(?:backup|backups|dump|database|db|site|www|wordpress)\.(?:zip|tar|tar\.gz|tgz|rar|7z|sql)$|/(?:shell|c99|r57|wso|alfa|webshell|cmd)\.php$|/vendor/phpunit/|/debug\.log$#', $path ) ) {
+		if ( ! PNCP_Paths::is_site_metadata( $path ) && preg_match( '#/\.(?:env|git|svn|hg|aws|ssh|docker|htpasswd|ds_store)|/wp-config\.(?:php[~._\-].*|bak|old|orig|save|txt|swp)$|\.(?:sql|sql\.gz|sqlite|bak|swp)$|/(?:phpmyadmin|pma|myadmin|adminer)(?:/|\.php|$)|/(?:backup|backups|dump|database|db|site|www|wordpress)\.(?:zip|tar|tar\.gz|tgz|rar|7z|sql)$|/(?:shell|c99|r57|wso|alfa|webshell|cmd)\.php$|/vendor/phpunit/|/debug\.log$#', $path ) ) {
 			return 'scanner';
 		}
 		if ( $status >= 400 && $status < 500 && preg_match( '#/wp-content/(?:plugins|themes)/([a-z0-9_.\-]+)#', $path, $m ) ) {
@@ -2403,7 +2789,8 @@ final class PNCP_Bunny {
 			$mk                  = $ip . '|' . (int) floor( $sec / 60 );
 			$a['minutes'][ $mk ] = isset( $a['minutes'][ $mk ] ) ? $a['minutes'][ $mk ] + 1 : 1;
 		}
-		if ( $status >= 400 && $status < 500 && count( $a['errors'] ) < 20000 ) {
+		// 3.10: a missing /llms.txt, /ai.txt or /.well-known/* file is not part of an error flood.
+		if ( $status >= 400 && $status < 500 && count( $a['errors'] ) < 20000 && ! PNCP_Paths::is_site_metadata( (string) $row['path'] ) ) {
 			if ( ! isset( $a['errors'][ $ip ] ) ) {
 				$a['errors'][ $ip ] = array(
 					'n'     => 0,
@@ -3101,6 +3488,8 @@ final class PNCP_Bunny {
 	 *     @type string[] $patterns  URL patterns Bunny refuses.
 	 *     @type string[] $except    URL patterns let through.
 	 *     @type string[] $allow     IPs let through.
+	 *     @type int      $bunny_rules 3.10: Edge Rules the lock is at Bunny (0: it cannot be sent).
+	 *     @type int      $conditions  3.10: triggers in them, each with at most 5 entries.
 	 *     @type bool     $locked    Already locked.
 	 *     @type bool     $enforcing The rule blocks now (false: Monitor only or protection off).
 	 *     @type array    $hits      See preview_hits().
@@ -3172,6 +3561,23 @@ final class PNCP_Bunny {
 			}
 			if ( '' === $preview['blocks'] && isset( $point['blocks'] ) && is_string( $point['blocks'] ) ) {
 				$preview['blocks'] = $point['blocks'];
+			}
+		}
+		// 3.10: how the lock goes to Bunny within its limits (several conditions, or several rules).
+		$plan                   = self::plan(
+			array(
+				'patterns' => self::clean_patterns( $preview['patterns'] ),
+				'allow'    => (array) $preview['allow'],
+				'except'   => self::clean_patterns( $preview['except'] ),
+			)
+		);
+		$preview['bunny_rules'] = is_wp_error( $plan ) ? 0 : count( $plan );
+		$preview['conditions']  = 0;
+		if ( is_wp_error( $plan ) ) {
+			$preview['blockers'][] = $plan->get_error_message();
+		} else {
+			foreach ( $plan as $part ) {
+				$preview['conditions'] += count( $part['triggers'] );
 			}
 		}
 		$preview['hits'] = self::preview_hits( $preview['patterns'], 7 );
@@ -3447,8 +3853,39 @@ final class PNCP_Bunny {
 			/* translators: %s: list of IPs */
 			echo '<p>' . esc_html( sprintf( __( 'Except from these IPs: %s', 'scrapelock' ), implode( ', ', (array) $preview['allow'] ) ) ) . '</p>';
 		}
+		self::render_preview_parts( $preview );
 		if ( '' !== (string) $preview['breaks'] ) {
 			echo '<p><strong>' . esc_html__( 'What may stop working:', 'scrapelock' ) . '</strong> ' . esc_html( (string) $preview['breaks'] ) . '</p>';
+		}
+	}
+
+	/**
+	 * 3.10: preview: how the lock is sent within Bunny's limits.
+	 *
+	 * @param array<string, mixed> $preview Preview.
+	 */
+	private static function render_preview_parts( $preview ) {
+		$rules = isset( $preview['bunny_rules'] ) ? (int) $preview['bunny_rules'] : 0;
+		$conds = isset( $preview['conditions'] ) ? (int) $preview['conditions'] : 0;
+		$max   = self::edge_limits()['patterns'];
+		if ( $rules > 1 ) {
+			echo '<p class="description pncp-bunny-preview-parts">' . esc_html(
+				sprintf(
+					/* translators: 1: most entries in one condition, 2: number of rules */
+					__( 'Bunny accepts at most %1$d entries in one condition, so this lock is sent as %2$d Edge Rules (“ScrapeLock: … (1/%2$d)” and so on). Here they are one lock: Remove removes them all, and if one cannot be made, none is kept.', 'scrapelock' ),
+					$max,
+					$rules
+				)
+			) . '</p>';
+		} elseif ( 1 === $rules && $conds > 1 ) {
+			echo '<p class="description pncp-bunny-preview-parts">' . esc_html(
+				sprintf(
+					/* translators: 1: number of conditions, 2: most entries in one condition */
+					__( 'Sent as one Edge Rule with %1$d conditions of at most %2$d entries each (what Bunny accepts).', 'scrapelock' ),
+					$conds,
+					$max
+				)
+			) . '</p>';
 		}
 	}
 
@@ -3956,6 +4393,7 @@ final class PNCP_Bunny {
 				/* translators: %s: list of IPs */
 				echo '<br><span class="description">' . esc_html( sprintf( __( 'Except from: %s', 'scrapelock' ), implode( ', ', array_slice( $rule['allow'], 0, 8 ) ) . ( count( $rule['allow'] ) > 8 ? ' …' : '' ) ) ) . '</span>';
 			}
+			self::render_rule_parts( $rule );
 			echo '</td><td>';
 			if ( $rule['enabled'] ) {
 				esc_html_e( 'Blocking', 'scrapelock' );
@@ -3971,6 +4409,20 @@ final class PNCP_Bunny {
 			echo '</td></tr>';
 		}
 		echo '</tbody></table>';
+	}
+
+	/**
+	 * 3.10: the card: a lock made of several rules at Bunny, or one to send again split.
+	 *
+	 * @param array<string, mixed> $rule Rule, from list_ours().
+	 */
+	private static function render_rule_parts( $rule ) {
+		if ( ! empty( $rule['needs_split'] ) ) {
+			echo '<br><span class="description pncp-bunny-rule-split">' . esc_html__( 'Made by an older version with more entries in one condition than Bunny accepts: it is sent again, split, with the next run. If it stays like this, remove it and lock again.', 'scrapelock' ) . '</span>';
+		} elseif ( isset( $rule['parts'] ) && (int) $rule['parts'] > 1 ) {
+			/* translators: 1: number of rules, 2: most entries in one condition */
+			echo '<br><span class="description pncp-bunny-rule-parts">' . esc_html( sprintf( __( '%1$d Edge Rules at Bunny (at most %2$d entries in one condition), managed as one lock.', 'scrapelock' ), (int) $rule['parts'], self::edge_limits()['patterns'] ) ) . '</span>';
+		}
 	}
 
 	/**
@@ -4145,14 +4597,15 @@ final class PNCP_Bunny {
 					$items[] = array(
 						'id'       => $rule['id'],
 						'label'    => $rule['label'],
-						'guid'     => $rule['guid'],
+						'guid'     => implode( ',', $rule['guids'] ), // 3.10: every rule of the lock at Bunny.
 						'zone'     => $rule['zone'],
 						'enabled'  => $rule['enabled'] ? 'yes' : 'no',
 						'patterns' => implode( ' ', $rule['patterns'] ),
 						'allow'    => implode( ' ', $rule['allow'] ),
+						'parts'    => $rule['parts'] . ( $rule['needs_split'] ? ' (to split)' : '' ),
 					);
 				}
-				WP_CLI\Utils\format_items( $format, $items, array( 'id', 'label', 'guid', 'zone', 'enabled', 'patterns', 'allow' ) );
+				WP_CLI\Utils\format_items( $format, $items, array( 'id', 'label', 'guid', 'zone', 'enabled', 'patterns', 'allow', 'parts' ) );
 				return;
 			case 'presets':
 				$items = array();

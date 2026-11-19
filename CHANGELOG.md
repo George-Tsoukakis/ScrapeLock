@@ -1,5 +1,18 @@
 # Αλλαγές
 
+## 3.10.0 — 2026-11-19
+
+Διορθώσεις από τα πραγματικά logs 7 ημερών του pharmacyneeds.gr (Bunny CDN, WP Rocket, OneSignal, Nginx).
+
+- **Edge Rules στο Bunny μέσα στο όριο των 5 ανά συνθήκη**: το «Secret files» (21 patterns) αποτύγχανε με HTTP 400 «Maximum 5 triggers are allowed per condition». Τα patterns και οι IP μοιράζονται σε ομάδες των 5, σε έναν κανόνα (Match Any) ή σε περισσότερους «ScrapeLock: … (1/3)», και είναι ένα κλείδωμα παντού: ένα Remove τα σβήνει όλα, rollback αν αποτύχει κάποιο κομμάτι (και για κομμάτι που το Bunny αποθήκευσε ενώ η απάντηση έληξε σε timeout), παλιά κλειδώματα 3.8/3.9 ξαναστέλνονται χωρισμένα. Allowed IPs του wp-login: έως 15. Φίλτρο `pncp_bunny_edge_limits`.
+- **Λιγότερα ψευδώς θετικά στο «No browser headers»**: τα αρχεία του site για υπηρεσίες (/.well-known/*, favicon, apple-touch-icon*, manifest, robots.txt, llms.txt…) με GET/HEAD δεν περνούν από τους ελέγχους «μοιάζει με bot»· διεύθυνση από τις επίσημες λίστες της Google δεν παίρνει ποτέ 403 για headers. Επαλήθευση των άλλων fetchers της Google, του Applebot και του DuckDuckBot από τις επίσημες λίστες τους (νέες λίστες Apple και DuckDuckGo, που ελέγχει και το Site Health).
+- **Bots ενεργών plugins**: το WP-Rocket-SaaS και το preload του WP Rocket, και το Jetpack, επιτρέπονται όσο το plugin είναι ενεργό, με «Stop allowing» / «Allow» και προειδοποίηση όταν μπλοκαρίστηκαν. Τα όρια και οι έλεγχοι επιθέσεων μένουν. Φίλτρο `pncp_plugin_bots`.
+- **Claude-User δεν είναι πια «Fake AI search bot»** από το εύρος 160.79.104.0/21 της Anthropic (φίλτρο `pncp_ip_extra_ranges`)· διαβάζονται όλες οι μορφές των λιστών AI· λίστα παλιότερη από μία εβδομάδα δεν χαρακτηρίζει bot ως ψεύτικο.
+- **Attacks**: τα /llms.txt, /ai.txt, /.well-known/*, εικονίδια και service workers (π.χ. /OneSignalSDKWorker.js) δεν μετρούν ως «Scanner probe» ούτε ως 4xx flood στο Bunny· οι παλιές γραμμές σβήνονται μία φορά. Φίλτρο `pncp_site_metadata_paths` (ένας κοινός κατάλογος και για το «No browser headers»).
+- **Vulnerable points → Security headers**: ο έλεγχος διαβάζει τη δημόσια αρχική σελίδα (GET, ακολουθεί redirects, ξέρει το Bunny/Cloudflare) και γράφει ποια απάντηση διάβασε· «δεν ελέγχθηκε» αντί για «λείπει» όταν η απάντηση δεν πέρασε από το CDN. Τα αποθηκευμένα αποτελέσματα της 3.9 ξαναελέγχονται.
+- **Site Health, ιδιωτικοί φάκελοι**: οι ακριβείς γραμμές Nginx και Apache φαίνονται πάντα ως απλό κείμενο· με Bunny, κουμπί «Lock at Bunny…» και νέο preset «ScrapeLock's private folders» (με προεπισκόπηση και Confirm).
+- **UX**: άλλα ονόματα καρτελών στο URL (&tab=vulnerable, &tab=server…) και ειδοποίηση για άγνωστη καρτέλα· οι ενότητες μένουν ανοιχτές μετά από Save και η σελίδα γυρίζει στο κουμπί.
+
 ## 3.9.1 — 2026-11-19
 
 - Όσο το wp-login.php είναι κλειδωμένο στο Bunny, η λίστα «Allowed IPs for the login page at Bunny» δεν αδειάζει και δεν αποθηκεύεται χωρίς την IP του διαχειριστή· κάθε αλλαγή στέλνεται αμέσως στο Bunny και η κάρτα προειδοποιεί όσο ο κανόνας έχει την παλιά λίστα.
