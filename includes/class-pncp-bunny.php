@@ -93,6 +93,17 @@ final class PNCP_Bunny {
 	const MAX_AGGREGATES = 3000;
 
 	/**
+	 * 3.9: the fewest log lines the check "full or anonymized IPs" decides on (fewer are added up over runs).
+	 */
+	const IP_SAMPLE_MIN = 20;
+
+	/**
+	 * 3.9: the share of lines with a hidden IP (IPv4 ending in .0, IPv6 with an empty second half, no IP)
+	 * from which the logs count as anonymized. Real IPs end in .0 about once in 256.
+	 */
+	const IP_SAMPLE_SHARE = 0.9;
+
+	/**
 	 * The credentials of this request (false = not read yet).
 	 *
 	 * @var array{zone:string, token:string, source:string}|null|false
@@ -511,12 +522,13 @@ final class PNCP_Bunny {
 			'error'      => '',
 			'error_time' => 0,
 			'logging'    => array(),
+			'ips'        => array(),
 			'hours'      => array(),
 			'struck'     => 0,
 			'skipped'    => 0,
 		);
 		$s        = array_merge( $defaults, array_intersect_key( $s, $defaults ) );
-		foreach ( array( 'logging', 'hours' ) as $key ) {
+		foreach ( array( 'logging', 'ips', 'hours' ) as $key ) {
 			$s[ $key ] = is_array( $s[ $key ] ) ? $s[ $key ] : array();
 		}
 		return $s;
@@ -1487,6 +1499,7 @@ final class PNCP_Bunny {
 		 */
 		$bytes    = max( 65536, (int) apply_filters( 'pncp_bunny_log_bytes', 8 * MB_IN_BYTES ) );
 		$analysis = self::new_analysis();
+		$sample   = self::new_ip_sample();
 		for ( $i = 0; $i < 4; $i++ ) {
 			if ( microtime( true ) >= $end ) {
 				break;
@@ -1531,6 +1544,7 @@ final class PNCP_Bunny {
 			}
 			$count = count( $lines );
 			foreach ( $lines as $line ) {
+				self::sample_ip( $sample, $line );
 				$row = self::parse_line( $line );
 				// Lines from before the import was turned on (or before another pull zone was set) are not imported.
 				if ( $row && $row['ts'] >= $floor ) {
@@ -1549,6 +1563,8 @@ final class PNCP_Bunny {
 				break; // Caught up.
 			}
 		}
+		// 3.9: full or anonymized IPs, from every line read (also with no attack at all), before store() uses it.
+		$state['ips']    = self::ip_verdict( $state['ips'], $sample );
 		$result['found'] = self::store( $analysis, $state );
 		$state['lines']  = $result['lines'];
 		$state['found']  = $result['found'];
@@ -1928,7 +1944,7 @@ final class PNCP_Bunny {
 			}
 		}
 		// Too fast at the edge: one violation per IP and minute over the limit, for the last hour only.
-		$anonymized = ! empty( $state['logging']['anonymized'] );
+		$anonymized = self::logs_anonymized( $state );
 		$struck     = 0;
 		if ( $cfg['strikes'] && $cfg['rate'] > 0 && ! $anonymized ) {
 			$since = (int) floor( ( time() - HOUR_IN_SECONDS ) / 60 );
@@ -2008,6 +2024,179 @@ final class PNCP_Bunny {
 		return $out;
 	}
 
+	/* ---------- 3.9: full or anonymized IPs in the logs ---------- */
+
+	/**
+	 * An empty sample of the IPs of log lines.
+	 *
+	 * @return array<string, int>
+	 */
+	public static function new_ip_sample() {
+		return array(
+			'full'   => 0,
+			'hidden' => 0,
+			'v6'     => 0,
+		);
+	}
+
+	/**
+	 * What the IP field of a raw log line looks like: 'full', 'hidden' (anonymized: IPv4 ending in .0, IPv6
+	 * whose second half is zero or cut off, a masked or missing address) or '' (not a log line).
+	 *
+	 * Bunny's "Log anonymization" either replaces the last part of the address with zero ("one digit") or
+	 * drops the address; both are seen here, also when parse_line() skips the line for want of an IP.
+	 *
+	 * @param string $line Raw line.
+	 * @return string
+	 */
+	public static function ip_kind( $line ) {
+		$f = explode( '|', trim( (string) $line ) );
+		if ( count( $f ) < 8 ) {
+			return '';
+		}
+		$ip = strtolower( trim( $f[5] ) );
+		if ( '' === $ip || '-' === $ip || '0.0.0.0' === $ip || '::' === $ip ) {
+			return 'hidden';
+		}
+		if ( false !== filter_var( $ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4 ) ) {
+			return '0' === substr( $ip, strrpos( $ip, '.' ) + 1 ) ? 'hidden' : 'full';
+		}
+		if ( false !== filter_var( $ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV6 ) ) {
+			$bin = inet_pton( $ip );
+			return ( false !== $bin && str_repeat( "\0", 8 ) === substr( $bin, 8 ) ) ? 'hidden_v6' : 'full_v6';
+		}
+		// Masked with x or a star, or cut off after a few groups of the address.
+		if ( preg_match( '/^[0-9a-f:.]*[x*][0-9a-fx*:.]*$/', $ip ) || preg_match( '/^[0-9a-f]{1,4}(?::[0-9a-f]{1,4}){1,6}:?$/', $ip ) || preg_match( '/^\d{1,3}(?:\.\d{1,3}){1,2}\.?$/', $ip ) ) {
+			return 'hidden';
+		}
+		return '';
+	}
+
+	/**
+	 * Adds one raw line to a sample.
+	 *
+	 * @param array<string, int> $sample Sample.
+	 * @param string             $line   Raw line.
+	 */
+	public static function sample_ip( &$sample, $line ) {
+		$kind = self::ip_kind( $line );
+		if ( '' === $kind ) {
+			return;
+		}
+		if ( '_v6' === substr( $kind, -3 ) ) {
+			++$sample['v6'];
+			$kind = substr( $kind, 0, -3 );
+		}
+		++$sample[ $kind ];
+	}
+
+	/**
+	 * The new result of the check, from the last one and the lines of this run. Runs with few lines are added
+	 * up until there are IP_SAMPLE_MIN of them, so a quiet site is checked too, and a few real addresses
+	 * ending in .0 never make the logs look anonymized.
+	 *
+	 * @param array<string, mixed> $old    Last result (state "ips").
+	 * @param array<string, int>   $sample Lines of this run.
+	 * @return array{status:string, time:int, lines:int, hidden:int, v6:int, pending:array<string, int>, looked:int}
+	 */
+	public static function ip_verdict( $old, $sample ) {
+		$old     = is_array( $old ) ? $old : array();
+		$out     = array(
+			'status'  => isset( $old['status'] ) && in_array( $old['status'], array( 'full', 'anonymized' ), true ) ? (string) $old['status'] : 'unknown',
+			'time'    => isset( $old['time'] ) ? (int) $old['time'] : 0,
+			'lines'   => isset( $old['lines'] ) ? (int) $old['lines'] : 0,
+			'hidden'  => isset( $old['hidden'] ) ? (int) $old['hidden'] : 0,
+			'v6'      => isset( $old['v6'] ) ? (int) $old['v6'] : 0,
+			'pending' => self::new_ip_sample(),
+			'looked'  => time(),
+		);
+		$pending = isset( $old['pending'] ) && is_array( $old['pending'] ) ? $old['pending'] : array();
+		foreach ( $out['pending'] as $key => $n ) {
+			$out['pending'][ $key ] = ( isset( $pending[ $key ] ) ? (int) $pending[ $key ] : 0 ) + ( isset( $sample[ $key ] ) ? (int) $sample[ $key ] : 0 );
+		}
+		$total = $out['pending']['full'] + $out['pending']['hidden'];
+		/**
+		 * Filters the fewest log lines the check "full or anonymized IPs" decides on (20 by default).
+		 *
+		 * @param int $lines Lines.
+		 */
+		$min = max( 1, (int) apply_filters( 'pncp_bunny_ip_sample_min', self::IP_SAMPLE_MIN ) );
+		if ( $total >= $min ) {
+			$out['status']  = $out['pending']['hidden'] >= self::IP_SAMPLE_SHARE * $total ? 'anonymized' : 'full';
+			$out['time']    = time();
+			$out['lines']   = $total;
+			$out['hidden']  = $out['pending']['hidden'];
+			$out['v6']      = $out['pending']['v6'];
+			$out['pending'] = self::new_ip_sample();
+		}
+		return $out;
+	}
+
+	/**
+	 * Are the IPs in the logs anonymized? The check of the lines when there is one, else what the pull zone says.
+	 *
+	 * @param array<string, mixed>|null $state State (null = read it).
+	 * @return bool
+	 */
+	public static function logs_anonymized( $state = null ) {
+		$state = null === $state ? self::state() : $state;
+		$ips   = isset( $state['ips'] ) && is_array( $state['ips'] ) ? $state['ips'] : array();
+		if ( isset( $ips['status'] ) && in_array( $ips['status'], array( 'full', 'anonymized' ), true ) ) {
+			return 'anonymized' === $ips['status'];
+		}
+		return ! empty( $state['logging']['anonymized'] );
+	}
+
+	/**
+	 * The result of the check in words, and whether it is a warning.
+	 *
+	 * @param array<string, mixed>|null $state State (null = read it).
+	 * @return array{0:string, 1:bool}
+	 */
+	public static function ip_check_text( $state = null ) {
+		$state = null === $state ? self::state() : $state;
+		$ips   = is_array( $state['ips'] ) ? $state['ips'] : array();
+		$st    = isset( $ips['status'] ) ? (string) $ips['status'] : 'unknown';
+		if ( 'full' === $st ) {
+			return array(
+				/* translators: 1: date and time, 2: number of log lines */
+				sprintf( __( 'The logs have full IPs (checked %1$s, on %2$s lines).', 'scrapelock' ), self::when( (int) $ips['time'] ), number_format_i18n( (int) $ips['lines'] ) ),
+				false,
+			);
+		}
+		if ( 'anonymized' === $st ) {
+			return array(
+				sprintf(
+					/* translators: 1: lines with a hidden IP, 2: lines checked, 3: date and time */
+					__( 'Log anonymization is on: ScrapeLock cannot block from the logs (%1$s of %2$s lines without a full IP, checked %3$s). The attacks are still counted, with the shortened addresses Bunny writes. To turn it off, in the bunny.net dashboard: CDN → your pull zone → Logging → turn off “Log anonymization”, then save.', 'scrapelock' ),
+					number_format_i18n( (int) $ips['hidden'] ),
+					number_format_i18n( (int) $ips['lines'] ),
+					self::when( (int) $ips['time'] )
+				),
+				true,
+			);
+		}
+		$seen = isset( $ips['pending'] ) && is_array( $ips['pending'] ) ? (int) array_sum( array_intersect_key( $ips['pending'], array_flip( array( 'full', 'hidden' ) ) ) ) : 0;
+		if ( ! empty( $ips['looked'] ) ) {
+			return array(
+				/* translators: 1: lines read so far, 2: lines needed, 3: date and time */
+				sprintf( __( 'Not yet known whether the logs have full IPs: %1$s of %2$s log lines needed so far (last look %3$s).', 'scrapelock' ), number_format_i18n( $seen ), number_format_i18n( self::IP_SAMPLE_MIN ), self::when( (int) $ips['looked'] ) ),
+				false,
+			);
+		}
+		return array( __( 'Not yet checked whether the logs have full IPs: every import checks it.', 'scrapelock' ), false );
+	}
+
+	/**
+	 * The line of the check in the "Logs" list of the card.
+	 *
+	 * @param array<string, mixed> $state State.
+	 */
+	private static function render_ip_check( $state ) {
+		$text = self::ip_check_text( $state );
+		echo '<li class="pncp-bunny-ips' . ( $text[1] ? ' pncp-edge-error' : '' ) . '">' . ( $text[1] ? '<strong>' : '' ) . esc_html( $text[0] ) . ( $text[1] ? '</strong>' : '' ) . '</li>';
+	}
+
 	/* ---------- Admin ---------- */
 
 	/**
@@ -2031,7 +2220,7 @@ final class PNCP_Bunny {
 				self::done( new WP_Error( 'pncp_bunny', $r['error'] ) );
 			}
 			/* translators: 1: number of log lines, 2: number of attacks */
-			self::done( sprintf( __( 'Imported %1$s log lines from Bunny; %2$s attack requests found.', 'scrapelock' ), number_format_i18n( $r['lines'] ), number_format_i18n( $r['found'] ) ) );
+			self::done( sprintf( __( 'Imported %1$s log lines from Bunny; %2$s attack requests found.', 'scrapelock' ), number_format_i18n( $r['lines'] ), number_format_i18n( $r['found'] ) ) . ' ' . self::ip_check_text()[0] );
 		}
 		if ( PNCP_Lockdown::is_locked() ) {
 			self::done( new WP_Error( 'pncp_locked', __( 'The site is locked with Lockdown: unlock it to change the rules at Bunny CDN.', 'scrapelock' ) ) );
@@ -2297,6 +2486,7 @@ final class PNCP_Bunny {
 		} else {
 			echo '<li>' . esc_html__( 'Not checked yet whether logging is on at the pull zone.', 'scrapelock' ) . '</li>';
 		}
+		self::render_ip_check( $state );
 		if ( in_array( $status, array( 'off', 'anonymized', 'unknown' ), true ) ) {
 			echo '<li>' . esc_html( self::logging_how() ) . '</li>';
 		}
@@ -2319,7 +2509,7 @@ final class PNCP_Bunny {
 		}
 		if ( $cfg['strikes'] ) {
 			echo '<li>' . esc_html(
-				'anonymized' === $status
+				self::logs_anonymized( $state )
 					? __( 'IPs too fast at the CDN are not blocked: Bunny anonymizes the IPs in its logs.', 'scrapelock' )
 					/* translators: %d: requests per minute */
 					: sprintf( __( 'IPs that ask for more than %d pages per minute at the CDN get a violation toward a temporary block (not in Monitor only).', 'scrapelock' ), (int) $cfg['rate'] )
@@ -2532,6 +2722,10 @@ final class PNCP_Bunny {
 					array(
 						'key'   => 'logging',
 						'value' => isset( $state['logging']['status'] ) ? (string) $state['logging']['status'] : 'unknown',
+					),
+					array(
+						'key'   => 'log_ips',
+						'value' => ( isset( $state['ips']['status'] ) ? (string) $state['ips']['status'] : 'unknown' ) . ( ! empty( $state['ips']['time'] ) ? ' (' . wp_date( 'Y-m-d H:i:s', (int) $state['ips']['time'] ) . ', ' . (int) $state['ips']['lines'] . ' lines)' : '' ),
 					),
 					array(
 						'key'   => 'last_run',
