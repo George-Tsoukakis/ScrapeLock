@@ -137,6 +137,16 @@ remove_filter( 'pncp_site_metadata_paths', $pncp_f );
 t( 'pncp_site_metadata_paths filter removed again', ! PNCP_Bots::is_metadata_request( '/my-app.json', 'GET' ) );
 t( 'one helper: PNCP_Bots::metadata_paths() is gone', ! method_exists( 'PNCP_Bots', 'metadata_paths' ) );
 
+/* ---------- Uninstall removes every downloaded list (the data center lists by prefix) ---------- */
+$pncp_un  = (string) file_get_contents( dirname( __DIR__ ) . '/uninstall.php' );
+$pncp_mis = array();
+foreach ( array_keys( PNCP_Ip::sources() ) as $pncp_name ) {
+	if ( 0 !== strpos( $pncp_name, 'dc_' ) && false === strpos( $pncp_un, "'pncp_ip_lists_" . $pncp_name . "'" ) ) {
+		$pncp_mis[] = $pncp_name;
+	}
+}
+t( 'uninstall.php deletes every official list (apple, duckduckgo too)', ! $pncp_mis, implode( ',', $pncp_mis ) );
+
 /* ---------- Unit: list parsing (Apple / DuckDuckGo shapes) ---------- */
 $apple_json = '{"creationTime":"2025-01-01T00:00:00.000000","prefixes":[{"ipv6Prefix":"2a01:b747:3000:200::/56"},{"ipv4Prefix":"17.241.208.0/24"}]}';
 $r          = PNCP_Ip::parse_ranges( $apple_json );
