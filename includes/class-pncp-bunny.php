@@ -1559,20 +1559,6 @@ final class PNCP_Bunny {
 	}
 
 	/**
-	 * The text of the confirmation before XML-RPC is locked at the CDN (also for the hardening card).
-	 *
-	 * @return string
-	 */
-	public static function xmlrpc_confirm_text() {
-		$warn = self::xmlrpc_lock_warnings();
-		$text = __( 'Block xmlrpc.php at Bunny CDN for everyone?', 'scrapelock' );
-		if ( $warn ) {
-			$text .= "\n\n" . __( 'This will stop working:', 'scrapelock' ) . "\n- " . implode( "\n- ", $warn );
-		}
-		return $text;
-	}
-
-	/**
 	 * The warnings about XML-RPC in the card, while it is not locked at Bunny.
 	 */
 	private static function render_xmlrpc_warnings() {
@@ -2879,7 +2865,8 @@ final class PNCP_Bunny {
 				$preview['except']   = array();
 			}
 			if ( 'login' === $id ) {
-				$preview['allow'] = self::login_allowlist();
+				// A lock made from 3.9 sends only the confirmed list ("Allowed IPs for the login page at Bunny").
+				$preview['allow'] = self::login_allow_list();
 			}
 		} else {
 			$point = class_exists( 'PNCP_Hardening' ) && method_exists( 'PNCP_Hardening', 'point' ) ? PNCP_Hardening::point( $id ) : null;
