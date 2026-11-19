@@ -2504,7 +2504,8 @@ final class PNCP_Bunny {
 
 	/**
 	 * What the IP field of a raw log line looks like: 'full', 'hidden' (anonymized: IPv4 ending in .0, IPv6
-	 * whose second half is zero or cut off, a masked or missing address) or '' (not a log line).
+	 * whose last group is zero, which includes a zeroed second half, or cut off, a masked or missing address)
+	 * or '' (not a log line). A real IPv6 address ends in :0 about once in 65536.
 	 *
 	 * Bunny's "Log anonymization" either replaces the last part of the address with zero ("one digit") or
 	 * drops the address; both are seen here, also when parse_line() skips the line for want of an IP.
@@ -2526,7 +2527,8 @@ final class PNCP_Bunny {
 		}
 		if ( false !== filter_var( $ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV6 ) ) {
 			$bin = inet_pton( $ip );
-			return ( false !== $bin && str_repeat( "\0", 8 ) === substr( $bin, 8 ) ) ? 'hidden_v6' : 'full_v6';
+			// 3.9: the last group zeroed ("one digit", as the last octet of IPv4) or the whole second half.
+			return ( false !== $bin && "\0\0" === substr( $bin, -2 ) ) ? 'hidden_v6' : 'full_v6';
 		}
 		// Masked with x or a star, or cut off after a few groups of the address.
 		if ( preg_match( '/^[0-9a-f:.]*[x*][0-9a-fx*:.]*$/', $ip ) || preg_match( '/^[0-9a-f]{1,4}(?::[0-9a-f]{1,4}){1,6}:?$/', $ip ) || preg_match( '/^\d{1,3}(?:\.\d{1,3}){1,2}\.?$/', $ip ) ) {
