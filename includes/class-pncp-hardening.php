@@ -640,6 +640,9 @@ final class PNCP_Hardening {
 			} elseif ( '' !== $check['note'] ) {
 				$note = $check['note'];
 			}
+		} elseif ( null !== $check && in_array( $id, array( 'headers', 'framing' ), true ) && '' !== $check['note'] ) {
+			// 3.10: "could not be checked" and where it looked, instead of nothing.
+			$note = $check['note'];
 		}
 		if ( 'xmlrpc' === $id && $applied && self::state()['xmlrpc_jetpack'] && 'on' === $state ) {
 			$note = trim( $note . ' ' . __( 'Jetpack\'s servers are still let through, without pingbacks.', 'scrapelock' ) );
@@ -1256,6 +1259,170 @@ final class PNCP_Hardening {
 	}
 
 	/**
+	 * 3.10: the home page as a visitor gets it: GET (not HEAD), following up to five redirects (http to https,
+	 * www, trailing slash) to the final answer, instead of reading the headers of the first redirect.
+	 *
+	 * @return array{response:array<string, mixed>|WP_Error, url:string, chain:array<int, array{url:string, code:int}>}
+	 */
+	private static function fetch_public_home() {
+		$url   = home_url( '/' );
+		$chain = array();
+		for ( $hop = 0; $hop <= 5; $hop++ ) {
+			$r = self::fetch( $url );
+			if ( is_wp_error( $r ) ) {
+				break;
+			}
+			$chain[] = array(
+				'url'  => $url,
+				'code' => (int) $r['code'],
+			);
+			if ( ! in_array( (int) $r['code'], array( 301, 302, 303, 307, 308 ), true ) || '' === trim( $r['location'] ) ) {
+				break;
+			}
+			$next = WP_Http::make_absolute_url( trim( $r['location'] ), $url );
+			if ( ! preg_match( '#^https?://#i', $next ) ) {
+				$r = new WP_Error( 'pncp_redirect', __( 'the home page redirects to an address that is not a web address', 'scrapelock' ) );
+				break;
+			}
+			$url = $next;
+			if ( 5 === $hop ) {
+				$r = new WP_Error( 'pncp_redirects', __( 'too many redirects', 'scrapelock' ) );
+			}
+		}
+		return array(
+			'response' => $r,
+			'url'      => $url,
+			'chain'    => $chain,
+		);
+	}
+
+	/**
+	 * 3.10: the CDN that answered, from its response headers ('' when none is seen).
+	 *
+	 * @param array<string, string> $headers Lowercase response headers.
+	 * @return string
+	 */
+	private static function cdn_in_answer( $headers ) {
+		$server = isset( $headers['server'] ) ? strtolower( $headers['server'] ) : '';
+		if ( false !== strpos( $server, 'bunnycdn' ) || isset( $headers['cdn-pullzone'] ) || isset( $headers['cdn-requestid'] ) || isset( $headers['cdn-uid'] ) ) {
+			return 'Bunny CDN';
+		}
+		if ( isset( $headers['cf-ray'] ) || false !== strpos( $server, 'cloudflare' ) ) {
+			return 'Cloudflare';
+		}
+		return '';
+	}
+
+	/**
+	 * 3.10: the CDN this site is set up with in ScrapeLock ("Blocking at the CDN" or the Bunny card), or ''.
+	 *
+	 * @return string
+	 */
+	private static function cdn_configured() {
+		if ( ! class_exists( 'PNCP_Edge' ) ) {
+			return '';
+		}
+		if ( PNCP_Edge::bunny_in_use() ) {
+			return 'Bunny CDN';
+		}
+		return 'cloudflare' === PNCP_Edge::config()['provider'] ? 'Cloudflare' : '';
+	}
+
+	/**
+	 * 3.10: the "Security headers" and "Framing" checks, on the final answer of fetch_public_home(). Says which
+	 * address and status it read, and "could not be checked" (never "missing") when it cannot see the answer that
+	 * visitors get: an error, a final answer that is not a page, or a CDN set up here that the answer did not pass.
+	 *
+	 * @param array<string, mixed> $public Result of fetch_public_home().
+	 * @return array{headers:array{state:string, note:string}, framing:array{state:string, note:string}}
+	 */
+	private static function check_home_headers( $public ) {
+		$home  = $public['response'];
+		$chain = (array) $public['chain'];
+		$steps = array();
+		foreach ( $chain as $step ) {
+			$steps[] = $step['url'] . ' (HTTP ' . (int) $step['code'] . ')';
+		}
+		/* translators: %s: addresses with their HTTP status, joined by arrows */
+		$where   = $steps ? sprintf( __( 'Checked: %s.', 'scrapelock' ), implode( ' → ', $steps ) ) : '';
+		$unknown = static function ( $why ) use ( $where ) {
+			$r = array(
+				'state' => 'unknown',
+				'note'  => trim( $why . ' ' . $where ),
+			);
+			return array(
+				'headers' => $r,
+				'framing' => $r,
+			);
+		};
+		if ( is_wp_error( $home ) ) {
+			/* translators: %s: error message */
+			return $unknown( sprintf( __( 'Could not be checked: the site could not read its public home page (%s).', 'scrapelock' ), $home->get_error_message() ) );
+		}
+		$code = (int) $home['code'];
+		if ( $code < 200 || $code > 299 ) {
+			/* translators: %d: HTTP status code */
+			return $unknown( sprintf( __( 'Could not be checked: the home page answered HTTP %d to the site itself, not the page visitors get.', 'scrapelock' ), $code ) );
+		}
+		$headers = (array) $home['headers'];
+		$has     = static function ( $name ) use ( $headers ) {
+			$name = strtolower( $name );
+			return isset( $headers[ $name ] ) && '' !== trim( (string) $headers[ $name ] );
+		};
+		$missing = array();
+		$want    = self::header_values();
+		foreach ( array_keys( $want ) as $name ) {
+			if ( ! $has( $name ) ) {
+				$missing[] = $name;
+			}
+		}
+		$frame    = $has( 'x-frame-options' ) || ( $has( 'content-security-policy' ) && false !== stripos( $headers['content-security-policy'], 'frame-ancestors' ) );
+		$seen     = self::cdn_in_answer( $headers );
+		$expected = self::cdn_configured();
+		if ( '' !== $seen ) {
+			/* translators: %s: CDN name */
+			$where = trim( $where . ' ' . sprintf( __( 'The answer came through %s: these are the headers visitors get.', 'scrapelock' ), $seen ) );
+		}
+		// The site reached its own server directly (hosts file, internal DNS), not the CDN in front of it: what the
+		// CDN adds cannot be seen, so a header that is not there is not "missing".
+		$blind = '' === $seen && '' !== $expected;
+		/* translators: 1: CDN name, 2: header names */
+		$blind_note = __( 'Could not be checked: the answer came straight from your server, not through %1$s, so headers that %1$s adds cannot be seen from here. Not in this answer: %2$s.', 'scrapelock' );
+		if ( ! $missing ) {
+			$headers_out = array(
+				'state' => 'on',
+				'note'  => $where,
+			);
+		} elseif ( $blind ) {
+			$headers_out = array(
+				'state' => 'unknown',
+				'note'  => trim( sprintf( $blind_note, $expected, implode( ', ', $missing ) ) . ' ' . $where ),
+			);
+		} else {
+			$headers_out = array(
+				'state' => count( $missing ) < count( $want ) ? 'partial' : 'off',
+				/* translators: %s: header names */
+				'note'  => trim( sprintf( __( 'Missing on the home page: %s.', 'scrapelock' ), implode( ', ', $missing ) ) . ' ' . $where ),
+			);
+		}
+		if ( ! $frame && $blind ) {
+			$framing_out = array(
+				'state' => 'unknown',
+				'note'  => trim( sprintf( $blind_note, $expected, 'X-Frame-Options' ) . ' ' . $where ),
+			);
+		} else {
+			$framing_out = array(
+				'state' => $frame ? 'on' : 'off',
+				'note'  => '',
+			);
+		}
+		return array(
+			'headers' => $headers_out,
+			'framing' => $framing_out,
+		);
+	}
+
+	/**
 	 * Is an answer a refusal (403, 404, 405, 410 or 444)?
 	 *
 	 * @param array<string, mixed> $r Answer of fetch().
@@ -1278,8 +1445,9 @@ final class PNCP_Hardening {
 				'note'  => $why,
 			);
 		};
-		$home    = self::fetch( home_url( '/' ), 'HEAD' );
-		if ( is_wp_error( $home ) ) {
+		$public  = self::fetch_public_home();
+		$home    = $public['response'];
+		if ( is_wp_error( $home ) && ! $public['chain'] ) {
 			/* translators: %s: error message */
 			$why = sprintf( __( 'Could not check: the site could not reach itself (%s).', 'scrapelock' ), $home->get_error_message() );
 			foreach ( array_keys( self::points() ) as $id ) {
@@ -1288,31 +1456,10 @@ final class PNCP_Hardening {
 			return $out;
 		}
 
-		// Security headers and framing: the headers of the home page.
-		$want    = self::header_values();
-		$missing = array();
-		foreach ( array_keys( $want ) as $name ) {
-			if ( ! isset( $home['headers'][ strtolower( $name ) ] ) ) {
-				$missing[] = $name;
-			}
-		}
-		if ( ! $missing ) {
-			$out['headers'] = array(
-				'state' => 'on',
-				'note'  => '',
-			);
-		} else {
-			$out['headers'] = array(
-				'state' => count( $missing ) < count( $want ) ? 'partial' : 'off',
-				/* translators: %s: header names */
-				'note'  => sprintf( __( 'Missing on the home page: %s.', 'scrapelock' ), implode( ', ', $missing ) ),
-			);
-		}
-		$frame           = isset( $home['headers']['x-frame-options'] ) || ( isset( $home['headers']['content-security-policy'] ) && false !== stripos( $home['headers']['content-security-policy'], 'frame-ancestors' ) );
-		$out['framing']  = array(
-			'state' => $frame ? 'on' : 'off',
-			'note'  => '',
-		);
+		// Security headers and framing: the headers of the public home page (3.10: after its redirects, GET).
+		$heads          = self::check_home_headers( $public );
+		$out['headers'] = $heads['headers'];
+		$out['framing'] = $heads['framing'];
 		$core            = self::core_path();
 		$site            = untrailingslashit( site_url() );
 		$out['xmlrpc']   = self::check_xmlrpc( $site . '/xmlrpc.php' );
