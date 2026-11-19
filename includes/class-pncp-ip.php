@@ -612,7 +612,9 @@ final class PNCP_Ip {
 			return $out;
 		}
 		// AWS (ip-ranges.json): only the servers (EC2), not CloudFront and the other services.
-		if ( is_array( $json ) && isset( $json['prefixes'][0]['ip_prefix'] ) ) {
+		// 3.10: only when the entries name their service, as AWS's do: a list of {"ip_prefix": …} without one
+		// (another publisher using the same key) is read by the generic branch below instead of coming out empty.
+		if ( is_array( $json ) && isset( $json['prefixes'][0]['ip_prefix'], $json['prefixes'][0]['service'] ) ) {
 			$keys = array(
 				'prefixes'      => 'ip_prefix',
 				'ipv6_prefixes' => 'ipv6_prefix',
@@ -640,12 +642,14 @@ final class PNCP_Ip {
 		if ( is_array( $json ) && isset( $json['prefixes'] ) && is_array( $json['prefixes'] ) ) {
 			foreach ( $json['prefixes'] as $prefix ) {
 				foreach ( array( 'ipv4Prefix', 'ipv6Prefix' ) as $key ) {
-					if ( isset( $prefix[ $key ] ) && self::valid_range( (string) $prefix[ $key ] ) ) {
+					if ( isset( $prefix[ $key ] ) && is_scalar( $prefix[ $key ] ) && self::valid_range( (string) $prefix[ $key ] ) ) {
 						$out[] = (string) $prefix[ $key ];
 					}
 				}
 			}
-			return $out;
+			if ( $out ) {
+				return $out;
+			}
 		}
 		if ( is_array( $json ) && array_values( $json ) === $json ) {
 			foreach ( $json as $range ) {
@@ -653,12 +657,14 @@ final class PNCP_Ip {
 					$out[] = $range;
 				}
 			}
-			return $out;
+			if ( $out ) {
+				return $out;
+			}
 		}
-		// 3.10: any other JSON object (a list published in a shape of its own, e.g. {"ips":[…]} or
-		// {"prefixes":["…"]}): every text value in it that is an address or a range, a few levels deep.
+		// 3.10: any other JSON (the AI services' lists: "prefixes" as plain strings, "ip_ranges", "ipv4" / "ipv6",
+		// {"cidr": …}, …): every text value that is an address or a CIDR, at any depth.
 		if ( is_array( $json ) ) {
-			return self::json_ranges( $json, 0 );
+			return self::json_ranges( $json );
 		}
 		// Plain text, one per line, the values of an XML list, or a geofeed CSV (DigitalOcean, Linode: the range
 		// is the first field; comment lines start with #).
@@ -666,31 +672,6 @@ final class PNCP_Ip {
 		foreach ( preg_split( '/[\s<>,]+/', trim( $body ) ) as $line ) {
 			if ( self::valid_range( $line ) ) {
 				$out[] = $line;
-			}
-		}
-		return $out;
-	}
-
-	/**
-	 * 3.10: the addresses and ranges anywhere in a decoded JSON value (parse_ranges()), at most four levels deep.
-	 *
-	 * @param array<mixed> $json  Decoded JSON.
-	 * @param int          $depth Current depth.
-	 * @return string[]
-	 */
-	private static function json_ranges( $json, $depth ) {
-		$out = array();
-		if ( $depth > 4 ) {
-			return $out;
-		}
-		foreach ( $json as $value ) {
-			if ( is_string( $value ) ) {
-				$value = trim( $value );
-				if ( self::valid_range( $value ) ) {
-					$out[] = $value;
-				}
-			} elseif ( is_array( $value ) ) {
-				$out = array_merge( $out, self::json_ranges( $value, $depth + 1 ) );
 			}
 		}
 		return $out;
@@ -1323,6 +1304,32 @@ final class PNCP_Ip {
 		}
 		$server = isset( $_SERVER['SERVER_ADDR'] ) ? sanitize_text_field( wp_unslash( $_SERVER['SERVER_ADDR'] ) ) : '';
 		return '' !== $ip && $ip === $server;
+	}
+
+	/**
+	 * 3.10: every text value of a decoded JSON document that is an address or a CIDR, at any depth (at most 8
+	 * levels and 100000 values, so a hostile source cannot make a refresh run forever).
+	 *
+	 * @param array<mixed> $json  Decoded JSON.
+	 * @param int          $depth Current depth.
+	 * @return string[]
+	 */
+	public static function json_ranges( $json, $depth = 0 ) {
+		$out = array();
+		if ( $depth > 8 ) {
+			return $out;
+		}
+		foreach ( $json as $value ) {
+			if ( count( $out ) >= 100000 ) {
+				break;
+			}
+			if ( is_array( $value ) ) {
+				$out = array_merge( $out, self::json_ranges( $value, $depth + 1 ) );
+			} elseif ( is_string( $value ) && self::valid_range( trim( $value ) ) ) {
+				$out[] = trim( $value );
+			}
+		}
+		return $out;
 	}
 
 	/**
