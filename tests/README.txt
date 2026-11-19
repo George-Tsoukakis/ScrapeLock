@@ -39,6 +39,8 @@ ScrapeLock — δοκιμές σε πραγματικό WordPress (όχι stubs)
   t_bunny_rules.php Edge Rules στο Bunny μέσα στα όριά του (το πολύ 5 μοτίβα ανά συνθήκη) με ψεύτικο API που δίνει
                     HTTP 400 όπως το πραγματικό: χωρισμός, κλείδωμα/Remove, rollback, Monitor only, sync, προεπισκόπηση,
                     κάρτα, wp-login allowed IPs, WP-CLI (με WP_CLI)
+  t_metadata.php    3.10: /llms.txt, /ai.txt, /.well-known/*, εικονίδια, service workers ποτέ «Scanner probe» (καταγραφή
+                    επιθέσεων, ομάδες του log, ban σαρωτών, εισαγωγή logs του Bunny με mock), σβήσιμο των παλιών γραμμών
   browser/          protect.js σε Chromium: δεξί κλικ/αντιγραφή/επιλογή/σύρσιμο ακόμη και με «εχθρικό» script,
                     αντιγραφή με πηγή, .pncp-allow, πεδία φόρμας, ελληνική διάταξη, θόλωμα (npm install && npm test)
 
