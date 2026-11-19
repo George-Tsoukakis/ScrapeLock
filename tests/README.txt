@@ -37,6 +37,9 @@ ScrapeLock — δοκιμές σε πραγματικό WordPress (όχι stubs)
                     plugin είναι ενεργό, όχι από όρια / επιθέσεις, «Σταμάτα να επιτρέπεις» / «Allow» (nonce, δικαιώματα)
   t_harden_headers.php  Ευάλωτα σημεία → «Security headers»: η δημόσια αρχική σελίδα (GET, μετά από redirects, μέσω CDN),
                     «δεν ελέγχθηκε» αντί για «λείπει» όταν δεν φαίνεται η απάντηση των επισκεπτών (mocks)
+  t_site_files.php  3.10.1: Site Health «ScrapeLock site files» (apple-touch-icon.png από το Site Icon, OneSignalSDKWorker.js
+                    όσο το OneSignal είναι ενεργό): Create/Remove μόνο με nonce και manage_options, ποτέ πάνω σε αρχείο του
+                    site, και ο έλεγχος «Wordfence and the visitor address» πίσω από CDN (ψεύτικο wfUtils / wfConfig)
   t_private_folders.php  3.10: Site Health «private folders»: γραμμές Nginx/Apache για κάθε ιδιωτικό φάκελο (ορατές),
                     preset «private_folders» του «Lock at Bunny» με ψεύτικο API (και 400 για > 5 patterns), κουμπί μόνο
                     για διαχειριστή με Bunny, αναγνώριση του κλειδώματος στο Site Health
