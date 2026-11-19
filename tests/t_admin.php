@@ -746,5 +746,46 @@ t( 'PNCP_Paths::config() = το wp-config.php που φορτώνεται', is_f
 $pncp_cf = print_r( PNCP_Rules::cloudflare(), true ); // phpcs:ignore
 t( 'κανόνας Cloudflare: οι διαδρομές από admin_url / includes_url / content_url', false !== strpos( $pncp_cf, 'starts_with(http.request.uri.path, "/wp-admin")' ) && false !== strpos( $pncp_cf, 'starts_with(http.request.uri.path, "/wp-includes/")' ) && false !== strpos( $pncp_cf, 'starts_with(http.request.uri.path, "/wp-content/")' ), substr( $pncp_cf, 0, 200 ) );
 
+/* ---------- 3.10: καρτέλες με άλλο όνομα στη διεύθυνση, άγνωστη καρτέλα ---------- */
+$pncp_tabs = array(
+	'general'   => 'On the page',
+	'bots'      => 'Bots',
+	'rules'     => 'Server rules',
+	'attacks'   => 'Attacks',
+	'hardening' => 'Vulnerable points',
+);
+$pncp_map  = array(
+	'vulnerable'        => 'hardening',
+	'vulnerable-points' => 'hardening',
+	'hardening'         => 'hardening',
+	'server'            => 'rules',
+	'rules'             => 'rules',
+	'attack'            => 'attacks',
+	'attacks'           => 'attacks',
+	'VULNERABLE'        => 'hardening',
+	''                  => 'general',
+);
+foreach ( $pncp_map as $pncp_in => $pncp_want ) {
+	$pncp_r = PNCP_Admin_Tabs::resolve( $pncp_in, $pncp_tabs );
+	t( "3.10 καρτέλα «{$pncp_in}» → {$pncp_want}", $pncp_want === $pncp_r['tab'] && '' === $pncp_r['unknown'], wp_json_encode( $pncp_r ) );
+}
+$pncp_r = PNCP_Admin_Tabs::resolve( 'nosuchtab', $pncp_tabs );
+t( '3.10 άγνωστη καρτέλα → η πρώτη, με το όνομα για την ειδοποίηση', 'general' === $pncp_r['tab'] && 'nosuchtab' === $pncp_r['unknown'], wp_json_encode( $pncp_r ) );
+$pncp_r = PNCP_Admin_Tabs::resolve( 'server', array( 'general' => 'x' ) );
+t( '3.10 alias προς καρτέλα που δεν υπάρχει → άγνωστη', 'general' === $pncp_r['tab'] && 'server' === $pncp_r['unknown'], wp_json_encode( $pncp_r ) );
+foreach ( PNCP_Admin_Tabs::aliases() as $pncp_alias => $pncp_target ) {
+	if ( ! in_array( $pncp_target, array( 'general', 'bots', 'content', 'images', 'rules', 'log', 'attacks', 'hardening', 'lockdown' ), true ) || sanitize_key( $pncp_alias ) !== $pncp_alias ) {
+		t( "3.10 alias «{$pncp_alias}» δείχνει σε πραγματική καρτέλα", false, $pncp_target );
+	}
+}
+foreach ( array( 'vulnerable' => 'hardening', 'server' => 'rules', 'attack' => 'attacks' ) as $pncp_in => $pncp_want ) {
+	list( $code, $body ) = http( $page . '&tab=' . $pncp_in );
+	t( "3.10 σελίδα &tab={$pncp_in}: ανοίγει η καρτέλα {$pncp_want}, χωρίς ειδοποίηση", 200 === $code && false !== strpos( $body, 'pncp-admin--' . $pncp_want ) && false === strpos( $body, 'pncp-unknown-tab' ) && ! php_errors( $body ), (string) $code );
+}
+list( $code, $body ) = http( $page . '&tab=' . rawurlencode( 'bogus"><script>alert(1)</script>' ) );
+t( '3.10 σελίδα με άγνωστη καρτέλα: η πρώτη καρτέλα και ειδοποίηση «Unknown tab»', 200 === $code && false !== strpos( $body, 'pncp-admin--general' ) && false !== strpos( $body, 'pncp-unknown-tab' ) && false !== strpos( $body, 'Unknown tab “bogusscriptalert1script”' ) && false === strpos( $body, '<script>alert(1)' ), (string) $code );
+list( $code, $body ) = http( $page . '&tab=bots' );
+t( '3.10 γνωστή καρτέλα: καμία ειδοποίηση', 200 === $code && false !== strpos( $body, 'pncp-admin--bots' ) && false === strpos( $body, 'pncp-unknown-tab' ) );
+
 echo $fails ? "\n$fails FAIL\n" : "\nΟΛΑ PASS\n";
 exit( $fails ? 1 : 0 );

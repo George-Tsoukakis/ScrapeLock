@@ -164,12 +164,11 @@ final class PNCP_Admin {
 	 * @return string
 	 */
 	private static function current_tab() {
-		// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Only selects a tab.
-		$tab = isset( $_GET['tab'] ) ? sanitize_key( wp_unslash( $_GET['tab'] ) ) : 'general';
 		if ( PNCP_Lockdown::is_locked() ) {
 			return 'lockdown'; // Nothing else can be changed while locked.
 		}
-		return array_key_exists( $tab, self::tabs() ) ? $tab : 'general';
+		// 3.10: aliases (e.g. "vulnerable", "server") and a notice for an unknown tab: PNCP_Admin_Tabs.
+		return PNCP_Admin_Tabs::current( self::tabs() )['tab'];
 	}
 
 	/* ---------- Fields ---------- */
@@ -698,6 +697,9 @@ final class PNCP_Admin {
 			<?php self::render_header( $stored, $locked ); ?>
 			<hr class="wp-header-end">
 			<?php
+			if ( ! $locked ) {
+				PNCP_Admin_Tabs::render_notice( self::tabs() ); // 3.10: unknown ?tab= in the address.
+			}
 			// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Only displays the confirmation.
 			if ( isset( $_GET['pncp_confirm'] ) && PNCP_Status::is_enabled() && ! $locked ) {
 				self::render_disable_confirm();
