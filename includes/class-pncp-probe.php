@@ -135,6 +135,11 @@ final class PNCP_Probe {
 	 * @return bool
 	 */
 	public static function matches( $path ) {
+		// 3.10: a site-metadata file (/llms.txt, /.well-known/*, icons, service workers…) is never a probe, also
+		// when an entry added with pncp_probe_trap_paths would match it.
+		if ( PNCP_Paths::is_site_metadata( (string) $path ) ) {
+			return false;
+		}
 		$body = self::body( 'wp' );
 		return '' !== $body && 1 === preg_match( '#^/' . $body . '$#i', '/' . ltrim( (string) $path, '/' ) );
 	}

@@ -685,6 +685,11 @@ final class PNCP_Attacks {
 	 * @return bool
 	 */
 	private static function is_scanner_path( $decoded, $status ) {
+		// 3.10: /llms.txt, /robots.txt, /.well-known/*, icons, service workers… are asked for by crawlers, browsers
+		// and apps by themselves: never a scanner probe, also when the site has no such file.
+		if ( PNCP_Paths::is_site_metadata( $decoded ) ) {
+			return false;
+		}
 		if ( class_exists( 'PNCP_Probe' ) && PNCP_Probe::matches( PNCP_Probe::request_path() ) ) {
 			return true;
 		}

@@ -1000,6 +1000,10 @@ final class PNCP_Log {
 	 */
 	public static function is_probe_path( $path ) {
 		$path = strtolower( $path );
+		// 3.10: site-metadata files (/llms.txt, /ai.txt, /.well-known/*, icons, service workers…) are not probes.
+		if ( PNCP_Paths::is_site_metadata( $path ) ) {
+			return false;
+		}
 		// 3.8: Stealth can move the REST API (another prefix) and the sitemaps (/sitemap-posts-post-1.xml).
 		if ( preg_match( '#(?:^|/)(?:wp-sitemap[a-z0-9_-]*|sitemap(?:_index)?|sitemap-[a-z0-9_-]+|[a-z0-9_-]+-sitemap[0-9]*)\.xml$#', $path ) || 0 === strpos( $path, '/wp-json/' ) || 0 === strpos( $path, '/' . rest_get_url_prefix() . '/' ) ) {
 			return false; // Sitemaps and the REST API lead to content.

@@ -2545,8 +2545,9 @@ final class PNCP_Bunny {
 		if ( preg_match( '/(?:^|&)author=\d/', $query ) || ( false !== strpos( $path, '/wp-json/wp/v2/users' ) || false !== strpos( $path, '/' . rest_get_url_prefix() . '/wp/v2/users' ) ) || false !== strpos( $query, 'rest_route=/wp/v2/users' ) ) {
 			return 'user enumeration';
 		}
+		// 3.10: a site-metadata file (/llms.txt, /.well-known/*, icons, service workers…) is never a scanner probe.
 		// phpcs:ignore WordPress.WP.CapitalPDangit.MisspelledInText -- File names, lowercased.
-		if ( preg_match( '#/\.(?:env|git|svn|hg|aws|ssh|docker|htpasswd|ds_store)|/wp-config\.(?:php[~._\-].*|bak|old|orig|save|txt|swp)$|\.(?:sql|sql\.gz|sqlite|bak|swp)$|/(?:phpmyadmin|pma|myadmin|adminer)(?:/|\.php|$)|/(?:backup|backups|dump|database|db|site|www|wordpress)\.(?:zip|tar|tar\.gz|tgz|rar|7z|sql)$|/(?:shell|c99|r57|wso|alfa|webshell|cmd)\.php$|/vendor/phpunit/|/debug\.log$#', $path ) ) {
+		if ( ! PNCP_Paths::is_site_metadata( $path ) && preg_match( '#/\.(?:env|git|svn|hg|aws|ssh|docker|htpasswd|ds_store)|/wp-config\.(?:php[~._\-].*|bak|old|orig|save|txt|swp)$|\.(?:sql|sql\.gz|sqlite|bak|swp)$|/(?:phpmyadmin|pma|myadmin|adminer)(?:/|\.php|$)|/(?:backup|backups|dump|database|db|site|www|wordpress)\.(?:zip|tar|tar\.gz|tgz|rar|7z|sql)$|/(?:shell|c99|r57|wso|alfa|webshell|cmd)\.php$|/vendor/phpunit/|/debug\.log$#', $path ) ) {
 			return 'scanner';
 		}
 		if ( $status >= 400 && $status < 500 && preg_match( '#/wp-content/(?:plugins|themes)/([a-z0-9_.\-]+)#', $path, $m ) ) {
@@ -2711,7 +2712,8 @@ final class PNCP_Bunny {
 			$mk                  = $ip . '|' . (int) floor( $sec / 60 );
 			$a['minutes'][ $mk ] = isset( $a['minutes'][ $mk ] ) ? $a['minutes'][ $mk ] + 1 : 1;
 		}
-		if ( $status >= 400 && $status < 500 && count( $a['errors'] ) < 20000 ) {
+		// 3.10: a missing /llms.txt, /ai.txt or /.well-known/* file is not part of an error flood.
+		if ( $status >= 400 && $status < 500 && count( $a['errors'] ) < 20000 && ! PNCP_Paths::is_site_metadata( (string) $row['path'] ) ) {
 			if ( ! isset( $a['errors'][ $ip ] ) ) {
 				$a['errors'][ $ip ] = array(
 					'n'     => 0,
