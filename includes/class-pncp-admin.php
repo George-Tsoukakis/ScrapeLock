@@ -1890,6 +1890,8 @@ final class PNCP_Admin {
 		$names   = array(
 			'google'          => 'Google',
 			'bing'            => 'Bing',
+			'apple'           => 'Applebot',
+			'duckduckgo'      => 'DuckDuckBot',
 			'cloudflare'      => 'Cloudflare',
 			'bunny'           => 'Bunny CDN',
 			'openai_search'   => 'OpenAI OAI-SearchBot',
@@ -1920,7 +1922,7 @@ final class PNCP_Admin {
 							echo esc_html__( 'built-in list (not downloaded yet)', 'scrapelock' );
 						} elseif ( 'bunny' === $key && ! in_array( 'bunny', $needed, true ) ) {
 							echo esc_html__( 'not used with the current settings', 'scrapelock' );
-						} elseif ( in_array( $key, PNCP_Bots::ai_bot_lists(), true ) ) {
+						} elseif ( 'duckduckgo' === $key || in_array( $key, PNCP_Bots::ai_bot_lists(), true ) ) {
 							echo esc_html__( 'not downloaded yet, no verification until then', 'scrapelock' );
 						} else {
 							echo esc_html__( 'not downloaded yet, only DNS is used', 'scrapelock' );

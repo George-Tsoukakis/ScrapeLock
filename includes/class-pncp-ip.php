@@ -116,6 +116,10 @@ final class PNCP_Ip {
 				'https://developers.google.com/static/search/apis/ipranges/user-triggered-fetchers-google.json',
 			),
 			'bing'            => array( 'https://www.bing.com/toolbox/bingbot.json' ),
+			// 3.10: Applebot and DuckDuckBot publish their addresses too. Applebot is also verified by reverse DNS
+			// (*.applebot.apple.com); DuckDuckBot has no reverse DNS of its own, so its list is the only proof.
+			'apple'           => array( 'https://search.developer.apple.com/applebot.json' ),
+			'duckduckgo'      => array( 'https://duckduckgo.com/duckduckbot.json' ),
 			// AI search bots and assistants (since 2.5), one list per User-Agent.
 			'openai_search'   => array( 'https://openai.com/searchbot.json' ),
 			'openai_user'     => array( 'https://openai.com/chatgpt-user.json' ),
@@ -453,6 +457,8 @@ final class PNCP_Ip {
 		if ( ! empty( $s['enabled'] ) ) {
 			$needed[] = 'google';
 			$needed[] = 'bing';
+			$needed[] = 'apple';
+			$needed[] = 'duckduckgo';
 		}
 		if ( ! empty( $s['trust_cloudflare'] ) && in_array( $s['ip_header'], array( 'cf_connecting_ip', 'x_forwarded_for' ), true ) ) {
 			$needed[] = 'cloudflare';
@@ -484,6 +490,8 @@ final class PNCP_Ip {
 		$owners = array(
 			'google'          => 'Google',
 			'bing'            => 'Bing',
+			'apple'           => 'Apple',
+			'duckduckgo'      => 'DuckDuckGo',
 			'openai_search'   => 'OpenAI',
 			'openai_user'     => 'OpenAI',
 			'perplexity_bot'  => 'Perplexity',
@@ -647,12 +655,42 @@ final class PNCP_Ip {
 			}
 			return $out;
 		}
+		// 3.10: any other JSON object (a list published in a shape of its own, e.g. {"ips":[…]} or
+		// {"prefixes":["…"]}): every text value in it that is an address or a range, a few levels deep.
+		if ( is_array( $json ) ) {
+			return self::json_ranges( $json, 0 );
+		}
 		// Plain text, one per line, the values of an XML list, or a geofeed CSV (DigitalOcean, Linode: the range
 		// is the first field; comment lines start with #).
 		$body = (string) preg_replace( '/^#.*$/m', '', $body );
 		foreach ( preg_split( '/[\s<>,]+/', trim( $body ) ) as $line ) {
 			if ( self::valid_range( $line ) ) {
 				$out[] = $line;
+			}
+		}
+		return $out;
+	}
+
+	/**
+	 * 3.10: the addresses and ranges anywhere in a decoded JSON value (parse_ranges()), at most four levels deep.
+	 *
+	 * @param array<mixed> $json  Decoded JSON.
+	 * @param int          $depth Current depth.
+	 * @return string[]
+	 */
+	private static function json_ranges( $json, $depth ) {
+		$out = array();
+		if ( $depth > 4 ) {
+			return $out;
+		}
+		foreach ( $json as $value ) {
+			if ( is_string( $value ) ) {
+				$value = trim( $value );
+				if ( self::valid_range( $value ) ) {
+					$out[] = $value;
+				}
+			} elseif ( is_array( $value ) ) {
+				$out = array_merge( $out, self::json_ranges( $value, $depth + 1 ) );
 			}
 		}
 		return $out;
