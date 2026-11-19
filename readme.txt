@@ -4,7 +4,7 @@ Tags: ai crawlers, anti-scraping, bot protection, rate limit, content protection
 Requires at least: 6.2
 Tested up to: 7.2
 Requires PHP: 7.4
-Stable tag: 3.10.0
+Stable tag: 3.10.1
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -362,6 +362,10 @@ No, on purpose: only an app code, a recovery code or the SCRAPELOCK_UNLOCK line 
 
 == Changelog ==
 
+= 3.10.1 =
+* New: Site Health "ScrapeLock site files" checks the files that phones, browsers and active plugins ask for at the root of the site. When a Site Icon is set and /apple-touch-icon.png answers "not found", "Create it" writes a 180 × 180 PNG made from the Site Icon (and apple-touch-icon-precomposed.png). While OneSignal is active and /OneSignalSDKWorker.js answers "not found" (browsers that subscribed when the worker was at the root ask for it there), "Create it" writes OneSignal's one-line worker. Without a Site Icon it links to where you choose one. Nothing is written without the click, a file of the site is never replaced, and Remove (or uninstall) deletes only files ScrapeLock wrote and nobody changed.
+* New: Site Health "Wordfence and the visitor address", while Wordfence is active: on your own visit through the CDN it compares the address Wordfence reads with the visitor address ScrapeLock reads. If Wordfence reads the CDN's server (it would then block or rate-limit the CDN, and every visitor with it), the test is critical and gives the steps (X-Forwarded-For, Trusted Proxies) with Bunny's addresses to copy. Nothing in Wordfence is changed.
+
 = 3.10.0 =
 * Fix: "Lock at Bunny" for "Secret files" (and any lock with more than 5 addresses or IPs) failed at the real Bunny API with HTTP 400 "Maximum 5 triggers are allowed per condition". Locks are now split into conditions of at most 5 entries, in one Edge Rule (Match Any) or, with exceptions or many entries, in several rules "ScrapeLock: … (1/3)". They are one lock everywhere: one Remove removes them all, Monitor only switches them all off, and if one part cannot be made the parts made in that call are deleted (also a part Bunny saved although its answer timed out), so no half lock is left. A lock made by 3.8/3.9 with more than 5 entries is sent again split at the next check. "Allowed IPs for the login page at Bunny" holds at most 15 entries. Filter `pncp_bunny_edge_limits`.
 * Fix: "Browsers only" refused real Google services from Google's own addresses (GoogleAssociationService for app links, Chrome's Privacy Preserving Prefetch Proxy), Apple's devices (passkeys, home-screen icons) and DuckDuckBot. The files a site publishes about itself (/.well-known/…, favicon, apple-touch-icon, the web app manifest, robots.txt, ads.txt, llms.txt…) skip the "looks like a bot" checks when asked with GET or HEAD; the bot list, the limits and the attack checks still apply. An address on Google's official lists is never refused for lacking browser headers. Google's other fetchers and DuckDuckBot are verified by their official lists, Applebot by Apple's list before reverse DNS.
@@ -465,6 +469,9 @@ No, on purpose: only an app code, a recovery code or the SCRAPELOCK_UNLOCK line 
 The changes of 3.5.0 and earlier versions are in changelog.txt in the plugin folder.
 
 == Upgrade Notice ==
+
+= 3.10.1 =
+Site Health can create a missing apple-touch-icon.png and OneSignalSDKWorker.js with one click, and checks that Wordfence reads the visitor's address behind the CDN.
 
 = 3.10.0 =
 Locks at Bunny with more than 5 addresses (such as "Secret files") now work with the real Bunny API, split into several conditions or rules managed as one lock. Fewer false blocks of Google, Apple, DuckDuckBot, WP Rocket and Claude-User; site-metadata files are no longer counted as attacks.
