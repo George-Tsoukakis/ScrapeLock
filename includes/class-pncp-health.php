@@ -1185,7 +1185,7 @@ final class PNCP_Health {
 			return self::folders_unknown( 'elsewhere' ); // 3.5: offloaded uploads or a CDN host: never requested.
 		}
 		// The key is a hash: the transient never holds a folder name.
-		$key  = md5( (string) wp_json_encode( array( PNCP_VERSION, $baseurl, array_keys( $folders ), array_values( $folders ) ) ) );
+		$key  = md5( (string) wp_json_encode( array( PNCP_VERSION, $baseurl, array_keys( $folders ), array_values( $folders ), self::folders_at_bunny() ) ) );
 		$got  = get_transient( self::FOLDERS_CACHE );
 		$data = is_array( $got ) && isset( $got['key'], $got['data'] ) && $key === $got['key'] && is_array( $got['data'] ) ? $got['data'] : null;
 		if ( null === $data ) {
@@ -1232,6 +1232,9 @@ final class PNCP_Health {
 				/* translators: %s: list of folders */
 				$text .= ' ' . sprintf( __( 'Could not be tested: %s.', 'scrapelock' ), implode( ', ', $failed ) );
 			}
+			if ( self::folders_at_bunny() ) {
+				$text .= ' ' . __( 'They are also refused at Bunny CDN by ScrapeLock\'s Edge Rule.', 'scrapelock' );
+			}
 			return self::result( 'folders', 'good', __( 'ScrapeLock\'s private folders cannot be read from the web', 'scrapelock' ), $text, '', '', $recheck );
 		}
 
@@ -1249,11 +1252,21 @@ final class PNCP_Health {
 		}
 		$details = self::html_list( $items ) . self::folders_fix( $open, $baseurl );
 		$status  = ! empty( $data['listing'] ) ? 'critical' : 'recommended';
+		if ( self::folders_at_bunny() ) {
+			// 3.10: refused at Bunny CDN ("Lock at Bunny"), but the server itself still serves them (this test asks
+			// the server, not Bunny): passed for the visitors who come through Bunny, with the lines to finish it.
+			$details = '<p>' . esc_html__( 'ScrapeLock\'s Edge Rule at Bunny CDN refuses these folders for every request that goes through Bunny. A request sent straight to the server (its IP address) still reads the files, as this test did: add these lines when you can.', 'scrapelock' ) . '</p>' . $details;
+			return self::result( 'folders', ! empty( $data['listing'] ) ? 'recommended' : 'good', __( 'ScrapeLock\'s private folders are blocked at Bunny CDN', 'scrapelock' ), __( 'A test file in these folders could be downloaded from the server itself, but Bunny CDN refuses these folders to visitors.', 'scrapelock' ), 'rules', '', $recheck, $details );
+		}
+		$details .= self::folders_bunny_offer();
 		return self::result( 'folders', $status, __( 'ScrapeLock\'s private folders can be read from the web', 'scrapelock' ), __( 'A test file in these folders could be downloaded from its web address, so anyone who finds the address can read the files.', 'scrapelock' ), 'rules', '', $recheck, $details );
 	}
 
 	/**
-	 * 3.5: how to refuse the open folders on this web server. Never the random folder names: only the fixed ones.
+	 * 3.5: how to refuse the open folders on this web server. Never the random folder names: only the fixed ones
+	 * (the clean originals are matched by their fixed prefix). 3.10: always the exact lines, for every private
+	 * folder ScrapeLock may create (private_folder_paths()), in a visible block that is also copied with the
+	 * text of the page (3.9.1 showed them in a box that some screens and copies left out).
 	 *
 	 * @param string[] $open    Open folder ids.
 	 * @param string   $baseurl Uploads address.
@@ -1261,30 +1274,156 @@ final class PNCP_Health {
 	 */
 	private static function folders_fix( $open, $baseurl ) {
 		global $is_nginx, $is_apache;
+		unset( $open, $baseurl ); // 3.10: the lines are the same whatever is open (every folder is listed).
 		if ( ! empty( $is_nginx ) ) {
-			$path  = untrailingslashit( (string) wp_parse_url( $baseurl, PHP_URL_PATH ) );
-			$rules = array();
-			if ( in_array( 'precheck', $open, true ) ) {
-				$rules[] = 'location ^~ ' . $path . '/' . PNCP_Precheck::DIR . '/ { deny all; return 404; }';
-			}
-			if ( in_array( 'geo', $open, true ) ) {
-				$rules[] = 'location ^~ ' . $path . '/' . PNCP_Geo::DIR . '/ { deny all; return 404; }';
-			}
-			$out = '';
-			if ( $rules ) {
-				$out .= '<p>' . esc_html__( 'Nginx ignores the .htaccess files ScrapeLock puts in these folders. Add these lines to the server { } block of the site, above the other location blocks, then reload Nginx:', 'scrapelock' ) . '</p>' . self::copy_block( implode( "\n", $rules ) );
-			} else {
-				$out .= '<p>' . esc_html__( 'Nginx ignores the .htaccess files ScrapeLock puts in these folders.', 'scrapelock' ) . '</p>';
-			}
-			if ( in_array( 'originals', $open, true ) ) {
-				$out .= '<p>' . esc_html__( 'For the clean originals, add the line from the “Server rules” tab (it holds the folder\'s random name, so it is not shown here).', 'scrapelock' ) . '</p>';
-			}
-			return $out;
+			return '<p>' . esc_html__( 'Nginx ignores the .htaccess files ScrapeLock puts in these folders. Add these lines to the server { } block of the site, above the other location blocks, then test the configuration (nginx -t) and reload Nginx:', 'scrapelock' ) . '</p>'
+				. self::lines_block( self::folders_nginx_lines() );
 		}
 		if ( ! empty( $is_apache ) ) {
-			return '<p>' . esc_html__( 'Each folder has an .htaccess file that refuses every request, but the server ignores it. Let .htaccess files work in the uploads folder (AllowOverride All, or at least AuthConfig and Limit), or add the rules of the “Server rules” tab.', 'scrapelock' ) . '</p>';
+			return '<p>' . esc_html__( 'Each folder has an .htaccess file that refuses every request, but the server ignores it. Let .htaccess files work in the uploads folder (AllowOverride All, or at least AuthConfig and Limit), or add these lines at the top of the .htaccess file in the folder of WordPress (they need only what WordPress\'s own permalinks need):', 'scrapelock' ) . '</p>'
+				. self::lines_block( self::folders_apache_lines() );
 		}
-		return '<p>' . esc_html__( 'Refuse every request to these folders in the web server\'s configuration (ScrapeLock\'s .htaccess files work only on Apache and LiteSpeed).', 'scrapelock' ) . '</p>';
+		return '<p>' . esc_html__( 'Refuse every request to these folders in the web server\'s configuration (ScrapeLock\'s .htaccess files work only on Apache and LiteSpeed). For Nginx, inside the server { } block, above the other location blocks:', 'scrapelock' ) . '</p>'
+			. self::lines_block( self::folders_nginx_lines() )
+			. '<p>' . esc_html__( 'For Apache or LiteSpeed, at the top of the .htaccess file in the folder of WordPress:', 'scrapelock' ) . '</p>'
+			. self::lines_block( self::folders_apache_lines() );
+	}
+
+	/**
+	 * 3.10: every private folder ScrapeLock may create, as addresses from the root of the domain (WordPress in a
+	 * sub-folder, a moved wp-content or uploads folder are followed). Folders that do not exist yet are listed
+	 * too: a rule for them costs nothing and is there when the feature is first used.
+	 *
+	 * @return array<string, array{path: string, prefix: bool}> id => path (with a trailing slash; for 'prefix'
+	 *         the path ends with the fixed start of a random folder name, e.g. ".../pncp-originals-").
+	 */
+	public static function private_folder_paths() {
+		$uploads = wp_upload_dir( null, false );
+		$up      = self::web_path( ! empty( $uploads['baseurl'] ) ? (string) $uploads['baseurl'] : content_url( 'uploads' ) );
+		$content = self::web_path( content_url() );
+		$mu      = self::web_path( defined( 'WPMU_PLUGIN_URL' ) ? (string) WPMU_PLUGIN_URL : content_url( 'mu-plugins' ) );
+		return array(
+			'precheck'      => array(
+				'path'   => $up . '/' . PNCP_Precheck::DIR . '/',
+				'prefix' => false,
+			),
+			'geo'           => array(
+				'path'   => $up . '/' . PNCP_Geo::DIR . '/',
+				'prefix' => false,
+			),
+			'originals'     => array(
+				'path'   => $up . '/pncp-originals-',
+				'prefix' => true,
+			),
+			'lockdown'      => array(
+				'path'   => $up . '/scrapelock-lockdown/',
+				'prefix' => false,
+			),
+			'lockdown_wpc'  => array(
+				'path'   => $content . '/scrapelock-lockdown/',
+				'prefix' => false,
+			),
+			'lockdown_data' => array(
+				'path'   => $mu . '/scrapelock-lockdown-data/',
+				'prefix' => false,
+			),
+		);
+	}
+
+	/**
+	 * 3.10: the path of an address, without a trailing slash ('' for the root of the domain).
+	 *
+	 * @param string $url Address.
+	 * @return string
+	 */
+	private static function web_path( $url ) {
+		$path = (string) wp_parse_url( (string) $url, PHP_URL_PATH );
+		$path = '/' . trim( preg_replace( '#/+#', '/', $path ), '/' );
+		return '/' === $path ? '' : $path;
+	}
+
+	/**
+	 * 3.10: the Nginx lines that refuse every private folder.
+	 *
+	 * @return string
+	 */
+	public static function folders_nginx_lines() {
+		$lines = array( '# BEGIN ScrapeLock private folders' );
+		foreach ( self::private_folder_paths() as $folder ) {
+			if ( $folder['prefix'] ) {
+				// A regex location: a random name. No "{n}" (it would need quotes in nginx.conf).
+				$lines[] = 'location ~ ^' . self::regex_path( $folder['path'] ) . '[a-z0-9]+/ { deny all; return 404; }';
+			} else {
+				$lines[] = 'location ^~ ' . $folder['path'] . ' { deny all; return 404; }';
+			}
+		}
+		$lines[] = '# END ScrapeLock private folders';
+		return implode( "\n", $lines );
+	}
+
+	/**
+	 * 3.10: the Apache / LiteSpeed lines (mod_alias, allowed wherever WordPress's permalinks work) that refuse
+	 * every private folder, for the .htaccess file in the folder of WordPress.
+	 *
+	 * @return string
+	 */
+	public static function folders_apache_lines() {
+		$lines = array( '# BEGIN ScrapeLock private folders', '<IfModule mod_alias.c>' );
+		foreach ( self::private_folder_paths() as $folder ) {
+			$lines[] = 'RedirectMatch 404 ^' . self::regex_path( $folder['path'] ) . ( $folder['prefix'] ? '[a-z0-9]+/' : '' );
+		}
+		$lines[] = '</IfModule>';
+		$lines[] = '# END ScrapeLock private folders';
+		return implode( "\n", $lines );
+	}
+
+	/**
+	 * 3.10: a path for a regular expression of nginx.conf or .htaccess (only the characters that mean something
+	 * there are escaped, so the line stays readable).
+	 *
+	 * @param string $path Path.
+	 * @return string
+	 */
+	private static function regex_path( $path ) {
+		return (string) preg_replace( '/[.\\\\+*?\\[\\]^$(){}|]/', '\\\\$0', (string) $path );
+	}
+
+	/**
+	 * 3.10: lines to copy, always visible (a <pre> block is shown by every screen and copied with the text of
+	 * the page, unlike the content of a text box).
+	 *
+	 * @param string $text The lines.
+	 * @return string Escaped HTML.
+	 */
+	private static function lines_block( $text ) {
+		return '<pre class="pncp-lines" style="white-space:pre-wrap;overflow-wrap:anywhere;background:#f6f7f7;border:1px solid #dcdcde;padding:8px 12px;font-size:12px;line-height:1.6"><code>' . esc_html( rtrim( (string) $text ) ) . '</code></pre>';
+	}
+
+	/**
+	 * 3.10: are the private folders locked at Bunny CDN (the "private_folders" preset)?
+	 *
+	 * @return bool
+	 */
+	private static function folders_at_bunny() {
+		return class_exists( 'PNCP_Bunny' ) && method_exists( 'PNCP_Bunny', 'preset_locked' ) && isset( PNCP_Bunny::presets()['private_folders'] ) && PNCP_Bunny::preset_locked( 'private_folders' );
+	}
+
+	/**
+	 * 3.10: for a site behind Bunny CDN without access to the server's configuration: "Lock at Bunny…", which
+	 * opens the preview "What would be blocked" (nothing is sent before Confirm there). Administrators only,
+	 * only while Bunny is connected and the site is not locked with Lockdown.
+	 *
+	 * @return string Escaped HTML ('' when it cannot be offered).
+	 */
+	private static function folders_bunny_offer() {
+		if ( ! current_user_can( 'manage_options' ) || ! class_exists( 'PNCP_Bunny' ) || ! method_exists( 'PNCP_Bunny', 'lock_button' ) || ! isset( PNCP_Bunny::presets()['private_folders'] ) ) {
+			return '';
+		}
+		if ( ! PNCP_Bunny::edge_available() || PNCP_Lockdown::is_locked() ) {
+			return '';
+		}
+		return '<p>' . esc_html__( 'No access to the server\'s configuration? The site is connected to Bunny CDN: ScrapeLock can refuse these folders there with an Edge Rule. It protects only the requests that go through Bunny: a request sent straight to the server (its IP address) still reads the files, so add the lines above when you can.', 'scrapelock' ) . '</p>'
+			. PNCP_Bunny::lock_button( 'private_folders', __( 'Lock at Bunny…', 'scrapelock' ), admin_url( 'site-health.php' ) );
 	}
 
 	/**
@@ -1301,7 +1440,15 @@ final class PNCP_Health {
 		if ( ! empty( $is_apache ) ) {
 			$text .= ' ' . __( 'On Apache and LiteSpeed the .htaccess file in each folder refuses every request, unless the server ignores .htaccess files.', 'scrapelock' );
 		}
-		return self::result( 'folders', ! empty( $is_apache ) ? 'good' : 'recommended', __( 'ScrapeLock could not test its private folders', 'scrapelock' ), $text, '', '', self::recheck_link() );
+		$details = '';
+		if ( empty( $is_apache ) ) {
+			// 3.10: the lines anyway: they refuse the folders whatever the test could not tell.
+			$details = '<p>' . esc_html__( 'These lines refuse every request to ScrapeLock\'s private folders on Nginx (inside the server { } block of the site, above the other location blocks):', 'scrapelock' ) . '</p>' . self::lines_block( self::folders_nginx_lines() );
+			if ( self::folders_at_bunny() ) {
+				$details .= '<p>' . esc_html__( 'They are refused at Bunny CDN by ScrapeLock\'s Edge Rule, for the requests that go through Bunny.', 'scrapelock' ) . '</p>';
+			}
+		}
+		return self::result( 'folders', ! empty( $is_apache ) ? 'good' : 'recommended', __( 'ScrapeLock could not test its private folders', 'scrapelock' ), $text, '', '', self::recheck_link(), $details );
 	}
 
 	/**
