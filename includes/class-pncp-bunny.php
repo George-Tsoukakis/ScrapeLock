@@ -1113,8 +1113,9 @@ final class PNCP_Bunny {
 	}
 
 	/**
-	 * 3.10: undoes a lock that failed halfway: removes the rules made by this call, and sends the rules it
-	 * updated back as they were stored (when the stored lock still takes as many rules).
+	 * 3.10: undoes a lock that failed halfway: removes the rules made by this call and any other rule of this
+	 * lock at Bunny that ScrapeLock does not keep (one saved by Bunny although the call timed out), and sends
+	 * the rules it updated back as they were stored (when the stored lock still takes as many rules).
 	 *
 	 * @param array{zone:string, token:string} $c         Credentials.
 	 * @param string                           $id        ID.
@@ -1126,6 +1127,19 @@ final class PNCP_Bunny {
 	private static function roll_back( $c, $id, $created, $updated, $old_guids, $old ) {
 		foreach ( $created as $guid ) {
 			self::delete_rule( $c, array( 'guid' => $guid ) );
+		}
+		// A part can exist at Bunny although its call failed (a timeout after Bunny saved it, or a rule whose GUID
+		// could not be found): every rule of this lock that ScrapeLock does not keep is removed too.
+		$keep = array_merge( $old_guids, $old && isset( $old['stale'] ) ? self::guids_of( array( 'guids' => $old['stale'] ) ) : array(), $created );
+		$zone = self::pull_zone( $c );
+		if ( 'ok' === $zone['status'] ) {
+			$suffix = ' [' . $id . ']';
+			foreach ( self::zone_rules( $zone['json'] ) as $guid => $found ) {
+				$guid = self::clean_guid( $guid );
+				if ( '' !== $guid && ! in_array( $guid, $keep, true ) && 0 === strpos( $found['description'], self::PREFIX ) && substr( $found['description'], -strlen( $suffix ) ) === $suffix ) {
+					self::delete_rule( $c, array( 'guid' => $guid ) );
+				}
+			}
 		}
 		if ( ! $updated || ! $old ) {
 			return;

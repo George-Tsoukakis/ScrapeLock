@@ -68,10 +68,18 @@ if ( is_array( get_option( 'pncp_test_bunny_rules' ) ) ) {
 			}
 			if ( '/edgerules/addOrUpdate' === $rest && 'POST' === $method ) {
 				++$db['posts'];
-				// Fail the n-th addOrUpdate on purpose: fail => [n => 400 | 401 | 404 | 429 | 'timeout'].
+				// Fail the n-th addOrUpdate on purpose: fail => [n => 400 | 401 | 404 | 429 | 'timeout' | 'saved_timeout'].
 				if ( isset( $db['fail'][ $db['posts'] ] ) ) {
 					$how = $db['fail'][ $db['posts'] ];
+					if ( 'saved_timeout' === $how && empty( $body['Guid'] ) ) {
+						// Bunny saved the rule, but its answer never came.
+						$guid                 = wp_generate_uuid4();
+						$db['rules'][ $guid ] = array( 'Guid' => $guid ) + $body;
+					}
 					$save();
+					if ( 'saved_timeout' === $how ) {
+						return new WP_Error( 'http_request_failed', 'cURL error 28: Operation timed out after 10001 milliseconds with 0 bytes received' );
+					}
 					if ( 'timeout' === $how ) {
 						return new WP_Error( 'http_request_failed', 'cURL error 28: Operation timed out after 10001 milliseconds' );
 					}
@@ -365,6 +373,20 @@ foreach ( array( 400, 401, 404, 429, 'timeout' ) as $how ) {
 	$r = PNCP_Bunny::lock_preset( 'probes' );
 	t( "rollback ($how on rule 3 of 3): the 2 made are removed, nothing stored, the error shown", is_wp_error( $r ) && ! at_bunny() && null === stored( 'preset_probes' ) && ! PNCP_Bunny::preset_locked( 'probes' ) && '' !== $r->get_error_message() && false === strpos( $r->get_error_message(), BR_KEY ), is_wp_error( $r ) ? $r->get_error_message() . ' / ' . count( at_bunny() ) : 'no error' );
 }
+// Bunny saved rule 2, but the call timed out: that rule is removed too (found by its Description).
+foreach ( array( false, true ) as $no_guid ) {
+	mock_reset( array( 'limits' => array( 'patterns' => 5, 'triggers' => 2 ), 'fail' => array( 2 => 'saved_timeout' ), 'no_guid' => $no_guid ) );
+	$r = PNCP_Bunny::lock_preset( 'probes' );
+	t( 'rollback (rule 2 of 3 saved at Bunny, then a timeout' . ( $no_guid ? ', answers without GUID' : '' ) . '): nothing left at Bunny, nothing stored', is_wp_error( $r ) && ! at_bunny() && null === stored( 'preset_probes' ), is_wp_error( $r ) ? $r->get_error_message() . ' / ' . count( at_bunny() ) : 'no error' );
+}
+// The same on a lock that exists: its rules stay, only the stray new one goes.
+mock_reset( array( 'limits' => array( 'patterns' => 5, 'triggers' => 2 ) ) );
+PNCP_Bunny::lock_preset( 'probes' );
+$before = stored( 'preset_probes' );
+mock_set( array( 'limits' => array( 'patterns' => 5, 'triggers' => 3 ), 'fail' => array( mock()['posts'] + 2 => 'saved_timeout' ) ) );
+$r = PNCP_Bunny::lock_preset( 'probes' );
+t( 'rollback of a re-lock (new rule 2 saved, then a timeout): the 3 old rules and the record kept, no new rule left', is_wp_error( $r ) && 3 === count( at_bunny() ) && $before && stored( 'preset_probes' )['guids'] === $before['guids'] && ! array_diff( array_keys( at_bunny() ), $before['guids'] ), is_wp_error( $r ) ? count( at_bunny() ) . ' at Bunny' : 'no error' );
+PNCP_Bunny::unlock_preset( 'probes' );
 // Without a GUID in the answer: found by its Description (as before), for each part.
 mock_reset( array( 'limits' => array( 'patterns' => 5, 'triggers' => 2 ), 'no_guid' => true ) );
 $r = PNCP_Bunny::lock_preset( 'probes' );
