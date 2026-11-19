@@ -226,6 +226,27 @@ $r = PNCP_Tester::run( array( 'mode' => 'custom', 'ip' => '160.79.106.230', 'ua'
 t( 'tester run(): Claude-User from 160.79.106.230 = allowed (ai_search)', is_array( $r ) && 'allowed' === $r['verdict'], is_array( $r ) ? wp_json_encode( array( $r['verdict'], $r['reason'], $r['pass'] ) ) : 'error' );
 
 /* ---------- restore ---------- */
+/* ---------- Site Health: the Apple and DuckDuckGo lists are checked too ---------- */
+$upd_before = get_option( PNCP_Ip::LISTS_OPTION . '_updated', array() );
+$upd        = is_array( $upd_before ) ? $upd_before : array();
+foreach ( array( 'google', 'bing', 'apple', 'duckduckgo', 'cloudflare' ) as $name ) {
+	$upd[ $name ] = time();
+}
+$upd_dd = $upd;
+unset( $upd_dd['duckduckgo'] );
+update_option( PNCP_Ip::LISTS_OPTION . '_updated', $upd_dd, false );
+$health = PNCP_Health::test_ip_lists();
+t( 'Site Health: a DuckDuckGo list never downloaded is named', 'good' !== $health['status'] && false !== strpos( $health['description'], 'DuckDuckGo' ), $health['status'] . ' ' . wp_strip_all_tags( $health['description'] ) );
+$upd['apple'] = time() - 5 * DAY_IN_SECONDS;
+update_option( PNCP_Ip::LISTS_OPTION . '_updated', $upd, false );
+$health = PNCP_Health::test_ip_lists();
+t( 'Site Health: an Apple list not refreshed for 5 days is named', 'good' !== $health['status'] && false !== strpos( $health['description'], 'Apple' ), $health['status'] );
+$upd['apple'] = time();
+update_option( PNCP_Ip::LISTS_OPTION . '_updated', $upd, false );
+$health = PNCP_Health::test_ip_lists();
+t( 'Site Health: all lists fresh = good', 'good' === $health['status'], wp_strip_all_tags( $health['description'] ) );
+update_option( PNCP_Ip::LISTS_OPTION . '_updated', $upd_before, false );
+
 update_option( PNCP_OPTION, $keep );
 foreach ( array( 'anthropic' => $keep_ant, 'updated' => $keep_upd, 'openai_user' => $keep_oai, 'perplexity_user' => $keep_ppl ) as $name => $value ) {
 	if ( null === $value ) {

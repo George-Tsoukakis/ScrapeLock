@@ -271,6 +271,8 @@ final class PNCP_Health {
 		$names   = array(
 			'google'     => 'Google',
 			'bing'       => 'Bing',
+			'apple'      => 'Apple',
+			'duckduckgo' => 'DuckDuckGo',
 			'cloudflare' => 'Cloudflare',
 		);
 		$updated = PNCP_Ip::lists_updated();
@@ -288,7 +290,7 @@ final class PNCP_Health {
 			}
 		}
 		if ( ! $missing && ! $stale ) {
-			return self::result( 'ip_lists', 'good', __( 'The official IP lists are up to date', 'scrapelock' ), __( 'The lists of Google, Bing and (when used) Cloudflare are refreshed every day.', 'scrapelock' ) );
+			return self::result( 'ip_lists', 'good', __( 'The official IP lists are up to date', 'scrapelock' ), __( 'The lists of Google, Bing, Apple, DuckDuckGo and (when used) Cloudflare are refreshed every day.', 'scrapelock' ) );
 		}
 		$parts = array();
 		if ( $missing ) {
@@ -299,7 +301,7 @@ final class PNCP_Health {
 			/* translators: %s: list names, e.g. "Google, Bing" */
 			$parts[] = sprintf( __( 'Not refreshed for more than 3 days: %s.', 'scrapelock' ), implode( ', ', $stale ) );
 		}
-		$parts[] = __( 'Until they are, real search engines are verified with slower DNS lookups only, and the Cloudflare addresses come from the list built into the plugin. The lists are refreshed once a day through WordPress\'s scheduled tasks (cron): check that cron runs and that the server can reach the Google, Bing and Cloudflare websites, or use “Refresh lists now”.', 'scrapelock' );
+		$parts[] = __( 'Until they are, real search engines are verified with slower DNS lookups only, and the Cloudflare addresses come from the list built into the plugin. The lists are refreshed once a day through WordPress\'s scheduled tasks (cron): check that cron runs and that the server can reach the websites of Google, Bing, Apple, DuckDuckGo and Cloudflare, or use “Refresh lists now”.', 'scrapelock' );
 		return self::result( 'ip_lists', 'recommended', __( 'ScrapeLock official IP lists are missing or out of date', 'scrapelock' ), implode( ' ', $parts ), 'bots', 'pncp-sec-lists' );
 	}
 
