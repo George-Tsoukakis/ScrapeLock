@@ -1255,7 +1255,9 @@ final class PNCP_Health {
 		if ( self::folders_at_bunny() ) {
 			// 3.10: refused at Bunny CDN ("Lock at Bunny"), but the server itself still serves them (this test asks
 			// the server, not Bunny): passed for the visitors who come through Bunny, with the lines to finish it.
-			$details = '<p>' . esc_html__( 'ScrapeLock\'s Edge Rule at Bunny CDN refuses these folders for every request that goes through Bunny. A request sent straight to the server (its IP address) still reads the files, as this test did: add these lines when you can.', 'scrapelock' ) . '</p>' . $details;
+			$details = '<p>' . esc_html__( 'ScrapeLock\'s Edge Rule at Bunny CDN refuses these folders for every request that goes through Bunny. A request sent straight to the server (its IP address) still reads the files, as this test did: add these lines when you can.', 'scrapelock' ) . '</p>'
+				. ( ! empty( $data['listing'] ) ? self::html_list( array( end( $items ) ) ) : '' )
+				. self::folders_fix( $open, $baseurl );
 			return self::result( 'folders', ! empty( $data['listing'] ) ? 'recommended' : 'good', __( 'ScrapeLock\'s private folders are blocked at Bunny CDN', 'scrapelock' ), __( 'A test file in these folders could be downloaded from the server itself, but Bunny CDN refuses these folders to visitors.', 'scrapelock' ), 'rules', '', $recheck, $details );
 		}
 		$details .= self::folders_bunny_offer();
@@ -1396,7 +1398,7 @@ final class PNCP_Health {
 	 * @return string Escaped HTML.
 	 */
 	private static function lines_block( $text ) {
-		return '<pre class="pncp-lines" style="white-space:pre-wrap;overflow-wrap:anywhere;background:#f6f7f7;border:1px solid #dcdcde;padding:8px 12px;font-size:12px;line-height:1.6"><code>' . esc_html( rtrim( (string) $text ) ) . '</code></pre>';
+		return '<pre class="pncp-lines" style="white-space:pre-wrap;overflow-wrap:anywhere;background:#f6f7f7;border:1px solid #dcdcde;padding:8px 12px;font-family:Consolas,Monaco,monospace;font-size:12px;line-height:1.6">' . esc_html( rtrim( (string) $text ) ) . '</pre>';
 	}
 
 	/**
