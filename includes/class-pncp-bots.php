@@ -1177,7 +1177,8 @@ final class PNCP_Bots {
 	/**
 	 * Is a request that says it is an AI search bot real? Only for the bots the site allows ("Allow AI search")
 	 * with "Verify AI search bots" on, and only once their official list has been downloaded: otherwise
-	 * nothing changes and the bot list decides, as before.
+	 * nothing changes and the bot list decides, as before. 3.10: the same when the list is stale
+	 * (PNCP_Ip::list_stale()): never "fake" then.
 	 *
 	 * @param string               $ua User-Agent.
 	 * @param string               $ip IP.
@@ -1195,11 +1196,22 @@ final class PNCP_Bots {
 			if ( ! self::ua_in_list( $ua, PNCP_Options::allowed_ai_search() ) ) {
 				return '';
 			}
+			// 3.10: the ranges the official list lacks (PNCP_Ip::extra_ranges(), e.g. Anthropic's outbound range,
+			// which Claude-User fetches from) verify too, even before the list is downloaded.
+			if ( PNCP_Ip::in_any( $ip, PNCP_Ip::extra_ranges( $list ) ) ) {
+				return 'verified';
+			}
 			$ranges = PNCP_Ip::list_of( $list );
 			if ( ! $ranges ) {
 				return '';
 			}
-			return PNCP_Ip::in_any( $ip, $ranges ) ? 'verified' : 'fake';
+			if ( PNCP_Ip::in_any( $ip, $ranges ) ) {
+				return 'verified';
+			}
+			// 3.10: fail open with a list that has not been refreshed for a week (its download keeps failing):
+			// the service may have new addresses since, so a real bot must not be called fake. The bot list
+			// decides, as before the list was downloaded.
+			return PNCP_Ip::list_stale( $list ) ? '' : 'fake';
 		}
 		return '';
 	}

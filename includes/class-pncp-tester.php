@@ -578,6 +578,43 @@ final class PNCP_Tester {
 	}
 
 	/**
+	 * 3.10: for a "Fake AI search bot": which list was compared and how fresh it is, e.g. " Anthropic's
+	 * published list: 14 entries, updated 18 November 2026 (plus 160.79.104.0/21)." A list that looks too
+	 * short can then be refreshed ("Refresh lists now") or the address checked with the service.
+	 *
+	 * @param string $ua User-Agent.
+	 * @return string '' when the User-Agent is not one of the verified AI bots.
+	 */
+	public static function ai_list_detail( $ua ) {
+		foreach ( PNCP_Bots::ai_bot_lists() as $agent => $list ) {
+			if ( false === stripos( (string) $ua, $agent ) ) {
+				continue;
+			}
+			$note = PNCP_Ip::list_note( $list );
+			if ( '' === $note ) {
+				return '';
+			}
+			/* translators: 1: list name, e.g. claude.com/crawling/bots.json, 2: e.g. "14 entries, updated 18 November 2026" */
+			return ' ' . sprintf( __( 'Compared with %1$s: %2$s.', 'scrapelock' ), self::list_source_name( $list ), $note );
+		}
+		return '';
+	}
+
+	/**
+	 * 3.10: the address of a list's first source without the scheme, e.g. claude.com/crawling/bots.json.
+	 *
+	 * @param string $list List name.
+	 * @return string
+	 */
+	private static function list_source_name( $list ) {
+		$sources = PNCP_Ip::sources();
+		if ( empty( $sources[ $list ][0] ) ) {
+			return $list;
+		}
+		return (string) preg_replace( '#^https?://(www\.)?#', '', $sources[ $list ][0] );
+	}
+
+	/**
 	 * Why the request gets this answer, and the setting that decides it.
 	 *
 	 * @param array<string, mixed> $result What explain() returns.
@@ -615,6 +652,7 @@ final class PNCP_Tester {
 					break;
 				case 'fake_ai_bot':
 					$why  = __( 'It says it is an AI search bot that you allow, but its IP is not on that bot\'s official IP list.', 'scrapelock' );
+					$why .= self::ai_list_detail( $ua );
 					$link = $ai;
 					break;
 				case 'no_browser':

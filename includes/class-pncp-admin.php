@@ -1938,6 +1938,7 @@ final class PNCP_Admin {
 								wp_date( get_option( 'date_format' ) . ' ' . get_option( 'time_format' ), $updated[ $key ] )
 							)
 						);
+						self::ai_list_extra_note( $key );
 					}
 					?>
 				</li>
@@ -3058,6 +3059,26 @@ final class PNCP_Admin {
 			printf( '<li><span>%s</span> <strong>%s</strong></li>', esc_html( isset( $labels[ $key ] ) ? $labels[ $key ] : (string) $key ), esc_html( number_format_i18n( $count ) ) );
 		}
 		echo '</ol>';
+	}
+
+	/**
+	 * 3.10: after an AI search list in "Official IP lists": the built-in extra ranges used with it, and a warning
+	 * when it is stale (no AI bot is then called fake until it is refreshed).
+	 *
+	 * @param string $key List name.
+	 */
+	private static function ai_list_extra_note( $key ) {
+		if ( ! in_array( $key, PNCP_Bots::ai_bot_lists(), true ) ) {
+			return;
+		}
+		$extra = PNCP_Ip::extra_ranges( $key );
+		if ( $extra ) {
+			/* translators: %s: IP ranges, e.g. 160.79.104.0/21 */
+			echo ' ' . esc_html( sprintf( __( '(plus the published outbound range %s)', 'scrapelock' ), implode( ', ', $extra ) ) );
+		}
+		if ( PNCP_Ip::list_stale( $key ) ) {
+			echo ' <span class="pncp-badge pncp-badge--monitor">' . esc_html__( 'Not refreshed for over a week: bots not on it are let through instead of being called fake until it is refreshed', 'scrapelock' ) . '</span>';
+		}
 	}
 
 	/**

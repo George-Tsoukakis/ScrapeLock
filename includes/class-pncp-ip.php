@@ -502,7 +502,7 @@ final class PNCP_Ip {
 		$owner  = '';
 		if ( filter_var( $ip, FILTER_VALIDATE_IP ) ) {
 			foreach ( $owners as $list => $name ) {
-				if ( self::in_any( $ip, self::list_of( $list ) ) ) {
+				if ( self::in_any( $ip, self::list_of( $list ) ) || self::in_any( $ip, self::extra_ranges( $list ) ) ) {
 					$owner = $name;
 					break;
 				}
@@ -513,6 +513,74 @@ final class PNCP_Ip {
 		}
 		self::$owners[ $ip ] = $owner;
 		return $owner;
+	}
+
+	/**
+	 * 3.10: ranges an official list may lack, used next to it only to recognize that company's own bots (the AI
+	 * search verification and official_owner()), never to block anything.
+	 *
+	 * Built in: Anthropic's outbound range 160.79.104.0/21, from its API documentation ("IP addresses",
+	 * https://docs.anthropic.com/en/api/ip-addresses), which Claude-User also fetches from on behalf of users,
+	 * while https://claude.com/crawling/bots.json lists only some single addresses (14 in November 2026). To be
+	 * confirmed against that page from time to time; the filter can remove or change it.
+	 *
+	 * Filter `pncp_ip_extra_ranges` ( string[] $ranges, string $name ). The result goes through sane_ranges().
+	 *
+	 * @param string $name List name (PNCP_Ip::sources()).
+	 * @return string[]
+	 */
+	public static function extra_ranges( $name ) {
+		$built_in = array(
+			'anthropic' => array( '160.79.104.0/21' ),
+		);
+		$ranges   = isset( $built_in[ $name ] ) ? $built_in[ $name ] : array();
+		$ranges   = apply_filters( 'pncp_ip_extra_ranges', $ranges, (string) $name );
+		return is_array( $ranges ) ? array_values( self::sane_ranges( array_filter( $ranges, 'is_string' ) ) ) : array();
+	}
+
+	/**
+	 * 3.10: is a downloaded list too old to call a bot fake? The lists are refreshed every day and a failed
+	 * download keeps the previous one, so a list that has not been refreshed for a week means its source keeps
+	 * failing (or the option that needs it was off): the service may use new addresses since. A list with no
+	 * date is not stale. Filter `pncp_ip_list_max_age` (seconds, default a week; 0 = never stale).
+	 *
+	 * @param string $name List name.
+	 * @return bool
+	 */
+	public static function list_stale( $name ) {
+		$max = (int) apply_filters( 'pncp_ip_list_max_age', WEEK_IN_SECONDS, (string) $name );
+		if ( $max <= 0 ) {
+			return false;
+		}
+		$updated = self::lists_updated();
+		return ! empty( $updated[ $name ] ) && time() - $updated[ $name ] > $max;
+	}
+
+	/**
+	 * 3.10: a short description of a list for an explanation: how many entries it has, when it was updated, and
+	 * the built-in extra ranges used with it, e.g. "14 entries, updated 18 November 2026 (plus 160.79.104.0/21)".
+	 *
+	 * @param string $name List name.
+	 * @return string '' when the list has not been downloaded.
+	 */
+	public static function list_note( $name ) {
+		$updated = self::lists_updated();
+		$list    = self::list_of( $name );
+		if ( ! $list || empty( $updated[ $name ] ) ) {
+			return '';
+		}
+		$note = sprintf(
+			/* translators: 1: number of entries, 2: date */
+			_n( '%1$s entry, updated %2$s', '%1$s entries, updated %2$s', count( $list ), 'scrapelock' ),
+			number_format_i18n( count( $list ) ),
+			wp_date( get_option( 'date_format' ), $updated[ $name ] )
+		);
+		$extra = self::extra_ranges( $name );
+		if ( $extra ) {
+			/* translators: %s: IP ranges, e.g. 160.79.104.0/21 */
+			$note .= ' ' . sprintf( __( '(plus %s)', 'scrapelock' ), implode( ', ', $extra ) );
+		}
+		return $note;
 	}
 
 	/**

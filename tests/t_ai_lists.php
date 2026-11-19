@@ -161,6 +161,70 @@ $r = PNCP_Ip::refresh_lists();
 t( 'refresh (mock): a source with nothing usable keeps the previous list', 0 === $r['anthropic'] && 3 === count( PNCP_Ip::list_of( 'anthropic' ) ), wp_json_encode( $r ) );
 remove_filter( 'pre_http_request', $pncp_mock, 10 );
 
+/* ---------- (b) Anthropic's published outbound range ---------- */
+t( 'extra ranges: Anthropic outbound 160.79.104.0/21 built in', array( '160.79.104.0/21' ) === PNCP_Ip::extra_ranges( 'anthropic' ) && array() === PNCP_Ip::extra_ranges( 'openai_user' ) );
+$pncp_extra = static function ( $ranges, $name ) {
+	return 'openai_user' === $name ? array( '0.0.0.0/0', '198.51.100.0/24', 42 ) : $ranges;
+};
+add_filter( 'pncp_ip_extra_ranges', $pncp_extra, 10, 2 );
+t( 'extra ranges: filter per list, sanitized (no 0.0.0.0/0, no non-text)', array( '198.51.100.0/24' ) === PNCP_Ip::extra_ranges( 'openai_user' ) );
+remove_filter( 'pncp_ip_extra_ranges', $pncp_extra, 10 );
+// The owner's case: 14 single addresses in the list, Claude-User from 160.79.106.230.
+$fourteen = array();
+for ( $i = 1; $i <= 14; $i++ ) {
+	$fourteen[] = '34.162.230.' . $i;
+}
+PNCP_Ip::store_list( 'anthropic', $fourteen );
+t( 'ai_verdict: Claude-User from 160.79.106.230 with a 14-address list = verified', 'verified' === PNCP_Bots::ai_verdict( $claude_ua, '160.79.106.230', PNCP_Options::get() ) );
+t( 'ai_verdict: Claude-User from an address of the list = verified', 'verified' === PNCP_Bots::ai_verdict( $claude_ua, '34.162.230.7', PNCP_Options::get() ) );
+t( 'ai_verdict: Claude-User from elsewhere = fake (fresh list)', 'fake' === PNCP_Bots::ai_verdict( $claude_ua, '198.51.100.140', PNCP_Options::get() ) );
+t( 'official_owner: 160.79.106.230 = Anthropic', 'Anthropic' === PNCP_Ip::official_owner( '160.79.106.230' ) && '' === PNCP_Ip::official_owner( '198.51.100.140' ) );
+$pncp_no_extra = static function ( $ranges, $name ) {
+	return 'anthropic' === $name ? array() : $ranges;
+};
+add_filter( 'pncp_ip_extra_ranges', $pncp_no_extra, 10, 2 );
+t( 'extra ranges: removable with the filter (back to fake)', 'fake' === PNCP_Bots::ai_verdict( $claude_ua, '160.79.106.230', PNCP_Options::get() ) );
+remove_filter( 'pncp_ip_extra_ranges', $pncp_no_extra, 10 );
+delete_option( PNCP_Ip::LISTS_OPTION . '_anthropic' );
+PNCP_Ip::reset();
+t( 'ai_verdict: no list yet, outbound range still verified, others unchecked', 'verified' === PNCP_Bots::ai_verdict( $search_ua, '160.79.106.230', PNCP_Options::get() ) && '' === PNCP_Bots::ai_verdict( $search_ua, '198.51.100.140', PNCP_Options::get() ) );
+t( 'ai_verdict: ClaudeBot (training crawler) is not an AI search bot: not verified', '' === PNCP_Bots::ai_verdict( 'Mozilla/5.0 (compatible; ClaudeBot/1.0; +claudebot@anthropic.com)', '160.79.106.230', PNCP_Options::get() ) );
+
+// End to end: the same over HTTP.
+PNCP_Ip::store_list( 'anthropic', $fourteen );
+fresh();
+list( $code ) = req( '/', array( 'X-Test-IP' => '160.79.106.230', 'User-Agent' => $claude_ua ) );
+t( 'HTTP: Claude-User from 160.79.106.230 = 200 (was 403 fake_ai_bot in 3.9.1)', 200 === $code && ! in_array( 'fake_ai_bot', log_reasons(), true ), $code . ' ' . implode( ',', log_reasons() ) );
+list( $code ) = req( '/', array( 'X-Test-IP' => '198.51.100.141', 'User-Agent' => $claude_ua ) );
+t( 'HTTP: Claude-User from an unknown address = 403 fake_ai_bot (fresh list)', 403 === $code && in_array( 'fake_ai_bot', log_reasons(), true ), $code . ' ' . implode( ',', log_reasons() ) );
+
+/* ---------- stale list: fail open ---------- */
+list_age( 'anthropic', 8 );
+t( 'list_stale: 8 days old = stale', PNCP_Ip::list_stale( 'anthropic' ) );
+fresh();
+list( $code ) = req( '/', array( 'X-Test-IP' => '198.51.100.142', 'User-Agent' => $claude_ua ) );
+t( 'HTTP: stale list (8 days): Claude-User from elsewhere not called fake (200)', 200 === $code && ! in_array( 'fake_ai_bot', log_reasons(), true ), $code . ' ' . implode( ',', log_reasons() ) );
+t( 'ai_verdict: stale list still verifies its own addresses', 'verified' === PNCP_Bots::ai_verdict( $claude_ua, '34.162.230.3', PNCP_Options::get() ) && '' === PNCP_Bots::ai_verdict( $claude_ua, '198.51.100.142', PNCP_Options::get() ), PNCP_Bots::ai_verdict( $claude_ua, '34.162.230.3', PNCP_Options::get() ) . '/' . PNCP_Bots::ai_verdict( $claude_ua, '198.51.100.142', PNCP_Options::get() ) . '/' . wp_json_encode( PNCP_Ip::lists_updated() ) . time() );
+$pncp_age = static function () {
+	return 0;
+};
+add_filter( 'pncp_ip_list_max_age', $pncp_age );
+t( 'list_stale: filter 0 = never stale', ! PNCP_Ip::list_stale( 'anthropic' ) && 'fake' === PNCP_Bots::ai_verdict( $claude_ua, '198.51.100.142', PNCP_Options::get() ) );
+remove_filter( 'pncp_ip_list_max_age', $pncp_age );
+list_age( 'anthropic', 2 );
+t( 'list_stale: 2 days old = not stale', ! PNCP_Ip::list_stale( 'anthropic' ) );
+
+/* ---------- (d) the explanation ---------- */
+$note = PNCP_Ip::list_note( 'anthropic' );
+t( 'list_note: 14 entries, date, plus the outbound range', 0 === strpos( $note, '14 entries, updated ' ) && false !== strpos( $note, '(plus 160.79.104.0/21)' ), $note );
+$detail = PNCP_Tester::ai_list_detail( $claude_ua );
+t( 'tester: "Fake AI search bot" names the list, its size and date', false !== strpos( $detail, 'claude.com/crawling/bots.json' ) && false !== strpos( $detail, '14 entries' ), $detail );
+t( 'tester: nothing for another User-Agent', '' === PNCP_Tester::ai_list_detail( 'Mozilla/5.0 Chrome/141' ) );
+$r = PNCP_Tester::run( array( 'mode' => 'custom', 'ip' => '198.51.100.143', 'ua' => $claude_ua, 'address' => '/' ) );
+t( 'tester run(): fake_ai_bot with the list details in "why"', is_array( $r ) && 'fake_ai_bot' === $r['reason'] && false !== strpos( $r['why'], '14 entries' ), is_array( $r ) ? $r['why'] : 'error' );
+$r = PNCP_Tester::run( array( 'mode' => 'custom', 'ip' => '160.79.106.230', 'ua' => $claude_ua, 'address' => '/' ) );
+t( 'tester run(): Claude-User from 160.79.106.230 = allowed (ai_search)', is_array( $r ) && 'allowed' === $r['verdict'], is_array( $r ) ? wp_json_encode( array( $r['verdict'], $r['reason'], $r['pass'] ) ) : 'error' );
+
 /* ---------- restore ---------- */
 update_option( PNCP_OPTION, $keep );
 foreach ( array( 'anthropic' => $keep_ant, 'updated' => $keep_upd, 'openai_user' => $keep_oai, 'perplexity_user' => $keep_ppl ) as $name => $value ) {
