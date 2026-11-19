@@ -1610,7 +1610,7 @@ final class PNCP_Admin {
 					self::number( $s, 'bunny_flood_4xx', __( 'Errors per IP that count as a flood (0 = off):', 'scrapelock' ), __( 'An IP with this many “page not found” or refused answers in one import is recorded as a 4xx flood.', 'scrapelock' ) );
 					self::checkbox( $s, 'bunny_strikes', __( 'Count IPs that are too fast at the CDN toward a temporary block', 'scrapelock' ), __( 'Uses the logs: every minute in which an IP asked Bunny for more pages than the limit below is a violation, also when Bunny served them from its cache. Not in Monitor only, and not when Bunny anonymizes IPs.', 'scrapelock' ) );
 					self::number( $s, 'bunny_rate', __( 'Pages per minute and IP at the CDN (0 = off):', 'scrapelock' ), __( 'Images, styles, scripts and fonts do not count.', 'scrapelock' ) );
-					self::textarea( $s, 'bunny_login_allow', __( 'Allowed IPs for the login page at Bunny, one per line:', 'scrapelock' ), __( 'When wp-login.php is locked at Bunny, these IPs still get through, with the IPs administrators used in the last 30 days.', 'scrapelock' ), 3 );
+					self::textarea( $s, 'bunny_login_allow', __( 'Allowed IPs for the login page at Bunny, one per line:', 'scrapelock' ), __( 'When wp-login.php is locked at Bunny, only these IPs and ranges get through (an IPv6 /64 such as 2001:db8:1:2::/64 too). The lock is refused while the list is empty or does not hold your IP; the Bunny card under “Blocking at the CDN” suggests the IPs administrators used in the last 30 days.', 'scrapelock' ), 3 );
 					?>
 				</td>
 			</tr>

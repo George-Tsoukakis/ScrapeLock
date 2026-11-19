@@ -136,6 +136,7 @@ final class PNCP_Bunny {
 	 * Registers the hooks.
 	 */
 	public static function init() {
+		add_filter( 'pncp_bunny_lock_preview', array( __CLASS__, 'lock_preview_checks' ), 10, 2 ); // 3.9.
 		add_filter( 'cron_schedules', array( __CLASS__, 'schedules' ) ); // phpcs:ignore WordPress.WP.CronInterval.ChangeDetected -- 15 minutes, the import interval.
 		add_action( self::CRON, array( __CLASS__, 'run' ) );
 		add_action( 'admin_post_' . self::ACTION, array( __CLASS__, 'handle' ) );
@@ -1044,7 +1045,7 @@ final class PNCP_Bunny {
 				// The administrators' IPs follow. While the sign-in page is at wp-login.php again (the address
 				// was opened again, cleared, or turned off with SCRAPELOCK_LOGIN_SLUG_OFF), the rule never blocks
 				// everyone: without a known administrator IP it is switched off.
-				$allow = self::login_allowlist();
+				$allow = self::login_rule_allow(); // 3.9: the explicit list, for a lock made since 3.9.
 				if ( $allow ) {
 					$want['allow'] = $allow;
 				}
@@ -1133,6 +1134,260 @@ final class PNCP_Bunny {
 		return array_slice( $out, 0, self::MAX_ALLOW_IPS );
 	}
 
+	/* ---------- 3.9: the login page lock follows an explicit list ---------- */
+
+	/**
+	 * 3.9: set (time) when wp-login.php was locked at Bunny with the explicit list only. A rule made before 3.9
+	 * has no such mark and keeps following the administrators' IPs (login_allowlist()), so upgraded sites keep
+	 * the behaviour they had.
+	 */
+	const LOGIN_STRICT = 'pncp_bunny_login_strict';
+
+	/**
+	 * The IPs and ranges listed under "Allowed IPs for the login page at Bunny" (bunny_login_allow), which the
+	 * administrator confirmed. An entry may be a CIDR range, e.g. an IPv6 /64.
+	 *
+	 * @return string[]
+	 */
+	public static function login_allow_list() {
+		return array_slice( self::settings()['allow'], 0, self::MAX_ALLOW_IPS );
+	}
+
+	/**
+	 * The IPs the login rule at Bunny lets through: since 3.9 only the explicit list; a rule locked before 3.9
+	 * keeps following the administrators' IPs too.
+	 *
+	 * Bunny's "Remote IP" trigger is sent the entries as written, CIDR included (an IPv6 /64 as
+	 * 2001:db8:1:2::/64). That Bunny matches CIDR in this trigger is the assumption of 3.8 (see specs/5-bunny.md)
+	 * and is not verified against the real API; filter `pncp_bunny_edge_rule` can rewrite the trigger.
+	 *
+	 * @return string[]
+	 */
+	public static function login_rule_allow() {
+		return get_option( self::LOGIN_STRICT, false ) ? self::login_allow_list() : self::login_allowlist();
+	}
+
+	/**
+	 * The public IP of the administrator using this page, when ScrapeLock can see it ('' otherwise).
+	 *
+	 * @return string
+	 */
+	public static function current_admin_ip() {
+		if ( ! function_exists( 'is_user_logged_in' ) || ! is_user_logged_in() || ! current_user_can( 'manage_options' ) || ! PNCP_Ip::reliable() ) {
+			return '';
+		}
+		$ip = PNCP_Ip::client_ip();
+		if ( '' === $ip || ! filter_var( $ip, FILTER_VALIDATE_IP ) || PNCP_Ip::is_cdn_edge( $ip ) || PNCP_Ip::is_local( $ip ) ) {
+			return '';
+		}
+		return $ip;
+	}
+
+	/**
+	 * Why wp-login.php cannot be locked at Bunny now: the allowed list is empty, or it does not hold the IP of
+	 * the administrator who locks (or that IP cannot be seen). Empty = it can. From WP-CLI (someone at the
+	 * server, no IP) only the empty list counts.
+	 *
+	 * @return string[]
+	 */
+	public static function login_lock_blockers() {
+		$out  = array();
+		$list = self::login_allow_list();
+		$cli  = defined( 'WP_CLI' ) && WP_CLI;
+		$ip   = $cli ? '' : self::current_admin_ip();
+		if ( ! $cli && '' === $ip ) {
+			$out[] = __( 'ScrapeLock cannot see your real IP (it appears as the address of a proxy, of Bunny or of this server), so it cannot check that the lock leaves you a way in. Set “Real visitor IP” in Bots first, then lock again.', 'scrapelock' );
+		}
+		if ( ! $list ) {
+			$out[] = __( 'The list “Allowed IPs for the login page at Bunny” is empty, so the lock would refuse everyone at wp-login.php, you included. Add your IP with “Add selected” under the suggestions in this card (or type it in Bots → Bunny CDN logs and save), then lock again.', 'scrapelock' );
+		} elseif ( '' !== $ip && ! PNCP_Ip::in_any( $ip, $list ) ) {
+			$out[] = sprintf(
+				/* translators: 1: the administrator's IP, 2: the entry to add (the IP, or its IPv6 /64) */
+				__( 'Your IP now (%1$s) is not in “Allowed IPs for the login page at Bunny”, so the lock would keep you out of wp-login.php. Add %2$s with “Add selected” under the suggestions in this card (or in Bots → Bunny CDN logs), then lock again.', 'scrapelock' ),
+				$ip,
+				PNCP_Ip::limit_key( $ip )
+			);
+		}
+		return $out;
+	}
+
+	/**
+	 * The IPs to suggest for the allowed list: the IP of the administrator using this page and those
+	 * administrators used in wp-admin in the last 30 days (PNCP_Edge::staff()), when the list does not already
+	 * cover them. IPv6 addresses are offered as their /64, since a connection's IPv6 address changes within it.
+	 *
+	 * @return array<string, array{last:int, current:bool}> Entry => last seen, is the IP now.
+	 */
+	public static function login_allow_suggestions() {
+		$list = self::login_allow_list();
+		$out  = array();
+		$ip   = self::current_admin_ip();
+		if ( '' !== $ip ) {
+			$out[ PNCP_Ip::limit_key( $ip ) ] = array(
+				'last'    => time(),
+				'current' => true,
+			);
+		}
+		foreach ( PNCP_Edge::staff() as $key => $time ) {
+			$key = (string) $key;
+			if ( ! isset( $out[ $key ] ) ) {
+				$out[ $key ] = array(
+					'last'    => (int) $time,
+					'current' => false,
+				);
+			}
+		}
+		foreach ( array_keys( $out ) as $key ) {
+			$base = explode( '/', (string) $key, 2 )[0];
+			if ( ! PNCP_Ip::valid_range( (string) $key ) || PNCP_Ip::is_local( $base ) || PNCP_Ip::is_cdn_edge( $base ) || ( $list && PNCP_Ip::in_any( $base, $list ) ) ) {
+				unset( $out[ $key ] );
+			}
+		}
+		return $out;
+	}
+
+	/**
+	 * Adds suggested entries to "Allowed IPs for the login page at Bunny". Only entries that are suggested
+	 * now are taken: this is the confirmation of a suggestion, not a free form.
+	 *
+	 * @param string[] $picked Entries the administrator ticked.
+	 * @return string[]|WP_Error The entries added.
+	 */
+	public static function add_login_allow( $picked ) {
+		if ( PNCP_Lockdown::is_locked() ) {
+			return new WP_Error( 'pncp_locked', __( 'The site is locked with Lockdown: unlock it to change the settings.', 'scrapelock' ) );
+		}
+		$offer = self::login_allow_suggestions();
+		$add   = array();
+		foreach ( (array) $picked as $entry ) {
+			$entry = trim( (string) $entry );
+			if ( isset( $offer[ $entry ] ) ) {
+				$add[ $entry ] = $entry;
+			}
+		}
+		if ( ! $add ) {
+			return new WP_Error( 'pncp_none', __( 'Tick at least one of the suggested IPs, then click “Add selected”.', 'scrapelock' ) );
+		}
+		$stored = PNCP_Options::stored();
+		$list   = PNCP_Options::parse_list( isset( $stored['bunny_login_allow'] ) ? (string) $stored['bunny_login_allow'] : '' );
+		if ( count( $list ) + count( $add ) > self::MAX_ALLOW_IPS ) {
+			/* translators: %d: most entries */
+			return new WP_Error( 'pncp_full', sprintf( __( 'The list may hold at most %d IPs and ranges (what Bunny accepts in one rule): remove old ones in Bots → Bunny CDN logs first.', 'scrapelock' ), self::MAX_ALLOW_IPS ) );
+		}
+		$stored['bunny_login_allow'] = implode( "\n", array_values( array_unique( array_merge( $list, array_values( $add ) ) ) ) );
+		// As PNCP_Options::block_ip_permanently(): a change of this list does not need the page cache purged.
+		$purge = has_action( 'update_option_' . PNCP_OPTION, 'pncp_purge_page_cache' );
+		if ( false !== $purge ) {
+			remove_action( 'update_option_' . PNCP_OPTION, 'pncp_purge_page_cache', $purge );
+		}
+		update_option( PNCP_OPTION, $stored );
+		if ( false !== $purge ) {
+			add_action( 'update_option_' . PNCP_OPTION, 'pncp_purge_page_cache', $purge );
+		}
+		PNCP_Options::flush();
+		if ( self::preset_locked( 'login' ) ) {
+			self::login_changed(); // A lock made with the list follows it now, not at the next run.
+		}
+		return array_values( $add );
+	}
+
+	/**
+	 * Locks wp-login.php at Bunny with the explicit list, after the checks of login_lock_blockers().
+	 *
+	 * @param array<string, mixed> $preset  The login preset.
+	 * @param array<string, mixed> $options Options for edge_block() (except).
+	 * @return true|WP_Error
+	 */
+	private static function lock_login( $preset, $options ) {
+		$blockers = self::login_lock_blockers();
+		if ( $blockers ) {
+			return new WP_Error( 'pncp_login_allow', implode( ' ', $blockers ) );
+		}
+		$options['allow'] = self::login_allow_list();
+		$result           = self::edge_block( 'preset_login', $preset['patterns'], $preset['label'], $options );
+		if ( true === $result ) {
+			update_option( self::LOGIN_STRICT, time(), false );
+		}
+		return $result;
+	}
+
+	/**
+	 * Filter `pncp_bunny_lock_preview` (the confirmation before a lock at Bunny): the reasons the login page
+	 * cannot be locked go in as blockers, what locking XML-RPC stops as warnings.
+	 *
+	 * @param mixed  $preview The preview (warnings, blockers: lists of strings).
+	 * @param string $preset  Preset.
+	 * @return array<string, mixed>
+	 */
+	public static function lock_preview_checks( $preview, $preset = '' ) {
+		$preview = is_array( $preview ) ? $preview : array();
+		foreach ( array( 'warnings', 'blockers' ) as $key ) {
+			$preview[ $key ] = isset( $preview[ $key ] ) && is_array( $preview[ $key ] ) ? $preview[ $key ] : array();
+		}
+		if ( 'login' === $preset ) {
+			$preview['blockers'] = array_merge( $preview['blockers'], self::login_lock_blockers() );
+		}
+		if ( 'xmlrpc' === $preset && method_exists( __CLASS__, 'xmlrpc_lock_warnings' ) ) {
+			$preview['warnings'] = array_merge( $preview['warnings'], self::xmlrpc_lock_warnings() );
+		}
+		return $preview;
+	}
+
+	/**
+	 * The "Allowed IPs for the login page at Bunny" part of the card: the list, whether it covers the IP now,
+	 * and the suggestions to confirm.
+	 *
+	 * @param bool $locked Site locked with Lockdown.
+	 */
+	private static function render_login_allow( $locked ) {
+		$list   = self::login_allow_list();
+		$ip     = self::current_admin_ip();
+		$offer  = self::login_allow_suggestions();
+		$is     = self::preset_locked( 'login' );
+		$strict = (bool) get_option( self::LOGIN_STRICT, false );
+		echo '<div class="pncp-bunny-login-allow" id="pncp-bunny-login-allow"><h4>' . esc_html__( 'Allowed IPs for the login page at Bunny', 'scrapelock' ) . '</h4>';
+		if ( $list ) {
+			/* translators: %s: list of IPs and ranges */
+			echo '<p>' . esc_html( sprintf( __( 'A lock of wp-login.php lets only these IPs and ranges through: %s.', 'scrapelock' ), implode( ', ', $list ) ) ) . '</p>';
+		} else {
+			echo '<p class="pncp-edge-error">' . esc_html__( 'The list is empty: wp-login.php cannot be locked at Bunny until it holds at least your IP.', 'scrapelock' ) . '</p>';
+		}
+		if ( '' !== $ip ) {
+			$covered = $list && PNCP_Ip::in_any( $ip, $list );
+			echo '<p class="' . esc_attr( $covered ? '' : 'pncp-edge-error' ) . '">' . esc_html(
+				$covered
+					/* translators: %s: IP */
+					? sprintf( __( 'Your IP now (%s) is in the list.', 'scrapelock' ), $ip )
+					/* translators: %s: IP */
+					: sprintf( __( 'Your IP now (%s) is not in the list.', 'scrapelock' ), $ip )
+			) . ( $is && ! $covered && $strict ? ' ' . esc_html__( 'The lock at Bunny keeps you out of wp-login.php from here: add it below.', 'scrapelock' ) : '' ) . '</p>';
+		}
+		if ( $is && ! $strict ) {
+			echo '<p class="description">' . esc_html__( 'This lock was made before ScrapeLock 3.9: it also lets in the IPs administrators used in the last 30 days, without asking. To use only this list, remove the lock and lock again.', 'scrapelock' ) . '</p>';
+		}
+		if ( $offer && ! $locked ) {
+			printf( '<form method="post" action="%s" class="pncp-bunny-form pncp-bunny-allow-add">', esc_url( admin_url( 'admin-post.php' ) ) );
+			echo '<input type="hidden" name="action" value="' . esc_attr( self::ACTION ) . '"><input type="hidden" name="op" value="login_allow_add">';
+			echo preg_replace( '/ id="_wpnonce"/', '', wp_nonce_field( self::ACTION, '_wpnonce', true, false ), 1 ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Core markup.
+			echo '<fieldset><legend>' . esc_html__( 'Suggested: the IPs administrators used in wp-admin in the last 30 days. Tick the ones that are yours or your team\'s, then add them.', 'scrapelock' ) . '</legend>';
+			foreach ( $offer as $entry => $info ) {
+				$what = $info['current']
+					? __( 'your IP now', 'scrapelock' )
+					/* translators: %s: date and time */
+					: sprintf( __( 'last seen in wp-admin %s', 'scrapelock' ), self::when( $info['last'] ) );
+				printf(
+					'<label style="display:block"><input type="checkbox" name="ips[]" value="%1$s"> <code>%2$s</code> <span class="description">(%3$s)</span></label>',
+					esc_attr( $entry ),
+					esc_html( $entry ),
+					esc_html( $what )
+				);
+			}
+			echo '</fieldset><p class="description">' . esc_html__( 'An IPv6 address is suggested as its /64 network: the address of an IPv6 connection changes within it.', 'scrapelock' ) . '</p>';
+			echo '<p><button type="submit" class="button button-small">' . esc_html__( 'Add selected', 'scrapelock' ) . '</button></p></form>';
+		}
+		echo '<p class="description">' . esc_html__( 'Edit or remove entries in Bots → Bunny CDN logs → “Allowed IPs for the login page at Bunny” (one IP or range per line, an IPv6 /64 such as 2001:db8:1:2::/64 too).', 'scrapelock' ) . '</p></div>';
+	}
+
 	/**
 	 * The presets of the "Lock at Bunny" buttons. A preset that is also a point of PNCP_Hardening is locked
 	 * through it (same rule, same state on the hardening card).
@@ -1147,8 +1402,8 @@ final class PNCP_Bunny {
 				'label'    => __( 'Login page (wp-login.php)', 'scrapelock' ),
 				'blocks'   => self::custom_login_active()
 					? __( 'Every request for wp-login.php: the login page has its own address, so only bots still ask for wp-login.php.', 'scrapelock' )
-					: __( 'Every request for wp-login.php, except from the IPs administrators used in the last 30 days, your IP now and the IPs listed under “Allowed IPs for the login page”. The list follows new administrator IPs within 15 minutes.', 'scrapelock' ),
-				'breaks'   => __( 'Anyone else who signs in at wp-login.php (authors, members, customers without a shop account page) is refused, and so are you from a new IP before you sign in: then remove the rule in the bunny.net dashboard (Edge Rules, “ScrapeLock: …”). Password-protected posts keep working. When the sign-in page goes back to wp-login.php (“Open again”, an empty sign-in address, or SCRAPELOCK_LOGIN_SLUG_OFF in wp-config.php), the rule keeps letting in the administrators\' IPs, and is switched off when none is known.', 'scrapelock' ),
+					: __( 'Every request for wp-login.php, except from the IPs and ranges listed under “Allowed IPs for the login page at Bunny”. The list must hold your IP now; the IPs administrators used in the last 30 days are suggested below, to add with one click.', 'scrapelock' ),
+				'breaks'   => __( 'Anyone else who signs in at wp-login.php (authors, members, customers without a shop account page) is refused, and so are you from an IP that is not in the list: then remove the rule in the bunny.net dashboard (Edge Rules, “ScrapeLock: …”) or run wp scrapelock bunny unlock preset_login. Password-protected posts keep working. When the sign-in page goes back to wp-login.php (“Open again”, an empty sign-in address, or SCRAPELOCK_LOGIN_SLUG_OFF in wp-config.php), the rule keeps letting in the listed IPs.', 'scrapelock' ),
 				'patterns' => array( '*' . $core . 'wp-login.php*' ),
 				'except'   => array( '*action=postpass*' ),
 				'evidence' => array( array( 'login_fail', '' ), array( 'login_probe', '' ), array( 'edge', $core . 'wp-login.php' ) ),
@@ -1274,17 +1529,10 @@ final class PNCP_Bunny {
 		}
 		$options = array( 'except' => $preset['except'] );
 		if ( 'login' === $id ) {
-			// The administrators' IPs are stored even while the sign-in page has its own address, so that the
-			// rule still lets them in when the address goes back to wp-login.php (sync_rules()).
-			$options['allow'] = self::login_allowlist();
-			if ( ! self::custom_login_active() ) {
-				if ( ! PNCP_Ip::reliable() || PNCP_Ip::is_cdn_edge( PNCP_Ip::client_ip() ) ) {
-					return new WP_Error( 'pncp_ip', __( 'ScrapeLock cannot see your real IP (every visitor appears with the address of a proxy or of Bunny), so it cannot keep you out of this block. Set “Real visitor IP” first.', 'scrapelock' ) );
-				}
-				if ( ! $options['allow'] ) {
-					return new WP_Error( 'pncp_no_allow', __( 'No administrator IP is known yet: open wp-admin from the place you sign in from, or list your IPs under “Allowed IPs for the login page”.', 'scrapelock' ) );
-				}
-			}
+			// 3.9: only the explicit, confirmed list, which must hold the IP of the administrator who locks. Also
+			// while the sign-in page has its own address: the rule falls back to the list when the address goes
+			// back to wp-login.php (sync_rules()).
+			return self::lock_login( $preset, $options );
 		}
 		return self::edge_block( 'preset_' . $id, $preset['patterns'], $preset['label'], $options );
 	}
@@ -2843,6 +3091,13 @@ final class PNCP_Bunny {
 				}
 				self::done( self::edge_unblock( $rule ), __( 'The rule was removed at Bunny CDN.', 'scrapelock' ) );
 				break;
+			case 'login_allow_add':
+				// phpcs:ignore WordPress.Security.NonceVerification.Missing -- Checked above with check_admin_referer().
+				$picked = isset( $_POST['ips'] ) && is_array( $_POST['ips'] ) ? array_map( 'sanitize_text_field', wp_unslash( $_POST['ips'] ) ) : array();
+				$added  = self::add_login_allow( $picked );
+				/* translators: %s: list of IPs */
+				self::done( is_wp_error( $added ) ? $added : sprintf( __( 'Added to “Allowed IPs for the login page at Bunny”: %s.', 'scrapelock' ), implode( ', ', $added ) ) );
+				break;
 			case 'logging_on':
 				self::done( self::enable_logging(), __( 'Logging is on at the pull zone. The first lines can be read within 15 minutes.', 'scrapelock' ) );
 				break;
@@ -3225,11 +3480,7 @@ final class PNCP_Bunny {
 			echo '</td></tr>';
 		}
 		echo '</tbody></table>';
-		if ( ! self::custom_login_active() ) {
-			$allow = self::login_allowlist();
-			/* translators: %s: list of IPs */
-			echo '<p class="description">' . esc_html( $allow ? sprintf( __( 'A lock of the login page lets these IPs through: %s.', 'scrapelock' ), implode( ', ', $allow ) ) : __( 'No administrator IP is known yet, so the login page cannot be locked at Bunny.', 'scrapelock' ) ) . '</p>';
-		}
+		self::render_login_allow( $locked ); // 3.9: the explicit list and its suggestions.
 	}
 
 	/* ---------- Site Health, privacy, WP-CLI ---------- */
