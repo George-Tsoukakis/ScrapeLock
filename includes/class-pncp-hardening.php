@@ -2144,7 +2144,7 @@ final class PNCP_Hardening {
 			if ( $row['edge_on'] ) {
 				self::button( 'edge_off', $id, __( 'Unlock at Bunny CDN', 'scrapelock' ), 'button button-small' );
 			} elseif ( 'xmlrpc' !== $id || ! self::state()['xmlrpc_jetpack'] ) {
-				self::button( 'edge_on', $id, __( 'Lock at Bunny CDN', 'scrapelock' ), 'button button-small' );
+				self::button( 'edge_on', $id, __( 'Lock at Bunny CDN', 'scrapelock' ), 'button button-small', 'xmlrpc' === $id && class_exists( 'PNCP_Bunny' ) && method_exists( 'PNCP_Bunny', 'xmlrpc_confirm_text' ) ? PNCP_Bunny::xmlrpc_confirm_text() : '' ); // 3.9: warns what stops.
 			}
 		}
 	}

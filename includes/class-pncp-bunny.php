@@ -137,6 +137,8 @@ final class PNCP_Bunny {
 	 */
 	public static function init() {
 		add_filter( 'pncp_bunny_lock_preview', array( __CLASS__, 'lock_preview_checks' ), 10, 2 ); // 3.9.
+		add_action( 'xmlrpc_call', array( __CLASS__, 'note_xmlrpc_call' ), 10, 1 ); // 3.9: real XML-RPC use, for the warning before a lock.
+		add_action( 'pingback_post', array( __CLASS__, 'note_pingback' ) );
 		add_filter( 'cron_schedules', array( __CLASS__, 'schedules' ) ); // phpcs:ignore WordPress.WP.CronInterval.ChangeDetected -- 15 minutes, the import interval.
 		add_action( self::CRON, array( __CLASS__, 'run' ) );
 		add_action( 'admin_post_' . self::ACTION, array( __CLASS__, 'handle' ) );
@@ -1386,6 +1388,206 @@ final class PNCP_Bunny {
 			echo '<p><button type="submit" class="button button-small">' . esc_html__( 'Add selected', 'scrapelock' ) . '</button></p></form>';
 		}
 		echo '<p class="description">' . esc_html__( 'Edit or remove entries in Bots → Bunny CDN logs → “Allowed IPs for the login page at Bunny” (one IP or range per line, an IPv6 /64 such as 2001:db8:1:2::/64 too).', 'scrapelock' ) . '</p></div>';
+	}
+
+	/* ---------- 3.9: what locking XML-RPC stops ---------- */
+
+	/**
+	 * 3.9: when XML-RPC was last used for real (not autoloaded): kind (auth = a call after a sign-in, pingback =
+	 * a pingback accepted) => the hours with such a use in the last 30 days (Unix times, at most one an hour),
+	 * and the name of the last signed-in method.
+	 */
+	const XMLRPC_USE = 'pncp_xmlrpc_use';
+
+	/**
+	 * Action `xmlrpc_call`: WordPress fires it in each method, after the sign-in for those that need one. Only
+	 * calls with a signed-in user count as use.
+	 *
+	 * @param string $name Method, e.g. wp.getUsersBlogs.
+	 */
+	public static function note_xmlrpc_call( $name = '' ) {
+		if ( function_exists( 'get_current_user_id' ) && get_current_user_id() > 0 ) {
+			self::note_xmlrpc( 'auth', (string) $name );
+		}
+	}
+
+	/**
+	 * Action `pingback_post`: a pingback from another site was accepted.
+	 */
+	public static function note_pingback() {
+		if ( defined( 'XMLRPC_REQUEST' ) && XMLRPC_REQUEST ) {
+			self::note_xmlrpc( 'pingback', '' );
+		}
+	}
+
+	/**
+	 * Notes one use, at most one write an hour per kind.
+	 *
+	 * @param string $kind   auth | pingback.
+	 * @param string $method Method name.
+	 */
+	private static function note_xmlrpc( $kind, $method ) {
+		$use   = get_option( self::XMLRPC_USE, array() );
+		$use   = is_array( $use ) ? $use : array();
+		$times = isset( $use[ $kind ] ) && is_array( $use[ $kind ] ) ? array_map( 'intval', $use[ $kind ] ) : array();
+		$now   = time();
+		if ( $times && max( $times ) > $now - HOUR_IN_SECONDS ) {
+			return;
+		}
+		$since = $now - 30 * DAY_IN_SECONDS;
+		$keep  = array();
+		foreach ( $times as $t ) {
+			if ( $t > $since ) {
+				$keep[] = $t;
+			}
+		}
+		$keep[]       = $now;
+		$use[ $kind ] = array_slice( $keep, -720 );
+		if ( 'auth' === $kind ) {
+			$use['method'] = substr( (string) preg_replace( '/[^A-Za-z0-9_.]/', '', $method ), 0, 60 );
+		}
+		if ( false === get_option( self::XMLRPC_USE, false ) ) {
+			add_option( self::XMLRPC_USE, $use, '', false );
+		} else {
+			update_option( self::XMLRPC_USE, $use, false );
+		}
+	}
+
+	/**
+	 * The uses of the last 30 days of one kind.
+	 *
+	 * @param string $kind auth | pingback.
+	 * @return array{hours:int, last:int, method:string}
+	 */
+	public static function xmlrpc_use( $kind ) {
+		$use   = get_option( self::XMLRPC_USE, array() );
+		$use   = is_array( $use ) ? $use : array();
+		$since = time() - 30 * DAY_IN_SECONDS;
+		$times = array();
+		foreach ( isset( $use[ $kind ] ) && is_array( $use[ $kind ] ) ? $use[ $kind ] : array() as $t ) {
+			if ( (int) $t > $since ) {
+				$times[] = (int) $t;
+			}
+		}
+		return array(
+			'hours'  => count( $times ),
+			'last'   => $times ? max( $times ) : 0,
+			'method' => 'auth' === $kind && isset( $use['method'] ) ? (string) $use['method'] : '',
+		);
+	}
+
+	/**
+	 * Is Jetpack active on this site? Filter `pncp_jetpack_active`.
+	 *
+	 * @return bool
+	 */
+	public static function jetpack_active() {
+		$on = defined( 'JETPACK__VERSION' ) || class_exists( 'Jetpack' );
+		if ( ! $on ) {
+			$on = in_array( 'jetpack/jetpack.php', (array) get_option( 'active_plugins', array() ), true );
+			if ( ! $on && is_multisite() ) {
+				$on = isset( ( (array) get_site_option( 'active_sitewide_plugins', array() ) )['jetpack/jetpack.php'] );
+			}
+		}
+		/**
+		 * Filters whether Jetpack counts as active (for the warning before XML-RPC is locked at the CDN).
+		 *
+		 * @param bool $on Active.
+		 */
+		return (bool) apply_filters( 'pncp_jetpack_active', $on );
+	}
+
+	/**
+	 * How many users have at least one application password.
+	 *
+	 * @return int
+	 */
+	public static function app_password_users() {
+		global $wpdb;
+		$key    = class_exists( 'WP_Application_Passwords' ) && defined( 'WP_Application_Passwords::USERMETA_KEY_APPLICATION_PASSWORDS' ) ? WP_Application_Passwords::USERMETA_KEY_APPLICATION_PASSWORDS : '_application_passwords';
+		$cached = wp_cache_get( 'app_password_users', 'scrapelock' );
+		if ( false !== $cached ) {
+			return (int) $cached;
+		}
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery -- One count, cached for the request; no API counts users by meta value.
+		$count = (int) $wpdb->get_var( $wpdb->prepare( "SELECT COUNT(DISTINCT user_id) FROM {$wpdb->usermeta} WHERE meta_key = %s AND meta_value NOT IN ( '', 'a:0:{}' )", $key ) );
+		wp_cache_set( 'app_password_users', $count, 'scrapelock', MINUTE_IN_SECONDS );
+		return $count;
+	}
+
+	/**
+	 * What a lock of xmlrpc.php at the CDN would stop on this site: Jetpack active, application passwords,
+	 * signed-in XML-RPC use or pingbacks in the last 30 days. Empty when nothing points to a real use.
+	 *
+	 * @return string[]
+	 */
+	public static function xmlrpc_lock_warnings() {
+		$out = array();
+		if ( self::jetpack_active() ) {
+			$out[] = __( 'Jetpack is active: it talks to WordPress.com through xmlrpc.php, so its connection, Stats, Publicize, backups and the WordPress.com app stop working.', 'scrapelock' );
+		}
+		$apps = self::app_password_users();
+		if ( $apps > 0 ) {
+			$out[] = sprintf(
+				/* translators: %s: number of users */
+				_n( '%s user has application passwords: apps and publishing tools that sign in with them through XML-RPC (the WordPress mobile app, desktop editors, some automation services) stop working. Through the REST API they keep working.', '%s users have application passwords: apps and publishing tools that sign in with them through XML-RPC (the WordPress mobile app, desktop editors, some automation services) stop working. Through the REST API they keep working.', $apps, 'scrapelock' ),
+				number_format_i18n( $apps )
+			);
+		}
+		$auth = self::xmlrpc_use( 'auth' );
+		if ( $auth['hours'] > 0 ) {
+			$out[] = sprintf(
+				/* translators: 1: date and time, 2: method name, 3: number of hours */
+				_n( 'Someone signed in through xmlrpc.php successfully in the last 30 days (last %1$s, method %2$s; in %3$s hour): the mobile app or publishing tool they used stops working.', 'Someone signed in through xmlrpc.php successfully in the last 30 days (last %1$s, method %2$s; in %3$s different hours): the mobile app or publishing tool they used stops working.', $auth['hours'], 'scrapelock' ),
+				self::when( $auth['last'] ),
+				'' !== $auth['method'] ? $auth['method'] : '?',
+				number_format_i18n( $auth['hours'] )
+			);
+		}
+		$ping = self::xmlrpc_use( 'pingback' );
+		if ( $ping['hours'] > 0 ) {
+			$out[] = sprintf(
+				/* translators: %s: date and time */
+				__( 'Pingbacks from other sites were accepted in the last 30 days (last %s): no new pingbacks arrive once xmlrpc.php is locked.', 'scrapelock' ),
+				self::when( $ping['last'] )
+			);
+		}
+		if ( $out ) {
+			$out[] = __( 'Locked at Bunny, xmlrpc.php is refused for everyone, Jetpack\'s servers included, before WordPress sees the request.', 'scrapelock' );
+		}
+		return $out;
+	}
+
+	/**
+	 * The text of the confirmation before XML-RPC is locked at the CDN (also for the hardening card).
+	 *
+	 * @return string
+	 */
+	public static function xmlrpc_confirm_text() {
+		$warn = self::xmlrpc_lock_warnings();
+		$text = __( 'Block xmlrpc.php at Bunny CDN for everyone?', 'scrapelock' );
+		if ( $warn ) {
+			$text .= "\n\n" . __( 'This will stop working:', 'scrapelock' ) . "\n- " . implode( "\n- ", $warn );
+		}
+		return $text;
+	}
+
+	/**
+	 * The warnings about XML-RPC in the card, while it is not locked at Bunny.
+	 */
+	private static function render_xmlrpc_warnings() {
+		if ( self::preset_locked( 'xmlrpc' ) ) {
+			return;
+		}
+		$warn = self::xmlrpc_lock_warnings();
+		if ( ! $warn ) {
+			return;
+		}
+		echo '<div class="notice notice-warning inline pncp-bunny-xmlrpc-warn"><p><strong>' . esc_html__( 'Before you lock XML-RPC (xmlrpc.php) at Bunny, this will stop working:', 'scrapelock' ) . '</strong></p><ul>';
+		foreach ( $warn as $line ) {
+			echo '<li>' . esc_html( $line ) . '</li>';
+		}
+		echo '</ul></div>';
 	}
 
 	/**
@@ -3481,6 +3683,7 @@ final class PNCP_Bunny {
 		}
 		echo '</tbody></table>';
 		self::render_login_allow( $locked ); // 3.9: the explicit list and its suggestions.
+		self::render_xmlrpc_warnings(); // 3.9: what locking XML-RPC stops.
 	}
 
 	/* ---------- Site Health, privacy, WP-CLI ---------- */
