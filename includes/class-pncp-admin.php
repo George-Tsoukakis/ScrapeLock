@@ -1314,6 +1314,7 @@ final class PNCP_Admin {
 	 */
 	private static function tab_bots( $s ) {
 		self::render_cloudflare_hint( $s );
+		PNCP_Plugin_Bots::render_notice_and_form(); // 3.10: before the settings form (the buttons have a form of their own).
 		self::section_nav(
 			array(
 				'monitor'    => __( 'Monitor only', 'scrapelock' ),
@@ -1409,6 +1410,7 @@ final class PNCP_Admin {
 				<?php
 				self::textarea( $s, 'allow_list', __( 'Always allowed User-Agents (link previews, price comparison platforms, monitoring):', 'scrapelock' ), __( 'They override the bot list and “Browsers only”. The page limit applies to them too, because the User-Agent is easy to spoof. To accept an entry only from specific IPs, add @ and the addresses, e.g. Skroutz@203.0.113.0/24.', 'scrapelock' ), 5, true );
 				self::textarea( $s, 'allow_ips', __( 'Always allowed IPs / CIDR (office, ERP, monitoring), one per line:', 'scrapelock' ), __( 'They are never checked, never count towards limits and are never blocked.', 'scrapelock' ), 3 );
+				PNCP_Plugin_Bots::render_panel(); // 3.10.
 				?>
 		<?php self::row_close(); ?>
 		<?php self::row_open( 'blocked', __( 'Always blocked', 'scrapelock' ) ); ?>

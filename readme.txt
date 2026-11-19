@@ -221,6 +221,10 @@ No. Verified search engines are never limited or blocked. Only fakes that preten
 
 Yes. Turn on "Allow AI search engines and assistants" (Bots and limits). Training crawlers stay blocked. With "Verify AI search bots" on, only requests from the official addresses count as those bots; copies of the name get a 403.
 
+= Does ScrapeLock block WP Rocket's or Jetpack's own services? =
+
+No, while the plugin is active. WP Rocket's service bot (WP-Rocket-SaaS, for Remove Unused CSS and critical CSS) and its cache preload (WP Rocket/Preload), and Jetpack's servers and uptime monitor, are allowed like "Always allowed User-Agents" as long as that plugin is active. "Bots and limits" → "Always allowed" lists them, with a button to stop allowing each one. The page limits, the bot trap and the attack checks still apply to them. Developers can add other plugins' bots with the `pncp_plugin_bots` filter.
+
 = Can I let one partner's crawler in? =
 
 Yes. Add it to "Always allowed User-Agents", pinned to its addresses so the name alone is not enough: `PartnerBot@203.0.113.0/24`. The page limit still applies to it.

@@ -38,7 +38,7 @@ final class PNCP_Early {
 		// All the files first: a plugin folder that is only partly there (an update copying its files, an
 		// incomplete upload) must not stop the whole site with a fatal error. The normal check decides then.
 		$files = array();
-		foreach ( array( 'options', 'ip', 'log', 'private-urls', 'bots' ) as $name ) {
+		foreach ( array( 'options', 'ip', 'log', 'private-urls', 'bots', 'plugin-bots' ) as $name ) {
 			$file = $dir . 'includes/class-pncp-' . $name . '.php';
 			if ( ! is_readable( $file ) ) {
 				return;
@@ -65,6 +65,7 @@ final class PNCP_Early {
 		// The normal check reads the settings and the IP again, after translations and the other plugins' filters.
 		PNCP_Options::flush();
 		PNCP_Ip::reset();
+		PNCP_Plugin_Bots::reset(); // 3.10: the other plugins' pncp_plugin_bots filters are not added yet.
 		if ( $monitor ) {
 			// "Monitor only": logged as "would block" (once for the request, also when the normal check comes to
 			// the same verdict later) and the request goes on.
@@ -147,7 +148,7 @@ final class PNCP_Early {
 			return array( 403, 'banned', $ip );
 		}
 
-		$allowed_ua = '' !== $ua && ( PNCP_Bots::allow_list_match( $ua, $ip, $s ) || PNCP_Bots::ua_in_list( $ua, PNCP_Options::allowed_ai_search() ) );
+		$allowed_ua = '' !== $ua && ( PNCP_Bots::allow_list_match( $ua, $ip, $s ) || PNCP_Bots::ua_in_list( $ua, PNCP_Options::allowed_ai_search() ) || null !== PNCP_Plugin_Bots::match( $ua, $ip ) );
 		if ( ! empty( $s['block_bots'] ) && ! $allowed_ua ) {
 			if ( '' === trim( $ua ) && ! empty( $s['block_empty_ua'] ) ) {
 				return array( 403, 'empty_ua', $ip );

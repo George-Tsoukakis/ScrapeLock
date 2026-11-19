@@ -764,7 +764,10 @@ final class PNCP_Bots {
 		// exhaust the shared DNS budget and make the real Applebot / YandexBot get a 403. It falls through to
 		// the normal per-minute limits instead, so a real crawler passes and a fake one is still rate-limited.
 
-		$allowed_ua = '' !== $ua && ( self::allow_list_match( $ua, $ip, $s ) || self::ua_in_list( $ua, PNCP_Options::allowed_ai_search() ) );
+		// 3.10: the service bot of an active plugin (WP Rocket's "WP-Rocket-SaaS" and the like, PNCP_Plugin_Bots) is
+		// allowed like an always-allowed User-Agent; $plugin_bot['verified'] = matched by an address too.
+		$plugin_bot = PNCP_Plugin_Bots::match( $ua, $ip );
+		$allowed_ua = '' !== $ua && ( self::allow_list_match( $ua, $ip, $s ) || self::ua_in_list( $ua, PNCP_Options::allowed_ai_search() ) || null !== $plugin_bot );
 
 		if ( ! empty( $s['block_bots'] ) && ! $allowed_ua ) {
 			if ( '' === trim( $ua ) && ! empty( $s['block_empty_ua'] ) ) {
@@ -789,7 +792,7 @@ final class PNCP_Bots {
 		// bot), not a User-Agent-only allow match, which anyone can spoof. A legitimate same-country bot is
 		// unaffected; to fully exempt one, pin it to its IP range in the allow list (UA@CIDR).
 		$country         = '';
-		$country_exempt  = $allowed_ua && ( self::allow_list_match_pinned( $ua, $ip, $s ) || self::ua_in_list( $ua, PNCP_Options::allowed_ai_search() ) );
+		$country_exempt  = $allowed_ua && ( self::allow_list_match_pinned( $ua, $ip, $s ) || self::ua_in_list( $ua, PNCP_Options::allowed_ai_search() ) || ! empty( $plugin_bot['verified'] ) );
 		if ( ! $country_exempt && ( '' !== $s['countries_block'] || '' !== $s['countries_strict'] ) ) {
 			$country = PNCP_Geo::country( $ip );
 			if ( '' !== $country && in_array( $country, PNCP_Options::parse_countries( $s['countries_block'] ), true ) ) {
@@ -892,7 +895,7 @@ final class PNCP_Bots {
 			// scrapers very often run on one. Not for the always-allowed User-Agents (monitoring, price platforms).
 			// A User-Agent alone ("WhatsApp", "Skroutz") is easy to fake: from a data center it is exempt only when
 			// the allow entry is pinned to the service's IPs (UA@CIDR), or it is a verified AI search bot.
-			$dc_exempt = $allowed_ua && ( self::allow_list_match_pinned( $ua, $ip, $s ) || self::ua_in_list( $ua, PNCP_Options::allowed_ai_search() ) );
+			$dc_exempt = $allowed_ua && ( self::allow_list_match_pinned( $ua, $ip, $s ) || self::ua_in_list( $ua, PNCP_Options::allowed_ai_search() ) || ! empty( $plugin_bot['verified'] ) );
 			if ( ! $dc_exempt && (int) $s['rate_limit_datacenter'] > 0 && '' !== PNCP_Ip::datacenter( $ip ) ) {
 				$stricter['rate_datacenter'] = (int) $s['rate_limit_datacenter'];
 			}

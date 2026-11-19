@@ -33,6 +33,8 @@ ScrapeLock — δοκιμές σε πραγματικό WordPress (όχι stubs)
   t_lockdown.php    Κλείδωμα: εφαρμογή authenticator, κάθε οθόνη, REST, κώδικας, ρόλοι, Abilities, Site Health
   t_edge.php        αποκλεισμός στο CDN (Cloudflare, Bunny) με ψεύτικο API: προσθήκη, λήξη, σφάλματα, όρια, εναλλαγή, φόρμα,
                     κουμπί δοκιμής, «μόνο μέσω CDN» (WordPress και πριν από την cache)
+  t_plugin_bots.php 3.10: bots υπηρεσιών ενεργών plugins (WP-Rocket-SaaS, WP Rocket/Preload, Jetpack): περνούν όσο το
+                    plugin είναι ενεργό, όχι από όρια / επιθέσεις, «Σταμάτα να επιτρέπεις» / «Allow» (nonce, δικαιώματα)
   t_cli.php         wp scrapelock … μέσα από το πραγματικό wp (χρειάζεται WP_CLI, αλλιώς SKIP)
   t_bunny_rules.php Edge Rules στο Bunny μέσα στα όριά του (το πολύ 5 μοτίβα ανά συνθήκη) με ψεύτικο API που δίνει
                     HTTP 400 όπως το πραγματικό: χωρισμός, κλείδωμα/Remove, rollback, Monitor only, sync, προεπισκόπηση,
