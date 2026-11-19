@@ -1897,6 +1897,16 @@ final class PNCP_Hardening {
 				break;
 			case 'edge_on':
 			case 'edge_off':
+				if ( 'edge_on' === $op && class_exists( 'PNCP_Bunny' ) && method_exists( 'PNCP_Bunny', 'lock_confirmed' ) ) {
+					// 3.9: only after "Confirm" on the preview of PNCP_Bunny ("What would be blocked").
+					$confirmed = PNCP_Bunny::lock_confirmed( 'harden', $id );
+					if ( false === $confirmed ) {
+						PNCP_Bunny::to_preview( 'harden', $id );
+					}
+					if ( is_wp_error( $confirmed ) ) {
+						self::done( $confirmed );
+					}
+				}
 				self::done( self::edge( $id, 'edge_on' === $op ), 'edge_on' === $op ? __( 'Locked at the Bunny CDN edge.', 'scrapelock' ) : __( 'Removed from the Bunny CDN edge.', 'scrapelock' ) );
 				break;
 			case 'htaccess_write':

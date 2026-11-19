@@ -104,6 +104,21 @@ final class PNCP_Bunny {
 	const IP_SAMPLE_SHARE = 0.9;
 
 	/**
+	 * 3.9: the hidden admin page "What would be blocked", shown before every lock at Bunny.
+	 */
+	const PREVIEW_PAGE = 'scrapelock-bunny-lock';
+
+	/**
+	 * 3.9: the most attacking IPs whose normal traffic the preview looks up.
+	 */
+	const PREVIEW_IPS = 200;
+
+	/**
+	 * 3.9: the most IPs whose normal page views from the logs are kept (only IPs that also attacked).
+	 */
+	const MAX_NORMAL = 3000;
+
+	/**
 	 * The credentials of this request (false = not read yet).
 	 *
 	 * @var array{zone:string, token:string, source:string}|null|false
@@ -124,6 +139,7 @@ final class PNCP_Bunny {
 		add_filter( 'cron_schedules', array( __CLASS__, 'schedules' ) ); // phpcs:ignore WordPress.WP.CronInterval.ChangeDetected -- 15 minutes, the import interval.
 		add_action( self::CRON, array( __CLASS__, 'run' ) );
 		add_action( 'admin_post_' . self::ACTION, array( __CLASS__, 'handle' ) );
+		add_action( 'admin_menu', array( __CLASS__, 'preview_menu' ) ); // 3.9: "What would be blocked".
 		add_action( 'admin_init', array( __CLASS__, 'maybe_schedule' ) );
 		add_action( 'update_option_' . PNCP_OPTION, array( __CLASS__, 'settings_changed' ), 20, 2 );
 		add_action( 'update_option_' . PNCP_Edge::CONFIG, array( __CLASS__, 'edge_config_changed' ), 10, 2 );
@@ -523,12 +539,13 @@ final class PNCP_Bunny {
 			'error_time' => 0,
 			'logging'    => array(),
 			'ips'        => array(),
+			'normal'     => array(),
 			'hours'      => array(),
 			'struck'     => 0,
 			'skipped'    => 0,
 		);
 		$s        = array_merge( $defaults, array_intersect_key( $s, $defaults ) );
-		foreach ( array( 'logging', 'ips', 'hours' ) as $key ) {
+		foreach ( array( 'logging', 'ips', 'normal', 'hours' ) as $key ) {
 			$s[ $key ] = is_array( $s[ $key ] ) ? $s[ $key ] : array();
 		}
 		return $s;
@@ -1771,6 +1788,7 @@ final class PNCP_Bunny {
 			'agg'     => array(),
 			'minutes' => array(),
 			'errors'  => array(),
+			'normal'  => array(),
 			'hours'   => array(),
 			'skip'    => array(),
 			'skipped' => 0,
@@ -1871,11 +1889,19 @@ final class PNCP_Bunny {
 				$a['errors'][ $ip ]['paths'][ $p ] = isset( $a['errors'][ $ip ]['paths'][ $p ] ) ? $a['errors'][ $ip ]['paths'][ $p ] + 1 : 1;
 			}
 		}
+		// 3.9: normal page views per IP (answered, not a static file, not attack-looking), for the lock preview.
+		$detail = null;
+		if ( $status >= 200 && $status < 400 && '' === $at_edge && ! self::is_static( (string) $row['path'] ) && ( isset( $a['normal'][ $ip ] ) || count( $a['normal'] ) < 20000 ) ) {
+			$detail = self::classify( $row, $a['agents'] );
+			if ( '' === $detail ) {
+				$a['normal'][ $ip ] = isset( $a['normal'][ $ip ] ) ? $a['normal'][ $ip ] + 1 : 1;
+			}
+		}
 		// Requests that reached WordPress were already recorded there, unless "bunny_all_lines" asks for them too.
 		if ( ! $served && ! $a['cfg']['all_lines'] ) {
 			return;
 		}
-		$detail = self::classify( $row, $a['agents'] );
+		$detail = null === $detail ? self::classify( $row, $a['agents'] ) : $detail;
 		if ( '' === $detail && '' === $at_edge ) {
 			return;
 		}
@@ -1984,6 +2010,7 @@ final class PNCP_Bunny {
 		if ( $rec && method_exists( 'PNCP_Attacks', 'flush' ) ) {
 			PNCP_Attacks::flush();
 		}
+		self::note_normal( $a, $state );
 		$hours = isset( $state['hours'] ) && is_array( $state['hours'] ) ? $state['hours'] : array();
 		foreach ( $a['hours'] as $hour => $n ) {
 			$old            = isset( $hours[ $hour ] ) ? (array) $hours[ $hour ] : array( 0, 0 );
@@ -2197,6 +2224,572 @@ final class PNCP_Bunny {
 		echo '<li class="pncp-bunny-ips' . ( $text[1] ? ' pncp-edge-error' : '' ) . '">' . ( $text[1] ? '<strong>' : '' ) . esc_html( $text[0] ) . ( $text[1] ? '</strong>' : '' ) . '</li>';
 	}
 
+	/* ---------- 3.9: "What would be blocked", before every lock at Bunny ---------- */
+
+	/**
+	 * Keeps the normal page views of the IPs that also attacked in this run (from the logs), for the preview.
+	 * Only those IPs: the addresses of ordinary visitors are not stored.
+	 *
+	 * @param array<string, mixed> $a     Analysis.
+	 * @param array<string, mixed> $state State.
+	 */
+	private static function note_normal( &$a, &$state ) {
+		$normal = isset( $state['normal'] ) && is_array( $state['normal'] ) ? $state['normal'] : array();
+		$now    = time();
+		foreach ( $a['agg'] as $event ) {
+			$ip = (string) $event['ip'];
+			if ( '' === $ip || empty( $a['normal'][ $ip ] ) ) {
+				continue;
+			}
+			$old                = isset( $normal[ $ip ] ) && is_array( $normal[ $ip ] ) ? $normal[ $ip ] : array( 0, 0 );
+			$normal[ $ip ]      = array( (int) $old[0] + (int) $a['normal'][ $ip ], $now );
+			$a['normal'][ $ip ] = 0; // Counted once, even when the IP has several events.
+		}
+		$keep = $now - 8 * DAY_IN_SECONDS;
+		foreach ( $normal as $ip => $n ) {
+			if ( ! is_array( $n ) || (int) $n[1] < $keep ) {
+				unset( $normal[ $ip ] );
+			}
+		}
+		if ( count( $normal ) > self::MAX_NORMAL ) {
+			uasort(
+				$normal,
+				static function ( $x, $y ) {
+					return (int) $y[1] - (int) $x[1];
+				}
+			);
+			$normal = array_slice( $normal, 0, self::MAX_NORMAL, true );
+		}
+		$state['normal'] = $normal;
+	}
+
+	/**
+	 * Registers the hidden page of the preview (not in the menu; opened from the "Lock at Bunny" buttons).
+	 */
+	public static function preview_menu() {
+		$hook = add_submenu_page( '', __( 'Lock at Bunny CDN', 'scrapelock' ), '', 'manage_options', self::PREVIEW_PAGE, array( __CLASS__, 'render_preview_page' ) );
+		if ( $hook ) {
+			add_action(
+				'load-' . $hook,
+				static function () {
+					global $title;
+					$title = __( 'Lock at Bunny CDN', 'scrapelock' ); // phpcs:ignore WordPress.WP.GlobalVariablesOverride.Prohibited -- A hidden page has no title of its own.
+				}
+			);
+		}
+	}
+
+	/**
+	 * The address of the preview of a lock.
+	 *
+	 * @param string $kind preset (Bunny card) | harden (hardening point).
+	 * @param string $id   Preset or point.
+	 * @param string $back Where Cancel and the result go ('' = the Bunny card).
+	 * @return string
+	 */
+	public static function preview_url( $kind, $id, $back = '' ) {
+		return add_query_arg(
+			array(
+				'page'     => self::PREVIEW_PAGE,
+				'kind'     => 'harden' === $kind ? 'harden' : 'preset',
+				'id'       => sanitize_key( (string) $id ),
+				'back'     => rawurlencode( self::preview_back( (string) $back ) ),
+				'_wpnonce' => wp_create_nonce( 'pncp_bunny_preview' ),
+			),
+			admin_url( 'admin.php' )
+		);
+	}
+
+	/**
+	 * A safe return address in wp-admin, the Bunny card by default.
+	 *
+	 * @param string $back Address.
+	 * @return string
+	 */
+	private static function preview_back( $back ) {
+		$default = PNCP_Status::settings_url( array( 'tab' => 'bots' ) );
+		$back    = '' !== $back ? wp_validate_redirect( $back, $default ) : $default;
+		// Never back to the preview itself.
+		return false !== strpos( $back, 'page=' . self::PREVIEW_PAGE ) ? $default : $back;
+	}
+
+	/**
+	 * Sends the browser to the preview of a lock (a "Lock at Bunny" click without the confirmation).
+	 *
+	 * @param string $kind preset | harden.
+	 * @param string $id   Preset or point.
+	 */
+	public static function to_preview( $kind, $id ) {
+		$back = wp_get_referer();
+		wp_safe_redirect( self::preview_url( $kind, $id, $back ? $back : '' ) );
+		exit;
+	}
+
+	/**
+	 * The nonce action of the confirmation of one lock.
+	 *
+	 * @param string $kind preset | harden.
+	 * @param string $id   Preset or point.
+	 * @return string
+	 */
+	private static function confirm_action( $kind, $id ) {
+		return 'pncp_bunny_lock|' . $kind . '|' . $id;
+	}
+
+	/**
+	 * Was this lock confirmed on its preview? The caller has checked the capability and its own nonce. Also
+	 * refuses when the preview now has a blocker (it is built again: the data may have changed meanwhile).
+	 *
+	 * @param string $kind preset | harden.
+	 * @param string $id   Preset or point.
+	 * @return bool|WP_Error False: not confirmed (show the preview). WP_Error: refused.
+	 */
+	public static function lock_confirmed( $kind, $id ) {
+		$kind = 'harden' === $kind ? 'harden' : 'preset';
+		// phpcs:ignore WordPress.Security.NonceVerification.Missing -- This is the nonce check.
+		$nonce = isset( $_POST['pncp_confirm'] ) ? sanitize_text_field( wp_unslash( $_POST['pncp_confirm'] ) ) : '';
+		if ( '' === $nonce || ! wp_verify_nonce( $nonce, self::confirm_action( $kind, (string) $id ) ) ) {
+			return false;
+		}
+		$preview = self::lock_preview( $kind, (string) $id );
+		if ( is_wp_error( $preview ) ) {
+			return $preview;
+		}
+		if ( $preview['blockers'] ) {
+			return new WP_Error( 'pncp_bunny_blocked', implode( ' ', $preview['blockers'] ) );
+		}
+		return true;
+	}
+
+	/**
+	 * What a lock at Bunny would block, and who hit it: the preview shown before every lock.
+	 *
+	 * Extension point, filter 'pncp_bunny_lock_preview' ( array $preview, string $preset ): other parts add to
+	 * $preview['warnings'] (strings, shown above the Confirm button) and $preview['blockers'] (strings: any
+	 * blocker disables Confirm, and lock_confirmed() refuses the lock while one remains). $preset is the key of
+	 * presets() ('login', 'xmlrpc', 'probes', 'core_files'…), or 'harden_<point>' for a hardening point without
+	 * a preset. The other keys of $preview are described below; they are for display only.
+	 *
+	 * @param string $kind preset (Bunny card) | harden (hardening point).
+	 * @param string $id   Preset or point.
+	 * @return array<string, mixed>|WP_Error {
+	 *     @type string   $kind      preset | harden.
+	 *     @type string   $id        Preset or point.
+	 *     @type string   $preset    Preset key passed to the filter.
+	 *     @type string   $label     Name of the point.
+	 *     @type string   $blocks    What it blocks.
+	 *     @type string   $breaks    What may stop working.
+	 *     @type string[] $patterns  URL patterns Bunny refuses.
+	 *     @type string[] $except    URL patterns let through.
+	 *     @type string[] $allow     IPs let through.
+	 *     @type bool     $locked    Already locked.
+	 *     @type bool     $enforcing The rule blocks now (false: Monitor only or protection off).
+	 *     @type array    $hits      See preview_hits().
+	 *     @type array    $normal    See preview_normal().
+	 *     @type string[] $warnings  Warnings.
+	 *     @type string[] $blockers  Reasons the lock is refused.
+	 * }
+	 */
+	public static function lock_preview( $kind, $id ) {
+		$kind    = 'harden' === $kind ? 'harden' : 'preset';
+		$id      = sanitize_key( (string) $id );
+		$presets = self::presets();
+		$preview = array(
+			'kind'      => $kind,
+			'id'        => $id,
+			'preset'    => $id,
+			'label'     => '',
+			'blocks'    => '',
+			'breaks'    => '',
+			'patterns'  => array(),
+			'except'    => array(),
+			'allow'     => array(),
+			'locked'    => false,
+			'enforcing' => self::enforcing(),
+			'hits'      => array(),
+			'normal'    => array(),
+			'warnings'  => array(),
+			'blockers'  => array(),
+		);
+		if ( 'preset' === $kind ) {
+			if ( ! isset( $presets[ $id ] ) ) {
+				return new WP_Error( 'pncp_unknown', __( 'Unknown preset.', 'scrapelock' ) );
+			}
+			$p                   = $presets[ $id ];
+			$preview['label']    = (string) $p['label'];
+			$preview['blocks']   = (string) $p['blocks'];
+			$preview['breaks']   = (string) $p['breaks'];
+			$preview['patterns'] = array_values( (array) $p['patterns'] );
+			$preview['except']   = array_values( (array) $p['except'] );
+			$preview['locked']   = self::preset_locked( $id );
+			if ( self::via_hardening( $p ) ) {
+				// Locked through the hardening point: the point's patterns are the ones sent.
+				$point               = PNCP_Hardening::point( (string) $p['harden'] );
+				$preview['patterns'] = array_values( (array) $point['edge'] );
+				$preview['except']   = array();
+			}
+			if ( 'login' === $id ) {
+				$preview['allow'] = self::login_allowlist();
+			}
+		} else {
+			$point = class_exists( 'PNCP_Hardening' ) && method_exists( 'PNCP_Hardening', 'point' ) ? PNCP_Hardening::point( $id ) : null;
+			if ( ! is_array( $point ) || empty( $point['edge'] ) ) {
+				return new WP_Error( 'pncp_unknown', __( 'This point cannot be locked at the CDN.', 'scrapelock' ) );
+			}
+			$preview['label']    = (string) $point['label'];
+			$preview['patterns'] = array_values( (array) $point['edge'] );
+			$preview['locked']   = isset( self::rules()[ 'harden_' . $id ] );
+			$preview['preset']   = 'harden_' . $id;
+			foreach ( $presets as $key => $p ) {
+				if ( isset( $p['harden'] ) && $id === $p['harden'] ) {
+					$preview['preset'] = (string) $key;
+					$preview['blocks'] = (string) $p['blocks'];
+					$preview['breaks'] = (string) $p['breaks'];
+					break;
+				}
+			}
+			if ( '' === $preview['blocks'] && isset( $point['blocks'] ) && is_string( $point['blocks'] ) ) {
+				$preview['blocks'] = $point['blocks'];
+			}
+		}
+		$preview['hits']   = self::preview_hits( $preview['patterns'], 7 );
+		$preview['normal'] = self::preview_normal( $preview['hits']['top'] );
+		if ( $preview['locked'] ) {
+			$preview['warnings'][] = __( 'This point is already locked at Bunny: Confirm sends the rule again.', 'scrapelock' );
+		}
+		if ( ! $preview['enforcing'] ) {
+			$preview['warnings'][] = __( 'ScrapeLock does not block now (Monitor only or protection off): the rule is created switched off, and switched on when ScrapeLock blocks again.', 'scrapelock' );
+		}
+		if ( $preview['normal']['found'] > 0 ) {
+			$preview['warnings'][] = sprintf(
+				/* translators: %s: number of IPs */
+				_n( '%s IP that hit these addresses also used the site normally: check the list above before you lock.', '%s IPs that hit these addresses also used the site normally: check the list above before you lock.', $preview['normal']['found'], 'scrapelock' ),
+				number_format_i18n( $preview['normal']['found'] )
+			);
+		}
+		/**
+		 * Filters the preview of a lock at Bunny: add 'warnings' (shown) or 'blockers' (refuse the lock).
+		 *
+		 * @param array<string, mixed> $preview Preview, see PNCP_Bunny::lock_preview().
+		 * @param string               $preset  Preset key, or 'harden_<point>'.
+		 */
+		$filtered = apply_filters( 'pncp_bunny_lock_preview', $preview, $preview['preset'] );
+		if ( is_array( $filtered ) ) {
+			foreach ( array( 'warnings', 'blockers' ) as $key ) {
+				$preview[ $key ] = isset( $filtered[ $key ] ) ? array_values( array_filter( array_map( 'strval', (array) $filtered[ $key ] ), 'strlen' ) ) : $preview[ $key ];
+			}
+			$preview = array_merge( $filtered, array_intersect_key( $preview, array_flip( array( 'kind', 'id', 'preset', 'warnings', 'blockers' ) ) ) );
+		}
+		return $preview;
+	}
+
+	/**
+	 * A URL pattern of a rule ("*" = anything) as a LIKE on the recorded path. The record keeps the path without
+	 * the host and the query, which is what the patterns' "*" at both ends stand for.
+	 *
+	 * @param string $pattern Pattern.
+	 * @return string
+	 */
+	private static function pattern_like( $pattern ) {
+		global $wpdb;
+		$pattern = (string) preg_replace( '#^\*?https?://[^/*]*#i', '*', (string) $pattern );
+		return implode( '%', array_map( array( $wpdb, 'esc_like' ), explode( '*', $pattern ) ) );
+	}
+
+	/**
+	 * The requests of the last N days on paths that match the patterns, from the attack record (every category,
+	 * also "edge" from the imported Bunny logs).
+	 *
+	 * @param string[] $patterns Patterns.
+	 * @param int      $days     Days.
+	 * @return array{available:bool, requests:int, blocked:int, ips:int, no_ip:int, categories:array<string, int>, top:array<string, int>}
+	 */
+	public static function preview_hits( $patterns, $days ) {
+		global $wpdb;
+		$out   = array(
+			'available'  => false,
+			'requests'   => 0,
+			'blocked'    => 0,
+			'ips'        => 0,
+			'no_ip'      => 0,
+			'categories' => array(),
+			'top'        => array(),
+		);
+		$likes = array();
+		foreach ( array_slice( (array) $patterns, 0, self::MAX_PATTERNS ) as $pattern ) {
+			$like = self::pattern_like( (string) $pattern );
+			if ( '' !== trim( $like, '%' ) ) {
+				$likes[] = $like;
+			}
+		}
+		if ( ! $likes || ! class_exists( 'PNCP_Attacks' ) || ! method_exists( 'PNCP_Attacks', 'ready' ) || ! PNCP_Attacks::ready() ) {
+			return $out;
+		}
+		$out['available'] = true;
+		$since            = (int) ( floor( ( time() - (int) $days * DAY_IN_SECONDS ) / HOUR_IN_SECONDS ) * HOUR_IN_SECONDS );
+		$where            = '(' . implode( ' OR ', array_fill( 0, count( $likes ), 'path LIKE %s' ) ) . ')';
+		$args             = array_merge( array( PNCP_Attacks::table(), $since ), $likes );
+		// phpcs:disable WordPress.DB.DirectDatabaseQuery, WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.PreparedSQLPlaceholders.UnfinishedPrepare, WordPress.DB.PreparedSQLPlaceholders.ReplacementsWrongNumber -- $where holds only "path LIKE %s" placeholders, filled by prepare(); an admin page, not cached.
+		$total = $wpdb->get_row( $wpdb->prepare( "SELECT SUM(hits) AS hits, SUM(blocked) AS blocked, COUNT(DISTINCT NULLIF(ip, '')) AS ips, SUM(CASE WHEN ip = '' THEN hits ELSE 0 END) AS no_ip FROM %i WHERE hour_ts >= %d AND {$where}", $args ), ARRAY_A );
+		$cats  = $wpdb->get_results( $wpdb->prepare( "SELECT category, SUM(hits) AS hits FROM %i WHERE hour_ts >= %d AND {$where} GROUP BY category ORDER BY hits DESC", $args ), ARRAY_A );
+		$top   = $wpdb->get_results( $wpdb->prepare( "SELECT ip, SUM(hits) AS hits FROM %i WHERE hour_ts >= %d AND ip <> '' AND {$where} GROUP BY ip ORDER BY hits DESC LIMIT %d", array_merge( $args, array( self::PREVIEW_IPS ) ) ), ARRAY_A );
+		// phpcs:enable
+		if ( is_array( $total ) ) {
+			$out['requests'] = (int) $total['hits'];
+			$out['blocked']  = (int) $total['blocked'];
+			$out['ips']      = (int) $total['ips'];
+			$out['no_ip']    = (int) $total['no_ip'];
+		}
+		foreach ( (array) $cats as $row ) {
+			$out['categories'][ (string) $row['category'] ] = (int) $row['hits'];
+		}
+		foreach ( (array) $top as $row ) {
+			$out['top'][ (string) $row['ip'] ] = (int) $row['hits'];
+		}
+		return $out;
+	}
+
+	/**
+	 * Which of the IPs also had normal traffic: an administrator's IP (30 days), a sign-in to any account from it
+	 * (30 days), pages read, the human check passed or a sign-in in the reputation record (7 days), normal page
+	 * views at Bunny in the imported logs (8 days). Says which sources are not available.
+	 *
+	 * @param array<string, int> $ips IP => requests on the patterns.
+	 * @return array{checked:int, found:int, rows:array<int, array{ip:string, hits:int, why:string[]}>, sources:array<string, bool>}
+	 */
+	public static function preview_normal( $ips ) {
+		global $wpdb;
+		$state   = self::state();
+		$rep     = class_exists( 'PNCP_Reputation' ) && PNCP_Reputation::active();
+		$logs    = self::settings()['import'] && ! self::logs_anonymized( $state ) && ! empty( $state['last_ok'] );
+		$out     = array(
+			'checked' => 0,
+			'found'   => 0,
+			'rows'    => array(),
+			'sources' => array(
+				'admins'     => true,
+				'logins'     => class_exists( 'PNCP_Login' ),
+				'reputation' => $rep,
+				'logs'       => $logs,
+			),
+		);
+		$staff   = PNCP_Edge::staff();
+		$known   = array();
+		$since30 = time() - 30 * DAY_IN_SECONDS;
+		if ( $out['sources']['logins'] && $ips ) {
+			// The IPs users signed in from (PNCP_Login, as keyed hashes of the address): at most 500 accounts.
+			// phpcs:ignore WordPress.DB.DirectDatabaseQuery, WordPress.DB.SlowDBQuery.slow_db_query_meta_key -- An admin page, once.
+			$metas = $wpdb->get_col( $wpdb->prepare( "SELECT meta_value FROM {$wpdb->usermeta} WHERE meta_key = %s LIMIT 500", PNCP_Login::KNOWN_META ) );
+			foreach ( (array) $metas as $meta ) {
+				foreach ( (array) maybe_unserialize( $meta ) as $hash => $when ) {
+					if ( (int) $when > $since30 ) {
+						$known[ (string) $hash ] = true;
+					}
+				}
+			}
+		}
+		$since7 = time() - 7 * DAY_IN_SECONDS;
+		foreach ( $ips as $ip => $hits ) {
+			$ip = (string) $ip;
+			++$out['checked'];
+			$why = array();
+			$key = PNCP_Ip::limit_key( $ip );
+			if ( isset( $staff[ $key ] ) ) {
+				$why[] = __( 'an administrator used wp-admin from it (last 30 days)', 'scrapelock' );
+			}
+			if ( $known && isset( $known[ substr( hash_hmac( 'sha256', $key, wp_salt( 'auth' ) ), 0, 20 ) ] ) ) {
+				$why[] = __( 'someone signed in to an account from it (last 30 days)', 'scrapelock' );
+			}
+			if ( $rep ) {
+				$record = PNCP_Reputation::get( $ip );
+				$labels = array(
+					'login' => __( 'signed in', 'scrapelock' ),
+					'human' => __( 'passed the human check', 'scrapelock' ),
+					'page'  => __( 'opened pages', 'scrapelock' ),
+				);
+				foreach ( $labels as $event => $label ) {
+					if ( isset( $record[ $event ] ) && (int) $record[ $event ] >= $since7 ) {
+						/* translators: %s: what the IP did */
+						$why[] = sprintf( __( '%s (reputation record, last 7 days)', 'scrapelock' ), $label );
+					}
+				}
+			}
+			if ( $logs && isset( $state['normal'][ $ip ] ) && is_array( $state['normal'][ $ip ] ) ) {
+				/* translators: %s: number of pages */
+				$why[] = sprintf( __( 'opened %s pages through Bunny (logs)', 'scrapelock' ), number_format_i18n( (int) $state['normal'][ $ip ][0] ) );
+			}
+			if ( $why ) {
+				++$out['found'];
+				$out['rows'][] = array(
+					'ip'   => $ip,
+					'hits' => (int) $hits,
+					'why'  => $why,
+				);
+			}
+		}
+		return $out;
+	}
+
+	/**
+	 * The page "Lock at Bunny CDN": what would be blocked, with Confirm and Cancel.
+	 */
+	public static function render_preview_page() {
+		if ( ! current_user_can( 'manage_options' ) ) {
+			wp_die( esc_html__( 'You are not allowed to change this setting.', 'scrapelock' ), '', array( 'response' => 403 ) );
+		}
+		// phpcs:disable WordPress.Security.NonceVerification.Recommended -- Checked just below.
+		$nonce = isset( $_GET['_wpnonce'] ) ? sanitize_text_field( wp_unslash( $_GET['_wpnonce'] ) ) : '';
+		$kind  = isset( $_GET['kind'] ) && 'harden' === $_GET['kind'] ? 'harden' : 'preset';
+		$id    = isset( $_GET['id'] ) ? sanitize_key( wp_unslash( $_GET['id'] ) ) : '';
+		$back  = self::preview_back( isset( $_GET['back'] ) ? esc_url_raw( wp_unslash( $_GET['back'] ) ) : '' );
+		// phpcs:enable
+		$card = $back . ( false === strpos( $back, '#' ) ? ( 'preset' === $kind ? '#pncp-bunny' : '#pncp-hardening' ) : '' );
+		echo '<div class="wrap pncp-bunny-preview">';
+		if ( ! wp_verify_nonce( $nonce, 'pncp_bunny_preview' ) ) {
+			echo '<h1>' . esc_html__( 'Lock at Bunny CDN', 'scrapelock' ) . '</h1><div class="notice notice-error"><p>' . esc_html__( 'The link has expired. Go back and click “Lock at Bunny” again.', 'scrapelock' ) . '</p></div>';
+			echo '<p><a class="button" href="' . esc_url( $card ) . '">' . esc_html__( 'Back', 'scrapelock' ) . '</a></p></div>';
+			return;
+		}
+		$preview = self::lock_preview( $kind, $id );
+		if ( is_wp_error( $preview ) ) {
+			echo '<h1>' . esc_html__( 'Lock at Bunny CDN', 'scrapelock' ) . '</h1><div class="notice notice-error"><p>' . esc_html( $preview->get_error_message() ) . '</p></div>';
+			echo '<p><a class="button" href="' . esc_url( $card ) . '">' . esc_html__( 'Back', 'scrapelock' ) . '</a></p></div>';
+			return;
+		}
+		if ( PNCP_Lockdown::is_locked() ) {
+			$preview['blockers'][] = __( 'The site is locked with Lockdown: unlock it to change the rules at Bunny CDN.', 'scrapelock' );
+		}
+		if ( ! self::edge_available() ) {
+			$preview['blockers'][] = __( 'Bunny CDN is not connected.', 'scrapelock' );
+		}
+		/* translators: %s: name of the point */
+		echo '<h1>' . esc_html( sprintf( __( 'Lock at Bunny CDN: %s', 'scrapelock' ), $preview['label'] ) ) . '</h1>';
+		echo '<p class="description">' . esc_html__( 'Nothing is sent to Bunny until you click “Confirm”.', 'scrapelock' ) . '</p>';
+		self::render_preview_what( $preview );
+		self::render_preview_hits( $preview );
+		self::render_preview_normal( $preview );
+		foreach ( $preview['warnings'] as $text ) {
+			echo '<div class="notice notice-warning inline pncp-bunny-preview-warning"><p>' . esc_html( (string) $text ) . '</p></div>';
+		}
+		foreach ( $preview['blockers'] as $text ) {
+			echo '<div class="notice notice-error inline pncp-bunny-preview-blocker"><p><strong>' . esc_html( (string) $text ) . '</strong></p></div>';
+		}
+		$harden = 'harden' === $kind;
+		printf( '<form method="post" action="%s" class="pncp-bunny-confirm"><p>', esc_url( admin_url( 'admin-post.php' ) ) );
+		echo '<input type="hidden" name="action" value="' . esc_attr( $harden ? PNCP_Hardening::ACTION : self::ACTION ) . '">';
+		echo '<input type="hidden" name="op" value="' . esc_attr( $harden ? 'edge_on' : 'lock' ) . '">';
+		echo '<input type="hidden" name="id" value="' . esc_attr( $id ) . '">';
+		echo '<input type="hidden" name="pncp_confirm" value="' . esc_attr( wp_create_nonce( self::confirm_action( $kind, $id ) ) ) . '">';
+		wp_nonce_field( $harden ? PNCP_Hardening::ACTION : self::ACTION, '_wpnonce', false );
+		echo '<input type="hidden" name="_wp_http_referer" value="' . esc_attr( $back ) . '">';
+		printf( '<button type="submit" class="button button-primary"%1$s>%2$s</button> ', $preview['blockers'] ? ' disabled' : '', esc_html__( 'Confirm: lock at Bunny', 'scrapelock' ) );
+		echo '<a class="button" href="' . esc_url( $card ) . '">' . esc_html__( 'Cancel', 'scrapelock' ) . '</a>';
+		echo '</p></form></div>';
+	}
+
+	/**
+	 * Preview: the addresses that will be cut.
+	 *
+	 * @param array<string, mixed> $preview Preview.
+	 */
+	private static function render_preview_what( $preview ) {
+		echo '<h2>' . esc_html__( 'Addresses Bunny will refuse (403)', 'scrapelock' ) . '</h2>';
+		if ( '' !== (string) $preview['blocks'] ) {
+			echo '<p>' . esc_html( (string) $preview['blocks'] ) . '</p>';
+		}
+		echo '<p class="pncp-bunny-preview-patterns">';
+		foreach ( (array) $preview['patterns'] as $pattern ) {
+			echo '<code>' . esc_html( (string) $pattern ) . '</code> ';
+		}
+		echo '</p>';
+		if ( $preview['except'] ) {
+			/* translators: %s: URL patterns */
+			echo '<p>' . esc_html( sprintf( __( 'Except the addresses: %s', 'scrapelock' ), implode( ' ', (array) $preview['except'] ) ) ) . '</p>';
+		}
+		if ( $preview['allow'] ) {
+			/* translators: %s: list of IPs */
+			echo '<p>' . esc_html( sprintf( __( 'Except from these IPs: %s', 'scrapelock' ), implode( ', ', (array) $preview['allow'] ) ) ) . '</p>';
+		}
+		if ( '' !== (string) $preview['breaks'] ) {
+			echo '<p><strong>' . esc_html__( 'What may stop working:', 'scrapelock' ) . '</strong> ' . esc_html( (string) $preview['breaks'] ) . '</p>';
+		}
+	}
+
+	/**
+	 * Preview: who hit these addresses in the last 7 days.
+	 *
+	 * @param array<string, mixed> $preview Preview.
+	 */
+	private static function render_preview_hits( $preview ) {
+		$h = $preview['hits'];
+		echo '<h2>' . esc_html__( 'Requests on these addresses, last 7 days', 'scrapelock' ) . '</h2>';
+		if ( ! $h['available'] ) {
+			echo '<p class="pncp-bunny-preview-hits">' . esc_html__( 'Not available: the attack record is off or not set up, so ScrapeLock cannot say who asked for these addresses.', 'scrapelock' ) . '</p>';
+			return;
+		}
+		echo '<p class="pncp-bunny-preview-hits">' . esc_html(
+			sprintf(
+				/* translators: 1: requests, 2: IPs, 3: requests already refused */
+				__( '%1$s requests from %2$s IPs (%3$s of them already refused).', 'scrapelock' ),
+				number_format_i18n( (int) $h['requests'] ),
+				number_format_i18n( (int) $h['ips'] ),
+				number_format_i18n( (int) $h['blocked'] )
+			)
+		);
+		if ( (int) $h['no_ip'] > 0 ) {
+			/* translators: %s: requests */
+			echo ' ' . esc_html( sprintf( __( '%s requests were recorded without their address.', 'scrapelock' ), number_format_i18n( (int) $h['no_ip'] ) ) );
+		}
+		echo '</p>';
+		echo '<p class="description">' . esc_html__( 'From the attack record: what WordPress saw, and what Bunny served itself (imported from its logs, when the import is on). Normal visits are not recorded there.', 'scrapelock' ) . '</p>';
+		if ( $h['categories'] ) {
+			$labels = class_exists( 'PNCP_Attacks' ) ? PNCP_Attacks::categories() : array();
+			echo '<table class="widefat striped" style="max-width:640px"><thead><tr><th scope="col">' . esc_html__( 'What', 'scrapelock' ) . '</th><th scope="col">' . esc_html__( 'Requests', 'scrapelock' ) . '</th></tr></thead><tbody>';
+			foreach ( $h['categories'] as $cat => $n ) {
+				echo '<tr><td>' . esc_html( isset( $labels[ $cat ] ) ? $labels[ $cat ] : (string) $cat ) . '</td><td>' . esc_html( number_format_i18n( (int) $n ) ) . '</td></tr>';
+			}
+			echo '</tbody></table>';
+		}
+	}
+
+	/**
+	 * Preview: which of those IPs also used the site normally.
+	 *
+	 * @param array<string, mixed> $preview Preview.
+	 */
+	private static function render_preview_normal( $preview ) {
+		$n = $preview['normal'];
+		echo '<h2>' . esc_html__( 'Normal traffic from the same IPs', 'scrapelock' ) . '</h2>';
+		if ( ! $n['checked'] ) {
+			echo '<p class="pncp-bunny-preview-normal">' . esc_html__( 'No IP to check: no recorded request on these addresses.', 'scrapelock' ) . '</p>';
+		} elseif ( ! $n['found'] ) {
+			/* translators: %s: number of IPs */
+			echo '<p class="pncp-bunny-preview-normal">' . esc_html( sprintf( _n( 'The %s IP checked had no normal traffic in the data below.', 'None of the %s IPs checked had normal traffic in the data below.', $n['checked'], 'scrapelock' ), number_format_i18n( $n['checked'] ) ) ) . '</p>';
+		} else {
+			echo '<table class="widefat striped pncp-bunny-preview-normal" style="max-width:960px"><thead><tr><th scope="col">' . esc_html__( 'IP', 'scrapelock' ) . '</th><th scope="col">' . esc_html__( 'Requests on these addresses', 'scrapelock' ) . '</th><th scope="col">' . esc_html__( 'Also', 'scrapelock' ) . '</th></tr></thead><tbody>';
+			foreach ( array_slice( $n['rows'], 0, 50 ) as $row ) {
+				echo '<tr><td><code>' . esc_html( $row['ip'] ) . '</code></td><td>' . esc_html( number_format_i18n( (int) $row['hits'] ) ) . '</td><td>' . esc_html( implode( '; ', $row['why'] ) ) . '</td></tr>';
+			}
+			echo '</tbody></table>';
+		}
+		$src   = $n['sources'];
+		$lines = array(
+			__( 'Administrators\' IPs of the last 30 days: checked.', 'scrapelock' ),
+			$src['logins'] ? __( 'Sign-ins to accounts of the last 30 days: checked.', 'scrapelock' ) : __( 'Sign-ins to accounts: not available.', 'scrapelock' ),
+			$src['reputation'] ? __( 'Reputation record (pages read, human check, sign-ins, last 7 days): checked.', 'scrapelock' ) : __( 'Reputation record (pages read, human check): not available, the IP reputation is off.', 'scrapelock' ),
+			$src['logs'] ? __( 'Page views through Bunny in the imported logs: checked.', 'scrapelock' ) : __( 'Page views through Bunny in the logs: not available (the import is off, has not run yet, or the logs have anonymized IPs).', 'scrapelock' ),
+		);
+		echo '<ul class="pncp-bunny-preview-sources">';
+		foreach ( $lines as $line ) {
+			echo '<li>' . esc_html( $line ) . '</li>';
+		}
+		if ( $n['checked'] >= self::PREVIEW_IPS ) {
+			/* translators: %s: number of IPs */
+			echo '<li>' . esc_html( sprintf( __( 'Only the %s IPs with the most requests were checked.', 'scrapelock' ), number_format_i18n( self::PREVIEW_IPS ) ) ) . '</li>';
+		}
+		echo '</ul>';
+	}
+
 	/* ---------- Admin ---------- */
 
 	/**
@@ -2228,6 +2821,14 @@ final class PNCP_Bunny {
 		$presets = self::presets();
 		switch ( $op ) {
 			case 'lock':
+				// 3.9: only after "Confirm" on the preview ("What would be blocked").
+				$confirmed = self::lock_confirmed( 'preset', $id );
+				if ( false === $confirmed ) {
+					self::to_preview( 'preset', $id );
+				}
+				if ( is_wp_error( $confirmed ) ) {
+					self::done( $confirmed );
+				}
 				/* translators: %s: what is locked */
 				self::done( self::lock_preset( $id ), sprintf( __( 'Locked at Bunny CDN: %s.', 'scrapelock' ), isset( $presets[ $id ] ) ? $presets[ $id ]['label'] : $id ) . ( self::enforcing() ? '' : ' ' . __( 'The rule is switched off until ScrapeLock blocks (Monitor only or protection off).', 'scrapelock' ) ) );
 				break;
@@ -2618,8 +3219,8 @@ final class PNCP_Bunny {
 					self::button( 'unlock', __( 'Remove', 'scrapelock' ), array( 'id' => (string) $id ) );
 				}
 			} elseif ( ! $locked ) {
-				/* translators: %s: point */
-				self::button( 'lock', __( 'Lock at Bunny', 'scrapelock' ), array( 'id' => (string) $id ), $hits > 0 ? 'button button-small button-primary' : 'button button-small', sprintf( __( 'Block “%s” at Bunny CDN for everyone it applies to?', 'scrapelock' ), (string) $preset['label'] ) );
+				// 3.9: opens the preview "What would be blocked"; the lock happens only after "Confirm" there.
+				self::button( 'lock', __( 'Lock at Bunny…', 'scrapelock' ), array( 'id' => (string) $id ), $hits > 0 ? 'button button-small button-primary' : 'button button-small' );
 			}
 			echo '</td></tr>';
 		}
@@ -2680,7 +3281,9 @@ final class PNCP_Bunny {
 	 * @return string
 	 */
 	public static function privacy_policy() {
-		return __( 'When “Import attacks from Bunny CDN\'s logs” is on, this site downloads the logs of its own Bunny CDN pull zone (logging.bunnycdn.com) every 15 minutes. They contain the IP address, the address asked for, the referrer, the browser identification (User-Agent) and the country of each request. Only requests that look like attacks are kept, with the IP address, for as long as the attack record is kept; the rest is discarded at once. When a vulnerable address is locked at Bunny CDN, the IP addresses administrators used in the last 30 days may be sent to the site owner\'s Bunny account, so that they are let through.', 'scrapelock' );
+		return __( 'When “Import attacks from Bunny CDN\'s logs” is on, this site downloads the logs of its own Bunny CDN pull zone (logging.bunnycdn.com) every 15 minutes. They contain the IP address, the address asked for, the referrer, the browser identification (User-Agent) and the country of each request. Only requests that look like attacks are kept, with the IP address, for as long as the attack record is kept; the rest is discarded at once. When a vulnerable address is locked at Bunny CDN, the IP addresses administrators used in the last 30 days may be sent to the site owner\'s Bunny account, so that they are let through.', 'scrapelock' )
+			// 3.9: kept for the preview "What would be blocked".
+			. ' ' . __( 'For the IP addresses whose requests looked like attacks, the number of normal pages they opened through Bunny is also kept, for 8 days, so that ScrapeLock can warn before a lock at Bunny CDN would refuse a real visitor.', 'scrapelock' );
 	}
 
 	/**
@@ -2788,6 +3391,16 @@ final class PNCP_Bunny {
 					);
 				}
 				WP_CLI\Utils\format_items( $format, $items, array( 'preset', 'label', 'locked', 'rule' ) );
+				return;
+			case 'preview':
+				// 3.9: "What would be blocked" for a preset, or a hardening point as harden_<point>, as JSON.
+				$target  = isset( $args[1] ) ? sanitize_key( $args[1] ) : '';
+				$harden  = 0 === strpos( $target, 'harden_' );
+				$preview = self::lock_preview( $harden ? 'harden' : 'preset', $harden ? substr( $target, 7 ) : $target );
+				if ( is_wp_error( $preview ) ) {
+					WP_CLI::error( $preview->get_error_message() );
+				}
+				WP_CLI::log( (string) wp_json_encode( $preview, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE ) );
 				return;
 			case 'lock':
 				$fail( self::lock_preset( isset( $args[1] ) ? sanitize_key( $args[1] ) : '' ), __( 'Locked at Bunny CDN.', 'scrapelock' ) );

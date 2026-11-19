@@ -1062,7 +1062,7 @@ final class PNCP_Cli {
 	 * ## OPTIONS
 	 *
 	 * [<subcommand>]
-	 * : status, import, rules, presets, lock <preset>, unlock <preset|rule-id>, logging [--enable], parse <file>.
+	 * : status, import, rules, presets, preview <preset|harden_point>, lock <preset>, unlock <preset|rule-id>, logging [--enable], parse <file>.
 	 *
 	 * [<arg>]
 	 * : Preset (login, xmlrpc, probes, core_files), rule ID or log file.
