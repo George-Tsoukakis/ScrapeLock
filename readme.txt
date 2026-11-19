@@ -4,7 +4,7 @@ Tags: ai crawlers, anti-scraping, bot protection, rate limit, content protection
 Requires at least: 6.2
 Tested up to: 7.2
 Requires PHP: 7.4
-Stable tag: 3.8.0
+Stable tag: 3.9.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -22,7 +22,7 @@ Most content protection plugins disable right click in the browser. Scrapers and
 * **Attack report (Attacks tab).** Where bots hit, also when nothing is refused: failed sign-ins and the usernames tried, how many try wp-admin and wp-login.php, XML-RPC calls, scanner and plugin probes, per day and hour, with country, "Block IP", CSV, a dashboard widget and an optional weekly email.
 * **Vulnerable points.** Lock XML-RPC, wp-admin, the sign-in page, readme.html, PHP in uploads and more with one click, with the risk explained; Apache rules written with a self-test and rollback, Nginx rules to copy.
 * **Sign-in protection.** Failed logins limited per IP and per username (wp-login.php, every XML-RPC multicall call, application passwords), one error message, and an optional sign-in address of your own.
-* **Bunny CDN, deeper.** Reads your pull zone's logs to see attacks on cached pages, and locks wp-login.php, xmlrpc.php and .env/.git probes at Bunny.
+* **Bunny CDN, deeper.** Reads your pull zone's logs to see attacks on cached pages, and locks wp-login.php, xmlrpc.php and .env/.git probes at Bunny. New in 3.9: every lock first shows what it would block and who hit it, and waits for your Confirm.
 * **Stealth (optional).** BuiltWith and Wappalyzer get neutral addresses (/assets/…) instead of /wp-content/, another REST prefix and /sitemap.xml, without WordPress-only markup. Tested before it turns on.
 
 = What it stops, and what it cannot =
@@ -145,7 +145,7 @@ Lockdown's file check also compares WordPress and the plugins hosted on WordPres
 Optional blocking at the CDN (off by default) uses the API of the CDN you choose, with your token. It sends only the IPs ScrapeLock blocks temporarily (IPv4, IPv6 or an IPv6 /64), each with the reason and end time, and removes them when the block ends. Saving the setting, or "Test connection", checks the token and the zone; with Cloudflare it also adds a test block for a documentation address (203.0.113.x) and removes it again.
 
 * **Cloudflare API** (IP Access rules of your zone), only when the CDN is set to Cloudflare: https://api.cloudflare.com/client/v4/zones/ZONE_ID/firewall/access_rules/rules, and for the check https://api.cloudflare.com/client/v4/user/tokens/verify (or /accounts/ACCOUNT_ID/tokens/verify) and /zones/ZONE_ID. Provided by Cloudflare, Inc.: [Terms of service](https://www.cloudflare.com/website-terms/), [Privacy policy](https://www.cloudflare.com/privacypolicy/).
-* **Bunny CDN API** (blocked IPs of your Pull Zone), only when the CDN is set to Bunny CDN: https://api.bunny.net/pullzone/PULL_ZONE_ID (addBlockedIp, removeBlockedIp, and reading the zone's list of blocked IPs). Provided by BunnyWay d.o.o. (bunny.net): [Terms of service](https://bunny.net/tos/), [Privacy policy](https://bunny.net/privacy/).
+* **Bunny CDN API** (blocked IPs of your Pull Zone), only when the CDN is set to Bunny CDN and, for the temporary blocks, "Send temporary blocks to the CDN" is on (3.9): https://api.bunny.net/pullzone/PULL_ZONE_ID (addBlockedIp, removeBlockedIp, and reading the zone's list of blocked IPs). Provided by BunnyWay d.o.o. (bunny.net): [Terms of service](https://bunny.net/tos/), [Privacy policy](https://bunny.net/privacy/).
 
 **Bunny CDN, deeper (3.8, off until you use it).** With the Bunny CDN connection of "Blocking at the CDN" (or a pull zone ID and API key entered in the Bunny card), and your API key:
 
@@ -247,7 +247,7 @@ If your server already replaces the IP, keep "REMOTE_ADDR". Otherwise set "Real 
 
 = Can ScrapeLock block scrapers at Cloudflare or Bunny CDN? =
 
-Yes. In "Blocking at the CDN", choose Cloudflare (an API token with only Zone → Firewall Services → Edit, for this zone) or Bunny CDN (your API key) and the zone ID; the token can go in `wp-config.php` (`SCRAPELOCK_EDGE_TOKEN`) instead of the database. Every temporary block is then also made at the CDN and removed when it ends. Your own rules are never changed; administrators' recent IPs, search engines and the CDN's addresses are never blocked there. Bunny CDN blocks single addresses only. Turning it off removes ScrapeLock's blocks.
+Yes. In "Blocking at the CDN", choose Cloudflare (an API token with only Zone → Firewall Services → Edit, for this zone) or Bunny CDN (your API key) and the zone ID; the token can go in `wp-config.php` (`SCRAPELOCK_EDGE_TOKEN`) instead of the database. "Save and test the connection" only connects and tests. Once you turn on "Send temporary blocks to the CDN" (3.9; off on new sites, kept on for sites that already sent their blocks), every temporary block is also made at the CDN and removed when it ends. Your own rules are never changed; administrators' recent IPs, search engines and the CDN's addresses are never blocked there. Bunny CDN blocks single addresses only. Turning it off removes ScrapeLock's blocks.
 
 = Can someone go around my CDN? =
 
@@ -303,7 +303,7 @@ No. A username under attack is paused for a few minutes, but not for IPs it sign
 
 = My site is behind Bunny CDN. What does ScrapeLock do with it? =
 
-Under Bots → Blocking at the CDN, the Bunny card reads the pull zone's logs (turn on logging at the pull zone; ScrapeLock has a button for it) and records attacks Bunny answered from its cache, which WordPress never saw. "Lock at Bunny" creates an Edge Rule in your own Bunny account that blocks an address (wp-login.php except your IPs, xmlrpc.php, .env/.git probes, readme.html…) before it reaches your server. ScrapeLock only changes rules it created (their description starts with "ScrapeLock:"); in Monitor only they are switched off. If a lock of wp-login.php keeps you out after your IP changed, remove the rule in the bunny.net dashboard or run wp scrapelock bunny unlock preset_login.
+Under Bots → Blocking at the CDN, the Bunny card reads the pull zone's logs (turn on logging at the pull zone; ScrapeLock has a button for it) and records attacks Bunny answered from its cache, which WordPress never saw. "Lock at Bunny" creates an Edge Rule in your own Bunny account that blocks an address (wp-login.php except your IPs, xmlrpc.php, .env/.git probes, readme.html…) before it reaches your server. Before every lock, ScrapeLock shows the addresses it cuts, the requests and IPs that hit them in the last 7 days and which of those IPs also used the site normally; nothing is sent before you click Confirm. wp-login.php is locked only when "Allowed IPs for the login page at Bunny" holds your current IP (an IPv6 /64 is fine). ScrapeLock only changes rules it created (their description starts with "ScrapeLock:"); in Monitor only they are switched off. If a lock of wp-login.php keeps you out after your IP changed, remove the rule in the bunny.net dashboard or run wp scrapelock bunny unlock preset_login.
 
 = Can ScrapeLock hide that my site runs on WordPress? =
 
@@ -355,6 +355,16 @@ No, on purpose: only an app code, a recovery code or the SCRAPELOCK_UNLOCK line 
 6. Dashboard widget with the protection status and the last 24 hours.
 
 == Changelog ==
+
+= 3.9.0 =
+* New: "Send temporary blocks to the CDN", a switch of its own under "Blocking at the CDN". Off on new installs: saving the API key or token no longer sends any block. Sites upgraded from 3.8 that already sent their temporary blocks keep it on, and administrators see a one-time notice about it. "Save and test the connection" only connects and tests. In Monitor only nothing that blocks is sent to the CDN. Blocks sent before the switch is turned off are removed when their temporary block ends. Filter `pncp_edge_api_base`.
+* New: every Bunny log import (and "Import now") checks whether the log lines carry full IPs or anonymized ones (IPv4 ending in .0, IPv6 cut to /64, masked or dropped addresses), also when no attack was found. The Bunny card shows "The logs have full IPs" or the warning "Log anonymization is on: ScrapeLock cannot block from the logs", with the time of the check; with anonymized logs, IPs too fast at the CDN are not counted toward a block. `wp scrapelock bunny status` shows the result (log_ips).
+* New: "What would be blocked" before every lock at Bunny (Bunny card and Vulnerable points): the addresses Bunny will refuse, the requests and IPs that hit them in the last 7 days, and which of those IPs also used the site normally (opened pages, signed in, passed the human check, an administrator). The lock is made only after "Confirm". `wp scrapelock bunny preview <preset>`. Filter `pncp_bunny_lock_preview` (warnings, blockers).
+* New: safer lock of wp-login.php at Bunny. The Bunny card suggests the IPs administrators used in the last 30 days (IPv6 as its /64) for "Allowed IPs for the login page at Bunny"; nothing is added until you tick them and click "Add selected". The lock is refused while the list is empty, does not cover your current IP, or ScrapeLock cannot see your real IP. A lock made from 3.9 sends only this list; a login rule made with 3.8 keeps following the administrators' IPs until it is removed and locked again.
+* New: warning before XML-RPC is locked at the CDN, when Jetpack is active, application passwords exist, or xmlrpc.php was used successfully (signed-in calls, accepted pingbacks) in the last 30 days, with what stops working.
+* Fix: "Trust Bunny CDN addresses" said "Default: on" on sites where it was off. Sites installed before 2.6 got it off when they were upgraded; the note now says so (for every setting whose upgrade value differs from the new-install default). When Bunny CDN is in use and its addresses are not trusted, "Blocking at the CDN" warns and offers a one-click "Trust Bunny CDN addresses". Upgrades never turn it on by themselves.
+* Change: after Save, Test, Import now, Lock, Confirm, Remove or Disconnect, the page comes back to "Blocking at the CDN (advanced)" opened at the part you used, so its buttons stay in view.
+* Privacy: the counts of normal page views per IP from the Bunny logs are kept only for IPs that also attacked, for 8 days; successful XML-RPC use is kept as times and the last method name (no user, no IP), for 30 days. Both are removed on uninstall with the other new options.
 
 = 3.8.0 =
 * New: Attacks tab with the full attack report: KPIs, timeline per day and hour, kinds of attack, addresses attacked most with "Lock this", wp-admin and sign-in attempts with the usernames tried, top IPs with country and reputation and "Block 24 h" / "Always block", User-Agents, Bunny CDN edge, CSV export, dashboard widget, optional weekly email (`wp scrapelock attack-report`).
@@ -431,4 +441,9 @@ No, on purpose: only an app code, a recovery code or the SCRAPELOCK_UNLOCK line 
 * Readme: the Lockdown section now lists what is put back when it is changed in the database, and what is not kept.
 
 The changes of 3.5.0 and earlier versions are in changelog.txt in the plugin folder.
+
+== Upgrade Notice ==
+
+= 3.9.0 =
+New switch "Send temporary blocks to the CDN": off on new installs. Sites that already send their temporary blocks to Cloudflare or Bunny CDN keep it on after the upgrade (a notice says so). Every lock at Bunny now asks for a Confirm first, and wp-login.php needs your IP in "Allowed IPs for the login page at Bunny".
 
