@@ -2383,6 +2383,8 @@ final class PNCP_Edge {
 			'edge_send_on'  => array( 'success', __( '“Send temporary blocks to the CDN” is on: the IPs ScrapeLock blocks temporarily are also blocked at the CDN from now on (within a minute or two).', 'scrapelock' ) ),
 			'edge_send_off' => array( 'success', __( '“Send temporary blocks to the CDN” is off: no new block is sent. The blocks sent before stay at the CDN until their temporary block ends.', 'scrapelock' ) ),
 			'edge_send_nc'  => array( 'error', __( 'Connect the CDN first (“Save and test the connection”), then turn on sending.', 'scrapelock' ) ),
+			'edge_trust_on' => array( 'success', __( '“Trust Bunny CDN addresses” is on: the real-IP header is now read from requests that come from Bunny CDN edge servers.', 'scrapelock' ) ),
+			'edge_trust_nl' => array( 'warning', __( '“Trust Bunny CDN addresses” is on, but the list of Bunny edge servers could not be downloaded. Until it is, no Bunny address is trusted. It will try again tomorrow, or use “Refresh now” under “Official IP lists”.', 'scrapelock' ) ),
 		);
 	}
 
@@ -2475,8 +2477,11 @@ final class PNCP_Edge {
 			wp_safe_redirect( $back ? $back : admin_url() );
 			exit;
 		}
-		if ( PNCP_Lockdown::is_locked() || ! in_array( $op, array( 'send_on', 'send_off' ), true ) ) {
+		if ( PNCP_Lockdown::is_locked() || ! in_array( $op, array( 'send_on', 'send_off', 'trust_bunny' ), true ) ) {
 			self::switch_back( 'error' );
+		}
+		if ( 'trust_bunny' === $op ) {
+			self::trust_bunny();
 		}
 		$on = 'send_on' === $op;
 		if ( $on && ! self::usable() ) {
@@ -2487,6 +2492,78 @@ final class PNCP_Edge {
 		delete_option( self::NOTICE ); // The administrator has seen the switch and decided.
 		self::soon();
 		self::switch_back( $on ? 'edge_send_on' : 'edge_send_off' );
+	}
+
+	/**
+	 * Is Bunny CDN in use here: the CDN of "Blocking at the CDN", or the own connection of the Bunny card?
+	 *
+	 * @return bool
+	 */
+	public static function bunny_in_use() {
+		return 'bunny' === self::config()['provider'] || ( class_exists( 'PNCP_Bunny' ) && null !== PNCP_Bunny::credentials() );
+	}
+
+	/**
+	 * 3.9: is the warning of render_trust_warning() due (also opens "Blocking at the CDN", so it is seen)?
+	 *
+	 * @param array<string, mixed> $s Settings.
+	 * @return bool
+	 */
+	public static function trust_warning_due( $s ) {
+		return empty( $s['trust_bunny'] ) && self::bunny_in_use();
+	}
+
+	/**
+	 * 3.9: Bunny CDN is in use but "Trust Bunny CDN addresses" is off (every site installed before 2.6 got it off
+	 * on upgrade, see PNCP_Options::new_in_260()). Then X-Real-IP / X-Forwarded-For from Bunny are not read and
+	 * Bunny's country header is ignored: ScrapeLock may see Bunny's servers instead of the visitors, and limit,
+	 * block and send to the CDN the wrong address. Never turned on silently: a warning with a one-click fix.
+	 *
+	 * @param array<string, mixed> $s Settings.
+	 */
+	public static function render_trust_warning( $s ) {
+		if ( ! self::trust_warning_due( $s ) ) {
+			return;
+		}
+		$remote = PNCP_Ip::remote_addr();
+		$via    = PNCP_Ip::remote_is_bunny();
+		echo '<div class="notice notice-warning inline pncp-edge-trust-warning" id="pncp-edge-trust-warning"><p><strong>' . esc_html__( 'Bunny CDN is in use, but “Trust Bunny CDN addresses” is off.', 'scrapelock' ) . '</strong> ';
+		if ( $via ) {
+			/* translators: %s: IP address */
+			echo esc_html( sprintf( __( 'This page came through a Bunny server (%s), and ScrapeLock does not read the real visitor IP from it: limits, blocks, the attack record and the blocks sent to Bunny would hit Bunny\'s servers instead of the visitors, unless that address is in “Other trusted proxies”.', 'scrapelock' ), $remote ) );
+		} else {
+			esc_html_e( 'If visitors reach this site through Bunny and “Real visitor IP” is X-Real-IP or X-Forwarded-For, the header is not read from Bunny\'s servers: limits, blocks, the attack record and the blocks sent to Bunny would hit Bunny\'s servers instead of the visitors. Bunny\'s country header is ignored too.', 'scrapelock' );
+		}
+		echo '</p><p>';
+		/* translators: 1: IP address ScrapeLock uses, 2: REMOTE_ADDR */
+		echo esc_html( sprintf( __( 'IP ScrapeLock uses for you now: %1$s (REMOTE_ADDR: %2$s).', 'scrapelock' ), PNCP_Ip::client_ip(), $remote ) ) . ' ';
+		esc_html_e( 'Sites installed before version 2.6 got this setting off when they were upgraded; new installs have it on. It is not turned on without you.', 'scrapelock' );
+		echo '</p>';
+		if ( ! PNCP_Lockdown::is_locked() ) {
+			printf( '<form method="post" action="%s">', esc_url( admin_url( 'admin-post.php' ) ) );
+			printf( '<input type="hidden" name="action" value="%s"><input type="hidden" name="op" value="trust_bunny">', esc_attr( self::SWITCH_ACTION ) );
+			self::switch_nonce();
+			echo '<p>';
+			submit_button( __( 'Trust Bunny CDN addresses', 'scrapelock' ), 'primary', 'submit', false, array( 'id' => 'pncp-edge-trust-submit' ) );
+			echo ' <a href="' . esc_url( PNCP_Status::settings_url( array( 'tab' => 'bots' ) ) . '#pncp-sec-ip' ) . '">' . esc_html__( 'Check “Real visitor IP”', 'scrapelock' ) . '</a></p></form>';
+		}
+		echo '</div>';
+	}
+
+	/**
+	 * The one click of render_trust_warning(): "Trust Bunny CDN addresses" on (only that setting), and the list of
+	 * Bunny edge servers downloaded now if it is missing.
+	 */
+	private static function trust_bunny() {
+		update_option( PNCP_OPTION, array_merge( PNCP_Options::stored(), array( 'trust_bunny' => 1 ) ) );
+		PNCP_Options::flush();
+		PNCP_Ip::reset();
+		$listed = (bool) PNCP_Ip::list_of( 'bunny' );
+		if ( ! $listed ) {
+			$result = PNCP_Ip::refresh_lists();
+			$listed = ! empty( $result['bunny'] );
+		}
+		self::switch_back( $listed ? 'edge_trust_on' : 'edge_trust_nl' );
 	}
 
 	/**

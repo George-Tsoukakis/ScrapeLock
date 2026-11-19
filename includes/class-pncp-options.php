@@ -825,6 +825,38 @@ final class PNCP_Options {
 	}
 
 	/**
+	 * 3.9: the settings whose value on sites upgraded from an older version differs from the default of new
+	 * installs, with that value and the version that added them (new_in_240() to new_in_300()). The settings page
+	 * says so next to such a field, so "Default: on" does not read as if this site had been changed by hand.
+	 * E.g. "Trust Bunny CDN addresses": on for new installs, off on every site that existed before 2.6 (and on
+	 * every site upgraded from 1.x).
+	 *
+	 * @return array<string, array{value:int|string, since:string}>
+	 */
+	public static function upgrade_values() {
+		$defaults = self::defaults();
+		$out      = array();
+		$sets     = array(
+			'3.0' => self::new_in_300(),
+			'2.9' => self::new_in_290(),
+			'2.6' => self::new_in_260(),
+			'2.5' => self::new_in_250(),
+			'2.4' => self::new_in_240(),
+		);
+		foreach ( $sets as $since => $values ) {
+			foreach ( $values as $key => $value ) {
+				if ( isset( $defaults[ $key ] ) && (string) $defaults[ $key ] !== (string) $value ) {
+					$out[ $key ] = array(
+						'value' => $value,
+						'since' => (string) $since,
+					);
+				}
+			}
+		}
+		return $out;
+	}
+
+	/**
 	 * The setting added in 3.9, with the value existing sites get on upgrade. Up to 3.8 the temporary blocks went
 	 * to the CDN as soon as a connection was saved: a site with a saved connection keeps sending them (on), every
 	 * other site starts with the switch off, as new installs do.

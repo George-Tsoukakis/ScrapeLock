@@ -1625,7 +1625,8 @@ final class PNCP_Admin {
 		// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Only decides whether a part is shown open.
 		$message = isset( $_GET['pncp_message'] ) ? sanitize_key( wp_unslash( $_GET['pncp_message'] ) ) : '';
 		$open    = 0 === strpos( $message, 'edge' ) || ( $usable && ( '' !== $edge['error'] || ! empty( $s['trust_any_proxy'] ) ) )
-			|| false !== get_transient( 'pncp_bunny_msg_' . get_current_user_id() ); // 3.8: after a click on the Bunny card.
+			|| false !== get_transient( 'pncp_bunny_msg_' . get_current_user_id() ) // 3.8: after a click on the Bunny card.
+			|| PNCP_Edge::trust_warning_due( $s ); // 3.9: Bunny in use, its addresses not trusted.
 		printf(
 			'<details class="pncp-advanced" id="pncp-sec-edge"%1$s><summary><h2 class="pncp-advanced__title">%2$s</h2> <span class="pncp-advanced__state">%3$s</span></summary>',
 			$open ? ' open' : '',
@@ -1662,6 +1663,7 @@ final class PNCP_Admin {
 		if ( $locked ) {
 			echo '<p class="description">' . esc_html__( 'The site is locked: this setting cannot be changed until it is unlocked.', 'scrapelock' ) . '</p>';
 		}
+		PNCP_Edge::render_trust_warning( $s ); // 3.9.
 		if ( ! empty( $s['trust_any_proxy'] ) && PNCP_Edge::usable() ) {
 			echo '<div class="pncp-inline-warning"><p>' . esc_html__( 'Paused: the real visitor IP is read from a header without checking the proxy, so anyone could get any address blocked. Turn off “Trust every request” under “Real visitor IP” first.', 'scrapelock' ) . '</p></div>';
 		}

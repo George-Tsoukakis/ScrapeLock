@@ -258,7 +258,37 @@ final class PNCP_Admin_Fields {
 		} else {
 			return '';
 		}
+		$text = self::upgrade_note( $key, $s, $text );
 		return sprintf( '<span class="pncp-default-note" id="%1$s">%2$s</span>', esc_attr( 'pncp-' . $key . '-default' ), esc_html( $text ) );
+	}
+
+	/**
+	 * 3.9: a setting that sites upgraded from an older version got with another value than new installs
+	 * (PNCP_Options::upgrade_values()), and that still has that value here: the note says both, e.g. "Default on
+	 * new installs: on. Sites installed before 2.6 got it off when they were upgraded." Otherwise the note as it is.
+	 *
+	 * @param string               $key  Field.
+	 * @param array<string, mixed> $s    Settings.
+	 * @param string               $text The note so far ("Default: on").
+	 * @return string
+	 */
+	private static function upgrade_note( $key, $s, $text ) {
+		$upgrade = PNCP_Options::upgrade_values();
+		if ( ! isset( $upgrade[ $key ] ) || (string) $s[ $key ] !== (string) $upgrade[ $key ]['value'] ) {
+			return $text;
+		}
+		$defaults = PNCP_Options::defaults();
+		if ( in_array( $key, PNCP_Options::bool_keys(), true ) ) {
+			$text = empty( $defaults[ $key ] )
+				/* translators: %s: version number, e.g. 2.6 */
+				? sprintf( __( 'Default on new installs: off. Sites installed before %s got it on when they were upgraded.', 'scrapelock' ), $upgrade[ $key ]['since'] )
+				/* translators: %s: version number, e.g. 2.6 */
+				: sprintf( __( 'Default on new installs: on. Sites installed before %s got it off when they were upgraded.', 'scrapelock' ), $upgrade[ $key ]['since'] );
+		} else {
+			/* translators: 1: the default number, 2: version number, e.g. 2.6, 3: the value upgraded sites got */
+			$text = sprintf( __( 'Default on new installs: %1$s. Sites installed before %2$s got %3$s when they were upgraded.', 'scrapelock' ), number_format_i18n( (int) $defaults[ $key ] ), $upgrade[ $key ]['since'], number_format_i18n( (int) $upgrade[ $key ]['value'] ) );
+		}
+		return $text;
 	}
 
 	/**
