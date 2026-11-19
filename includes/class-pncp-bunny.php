@@ -119,6 +119,16 @@ final class PNCP_Bunny {
 	const MAX_NORMAL = 3000;
 
 	/**
+	 * 3.9: the most IPs kept per lockable address and day from the logs (the requests are all counted).
+	 */
+	const POINT_IPS = 200;
+
+	/**
+	 * 3.9: days the requests for the lockable addresses are kept from the logs (the preview shows 7).
+	 */
+	const POINT_DAYS = 8;
+
+	/**
 	 * The credentials of this request (false = not read yet).
 	 *
 	 * @var array{zone:string, token:string, source:string}|null|false
@@ -543,12 +553,14 @@ final class PNCP_Bunny {
 			'logging'    => array(),
 			'ips'        => array(),
 			'normal'     => array(),
+			'points'     => array(),
+			'points_0'   => 0,
 			'hours'      => array(),
 			'struck'     => 0,
 			'skipped'    => 0,
 		);
 		$s        = array_merge( $defaults, array_intersect_key( $s, $defaults ) );
-		foreach ( array( 'logging', 'ips', 'normal', 'hours' ) as $key ) {
+		foreach ( array( 'logging', 'ips', 'normal', 'points', 'hours' ) as $key ) {
 			$s[ $key ] = is_array( $s[ $key ] ) ? $s[ $key ] : array();
 		}
 		return $s;
@@ -2001,6 +2013,7 @@ final class PNCP_Bunny {
 				$row = self::parse_line( $line );
 				// Lines from before the import was turned on (or before another pull zone was set) are not imported.
 				if ( $row && $row['ts'] >= $floor ) {
+					self::count_points( $analysis, $row ); // 3.9: every request for a lockable address, for the preview.
 					self::analyse( $analysis, $row );
 					++$result['lines'];
 				}
@@ -2225,6 +2238,8 @@ final class PNCP_Bunny {
 			'minutes' => array(),
 			'errors'  => array(),
 			'normal'  => array(),
+			'points'  => array(),
+			'any_rx'  => self::point_any_regex(),
 			'hours'   => array(),
 			'skip'    => array(),
 			'skipped' => 0,
@@ -2327,7 +2342,7 @@ final class PNCP_Bunny {
 		}
 		// 3.9: normal page views per IP (answered, not a static file, not attack-looking), for the lock preview.
 		$detail = null;
-		if ( $status >= 200 && $status < 400 && '' === $at_edge && ! self::is_static( (string) $row['path'] ) && ( isset( $a['normal'][ $ip ] ) || count( $a['normal'] ) < 20000 ) ) {
+		if ( $status >= 200 && $status < 400 && '' === $at_edge && ! self::is_static( (string) $row['path'] ) && ( isset( $a['normal'][ $ip ] ) || count( $a['normal'] ) < 20000 ) && ! self::is_point( $a, (string) $row['url'] ) ) {
 			$detail = self::classify( $row, $a['agents'] );
 			if ( '' === $detail ) {
 				$a['normal'][ $ip ] = isset( $a['normal'][ $ip ] ) ? $a['normal'][ $ip ] + 1 : 1;
@@ -2674,8 +2689,17 @@ final class PNCP_Bunny {
 	private static function note_normal( &$a, &$state ) {
 		$normal = isset( $state['normal'] ) && is_array( $state['normal'] ) ? $state['normal'] : array();
 		$now    = time();
+		$ips    = array();
 		foreach ( $a['agg'] as $event ) {
-			$ip = (string) $event['ip'];
+			$ips[] = (string) $event['ip'];
+		}
+		// 3.9: and the IPs that asked for an address that can be locked at Bunny (wp-login.php, xmlrpc.php…).
+		foreach ( $a['points'] as $days ) {
+			foreach ( $days as $c ) {
+				$ips = array_merge( $ips, array_map( 'strval', array_keys( $c['ips'] ) ) );
+			}
+		}
+		foreach ( array_unique( $ips ) as $ip ) {
 			if ( '' === $ip || empty( $a['normal'][ $ip ] ) ) {
 				continue;
 			}
@@ -2699,6 +2723,187 @@ final class PNCP_Bunny {
 			$normal = array_slice( $normal, 0, self::MAX_NORMAL, true );
 		}
 		$state['normal'] = $normal;
+		self::note_points( $a, $state );
+	}
+
+	/**
+	 * 3.9: the URL patterns of every address that can be locked at Bunny (the presets and the hardening points
+	 * with a rule at the CDN), as Bunny matches them: on the whole URL, "*" for anything, case-insensitive.
+	 *
+	 * @return array<string, string> Pattern => regular expression.
+	 */
+	public static function point_patterns() {
+		$patterns = array();
+		foreach ( self::presets() as $preset ) {
+			$patterns = array_merge( $patterns, array_map( 'strval', isset( $preset['patterns'] ) ? (array) $preset['patterns'] : array() ) );
+		}
+		if ( class_exists( 'PNCP_Hardening' ) && method_exists( 'PNCP_Hardening', 'points' ) ) {
+			foreach ( PNCP_Hardening::points() as $point ) {
+				$patterns = array_merge( $patterns, array_map( 'strval', isset( $point['edge'] ) ? (array) $point['edge'] : array() ) );
+			}
+		}
+		$out = array();
+		foreach ( array_unique( $patterns ) as $pattern ) {
+			if ( '' !== trim( $pattern, '*' ) ) {
+				$out[ $pattern ] = '#^' . str_replace( '\*', '.*', preg_quote( $pattern, '#' ) ) . '$#i';
+			}
+		}
+		return $out;
+	}
+
+	/**
+	 * One regular expression for all of point_patterns(), to skip most lines with one test ('' = none).
+	 *
+	 * @return string
+	 */
+	private static function point_any_regex() {
+		$parts = array();
+		foreach ( array_keys( self::point_patterns() ) as $pattern ) {
+			$parts[] = str_replace( '\*', '.*', preg_quote( $pattern, '#' ) );
+		}
+		return $parts ? '#^(?:' . implode( '|', $parts ) . ')$#i' : '';
+	}
+
+	/**
+	 * Does the URL of a log line ask for an address that can be locked at Bunny?
+	 *
+	 * @param array<string, mixed> $a   Analysis.
+	 * @param string               $url URL of the line.
+	 * @return bool
+	 */
+	private static function is_point( $a, $url ) {
+		return ! empty( $a['any_rx'] ) && preg_match( $a['any_rx'], $url );
+	}
+
+	/**
+	 * Counts a log line on every lockable address it asks for: all requests, attacks or not, per day (UTC), with
+	 * the IPs (at most POINT_IPS per address and day; the requests of the others are counted all the same).
+	 *
+	 * @param array<string, mixed> $a   Analysis.
+	 * @param array<string, mixed> $row Parsed line.
+	 */
+	private static function count_points( &$a, $row ) {
+		$url = (string) $row['url'];
+		if ( ! self::is_point( $a, $url ) ) {
+			return;
+		}
+		if ( ! isset( $a['point_rx'] ) ) {
+			$a['point_rx'] = self::point_patterns();
+		}
+		$ip  = (string) $row['ip'];
+		$day = (int) floor( (int) $row['ts'] / 1000 / DAY_IN_SECONDS );
+		foreach ( $a['point_rx'] as $pattern => $regex ) {
+			if ( ! preg_match( $regex, $url ) ) {
+				continue;
+			}
+			if ( ! isset( $a['points'][ $pattern ][ $day ] ) ) {
+				$a['points'][ $pattern ][ $day ] = array(
+					'n'      => 0,
+					'ips'    => array(),
+					'capped' => 0,
+				);
+			}
+			$c = &$a['points'][ $pattern ][ $day ];
+			++$c['n'];
+			if ( isset( $c['ips'][ $ip ] ) ) {
+				++$c['ips'][ $ip ];
+			} elseif ( count( $c['ips'] ) < self::POINT_IPS ) {
+				$c['ips'][ $ip ] = 1;
+			} else {
+				$c['capped'] = 1;
+			}
+			unset( $c );
+		}
+	}
+
+	/**
+	 * Adds the counts of a run to the state, and drops the days older than POINT_DAYS.
+	 *
+	 * @param array<string, mixed> $a     Analysis.
+	 * @param array<string, mixed> $state State.
+	 */
+	private static function note_points( $a, &$state ) {
+		$points = isset( $state['points'] ) && is_array( $state['points'] ) ? $state['points'] : array();
+		foreach ( $a['points'] as $pattern => $days ) {
+			foreach ( $days as $day => $c ) {
+				$empty    = array(
+					'n'      => 0,
+					'ips'    => array(),
+					'capped' => 0,
+				);
+				$old      = isset( $points[ $pattern ][ $day ] ) && is_array( $points[ $pattern ][ $day ] ) ? $points[ $pattern ][ $day ] : $empty;
+				$old['n'] = (int) $old['n'] + (int) $c['n'];
+				foreach ( $c['ips'] as $ip => $n ) {
+					if ( isset( $old['ips'][ $ip ] ) ) {
+						$old['ips'][ $ip ] = (int) $old['ips'][ $ip ] + (int) $n;
+					} elseif ( count( $old['ips'] ) < self::POINT_IPS ) {
+						$old['ips'][ $ip ] = (int) $n;
+					} else {
+						$old['capped'] = 1;
+					}
+				}
+				$old['capped']              = ! empty( $old['capped'] ) || ! empty( $c['capped'] ) ? 1 : 0;
+				$points[ $pattern ][ $day ] = $old;
+			}
+		}
+		$keep = (int) floor( time() / DAY_IN_SECONDS ) - self::POINT_DAYS;
+		foreach ( $points as $pattern => $days ) {
+			foreach ( (array) $days as $day => $c ) {
+				if ( (int) $day < $keep ) {
+					unset( $points[ $pattern ][ $day ] );
+				}
+			}
+			if ( empty( $points[ $pattern ] ) ) {
+				unset( $points[ $pattern ] );
+			}
+		}
+		if ( empty( $state['points_0'] ) ) {
+			$state['points_0'] = time(); // Since when the logs are counted (3.9).
+		}
+		$state['points'] = $points;
+	}
+
+	/**
+	 * The requests of the last N days (UTC days, today included) for the given patterns, from the logs: all of
+	 * them, attacks or not.
+	 *
+	 * @param string[] $patterns Patterns.
+	 * @param int      $days     Days.
+	 * @return array{available:bool, since:int, requests:int, ips:int, capped:bool, anonymized:bool, top:array<string, int>, allowed:int}
+	 */
+	public static function preview_logs( $patterns, $days ) {
+		$state = self::state();
+		$out   = array(
+			'available'  => self::settings()['import'] && ! empty( $state['last_ok'] ) && ! empty( $state['points_0'] ),
+			'since'      => (int) $state['points_0'],
+			'requests'   => 0,
+			'ips'        => 0,
+			'capped'     => false,
+			'anonymized' => self::logs_anonymized( $state ),
+			'top'        => array(),
+			'allowed'    => 0, // Set by lock_preview(): IPs of these let through by the rule.
+		);
+		$from  = (int) floor( time() / DAY_IN_SECONDS ) - max( 1, (int) $days ) + 1;
+		$ips   = array();
+		foreach ( array_unique( array_map( 'strval', (array) $patterns ) ) as $pattern ) {
+			if ( ! isset( $state['points'][ $pattern ] ) || ! is_array( $state['points'][ $pattern ] ) ) {
+				continue;
+			}
+			foreach ( $state['points'][ $pattern ] as $day => $c ) {
+				if ( (int) $day < $from || ! is_array( $c ) ) {
+					continue;
+				}
+				$out['requests'] += (int) $c['n'];
+				$out['capped']    = $out['capped'] || ! empty( $c['capped'] );
+				foreach ( (array) $c['ips'] as $ip => $n ) {
+					$ips[ (string) $ip ] = ( isset( $ips[ (string) $ip ] ) ? $ips[ (string) $ip ] : 0 ) + (int) $n;
+				}
+			}
+		}
+		arsort( $ips );
+		$out['ips'] = count( $ips );
+		$out['top'] = array_slice( $ips, 0, self::PREVIEW_IPS, true );
+		return $out;
 	}
 
 	/**
@@ -2823,6 +3028,7 @@ final class PNCP_Bunny {
 	 *     @type bool     $locked    Already locked.
 	 *     @type bool     $enforcing The rule blocks now (false: Monitor only or protection off).
 	 *     @type array    $hits      See preview_hits().
+	 *     @type array    $logs      See preview_logs().
 	 *     @type array    $normal    See preview_normal().
 	 *     @type string[] $warnings  Warnings.
 	 *     @type string[] $blockers  Reasons the lock is refused.
@@ -2845,6 +3051,7 @@ final class PNCP_Bunny {
 			'locked'    => false,
 			'enforcing' => self::enforcing(),
 			'hits'      => array(),
+			'logs'      => array(),
 			'normal'    => array(),
 			'warnings'  => array(),
 			'blockers'  => array(),
@@ -2891,8 +3098,21 @@ final class PNCP_Bunny {
 				$preview['blocks'] = $point['blocks'];
 			}
 		}
-		$preview['hits']   = self::preview_hits( $preview['patterns'], 7 );
-		$preview['normal'] = self::preview_normal( $preview['hits']['top'] );
+		$preview['hits'] = self::preview_hits( $preview['patterns'], 7 );
+		$preview['logs'] = self::preview_logs( $preview['patterns'], 7 ); // 3.9: every request in the logs, attacks or not.
+		$ips             = $preview['hits']['top'];
+		foreach ( $preview['logs']['top'] as $ip => $n ) {
+			$ips[ $ip ] = max( isset( $ips[ $ip ] ) ? (int) $ips[ $ip ] : 0, (int) $n );
+		}
+		$preview['logs']['allowed'] = 0;
+		foreach ( array_keys( $ips ) as $ip ) {
+			if ( $preview['allow'] && PNCP_Ip::in_any( (string) $ip, (array) $preview['allow'] ) ) {
+				$preview['logs']['allowed'] += isset( $preview['logs']['top'][ $ip ] ) ? 1 : 0;
+				unset( $ips[ $ip ] ); // Let through by the rule (the allowed IPs of the login page): not refused.
+			}
+		}
+		arsort( $ips );
+		$preview['normal'] = self::preview_normal( array_slice( $ips, 0, self::PREVIEW_IPS, true ) );
 		if ( $preview['locked'] ) {
 			$preview['warnings'][] = __( 'This point is already locked at Bunny: Confirm sends the rule again.', 'scrapelock' );
 		}
@@ -2968,10 +3188,12 @@ final class PNCP_Bunny {
 		$since            = (int) ( floor( ( time() - (int) $days * DAY_IN_SECONDS ) / HOUR_IN_SECONDS ) * HOUR_IN_SECONDS );
 		$where            = '(' . implode( ' OR ', array_fill( 0, count( $likes ), 'path LIKE %s' ) ) . ')';
 		$args             = array_merge( array( PNCP_Attacks::table(), $since ), $likes );
+		// Rows with no request (hits = 0: e.g. a visit to wp-login.php that ended in a sign-in that worked) are left
+		// out, as in the attack report.
 		// phpcs:disable WordPress.DB.DirectDatabaseQuery, WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.PreparedSQLPlaceholders.UnfinishedPrepare, WordPress.DB.PreparedSQLPlaceholders.ReplacementsWrongNumber -- $where holds only "path LIKE %s" placeholders, filled by prepare(); an admin page, not cached.
-		$total = $wpdb->get_row( $wpdb->prepare( "SELECT SUM(hits) AS hits, SUM(blocked) AS blocked, COUNT(DISTINCT NULLIF(ip, '')) AS ips, SUM(CASE WHEN ip = '' THEN hits ELSE 0 END) AS no_ip FROM %i WHERE hour_ts >= %d AND {$where}", $args ), ARRAY_A );
-		$cats  = $wpdb->get_results( $wpdb->prepare( "SELECT category, SUM(hits) AS hits FROM %i WHERE hour_ts >= %d AND {$where} GROUP BY category ORDER BY hits DESC", $args ), ARRAY_A );
-		$top   = $wpdb->get_results( $wpdb->prepare( "SELECT ip, SUM(hits) AS hits FROM %i WHERE hour_ts >= %d AND ip <> '' AND {$where} GROUP BY ip ORDER BY hits DESC LIMIT %d", array_merge( $args, array( self::PREVIEW_IPS ) ) ), ARRAY_A );
+		$total = $wpdb->get_row( $wpdb->prepare( "SELECT SUM(hits) AS hits, SUM(blocked) AS blocked, COUNT(DISTINCT NULLIF(ip, '')) AS ips, SUM(CASE WHEN ip = '' THEN hits ELSE 0 END) AS no_ip FROM %i WHERE hour_ts >= %d AND hits > 0 AND {$where}", $args ), ARRAY_A );
+		$cats  = $wpdb->get_results( $wpdb->prepare( "SELECT category, SUM(hits) AS hits FROM %i WHERE hour_ts >= %d AND hits > 0 AND {$where} GROUP BY category ORDER BY hits DESC", $args ), ARRAY_A );
+		$top   = $wpdb->get_results( $wpdb->prepare( "SELECT ip, SUM(hits) AS hits FROM %i WHERE hour_ts >= %d AND hits > 0 AND ip <> '' AND {$where} GROUP BY ip ORDER BY hits DESC LIMIT %d", array_merge( $args, array( self::PREVIEW_IPS ) ) ), ARRAY_A );
 		// phpcs:enable
 		if ( is_array( $total ) ) {
 			$out['requests'] = (int) $total['hits'];
@@ -3162,6 +3384,7 @@ final class PNCP_Bunny {
 	private static function render_preview_hits( $preview ) {
 		$h = $preview['hits'];
 		echo '<h2>' . esc_html__( 'Requests on these addresses, last 7 days', 'scrapelock' ) . '</h2>';
+		self::render_preview_logs( $preview );
 		if ( ! $h['available'] ) {
 			echo '<p class="pncp-bunny-preview-hits">' . esc_html__( 'Not available: the attack record is off or not set up, so ScrapeLock cannot say who asked for these addresses.', 'scrapelock' ) . '</p>';
 			return;
@@ -3189,6 +3412,37 @@ final class PNCP_Bunny {
 			}
 			echo '</tbody></table>';
 		}
+	}
+
+	/**
+	 * Preview: every request on these addresses in the imported Bunny logs.
+	 *
+	 * @param array<string, mixed> $preview Preview.
+	 */
+	private static function render_preview_logs( $preview ) {
+		$g = isset( $preview['logs'] ) && is_array( $preview['logs'] ) ? $preview['logs'] : array( 'available' => false );
+		if ( empty( $g['available'] ) ) {
+			echo '<p class="pncp-bunny-preview-logs">' . esc_html__( 'From the Bunny logs: not available (the import from Bunny\'s logs is off or has not run since ScrapeLock 3.9).', 'scrapelock' ) . '</p>';
+			return;
+		}
+		$text = sprintf(
+			/* translators: 1: requests, 2: IPs */
+			__( 'From the Bunny logs: %1$s requests from %2$s IPs, attacks or not.', 'scrapelock' ),
+			number_format_i18n( (int) $g['requests'] ),
+			( $g['capped'] ? '≥ ' : '' ) . number_format_i18n( (int) $g['ips'] )
+		);
+		if ( (int) $g['since'] > time() - 7 * DAY_IN_SECONDS ) {
+			/* translators: %s: date and time */
+			$text .= ' ' . sprintf( __( 'Counted since %s, so less than 7 days.', 'scrapelock' ), self::when( (int) $g['since'] ) );
+		}
+		if ( ! empty( $g['allowed'] ) ) {
+			/* translators: %s: number of IPs */
+			$text .= ' ' . sprintf( _n( '%s of these IPs is in the allowed list and is let through.', '%s of these IPs are in the allowed list and are let through.', (int) $g['allowed'], 'scrapelock' ), number_format_i18n( (int) $g['allowed'] ) );
+		}
+		if ( ! empty( $g['anonymized'] ) ) {
+			$text .= ' ' . __( 'Bunny anonymizes the IPs in the logs, so several visitors may share one shortened address.', 'scrapelock' );
+		}
+		echo '<p class="pncp-bunny-preview-logs"><strong>' . esc_html( $text ) . '</strong></p>';
 	}
 
 	/**
@@ -3727,7 +3981,7 @@ final class PNCP_Bunny {
 	public static function privacy_policy() {
 		return __( 'When “Import attacks from Bunny CDN\'s logs” is on, this site downloads the logs of its own Bunny CDN pull zone (logging.bunnycdn.com) every 15 minutes. They contain the IP address, the address asked for, the referrer, the browser identification (User-Agent) and the country of each request. Only requests that look like attacks are kept, with the IP address, for as long as the attack record is kept; the rest is discarded at once. When a vulnerable address is locked at Bunny CDN, the IP addresses administrators used in the last 30 days may be sent to the site owner\'s Bunny account, so that they are let through.', 'scrapelock' )
 			// 3.9: kept for the preview "What would be blocked".
-			. ' ' . __( 'For the IP addresses whose requests looked like attacks, the number of normal pages they opened through Bunny is also kept, for 8 days, so that ScrapeLock can warn before a lock at Bunny CDN would refuse a real visitor.', 'scrapelock' );
+			. ' ' . __( 'For the IP addresses whose requests looked like attacks or asked for an address that can be locked at Bunny CDN (such as wp-login.php or xmlrpc.php), the number of those requests and of the normal pages they opened through Bunny is also kept, for 8 days, so that ScrapeLock can show what a lock would refuse and warn before it refuses a real visitor.', 'scrapelock' );
 	}
 
 	/**
