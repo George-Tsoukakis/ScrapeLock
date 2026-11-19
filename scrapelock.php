@@ -311,6 +311,8 @@ function pncp_upgrade() {
 	}
 
 	PNCP_Log::install();
+	// 3.10: rows that counted /llms.txt, /.well-known/* and other site-metadata files as scanner probes (once).
+	PNCP_Attacks::purge_site_metadata();
 	// Autoload: read on every request, without a separate query.
 	add_option( PNCP_Options::EMERGENCY_OPTION, 0, '', true );
 	// 3.8: the state of the vulnerable points is read on every request; a missing option would be a query each time.

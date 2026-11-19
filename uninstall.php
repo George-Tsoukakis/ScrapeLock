@@ -168,6 +168,7 @@ function pncp_uninstall_site() {
 	$wpdb->query( $wpdb->prepare( 'DROP TABLE IF EXISTS %i', $wpdb->prefix . 'pncp_crowdsec' ) ); // 3.7: CrowdSec blocklist.
 	$wpdb->query( $wpdb->prepare( 'DROP TABLE IF EXISTS %i', $wpdb->prefix . 'pncp_airef' ) ); // 3.7: visits from AI assistants.
 	$wpdb->query( $wpdb->prepare( 'DROP TABLE IF EXISTS %i', $wpdb->prefix . 'pncp_attacks' ) ); // 3.8: the attack record.
+	delete_option( 'pncp_attacks_meta_purged' ); // 3.10: the one-time cleanup of site-metadata rows.
 	$wpdb->query(
 		$wpdb->prepare(
 			"DELETE FROM {$wpdb->options} WHERE option_name LIKE %s OR option_name LIKE %s OR option_name LIKE %s OR option_name LIKE %s OR option_name LIKE %s OR option_name LIKE %s",

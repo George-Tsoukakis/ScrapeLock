@@ -38,6 +38,12 @@ final class PNCP_Attacks {
 	const GEN_OPTION = 'pncp_attacks_gen';
 
 	/**
+	 * 3.10: set once the rows that counted site-metadata files (/llms.txt, /.well-known/*…) as scanner probes
+	 * were deleted (purge_site_metadata()).
+	 */
+	const META_PURGED_OPTION = 'pncp_attacks_meta_purged';
+
+	/**
 	 * Seconds the figures of the admin screen are cached.
 	 */
 	const CACHE_TTL = 60;
@@ -1141,6 +1147,40 @@ final class PNCP_Attacks {
 			}
 		} while ( self::DELETE_BATCH === (int) $deleted && microtime( true ) < $budget );
 		$wpdb->suppress_errors( $suppress );
+		self::purge_site_metadata(); // 3.10: once.
+	}
+
+	/**
+	 * 3.10: up to 3.9.1 a "page not found" for a site-metadata file (/llms.txt, /ai.txt, /.well-known/assetlinks.json,
+	 * /.well-known/traffic-advice, /OneSignalSDKWorker.js…) was recorded as "Scanner probe", and a Bunny log line
+	 * for one as an attack seen at the CDN with the detail "scanner" (or as the top path of a "4xx flood"). Those rows are deleted once (from the upgrade
+	 * and, should the table not be ready then, from the hourly cleanup); new ones are no longer recorded.
+	 *
+	 * @param bool $force Run again although it already ran (tests, WP-CLI).
+	 * @return int Rows deleted, or -1 when it had already run or the table is not ready.
+	 */
+	public static function purge_site_metadata( $force = false ) {
+		global $wpdb;
+		if ( ! self::ready() || ( ! $force && get_option( self::META_PURGED_OPTION, false ) ) ) {
+			return -1;
+		}
+		$suppress = $wpdb->suppress_errors( true );
+		$rows     = self::rows( $wpdb->prepare( "SELECT DISTINCT category, path, detail FROM %i WHERE ( category = 'scanner' OR ( category = 'edge' AND ( detail LIKE %s OR detail = %s ) ) ) AND path <> '' LIMIT 20000", self::table(), $wpdb->esc_like( 'scanner' ) . '%', '4xx flood' ) );
+		$deleted  = 0;
+		foreach ( $rows as $row ) {
+			if ( ! PNCP_Paths::is_site_metadata( (string) $row['path'] ) ) {
+				continue;
+			}
+			// phpcs:ignore WordPress.DB.DirectDatabaseQuery -- Plugin table, a one-time cleanup.
+			$done = $wpdb->query( $wpdb->prepare( 'DELETE FROM %i WHERE category = %s AND path = %s AND detail = %s', self::table(), (string) $row['category'], (string) $row['path'], (string) $row['detail'] ) );
+			$deleted += max( 0, (int) $done );
+		}
+		$wpdb->suppress_errors( $suppress );
+		update_option( self::META_PURGED_OPTION, time(), false );
+		if ( $deleted > 0 ) {
+			update_option( self::GEN_OPTION, (int) get_option( self::GEN_OPTION, 0 ) + 1, false );
+		}
+		return $deleted;
 	}
 
 	/**
@@ -1164,6 +1204,7 @@ final class PNCP_Attacks {
 		$wpdb->query( $wpdb->prepare( 'DROP TABLE IF EXISTS %i', self::table() ) );
 		delete_option( self::DB_OPTION );
 		delete_option( self::GEN_OPTION );
+		delete_option( self::META_PURGED_OPTION );
 	}
 
 	/* ---------- Export ---------- */
