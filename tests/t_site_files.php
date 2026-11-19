@@ -103,7 +103,7 @@ $tests = PNCP_Site_Files::tests( array() );
 t( 'Site Health: async test scrapelock_sitefiles registered (one underscore in the key)', isset( $tests['async']['scrapelock_sitefiles'] ) && 1 === substr_count( 'scrapelock_sitefiles', '_' ) );
 t( 'Site Health: no Wordfence test while Wordfence is not active', ! isset( $tests['direct']['scrapelock_wordfence'] ) );
 t( 'files(): the icon (both Apple names) and the OneSignal worker', array( 'apple-touch-icon.png', 'apple-touch-icon-precomposed.png' ) === PNCP_Site_Files::files()['icon'] && array( 'OneSignalSDKWorker.js' ) === PNCP_Site_Files::files()['onesignal'] );
-t( 'OneSignal worker: the one importScripts line of the v16 SDK', "importScripts(\"https:\\/\\/cdn.onesignal.com\\/sdks\\/web\\/v16\\/OneSignalSDK.sw.js\");\n" === PNCP_Site_Files::onesignal_worker() || "importScripts(\"https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.sw.js\");\n" === PNCP_Site_Files::onesignal_worker(), PNCP_Site_Files::onesignal_worker() );
+t( 'OneSignal worker: exactly the one importScripts line of the v16 SDK (slashes not escaped)', "importScripts(\"https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.sw.js\");\n" === PNCP_Site_Files::onesignal_worker(), PNCP_Site_Files::onesignal_worker() );
 
 /* ---------- 2. No Site Icon, OneSignal not active ---------- */
 $admin = get_user_by( 'id', 1 );
@@ -141,6 +141,15 @@ t( 'probe: OneSignalSDKWorker.js missing over HTTP', isset( $probe['onesignal'] 
 $r = PNCP_Site_Files::test();
 t( 'test: recommended with a "Create it" button for each (nonce in the form)', 'recommended' === $r['status'] && false !== strpos( $r['description'], 'value="icon"' ) && false !== strpos( $r['description'], 'value="onesignal"' ) && false !== strpos( $r['description'], '_wpnonce' ), $r['status'] );
 t( 'test: says these are not security problems', false !== strpos( $r['description'], 'not a security problem' ) );
+$refuse = static function ( $pre, $args, $url ) {
+	return 0 === strpos( $url, home_url( '/' ) ) ? new WP_Error( 'http_request_failed', 'cURL error 7: Failed to connect' ) : $pre;
+};
+add_filter( 'pre_http_request', $refuse, 10, 3 );
+delete_transient( PNCP_Site_Files::CACHE );
+$r = PNCP_Site_Files::test();
+t( 'site cannot ask itself (loopback refused): "could not be checked", still a "Create it" for files not in the folder', 'recommended' === $r['status'] && false !== strpos( $r['description'], 'Could not be checked over the web' ) && 2 === substr_count( $r['description'], 'value="create"' ), wp_strip_all_tags( $r['description'] ) );
+remove_filter( 'pre_http_request', $refuse, 10 );
+delete_transient( PNCP_Site_Files::CACHE );
 
 /* ---------- 4. Create / Remove over HTTP: nonce and capability ---------- */
 $expire  = time() + DAY_IN_SECONDS;

@@ -9,7 +9,7 @@ msgstr ""
 "MIME-Version: 1.0\n"
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
-"POT-Creation-Date: 2026-11-19T18:09:41+00:00\n"
+"POT-Creation-Date: 2026-11-19T18:17:33+00:00\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "X-Generator: WP-CLI 2.12.0\n"
 "X-Domain: scrapelock\n"
@@ -2554,7 +2554,7 @@ msgstr ""
 #: includes/class-pncp-attack-report.php:520
 #: includes/class-pncp-attacks.php:1286
 #: includes/class-pncp-health.php:539
-#: includes/class-pncp-site-files.php:344
+#: includes/class-pncp-site-files.php:353
 #: includes/class-pncp-tester.php:66
 msgid "You are not allowed to do this."
 msgstr ""
@@ -3548,7 +3548,7 @@ msgstr ""
 #: includes/class-pncp-attack-report.php:712
 #: includes/class-pncp-bunny.php:4079
 #: includes/class-pncp-hardening.php:2070
-#: includes/class-pncp-site-files.php:357
+#: includes/class-pncp-site-files.php:366
 msgid "Unknown action."
 msgstr ""
 
@@ -4489,7 +4489,7 @@ msgstr ""
 #: includes/class-pncp-hardening.php:2440
 #: includes/class-pncp-health.php:149
 #: includes/class-pncp-login.php:1692
-#: includes/class-pncp-site-files.php:599
+#: includes/class-pncp-site-files.php:608
 #: includes/class-pncp-stealth.php:2752
 msgid "Security"
 msgstr ""
@@ -7752,7 +7752,7 @@ msgid "No code file was added or changed since the site was locked, and WordPres
 msgstr ""
 
 #: includes/class-pncp-health.php:557
-#: includes/class-pncp-site-files.php:279
+#: includes/class-pncp-site-files.php:288
 msgid "Check again now"
 msgstr ""
 
@@ -10673,145 +10673,150 @@ msgid "OneSignalSDKWorker.js (OneSignal push notifications: browsers that subscr
 msgstr ""
 
 #. translators: %s: file description
-#: includes/class-pncp-site-files.php:262
+#: includes/class-pncp-site-files.php:265
 #, php-format
-msgid "Could not be checked: %s."
+msgid "Could not be checked over the web: %s."
+msgstr ""
+
+#: includes/class-pncp-site-files.php:267
+msgid "The file is not in the folder of the site."
+msgstr ""
+
+#: includes/class-pncp-site-files.php:269
+#: includes/class-pncp-site-files.php:283
+msgid "Create it"
 msgstr ""
 
 #. translators: %s: file name
-#: includes/class-pncp-site-files.php:268
+#: includes/class-pncp-site-files.php:277
 #, php-format
 msgid "%s is on the server but the site answers \"not found\". If the site is behind a CDN (Bunny, Cloudflare), purge this address in the CDN, then check again."
 msgstr ""
 
 #. translators: %s: file description
-#: includes/class-pncp-site-files.php:272
+#: includes/class-pncp-site-files.php:281
 #, php-format
 msgid "Not found: %s."
 msgstr ""
 
-#: includes/class-pncp-site-files.php:274
-msgid "Create it"
-msgstr ""
-
 #. translators: %s: file name
-#: includes/class-pncp-site-files.php:285
+#: includes/class-pncp-site-files.php:294
 #, php-format
 msgid "Remove %s (created by ScrapeLock)"
 msgstr ""
 
 #. translators: %s: list of file names
-#: includes/class-pncp-site-files.php:292
+#: includes/class-pncp-site-files.php:301
 #, php-format
 msgid "These files answer normally: %s."
 msgstr ""
 
-#: includes/class-pncp-site-files.php:293
+#: includes/class-pncp-site-files.php:302
 msgid "No file is missing that this site needs."
 msgstr ""
 
-#: includes/class-pncp-site-files.php:294
+#: includes/class-pncp-site-files.php:303
 msgid "Files that devices and services ask for are there"
 msgstr ""
 
-#: includes/class-pncp-site-files.php:297
+#: includes/class-pncp-site-files.php:306
 msgid "A missing file is not a security problem; ScrapeLock does not block these requests or count them as attacks. Creating a file writes it in the folder of the site and never replaces a file that is already there."
 msgstr ""
 
-#: includes/class-pncp-site-files.php:298
+#: includes/class-pncp-site-files.php:307
 msgid "Files that devices and services ask for are missing"
 msgstr ""
 
-#: includes/class-pncp-site-files.php:298
+#: includes/class-pncp-site-files.php:307
 msgid "The site answers \"not found\" for files that phones, browsers or an active plugin ask for at its root."
 msgstr ""
 
-#: includes/class-pncp-site-files.php:501
+#: includes/class-pncp-site-files.php:510
 msgid "The file was created at the root of the site. If the site is behind a CDN, purge its address there; Site Health checks it again below."
 msgstr ""
 
-#: includes/class-pncp-site-files.php:502
+#: includes/class-pncp-site-files.php:511
 msgid "The file created by ScrapeLock was removed."
 msgstr ""
 
-#: includes/class-pncp-site-files.php:503
+#: includes/class-pncp-site-files.php:512
 msgid "The site files are checked again below."
 msgstr ""
 
-#: includes/class-pncp-site-files.php:504
+#: includes/class-pncp-site-files.php:513
 msgid "A file with that name is already there, so nothing was written."
 msgstr ""
 
-#: includes/class-pncp-site-files.php:505
+#: includes/class-pncp-site-files.php:514
 msgid "Only some of the files could be written. Check the permissions of the site's folder."
 msgstr ""
 
-#: includes/class-pncp-site-files.php:506
+#: includes/class-pncp-site-files.php:515
 msgid "The folder of the site cannot be written to by WordPress. Upload the file yourself with FTP or your host's file manager."
 msgstr ""
 
-#: includes/class-pncp-site-files.php:507
+#: includes/class-pncp-site-files.php:516
 msgid "The Site Icon could not be turned into a PNG image. Choose a Site Icon (PNG or JPEG, at least 512 × 512 pixels) and try again."
 msgstr ""
 
-#: includes/class-pncp-site-files.php:508
+#: includes/class-pncp-site-files.php:517
 msgid "Nothing was removed: ScrapeLock removes only files it created and that nobody changed since."
 msgstr ""
 
-#: includes/class-pncp-site-files.php:509
+#: includes/class-pncp-site-files.php:518
 msgid "Unknown file."
 msgstr ""
 
-#: includes/class-pncp-site-files.php:558
+#: includes/class-pncp-site-files.php:567
 msgid "In Wordfence → All Options → General Wordfence Options → \"How does Wordfence get IPs\", choose \"Use the X-Forwarded-For HTTP header\", and put the CDN's addresses in \"Trusted Proxies\", so that nobody who reaches the server directly can write a false address in that header. Then compare \"Detected IP\" on that page with your own address."
 msgstr ""
 
-#: includes/class-pncp-site-files.php:561
+#: includes/class-pncp-site-files.php:570
 msgid "Bunny CDN's addresses, as ScrapeLock downloaded them (for \"Trusted Proxies\"):"
 msgstr ""
 
 #. translators: %s: IP address
-#: includes/class-pncp-site-files.php:567
+#: includes/class-pncp-site-files.php:576
 msgid "Wordfence reads the visitor's address behind the CDN"
 msgstr ""
 
 #. translators: %s: IP address
-#: includes/class-pncp-site-files.php:567
+#: includes/class-pncp-site-files.php:576
 #, php-format
 msgid "For your visit to this page, Wordfence and ScrapeLock both read %s."
 msgstr ""
 
 #. translators: 1: address Wordfence reads, 2: visitor's address
-#: includes/class-pncp-site-files.php:571
+#: includes/class-pncp-site-files.php:580
 #, php-format
 msgid "For your visit to this page, Wordfence read %1$s, but your address is %2$s."
 msgstr ""
 
-#: includes/class-pncp-site-files.php:573
+#: includes/class-pncp-site-files.php:582
 msgid "That is a server of the CDN: Wordfence would block or rate-limit the CDN, and with it every visitor, instead of the attacker, and its logs show the CDN instead of the visitors."
 msgstr ""
 
-#: includes/class-pncp-site-files.php:575
+#: includes/class-pncp-site-files.php:584
 msgid "Wordfence does not read the visitor's address behind the CDN"
 msgstr ""
 
-#: includes/class-pncp-site-files.php:578
+#: includes/class-pncp-site-files.php:587
 msgid "Wordfence may read the CDN's address instead of the visitor's"
 msgstr ""
 
-#: includes/class-pncp-site-files.php:578
+#: includes/class-pncp-site-files.php:587
 msgid "Wordfence is set to use the address of the connection (REMOTE_ADDR), and the site is behind a CDN: that address is a server of the CDN."
 msgstr ""
 
-#: includes/class-pncp-site-files.php:580
+#: includes/class-pncp-site-files.php:589
 msgid "Wordfence and ScrapeLock read the same address"
 msgstr ""
 
-#: includes/class-pncp-site-files.php:580
+#: includes/class-pncp-site-files.php:589
 msgid "This visit did not come through a CDN, or Wordfence read the same address as ScrapeLock. Open this page through the site's public address to check the CDN."
 msgstr ""
 
-#: includes/class-pncp-site-files.php:599
+#: includes/class-pncp-site-files.php:608
 msgid "Performance"
 msgstr ""
 

@@ -97,7 +97,7 @@ final class PNCP_Site_Files {
 	 */
 	public static function onesignal_worker() {
 		$url = (string) apply_filters( 'pncp_onesignal_worker_sdk', 'https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.sw.js' );
-		return 'importScripts(' . wp_json_encode( esc_url_raw( $url ) ) . ");\n";
+		return 'importScripts(' . wp_json_encode( esc_url_raw( $url ), JSON_UNESCAPED_SLASHES ) . ");\n";
 	}
 
 	/**
@@ -257,12 +257,21 @@ final class PNCP_Site_Files {
 				continue;
 			}
 			$status = 'recommended';
+			$exists = is_file( self::root_dir() . $names[0] );
 			if ( 'error' === $outcome ) {
+				// The site could not ask itself (loopback refused by the host, a timeout). Still useful: is the
+				// file in the site's folder at all?
 				/* translators: %s: file description */
-				$items[] = '<li>' . esc_html( sprintf( __( 'Could not be checked: %s.', 'scrapelock' ), $labels[ $id ] ) ) . '</li>';
+				$line = esc_html( sprintf( __( 'Could not be checked over the web: %s.', 'scrapelock' ), $labels[ $id ] ) );
+				if ( ! $exists ) {
+					$line .= ' ' . esc_html__( 'The file is not in the folder of the site.', 'scrapelock' );
+					if ( $admin ) {
+						$line .= ' ' . self::button( 'create', $id, __( 'Create it', 'scrapelock' ) );
+					}
+				}
+				$items[] = '<li>' . $line . '</li>';
 				continue;
 			}
-			$exists = is_file( self::root_dir() . $names[0] );
 			if ( $exists ) {
 				/* translators: %s: file name */
 				$items[] = '<li>' . esc_html( sprintf( __( '%s is on the server but the site answers "not found". If the site is behind a CDN (Bunny, Cloudflare), purge this address in the CDN, then check again.', 'scrapelock' ), $names[0] ) ) . '</li>';
