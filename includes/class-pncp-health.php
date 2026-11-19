@@ -103,6 +103,23 @@ final class PNCP_Health {
 			'label' => __( 'ScrapeLock limit for IPs that never opened a page', 'scrapelock' ),
 			'test'  => array( __CLASS__, 'test_api_only' ),
 		);
+		// 3.8. (Stealth registers its own async test, only while it is turned on.)
+		$tests['direct']['pncp_attacks']         = array(
+			'label' => __( 'Attack record', 'scrapelock' ),
+			'test'  => array( 'PNCP_Attacks', 'health_test' ),
+		);
+		$tests['direct']['scrapelock_hardening'] = array(
+			'label' => __( 'Vulnerable points', 'scrapelock' ),
+			'test'  => array( 'PNCP_Hardening', 'health_test' ),
+		);
+		$tests['direct']['pncp_login']           = array(
+			'label' => __( 'ScrapeLock sign-in protection', 'scrapelock' ),
+			'test'  => array( 'PNCP_Login', 'health_test' ),
+		);
+		$tests['direct']['pncp_bunny']           = array(
+			'label' => __( 'ScrapeLock and Bunny CDN logs', 'scrapelock' ),
+			'test'  => array( 'PNCP_Bunny', 'health_test' ),
+		);
 		return $tests;
 	}
 
@@ -1684,6 +1701,13 @@ final class PNCP_Health {
 			'crowdsec'       => array( __( 'CrowdSec blocklist', 'scrapelock' ), self::crowdsec_info( $s, $no ) ),
 			'syslog'         => array( __( 'Blocks written to the system log (fail2ban)', 'scrapelock' ), empty( $s['syslog_bans'] ) ? $no : ( PNCP_Fail2ban::available() ? $yes : __( 'On, but syslog() is disabled', 'scrapelock' ) ) ),
 			'ai_referrals'   => array( __( 'Visits from AI assistants counted', 'scrapelock' ), $flag( 'ai_referrals' ) ),
+			// 3.8. The sign-in address itself is not shown (this list is often copied into support requests).
+			'attack_record'  => array( __( 'Attack record', 'scrapelock' ), empty( $s['attack_record'] ) ? $no : sprintf( '%s (%s d)', $yes, (string) $s['attack_retention'] ) ),
+			'login_limit'    => array( __( 'Failed sign-ins limited', 'scrapelock' ), empty( $s['login_limit'] ) ? $no : sprintf( '%d / %d min', (int) $s['login_max'], (int) $s['login_window'] ) ),
+			'login_moved'    => array( __( 'Sign-in address moved', 'scrapelock' ), '' !== PNCP_Login::slug() ? $yes : $no ),
+			'hardening'      => array( __( 'Vulnerable points locked', 'scrapelock' ), self::hardening_info() ),
+			'stealth'        => array( __( 'Stealth', 'scrapelock' ), PNCP_Stealth::active() ? $yes : ( empty( $s['stealth_enabled'] ) ? $no : __( 'On, not working', 'scrapelock' ) ) ),
+			'bunny_import'   => array( __( 'Attacks imported from Bunny CDN\'s logs', 'scrapelock' ), $flag( 'bunny_import' ) ),
 			'auto_emergency' => array( __( 'Automatic Emergency Mode', 'scrapelock' ), empty( $s['auto_emergency'] ) ? $no : ( 'start' === $s['auto_emergency_mode'] ? __( 'Starts on its own', 'scrapelock' ) : __( 'Alerts only', 'scrapelock' ) ) ),
 			'edge'           => array( __( 'Blocking at the CDN', 'scrapelock' ), $edge ),
 			'cdn_only'       => array( __( 'Only through the CDN', 'scrapelock' ), PNCP_Origin::active( $s ) ? $yes : $no ),
@@ -1707,6 +1731,21 @@ final class PNCP_Health {
 		}
 		$info['scrapelock'] = $section;
 		return $info;
+	}
+
+	/**
+	 * 3.8: the vulnerable points that are locked, by their IDs (PNCP_Hardening::points()).
+	 *
+	 * @return string
+	 */
+	private static function hardening_info() {
+		$on = array();
+		foreach ( array_keys( PNCP_Hardening::points() ) as $id ) {
+			if ( PNCP_Hardening::is_applied( $id ) ) {
+				$on[] = $id;
+			}
+		}
+		return $on ? implode( ', ', $on ) : '-';
 	}
 
 	/**

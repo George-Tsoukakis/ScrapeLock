@@ -2,7 +2,7 @@
 /**
  * Plugin Name:       ScrapeLock – Content & AI Bot Protection
  * Description:       Protects your content: makes copying text and images harder, hides the text in the REST API, GraphQL and RSS, blocks scrapers, AI bots and fake Googlebots, temporarily blocks persistent IPs, protects XML feeds with a token and adds an optional watermark. Lockdown freezes every change to the site until it is unlocked with an authenticator app. Forms, cart, checkout and search engines are not affected.
- * Version:           3.7.0
+ * Version:           3.8.0
  * Requires at least: 6.2
  * Requires PHP:      7.4
  * Author:            CodeBunny
@@ -19,7 +19,7 @@ if ( defined( 'PNCP_VERSION' ) ) {
 	return;
 }
 
-define( 'PNCP_VERSION', '3.7.0' );
+define( 'PNCP_VERSION', '3.8.0' );
 define( 'PNCP_FILE', __FILE__ );
 define( 'PNCP_DIR', plugin_dir_path( __FILE__ ) );
 define( 'PNCP_URL', plugin_dir_url( __FILE__ ) );
@@ -53,6 +53,7 @@ PNCP_Graphql::init();
 PNCP_Feed::init();
 PNCP_Bots::init();
 PNCP_Edge::init();
+PNCP_Bunny::init(); // 3.8: Bunny CDN logs and Edge Rules.
 PNCP_Origin::init();
 PNCP_Watermark::init();
 PNCP_Private_Urls::init();
@@ -64,6 +65,9 @@ PNCP_Precheck::init();
 PNCP_Lockdown::init();
 PNCP_Seal::init();
 PNCP_Surface::init();
+// 3.8: both must run at plugin load (before plugins_loaded and init).
+PNCP_Stealth::init(); // Neutral asset addresses, REST prefix, sitemap (off by default).
+PNCP_Login::init(); // Failed sign-ins, generic errors, custom sign-in address.
 // 3.6: what only wp-admin, admin-ajax, scheduled events, WP-CLI or the REST API use is loaded there only.
 $pncp_backend = is_admin() || wp_doing_cron() || ( defined( 'WP_CLI' ) && WP_CLI );
 if ( $pncp_backend ) {
@@ -104,6 +108,10 @@ PNCP_Trace::init();
 PNCP_Reputation::init();
 PNCP_Crowdsec::init();
 PNCP_Ai_Referrals::init();
+// 3.8.
+PNCP_Attacks::init(); // Where bots and attackers hit the site.
+PNCP_Attack_Report::init(); // The Attacks tab, the weekly email and the dashboard widget.
+PNCP_Hardening::init(); // Vulnerable points.
 
 if ( defined( 'WP_CLI' ) && WP_CLI ) {
 	require_once PNCP_DIR . 'includes/class-pncp-cli.php';
@@ -130,6 +138,7 @@ function pncp_activate( $network_wide = false ) {
 		return;
 	}
 	pncp_upgrade();
+	PNCP_Stealth::plugin_activated(); // 3.8: re-tests Stealth in 30 s when it is on (it cannot test during activation).
 }
 register_activation_hook( PNCP_FILE, 'pncp_activate' );
 register_deactivation_hook( PNCP_FILE, 'pncp_deactivate' );
@@ -186,12 +195,17 @@ function pncp_deactivate_site() {
 	// wp_unschedule_hook() removes every event of a hook, whatever its arguments: some carry some (the missing
 	// IP lists, the image to clean up, the numbers in the surge email), which wp_clear_scheduled_hook() would
 	// only remove when given the same ones.
-	foreach ( array( PNCP_Ip::CRON, PNCP_Log::CRON, PNCP_Log::CRON . '_more', PNCP_Integrity::OFFICIAL, PNCP_Integrity::RESUME, PNCP_Surge::MAIL, PNCP_Surge::MAIL_ALERT, PNCP_Watermark::CRON_UNMARK, 'pncp_background_purge', 'pncp_upgrade_files', PNCP_Crowdsec::CRON ) as $pncp_hook ) {
+	foreach ( array( PNCP_Ip::CRON, PNCP_Log::CRON, PNCP_Log::CRON . '_more', PNCP_Integrity::OFFICIAL, PNCP_Integrity::RESUME, PNCP_Surge::MAIL, PNCP_Surge::MAIL_ALERT, PNCP_Watermark::CRON_UNMARK, 'pncp_background_purge', 'pncp_upgrade_files', PNCP_Crowdsec::CRON, PNCP_Bunny::CRON, 'pncp_attack_report_weekly' ) as $pncp_hook ) {
 		wp_unschedule_hook( $pncp_hook );
 	}
 	// The blocks ScrapeLock made at the CDN go away with it (the bans themselves end with the plugin).
 	PNCP_Edge::remove_all();
+	PNCP_Bunny::deactivate(); // 3.8: ScrapeLock's Edge Rules at Bunny (15 s at most) and the cron event.
 	PNCP_Rules::sync_uploads_htaccess( false );
+	// 3.8: the "ScrapeLock Hardening" and Stealth blocks of the site's .htaccess, Stealth's events and rules.
+	PNCP_Hardening::deactivate();
+	PNCP_Stealth::plugin_deactivated();
+	PNCP_Attack_Report::deactivate();
 	pncp_purge_page_cache();
 }
 
@@ -233,6 +247,11 @@ function pncp_upgrade() {
 		}
 		if ( version_compare( $from_settings, '3.0.0', '<' ) ) {
 			$added += PNCP_Options::new_in_300();
+		}
+		// 3.8: the attack record, the sign-in protection and the rest of 3.8 (Stealth, Bunny logs, the weekly
+		// email stay off). Stored now, so an export or a settings list shows them.
+		if ( version_compare( $from_settings, '3.8.0', '<' ) ) {
+			$added += PNCP_Options::new_in_380();
 		}
 		$added = array_diff_key( $added, $stored );
 		// 3.4: the automatic Emergency Mode only tells the administrator on new installs; a site that had it on
@@ -285,6 +304,18 @@ function pncp_upgrade() {
 	PNCP_Log::install();
 	// Autoload: read on every request, without a separate query.
 	add_option( PNCP_Options::EMERGENCY_OPTION, 0, '', true );
+	// 3.8: the state of the vulnerable points is read on every request; a missing option would be a query each time.
+	add_option(
+		PNCP_Hardening::OPTION,
+		array(
+			'points'         => array(),
+			'edge'           => array(),
+			'xmlrpc_jetpack' => 0,
+			'htaccess'       => 0,
+		),
+		'',
+		true
+	);
 	if ( ! wp_next_scheduled( PNCP_Ip::CRON ) ) {
 		wp_schedule_event( time() + 60, 'daily', PNCP_Ip::CRON );
 	}

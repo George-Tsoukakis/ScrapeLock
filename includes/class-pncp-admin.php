@@ -145,13 +145,16 @@ final class PNCP_Admin {
 	 */
 	private static function tabs() {
 		return array(
-			'general'  => __( 'On the page', 'scrapelock' ),
-			'bots'     => __( 'Bots and limits', 'scrapelock' ),
-			'content'  => __( 'Feeds and API', 'scrapelock' ),
-			'images'   => __( 'Images', 'scrapelock' ),
-			'rules'    => __( 'Server rules', 'scrapelock' ),
-			'log'      => __( 'Log', 'scrapelock' ),
-			'lockdown' => __( 'Lockdown', 'scrapelock' ),
+			'general'   => __( 'On the page', 'scrapelock' ),
+			'bots'      => __( 'Bots and limits', 'scrapelock' ),
+			'content'   => __( 'Feeds and API', 'scrapelock' ),
+			'images'    => __( 'Images', 'scrapelock' ),
+			'rules'     => __( 'Server rules', 'scrapelock' ),
+			'log'       => __( 'Log', 'scrapelock' ),
+			// 3.8: where bots hit the site, and the points to lock.
+			'attacks'   => __( 'Attacks', 'scrapelock' ),
+			'hardening' => __( 'Vulnerable points', 'scrapelock' ),
+			'lockdown'  => __( 'Lockdown', 'scrapelock' ),
 		);
 	}
 
@@ -680,13 +683,15 @@ final class PNCP_Admin {
 		$stored = PNCP_Options::stored();
 		// Icons of the tabs (decorative: the label stays the accessible name).
 		$icons = array(
-			'general'  => 'visibility',
-			'bots'     => 'shield',
-			'content'  => 'rss',
-			'images'   => 'format-image',
-			'rules'    => 'editor-code',
-			'log'      => 'chart-bar',
-			'lockdown' => $locked ? 'lock' : 'unlock',
+			'general'   => 'visibility',
+			'bots'      => 'shield',
+			'content'   => 'rss',
+			'images'    => 'format-image',
+			'rules'     => 'editor-code',
+			'log'       => 'chart-bar',
+			'attacks'   => 'warning',
+			'hardening' => 'shield-alt',
+			'lockdown'  => $locked ? 'lock' : 'unlock',
 		);
 		?>
 		<div class="wrap pncp-admin pncp-admin--<?php echo esc_attr( $tab ); ?><?php echo $locked ? ' is-site-locked' : ''; ?>">
@@ -1316,6 +1321,7 @@ final class PNCP_Admin {
 				'ai'         => __( 'AI', 'scrapelock' ),
 				'allowed'    => __( 'Always allowed', 'scrapelock' ),
 				'blocked'    => __( 'Always blocked', 'scrapelock' ),
+				'login'      => __( 'Sign-in', 'scrapelock' ),
 				'limits'     => __( 'Limits', 'scrapelock' ),
 				'human'      => __( 'Human check', 'scrapelock' ),
 				'reputation' => __( 'Reputation', 'scrapelock' ),
@@ -1412,6 +1418,7 @@ final class PNCP_Admin {
 				self::checkbox( $s, 'block_user_enum', __( 'Hide usernames from visitors', 'scrapelock' ), __( '?author=1, 2, 3… returns “page not found” instead of the redirect to /author/username/, the REST API does not list users, the users sitemap is removed and oEmbed shows the site instead of the author. Logged-in users see everything as before. Author archives with a link stay.', 'scrapelock' ) );
 				?>
 		<?php self::row_close(); ?>
+		<?php self::render_login_settings( $s ); ?>
 		<?php self::group_heading( 'limits', __( 'Limits', 'scrapelock' ), __( 'How much one visitor may read per minute, stricter limits for some visitors, countries, and the temporary block for those who keep going.', 'scrapelock' ) ); ?>
 		<?php self::row_open( 'limits', __( 'Limits per IP', 'scrapelock' ) ); ?>
 				<?php
@@ -1592,6 +1599,21 @@ final class PNCP_Admin {
 					?>
 				</td>
 			</tr>
+			<tr id="pncp-sec-bunny-logs">
+				<th scope="row"><?php esc_html_e( 'Bunny CDN logs', 'scrapelock' ); ?></th>
+				<td>
+					<?php
+					// 3.8: PNCP_Bunny. The connection, Edge Rules and "Import now" are in the Bunny card under
+					// "Blocking at the CDN".
+					self::checkbox( $s, 'bunny_import', __( 'Import attacks from Bunny CDN\'s logs', 'scrapelock' ), __( 'Every 15 minutes ScrapeLock reads the new lines of the pull zone\'s log and records the attacks on pages Bunny served from its cache, which never reached WordPress. Needs logging on at the pull zone.', 'scrapelock' ) );
+					self::checkbox( $s, 'bunny_all_lines', __( 'Also record requests that reached WordPress', 'scrapelock' ), __( 'Off: only requests Bunny answered itself are recorded (WordPress already recorded the others). On: every attack-looking line, for sites where a page cache in front of WordPress hides requests.', 'scrapelock' ) );
+					self::number( $s, 'bunny_flood_4xx', __( 'Errors per IP that count as a flood (0 = off):', 'scrapelock' ), __( 'An IP with this many “page not found” or refused answers in one import is recorded as a 4xx flood.', 'scrapelock' ) );
+					self::checkbox( $s, 'bunny_strikes', __( 'Count IPs that are too fast at the CDN toward a temporary block', 'scrapelock' ), __( 'Uses the logs: every minute in which an IP asked Bunny for more pages than the limit below is a violation, also when Bunny served them from its cache. Not in Monitor only, and not when Bunny anonymizes IPs.', 'scrapelock' ) );
+					self::number( $s, 'bunny_rate', __( 'Pages per minute and IP at the CDN (0 = off):', 'scrapelock' ), __( 'Images, styles, scripts and fonts do not count.', 'scrapelock' ) );
+					self::textarea( $s, 'bunny_login_allow', __( 'Allowed IPs for the login page at Bunny, one per line:', 'scrapelock' ), __( 'When wp-login.php is locked at Bunny, these IPs still get through, with the IPs administrators used in the last 30 days.', 'scrapelock' ), 3 );
+					?>
+				</td>
+			</tr>
 			</table>
 		</details>
 		<?php
@@ -1602,7 +1624,8 @@ final class PNCP_Admin {
 		$usable = PNCP_Edge::usable();
 		// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Only decides whether a part is shown open.
 		$message = isset( $_GET['pncp_message'] ) ? sanitize_key( wp_unslash( $_GET['pncp_message'] ) ) : '';
-		$open    = 0 === strpos( $message, 'edge' ) || ( $usable && ( '' !== $edge['error'] || ! empty( $s['trust_any_proxy'] ) ) );
+		$open    = 0 === strpos( $message, 'edge' ) || ( $usable && ( '' !== $edge['error'] || ! empty( $s['trust_any_proxy'] ) ) )
+			|| false !== get_transient( 'pncp_bunny_msg_' . get_current_user_id() ); // 3.8: after a click on the Bunny card.
 		printf(
 			'<details class="pncp-advanced" id="pncp-sec-edge"%1$s><summary><h2 class="pncp-advanced__title">%2$s</h2> <span class="pncp-advanced__state">%3$s</span></summary>',
 			$open ? ' open' : '',
@@ -1615,6 +1638,7 @@ final class PNCP_Admin {
 			)
 		);
 		self::render_edge( $s );
+		PNCP_Bunny::render_card(); // 3.8: Bunny CDN logs and Edge Rules (own forms).
 		echo '</details>';
 		self::render_ip_lists();
 	}
@@ -1990,6 +2014,7 @@ final class PNCP_Admin {
 			<th scope="row"><?php esc_html_e( 'Versions', 'scrapelock' ); ?></th>
 			<td>
 				<?php self::checkbox( $s, 'hide_fingerprint', __( 'Hide that the site runs on WordPress, as far as possible', 'scrapelock' ), __( 'For visitors who are not signed in: everything “Hide the versions” below does, plus no REST API, oEmbed, RSD and shortlink links in the page head and headers, no emoji script, no X-Pingback and “X-Redirect-By: WordPress” headers. Tools such as BuiltWith and Wappalyzer, and scanners, look for these first. Everything keeps working. It cannot hide everything: the addresses of themes and plugins (/wp-content/…) still show it, and the hosting and DNS of a site are public anyway. Add the Nginx or Apache rules (Server rules tab) to refuse readme.html and license.txt too.', 'scrapelock' ) ); ?>
+				<?php self::render_stealth_pointer(); ?>
 				<?php self::checkbox( $s, 'hide_versions', __( 'Hide the versions of WordPress, PHP and the plugins', 'scrapelock' ), __( 'Scanners read these versions and look them up in lists of known vulnerabilities. This removes the “generator” tag from the page head and the feeds, the X-Powered-By header with the PHP version, and replaces “?ver=7.1.3” on CSS and JS files with a code that changes when the version changes, so caches still work. The readme and changelog files of WordPress and the plugins are static files: the Nginx and Apache rules in the “Server rules” tab refuse them. It does not fix any vulnerability: keep WordPress and the plugins updated.', 'scrapelock' ) ); ?>
 			</td>
 		</tr>
@@ -2303,6 +2328,112 @@ final class PNCP_Admin {
 				'done'     => $done,
 			)
 		);
+	}
+
+	/**
+	 * 3.8: the "Sign-in" part of the Bots and limits tab (PNCP_Login): failed sign-ins per IP and per username,
+	 * one error message, and the sign-in address. Part of the Bots tab's settings form.
+	 *
+	 * @param array<string, mixed> $s Settings.
+	 */
+	private static function render_login_settings( $s ) {
+		self::group_heading( 'login', __( 'Sign-in', 'scrapelock' ), __( 'Password guessing on wp-login.php, XML-RPC and the REST API, and where the sign-in page is.', 'scrapelock' ) );
+		self::row_open( 'login', __( 'Failed sign-ins', 'scrapelock' ) );
+		self::checkbox( $s, 'login_limit', __( 'Limit failed sign-ins', 'scrapelock' ), __( 'Counts wrong passwords on wp-login.php, XML-RPC (each call of a system.multicall, the way bots try hundreds of passwords in one request) and application passwords. Too many from one IP block it for a while; too many for one username pause that username.', 'scrapelock' ) );
+		self::number( $s, 'login_max', __( 'Failed sign-ins per IP before it is blocked:', 'scrapelock' ), __( 'Within the time below. Failures for an account that already signed in from that IP do not count, so a person who forgot the password is not blocked. Starting value: 5.', 'scrapelock' ) );
+		self::number( $s, 'login_window', __( '…within this many minutes:', 'scrapelock' ), __( 'Starting value: 15.', 'scrapelock' ) );
+		self::number( $s, 'login_ban_minutes', __( 'Block the IP for (minutes):', 'scrapelock' ), __( 'The block covers the whole site, like the other temporary blocks, and is listed under “Blocked IPs”. Starting value: 30.', 'scrapelock' ) );
+		self::number( $s, 'login_user_max', __( 'Failed sign-ins per username before it is paused (0 = off):', 'scrapelock' ), __( 'Counted from all IPs together: password guessing spread over many addresses. Usernames that do not exist are paused too, so the answer does not tell which exist. Starting value: 10.', 'scrapelock' ) );
+		self::number( $s, 'login_user_minutes', __( 'Pause the username for (minutes):', 'scrapelock' ), __( 'Its owner can still sign in from where they signed in before, and with the one-time link emailed to the account. Starting value: 15.', 'scrapelock' ) );
+		self::checkbox( $s, 'login_user_email', __( 'Email the account a link to sign in during a pause', 'scrapelock' ), __( 'Once per pause. The link works once, for 24 hours, and lets that browser sign in for 30 days.', 'scrapelock' ) );
+		self::checkbox( $s, 'login_generic_errors', __( 'One error message for a wrong username, email or password', 'scrapelock' ), __( 'WordPress says “The username … is not registered” for an unknown user, which tells bots which usernames exist. “Lost your password” answers the same way for unknown accounts too.', 'scrapelock' ) );
+		echo '<p class="description"><a href="' . esc_url( PNCP_Status::settings_url( array( 'tab' => 'hardening' ) ) . '#pncp-login-status' ) . '">' . esc_html__( 'Blocked IPs, paused usernames and the usernames tried', 'scrapelock' ) . '</a></p>';
+		self::row_close();
+		self::row_open( 'login_slug', __( 'Sign-in address', 'scrapelock' ) );
+		printf(
+			'<div class="pncp-field"><p><label for="pncp-login_slug">%1$s</label><br><code>%2$s</code><input type="text" class="regular-text code" id="pncp-login_slug" name="%3$s[login_slug]" value="%4$s" placeholder="my-login" spellcheck="false" autocomplete="off" pattern="[A-Za-z0-9_\-]{3,50}" aria-describedby="pncp-login_slug-help"></p><p class="description" id="pncp-login_slug-help">%5$s</p></div>',
+			esc_html__( 'Move the sign-in page to this address (empty = wp-login.php):', 'scrapelock' ),
+			esc_html( trailingslashit( home_url( '/' ) ) ),
+			esc_attr( PNCP_OPTION ),
+			esc_attr( (string) $s['login_slug'] ),
+			esc_html__( 'wp-login.php and /wp-admin/ then answer “page not found” to visitors who are not signed in, so password-guessing bots find nothing there; links, emails and redirects use the new address. Write it down. If you lose it, add define( \'SCRAPELOCK_LOGIN_SLUG_OFF\', true ); to wp-config.php. In Monitor only both addresses work. Letters, digits, “-” and “_”; not login, admin or an address a page already has.', 'scrapelock' )
+		);
+		if ( '' !== PNCP_Login::slug() ) {
+			echo '<p>' . esc_html__( 'Sign in at:', 'scrapelock' ) . ' <a href="' . esc_url( PNCP_Login::login_url() ) . '"><code>' . esc_html( PNCP_Login::login_url() ) . '</code></a></p>';
+		}
+		self::row_close();
+	}
+
+	/**
+	 * 3.8: on the Feeds and API tab, next to "Hide that the site runs on WordPress": where Stealth is, and its state.
+	 */
+	private static function render_stealth_pointer() {
+		$on = PNCP_Stealth::active();
+		printf(
+			'<p class="description pncp-stealth-pointer"><strong>%1$s</strong> %2$s <a href="%3$s">%4$s</a></p>',
+			esc_html( $on ? __( 'Stealth is on.', 'scrapelock' ) : __( 'More: Stealth.', 'scrapelock' ) ),
+			esc_html__( 'It also gives visitors and tools such as BuiltWith and Wappalyzer neutral addresses instead of /wp-content/ and /wp-includes/, another REST prefix and /sitemap.xml, and refuses readme.html, after testing the server rules. It includes the two settings here.', 'scrapelock' ),
+			esc_url( PNCP_Status::settings_url( array( 'tab' => PNCP_Stealth::tab() ) ) . '#pncp-stealth' ),
+			esc_html__( 'Stealth settings', 'scrapelock' )
+		);
+	}
+
+	/**
+	 * 3.8: the Attacks tab: the full attack report (PNCP_Attack_Report), and deleting the record.
+	 *
+	 * @param array<string, mixed> $s Settings.
+	 */
+	private static function tab_attacks( $s ) {
+		PNCP_Attack_Report::render_tab( $s );
+		if ( ! PNCP_Attacks::ready() ) {
+			return;
+		}
+		$locked = PNCP_Lockdown::is_locked();
+		?>
+		<section class="pncp-card pncp-card--wide" id="pncp-attacks-settings" aria-labelledby="pncp-attacks-settings-title">
+			<h2 id="pncp-attacks-settings-title"><?php esc_html_e( 'The attack record', 'scrapelock' ); ?></h2>
+			<p class="description">
+				<?php
+				echo esc_html(
+					empty( $s['attack_record'] )
+						? __( 'Recording is off: only what was there before is shown.', 'scrapelock' )
+						/* translators: %s: number of days */
+						: sprintf( _n( 'Recording is on. It keeps IP addresses and the usernames tried, and is deleted automatically after %s day.', 'Recording is on. It keeps IP addresses and the usernames tried, and is deleted automatically after %s days.', PNCP_Attacks::retention(), 'scrapelock' ), number_format_i18n( PNCP_Attacks::retention() ) )
+				);
+				?>
+				<a href="<?php echo esc_url( PNCP_Status::settings_url( array( 'tab' => 'log' ) ) . '#pncp-sec-attack-record' ); ?>"><?php esc_html_e( 'Attack record settings', 'scrapelock' ); ?></a>
+			</p>
+			<?php self::action_form_open( 'pncp_attacks_clear', 'pncp_attacks_clear', 'pncp-inline-form' ); ?>
+				<button type="submit" class="button button-link-delete" data-pncp-confirm="<?php esc_attr_e( 'Delete the whole attack record? This cannot be undone.', 'scrapelock' ); ?>"<?php disabled( $locked ); ?>><?php esc_html_e( 'Delete the attack record', 'scrapelock' ); ?></button>
+				<?php if ( $locked ) : ?>
+					<span class="description"><?php esc_html_e( 'While the site is locked it cannot be deleted.', 'scrapelock' ); ?></span>
+				<?php endif; ?>
+			</form>
+		</section>
+		<?php
+	}
+
+	/**
+	 * 3.8: the Vulnerable points tab: one-click hardening (PNCP_Hardening), the sign-in protection's state
+	 * (PNCP_Login) and Stealth (PNCP_Stealth).
+	 *
+	 * @param array<string, mixed> $s Settings.
+	 */
+	private static function tab_hardening( $s ) { // phpcs:ignore Generic.CodeAnalysis.UnusedFunctionParameter.Found -- Same signature as the other tabs.
+		self::section_nav(
+			array(
+				'points'  => __( 'Vulnerable points', 'scrapelock' ),
+				'login'   => __( 'Sign-in protection', 'scrapelock' ),
+				'stealth' => __( 'Stealth', 'scrapelock' ),
+			)
+		);
+		echo '<div id="pncp-sec-points">';
+		PNCP_Hardening::render_card();
+		echo '</div><div id="pncp-sec-login"><div id="pncp-login-status">';
+		PNCP_Login::render_status_card();
+		echo '</div></div><div id="pncp-sec-stealth">';
+		PNCP_Stealth::render_card();
+		echo '</div>';
 	}
 
 	/**
@@ -2839,6 +2970,35 @@ final class PNCP_Admin {
 			<th scope="row"><?php esc_html_e( 'AI assistants', 'scrapelock' ); ?></th>
 			<td>
 				<?php self::checkbox( $s, 'ai_referrals', __( 'Count visitors who come from AI assistants (ChatGPT, Perplexity, Claude, Gemini, Copilot…)', 'scrapelock' ), __( 'One count per day, assistant and page; no IP, User-Agent or cookie is stored. Shown above.', 'scrapelock' ) ); ?>
+			</td>
+		</tr>
+		<tr id="pncp-sec-attack-record">
+			<th scope="row"><?php esc_html_e( 'Attack record', 'scrapelock' ); ?></th>
+			<td>
+				<?php self::checkbox( $s, 'attack_record', __( 'Record where bots and attackers hit the site', 'scrapelock' ), __( 'Failed sign-ins and the usernames tried, wp-login.php and wp-admin visits that do not sign in, XML-RPC calls, scanner and plugin probes, username enumeration and attack patterns in the address, also when nothing is refused. Kept per hour, address and IP; a normal page view writes nothing. Shown on the Attacks tab.', 'scrapelock' ) ); ?>
+			</td>
+		</tr>
+		<tr>
+			<th scope="row"><label for="pncp-attack_retention"><?php esc_html_e( 'Keep the attack record for', 'scrapelock' ); ?></label></th>
+			<td>
+				<?php
+				self::select(
+					$s,
+					'attack_retention',
+					array(
+						'7'  => __( '7 days', 'scrapelock' ),
+						'30' => __( '30 days', 'scrapelock' ),
+						'90' => __( '90 days', 'scrapelock' ),
+					),
+					__( 'It keeps IP addresses and the usernames tried (personal data). Deleted automatically.', 'scrapelock' )
+				);
+				?>
+			</td>
+		</tr>
+		<tr id="pncp-sec-attack-report">
+			<th scope="row"><?php esc_html_e( 'Attack report by email', 'scrapelock' ); ?></th>
+			<td>
+				<?php self::checkbox( $s, 'report_weekly', __( 'Weekly attack report by email', 'scrapelock' ), __( 'Every Monday, a plain-text summary of the last 7 days (attacks, wp-admin and sign-in attempts, the addresses attacked most, the usernames tried) to the site\'s administration email, with a link to the Attacks tab.', 'scrapelock' ) ); ?>
 			</td>
 		</tr>
 		<?php
@@ -3513,6 +3673,7 @@ final class PNCP_Admin {
 			'edge_test_failed' => array( 'error', '' ),
 			'error'            => array( 'error', __( 'The action was not completed.', 'scrapelock' ) ),
 		);
+		$texts  += PNCP_Attacks::notices(); // 3.8: attacks_cleared, attacks_locked.
 		if ( isset( $texts[ $message ] ) ) {
 			$text = $texts[ $message ][1];
 			if ( in_array( $message, array( 'edge_failed', 'edge_test_ok', 'edge_test_failed' ), true ) ) {

@@ -1,0 +1,2650 @@
+<?php
+/**
+ * Bunny CDN, deeper: every visitor passes through Bunny, also for pages Bunny serves from its cache, which never
+ * reach WordPress. ScrapeLock reads the pull zone's logs to see the attacks WordPress cannot see, and locks
+ * vulnerable addresses (wp-login.php, xmlrpc.php, .env and .git probes…) at the edge with one click, as Bunny
+ * Edge Rules made with the site owner's own account.
+ *
+ * Bunny's APIs as ScrapeLock uses them (see the readme's External services):
+ * - Pull zone:  GET  {api}/pullzone/{id}  (EnableLogging, LoggingIPAnonymizationEnabled, EdgeRules[]).
+ *               POST {api}/pullzone/{id}  with {"EnableLogging": true} (only when the owner clicks the button).
+ * - Edge rules: POST {api}/pullzone/{id}/edgerules/addOrUpdate, DELETE {api}/pullzone/{id}/edgerules/{guid}.
+ * - Logs:       GET  {log}/{MM-dd-yy}/{id}.log?order=asc&start=N&end=M, one request per line, fields separated by
+ *               "|": cache status|status|timestamp (ms)|bytes|pull zone|remote IP|referer|URL|edge location|
+ *               User-Agent|request ID|country. The parser accepts missing fields at the end and extra "|" in the
+ *               User-Agent.
+ * {api} = https://api.bunny.net (filter `pncp_bunny_api_base`), {log} = https://logging.bunnycdn.com (filter
+ * `pncp_bunny_log_base`). Header "AccessKey" with the account's API key.
+ *
+ * Nothing here runs while a visitor waits: the import and the rule updates run from cron (every 15 minutes) or
+ * when an administrator clicks a button. A normal page view reads and writes nothing of this.
+ *
+ * @package ScrapeLock
+ */
+
+defined( 'ABSPATH' ) || exit;
+
+/**
+ * Reads attacks from Bunny CDN's logs and manages the Edge Rules ScrapeLock created.
+ */
+final class PNCP_Bunny {
+
+	/**
+	 * Own connection (pull zone and API key) when "Blocking at the CDN" is not set to Bunny CDN.
+	 */
+	const CONFIG = 'pncp_bunny_config';
+
+	/**
+	 * Import cursor, logging status, last run and the hourly counts of what was seen at the edge.
+	 */
+	const STATE = 'pncp_bunny_state';
+
+	/**
+	 * The Edge Rules ScrapeLock created: id => rule. Rules not in here are never touched.
+	 */
+	const RULES = 'pncp_bunny_rules';
+
+	/**
+	 * API calls of the last 5 minutes: [window start, calls].
+	 */
+	const CALLS = 'pncp_bunny_calls';
+
+	const CRON     = 'pncp_bunny_run';
+	const SCHEDULE = 'pncp_15min';
+	const ACTION   = 'pncp_bunny';
+
+	/**
+	 * Log reason (PNCP_Log::reasons()) of a temporary block for too many requests seen at the edge.
+	 */
+	const REASON = 'edge_rate';
+
+	/**
+	 * Description prefix of every Edge Rule ScrapeLock creates.
+	 */
+	const PREFIX = 'ScrapeLock: ';
+
+	/**
+	 * API calls in 5 minutes at most.
+	 */
+	const CALL_BUDGET = 60;
+
+	/**
+	 * Seconds one API call may take; a log download may take longer.
+	 */
+	const CALL_TIMEOUT = 10;
+	const LOG_TIMEOUT  = 20;
+
+	/**
+	 * Seconds a run may work.
+	 */
+	const BUDGET = 20;
+
+	/**
+	 * Bunny's enums as ScrapeLock uses them (filter `pncp_bunny_edge_rule` can change the whole rule).
+	 */
+	const ACTION_BLOCK   = 4; // ActionType BlockRequest.
+	const TRIGGER_URL    = 0; // Trigger Type Url.
+	const TRIGGER_IP     = 5; // Trigger Type RemoteIP.
+	const MATCH_ANY      = 0;
+	const MATCH_ALL      = 1;
+	const MATCH_NONE     = 2;
+	const MAX_PATTERNS   = 50;
+	const MAX_ALLOW_IPS  = 40;
+	const MAX_AGGREGATES = 3000;
+
+	/**
+	 * The credentials of this request (false = not read yet).
+	 *
+	 * @var array{zone:string, token:string, source:string}|null|false
+	 */
+	private static $creds = false;
+
+	/**
+	 * Whether this request removes everything (deactivation, uninstall): not held to the call budget.
+	 *
+	 * @var bool
+	 */
+	private static $removing_all = false;
+
+	/**
+	 * Registers the hooks.
+	 */
+	public static function init() {
+		add_filter( 'cron_schedules', array( __CLASS__, 'schedules' ) ); // phpcs:ignore WordPress.WP.CronInterval.ChangeDetected -- 15 minutes, the import interval.
+		add_action( self::CRON, array( __CLASS__, 'run' ) );
+		add_action( 'admin_post_' . self::ACTION, array( __CLASS__, 'handle' ) );
+		add_action( 'admin_init', array( __CLASS__, 'maybe_schedule' ) );
+		add_action( 'update_option_' . PNCP_OPTION, array( __CLASS__, 'settings_changed' ), 20, 2 );
+		add_action( 'update_option_' . PNCP_Edge::CONFIG, array( __CLASS__, 'edge_config_changed' ), 10, 2 );
+	}
+
+	/**
+	 * The 15-minute schedule.
+	 *
+	 * @param array<string, array<string, mixed>> $schedules Schedules.
+	 * @return array<string, array<string, mixed>>
+	 */
+	public static function schedules( $schedules ) {
+		if ( ! isset( $schedules[ self::SCHEDULE ] ) ) {
+			$schedules[ self::SCHEDULE ] = array(
+				'interval' => 15 * MINUTE_IN_SECONDS,
+				'display'  => __( 'Every 15 minutes (ScrapeLock)', 'scrapelock' ),
+			);
+		}
+		return $schedules;
+	}
+
+	/* ---------- Settings ---------- */
+
+	/**
+	 * The settings of this component, with their defaults when they are not registered (yet).
+	 *
+	 * @return array{import:bool, all_lines:bool, flood:int, strikes:bool, rate:int, allow:string[]}
+	 */
+	public static function settings() {
+		$s     = PNCP_Options::get();
+		$allow = isset( $s['bunny_login_allow'] ) ? $s['bunny_login_allow'] : '';
+		$allow = is_array( $allow ) ? $allow : preg_split( '/[\s,]+/', (string) $allow, -1, PREG_SPLIT_NO_EMPTY );
+		$ips   = array();
+		foreach ( (array) $allow as $entry ) {
+			$entry = trim( (string) $entry );
+			if ( '' !== $entry && ( filter_var( $entry, FILTER_VALIDATE_IP ) || PNCP_Ip::valid_range( $entry ) ) ) {
+				$ips[] = $entry;
+			}
+		}
+		return array(
+			'import'    => ! empty( $s['bunny_import'] ),
+			'all_lines' => ! empty( $s['bunny_all_lines'] ),
+			'flood'     => isset( $s['bunny_flood_4xx'] ) ? max( 0, min( 10000, (int) $s['bunny_flood_4xx'] ) ) : 30,
+			'strikes'   => ! empty( $s['bunny_strikes'] ),
+			'rate'      => isset( $s['bunny_rate'] ) ? max( 0, min( 10000, (int) $s['bunny_rate'] ) ) : 120,
+			'allow'     => array_values( array_unique( $ips ) ),
+		);
+	}
+
+	/**
+	 * The pull zone and API key: those of "Blocking at the CDN" when it is set to Bunny CDN, otherwise the
+	 * connection of this card (option pncp_bunny_config; the key can come from SCRAPELOCK_BUNNY_KEY in
+	 * wp-config.php).
+	 *
+	 * @return array{zone:string, token:string, source:string}|null
+	 */
+	public static function credentials() {
+		if ( false !== self::$creds ) {
+			return self::$creds;
+		}
+		self::$creds = null;
+		$edge        = PNCP_Edge::config();
+		if ( 'bunny' === $edge['provider'] && '' !== $edge['zone'] && '' !== $edge['token'] ) {
+			self::$creds = array(
+				'zone'   => $edge['zone'],
+				'token'  => $edge['token'],
+				'source' => 'edge',
+			);
+			return self::$creds;
+		}
+		$own = self::own_config();
+		if ( '' !== $own['zone'] && '' !== $own['token'] ) {
+			self::$creds = array(
+				'zone'   => $own['zone'],
+				'token'  => $own['token'],
+				'source' => 'own',
+			);
+		}
+		return self::$creds;
+	}
+
+	/**
+	 * Forgets the credentials read in this request (after a change, and for tests).
+	 */
+	public static function reset() {
+		self::$creds = false;
+	}
+
+	/**
+	 * The own connection of this card.
+	 *
+	 * @return array{zone:string, token:string}
+	 */
+	public static function own_config() {
+		$c     = get_option( self::CONFIG, array() );
+		$c     = is_array( $c ) ? $c : array();
+		$token = self::key_from_config() ? (string) SCRAPELOCK_BUNNY_KEY : ( isset( $c['token'] ) ? (string) $c['token'] : '' );
+		return array(
+			'zone'  => PNCP_Edge::clean_zone( 'bunny', isset( $c['zone'] ) ? (string) $c['zone'] : '' ),
+			'token' => PNCP_Edge::clean_token( $token ),
+		);
+	}
+
+	/**
+	 * Is the own API key set in wp-config.php (SCRAPELOCK_BUNNY_KEY)?
+	 *
+	 * @return bool
+	 */
+	public static function key_from_config() {
+		return defined( 'SCRAPELOCK_BUNNY_KEY' ) && '' !== PNCP_Edge::clean_token( (string) SCRAPELOCK_BUNNY_KEY );
+	}
+
+	/**
+	 * Can vulnerable points be locked at the Bunny CDN edge?
+	 *
+	 * @return bool
+	 */
+	public static function edge_available() {
+		return null !== self::credentials();
+	}
+
+	/**
+	 * Should Edge Rules block now? Not while protection is off or in Monitor only: the rules stay at Bunny,
+	 * switched off, and are switched on again by the next run.
+	 *
+	 * @return bool
+	 */
+	public static function enforcing() {
+		$s = PNCP_Options::get();
+		return ! empty( $s['enabled'] ) && ! PNCP_Options::monitoring( $s );
+	}
+
+	/* ---------- Scheduling ---------- */
+
+	/**
+	 * Is there work for cron: an import, or rules to keep in step?
+	 *
+	 * @return bool
+	 */
+	public static function wanted() {
+		if ( null === self::credentials() ) {
+			return false;
+		}
+		$s = PNCP_Options::get();
+		return ( self::settings()['import'] && ! empty( $s['enabled'] ) ) || (bool) self::rules();
+	}
+
+	/**
+	 * Schedules or clears the run (wp-admin and after a settings change; reads only the cron option, which
+	 * WordPress has loaded anyway).
+	 */
+	public static function maybe_schedule() {
+		$next = wp_next_scheduled( self::CRON );
+		if ( self::wanted() ) {
+			if ( ! $next ) {
+				wp_schedule_event( time() + MINUTE_IN_SECONDS, self::SCHEDULE, self::CRON );
+			}
+		} elseif ( $next ) {
+			wp_clear_scheduled_hook( self::CRON );
+		}
+	}
+
+	/**
+	 * The settings were saved: Monitor only or protection may have changed, so the rules follow soon.
+	 *
+	 * @param mixed $old   Previous value of the settings.
+	 * @param mixed $value New value.
+	 */
+	public static function settings_changed( $old = array(), $value = array() ) {
+		self::reset();
+		if ( ! self::rules() ) {
+			self::maybe_schedule();
+			return;
+		}
+		$was = is_array( $old ) && isset( $old['login_slug'] ) ? (string) $old['login_slug'] : '';
+		$now = is_array( $value ) && isset( $value['login_slug'] ) ? (string) $value['login_slug'] : '';
+		if ( $was !== $now && self::preset_locked( 'login' ) ) {
+			// The sign-in address changed while wp-login.php is locked at Bunny: the rule follows now, not at
+			// the next run, so nobody is left without a way to sign in.
+			self::login_changed();
+		}
+		wp_clear_scheduled_hook( self::CRON );
+		wp_schedule_event( time() + 30, self::SCHEDULE, self::CRON );
+	}
+
+	/**
+	 * "Blocking at the CDN" got another configuration. The Edge Rules made with the previous Bunny pull zone are
+	 * removed with the previous key, unless this card still reaches that pull zone.
+	 *
+	 * @param mixed $old Previous value.
+	 * @param mixed $value New value.
+	 */
+	public static function edge_config_changed( $old, $value ) {
+		self::reset();
+		$old = is_array( $old ) ? $old : array();
+		$new = is_array( $value ) ? $value : array();
+		if ( empty( $old['provider'] ) || 'bunny' !== $old['provider'] ) {
+			self::maybe_schedule();
+			return;
+		}
+		$old_zone = PNCP_Edge::clean_zone( 'bunny', isset( $old['zone'] ) ? (string) $old['zone'] : '' );
+		$creds    = self::credentials();
+		if ( '' === $old_zone || ( null !== $creds && $creds['zone'] === $old_zone ) ) {
+			self::maybe_schedule();
+			return;
+		}
+		$token = PNCP_Edge::token_from_config() ? (string) SCRAPELOCK_EDGE_TOKEN : ( isset( $old['token'] ) ? (string) $old['token'] : '' );
+		if ( '' === $token && isset( $new['token'] ) && ( isset( $new['provider'] ) && 'bunny' === $new['provider'] ) ) {
+			$token = (string) $new['token']; // Same account, another pull zone: the token was kept.
+		}
+		$c = array(
+			'zone'   => $old_zone,
+			'token'  => PNCP_Edge::clean_token( $token ),
+			'source' => 'edge',
+		);
+		if ( '' !== $c['token'] ) {
+			self::remove_rules_of( $c, 15 );
+		}
+		self::maybe_schedule();
+	}
+
+	/* ---------- API ---------- */
+
+	/**
+	 * The base address of an API, from its filter (an https or http address without a trailing slash).
+	 *
+	 * @param string $which api | log.
+	 * @return string
+	 */
+	public static function base( $which ) {
+		if ( 'log' === $which ) {
+			/**
+			 * Filters the address of Bunny's logging API (https://logging.bunnycdn.com).
+			 *
+			 * @param string $base Address.
+			 */
+			$base = (string) apply_filters( 'pncp_bunny_log_base', 'https://logging.bunnycdn.com' );
+			$def  = 'https://logging.bunnycdn.com';
+		} else {
+			/**
+			 * Filters the address of Bunny's API (https://api.bunny.net).
+			 *
+			 * @param string $base Address.
+			 */
+			$base = (string) apply_filters( 'pncp_bunny_api_base', PNCP_Edge::BUNNY_API );
+			$def  = PNCP_Edge::BUNNY_API;
+		}
+		$base = untrailingslashit( trim( $base ) );
+		return preg_match( '#^https?://[^\s/?\#]+(?:/[^\s?\#]*)?$#i', $base ) ? $base : $def;
+	}
+
+	/**
+	 * One call to Bunny's API, with the account's API key.
+	 *
+	 * @param array{zone:string, token:string} $c       Credentials.
+	 * @param string                           $method  Method.
+	 * @param string                           $url     Address.
+	 * @param array<string, mixed>|null        $body    JSON body.
+	 * @param array<string, mixed>             $options timeout, bytes (limit_response_size), raw (no JSON).
+	 * @return array{status:string, code:int, json:array<mixed>, body:string, message:string, truncated:bool}
+	 */
+	private static function call( $c, $method, $url, $body = null, $options = array() ) {
+		$out    = array(
+			'status'    => 'error',
+			'code'      => 0,
+			'json'      => array(),
+			'body'      => '',
+			'message'   => '',
+			'truncated' => false,
+		);
+		$now    = time();
+		$window = get_option( self::CALLS, array() );
+		$window = is_array( $window ) && isset( $window[0], $window[1] ) && (int) $window[0] > $now - 5 * MINUTE_IN_SECONDS && (int) $window[0] <= $now ? array( (int) $window[0], (int) $window[1] ) : array( $now, 0 );
+		// WP-CLI is someone at the server on purpose (e.g. removing a rule that locked them out): no budget.
+		if ( ! self::$removing_all && ! ( defined( 'WP_CLI' ) && WP_CLI ) ) {
+			/**
+			 * Filters the most calls ScrapeLock makes to Bunny's APIs in 5 minutes (60 by default).
+			 *
+			 * @param int $budget Calls.
+			 */
+			$budget = max( 10, (int) apply_filters( 'pncp_bunny_call_budget', self::CALL_BUDGET ) );
+			// An administrator's click may use twice as many: the automatic runs leave room for it.
+			$budget = is_admin() && ! wp_doing_cron() ? 2 * $budget : $budget;
+			if ( $window[1] >= $budget ) {
+				$out['status']  = 'wait';
+				$out['message'] = __( 'ScrapeLock made many calls to Bunny in the last 5 minutes; it will continue in a few minutes.', 'scrapelock' );
+				return $out;
+			}
+			++$window[1];
+			update_option( self::CALLS, $window, false );
+		}
+		$raw  = ! empty( $options['raw'] );
+		$args = array(
+			'method'      => $method,
+			'timeout'     => isset( $options['timeout'] ) ? (int) $options['timeout'] : self::CALL_TIMEOUT,
+			'redirection' => 0,
+			'user-agent'  => 'ScrapeLock/' . ( defined( 'PNCP_VERSION' ) ? PNCP_VERSION : '' ),
+			'headers'     => array(
+				'AccessKey' => $c['token'],
+				'Accept'    => $raw ? 'text/plain, */*' : 'application/json',
+			),
+		);
+		if ( ! empty( $options['bytes'] ) ) {
+			$args['limit_response_size'] = (int) $options['bytes'];
+		}
+		if ( null !== $body ) {
+			$args['headers']['Content-Type'] = 'application/json';
+			$args['body']                    = (string) wp_json_encode( $body );
+		}
+		$response = wp_remote_request( $url, $args );
+		if ( is_wp_error( $response ) ) {
+			/* translators: %s: error message */
+			$out['message'] = sprintf( __( 'Bunny could not be reached: %s', 'scrapelock' ), self::redact( substr( sanitize_text_field( $response->get_error_message() ), 0, 200 ), $c['token'] ) );
+			if ( 'http_request_not_executed' === $response->get_error_code() ) {
+				$out['message'] .= ' ' . __( 'WordPress blocks requests to other sites on this server (WP_HTTP_BLOCK_EXTERNAL): add api.bunny.net and logging.bunnycdn.com to WP_ACCESSIBLE_HOSTS.', 'scrapelock' );
+			}
+			return $out;
+		}
+		$code             = (int) wp_remote_retrieve_response_code( $response );
+		$text             = (string) wp_remote_retrieve_body( $response );
+		$out['code']      = $code;
+		$out['body']      = $raw ? $text : '';
+		$out['truncated'] = ! empty( $options['bytes'] ) && strlen( $text ) >= (int) $options['bytes'];
+		$json             = $raw ? null : json_decode( $text, true );
+		$out['json']      = is_array( $json ) ? $json : array();
+		if ( $code >= 200 && $code < 300 ) {
+			$out['status'] = 'ok';
+			return $out;
+		}
+		$detail = isset( $out['json']['Message'] ) && is_scalar( $out['json']['Message'] ) ? (string) $out['json']['Message'] : '';
+		$detail = self::redact( substr( sanitize_text_field( $detail ), 0, 200 ), $c['token'] );
+		if ( 401 === $code || 403 === $code ) {
+			$out['status']  = 'denied';
+			$out['message'] = __( 'Bunny refused the API key. Use the API key from Account settings → API in the bunny.net dashboard.', 'scrapelock' );
+		} elseif ( 404 === $code ) {
+			$out['status']  = 'missing';
+			$out['message'] = __( 'Bunny does not know this address (pull zone, rule or log).', 'scrapelock' );
+		} elseif ( 429 === $code ) {
+			$out['status']  = 'wait';
+			$out['message'] = __( 'Bunny asked to slow down; ScrapeLock will continue in a few minutes.', 'scrapelock' );
+		} elseif ( $code >= 500 ) {
+			/* translators: %d: HTTP status code */
+			$out['message'] = sprintf( __( 'Bunny answered with an error (HTTP %d); ScrapeLock will try again later.', 'scrapelock' ), $code );
+		} else {
+			$out['status'] = 'refused';
+			/* translators: %d: HTTP status code */
+			$out['message'] = sprintf( __( 'Bunny did not accept the request (HTTP %d).', 'scrapelock' ), $code );
+		}
+		if ( '' !== $detail ) {
+			$out['message'] .= ' (' . $detail . ')';
+		}
+		return $out;
+	}
+
+	/**
+	 * Takes the API key out of a text.
+	 *
+	 * @param string $text  Text.
+	 * @param string $token API key.
+	 * @return string
+	 */
+	private static function redact( $text, $token ) {
+		return strlen( (string) $token ) >= 8 ? str_replace( (string) $token, '[key]', (string) $text ) : (string) $text;
+	}
+
+	/**
+	 * The pull zone, as Bunny returns it.
+	 *
+	 * @param array{zone:string, token:string} $c Credentials.
+	 * @return array{status:string, code:int, json:array<mixed>, body:string, message:string, truncated:bool}
+	 */
+	private static function pull_zone( $c ) {
+		return self::call( $c, 'GET', self::base( 'api' ) . '/pullzone/' . rawurlencode( $c['zone'] ) );
+	}
+
+	/* ---------- State ---------- */
+
+	/**
+	 * The state, with every field present.
+	 *
+	 * @return array<string, mixed>
+	 */
+	public static function state() {
+		$s        = get_option( self::STATE, array() );
+		$s        = is_array( $s ) ? $s : array();
+		$defaults = array(
+			'zone'       => '',
+			'day'        => '',
+			'offset'     => 0,
+			'sig'        => '',
+			'floor'      => 0,
+			'last_run'   => 0,
+			'last_ok'    => 0,
+			'lines'      => 0,
+			'found'      => 0,
+			'error'      => '',
+			'error_time' => 0,
+			'logging'    => array(),
+			'hours'      => array(),
+			'struck'     => 0,
+			'skipped'    => 0,
+		);
+		$s        = array_merge( $defaults, array_intersect_key( $s, $defaults ) );
+		foreach ( array( 'logging', 'hours' ) as $key ) {
+			$s[ $key ] = is_array( $s[ $key ] ) ? $s[ $key ] : array();
+		}
+		return $s;
+	}
+
+	/**
+	 * Saves the state (not autoloaded: only cron and the settings page read it).
+	 *
+	 * @param array<string, mixed> $state State.
+	 */
+	private static function save_state( $state ) {
+		if ( false === get_option( self::STATE, false ) ) {
+			add_option( self::STATE, $state, '', false );
+		} else {
+			update_option( self::STATE, $state, false );
+		}
+	}
+
+	/**
+	 * The Edge Rules ScrapeLock created.
+	 *
+	 * @return array<string, array<string, mixed>>
+	 */
+	private static function rules() {
+		$rules = get_option( self::RULES, array() );
+		return is_array( $rules ) ? $rules : array();
+	}
+
+	/**
+	 * Saves the rules ScrapeLock created.
+	 *
+	 * @param array<string, array<string, mixed>> $rules Rules.
+	 */
+	private static function save_rules( $rules ) {
+		if ( ! $rules ) {
+			delete_option( self::RULES );
+			return;
+		}
+		if ( false === get_option( self::RULES, false ) ) {
+			add_option( self::RULES, $rules, '', false );
+		} else {
+			update_option( self::RULES, $rules, false );
+		}
+	}
+
+	/**
+	 * The Edge Rules ScrapeLock manages, for the card, WP-CLI and other components.
+	 *
+	 * @return array<string, array{id:string, label:string, patterns:string[], allow:string[], guid:string, zone:string, enabled:bool, created:int, updated:int, missing:bool}>
+	 */
+	public static function list_ours() {
+		$out = array();
+		foreach ( self::rules() as $id => $rule ) {
+			$out[ (string) $id ] = array(
+				'id'       => (string) $id,
+				'label'    => isset( $rule['label'] ) ? (string) preg_replace( '/^ScrapeLock\s*(?:hardening)?\s*:\s*/i', '', (string) $rule['label'] ) : (string) $id,
+				'patterns' => isset( $rule['patterns'] ) ? array_map( 'strval', (array) $rule['patterns'] ) : array(),
+				'allow'    => isset( $rule['allow'] ) ? array_map( 'strval', (array) $rule['allow'] ) : array(),
+				'guid'     => isset( $rule['guid'] ) ? (string) $rule['guid'] : '',
+				'zone'     => isset( $rule['zone'] ) ? (string) $rule['zone'] : '',
+				'enabled'  => ! empty( $rule['enabled'] ),
+				'created'  => isset( $rule['created'] ) ? (int) $rule['created'] : 0,
+				'updated'  => isset( $rule['updated'] ) ? (int) $rule['updated'] : 0,
+				'missing'  => ! empty( $rule['missing'] ),
+			);
+		}
+		return $out;
+	}
+
+	/* ---------- Edge Rules ---------- */
+
+	/**
+	 * A rule ID as stored: lowercase letters, digits, "_" and "-", at most 40 characters.
+	 *
+	 * @param string $id ID.
+	 * @return string
+	 */
+	private static function clean_id( $id ) {
+		return substr( sanitize_key( (string) $id ), 0, 40 );
+	}
+
+	/**
+	 * URL patterns as Bunny's "Request URL" trigger takes them (wildcards "*"): no spaces or control characters,
+	 * at most 255 characters each, at most MAX_PATTERNS, and never a pattern that is only wildcards.
+	 *
+	 * @param string[] $patterns Patterns.
+	 * @return string[]
+	 */
+	private static function clean_patterns( $patterns ) {
+		$out = array();
+		foreach ( (array) $patterns as $pattern ) {
+			$pattern = trim( (string) $pattern );
+			if ( '' === $pattern || strlen( $pattern ) > 255 || preg_match( '/[\s\x00-\x1F\x7F"<>]/', $pattern ) || '' === trim( $pattern, '*/' ) ) {
+				continue;
+			}
+			$out[ $pattern ] = $pattern;
+		}
+		return array_slice( array_values( $out ), 0, self::MAX_PATTERNS );
+	}
+
+	/**
+	 * The Description of a rule at Bunny: "ScrapeLock: <label> [<id>]", which also finds it again after it was
+	 * created.
+	 *
+	 * @param string $id    ID.
+	 * @param string $label Label.
+	 * @return string
+	 */
+	private static function description( $id, $label ) {
+		$label = trim( preg_replace( '/^ScrapeLock\s*(?:hardening)?\s*:\s*/i', '', sanitize_text_field( (string) $label ) ) );
+		$label = function_exists( 'mb_substr' ) ? mb_substr( $label, 0, 120 ) : substr( $label, 0, 120 );
+		return self::PREFIX . ( '' !== $label ? $label : $id ) . ' [' . $id . ']';
+	}
+
+	/**
+	 * The JSON body of a rule for addOrUpdate.
+	 *
+	 * @param string               $id      ID.
+	 * @param array<string, mixed> $rule    Rule (label, patterns, allow, except, guid).
+	 * @param bool                 $enabled Whether it blocks.
+	 * @return array<string, mixed>
+	 */
+	private static function body( $id, $rule, $enabled ) {
+		$triggers = array(
+			array(
+				'Type'                => self::TRIGGER_URL,
+				'PatternMatches'      => array_values( (array) $rule['patterns'] ),
+				'PatternMatchingType' => self::MATCH_ANY,
+				'Parameter1'          => '',
+			),
+		);
+		if ( ! empty( $rule['allow'] ) ) {
+			$triggers[] = array(
+				'Type'                => self::TRIGGER_IP,
+				'PatternMatches'      => array_values( (array) $rule['allow'] ),
+				'PatternMatchingType' => self::MATCH_NONE,
+				'Parameter1'          => '',
+			);
+		}
+		if ( ! empty( $rule['except'] ) ) {
+			$triggers[] = array(
+				'Type'                => self::TRIGGER_URL,
+				'PatternMatches'      => array_values( (array) $rule['except'] ),
+				'PatternMatchingType' => self::MATCH_NONE,
+				'Parameter1'          => '',
+			);
+		}
+		$body = array(
+			'ActionType'          => self::ACTION_BLOCK,
+			'ActionParameter1'    => '',
+			'ActionParameter2'    => '',
+			'Triggers'            => $triggers,
+			'TriggerMatchingType' => count( $triggers ) > 1 ? self::MATCH_ALL : self::MATCH_ANY,
+			'Description'         => self::description( $id, (string) $rule['label'] ),
+			'Enabled'             => (bool) $enabled,
+		);
+		if ( ! empty( $rule['guid'] ) ) {
+			$body = array( 'Guid' => (string) $rule['guid'] ) + $body;
+		}
+		/**
+		 * Filters an Edge Rule before ScrapeLock sends it to Bunny (addOrUpdate).
+		 *
+		 * @param array<string, mixed> $body The rule as JSON.
+		 * @param string               $id   ScrapeLock's ID of the rule.
+		 */
+		return (array) apply_filters( 'pncp_bunny_edge_rule', $body, $id );
+	}
+
+	/**
+	 * The Edge Rules of the pull zone: GUID => Description.
+	 *
+	 * @param array<mixed> $zone The pull zone as JSON.
+	 * @return array<string, array{description:string, enabled:bool}>
+	 */
+	private static function zone_rules( $zone ) {
+		$out = array();
+		if ( isset( $zone['EdgeRules'] ) && is_array( $zone['EdgeRules'] ) ) {
+			foreach ( $zone['EdgeRules'] as $rule ) {
+				if ( is_array( $rule ) && isset( $rule['Guid'] ) && is_scalar( $rule['Guid'] ) ) {
+					$out[ (string) $rule['Guid'] ] = array(
+						'description' => isset( $rule['Description'] ) && is_scalar( $rule['Description'] ) ? (string) $rule['Description'] : '',
+						'enabled'     => ! isset( $rule['Enabled'] ) || ! empty( $rule['Enabled'] ),
+					);
+				}
+			}
+		}
+		return $out;
+	}
+
+	/**
+	 * A GUID as Bunny writes it.
+	 *
+	 * @param string $guid GUID.
+	 * @return string Empty when it is not one.
+	 */
+	private static function clean_guid( $guid ) {
+		$guid = strtolower( trim( (string) $guid ) );
+		return preg_match( '/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/', $guid ) ? $guid : '';
+	}
+
+	/**
+	 * Why a change cannot be made now ('' = it can).
+	 *
+	 * @return WP_Error|null
+	 */
+	private static function refusal() {
+		if ( PNCP_Lockdown::is_locked() ) {
+			return new WP_Error( 'pncp_locked', __( 'The site is locked with Lockdown: unlock it to change the rules at Bunny CDN.', 'scrapelock' ) );
+		}
+		if ( null === self::credentials() ) {
+			return new WP_Error( 'pncp_no_bunny', __( 'Bunny CDN is not connected: set the pull zone and API key first.', 'scrapelock' ) );
+		}
+		return null;
+	}
+
+	/**
+	 * Creates or updates an Edge Rule that blocks the requests whose URL matches one of the patterns. Only rules
+	 * ScrapeLock created are ever updated. In Monitor only, or with protection off, the rule is made switched off
+	 * and the next run switches it on once ScrapeLock blocks.
+	 *
+	 * @param string               $id           ScrapeLock's ID of the rule (e.g. harden_xmlrpc, preset_login).
+	 * @param string[]             $url_patterns Bunny "Request URL" patterns, e.g. "*\/xmlrpc.php*".
+	 * @param string               $label        What it blocks, for the Description at Bunny.
+	 * @param array<string, mixed> $options      allow: IPs and ranges never blocked; except: URL patterns never blocked.
+	 * @return true|WP_Error
+	 */
+	public static function edge_block( $id, $url_patterns, $label, $options = array() ) {
+		$refused = self::refusal();
+		if ( $refused ) {
+			return $refused;
+		}
+		$id       = self::clean_id( $id );
+		$patterns = self::clean_patterns( $url_patterns );
+		if ( '' === $id || ! $patterns ) {
+			return new WP_Error( 'pncp_bad_rule', __( 'This rule has no address to block.', 'scrapelock' ) );
+		}
+		$allow = array();
+		foreach ( isset( $options['allow'] ) ? (array) $options['allow'] : array() as $ip ) {
+			$ip = trim( (string) $ip );
+			if ( filter_var( $ip, FILTER_VALIDATE_IP ) || PNCP_Ip::valid_range( $ip ) ) {
+				$allow[ $ip ] = $ip;
+			}
+		}
+		$rule = array(
+			'label'    => sanitize_text_field( (string) $label ),
+			'patterns' => $patterns,
+			'allow'    => array_slice( array_values( $allow ), 0, self::MAX_ALLOW_IPS ),
+			'except'   => self::clean_patterns( isset( $options['except'] ) ? (array) $options['except'] : array() ),
+		);
+		return self::send( $id, $rule, self::enforcing() );
+	}
+
+	/**
+	 * Sends a rule to Bunny (update when ScrapeLock has its GUID for this pull zone, otherwise create) and keeps
+	 * its GUID.
+	 *
+	 * @param string               $id      ID.
+	 * @param array<string, mixed> $rule    label, patterns, allow, except.
+	 * @param bool                 $enabled Whether it blocks.
+	 * @return true|WP_Error
+	 */
+	private static function send( $id, $rule, $enabled ) {
+		$c     = self::credentials();
+		$rules = self::rules();
+		$old   = isset( $rules[ $id ] ) ? $rules[ $id ] : null;
+		$url   = self::base( 'api' ) . '/pullzone/' . rawurlencode( $c['zone'] ) . '/edgerules/addOrUpdate';
+		if ( $old && ! empty( $old['guid'] ) && isset( $old['zone'] ) && $old['zone'] === $c['zone'] ) {
+			$rule['guid'] = (string) $old['guid'];
+			$res          = self::call( $c, 'POST', $url, self::body( $id, $rule, $enabled ) );
+			if ( 'ok' === $res['status'] ) {
+				return self::keep( $id, $rule, $enabled, $c['zone'], $old );
+			}
+			if ( 'missing' !== $res['status'] ) {
+				return new WP_Error( 'pncp_bunny_' . $res['status'], $res['message'] );
+			}
+			unset( $rule['guid'] ); // Removed in the Bunny dashboard: made again.
+		} elseif ( $old && ! empty( $old['guid'] ) ) {
+			// Another pull zone now: the old rule is removed first (same account, same key).
+			self::delete_rule( $c, $old );
+		}
+		$before = self::pull_zone( $c );
+		if ( 'ok' !== $before['status'] ) {
+			return new WP_Error( 'pncp_bunny_' . $before['status'], $before['message'] );
+		}
+		$known = self::zone_rules( $before['json'] );
+		$res   = self::call( $c, 'POST', $url, self::body( $id, $rule, $enabled ) );
+		if ( 'ok' !== $res['status'] ) {
+			return new WP_Error( 'pncp_bunny_' . $res['status'], $res['message'] );
+		}
+		$guid = isset( $res['json']['Guid'] ) && is_scalar( $res['json']['Guid'] ) ? self::clean_guid( (string) $res['json']['Guid'] ) : '';
+		if ( '' === $guid ) {
+			// addOrUpdate answers without a body: the new rule is the one with this Description that was not there before.
+			$after = self::pull_zone( $c );
+			$want  = self::description( $id, (string) $rule['label'] );
+			if ( 'ok' === $after['status'] ) {
+				foreach ( self::zone_rules( $after['json'] ) as $g => $found ) {
+					if ( ! isset( $known[ $g ] ) && $found['description'] === $want ) {
+						$guid = self::clean_guid( $g );
+						break;
+					}
+				}
+			}
+		}
+		if ( '' === $guid ) {
+			return new WP_Error( 'pncp_bunny_guid', __( 'Bunny accepted the rule, but ScrapeLock could not find it again to manage it. Check the Edge Rules of the pull zone in the bunny.net dashboard (its description starts with “ScrapeLock:”).', 'scrapelock' ) );
+		}
+		$rule['guid'] = $guid;
+		return self::keep( $id, $rule, $enabled, $c['zone'], $old );
+	}
+
+	/**
+	 * Notes a rule that Bunny confirmed.
+	 *
+	 * @param string                    $id      ID.
+	 * @param array<string, mixed>      $rule    Rule with guid.
+	 * @param bool                      $enabled Whether it blocks.
+	 * @param string                    $zone    Pull zone.
+	 * @param array<string, mixed>|null $old     Previous record.
+	 * @return true
+	 */
+	private static function keep( $id, $rule, $enabled, $zone, $old ) {
+		$rules        = self::rules();
+		$rules[ $id ] = array(
+			'guid'     => (string) $rule['guid'],
+			'zone'     => (string) $zone,
+			'label'    => (string) $rule['label'],
+			'patterns' => array_values( (array) $rule['patterns'] ),
+			'allow'    => isset( $rule['allow'] ) ? array_values( (array) $rule['allow'] ) : array(),
+			'except'   => isset( $rule['except'] ) ? array_values( (array) $rule['except'] ) : array(),
+			'enabled'  => (bool) $enabled,
+			'created'  => $old && isset( $old['created'] ) ? (int) $old['created'] : time(),
+			'updated'  => time(),
+		);
+		self::save_rules( $rules );
+		self::maybe_schedule();
+		return true;
+	}
+
+	/**
+	 * Removes an Edge Rule ScrapeLock created.
+	 *
+	 * @param string $id ScrapeLock's ID of the rule.
+	 * @return true|WP_Error
+	 */
+	public static function edge_unblock( $id ) {
+		if ( PNCP_Lockdown::is_locked() ) {
+			return new WP_Error( 'pncp_locked', __( 'The site is locked with Lockdown: unlock it to change the rules at Bunny CDN.', 'scrapelock' ) );
+		}
+		return self::remove( self::clean_id( $id ) );
+	}
+
+	/**
+	 * Removes a rule (also while locked: deactivation, WP-CLI).
+	 *
+	 * @param string $id ID.
+	 * @return true|WP_Error
+	 */
+	private static function remove( $id ) {
+		$rules = self::rules();
+		if ( ! isset( $rules[ $id ] ) ) {
+			return true; // Not one of ScrapeLock's, or already gone.
+		}
+		$c = self::credentials();
+		if ( null === $c ) {
+			return new WP_Error( 'pncp_no_bunny', __( 'Bunny CDN is not connected: remove the rule in the bunny.net dashboard (Edge Rules, description “ScrapeLock: …”).', 'scrapelock' ) );
+		}
+		$done = self::delete_rule( $c, $rules[ $id ] );
+		if ( is_wp_error( $done ) ) {
+			return $done;
+		}
+		$rules = self::rules();
+		unset( $rules[ $id ] );
+		self::save_rules( $rules );
+		self::maybe_schedule();
+		return true;
+	}
+
+	/**
+	 * DELETE of one rule at Bunny ("not found" counts as removed).
+	 *
+	 * @param array{zone:string, token:string} $c    Credentials (the key; the pull zone of the rule is used).
+	 * @param array<string, mixed>             $rule Stored rule.
+	 * @return true|WP_Error
+	 */
+	private static function delete_rule( $c, $rule ) {
+		$guid = self::clean_guid( isset( $rule['guid'] ) ? (string) $rule['guid'] : '' );
+		$zone = isset( $rule['zone'] ) && '' !== (string) $rule['zone'] ? (string) $rule['zone'] : $c['zone'];
+		if ( '' === $guid ) {
+			return true;
+		}
+		$res = self::call( $c, 'DELETE', self::base( 'api' ) . '/pullzone/' . rawurlencode( $zone ) . '/edgerules/' . rawurlencode( $guid ) );
+		if ( 'ok' === $res['status'] || 'missing' === $res['status'] ) {
+			return true;
+		}
+		return new WP_Error( 'pncp_bunny_' . $res['status'], $res['message'] );
+	}
+
+	/**
+	 * Removes every rule ScrapeLock created at a pull zone (configuration changed).
+	 *
+	 * @param array{zone:string, token:string} $c       Credentials of that pull zone.
+	 * @param int                              $seconds Time budget.
+	 */
+	private static function remove_rules_of( $c, $seconds ) {
+		$end   = microtime( true ) + $seconds;
+		$rules = self::rules();
+		foreach ( $rules as $id => $rule ) {
+			if ( microtime( true ) > $end ) {
+				break;
+			}
+			if ( isset( $rule['zone'] ) && (string) $rule['zone'] === $c['zone'] && true === self::delete_rule( $c, $rule ) ) {
+				unset( $rules[ $id ] );
+			}
+		}
+		self::save_rules( $rules );
+	}
+
+	/**
+	 * Removes every rule ScrapeLock created (deactivation, uninstall). Rules that are left (Bunny not reachable)
+	 * carry "ScrapeLock:" in their description in the Bunny dashboard.
+	 *
+	 * @param int $seconds Time budget.
+	 * @return int Rules left.
+	 */
+	public static function remove_all( $seconds = 15 ) {
+		self::$removing_all = true;
+		$c                  = self::credentials();
+		$end                = microtime( true ) + max( 1, (int) $seconds );
+		$rules              = self::rules();
+		if ( null !== $c ) {
+			foreach ( $rules as $id => $rule ) {
+				if ( microtime( true ) > $end ) {
+					break;
+				}
+				if ( true === self::delete_rule( $c, $rule ) ) {
+					unset( $rules[ $id ] );
+				}
+			}
+		}
+		self::save_rules( $rules );
+		self::$removing_all = false;
+		return count( $rules );
+	}
+
+	/**
+	 * Deactivation: removes the rules at Bunny and the scheduled run.
+	 */
+	public static function deactivate() {
+		self::remove_all( 15 );
+		wp_clear_scheduled_hook( self::CRON );
+	}
+
+	/**
+	 * Uninstall: removes the rules at Bunny, the scheduled run and the options.
+	 */
+	public static function uninstall() {
+		self::remove_all( 15 );
+		wp_clear_scheduled_hook( self::CRON );
+		foreach ( array( self::CONFIG, self::STATE, self::RULES, self::CALLS ) as $option ) {
+			delete_option( $option );
+		}
+	}
+
+	/**
+	 * Keeps the rules in step: switched on while ScrapeLock blocks, off in Monitor only or with protection off,
+	 * and the login rule's allowed IPs follow the administrators' IPs. Also notes rules removed in the Bunny
+	 * dashboard.
+	 *
+	 * @param array<mixed>|null $zone  The pull zone as JSON (null = not read).
+	 * @param float             $end   Deadline (microtime).
+	 * @return int Rules sent again.
+	 */
+	public static function sync_rules( $zone = null, $end = 0.0 ) {
+		$c = self::credentials();
+		if ( null === $c || PNCP_Lockdown::is_locked() ) {
+			return 0; // Changes wait until the site is unlocked.
+		}
+		$end   = $end > 0 ? $end : microtime( true ) + 10;
+		$on    = self::enforcing();
+		$rules = self::rules();
+		$sent  = 0;
+		$live  = is_array( $zone ) ? self::zone_rules( $zone ) : null;
+		foreach ( $rules as $id => $rule ) {
+			if ( microtime( true ) > $end || $sent >= 10 ) {
+				break;
+			}
+			if ( null !== $live && isset( $rule['zone'] ) && $rule['zone'] === $c['zone'] && ! empty( $rule['guid'] ) && ! isset( $live[ (string) $rule['guid'] ] ) ) {
+				// Removed in the Bunny dashboard: the owner decided, so ScrapeLock forgets it instead of making it again.
+				unset( $rules[ $id ] );
+				self::save_rules( $rules );
+				continue;
+			}
+			$want    = $rule;
+			$rule_on = $on;
+			if ( 'preset_login' === $id ) {
+				// The administrators' IPs follow. While the sign-in page is at wp-login.php again (the address
+				// was opened again, cleared, or turned off with SCRAPELOCK_LOGIN_SLUG_OFF), the rule never blocks
+				// everyone: without a known administrator IP it is switched off.
+				$allow = self::login_allowlist();
+				if ( $allow ) {
+					$want['allow'] = $allow;
+				}
+				if ( empty( $want['allow'] ) && ! self::custom_login_active() ) {
+					$rule_on = false;
+				}
+			}
+			$same_allow = ( isset( $rule['allow'] ) ? (array) $rule['allow'] : array() ) === ( isset( $want['allow'] ) ? (array) $want['allow'] : array() );
+			// Only ScrapeLock's own record is compared: a rule switched off by hand in the Bunny dashboard stays off.
+			if ( ( ! empty( $rule['enabled'] ) ) === $rule_on && $same_allow ) {
+				continue;
+			}
+			++$sent;
+			self::send( (string) $id, $want, $rule_on );
+			$rules = self::rules();
+		}
+		return $sent;
+	}
+
+	/**
+	 * The sign-in address changed (or was turned off in wp-config.php): the login rule at Bunny is sent again
+	 * at once (allowed IPs, or switched off). Errors wait for the next run.
+	 */
+	public static function login_changed() {
+		if ( null === self::credentials() || PNCP_Lockdown::is_locked() || ! self::preset_locked( 'login' ) ) {
+			return;
+		}
+		PNCP_Options::flush();
+		if ( class_exists( 'PNCP_Login' ) ) {
+			PNCP_Login::flush();
+		}
+		self::sync_rules( null, microtime( true ) + 8 );
+	}
+
+	/* ---------- Presets ---------- */
+
+	/**
+	 * Is the login page moved to an address of the site's own (PNCP_Login)? Then wp-login.php can be blocked
+	 * for everyone. Filter `pncp_bunny_custom_login`.
+	 *
+	 * @return bool
+	 */
+	public static function custom_login_active() {
+		$on = false;
+		if ( class_exists( 'PNCP_Login' ) ) {
+			// PNCP_Login serves the sign-in form at its own address and rewrites every link and form to it, so
+			// requests for wp-login.php itself then come from bots only.
+			if ( method_exists( 'PNCP_Login', 'custom_login_active' ) ) {
+				$on = (bool) PNCP_Login::custom_login_active();
+			} elseif ( method_exists( 'PNCP_Login', 'slug' ) ) {
+				$on = '' !== (string) PNCP_Login::slug();
+			}
+		}
+		/**
+		 * Filters whether the login page is moved away from wp-login.php (by PNCP_Login or another plugin that
+		 * no longer uses wp-login.php in its addresses).
+		 *
+		 * @param bool $on Moved.
+		 */
+		return (bool) apply_filters( 'pncp_bunny_custom_login', $on );
+	}
+
+	/**
+	 * The IPs that may still open wp-login.php when it is locked at Bunny: the administrators' IPs of the last
+	 * 30 days, the IP of the administrator using this page, and "bunny_login_allow".
+	 *
+	 * @return string[]
+	 */
+	public static function login_allowlist() {
+		$out = array();
+		if ( function_exists( 'is_user_logged_in' ) && is_user_logged_in() && current_user_can( 'manage_options' ) && PNCP_Ip::reliable() ) {
+			$ip = PNCP_Ip::client_ip();
+			if ( '' !== $ip && ! PNCP_Ip::is_cdn_edge( $ip ) && ! PNCP_Ip::is_local( $ip ) ) {
+				$out[ $ip ] = $ip;
+			}
+		}
+		foreach ( array_keys( PNCP_Edge::staff() ) as $key ) {
+			$key         = (string) $key;
+			$out[ $key ] = $key;
+		}
+		foreach ( self::settings()['allow'] as $ip ) {
+			$out[ $ip ] = $ip;
+		}
+		$out = array_values( $out );
+		sort( $out );
+		return array_slice( $out, 0, self::MAX_ALLOW_IPS );
+	}
+
+	/**
+	 * The presets of the "Lock at Bunny" buttons. A preset that is also a point of PNCP_Hardening is locked
+	 * through it (same rule, same state on the hardening card).
+	 *
+	 * @return array<string, array{label:string, blocks:string, breaks:string, patterns:string[], except:string[], evidence:array<int, array{0:string, 1:string}>, harden:string}>
+	 */
+	public static function presets() {
+		$core = (string) wp_parse_url( site_url( '/' ), PHP_URL_PATH );
+		$core = '' !== $core ? trailingslashit( $core ) : '/';
+		$out  = array(
+			'login'      => array(
+				'label'    => __( 'Login page (wp-login.php)', 'scrapelock' ),
+				'blocks'   => self::custom_login_active()
+					? __( 'Every request for wp-login.php: the login page has its own address, so only bots still ask for wp-login.php.', 'scrapelock' )
+					: __( 'Every request for wp-login.php, except from the IPs administrators used in the last 30 days, your IP now and the IPs listed under “Allowed IPs for the login page”. The list follows new administrator IPs within 15 minutes.', 'scrapelock' ),
+				'breaks'   => __( 'Anyone else who signs in at wp-login.php (authors, members, customers without a shop account page) is refused, and so are you from a new IP before you sign in: then remove the rule in the bunny.net dashboard (Edge Rules, “ScrapeLock: …”). Password-protected posts keep working. When the sign-in page goes back to wp-login.php (“Open again”, an empty sign-in address, or SCRAPELOCK_LOGIN_SLUG_OFF in wp-config.php), the rule keeps letting in the administrators\' IPs, and is switched off when none is known.', 'scrapelock' ),
+				'patterns' => array( '*' . $core . 'wp-login.php*' ),
+				'except'   => array( '*action=postpass*' ),
+				'evidence' => array( array( 'login_fail', '' ), array( 'login_probe', '' ), array( 'edge', $core . 'wp-login.php' ) ),
+				'harden'   => '',
+			),
+			'xmlrpc'     => array(
+				'label'    => __( 'XML-RPC (xmlrpc.php)', 'scrapelock' ),
+				'blocks'   => __( 'Every request for xmlrpc.php, where bots try hundreds of passwords in one request.', 'scrapelock' ),
+				'breaks'   => __( 'Jetpack, the WordPress mobile app and old publishing tools that use XML-RPC.', 'scrapelock' ),
+				'patterns' => array( '*' . $core . 'xmlrpc.php*' ),
+				'except'   => array(),
+				'evidence' => array( array( 'xmlrpc', '' ), array( 'edge', $core . 'xmlrpc.php' ) ),
+				'harden'   => 'xmlrpc',
+			),
+			'probes'     => array(
+				'label'    => __( 'Secret files: .env, .git, backups, database dumps', 'scrapelock' ),
+				'blocks'   => __( 'Requests for .env, .git, .svn, wp-config.php copies, .sql dumps, phpMyAdmin and the usual backup and web shell names. A real site never serves them.', 'scrapelock' ),
+				'breaks'   => __( 'Nothing a visitor uses. /.well-known/ (certificates, app links) is not touched.', 'scrapelock' ),
+				'patterns' => array(
+					'*/.env*',
+					'*/.git*',
+					'*/.svn/*',
+					'*/.hg/*',
+					'*/.aws/*',
+					'*/.ssh/*',
+					'*/.DS_Store*',
+					'*/.htpasswd*',
+					'*/wp-config.php.*',
+					'*/wp-config.php~*',
+					'*/wp-config.bak*',
+					'*/wp-config.old*',
+					'*/wp-config.txt*',
+					'*.sql',
+					'*.sql.gz',
+					'*/phpmyadmin*',
+					'*/adminer.php*',
+					'*/backup.zip*',
+					'*/backup.tar.gz*',
+					'*/debug.log*',
+					'*/vendor/phpunit/*',
+				),
+				'except'   => array(),
+				'evidence' => array( array( 'scanner', '' ), array( 'edge', '/.env' ), array( 'edge', '/.git' ), array( 'edge', '/wp-config' ), array( 'edge', '/phpmyadmin' ) ),
+				'harden'   => '',
+			),
+			'core_files' => array(
+				'label'    => __( 'WordPress\'s own files: readme.html, license.txt, install.php…', 'scrapelock' ),
+				'blocks'   => __( 'readme.html, license.txt, wp-config-sample.php, wp-admin/install.php and setup-config.php, which scanners open to learn that the site runs WordPress, and which version.', 'scrapelock' ),
+				'breaks'   => __( 'Nothing a visitor uses.', 'scrapelock' ),
+				'patterns' => array(
+					'*' . $core . 'readme.html*',
+					'*' . $core . 'license.txt*',
+					'*' . $core . 'wp-config-sample.php*',
+					'*' . $core . 'wp-admin/install.php*',
+					'*' . $core . 'wp-admin/setup-config.php*',
+				),
+				'except'   => array(),
+				'evidence' => array( array( 'install', '' ), array( 'scanner', $core . 'readme.html' ) ),
+				'harden'   => 'core_files',
+			),
+		);
+		/**
+		 * Filters the presets of the "Lock at Bunny" buttons.
+		 *
+		 * @param array<string, array<string, mixed>> $presets Presets.
+		 */
+		return (array) apply_filters( 'pncp_bunny_presets', $out );
+	}
+
+	/**
+	 * Locks through PNCP_Hardening when it offers the point?
+	 *
+	 * @param array<string, mixed> $preset Preset.
+	 * @return bool
+	 */
+	private static function via_hardening( $preset ) {
+		if ( empty( $preset['harden'] ) || ! class_exists( 'PNCP_Hardening' ) || ! method_exists( 'PNCP_Hardening', 'edge' ) || ! method_exists( 'PNCP_Hardening', 'point' ) ) {
+			return false;
+		}
+		$point = PNCP_Hardening::point( (string) $preset['harden'] );
+		return is_array( $point ) && ! empty( $point['edge'] );
+	}
+
+	/**
+	 * The rule ID of a preset.
+	 *
+	 * @param string $id Preset.
+	 * @return string
+	 */
+	public static function preset_rule_id( $id ) {
+		$presets = self::presets();
+		if ( isset( $presets[ $id ] ) && self::via_hardening( $presets[ $id ] ) ) {
+			return 'harden_' . $presets[ $id ]['harden'];
+		}
+		return 'preset_' . $id;
+	}
+
+	/**
+	 * Is a preset locked at Bunny now (by this card or the hardening card)?
+	 *
+	 * @param string $id Preset.
+	 * @return bool
+	 */
+	public static function preset_locked( $id ) {
+		$rules = self::rules();
+		return isset( $rules[ self::preset_rule_id( $id ) ] ) || isset( $rules[ 'preset_' . $id ] );
+	}
+
+	/**
+	 * Locks a preset at Bunny.
+	 *
+	 * @param string $id Preset.
+	 * @return true|WP_Error
+	 */
+	public static function lock_preset( $id ) {
+		$presets = self::presets();
+		if ( ! isset( $presets[ $id ] ) ) {
+			return new WP_Error( 'pncp_unknown', __( 'Unknown preset.', 'scrapelock' ) );
+		}
+		$preset = $presets[ $id ];
+		if ( self::via_hardening( $preset ) ) {
+			return PNCP_Hardening::edge( (string) $preset['harden'], true );
+		}
+		$options = array( 'except' => $preset['except'] );
+		if ( 'login' === $id ) {
+			// The administrators' IPs are stored even while the sign-in page has its own address, so that the
+			// rule still lets them in when the address goes back to wp-login.php (sync_rules()).
+			$options['allow'] = self::login_allowlist();
+			if ( ! self::custom_login_active() ) {
+				if ( ! PNCP_Ip::reliable() || PNCP_Ip::is_cdn_edge( PNCP_Ip::client_ip() ) ) {
+					return new WP_Error( 'pncp_ip', __( 'ScrapeLock cannot see your real IP (every visitor appears with the address of a proxy or of Bunny), so it cannot keep you out of this block. Set “Real visitor IP” first.', 'scrapelock' ) );
+				}
+				if ( ! $options['allow'] ) {
+					return new WP_Error( 'pncp_no_allow', __( 'No administrator IP is known yet: open wp-admin from the place you sign in from, or list your IPs under “Allowed IPs for the login page”.', 'scrapelock' ) );
+				}
+			}
+		}
+		return self::edge_block( 'preset_' . $id, $preset['patterns'], $preset['label'], $options );
+	}
+
+	/**
+	 * Removes a preset's rule.
+	 *
+	 * @param string $id Preset.
+	 * @return true|WP_Error
+	 */
+	public static function unlock_preset( $id ) {
+		$presets = self::presets();
+		if ( isset( $presets[ $id ] ) && self::via_hardening( $presets[ $id ] ) && isset( self::rules()[ 'harden_' . $presets[ $id ]['harden'] ] ) ) {
+			return PNCP_Hardening::edge( (string) $presets[ $id ]['harden'], false );
+		}
+		return self::edge_unblock( 'preset_' . $id );
+	}
+
+	/* ---------- Logging ---------- */
+
+	/**
+	 * How to turn logging on at Bunny.
+	 *
+	 * @return string
+	 */
+	public static function logging_how() {
+		return __( 'In the bunny.net dashboard: CDN → your pull zone → Logging → turn on “Enable logging”, then save. Logs are kept by Bunny for 3 days; ScrapeLock reads them every 15 minutes. With “Log anonymization” on, Bunny hides the last part of each IP: ScrapeLock still sees where bots hit, but cannot block single addresses from the logs.', 'scrapelock' );
+	}
+
+	/**
+	 * Is logging on at the pull zone? Asks Bunny (one call) and keeps the answer.
+	 *
+	 * @param array<mixed>|null $zone The pull zone as JSON, if already read.
+	 * @return array{status:string, enabled:bool|null, anonymized:bool|null, message:string, how:string, time:int}
+	 */
+	public static function bunny_logging_check( $zone = null ) {
+		$how = self::logging_how();
+		$out = array(
+			'status'     => 'unknown',
+			'enabled'    => null,
+			'anonymized' => null,
+			'message'    => '',
+			'how'        => $how,
+			'time'       => time(),
+		);
+		$c   = self::credentials();
+		if ( null === $c ) {
+			$out['status']  = 'off';
+			$out['message'] = __( 'Bunny CDN is not connected.', 'scrapelock' );
+			return $out;
+		}
+		if ( null === $zone ) {
+			$res = self::pull_zone( $c );
+			if ( 'ok' !== $res['status'] ) {
+				$out['status']  = 'error';
+				$out['message'] = $res['message'];
+				self::note_logging( $out );
+				return $out;
+			}
+			$zone = $res['json'];
+		}
+		if ( array_key_exists( 'EnableLogging', $zone ) ) {
+			$out['enabled'] = ! empty( $zone['EnableLogging'] );
+		}
+		if ( array_key_exists( 'LoggingIPAnonymizationEnabled', $zone ) ) {
+			$out['anonymized'] = ! empty( $zone['LoggingIPAnonymizationEnabled'] );
+		}
+		if ( true === $out['enabled'] ) {
+			$out['status']  = $out['anonymized'] ? 'anonymized' : 'on';
+			$out['message'] = $out['anonymized']
+				? __( 'Logging is on, with IP anonymization: ScrapeLock sees where bots hit, but not their full IPs, so it blocks no address because of the logs.', 'scrapelock' )
+				: __( 'Logging is on at the pull zone.', 'scrapelock' );
+		} elseif ( false === $out['enabled'] ) {
+			$out['status']  = 'off';
+			$out['message'] = __( 'Logging is off at the pull zone: Bunny keeps no logs to read.', 'scrapelock' );
+		} else {
+			$out['message'] = __( 'Bunny did not say whether logging is on.', 'scrapelock' );
+		}
+		self::note_logging( $out );
+		return $out;
+	}
+
+	/**
+	 * Keeps the logging status in the state.
+	 *
+	 * @param array<string, mixed> $status Status.
+	 */
+	private static function note_logging( $status ) {
+		$state            = self::state();
+		$state['logging'] = array_intersect_key( $status, array_flip( array( 'status', 'enabled', 'anonymized', 'message', 'time' ) ) );
+		self::save_state( $state );
+	}
+
+	/**
+	 * Turns logging on at the pull zone (an administrator clicked the button).
+	 *
+	 * @return true|WP_Error
+	 */
+	public static function enable_logging() {
+		$refused = self::refusal();
+		if ( $refused ) {
+			return $refused;
+		}
+		$c   = self::credentials();
+		$res = self::call( $c, 'POST', self::base( 'api' ) . '/pullzone/' . rawurlencode( $c['zone'] ), array( 'EnableLogging' => true ) );
+		if ( 'ok' !== $res['status'] ) {
+			return new WP_Error( 'pncp_bunny_' . $res['status'], $res['message'] );
+		}
+		$check = self::bunny_logging_check();
+		if ( false === $check['enabled'] ) {
+			return new WP_Error( 'pncp_bunny_logging', __( 'Bunny accepted the change, but logging is still off. Turn it on in the bunny.net dashboard.', 'scrapelock' ) );
+		}
+		return true;
+	}
+
+	/* ---------- Import ---------- */
+
+	/**
+	 * One run (cron, every 15 minutes; "Import now"): reads the pull zone (logging status, rules), keeps the rules
+	 * in step and imports the new log lines.
+	 *
+	 * @return array{lines:int, found:int, error:string}
+	 */
+	public static function run() {
+		$result = array(
+			'lines' => 0,
+			'found' => 0,
+			'error' => '',
+		);
+		$c      = self::credentials();
+		if ( null === $c ) {
+			self::maybe_schedule();
+			return $result;
+		}
+		if ( ! PNCP_Log::cache_add( 'pncp_bunny_lock', time(), 5 * MINUTE_IN_SECONDS ) ) {
+			$result['error'] = __( 'Another import is running.', 'scrapelock' );
+			return $result;
+		}
+		$end  = self::deadline();
+		$zone = self::pull_zone( $c );
+		if ( 'ok' === $zone['status'] ) {
+			$logging = self::bunny_logging_check( $zone['json'] );
+			self::sync_rules( $zone['json'], $end );
+		} else {
+			$logging = array( 'enabled' => null );
+		}
+		$s = PNCP_Options::get();
+		if ( self::settings()['import'] && ! empty( $s['enabled'] ) && false !== $logging['enabled'] ) {
+			$result = self::import( $c, $end );
+		} elseif ( 'ok' !== $zone['status'] ) {
+			$result['error'] = $zone['message'];
+		}
+		$state             = self::state();
+		$state['last_run'] = time();
+		if ( '' !== $result['error'] ) {
+			$state['error']      = $result['error'];
+			$state['error_time'] = time();
+		} else {
+			$state['error'] = '';
+		}
+		self::save_state( $state );
+		PNCP_Log::cache_delete( 'pncp_bunny_lock' );
+		self::maybe_schedule();
+		return $result;
+	}
+
+	/**
+	 * When a run stops starting new work: BUDGET seconds, less when PHP's time limit is closer.
+	 *
+	 * @return float
+	 */
+	private static function deadline() {
+		$budget = self::BUDGET;
+		$limit  = (int) ini_get( 'max_execution_time' );
+		if ( $limit > 0 ) {
+			$start  = isset( $_SERVER['REQUEST_TIME_FLOAT'] ) ? (float) $_SERVER['REQUEST_TIME_FLOAT'] : microtime( true );
+			$budget = min( $budget, max( 3, $limit - ( microtime( true ) - $start ) - 8 ) );
+		}
+		return microtime( true ) + $budget;
+	}
+
+	/**
+	 * The day of a log file as Bunny names it (UTC): MM-dd-yy.
+	 *
+	 * @param int $time Unix time.
+	 * @return string
+	 */
+	public static function log_day( $time ) {
+		return gmdate( 'm-d-y', $time );
+	}
+
+	/**
+	 * Imports the new lines of the pull zone's logs: from the cursor, yesterday's file until its end, then
+	 * today's. At most a number of lines and bytes per run, within the time budget.
+	 *
+	 * @param array{zone:string, token:string} $c   Credentials.
+	 * @param float                            $end Deadline.
+	 * @return array{lines:int, found:int, error:string}
+	 */
+	public static function import( $c, $end ) {
+		$result = array(
+			'lines' => 0,
+			'found' => 0,
+			'error' => '',
+		);
+		$state  = self::state();
+		$today  = self::log_day( time() );
+		$yday   = self::log_day( time() - DAY_IN_SECONDS );
+		if ( $state['zone'] !== $c['zone'] || ! in_array( $state['day'], array( $today, $yday ), true ) ) {
+			// First run, another pull zone, or a cursor older than yesterday: start with today's file, from now on
+			// (older lines are not imported, so turning the import on does not flood the record with old lines).
+			$state['zone']   = $c['zone'];
+			$state['day']    = $today;
+			$state['offset'] = 0;
+			$state['sig']    = '';
+			$state['floor']  = ( time() - 15 * MINUTE_IN_SECONDS ) * 1000;
+		}
+		$floor = (int) $state['floor'];
+		/**
+		 * Filters the most log lines one request asks for (20,000 by default).
+		 *
+		 * @param int $lines Lines.
+		 */
+		$per = max( 100, (int) apply_filters( 'pncp_bunny_lines_per_request', 20000 ) );
+		/**
+		 * Filters the most bytes of one log download (8 MB by default).
+		 *
+		 * @param int $bytes Bytes.
+		 */
+		$bytes    = max( 65536, (int) apply_filters( 'pncp_bunny_log_bytes', 8 * MB_IN_BYTES ) );
+		$analysis = self::new_analysis();
+		for ( $i = 0; $i < 4; $i++ ) {
+			if ( microtime( true ) >= $end ) {
+				break;
+			}
+			$day    = $state['day'];
+			$offset = max( 0, (int) $state['offset'] );
+			$url    = self::base( 'log' ) . '/' . rawurlencode( $day ) . '/' . rawurlencode( $c['zone'] ) . '.log';
+			$url    = add_query_arg(
+				array(
+					'order' => 'asc',
+					'start' => $offset,
+					'end'   => $offset + $per,
+				),
+				$url
+			);
+			$res    = self::call(
+				$c,
+				'GET',
+				$url,
+				null,
+				array(
+					'raw'     => true,
+					'timeout' => self::LOG_TIMEOUT,
+					'bytes'   => $bytes,
+				)
+			);
+			if ( 'missing' === $res['status'] ) {
+				$res['status'] = 'ok'; // No log for this day (yet): nothing to read.
+				$res['body']   = '';
+			}
+			if ( 'ok' !== $res['status'] ) {
+				$result['error'] = $res['message'];
+				break;
+			}
+			$lines = self::split_lines( $res['body'], $res['truncated'] );
+			// Did Bunny ignore start/end? Then the answer begins with the first line of the day again.
+			if ( $offset > 0 && $lines && '' !== $state['sig'] && self::signature( $lines[0] ) === $state['sig'] ) {
+				$lines = array_slice( $lines, $offset );
+			}
+			if ( 0 === $offset && $lines ) {
+				$state['sig'] = self::signature( $lines[0] );
+			}
+			$count = count( $lines );
+			foreach ( $lines as $line ) {
+				$row = self::parse_line( $line );
+				// Lines from before the import was turned on (or before another pull zone was set) are not imported.
+				if ( $row && $row['ts'] >= $floor ) {
+					self::analyse( $analysis, $row );
+					++$result['lines'];
+				}
+			}
+			$state['offset'] = $offset + $count;
+			if ( $count < $per && ! $res['truncated'] ) {
+				if ( $day !== $today ) {
+					$state['day']    = $today; // Yesterday is read to its end: on to today.
+					$state['offset'] = 0;
+					$state['sig']    = '';
+					continue;
+				}
+				break; // Caught up.
+			}
+		}
+		$result['found'] = self::store( $analysis, $state );
+		$state['lines']  = $result['lines'];
+		$state['found']  = $result['found'];
+		if ( '' === $result['error'] ) {
+			$state['last_ok'] = time();
+		}
+		$current = self::state();
+		// Keep what the run noted meanwhile (logging status).
+		$state['logging'] = $current['logging'];
+		self::save_state( $state );
+		return $result;
+	}
+
+	/**
+	 * The complete lines of a download (the last one is dropped when the download was cut off).
+	 *
+	 * @param string $body      Body.
+	 * @param bool   $truncated Cut off at the byte limit.
+	 * @return string[]
+	 */
+	public static function split_lines( $body, $truncated = false ) {
+		$body = str_replace( "\r", '', (string) $body );
+		if ( '' === trim( $body ) ) {
+			return array();
+		}
+		$lines = explode( "\n", $body );
+		if ( $truncated && "\n" !== substr( $body, -1 ) ) {
+			array_pop( $lines );
+		}
+		return array_values(
+			array_filter(
+				$lines,
+				static function ( $line ) {
+					return '' !== trim( $line );
+				}
+			)
+		);
+	}
+
+	/**
+	 * What identifies a line (its request ID, or the line itself).
+	 *
+	 * @param string $line Line.
+	 * @return string
+	 */
+	private static function signature( $line ) {
+		return md5( (string) $line );
+	}
+
+	/**
+	 * One log line as fields. Tolerant: fields missing at the end are empty, and extra "|" are taken to belong
+	 * to the User-Agent (the only free text after the URL). Lines with fewer than 8 fields, without a valid IP or
+	 * without a URL are skipped.
+	 *
+	 * @param string $line Line.
+	 * @return array{cache:string, status:int, ts:int, bytes:int, zone:string, ip:string, referer:string, url:string, path:string, query:string, edge:string, ua:string, id:string, country:string}|null
+	 */
+	public static function parse_line( $line ) {
+		$f = explode( '|', trim( (string) $line ) );
+		$n = count( $f );
+		if ( $n < 8 ) {
+			return null;
+		}
+		if ( $n > 12 ) {
+			$ua = implode( '|', array_slice( $f, 9, $n - 11 ) );
+			$f  = array_merge( array_slice( $f, 0, 9 ), array( $ua ), array_slice( $f, -2 ) );
+		}
+		$f  = array_pad( $f, 12, '' );
+		$ip = PNCP_Ip::normalize( trim( $f[5] ) );
+		if ( '' === $ip ) {
+			return null;
+		}
+		$url = trim( $f[7] );
+		if ( '' === $url ) {
+			return null;
+		}
+		$parts = wp_parse_url( preg_match( '#^[a-z][a-z0-9+.\-]*://#i', $url ) ? $url : 'http://x' . ( '/' === $url[0] ? '' : '/' ) . $url );
+		if ( ! is_array( $parts ) ) {
+			return null;
+		}
+		$ts = trim( $f[2] );
+		$ts = ctype_digit( $ts ) ? (int) $ts : 0;
+		if ( $ts > 0 && $ts < 100000000000 ) {
+			$ts *= 1000; // Seconds instead of milliseconds.
+		}
+		return array(
+			'cache'   => strtoupper( trim( $f[0] ) ),
+			'status'  => (int) trim( $f[1] ),
+			'ts'      => $ts > 0 ? $ts : time() * 1000,
+			'bytes'   => (int) trim( $f[3] ),
+			'zone'    => trim( $f[4] ),
+			'ip'      => $ip,
+			'referer' => trim( $f[6] ),
+			'url'     => $url,
+			'path'    => isset( $parts['path'] ) && '' !== $parts['path'] ? (string) $parts['path'] : '/',
+			'query'   => isset( $parts['query'] ) ? (string) $parts['query'] : '',
+			'edge'    => trim( $f[8] ),
+			'ua'      => trim( $f[9] ),
+			'id'      => trim( $f[10] ),
+			'country' => strtoupper( substr( trim( $f[11] ), 0, 2 ) ),
+		);
+	}
+
+	/**
+	 * What an attack-looking request is (the detail of its record), or '' for a normal one.
+	 *
+	 * @param array<string, mixed> $row    Parsed line.
+	 * @param string[]             $agents Blocked User-Agents.
+	 * @return string
+	 */
+	public static function classify( $row, $agents = array() ) {
+		$path   = strtolower( rawurldecode( (string) $row['path'] ) );
+		$query  = strtolower( rawurldecode( (string) $row['query'] ) );
+		$status = (int) $row['status'];
+		if ( preg_match( '#/xmlrpc\.php$#', $path ) ) {
+			return 'xmlrpc.php';
+		}
+		if ( preg_match( '#/wp-login\.php$#', $path ) ) {
+			return false !== strpos( $query, 'action=postpass' ) ? '' : 'wp-login.php';
+		}
+		if ( preg_match( '#/wp-admin/(?:install|setup-config|upgrade)\.php$#', $path ) ) {
+			return 'installer';
+		}
+		if ( preg_match( '#/wp-admin(?:/|$)#', $path ) && ! preg_match( '#/wp-admin/(?:admin-ajax|admin-post)\.php$#', $path ) && $status >= 300 ) {
+			// 302 to the login page (not signed in) or refused: a signed-in user gets 200, so that is skipped.
+			return 'wp-admin';
+		}
+		if ( preg_match( '/(?:^|&)author=\d/', $query ) || ( false !== strpos( $path, '/wp-json/wp/v2/users' ) || false !== strpos( $path, '/' . rest_get_url_prefix() . '/wp/v2/users' ) ) || false !== strpos( $query, 'rest_route=/wp/v2/users' ) ) {
+			return 'user enumeration';
+		}
+		// phpcs:ignore WordPress.WP.CapitalPDangit.MisspelledInText -- File names, lowercased.
+		if ( preg_match( '#/\.(?:env|git|svn|hg|aws|ssh|docker|htpasswd|ds_store)|/wp-config\.(?:php[~._\-].*|bak|old|orig|save|txt|swp)$|\.(?:sql|sql\.gz|sqlite|bak|swp)$|/(?:phpmyadmin|pma|myadmin|adminer)(?:/|\.php|$)|/(?:backup|backups|dump|database|db|site|www|wordpress)\.(?:zip|tar|tar\.gz|tgz|rar|7z|sql)$|/(?:shell|c99|r57|wso|alfa|webshell|cmd)\.php$|/vendor/phpunit/|/debug\.log$#', $path ) ) {
+			return 'scanner';
+		}
+		if ( $status >= 400 && $status < 500 && preg_match( '#/wp-content/(?:plugins|themes)/([a-z0-9_.\-]+)#', $path, $m ) ) {
+			return 'plugin probe';
+		}
+		if ( class_exists( 'PNCP_Attacks' ) && method_exists( 'PNCP_Attacks', 'injection_type' ) ) {
+			$type = (string) PNCP_Attacks::injection_type( (string) $row['path'] . ( '' !== (string) $row['query'] ? '?' . $row['query'] : '' ) );
+			if ( '' !== $type ) {
+				return 'injection: ' . $type;
+			}
+		}
+		if ( $agents && '' !== (string) $row['ua'] ) {
+			$name = self::bad_bot( (string) $row['ua'], $agents );
+			if ( '' !== $name ) {
+				return 'bad bot: ' . $name;
+			}
+		}
+		return '';
+	}
+
+	/**
+	 * The name in the bot list a User-Agent matches ('' = none). Memoised per User-Agent.
+	 *
+	 * @param string   $ua     User-Agent.
+	 * @param string[] $agents Blocked User-Agents.
+	 * @return string
+	 */
+	private static function bad_bot( $ua, $agents ) {
+		static $memo = array();
+		if ( isset( $memo[ $ua ] ) ) {
+			return $memo[ $ua ];
+		}
+		$name = '';
+		if ( PNCP_Bots::ua_in_list( $ua, $agents ) ) {
+			foreach ( $agents as $agent ) {
+				if ( PNCP_Bots::ua_in_list( $ua, array( $agent ) ) ) {
+					$name = ltrim( (string) $agent, '=' );
+					break;
+				}
+			}
+		}
+		if ( count( $memo ) < 5000 ) {
+			$memo[ $ua ] = $name;
+		}
+		return $name;
+	}
+
+	/**
+	 * A request for a static file (image, style, script, font, media), which a page view makes dozens of.
+	 *
+	 * @param string $path Path.
+	 * @return bool
+	 */
+	private static function is_static( $path ) {
+		return (bool) preg_match( '#\.(?:css|js|mjs|map|png|jpe?g|gif|webp|avif|svg|ico|bmp|woff2?|ttf|otf|eot|mp4|webm|mp3|ogg|wav|m4a|pdf)$#i', (string) $path );
+	}
+
+	/**
+	 * A new analysis (what one run collects before it is stored).
+	 *
+	 * @return array<string, mixed>
+	 */
+	private static function new_analysis() {
+		$s = PNCP_Options::get();
+		return array(
+			's'       => $s,
+			'cfg'     => self::settings(),
+			'agents'  => isset( $s['bot_list'] ) ? PNCP_Options::blocked_agents( $s ) : array(),
+			'staff'   => PNCP_Edge::staff(),
+			'edge'    => PNCP_Edge::state()['rules'],
+			'rules'   => self::active_patterns(),
+			'agg'     => array(),
+			'minutes' => array(),
+			'errors'  => array(),
+			'hours'   => array(),
+			'skip'    => array(),
+			'skipped' => 0,
+		);
+	}
+
+	/**
+	 * The URL patterns of the rules that block now, as regular expressions with their labels.
+	 *
+	 * @return array<string, string> Regex => label.
+	 */
+	private static function active_patterns() {
+		$out = array();
+		foreach ( self::rules() as $rule ) {
+			if ( empty( $rule['enabled'] ) ) {
+				continue;
+			}
+			foreach ( (array) $rule['patterns'] as $pattern ) {
+				$regex         = '#^' . str_replace( '\*', '.*', preg_quote( (string) $pattern, '#' ) ) . '$#i';
+				$out[ $regex ] = (string) $rule['label'];
+			}
+		}
+		return $out;
+	}
+
+	/**
+	 * Is an IP one ScrapeLock never counts: the server, private networks, the administrators of the last
+	 * 30 days, CDN edges, search engines' official addresses, always-allowed User-Agents from their IPs?
+	 *
+	 * @param array<string, mixed> $a   Analysis.
+	 * @param array<string, mixed> $row Line.
+	 * @return bool
+	 */
+	private static function spared( &$a, $row ) {
+		$memo = $row['ip'] . "\0" . $row['ua'];
+		if ( isset( $a['skip'][ $memo ] ) ) {
+			return $a['skip'][ $memo ];
+		}
+		$ip    = (string) $row['ip'];
+		$spare = PNCP_Ip::is_local( $ip ) || PNCP_Ip::is_private( $ip ) || isset( $a['staff'][ PNCP_Ip::limit_key( $ip ) ] ) || PNCP_Ip::is_cdn_edge( $ip ) || PNCP_Bots::is_official_crawler_ip( $ip ) || '' !== PNCP_Ip::official_owner( $ip )
+			// While the Google / Bing lists are not downloaded: their core ranges (log lines have no DNS check).
+			|| PNCP_Options::crawler_fallback_ip( $ip );
+		if ( ! $spare && isset( $a['s']['allow_list'] ) ) {
+			$spare = PNCP_Bots::allow_list_match( (string) $row['ua'], $ip, $a['s'] );
+		}
+		if ( ! $spare && in_array( $ip, $a['cfg']['allow'], true ) ) {
+			$spare = true;
+		}
+		if ( count( $a['skip'] ) < 20000 ) {
+			$a['skip'][ $memo ] = $spare;
+		}
+		return $spare;
+	}
+
+	/**
+	 * Adds one line to the analysis.
+	 *
+	 * @param array<string, mixed> $a   Analysis.
+	 * @param array<string, mixed> $row Parsed line.
+	 */
+	public static function analyse( &$a, $row ) {
+		if ( self::spared( $a, $row ) ) {
+			++$a['skipped'];
+			return;
+		}
+		$ip     = (string) $row['ip'];
+		$status = (int) $row['status'];
+		$sec    = (int) floor( (int) $row['ts'] / 1000 );
+		// Blocked at Bunny itself: by one of ScrapeLock's rules, or because the IP is in the pull zone's block list.
+		$at_edge = '';
+		if ( 403 === $status ) {
+			foreach ( $a['rules'] as $regex => $label ) {
+				if ( preg_match( $regex, (string) $row['url'] ) ) {
+					$at_edge = $label;
+					break;
+				}
+			}
+			if ( '' === $at_edge && isset( $a['edge'][ $ip ] ) ) {
+				$at_edge = __( 'blocked IP', 'scrapelock' );
+			}
+		}
+		$served = '' !== $at_edge || 0 === strpos( (string) $row['cache'], 'HIT' );
+		// Speed: requests for pages (not static files) per IP and minute, all lines (also those WordPress saw).
+		if ( ! self::is_static( (string) $row['path'] ) && count( $a['minutes'] ) < 50000 ) {
+			$mk                  = $ip . '|' . (int) floor( $sec / 60 );
+			$a['minutes'][ $mk ] = isset( $a['minutes'][ $mk ] ) ? $a['minutes'][ $mk ] + 1 : 1;
+		}
+		if ( $status >= 400 && $status < 500 && count( $a['errors'] ) < 20000 ) {
+			if ( ! isset( $a['errors'][ $ip ] ) ) {
+				$a['errors'][ $ip ] = array(
+					'n'     => 0,
+					'paths' => array(),
+				);
+			}
+			++$a['errors'][ $ip ]['n'];
+			$p = (string) $row['path'];
+			if ( count( $a['errors'][ $ip ]['paths'] ) < 50 || isset( $a['errors'][ $ip ]['paths'][ $p ] ) ) {
+				$a['errors'][ $ip ]['paths'][ $p ] = isset( $a['errors'][ $ip ]['paths'][ $p ] ) ? $a['errors'][ $ip ]['paths'][ $p ] + 1 : 1;
+			}
+		}
+		// Requests that reached WordPress were already recorded there, unless "bunny_all_lines" asks for them too.
+		if ( ! $served && ! $a['cfg']['all_lines'] ) {
+			return;
+		}
+		$detail = self::classify( $row, $a['agents'] );
+		if ( '' === $detail && '' === $at_edge ) {
+			return;
+		}
+		if ( '' === $detail ) {
+			$detail = 'blocked at CDN';
+		}
+		$blocked = '' !== $at_edge || 403 === $status || 429 === $status;
+		$path    = 0 === strpos( $detail, 'bad bot' ) ? '' : (string) $row['path'];
+		self::count_up( $a, $path, $ip, $blocked, '' !== $at_edge ? $detail . ' (' . __( 'blocked at Bunny', 'scrapelock' ) . ')' : $detail, $sec );
+	}
+
+	/**
+	 * Adds one event to the aggregates.
+	 *
+	 * @param array<string, mixed> $a       Analysis.
+	 * @param string               $path    Path.
+	 * @param string               $ip      IP.
+	 * @param bool                 $blocked Refused.
+	 * @param string               $detail  Detail.
+	 * @param int                  $sec     Time of the request.
+	 * @param int                  $hits    Count.
+	 */
+	private static function count_up( &$a, $path, $ip, $blocked, $detail, $sec, $hits = 1 ) {
+		$key = md5( $path . '|' . $ip . '|' . $detail . '|' . ( $blocked ? 1 : 0 ) );
+		if ( ! isset( $a['agg'][ $key ] ) ) {
+			if ( count( $a['agg'] ) >= self::MAX_AGGREGATES ) {
+				$ip  = ''; // Too many: kept without the address.
+				$key = md5( $path . '||' . $detail . '|' . ( $blocked ? 1 : 0 ) );
+			}
+			if ( ! isset( $a['agg'][ $key ] ) ) {
+				$a['agg'][ $key ] = array(
+					'path'    => $path,
+					'ip'      => $ip,
+					'blocked' => $blocked,
+					'detail'  => $detail,
+					'hits'    => 0,
+				);
+			}
+		}
+		$a['agg'][ $key ]['hits'] += $hits;
+		$hour                      = (int) ( floor( $sec / HOUR_IN_SECONDS ) * HOUR_IN_SECONDS );
+		if ( ! isset( $a['hours'][ $hour ] ) ) {
+			$a['hours'][ $hour ] = array( 0, 0 );
+		}
+		$a['hours'][ $hour ][0] += $hits;
+		$a['hours'][ $hour ][1] += $blocked ? $hits : 0;
+	}
+
+	/**
+	 * Stores what a run found: the attack record (PNCP_Attacks, category "edge"), the hourly counts and,
+	 * when turned on, violations for IPs that were too fast at the edge.
+	 *
+	 * @param array<string, mixed> $a     Analysis.
+	 * @param array<string, mixed> $state State (counts are added).
+	 * @return int Events found.
+	 */
+	public static function store( &$a, &$state ) {
+		$cfg = $a['cfg'];
+		// Floods of errors (404, 403…) per IP.
+		if ( $cfg['flood'] > 0 ) {
+			foreach ( $a['errors'] as $ip => $e ) {
+				if ( $e['n'] >= $cfg['flood'] ) {
+					arsort( $e['paths'] );
+					self::count_up( $a, (string) key( $e['paths'] ), (string) $ip, false, '4xx flood', time(), 1 );
+				}
+			}
+		}
+		// Too fast at the edge: one violation per IP and minute over the limit, for the last hour only.
+		$anonymized = ! empty( $state['logging']['anonymized'] );
+		$struck     = 0;
+		if ( $cfg['strikes'] && $cfg['rate'] > 0 && ! $anonymized ) {
+			$since = (int) floor( ( time() - HOUR_IN_SECONDS ) / 60 );
+			$fast  = array();
+			foreach ( $a['minutes'] as $mk => $n ) {
+				list( $ip, $minute ) = explode( '|', $mk );
+				if ( $n > $cfg['rate'] && (int) $minute >= $since ) {
+					$fast[ $ip ] = isset( $fast[ $ip ] ) ? $fast[ $ip ] + 1 : 1;
+				}
+			}
+			foreach ( $fast as $ip => $minutes ) {
+				self::count_up( $a, '', (string) $ip, false, 'too fast at the CDN', time(), 1 );
+				for ( $i = 0; $i < $minutes && $i < 20; $i++ ) {
+					++$struck;
+					if ( PNCP_Log::strike( (string) $ip, self::REASON ) ) {
+						break;
+					}
+				}
+			}
+		}
+		$found = 0;
+		$rec   = class_exists( 'PNCP_Attacks' ) && method_exists( 'PNCP_Attacks', 'record' );
+		foreach ( $a['agg'] as $event ) {
+			$found += (int) $event['hits'];
+			if ( ! $rec ) {
+				continue;
+			}
+			$hits = min( 100000, (int) $event['hits'] );
+			if ( method_exists( 'PNCP_Attacks', 'record_hits' ) ) {
+				PNCP_Attacks::record_hits( 'edge', (string) $event['path'], (string) $event['ip'], (bool) $event['blocked'], (string) $event['detail'], $hits );
+				continue;
+			}
+			for ( $i = 0; $i < $hits; $i++ ) {
+				PNCP_Attacks::record( 'edge', (string) $event['path'], (string) $event['ip'], (bool) $event['blocked'], (string) $event['detail'] );
+			}
+		}
+		if ( $rec && method_exists( 'PNCP_Attacks', 'flush' ) ) {
+			PNCP_Attacks::flush();
+		}
+		$hours = isset( $state['hours'] ) && is_array( $state['hours'] ) ? $state['hours'] : array();
+		foreach ( $a['hours'] as $hour => $n ) {
+			$old            = isset( $hours[ $hour ] ) ? (array) $hours[ $hour ] : array( 0, 0 );
+			$hours[ $hour ] = array( (int) $old[0] + $n[0], (int) ( isset( $old[1] ) ? $old[1] : 0 ) + $n[1] );
+		}
+		$keep = time() - 8 * DAY_IN_SECONDS;
+		foreach ( array_keys( $hours ) as $hour ) {
+			if ( (int) $hour < $keep ) {
+				unset( $hours[ $hour ] );
+			}
+		}
+		ksort( $hours );
+		$state['hours']   = $hours;
+		$state['struck']  = $struck;
+		$state['skipped'] = (int) $a['skipped'];
+		$a['agg']         = array();
+		return $found;
+	}
+
+	/**
+	 * The attacks seen at the edge in the last N hours.
+	 *
+	 * @param int $hours Hours.
+	 * @return array{seen:int, blocked:int}
+	 */
+	public static function seen( $hours ) {
+		$since = time() - (int) $hours * HOUR_IN_SECONDS;
+		$out   = array(
+			'seen'    => 0,
+			'blocked' => 0,
+		);
+		foreach ( self::state()['hours'] as $hour => $n ) {
+			if ( (int) $hour + HOUR_IN_SECONDS > $since ) {
+				$out['seen']    += (int) $n[0];
+				$out['blocked'] += isset( $n[1] ) ? (int) $n[1] : 0;
+			}
+		}
+		return $out;
+	}
+
+	/* ---------- Admin ---------- */
+
+	/**
+	 * The admin-post handler (action pncp_bunny). Fields: op (lock, unlock, unlock_rule, check, logging_on,
+	 * import, save, forget), id.
+	 */
+	public static function handle() {
+		if ( ! current_user_can( 'manage_options' ) ) {
+			wp_die( esc_html__( 'You are not allowed to change this setting.', 'scrapelock' ), '', array( 'response' => 403 ) );
+		}
+		check_admin_referer( self::ACTION );
+		$op = isset( $_POST['op'] ) ? sanitize_key( wp_unslash( $_POST['op'] ) ) : '';
+		$id = isset( $_POST['id'] ) ? sanitize_key( wp_unslash( $_POST['id'] ) ) : '';
+		if ( 'check' === $op ) {
+			$check = self::bunny_logging_check();
+			self::done( 'error' === $check['status'] ? new WP_Error( 'pncp_bunny', $check['message'] ) : $check['message'] );
+		}
+		if ( 'import' === $op ) {
+			$r = self::run();
+			if ( '' !== $r['error'] ) {
+				self::done( new WP_Error( 'pncp_bunny', $r['error'] ) );
+			}
+			/* translators: 1: number of log lines, 2: number of attacks */
+			self::done( sprintf( __( 'Imported %1$s log lines from Bunny; %2$s attack requests found.', 'scrapelock' ), number_format_i18n( $r['lines'] ), number_format_i18n( $r['found'] ) ) );
+		}
+		if ( PNCP_Lockdown::is_locked() ) {
+			self::done( new WP_Error( 'pncp_locked', __( 'The site is locked with Lockdown: unlock it to change the rules at Bunny CDN.', 'scrapelock' ) ) );
+		}
+		$presets = self::presets();
+		switch ( $op ) {
+			case 'lock':
+				/* translators: %s: what is locked */
+				self::done( self::lock_preset( $id ), sprintf( __( 'Locked at Bunny CDN: %s.', 'scrapelock' ), isset( $presets[ $id ] ) ? $presets[ $id ]['label'] : $id ) . ( self::enforcing() ? '' : ' ' . __( 'The rule is switched off until ScrapeLock blocks (Monitor only or protection off).', 'scrapelock' ) ) );
+				break;
+			case 'unlock':
+				self::done( self::unlock_preset( $id ), __( 'The rule was removed at Bunny CDN.', 'scrapelock' ) );
+				break;
+			case 'unlock_rule':
+				$rule = isset( $_POST['rule'] ) ? self::clean_id( sanitize_key( wp_unslash( $_POST['rule'] ) ) ) : '';
+				if ( 0 === strpos( $rule, 'harden_' ) && class_exists( 'PNCP_Hardening' ) && method_exists( 'PNCP_Hardening', 'edge' ) ) {
+					$hid = substr( $rule, 7 );
+					self::done( PNCP_Hardening::edge( $hid, false ), __( 'The rule was removed at Bunny CDN.', 'scrapelock' ) );
+				}
+				self::done( self::edge_unblock( $rule ), __( 'The rule was removed at Bunny CDN.', 'scrapelock' ) );
+				break;
+			case 'logging_on':
+				self::done( self::enable_logging(), __( 'Logging is on at the pull zone. The first lines can be read within 15 minutes.', 'scrapelock' ) );
+				break;
+			case 'save':
+				// phpcs:disable WordPress.Security.NonceVerification.Missing -- Checked above with check_admin_referer().
+				$zone = PNCP_Edge::clean_zone( 'bunny', isset( $_POST['zone'] ) ? sanitize_text_field( wp_unslash( $_POST['zone'] ) ) : '' );
+				$raw  = isset( $_POST['token'] ) ? sanitize_text_field( wp_unslash( $_POST['token'] ) ) : '';
+				// phpcs:enable
+				$old   = self::own_config();
+				$token = self::key_from_config() ? $old['token'] : ( '' === trim( $raw ) ? $old['token'] : PNCP_Edge::clean_token( $raw ) );
+				if ( '' === $zone || '' === $token ) {
+					self::done( new WP_Error( 'pncp_bunny', '' === $zone ? __( 'The pull zone ID is a number: see the address of the pull zone\'s page in the bunny.net dashboard.', 'scrapelock' ) : __( 'The API key is not valid.', 'scrapelock' ) ) );
+				}
+				self::done( self::save_own( $zone, $token ), __( 'Connected to the Bunny pull zone.', 'scrapelock' ) );
+				break;
+			case 'forget':
+				self::forget_own();
+				self::done( __( 'The Bunny connection of this card was removed, with the rules ScrapeLock made with it.', 'scrapelock' ) );
+				break;
+		}
+		self::done( new WP_Error( 'pncp_unknown', __( 'Unknown action.', 'scrapelock' ) ) );
+	}
+
+	/**
+	 * Saves the own connection after a test call (the pull zone must answer).
+	 *
+	 * @param string $zone  Pull zone ID.
+	 * @param string $token API key.
+	 * @return true|WP_Error
+	 */
+	public static function save_own( $zone, $token ) {
+		$test = self::pull_zone(
+			array(
+				'zone'  => $zone,
+				'token' => $token,
+			)
+		);
+		if ( 'ok' !== $test['status'] ) {
+			return new WP_Error( 'pncp_bunny_' . $test['status'], $test['message'] );
+		}
+		$old = self::own_config();
+		if ( '' !== $old['zone'] && $old['zone'] !== $zone && '' !== $old['token'] && 'own' === ( self::credentials() ? self::credentials()['source'] : '' ) ) {
+			self::remove_rules_of(
+				array(
+					'zone'  => $old['zone'],
+					'token' => $old['token'],
+				),
+				15
+			);
+		}
+		$value = array(
+			'zone'  => $zone,
+			'token' => self::key_from_config() ? '' : $token,
+		);
+		if ( false === get_option( self::CONFIG, false ) ) {
+			add_option( self::CONFIG, $value, '', false );
+		} else {
+			update_option( self::CONFIG, $value, false );
+		}
+		self::reset();
+		self::maybe_schedule();
+		return true;
+	}
+
+	/**
+	 * Removes the own connection, and the rules made with it first.
+	 */
+	public static function forget_own() {
+		$c = self::credentials();
+		if ( null !== $c && 'own' === $c['source'] ) {
+			self::remove_rules_of( $c, 15 );
+		}
+		delete_option( self::CONFIG );
+		self::reset();
+		self::maybe_schedule();
+	}
+
+	/**
+	 * Back to the page the form came from, with the result shown once.
+	 *
+	 * @param true|string|WP_Error $result  Result, or the message.
+	 * @param string               $message Message on success.
+	 */
+	private static function done( $result, $message = '' ) {
+		if ( is_string( $result ) ) {
+			$message = $result;
+			$result  = true;
+		}
+		$notice = is_wp_error( $result ) ? array( 'error', $result->get_error_message() ) : array( 'success', $message );
+		set_transient( 'pncp_bunny_msg_' . get_current_user_id(), $notice, MINUTE_IN_SECONDS );
+		$back = wp_get_referer();
+		if ( ! $back ) {
+			$back = PNCP_Status::settings_url( array( 'tab' => 'bots' ) );
+		}
+		wp_safe_redirect( remove_query_arg( array( 'pncp_message' ), $back ) . '#pncp-bunny' );
+		exit;
+	}
+
+	/**
+	 * One admin-post button.
+	 *
+	 * @param string                $op      Operation.
+	 * @param string                $label   Button text.
+	 * @param array<string, string> $fields  More fields.
+	 * @param string                $css     Button class.
+	 * @param string                $confirm Confirmation text, '' = none.
+	 */
+	private static function button( $op, $label, $fields = array(), $css = 'button button-small', $confirm = '' ) {
+		printf( '<form method="post" action="%s" class="pncp-bunny-form" style="display:inline-block;margin:0 4px 4px 0">', esc_url( admin_url( 'admin-post.php' ) ) );
+		echo '<input type="hidden" name="action" value="' . esc_attr( self::ACTION ) . '">';
+		echo '<input type="hidden" name="op" value="' . esc_attr( $op ) . '">';
+		foreach ( $fields as $name => $value ) {
+			echo '<input type="hidden" name="' . esc_attr( $name ) . '" value="' . esc_attr( $value ) . '">';
+		}
+		echo preg_replace( '/ id="_wpnonce"/', '', wp_nonce_field( self::ACTION, '_wpnonce', true, false ), 1 ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Core markup.
+		printf(
+			'<button type="submit" class="%1$s"%3$s>%2$s</button></form>',
+			esc_attr( $css ),
+			esc_html( $label ),
+			'' !== $confirm ? ' onclick="return window.confirm(' . esc_attr( wp_json_encode( $confirm ) ) . ');"' : ''
+		);
+	}
+
+	/**
+	 * A date and time in the site's format.
+	 *
+	 * @param int $time Unix time.
+	 * @return string
+	 */
+	private static function when( $time ) {
+		return (string) wp_date( get_option( 'date_format' ) . ' ' . get_option( 'time_format' ), (int) $time );
+	}
+
+	/**
+	 * The notice of the last action of this user, once.
+	 */
+	public static function render_notice() {
+		$key    = 'pncp_bunny_msg_' . get_current_user_id();
+		$notice = get_transient( $key );
+		if ( ! is_array( $notice ) || 2 !== count( $notice ) ) {
+			return;
+		}
+		delete_transient( $key );
+		printf( '<div class="notice notice-%1$s inline"><p>%2$s</p></div>', 'error' === $notice[0] ? 'error' : 'success', esc_html( (string) $notice[1] ) );
+	}
+
+	/**
+	 * The card "Bunny CDN: attacks and locks at the edge", for the "Blocking at the CDN" area.
+	 */
+	public static function render_card() {
+		if ( ! current_user_can( 'manage_options' ) ) {
+			return;
+		}
+		$c      = self::credentials();
+		$state  = self::state();
+		$cfg    = self::settings();
+		$locked = PNCP_Lockdown::is_locked();
+		?>
+		<section class="pncp-card pncp-card--wide pncp-bunny" id="pncp-bunny" aria-labelledby="pncp-bunny-title">
+			<h2 id="pncp-bunny-title"><?php esc_html_e( 'Bunny CDN: attacks and locks at the edge', 'scrapelock' ); ?></h2>
+			<p class="description"><?php esc_html_e( 'Every visitor passes through Bunny CDN, also for pages Bunny serves from its cache, which never reach WordPress. ScrapeLock reads the pull zone\'s logs every 15 minutes to see those attacks too, and can lock vulnerable addresses at Bunny with one click (Edge Rules in your own account, marked “ScrapeLock:”). Rules ScrapeLock did not make are never touched.', 'scrapelock' ); ?></p>
+			<?php
+			self::render_notice();
+			if ( $locked ) {
+				echo '<p class="description">' . esc_html__( 'The site is locked: the rules at Bunny cannot be changed until it is unlocked.', 'scrapelock' ) . '</p>';
+			}
+			self::render_connection( $c, $locked );
+			if ( null === $c ) {
+				echo '</section>';
+				return;
+			}
+			self::render_status( $state, $cfg, $locked );
+			self::render_seen();
+			self::render_rules( $locked );
+			self::render_presets( $locked );
+			?>
+		</section>
+		<?php
+	}
+
+	/**
+	 * The connection part of the card.
+	 *
+	 * @param array<string, string>|null $c      Credentials.
+	 * @param bool                       $locked Site locked.
+	 */
+	private static function render_connection( $c, $locked ) {
+		if ( null !== $c && 'edge' === $c['source'] ) {
+			/* translators: %s: pull zone ID */
+			echo '<p>' . esc_html( sprintf( __( 'Uses the Bunny connection of “Blocking at the CDN” (pull zone %s).', 'scrapelock' ), $c['zone'] ) ) . '</p>';
+			return;
+		}
+		$own = self::own_config();
+		echo '<p class="description">' . esc_html__( '“Blocking at the CDN” is not set to Bunny CDN. If this site is served by Bunny all the same, connect its pull zone here (only for the logs and the Edge Rules below; the bans then stay with the CDN chosen there).', 'scrapelock' ) . '</p>';
+		if ( $locked ) {
+			return;
+		}
+		printf( '<form method="post" action="%s" class="pncp-bunny-connect">', esc_url( admin_url( 'admin-post.php' ) ) );
+		echo '<input type="hidden" name="action" value="' . esc_attr( self::ACTION ) . '"><input type="hidden" name="op" value="save">';
+		echo preg_replace( '/ id="_wpnonce"/', '', wp_nonce_field( self::ACTION, '_wpnonce', true, false ), 1 ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Core markup.
+		?>
+		<table class="form-table" role="presentation">
+			<tr>
+				<th scope="row"><label for="pncp-bunny-zone"><?php esc_html_e( 'Pull zone ID', 'scrapelock' ); ?></label></th>
+				<td><input type="text" class="regular-text code" id="pncp-bunny-zone" name="zone" value="<?php echo esc_attr( $own['zone'] ); ?>" autocomplete="off" spellcheck="false" inputmode="numeric">
+				<p class="description"><?php esc_html_e( 'The number in the address of the pull zone\'s page in the bunny.net dashboard.', 'scrapelock' ); ?></p></td>
+			</tr>
+			<tr>
+				<th scope="row"><label for="pncp-bunny-token"><?php esc_html_e( 'API key', 'scrapelock' ); ?></label></th>
+				<td>
+					<?php if ( self::key_from_config() ) : ?>
+						<p><?php esc_html_e( 'Set in wp-config.php (SCRAPELOCK_BUNNY_KEY).', 'scrapelock' ); ?></p>
+					<?php else : ?>
+						<input type="password" class="regular-text" id="pncp-bunny-token" name="token" value="" autocomplete="new-password" spellcheck="false" placeholder="<?php echo esc_attr( '' !== $own['token'] ? __( 'Saved. Leave empty to keep it.', 'scrapelock' ) : '' ); ?>">
+					<?php endif; ?>
+					<p class="description"><?php esc_html_e( 'Account settings → API in the bunny.net dashboard. It gives access to the whole account; it is stored in the database and never shown again. To keep it out of the database, add define( \'SCRAPELOCK_BUNNY_KEY\', \'…\' ); to wp-config.php instead.', 'scrapelock' ); ?></p>
+				</td>
+			</tr>
+		</table>
+		<p><button type="submit" class="button"><?php esc_html_e( 'Save and test', 'scrapelock' ); ?></button></p>
+		</form>
+		<?php
+		if ( null !== $c ) {
+			self::button( 'forget', __( 'Disconnect', 'scrapelock' ), array(), 'button button-small', __( 'Remove this connection and the rules ScrapeLock made at Bunny with it?', 'scrapelock' ) );
+		}
+	}
+
+	/**
+	 * Logging and import status.
+	 *
+	 * @param array<string, mixed> $state  State.
+	 * @param array<string, mixed> $cfg    Settings.
+	 * @param bool                 $locked Site locked.
+	 */
+	private static function render_status( $state, $cfg, $locked ) {
+		$log    = $state['logging'];
+		$status = isset( $log['status'] ) ? (string) $log['status'] : 'unknown';
+		echo '<h3>' . esc_html__( 'Logs', 'scrapelock' ) . '</h3><ul class="pncp-list-status pncp-bunny-status">';
+		if ( isset( $log['message'] ) && '' !== (string) $log['message'] ) {
+			/* translators: 1: status, 2: date and time */
+			echo '<li class="' . esc_attr( in_array( $status, array( 'off', 'error' ), true ) ? 'pncp-edge-error' : '' ) . '">' . esc_html( sprintf( __( '%1$s (checked %2$s)', 'scrapelock' ), (string) $log['message'], self::when( isset( $log['time'] ) ? (int) $log['time'] : 0 ) ) ) . '</li>';
+		} else {
+			echo '<li>' . esc_html__( 'Not checked yet whether logging is on at the pull zone.', 'scrapelock' ) . '</li>';
+		}
+		if ( in_array( $status, array( 'off', 'anonymized', 'unknown' ), true ) ) {
+			echo '<li>' . esc_html( self::logging_how() ) . '</li>';
+		}
+		if ( ! $cfg['import'] ) {
+			echo '<li>' . esc_html__( 'Importing the logs is off: turn on “Import attacks from Bunny CDN\'s logs” in the settings above.', 'scrapelock' ) . '</li>';
+		} elseif ( $state['last_run'] ) {
+			/* translators: 1: date and time, 2: lines, 3: attack requests */
+			echo '<li>' . esc_html( sprintf( __( 'Last import: %1$s, %2$s lines read, %3$s attack requests found.', 'scrapelock' ), self::when( (int) $state['last_run'] ), number_format_i18n( (int) $state['lines'] ), number_format_i18n( (int) $state['found'] ) ) ) . '</li>';
+			$next = wp_next_scheduled( self::CRON );
+			if ( $next ) {
+				/* translators: %s: date and time */
+				echo '<li>' . esc_html( sprintf( __( 'Next import: %s', 'scrapelock' ), self::when( $next ) ) ) . '</li>';
+			}
+		} else {
+			echo '<li>' . esc_html__( 'The first import starts within 15 minutes. It begins with the last 15 minutes of the log, not with older lines.', 'scrapelock' ) . '</li>';
+		}
+		if ( '' !== (string) $state['error'] ) {
+			/* translators: 1: date and time, 2: error message */
+			echo '<li class="pncp-edge-error"><strong>' . esc_html( sprintf( __( 'Last error (%1$s): %2$s', 'scrapelock' ), self::when( (int) $state['error_time'] ), (string) $state['error'] ) ) . '</strong></li>';
+		}
+		if ( $cfg['strikes'] ) {
+			echo '<li>' . esc_html(
+				'anonymized' === $status
+					? __( 'IPs too fast at the CDN are not blocked: Bunny anonymizes the IPs in its logs.', 'scrapelock' )
+					/* translators: %d: requests per minute */
+					: sprintf( __( 'IPs that ask for more than %d pages per minute at the CDN get a violation toward a temporary block (not in Monitor only).', 'scrapelock' ), (int) $cfg['rate'] )
+			) . '</li>';
+		}
+		echo '</ul><p>';
+		self::button( 'check', __( 'Check logging at Bunny', 'scrapelock' ) );
+		if ( 'off' === $status && ! $locked ) {
+			self::button( 'logging_on', __( 'Turn on logging at Bunny', 'scrapelock' ), array(), 'button button-small button-primary', __( 'Turn on logging for this pull zone at Bunny? Bunny then keeps a log of every request (IP, address, User-Agent) for 3 days.', 'scrapelock' ) );
+		}
+		if ( $cfg['import'] ) {
+			self::button( 'import', __( 'Import now', 'scrapelock' ) );
+		}
+		echo '</p>';
+	}
+
+	/**
+	 * What was seen at the edge.
+	 */
+	private static function render_seen() {
+		$day  = self::seen( 24 );
+		$week = self::seen( 24 * 7 );
+		echo '<h3>' . esc_html__( 'Attacks seen at the CDN', 'scrapelock' ) . '</h3>';
+		echo '<p>' . esc_html(
+			sprintf(
+				/* translators: 1: requests in 24 hours, 2: blocked of them, 3: requests in 7 days, 4: blocked of them */
+				__( 'Last 24 hours: %1$s attack requests (%2$s blocked). Last 7 days: %3$s (%4$s blocked).', 'scrapelock' ),
+				number_format_i18n( $day['seen'] ),
+				number_format_i18n( $day['blocked'] ),
+				number_format_i18n( $week['seen'] ),
+				number_format_i18n( $week['blocked'] )
+			)
+		) . '</p>';
+		if ( ! class_exists( 'PNCP_Attacks' ) || ! method_exists( 'PNCP_Attacks', 'top_details' ) ) {
+			return;
+		}
+		$rows = PNCP_Attacks::top_details( 7, 'edge', 10 );
+		if ( ! $rows ) {
+			return;
+		}
+		echo '<table class="widefat striped pncp-bunny-seen"><thead><tr><th scope="col">' . esc_html__( 'What (last 7 days)', 'scrapelock' ) . '</th><th scope="col">' . esc_html__( 'Requests', 'scrapelock' ) . '</th><th scope="col">' . esc_html__( 'IPs', 'scrapelock' ) . '</th></tr></thead><tbody>';
+		foreach ( $rows as $row ) {
+			echo '<tr><td>' . esc_html( '' !== (string) $row['detail'] ? (string) $row['detail'] : __( '(many addresses)', 'scrapelock' ) ) . '</td><td>' . esc_html( number_format_i18n( (int) $row['hits'] ) ) . '</td><td>' . esc_html( number_format_i18n( (int) $row['ips'] ) ) . '</td></tr>';
+		}
+		echo '</tbody></table>';
+	}
+
+	/**
+	 * The rules ScrapeLock manages, with Remove buttons.
+	 *
+	 * @param bool $locked Site locked.
+	 */
+	private static function render_rules( $locked ) {
+		$rules = self::list_ours();
+		echo '<h3>' . esc_html__( 'Edge Rules ScrapeLock manages', 'scrapelock' ) . '</h3>';
+		if ( ! $rules ) {
+			echo '<p class="description">' . esc_html__( 'None yet.', 'scrapelock' ) . '</p>';
+			return;
+		}
+		$on = self::enforcing();
+		echo '<table class="widefat striped pncp-bunny-rules"><thead><tr><th scope="col">' . esc_html__( 'Rule', 'scrapelock' ) . '</th><th scope="col">' . esc_html__( 'Blocks', 'scrapelock' ) . '</th><th scope="col">' . esc_html__( 'State', 'scrapelock' ) . '</th><th scope="col"><span class="screen-reader-text">' . esc_html__( 'Action', 'scrapelock' ) . '</span></th></tr></thead><tbody>';
+		foreach ( $rules as $rule ) {
+			$patterns = implode( ' ', array_slice( $rule['patterns'], 0, 6 ) ) . ( count( $rule['patterns'] ) > 6 ? ' …' : '' );
+			echo '<tr><td>' . esc_html( $rule['label'] ) . '</td><td><code>' . esc_html( $patterns ) . '</code>';
+			if ( $rule['allow'] ) {
+				/* translators: %s: list of IPs */
+				echo '<br><span class="description">' . esc_html( sprintf( __( 'Except from: %s', 'scrapelock' ), implode( ', ', array_slice( $rule['allow'], 0, 8 ) ) . ( count( $rule['allow'] ) > 8 ? ' …' : '' ) ) ) . '</span>';
+			}
+			echo '</td><td>';
+			if ( $rule['enabled'] ) {
+				esc_html_e( 'Blocking', 'scrapelock' );
+			} else {
+				echo esc_html( $on ? __( 'Switched off, switched on with the next run', 'scrapelock' ) : __( 'Switched off while ScrapeLock does not block (Monitor only or protection off)', 'scrapelock' ) );
+			}
+			/* translators: %s: date */
+			echo '<br><span class="description">' . esc_html( sprintf( __( 'Since %s', 'scrapelock' ), self::when( $rule['created'] ) ) ) . '</span></td><td>';
+			if ( ! $locked ) {
+				/* translators: %s: rule */
+				self::button( 'unlock_rule', __( 'Remove', 'scrapelock' ), array( 'rule' => $rule['id'] ), 'button button-small', sprintf( __( 'Remove the rule “%s” at Bunny CDN?', 'scrapelock' ), $rule['label'] ) );
+			}
+			echo '</td></tr>';
+		}
+		echo '</tbody></table>';
+	}
+
+	/**
+	 * The "Lock at Bunny" presets, with the attacks seen on each point.
+	 *
+	 * @param bool $locked Site locked.
+	 */
+	private static function render_presets( $locked ) {
+		echo '<h3>' . esc_html__( 'Lock at Bunny with one click', 'scrapelock' ) . '</h3>';
+		echo '<table class="widefat striped pncp-bunny-presets"><thead><tr><th scope="col">' . esc_html__( 'Point', 'scrapelock' ) . '</th><th scope="col">' . esc_html__( 'What it blocks, what may stop working', 'scrapelock' ) . '</th><th scope="col">' . esc_html__( 'Attacks, 7 days', 'scrapelock' ) . '</th><th scope="col"><span class="screen-reader-text">' . esc_html__( 'Action', 'scrapelock' ) . '</span></th></tr></thead><tbody>';
+		foreach ( self::presets() as $id => $preset ) {
+			$hits = 0;
+			if ( class_exists( 'PNCP_Attacks' ) && method_exists( 'PNCP_Attacks', 'count' ) ) {
+				foreach ( (array) $preset['evidence'] as $ev ) {
+					$hits += (int) PNCP_Attacks::count( 7, (string) $ev[0], (string) $ev[1] );
+				}
+			}
+			$is = self::preset_locked( (string) $id );
+			echo '<tr><td><strong>' . esc_html( (string) $preset['label'] ) . '</strong></td><td>' . esc_html( (string) $preset['blocks'] ) . '<br><span class="description">' . esc_html( (string) $preset['breaks'] ) . '</span></td><td>' . esc_html( number_format_i18n( $hits ) ) . '</td><td>';
+			if ( $is ) {
+				echo '<span class="pncp-bunny-locked">' . esc_html__( 'Locked at Bunny', 'scrapelock' ) . '</span><br>';
+				if ( ! $locked ) {
+					self::button( 'unlock', __( 'Remove', 'scrapelock' ), array( 'id' => (string) $id ) );
+				}
+			} elseif ( ! $locked ) {
+				/* translators: %s: point */
+				self::button( 'lock', __( 'Lock at Bunny', 'scrapelock' ), array( 'id' => (string) $id ), $hits > 0 ? 'button button-small button-primary' : 'button button-small', sprintf( __( 'Block “%s” at Bunny CDN for everyone it applies to?', 'scrapelock' ), (string) $preset['label'] ) );
+			}
+			echo '</td></tr>';
+		}
+		echo '</tbody></table>';
+		if ( ! self::custom_login_active() ) {
+			$allow = self::login_allowlist();
+			/* translators: %s: list of IPs */
+			echo '<p class="description">' . esc_html( $allow ? sprintf( __( 'A lock of the login page lets these IPs through: %s.', 'scrapelock' ), implode( ', ', $allow ) ) : __( 'No administrator IP is known yet, so the login page cannot be locked at Bunny.', 'scrapelock' ) ) . '</p>';
+		}
+	}
+
+	/* ---------- Site Health, privacy, WP-CLI ---------- */
+
+	/**
+	 * Site Health test: logging at Bunny and the last import.
+	 *
+	 * @return array<string, mixed>
+	 */
+	public static function health_test() {
+		$result = array(
+			'label'       => __( 'ScrapeLock reads Bunny CDN\'s logs', 'scrapelock' ),
+			'status'      => 'good',
+			'badge'       => array(
+				'label' => __( 'Security', 'scrapelock' ),
+				'color' => 'blue',
+			),
+			'description' => '<p>' . esc_html__( 'Attacks on pages Bunny serves from its cache never reach WordPress; ScrapeLock sees them in the pull zone\'s logs.', 'scrapelock' ) . '</p>',
+			'actions'     => '',
+			'test'        => 'pncp_bunny',
+		);
+		$c      = self::credentials();
+		$state  = self::state();
+		$cfg    = self::settings();
+		if ( null === $c || ! $cfg['import'] ) {
+			$result['label'] = __( 'ScrapeLock does not read Bunny CDN\'s logs', 'scrapelock' );
+			if ( null !== $c ) {
+				$result['description'] = '<p>' . esc_html__( 'The site is connected to Bunny CDN, but importing its logs is off: attacks on cached pages stay unseen. Turn on “Import attacks from Bunny CDN\'s logs”.', 'scrapelock' ) . '</p>';
+			}
+			return $result;
+		}
+		$status = isset( $state['logging']['status'] ) ? (string) $state['logging']['status'] : '';
+		if ( 'off' === $status ) {
+			$result['status']      = 'recommended';
+			$result['label']       = __( 'Logging is off at the Bunny pull zone', 'scrapelock' );
+			$result['description'] = '<p>' . esc_html( self::logging_how() ) . '</p>';
+		} elseif ( '' !== (string) $state['error'] && (int) $state['last_ok'] < time() - 2 * HOUR_IN_SECONDS ) {
+			$result['status'] = 'recommended';
+			$result['label']  = __( 'ScrapeLock could not read Bunny CDN\'s logs', 'scrapelock' );
+			/* translators: %s: error */
+			$result['description'] = '<p>' . esc_html( sprintf( __( 'The last import failed: %s', 'scrapelock' ), (string) $state['error'] ) ) . '</p>';
+		}
+		return $result;
+	}
+
+	/**
+	 * The text for the privacy policy guide.
+	 *
+	 * @return string
+	 */
+	public static function privacy_policy() {
+		return __( 'When “Import attacks from Bunny CDN\'s logs” is on, this site downloads the logs of its own Bunny CDN pull zone (logging.bunnycdn.com) every 15 minutes. They contain the IP address, the address asked for, the referrer, the browser identification (User-Agent) and the country of each request. Only requests that look like attacks are kept, with the IP address, for as long as the attack record is kept; the rest is discarded at once. When a vulnerable address is locked at Bunny CDN, the IP addresses administrators used in the last 30 days may be sent to the site owner\'s Bunny account, so that they are let through.', 'scrapelock' );
+	}
+
+	/**
+	 * "wp scrapelock bunny <status|import|rules|presets|lock|unlock|logging|parse>".
+	 *
+	 * @param string[]              $args       Arguments.
+	 * @param array<string, string> $assoc_args Options.
+	 */
+	public static function cli( $args, $assoc_args ) {
+		$sub    = isset( $args[0] ) ? (string) $args[0] : 'status';
+		$format = isset( $assoc_args['format'] ) ? (string) $assoc_args['format'] : 'table';
+		if ( ! in_array( $format, array( 'table', 'json', 'csv', 'yaml', 'count' ), true ) ) {
+			WP_CLI::error( __( 'Unknown --format. Use: table, json, csv, yaml or count.', 'scrapelock' ) );
+		}
+		if ( 'parse' !== $sub && null === self::credentials() ) {
+			WP_CLI::error( __( 'Bunny CDN is not connected.', 'scrapelock' ) );
+		}
+		$fail = static function ( $result, $ok ) {
+			if ( is_wp_error( $result ) ) {
+				WP_CLI::error( $result->get_error_message() );
+			}
+			WP_CLI::success( $ok );
+		};
+		switch ( $sub ) {
+			case 'status':
+				$state = self::state();
+				$c     = self::credentials();
+				$day   = self::seen( 24 );
+				$week  = self::seen( 168 );
+				$items = array(
+					array(
+						'key'   => 'pull_zone',
+						'value' => $c['zone'] . ' (' . $c['source'] . ')',
+					),
+					array(
+						'key'   => 'import',
+						'value' => self::settings()['import'] ? 'on' : 'off',
+					),
+					array(
+						'key'   => 'logging',
+						'value' => isset( $state['logging']['status'] ) ? (string) $state['logging']['status'] : 'unknown',
+					),
+					array(
+						'key'   => 'last_run',
+						'value' => $state['last_run'] ? wp_date( 'Y-m-d H:i:s', (int) $state['last_run'] ) : '-',
+					),
+					array(
+						'key'   => 'cursor',
+						'value' => $state['day'] . ' +' . (int) $state['offset'],
+					),
+					array(
+						'key'   => 'seen_24h',
+						'value' => $day['seen'] . ' (' . $day['blocked'] . ' blocked)',
+					),
+					array(
+						'key'   => 'seen_7d',
+						'value' => $week['seen'] . ' (' . $week['blocked'] . ' blocked)',
+					),
+					array(
+						'key'   => 'rules',
+						'value' => (string) count( self::rules() ),
+					),
+					array(
+						'key'   => 'error',
+						'value' => (string) $state['error'],
+					),
+				);
+				WP_CLI\Utils\format_items( $format, $items, array( 'key', 'value' ) );
+				return;
+			case 'import':
+				$r = self::run();
+				if ( '' !== $r['error'] ) {
+					WP_CLI::error( $r['error'] );
+				}
+				/* translators: 1: lines, 2: attack requests */
+				WP_CLI::success( sprintf( __( '%1$d lines read, %2$d attack requests found.', 'scrapelock' ), $r['lines'], $r['found'] ) );
+				return;
+			case 'rules':
+				$items = array();
+				foreach ( self::list_ours() as $rule ) {
+					$items[] = array(
+						'id'       => $rule['id'],
+						'label'    => $rule['label'],
+						'guid'     => $rule['guid'],
+						'zone'     => $rule['zone'],
+						'enabled'  => $rule['enabled'] ? 'yes' : 'no',
+						'patterns' => implode( ' ', $rule['patterns'] ),
+						'allow'    => implode( ' ', $rule['allow'] ),
+					);
+				}
+				WP_CLI\Utils\format_items( $format, $items, array( 'id', 'label', 'guid', 'zone', 'enabled', 'patterns', 'allow' ) );
+				return;
+			case 'presets':
+				$items = array();
+				foreach ( self::presets() as $id => $preset ) {
+					$items[] = array(
+						'preset' => $id,
+						'label'  => $preset['label'],
+						'locked' => self::preset_locked( (string) $id ) ? 'yes' : 'no',
+						'rule'   => self::preset_rule_id( (string) $id ),
+					);
+				}
+				WP_CLI\Utils\format_items( $format, $items, array( 'preset', 'label', 'locked', 'rule' ) );
+				return;
+			case 'lock':
+				$fail( self::lock_preset( isset( $args[1] ) ? sanitize_key( $args[1] ) : '' ), __( 'Locked at Bunny CDN.', 'scrapelock' ) );
+				return;
+			case 'unlock':
+				$id = isset( $args[1] ) ? sanitize_key( $args[1] ) : '';
+				if ( isset( self::presets()[ $id ] ) ) {
+					$fail( self::unlock_preset( $id ), __( 'Removed at Bunny CDN.', 'scrapelock' ) );
+					return;
+				}
+				// A rule ID; also while the site is locked, so a locked-out owner can open the login page again.
+				$fail( self::remove( self::clean_id( $id ) ), __( 'Removed at Bunny CDN.', 'scrapelock' ) );
+				return;
+			case 'logging':
+				if ( isset( $assoc_args['enable'] ) ) {
+					$fail( self::enable_logging(), __( 'Logging is on at the pull zone.', 'scrapelock' ) );
+					return;
+				}
+				$check = self::bunny_logging_check();
+				WP_CLI::log( $check['message'] );
+				if ( 'on' !== $check['status'] ) {
+					WP_CLI::log( $check['how'] );
+				}
+				return;
+			case 'parse':
+				$file = isset( $args[1] ) ? (string) $args[1] : '';
+				if ( '' === $file || ! is_readable( $file ) ) {
+					WP_CLI::error( __( 'Give the path of a Bunny log file.', 'scrapelock' ) );
+				}
+				$a = self::new_analysis();
+				// Every line counts here, also those WordPress saw.
+				$a['cfg']['all_lines'] = true;
+				$items                 = array();
+				$handle                = fopen( $file, 'r' ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fopen -- Reads a local file given on the command line.
+				while ( false !== ( $line = fgets( $handle ) ) ) { // phpcs:ignore Generic.CodeAnalysis.AssignmentInCondition.FoundInWhileCondition -- Line by line.
+					$row = self::parse_line( $line );
+					if ( ! $row ) {
+						continue;
+					}
+					$items[] = array(
+						'ip'     => $row['ip'],
+						'status' => $row['status'],
+						'cache'  => $row['cache'],
+						'path'   => $row['path'],
+						'what'   => self::classify( $row, $a['agents'] ),
+					);
+				}
+				fclose( $handle ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fclose -- See fopen().
+				WP_CLI\Utils\format_items( $format, $items, array( 'ip', 'status', 'cache', 'path', 'what' ) );
+				return;
+		}
+		WP_CLI::error( __( 'Use: status, import, rules, presets, lock <preset>, unlock <preset|rule>, logging [--enable] or parse <file>.', 'scrapelock' ) );
+	}
+}

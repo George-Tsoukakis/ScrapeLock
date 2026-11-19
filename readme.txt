@@ -4,7 +4,7 @@ Tags: ai crawlers, anti-scraping, bot protection, rate limit, content protection
 Requires at least: 6.2
 Tested up to: 7.2
 Requires PHP: 7.4
-Stable tag: 3.7.0
+Stable tag: 3.8.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -16,6 +16,14 @@ Most content protection plugins disable right click in the browser. Scrapers and
 
 * **Runs on your own server.** No account and no API key needed, and no visitor data sent anywhere by default. It downloads public IP lists; only if you turn on CDN blocking does it send the IPs it blocks to your own Cloudflare or Bunny account, with your API token (see External services).
 * **Starts in Monitor only.** For its first 7 days a new install blocks nobody: requests that would be refused are logged as "Would block", so you can see what it would do and adjust before it enforces. You can switch Monitor only on again at any time.
+
+= New in 3.8: see where bots attack, and close it with one click =
+
+* **Attack report (Attacks tab).** Where bots hit, also when nothing is refused: failed sign-ins and the usernames tried, how many try wp-admin and wp-login.php, XML-RPC calls, scanner and plugin probes, per day and hour, with country, "Block IP", CSV, a dashboard widget and an optional weekly email.
+* **Vulnerable points.** Lock XML-RPC, wp-admin, the sign-in page, readme.html, PHP in uploads and more with one click, with the risk explained; Apache rules written with a self-test and rollback, Nginx rules to copy.
+* **Sign-in protection.** Failed logins limited per IP and per username (wp-login.php, every XML-RPC multicall call, application passwords), one error message, and an optional sign-in address of your own.
+* **Bunny CDN, deeper.** Reads your pull zone's logs to see attacks on cached pages, and locks wp-login.php, xmlrpc.php and .env/.git probes at Bunny.
+* **Stealth (optional).** BuiltWith and Wappalyzer get neutral addresses (/assets/…) instead of /wp-content/, another REST prefix and /sitemap.xml, without WordPress-only markup. Tested before it turns on.
 
 = What it stops, and what it cannot =
 
@@ -55,7 +63,6 @@ Whatever a visitor sees has already reached their device, so nothing stops a det
 = Limits and blocks =
 
 * Per-IP limits for pages, searches, REST / GraphQL, "page not found" (404) requests, sitemaps, visitors from data centers and, with WooCommerce, cart actions and coupon attempts (IPv6: per /64). Verified search engines and real shoppers are not affected.
-* **3.5:** an anonymous request for a long list from the REST API (posts, pages, products) counts more toward the REST limit: 2 above 20 items per page, 3 above 50. Lists of up to 20 items and logged-in users count as before, and the WooCommerce cart and checkout are not counted. JSON 429 answers (REST API, GraphQL, cart) also carry `retry_after`, the seconds of their Retry-After header.
 * IPs that keep exceeding the limits are blocked for a while, optionally also at Cloudflare or Bunny CDN ("Test connection" checks the token, the zone and the permissions).
 * **Emergency Mode:** stricter limits for 1 hour to 3 days, then your settings return on their own. When traffic suddenly jumps, ScrapeLock emails you a one-click button to start it.
 * Optional human check without a captcha: visitors who have not scrolled, tapped or typed get a stricter page limit.
@@ -80,7 +87,7 @@ Whatever a visitor sees has already reached their device, so nothing stops a det
 * Settings that explain themselves: rejected lines are named, unsaved changes flagged, defaults labelled, options that may affect visitors or SEO tagged.
 * Presets (Balanced, Strict, Maximum) with undo, settings export and import, and a block log with a 24-hour summary and automatic deletion.
 * **3.7:** visitors from AI assistants (ChatGPT, Perplexity, Claude, Gemini…) per assistant and page, counted on your server without personal data.
-* WP-CLI: `wp scrapelock status`, `block`, `unblock`, `blocked`, `emergency`, `log`, `check --ip=<ip>` (what ScrapeLock would answer, without side effects), `settings`, `lockdown status`, `reputation`, `crowdsec` and `ai-referrals`.
+* WP-CLI: `wp scrapelock status`, `block`, `unblock`, `blocked`, `emergency`, `log`, `check --ip=<ip>` (what ScrapeLock would answer, without side effects), `settings`, `lockdown status`, `reputation`, `crowdsec`, `ai-referrals`, and in 3.8 `attacks`, `attack-report`, `login`, `harden`, `bunny` and `stealth`.
 * Abilities API (WordPress 6.9+) for administrators: read the summary, block or unblock an IP and start Emergency Mode from an AI agent or MCP client. None of them unlocks Lockdown.
 
 = On the page and images =
@@ -103,9 +110,7 @@ Whatever a visitor sees has already reached their device, so nothing stops a det
 * Administrators are frozen completely. Shop managers and other staff roles you do not tick keep their work (orders, products, coupons, posts, media), but not the rights that could take over the site. Visitors and customers browse, order, pay, register and comment as usual.
 * Also enforced against code: a bug in another plugin cannot be used to activate plugins, change the site address or the admin email, add an administrator or unlock the lock. Code that can run its own PHP on your server can get around any plugin, ScrapeLock included. While the site is unlocked for a while, these rules are off for code too: unlock only for as long as you need.
 * Sealed: the lock is signed with the keys in wp-config.php and kept outside the database (a guard file, a lock file, or a line in wp-config.php), so SQL injection in another plugin cannot unlock the site.
-* What is put back when it is changed straight in the database: the active plugins and theme, the site address, the admin email, registration and the default role, the roles, the uploads folder, search engine visibility, the widgets, the theme's settings, WooCommerce's own payment methods and bank accounts, and ScrapeLock's own settings (more with the filter `pncp_lockdown_protected_options`). New administrators, new application passwords for staff and changed staff passwords are refused at sign-in and emailed. A capability given to one user alone, outside their role, does not work while the site is locked.
-* The Site Editor's templates and template parts cannot be changed by code while locked; templates, template parts and global styles changed straight in the database are found every hour.
-* What it does not keep: posts, pages, products, orders, comments and media, navigation menus, scheduled events, and the settings and tables of other plugins (a payment gateway of another plugin, for example; add its option to the filter). Code that other plugins keep in the database and run (snippets of Code Snippets or WPCode) is checked every hour: new or changed code is emailed to you, and the quarantine deactivates the plugin that runs it.
+* Changes made straight in the database to the plugins, theme, site address, admin email, roles and ScrapeLock's settings are put back; new administrators and changed staff passwords are refused at sign-in. See the FAQ for the full list.
 * File integrity: every PHP, .htaccess and .user.ini file is fingerprinted and checked every hour while locked, and WordPress and the plugins from WordPress.org are compared with their official checksums. New or changed files are emailed to you and shown in Site Health; optional quarantine. When the site is locked again after an unlock, the files that changed while it was open are emailed to you too, before they become part of the new fingerprint.
 * Unlock for 15 minutes to 2 hours for yourself only, or until you lock it again; every lock and unlock is logged and emailed. Ten one-time recovery codes for a lost phone. The QR code is drawn in your browser and the secret is stored encrypted, never sent anywhere.
 
@@ -141,6 +146,13 @@ Optional blocking at the CDN (off by default) uses the API of the CDN you choose
 
 * **Cloudflare API** (IP Access rules of your zone), only when the CDN is set to Cloudflare: https://api.cloudflare.com/client/v4/zones/ZONE_ID/firewall/access_rules/rules, and for the check https://api.cloudflare.com/client/v4/user/tokens/verify (or /accounts/ACCOUNT_ID/tokens/verify) and /zones/ZONE_ID. Provided by Cloudflare, Inc.: [Terms of service](https://www.cloudflare.com/website-terms/), [Privacy policy](https://www.cloudflare.com/privacypolicy/).
 * **Bunny CDN API** (blocked IPs of your Pull Zone), only when the CDN is set to Bunny CDN: https://api.bunny.net/pullzone/PULL_ZONE_ID (addBlockedIp, removeBlockedIp, and reading the zone's list of blocked IPs). Provided by BunnyWay d.o.o. (bunny.net): [Terms of service](https://bunny.net/tos/), [Privacy policy](https://bunny.net/privacy/).
+
+**Bunny CDN, deeper (3.8, off until you use it).** With the Bunny CDN connection of "Blocking at the CDN" (or a pull zone ID and API key entered in the Bunny card), and your API key:
+
+* **Bunny CDN logging API (logging.bunnycdn.com)** – only when "Import attacks from Bunny CDN's logs" is on: every 15 minutes the site downloads the new lines of its own pull zone's log, from https://logging.bunnycdn.com/DATE/PULL_ZONE_ID.log. Nothing about your visitors is sent; the log Bunny returns contains your visitors' IPs, addresses asked for, referrers, User-Agents and countries. Only attack-looking lines are kept. Provided by BunnyWay d.o.o. (bunny.net): [Terms of service](https://bunny.net/tos/), [Privacy policy](https://bunny.net/privacy/).
+* **Bunny CDN API (api.bunny.net)** – when Bunny CDN is connected: reads the pull zone (https://api.bunny.net/pullzone/PULL_ZONE_ID: logging status, Edge Rules); when you click "Lock at Bunny" or "Turn on logging at Bunny" it creates, updates or deletes Edge Rules made by ScrapeLock (URL patterns, a description starting with "ScrapeLock:", and for the login page the IPs administrators used in the last 30 days) or turns logging on. Same provider and terms as above.
+
+Vulnerable points and Stealth (3.8) only request the site's own pages and files, from the site itself (loopback), to check what a visitor gets. The weekly attack report and the sign-in protection's emails go through the site's own wp_mail().
 
 If a list has not been downloaded, ScrapeLock verifies search engine bots with reverse DNS, and uses a built-in copy of the Cloudflare ranges. AI search bots are not verified until their list has been downloaded. Reverse DNS lookups are made only for requests that claim to be a search engine, through your server's own DNS resolver.
 
@@ -269,13 +281,45 @@ On a VPS: install CrowdSec (it subscribes to the community blocklist on its own)
 
 Turn on "Write each temporary block to the system log" (Bots and limits → Temporary block), then copy the filter and the jail from the Server rules tab to /etc/fail2ban/filter.d/scrapelock.conf and /etc/fail2ban/jail.d/scrapelock.local, check logpath (/var/log/auth.log on Debian and Ubuntu, /var/log/secure on Red Hat) and run `fail2ban-client reload`. The line looks like `scrapelock[1234]: ban 203.0.113.5 for 60 minutes reason=rate_page site=example.com`. Blocks made by the pre-cache check before WordPress loads are not written.
 
+= Where do I see which points bots attack, and how do I close them? =
+
+Settings → ScrapeLock → Attacks. Choose 24 hours, 7, 30 or 90 days: you get the attacks per day and hour, the kinds of attack, the addresses attacked most, the wp-admin and sign-in attempts with the usernames tried, the IPs (with country and reputation) and what the Bunny CDN edge saw. Next to an address, "Lock this" closes that point (Vulnerable points); next to an IP, "Block 24 h" or "Always block". Search engines, CDN addresses and your own address cannot be blocked there. "Download the report (CSV)" exports it, and "Weekly attack report by email" (Log tab) sends a summary every Monday. `wp scrapelock attacks --top=users` lists the usernames tried.
+
+= What does the attack report record? =
+
+Failed sign-ins (with the username tried), visits to wp-login.php and /wp-admin/ that do not sign in, XML-RPC calls (each call of a system.multicall), ?author=N and the REST users list, scanner probes, "page not found" under /wp-content/plugins/ and /themes/, SQL/script/path patterns in the address (recorded only) and every request ScrapeLock refused. One row per hour, address and IP; a normal page view writes nothing. Exempt staff, verified search engines and the server itself are not recorded. Turn it off with "Record where bots and attackers hit the site" (Log settings). install.php and upgrade.php run without plugins, so they are recorded only with "Early check" on (and from the Bunny CDN logs); setup-config.php is seen only in the CDN or server logs. The "WordPress's own files" point closes all three.
+
+= What does "Vulnerable points" lock, and can it break my site? =
+
+Each point lists what it protects, how many attacks reached it, and what may stop working (for example Jetpack and the mobile app use XML-RPC; "Allow Jetpack" keeps Jetpack working). Low-risk points can be locked together. Points that only the web server can enforce (WordPress's own files, PHP in wp-includes or wp-content, directory listing) come with Apache and Nginx rules; on Apache ScrapeLock can write them into .htaccess, tests the site right after and puts the file back on its own if the site stops answering. Every point opens again with one click (or `wp scrapelock harden revert <id>`).
+
+= I moved the sign-in page and forgot the address =
+
+Add define( 'SCRAPELOCK_LOGIN_SLUG_OFF', true ); to wp-config.php: wp-login.php works again. Sign in, look up or change the address (Bots and limits → Sign-in), then remove the line. "wp scrapelock login url" prints it too. In Monitor only both addresses work.
+
+= Can password guessing lock me out of my own account? =
+
+No. A username under attack is paused for a few minutes, but not for IPs it signed in from before, and its email gets a one-time link that lets you sign in at once. "Lost your password" always works. Too many wrong passwords from one IP block that IP for a while (30 minutes by default); `wp scrapelock login unlock <ip>` lifts it.
+
+= My site is behind Bunny CDN. What does ScrapeLock do with it? =
+
+Under Bots → Blocking at the CDN, the Bunny card reads the pull zone's logs (turn on logging at the pull zone; ScrapeLock has a button for it) and records attacks Bunny answered from its cache, which WordPress never saw. "Lock at Bunny" creates an Edge Rule in your own Bunny account that blocks an address (wp-login.php except your IPs, xmlrpc.php, .env/.git probes, readme.html…) before it reaches your server. ScrapeLock only changes rules it created (their description starts with "ScrapeLock:"); in Monitor only they are switched off. If a lock of wp-login.php keeps you out after your IP changed, remove the rule in the bunny.net dashboard or run wp scrapelock bunny unlock preset_login.
+
+= Can ScrapeLock hide that my site runs on WordPress? =
+
+Mostly. Turn on Stealth (Vulnerable points tab). Visitors then get neutral addresses for the theme, plugin, media and core files, served by rules that ScrapeLock writes into .htaccess on Apache or that you add to Nginx; the site tests them first and never turns them on if a file would not load. The REST API can get another prefix, the sitemap becomes /sitemap.xml, and readme.html and the like answer "page not found". Move the sign-in address too (Sign-in protection). What cannot be hidden: block and WooCommerce class names the styles depend on, cookies of signed-in users and shoppers, your hosting and DNS. WHOIS shows who registered the domain, not what the site is built with (use your registrar's privacy option for that). If the site ever loses its styles after moving host, add define( 'SCRAPELOCK_STEALTH_OFF', true ); to wp-config.php.
+
+= Does a REST API list count more toward the REST limit? =
+
+Yes (3.5): an anonymous request for a long list from the REST API (posts, pages, products) counts 2 above 20 items per page, 3 above 50. Lists of up to 20 items and logged-in users count as before, and the WooCommerce cart and checkout are not counted. JSON 429 answers (REST API, GraphQL, cart) also carry `retry_after`, the seconds of their Retry-After header.
+
 = Can I customise it in code? =
 
 Yes, with filters such as `pncp_client_ip`, `pncp_skip_guard`, `pncp_should_protect`, `pncp_known_ai_agents`, `pncp_ai_search_agents`, `pncp_rest_post_types`, `pncp_rest_hide_content`, `pncp_404_exempt`, `pncp_trap_exempt_agents`, `pncp_trap_first_ban_minutes`, `pncp_watermark_attachment`, `pncp_hotlink_allowed`, `pncp_use_apcu` and `pncp_log_rows_per_minute`; 3.5 adds `pncp_rest_cost`, `pncp_probe_trap_paths` and `pncp_conflicting_plugins`; 3.7 adds `pncp_ripper_agents`, `pncp_seo_agents`, `pncp_malicious_ua_patterns`, `pncp_host_is_foreign_ip`, `pncp_reputation_weights`, `pncp_reputation_good`, `pncp_reputation_bad`, `pncp_crowdsec_listed`, `pncp_crowdsec_max`, `pncp_crowdsec_range_ok`, `pncp_ai_referrers` and `pncp_syslog_facility`. The early and pre-cache checks run before plugins load, so filters in plugins and themes do not apply there. There is also WP-CLI and settings export and import.
 
 = What personal data does it store? =
 
-For a blocked request: the IP, User-Agent, page and time, deleted after 1, 7 or 30 days. With IP reputation (3.7, off by default): for each IP, stored under a hash, when it last read pages, passed the human check, signed in or was refused, for 7 days. Visits from AI assistants are counted per day and page only. With the human check, visitors who interact get a 7-day cookie, `pncp_hv`, holding only an expiry and a signature tied to their IP network and browser; it is not used for tracking. The country database is a local file.
+For a blocked request: the IP, User-Agent, page and time, deleted after 1, 7 or 30 days. The attack record (3.8) keeps the IP, the address asked for, the hour and, for a failed sign-in, the username tried, for 7, 30 or 90 days. The sign-in protection keeps, per account, a keyed hash of the IPs it signed in from (180 days). With IP reputation (3.7, off by default): for each IP, stored under a hash, when it last read pages, passed the human check, signed in or was refused, for 7 days. Visits from AI assistants are counted per day and page only. With the human check, visitors who interact get a 7-day cookie, `pncp_hv`, holding only an expiry and a signature tied to their IP network and browser; it is not used for tracking. The country database is a local file.
 
 = Does it guarantee legal protection of my content? =
 
@@ -284,6 +328,10 @@ No. The TDM declaration is a machine-readable reservation of rights; it does not
 = What does Lockdown freeze, and what keeps working? =
 
 Frozen roles can log in but change nothing. Roles that can change plugins, themes, users or settings are always frozen; editors, authors, contributors and shop managers by default. Customers, members, visitors, orders, payments, webhooks, cron and comments are not affected. Shop staff cannot process orders in wp-admin while locked: unlock for a while.
+
+What is put back when it is changed straight in the database: the active plugins and theme, the site address, the admin email, registration and the default role, the roles, the uploads folder, search engine visibility, the widgets, the theme's settings, WooCommerce's own payment methods and bank accounts, and ScrapeLock's own settings (more with the filter `pncp_lockdown_protected_options`). New administrators, new application passwords for staff and changed staff passwords are refused at sign-in and emailed. A capability given to one user alone, outside their role, does not work while the site is locked. The Site Editor's templates and template parts cannot be changed by code while locked; templates, template parts and global styles changed straight in the database are found every hour.
+
+What it does not keep: posts, pages, products, orders, comments and media, navigation menus, scheduled events, and the settings and tables of other plugins (a payment gateway of another plugin, for example; add its option to the filter). Code that other plugins keep in the database and run (snippets of Code Snippets or WPCode) is checked every hour: new or changed code is emailed to you, and the quarantine deactivates the plugin that runs it.
 
 = I lost my phone. How do I unlock the site? =
 
@@ -307,6 +355,23 @@ No, on purpose: only an app code, a recovery code or the SCRAPELOCK_UNLOCK line 
 6. Dashboard widget with the protection status and the last 24 hours.
 
 == Changelog ==
+
+= 3.8.0 =
+* New: Attacks tab with the full attack report: KPIs, timeline per day and hour, kinds of attack, addresses attacked most with "Lock this", wp-admin and sign-in attempts with the usernames tried, top IPs with country and reputation and "Block 24 h" / "Always block", User-Agents, Bunny CDN edge, CSV export, dashboard widget, optional weekly email (`wp scrapelock attack-report`).
+* New: attack record (`wp scrapelock attacks`): where bots and attackers hit the site, also when nothing is refused: failed sign-ins and usernames tried, wp-admin, wp-login.php and XML-RPC probes (each call of a system.multicall), username enumeration, scanner and plugin probes, attack patterns in the address. One row per hour, address and IP, written only for attack-looking requests; kept 7, 30 or 90 days. On by default.
+* New: Vulnerable points tab: live status, attack counts and one-click lock/unlock for XML-RPC, wp-admin, login, core files, file editor, application passwords, usernames, author archives, REST map, PHP in uploads/wp-includes/wp-content, directory listing, pingbacks and security headers; Apache rules written with self-test and rollback, Nginx rules, Bunny CDN edge (`wp scrapelock harden`).
+* New: sign-in protection: failed logins limited per IP (temporary block) and per username (pause with an emailed unlock link), counting wp-login.php, each call of an XML-RPC system.multicall and application passwords; one generic error message; optional custom login address that answers 404 for wp-login.php and wp-admin (recovery: `SCRAPELOCK_LOGIN_SLUG_OFF`); `wp scrapelock login`. The limit and the generic message are on for new and existing sites; the address is off until you set one.
+* New: Bunny CDN logs import (attacks on cached pages, bad bots, 4xx floods, optional violations for IPs too fast at the CDN) and one-click Edge Rules at Bunny for wp-login.php, xmlrpc.php, secret-file probes and WordPress's own files (`wp scrapelock bunny`).
+* New: Stealth (optional) — neutral asset addresses with tested server rules for Apache and Nginx, REST prefix, /sitemap.xml, WordPress-only markup removed, and a scan of what still shows WordPress (`wp scrapelock stealth`). While on, it includes "Hide the versions" and "Hide that the site runs on WordPress".
+* New: Site Health tests for the attack record, vulnerable points, sign-in protection, Bunny CDN logs and Stealth; Site Health info and the suggested privacy policy text cover 3.8.
+* Change: the log counts the sub-sitemaps (/sitemap-posts-post-1.xml) and a moved REST API as content, not as scanner probes.
+* Security: the custom login address is never shown to visitors: the password form of protected posts keeps its own address, and wp-signup.php and wp-register.php answer 404 instead of redirecting to the new address. A page, post or tag created later with the same address no longer clears it at the next save (a warning says so). "Open again" on the login point only moves the login page back and keeps the limit of failed logins on.
+* Security: a login rule at Bunny CDN always keeps the administrators' IPs, and follows the login address at once: when the page goes back to wp-login.php ("Open again", an empty address, `SCRAPELOCK_LOGIN_SLUG_OFF`) it lets them in, or is switched off when no administrator IP is known, so nobody is locked out.
+* Stealth: the password form of protected posts goes through the Stealth folder; ?rest_route= answers only requests that sign in while the REST prefix is moved; REST answers to visitors no longer carry the api.w.org Link header or the X-WP- names in the CORS headers; the ids of script module preloads are renamed. `wp scrapelock stealth scan --page=<url>` (was --url, which WP-CLI keeps for itself).
+* Attack record: installer probes (install.php, upgrade.php) are recorded when "Early check" is on; sign-ins refused for a blocked IP or a paused username count as refused sign-ins, not as wrong passwords of that account; during a flood, wp-admin and login paths add up in a few rows; the Site Health test shows the number of failed sign-ins.
+* Performance: Stealth checks the stored rewrite rules only on sites where it once moved the REST API or the sitemap, and rebuilds them at most once an hour. The Bunny import adds each aggregated event in one step.
+* Database: a new table, `pncp_attacks` (schema version 6), removed on uninstall with the new options, events and .htaccess blocks.
+* Readme: the details of Lockdown and of the REST list weighting moved to the FAQ.
 
 = 3.7.0 =
 * New: site rippers and address harvesters (HTTrack, WebCopier, Teleport Pro, Offline Explorer, SiteSucker, Cyotek WebCopy, Octoparse, ParseHub and more, 30 names) are blocked with the bot list. Built in, like the AI crawlers; an entry in "Always allowed" still passes. Filter `pncp_ripper_agents`.

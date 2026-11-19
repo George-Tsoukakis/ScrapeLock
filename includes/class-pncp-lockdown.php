@@ -2088,6 +2088,9 @@ final class PNCP_Lockdown {
 			return $cache;
 		}
 		$names = array( 'sidebars_widgets', 'woocommerce_bacs_accounts', 'woocommerce_bacs_settings', 'woocommerce_cheque_settings', 'woocommerce_cod_settings', 'woocommerce_paypal_settings' );
+		// 3.8: Bunny CDN's own API key (PNCP_Bunny, when "Blocking at the CDN" is not Bunny).
+		$names[] = PNCP_Bunny::CONFIG;
+
 		$theme = (string) get_option( 'stylesheet' );
 		if ( '' !== $theme ) {
 			$names[] = 'theme_mods_' . $theme;

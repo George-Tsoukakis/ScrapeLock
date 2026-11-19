@@ -44,6 +44,10 @@ final class PNCP_Surface {
 		if ( empty( $s['enabled'] ) ) {
 			return false;
 		}
+		// 3.8: Stealth (PNCP_Stealth) includes both: it removes the rest of the signs of WordPress.
+		if ( ( 'hide_versions' === $key || 'hide_fingerprint' === $key ) && class_exists( 'PNCP_Stealth' ) && PNCP_Stealth::active() ) {
+			return true;
+		}
 		// 3.6: "Hide that the site runs on WordPress" includes hiding the versions.
 		return ! empty( $s[ $key ] ) || ( 'hide_versions' === $key && ! empty( $s['hide_fingerprint'] ) );
 	}

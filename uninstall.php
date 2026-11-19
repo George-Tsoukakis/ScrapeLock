@@ -13,6 +13,43 @@ defined( 'WP_UNINSTALL_PLUGIN' ) || exit;
 
 require_once __DIR__ . '/includes/class-pncp-paths.php';
 
+// 3.8: the classes of 3.8 clean up after themselves (their .htaccess blocks, their rules at Bunny CDN). The plugin
+// itself is not loaded here: its classes are loaded when first used, as in scrapelock.php.
+defined( 'PNCP_OPTION' ) || define( 'PNCP_OPTION', 'pncp_settings' );
+defined( 'PNCP_DIR' ) || define( 'PNCP_DIR', __DIR__ . '/' );
+spl_autoload_register(
+	static function ( $pncp_class ) {
+		if ( 0 !== strpos( $pncp_class, 'PNCP_' ) ) {
+			return;
+		}
+		$pncp_file = __DIR__ . '/includes/class-' . str_replace( '_', '-', strtolower( $pncp_class ) ) . '.php';
+		if ( is_readable( $pncp_file ) ) {
+			require_once $pncp_file;
+		}
+	}
+);
+
+/**
+ * 3.8: what the 3.8 classes stored on one site: the Bunny CDN Edge Rules made by ScrapeLock, the "ScrapeLock
+ * Hardening" and "ScrapeLock Stealth" blocks of the site's .htaccess, the attack record, the sign-in protection's
+ * data and their options and events. Each part on its own: one that fails does not stop the others, and the
+ * options, events and table are also deleted directly below.
+ */
+function pncp_uninstall_380() {
+	$pncp_bunny_rules = get_option( 'pncp_bunny_rules', array() );
+	$pncp_parts       = array( 'PNCP_Hardening', 'PNCP_Stealth', 'PNCP_Login', 'PNCP_Attack_Report', 'PNCP_Attacks' );
+	if ( is_array( $pncp_bunny_rules ) && $pncp_bunny_rules ) {
+		array_unshift( $pncp_parts, 'PNCP_Bunny' ); // Leftover rules carry "ScrapeLock:" in the Bunny dashboard.
+	}
+	foreach ( $pncp_parts as $pncp_class ) {
+		try {
+			call_user_func( array( $pncp_class, 'uninstall' ) );
+		} catch ( Throwable $pncp_error ) {
+			unset( $pncp_error );
+		}
+	}
+}
+
 /**
  * Cleans up a single site.
  */
@@ -36,12 +73,13 @@ function pncp_uninstall_site() {
 		}
 	}
 	unset( $pncp_retire, $pncp_config );
+	pncp_uninstall_380();
 
-	foreach ( array( 'pncp_settings', 'pncp_version', 'pncp_db_version', 'pncp_emergency_until', 'pncp_ip_lists', 'pncp_ip_lists_cloudflare', 'pncp_ip_lists_bunny', 'pncp_ip_lists_bunny_sum', 'pncp_ip_lists_google', 'pncp_ip_lists_bing', 'pncp_ip_lists_openai_search', 'pncp_ip_lists_openai_user', 'pncp_ip_lists_perplexity_bot', 'pncp_ip_lists_perplexity_user', 'pncp_ip_lists_anthropic', 'pncp_ip_lists_updated', 'pncp_bans', 'pncp_feed_token', 'pncp_feed_stats', 'pncp_legacy_token_notice', 'pncp_legacy_token_migrated', 'pncp_wm_cursor_apply', 'pncp_wm_cursor_remove', 'pncp_upgrade_lock', 'pncp_geo', 'pncp_origin_proxy', 'pncp_proxy_peer', 'pncp_precheck_status', 'pncp_precheck_key', 'pncp_log_uas', 'pncp_lockdown', 'pncp_lockdown_log', 'pncp_integrity', 'pncp_integrity_report', 'pncp_integrity_alerted', 'pncp_integrity_dbcode', 'pncp_surge', 'pncp_surge_last', 'pncp_surge_alert', 'pncp_edge', 'pncp_edge_state', 'pncp_edge_retire', 'pncp_edge_staff', 'pncp_edge_lock', 'pncp_edge_dirty', 'pncp_edge_not_before', 'pncp_edge_calls', 'pncp_lockdown_snap', 'pncp_lockdown_digests', 'pncp_lockdown_window', 'pncp_lockdown_mutex', 'pncp_lockdown_mutex_pri', 'pncp_lockdown_fails', 'pncp_lockdown_dblock', 'pncp_integrity_stat', 'pncp_integrity_scan', 'pncp_upgrade_files', 'pncp_log_cleaned', 'pncp_bans_until', 'pncp_monitor_ended', 'pncp_settings_backups', 'pncp_lockdown_updates_mailed', 'pncp_bans_stamp', 'pncp_dc_stamp', 'pncp_precheck_hv_key', 'pncp_crowdsec_ranges', 'pncp_crowdsec_state' ) as $pncp_option ) {
+	foreach ( array( 'pncp_settings', 'pncp_version', 'pncp_db_version', 'pncp_emergency_until', 'pncp_ip_lists', 'pncp_ip_lists_cloudflare', 'pncp_ip_lists_bunny', 'pncp_ip_lists_bunny_sum', 'pncp_ip_lists_google', 'pncp_ip_lists_bing', 'pncp_ip_lists_openai_search', 'pncp_ip_lists_openai_user', 'pncp_ip_lists_perplexity_bot', 'pncp_ip_lists_perplexity_user', 'pncp_ip_lists_anthropic', 'pncp_ip_lists_updated', 'pncp_bans', 'pncp_feed_token', 'pncp_feed_stats', 'pncp_legacy_token_notice', 'pncp_legacy_token_migrated', 'pncp_wm_cursor_apply', 'pncp_wm_cursor_remove', 'pncp_upgrade_lock', 'pncp_geo', 'pncp_origin_proxy', 'pncp_proxy_peer', 'pncp_precheck_status', 'pncp_precheck_key', 'pncp_log_uas', 'pncp_lockdown', 'pncp_lockdown_log', 'pncp_integrity', 'pncp_integrity_report', 'pncp_integrity_alerted', 'pncp_integrity_dbcode', 'pncp_surge', 'pncp_surge_last', 'pncp_surge_alert', 'pncp_edge', 'pncp_edge_state', 'pncp_edge_retire', 'pncp_edge_staff', 'pncp_edge_lock', 'pncp_edge_dirty', 'pncp_edge_not_before', 'pncp_edge_calls', 'pncp_lockdown_snap', 'pncp_lockdown_digests', 'pncp_lockdown_window', 'pncp_lockdown_mutex', 'pncp_lockdown_mutex_pri', 'pncp_lockdown_fails', 'pncp_lockdown_dblock', 'pncp_integrity_stat', 'pncp_integrity_scan', 'pncp_upgrade_files', 'pncp_log_cleaned', 'pncp_bans_until', 'pncp_monitor_ended', 'pncp_settings_backups', 'pncp_lockdown_updates_mailed', 'pncp_bans_stamp', 'pncp_dc_stamp', 'pncp_precheck_hv_key', 'pncp_crowdsec_ranges', 'pncp_crowdsec_state', 'pncp_attacks_db', 'pncp_attacks_gen', 'pncp_attack_report_last', 'pncp_hardening', 'pncp_hardening_history', 'pncp_login_locks', 'pncp_bunny_config', 'pncp_bunny_state', 'pncp_bunny_rules', 'pncp_bunny_calls', 'pncp_stealth' ) as $pncp_option ) {
 		delete_option( $pncp_option );
 	}
 	// Every event of each hook, whatever its arguments (wp_clear_scheduled_hook() only removes the ones without).
-	foreach ( array( 'pncp_refresh_ip_lists', 'pncp_log_cleanup', 'pncp_log_cleanup_more', 'pncp_wm_unmark', 'pncp_edge_sync', 'pncp_integrity_official', 'pncp_integrity_resume', 'pncp_surge_mail', 'pncp_surge_mail_alert', 'pncp_background_purge', 'pncp_upgrade_files', 'pncp_crowdsec_sync' ) as $pncp_hook ) {
+	foreach ( array( 'pncp_refresh_ip_lists', 'pncp_log_cleanup', 'pncp_log_cleanup_more', 'pncp_wm_unmark', 'pncp_edge_sync', 'pncp_integrity_official', 'pncp_integrity_resume', 'pncp_surge_mail', 'pncp_surge_mail_alert', 'pncp_background_purge', 'pncp_upgrade_files', 'pncp_crowdsec_sync', 'pncp_attack_report_weekly', 'pncp_bunny_run', 'pncp_stealth_check', 'pncp_stealth_refresh', 'pncp_stealth_restart' ) as $pncp_hook ) {
 		wp_unschedule_hook( $pncp_hook );
 	}
 	// The Lockdown guard (must-use plugin), only if it is ours.
@@ -126,6 +164,7 @@ function pncp_uninstall_site() {
 	$wpdb->query( $wpdb->prepare( 'DROP TABLE IF EXISTS %i', $wpdb->prefix . 'pncp_kv' ) ); // 3.6.1: short-lived values.
 	$wpdb->query( $wpdb->prepare( 'DROP TABLE IF EXISTS %i', $wpdb->prefix . 'pncp_crowdsec' ) ); // 3.7: CrowdSec blocklist.
 	$wpdb->query( $wpdb->prepare( 'DROP TABLE IF EXISTS %i', $wpdb->prefix . 'pncp_airef' ) ); // 3.7: visits from AI assistants.
+	$wpdb->query( $wpdb->prepare( 'DROP TABLE IF EXISTS %i', $wpdb->prefix . 'pncp_attacks' ) ); // 3.8: the attack record.
 	$wpdb->query(
 		$wpdb->prepare(
 			"DELETE FROM {$wpdb->options} WHERE option_name LIKE %s OR option_name LIKE %s OR option_name LIKE %s OR option_name LIKE %s OR option_name LIKE %s OR option_name LIKE %s",
@@ -187,6 +226,9 @@ delete_site_option( 'pncp_integrity_report' );
 delete_site_option( 'pncp_integrity_scan' );
 delete_site_option( 'pncp_integrity_dbcode' ); // 3.6.
 delete_metadata( 'user', 0, 'pncp_lockdown_pending', '', true );
+// 3.8: sign-in protection (users are network-wide): the keyed IPs each account signed in from, the unlock tokens.
+delete_metadata( 'user', 0, 'pncp_login_known', '', true );
+delete_metadata( 'user', 0, 'pncp_login_unlock', '', true );
 delete_site_option( 'pncp_lockdown_digests' );
 // 3.4, multisite: the snapshot of the whole network, its fingerprints and the changes noted while unlocked for a while.
 delete_site_option( 'pncp_lockdown_net_snap' );

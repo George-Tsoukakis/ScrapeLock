@@ -35,6 +35,9 @@ final class PNCP_Admin_Fields {
 			'watermark_products'      => true,
 			'hide_rest_discovery'     => true,
 			'rate_limit_apionly'      => true, // 3.7: feed readers, apps and headless front ends that never open a page.
+			// 3.8: a new sign-in address must be written down; "Lost your password" links in old emails change.
+			'login_slug'              => true,
+			'bunny_strikes'           => true, // 3.8: an IP too fast at the CDN is blocked temporarily, also on cached pages.
 		);
 	}
 
@@ -93,6 +96,11 @@ final class PNCP_Admin_Fields {
 		// 3.7.
 		$add( 'rate_limit_lowrep', 'reputation', 'on', __( 'Remember how each IP behaves (reputation)', 'scrapelock' ) );
 		$add( 'rate_limit_crowdsec', 'crowdsec_action', 'choice', __( 'The stricter page limit below', 'scrapelock' ), 'limit' );
+		// 3.8.
+		$add( array( 'login_max', 'login_window', 'login_ban_minutes', 'login_user_max', 'login_user_minutes', 'login_user_email' ), 'login_limit', 'on', __( 'Limit failed sign-ins', 'scrapelock' ) );
+		$add( array( 'bunny_all_lines', 'bunny_flood_4xx', 'bunny_strikes' ), 'bunny_import', 'on', __( 'Import attacks from Bunny CDN\'s logs', 'scrapelock' ) );
+		$add( 'bunny_rate', 'bunny_strikes', 'on', __( 'Count IPs that are too fast at the CDN toward a temporary block', 'scrapelock' ) );
+		$add( array( 'attack_retention', 'report_weekly' ), 'attack_record', 'on', __( 'Record where bots and attackers hit the site', 'scrapelock' ) );
 		return $map;
 	}
 

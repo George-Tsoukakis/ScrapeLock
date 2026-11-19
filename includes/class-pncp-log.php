@@ -19,7 +19,7 @@ final class PNCP_Log {
 	 * table of short-lived values (kv_table()). 5 (3.7.0): the CrowdSec blocklist (PNCP_Crowdsec::table()) and the
 	 * visits from AI assistants (PNCP_Ai_Referrals::table()).
 	 */
-	const DB_VERSION = '5';
+	const DB_VERSION = '6'; // 3.8: the attack record (PNCP_Attacks::table()).
 
 	/**
 	 * 3.6.1: the lowest schema version that has the table of short-lived values (kv_table()).
@@ -249,6 +249,7 @@ final class PNCP_Log {
 		// queries suppress errors), so neither is required for the log and the bans.
 		PNCP_Crowdsec::install();
 		PNCP_Ai_Referrals::install();
+		PNCP_Attacks::install(); // 3.8.
 		// Only if the tables were actually created (e.g. the database user may lack CREATE).
 		// 3.6.1: compared without regard to case: with lower_case_table_names=1 (Windows, macOS) MySQL answers
 		// "wp_pncp_log" for a "WP_" prefix, and the log and the bans were never switched on.
@@ -334,6 +335,16 @@ final class PNCP_Log {
 			'rate_apionly'    => __( 'API / feed / sitemap requests per minute without ever opening a page', 'scrapelock' ),
 			'crowdsec'        => __( 'IP in the CrowdSec blocklist', 'scrapelock' ),
 			'rate_crowdsec'   => __( 'Pages per minute for IPs in the CrowdSec blocklist', 'scrapelock' ),
+			// 3.8: sign-in protection (PNCP_Login).
+			'login'           => __( 'Too many failed sign-ins (temporary block)', 'scrapelock' ),
+			'login_user'      => __( 'Sign-in to a paused username', 'scrapelock' ),
+			'login_hidden'    => __( 'wp-login.php or wp-admin while the sign-in page is moved', 'scrapelock' ),
+			// 3.8: vulnerable points (PNCP_Hardening).
+			'harden_xmlrpc'   => __( 'XML-RPC is locked (Vulnerable points)', 'scrapelock' ),
+			'harden_admin'    => __( 'wp-admin hidden from visitors (Vulnerable points)', 'scrapelock' ),
+			'harden_author'   => __( 'Author archives are locked (Vulnerable points)', 'scrapelock' ),
+			// 3.8: Bunny CDN logs (PNCP_Bunny).
+			'edge_rate'       => __( 'Too fast at Bunny CDN (seen in its logs)', 'scrapelock' ),
 		);
 	}
 
@@ -387,6 +398,11 @@ final class PNCP_Log {
 		global $wpdb;
 		if ( ! self::ready() ) {
 			return;
+		}
+		// 3.8: the attack record sees every refusal (also the "would block" ones). It only keeps a note in
+		// memory; the row is written once, at the end of the request.
+		if ( class_exists( 'PNCP_Attacks' ) ) {
+			PNCP_Attacks::on_blocked( $reason, (int) $code, $ip );
 		}
 		if ( self::MONITOR_CODE === (int) $code ) {
 			if ( self::$monitored || ( class_exists( 'PNCP_Precheck_Runtime', false ) && property_exists( 'PNCP_Precheck_Runtime', 'monitored' ) && PNCP_Precheck_Runtime::$monitored ) ) {
@@ -620,6 +636,7 @@ final class PNCP_Log {
 		self::purge_expired_transients();
 		PNCP_Crowdsec::cleanup(); // 3.7.
 		PNCP_Ai_Referrals::cleanup(); // 3.7.
+		PNCP_Attacks::cleanup(); // 3.8.
 		update_option( self::CLEANED_OPTION, time(), true );
 	}
 
@@ -983,7 +1000,8 @@ final class PNCP_Log {
 	 */
 	public static function is_probe_path( $path ) {
 		$path = strtolower( $path );
-		if ( preg_match( '#(?:^|/)(?:wp-sitemap[a-z0-9_-]*|sitemap(?:_index)?|[a-z0-9_-]+-sitemap[0-9]*)\.xml$#', $path ) || 0 === strpos( $path, '/wp-json/' ) ) {
+		// 3.8: Stealth can move the REST API (another prefix) and the sitemaps (/sitemap-posts-post-1.xml).
+		if ( preg_match( '#(?:^|/)(?:wp-sitemap[a-z0-9_-]*|sitemap(?:_index)?|sitemap-[a-z0-9_-]+|[a-z0-9_-]+-sitemap[0-9]*)\.xml$#', $path ) || 0 === strpos( $path, '/wp-json/' ) || 0 === strpos( $path, '/' . rest_get_url_prefix() . '/' ) ) {
 			return false; // Sitemaps and the REST API lead to content.
 		}
 		// The site's own GraphQL endpoint (WPGraphQL) is content; any other GraphQL path is a scanner.
@@ -1032,7 +1050,7 @@ final class PNCP_Log {
 	 */
 	private static function find_site_content( $path ) {
 		$lower = strtolower( $path );
-		if ( preg_match( '#(?:^|/)(?:wp-sitemap[a-z0-9_-]*|sitemap(?:_index)?|[a-z0-9_-]+-sitemap[0-9]*)\.xml$#', $lower ) || false !== strpos( $lower, '/wp-json/' ) ) {
+		if ( preg_match( '#(?:^|/)(?:wp-sitemap[a-z0-9_-]*|sitemap(?:_index)?|sitemap-[a-z0-9_-]+|[a-z0-9_-]+-sitemap[0-9]*)\.xml$#', $lower ) || false !== strpos( $lower, '/wp-json/' ) || false !== strpos( $lower, '/' . rest_get_url_prefix() . '/' ) ) {
 			return true;
 		}
 		$rel = PNCP_Private_Urls::relative_path( $path );
@@ -1978,6 +1996,13 @@ final class PNCP_Log {
 			// 3.7.
 			. '<p>' . esc_html__( 'If IP reputation is turned on, for each IP address (stored only as a one-way hash) we keep, for up to 7 days, when it last read pages, passed the automatic human check, was used to sign in, or was refused or blocked, to treat it more or less strictly. We count visits that come from AI assistants (such as ChatGPT or Perplexity) per day and page only, without any data about the visitor.', 'scrapelock' ) . '</p>'
 			. '<p>' . esc_html__( 'If the CrowdSec blocklist is turned on, we download a list of IP addresses known for attacks and check visitors against it on our server; no data about visitors is sent to CrowdSec or the list\'s provider. If writing blocks to the system log is turned on, the IP addresses that are blocked temporarily are also written to our server\'s system log, so the server\'s firewall can block them for the same time.', 'scrapelock' ) . '</p>'
+			// 3.8.
+			. '<p>' . esc_html__( 'To see where the site is attacked, for failed sign-ins, visits to the sign-in page or the dashboard without signing in, XML-RPC calls and requests that look for weak points, we record the IP address, the address asked for, the time (per hour) and, for a failed sign-in, the username that was tried. This is deleted automatically after 7, 30 or 90 days and is not used for any other purpose.', 'scrapelock' ) . '</p>'
+			. '<p>' . esc_html__( 'If the weekly attack report is turned on, a summary of the attack record (counts, the addresses attacked, the IP addresses that attacked most and the usernames tried) is emailed once a week to the site\'s administration email address.', 'scrapelock' ) . '</p>'
+			. '<p>' . esc_html( PNCP_Login::privacy_text() ) . '</p>'
+			. '<p>' . esc_html__( 'When a vulnerable point is locked (Vulnerable points), refused requests to it (XML-RPC, wp-admin while signed out, author archives) are written to the block log with the visitor\'s IP address and User-Agent, like other blocks. The list of changes keeps the username of the administrator who made each change.', 'scrapelock' ) . '</p>'
+			. '<p>' . esc_html( PNCP_Bunny::privacy_policy() ) . '</p>'
+			. '<p>' . esc_html__( 'ScrapeLock Stealth changes the addresses of the theme, plugin and media files in the pages sent to visitors. It stores no data about visitors. Its self-test and scan only request this site\'s own public pages, from the site itself.', 'scrapelock' ) . '</p>'
 		);
 	}
 }

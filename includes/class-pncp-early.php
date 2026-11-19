@@ -50,6 +50,16 @@ final class PNCP_Early {
 			require_once $file;
 		}
 
+		// 3.8: installer probes. wp-admin/install.php and upgrade.php run with WP_INSTALLING, so WordPress loads
+		// no normal plugin there: only this file sees them, for the attack record (written at shutdown).
+		if ( wp_installing() && is_readable( $dir . 'includes/class-pncp-attacks.php' ) ) {
+			$path = strtolower( (string) wp_parse_url( PNCP_Log::request_uri(), PHP_URL_PATH ) );
+			if ( preg_match( '#/wp-admin/(?:install|upgrade)\.php$#', $path ) ) {
+				require_once $dir . 'includes/class-pncp-attacks.php';
+				PNCP_Attacks::watch_installer();
+			}
+		}
+
 		$verdict = self::check();
 		$monitor = $verdict && PNCP_Options::monitoring();
 		// The normal check reads the settings and the IP again, after translations and the other plugins' filters.
