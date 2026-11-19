@@ -2062,8 +2062,9 @@ final class PNCP_Bunny {
 	}
 
 	/**
-	 * 3.10: the URL patterns of ScrapeLock's private folders (PNCP_Health::private_folder_paths()), at most 5
-	 * (Bunny's limit of triggers per condition): the folders of uploads whose name starts with "scrapelock"
+	 * 3.10: the URL patterns of ScrapeLock's private folders (PNCP_Health::private_folder_paths()), usually 4, so
+	 * the lock fits in one trigger; more (a filter) are split by plan() like any preset. The folders of uploads
+	 * whose name starts with "scrapelock"
 	 * share one pattern ("…/uploads/scrapelock*\/*" needs a "/" after the name, so a media file named
 	 * scrapelock-….png in uploads is not hit).
 	 *

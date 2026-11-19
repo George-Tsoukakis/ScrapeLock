@@ -231,20 +231,27 @@ t( 'κανόνας: «ScrapeLock: …» [preset_private_folders], Block, τα pa
 t( 'preset_locked(private_folders)', PNCP_Bunny::preset_locked( 'private_folders' ) );
 t( 'κανένα κλειδί API σε μήνυμα ή κανόνα', false === strpos( wp_json_encode( $GLOBALS['pf_bunny']['rules'] ), PF_KEY ) );
 
-// Το παλιό όριο του Bunny: αν ποτέ το preset ξεπεράσει τα 5, το ψεύτικο API απαντά όπως το πραγματικό.
+// 3.10 wiring with the split Edge Rules: if the preset ever holds more than 5 patterns (a moved uploads folder,
+// a filter), it is split into triggers of at most 5 and still handled as one lock.
 $pf_six = static function ( $p ) {
 	$p['private_folders']['patterns'] = array( '*/a1/*', '*/a2/*', '*/a3/*', '*/a4/*', '*/a5/*', '*/a6/*' );
 	return $p;
 };
+PNCP_Bunny::unlock_preset( 'private_folders' );
 add_filter( 'pncp_bunny_presets', $pf_six, 1 );
-$r6 = PNCP_Bunny::edge_block( 'pf_six_test', PNCP_Bunny::presets()['private_folders']['patterns'], 'six' );
-remove_filter( 'pncp_bunny_presets', $pf_six, 1 );
-if ( is_wp_error( $r6 ) ) {
-	t( 'ψεύτικο API: 6 patterns σε μία συνθήκη → «Maximum 5 triggers» (όπως το Bunny)', false !== strpos( $r6->get_error_message(), 'Maximum 5 triggers' ), $r6->get_error_message() );
-} else {
-	t( 'ψεύτικο API: 6 patterns μοιράστηκαν σε συνθήκες των 5 (builder 1)', true );
-	PNCP_Bunny::edge_unblock( 'pf_six_test' );
+$r6    = PNCP_Bunny::lock_preset( 'private_folders' );
+$sizes = array();
+foreach ( $GLOBALS['pf_bunny']['rules'] as $pf_r ) {
+	foreach ( $pf_r['Triggers'] as $pf_tr ) {
+		$sizes[] = count( $pf_tr['PatternMatches'] );
+	}
 }
+t( 'split: 6 patterns of the preset → accepted by the fake API (400 for > 5), triggers 5+1, one lock', true === $r6 && array( 5, 1 ) === $sizes && PNCP_Bunny::preset_locked( 'private_folders' ), is_wp_error( $r6 ) ? $r6->get_error_message() : wp_json_encode( $sizes ) );
+$r6 = PNCP_Bunny::unlock_preset( 'private_folders' );
+t( 'split: one Remove deletes the whole lock', true === $r6 && ! $GLOBALS['pf_bunny']['rules'] && ! PNCP_Bunny::preset_locked( 'private_folders' ) );
+remove_filter( 'pncp_bunny_presets', $pf_six, 1 );
+$r = PNCP_Bunny::lock_preset( 'private_folders' );
+t( 'lock_preset again with the real patterns', true === $r, is_wp_error( $r ) ? $r->get_error_message() : '' );
 
 /* ---------- Site Health αναγνωρίζει το κλείδωμα ---------- */
 delete_transient( PNCP_Health::FOLDERS_CACHE );
