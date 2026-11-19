@@ -37,6 +37,9 @@ ScrapeLock — δοκιμές σε πραγματικό WordPress (όχι stubs)
                     plugin είναι ενεργό, όχι από όρια / επιθέσεις, «Σταμάτα να επιτρέπεις» / «Allow» (nonce, δικαιώματα)
   t_harden_headers.php  Ευάλωτα σημεία → «Security headers»: η δημόσια αρχική σελίδα (GET, μετά από redirects, μέσω CDN),
                     «δεν ελέγχθηκε» αντί για «λείπει» όταν δεν φαίνεται η απάντηση των επισκεπτών (mocks)
+  t_private_folders.php  3.10: Site Health «private folders»: γραμμές Nginx/Apache για κάθε ιδιωτικό φάκελο (ορατές),
+                    preset «private_folders» του «Lock at Bunny» με ψεύτικο API (και 400 για > 5 patterns), κουμπί μόνο
+                    για διαχειριστή με Bunny, αναγνώριση του κλειδώματος στο Site Health
   t_cli.php         wp scrapelock … μέσα από το πραγματικό wp (χρειάζεται WP_CLI, αλλιώς SKIP)
   t_bunny_rules.php Edge Rules στο Bunny μέσα στα όριά του (το πολύ 5 μοτίβα ανά συνθήκη) με ψεύτικο API που δίνει
                     HTTP 400 όπως το πραγματικό: χωρισμός, κλείδωμα/Remove, rollback, Monitor only, sync, προεπισκόπηση,
