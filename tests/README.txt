@@ -48,6 +48,8 @@ ScrapeLock — δοκιμές σε πραγματικό WordPress (όχι stubs)
                     επιθέσεων, ομάδες του log, ban σαρωτών, εισαγωγή logs του Bunny με mock), σβήσιμο των παλιών γραμμών
   browser/          protect.js σε Chromium: δεξί κλικ/αντιγραφή/επιλογή/σύρσιμο ακόμη και με «εχθρικό» script,
                     αντιγραφή με πηγή, .pncp-allow, πεδία φόρμας, ελληνική διάταξη, θόλωμα (npm install && npm test)
+                    admin.mjs (3.10): καρτέλες με άλλο όνομα / άγνωστη καρτέλα, ανοιχτά <details> και κύλιση μετά από Save
+                    (σύνδεση admin / admin, ή WP_USER / WP_PASS)
 
 Οι δοκιμές της αναβάθμισης 1.4 → 2.1: εγκατάσταση του zip της 1.4.0 (git show 5c70396), ρυθμίσεις, μετά
 αντικατάσταση με την 2.1 και `wp eval 'wp_set_current_user(1); do_action("admin_init");'`.

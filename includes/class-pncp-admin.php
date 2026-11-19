@@ -57,6 +57,7 @@ final class PNCP_Admin {
 		add_action( 'admin_post_pncp_edge', array( __CLASS__, 'handle_edge' ) );
 		add_action( 'wp_ajax_pncp_wm_batch', array( __CLASS__, 'ajax_wm_batch' ) );
 		add_action( 'admin_notices', array( __CLASS__, 'upgrade_notices' ) );
+		PNCP_Admin_Sections::init(); // 3.10: folded parts stay open after a Save.
 	}
 
 	/**
@@ -1530,7 +1531,7 @@ final class PNCP_Admin {
 				<p class="description"><?php esc_html_e( 'How long the log is kept is set on the Log tab.', 'scrapelock' ); ?></p>
 		<?php self::row_close(); ?>
 		</table>
-		<details class="pncp-advanced" id="pncp-sec-network"<?php echo self::network_needs_attention( $s ) ? ' open' : ''; ?>>
+		<details class="pncp-advanced" id="pncp-sec-network"<?php echo self::network_needs_attention( $s ) || PNCP_Admin_Sections::requested( 'pncp-sec-network' ) ? ' open' : ''; ?>>
 			<summary>
 				<h2 class="pncp-advanced__title"><?php esc_html_e( 'Network and CDN (advanced)', 'scrapelock' ); ?></h2>
 				<span class="pncp-advanced__state"><?php echo esc_html( self::network_summary( $s ) ); ?></span>
@@ -1631,7 +1632,8 @@ final class PNCP_Admin {
 		$open    = 0 === strpos( $message, 'edge' ) || ( $usable && ( '' !== $edge['error'] || ! empty( $s['trust_any_proxy'] ) ) )
 			|| false !== get_transient( 'pncp_bunny_msg_' . get_current_user_id() ) // 3.8: after a click on the Bunny card.
 			|| PNCP_Edge::trust_warning_due( $s ) // 3.9: Bunny in use, its addresses not trusted.
-			|| PNCP_Edge::section_requested(); // 3.9: back from one of its own buttons (Save, Test, Import now, Lock…).
+			|| PNCP_Edge::section_requested() // 3.9: back from one of its own buttons (Save, Test, Import now, Lock…).
+			|| PNCP_Admin_Sections::requested( 'pncp-sec-edge' ); // 3.10: open when the settings form was saved.
 		printf(
 			'<details class="pncp-advanced" id="pncp-sec-edge"%1$s><summary><h2 class="pncp-advanced__title">%2$s</h2> <span class="pncp-advanced__state">%3$s</span></summary>',
 			$open ? ' open' : '',
