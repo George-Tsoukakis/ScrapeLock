@@ -127,6 +127,7 @@ final class PNCP_Paths {
 			'robots'         => 'robots\.txt',
 			'humans'         => 'humans\.txt',
 			'ads'            => '(?:app-)?ads\.txt',
+			'sellers'        => 'sellers\.json',
 			'security_txt'   => 'security\.txt',
 			'sitemap'        => '(?:wp-sitemap[a-z0-9_-]*|sitemaps?(?:_index|-index)?|sitemap[0-9]+|sitemap-[a-z0-9_-]+|[a-z0-9_-]+-sitemap[0-9]*|[a-z0-9_-]+_sitemap)\.(?:xml|xml\.gz|xsl)',
 			'icons'          => '(?:favicon(?:-[0-9x]+)?\.(?:ico|png|svg|gif|webp)|apple-touch-icon(?:-[0-9x]+)?(?:-precomposed)?\.png|android-chrome-[0-9x]+\.png|mstile-[0-9x]+\.png|safari-pinned-tab\.svg)',

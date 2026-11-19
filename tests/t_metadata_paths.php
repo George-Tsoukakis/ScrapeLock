@@ -103,7 +103,7 @@ $post = get_posts( array( 'numberposts' => 1, 'post_type' => 'post' ) );
 $page = $post ? wp_parse_url( get_permalink( $post[0] ), PHP_URL_PATH ) : '/';
 
 /* ---------- Unit: the path matcher ---------- */
-$yes = array( '/.well-known/assetlinks.json', '/.well-known/traffic-advice', '/.well-known/passkey-endpoints', '/.well-known/apple-app-site-association', '/favicon.ico', '/favicon-32x32.png', '/favicon.svg', '/apple-touch-icon.png', '/apple-touch-icon-precomposed.png', '/apple-touch-icon-120x120-precomposed.png', '/site.webmanifest', '/manifest.json', '/ads.txt', '/robots.txt' );
+$yes = array( '/.well-known/assetlinks.json', '/.well-known/traffic-advice', '/.well-known/passkey-endpoints', '/.well-known/apple-app-site-association', '/favicon.ico', '/favicon-32x32.png', '/favicon.svg', '/apple-touch-icon.png', '/apple-touch-icon-precomposed.png', '/apple-touch-icon-120x120-precomposed.png', '/site.webmanifest', '/manifest.json', '/ads.txt', '/robots.txt', '/sellers.json', '/.well-known/acme-challenge/abc_DEF-1', '/llms.txt' );
 foreach ( $yes as $p ) {
 	t( "metadata path: $p", PNCP_Bots::is_metadata_request( $p, 'GET' ) );
 }
@@ -113,7 +113,6 @@ $no = array(
 	'/.well-known/..%2fwp-config.php',
 	'/.well-known//x',
 	'/.well-known/',
-	'/.well-known/a/b/c',
 	'/.env',
 	'/wp-config.php',
 	'/apple-touch-icon.php',
@@ -129,13 +128,14 @@ foreach ( $no as $p ) {
 }
 t( 'not metadata: POST to /.well-known/assetlinks.json', ! PNCP_Bots::is_metadata_request( '/.well-known/assetlinks.json', 'POST' ) );
 $pncp_f = static function ( $paths ) {
-	$paths[] = '/my-app.json';
+	$paths['my_app'] = 'my-app\\.json';
 	return $paths;
 };
-add_filter( 'pncp_metadata_paths', $pncp_f );
-t( 'pncp_metadata_paths filter adds a path', PNCP_Bots::is_metadata_request( '/my-app.json', 'GET' ) );
-remove_filter( 'pncp_metadata_paths', $pncp_f );
-t( 'pncp_metadata_paths filter removed again', ! PNCP_Bots::is_metadata_request( '/my-app.json', 'GET' ) );
+add_filter( 'pncp_site_metadata_paths', $pncp_f );
+t( 'pncp_site_metadata_paths filter adds a path (one list with the attack record)', PNCP_Bots::is_metadata_request( '/my-app.json', 'GET' ) && PNCP_Paths::is_site_metadata( '/my-app.json' ) );
+remove_filter( 'pncp_site_metadata_paths', $pncp_f );
+t( 'pncp_site_metadata_paths filter removed again', ! PNCP_Bots::is_metadata_request( '/my-app.json', 'GET' ) );
+t( 'one helper: PNCP_Bots::metadata_paths() is gone', ! method_exists( 'PNCP_Bots', 'metadata_paths' ) );
 
 /* ---------- Unit: list parsing (Apple / DuckDuckGo shapes) ---------- */
 $apple_json = '{"creationTime":"2025-01-01T00:00:00.000000","prefixes":[{"ipv6Prefix":"2a01:b747:3000:200::/56"},{"ipv4Prefix":"17.241.208.0/24"}]}';

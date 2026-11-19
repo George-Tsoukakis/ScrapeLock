@@ -1826,41 +1826,11 @@ final class PNCP_Bots {
 	}
 
 	/**
-	 * 3.10: the site files read by services and the operating system rather than by a browser tab (see check()):
-	 * patterns of paths relative to the site, where * stands for any letters, digits, dots, hyphens and
-	 * underscores within one part of the path. Filter `pncp_metadata_paths`.
-	 *
-	 * @return string[]
-	 */
-	public static function metadata_paths() {
-		$paths = apply_filters(
-			'pncp_metadata_paths',
-			array(
-				'/.well-known/*',
-				'/.well-known/*/*',
-				'/favicon.ico',
-				'/favicon*.ico',
-				'/favicon*.png',
-				'/favicon*.svg',
-				'/apple-touch-icon*.png',
-				'/site.webmanifest',
-				'/manifest.json',
-				'/manifest.webmanifest',
-				'/browserconfig.xml',
-				'/robots.txt',
-				'/ads.txt',
-				'/app-ads.txt',
-				'/sellers.json',
-				'/humans.txt',
-				'/security.txt',
-			)
-		);
-		return is_array( $paths ) ? array_values( array_filter( $paths, 'is_string' ) ) : array();
-	}
-
-	/**
-	 * 3.10: is this request a GET / HEAD of one of metadata_paths()? Strict: only letters, digits, dots, hyphens,
-	 * underscores and slashes in the path, no "..", no empty part; anything else is checked as before.
+	 * 3.10: is this request a GET / HEAD of a site file read by services and the operating system rather than
+	 * by a browser tab (/.well-known/*, favicon, apple-touch-icon*, manifests, robots.txt, …: the one list of
+	 * PNCP_Paths::is_site_metadata(), filter `pncp_site_metadata_paths`)? Stricter here: only letters, digits,
+	 * dots, hyphens, underscores and slashes in the path, no "..", no empty part, no trailing slash; anything
+	 * else is checked as before.
 	 *
 	 * @param string|null $path   Path relative to the site (null = this request).
 	 * @param string|null $method Request method (null = this request's; an explained request is a GET).
@@ -1882,13 +1852,7 @@ final class PNCP_Bots {
 		if ( ( ! $well_known && ( 1 !== substr_count( $path, '/' ) || false === strpos( $path, '.' ) ) ) || false !== strpos( $path, '..' ) || false !== strpos( $path, '//' ) || preg_match( '#[^a-z0-9._/-]|/$#', $path ) ) {
 			return false;
 		}
-		foreach ( self::metadata_paths() as $pattern ) {
-			$regex = '#^' . str_replace( '\\*', '[a-z0-9._-]*', preg_quote( strtolower( $pattern ), '#' ) ) . '$#';
-			if ( preg_match( $regex, $path ) ) {
-				return true;
-			}
-		}
-		return false;
+		return PNCP_Paths::is_site_metadata( $path );
 	}
 
 	/**
