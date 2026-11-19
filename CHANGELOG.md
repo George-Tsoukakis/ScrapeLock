@@ -1,5 +1,12 @@
 # Αλλαγές
 
+## 3.10.1 — 2026-11-19
+
+Δύο θέματα του site που φάνηκαν όταν η 3.10.0 σταμάτησε να μπλοκάρει αυτά τα αιτήματα.
+
+- **Site Health «ScrapeLock site files»**: ελέγχει τα /apple-touch-icon.png (όταν υπάρχει Site Icon) και /OneSignalSDKWorker.js (όσο το OneSignal είναι ενεργό). Αν απαντούν «not found», κουμπί «Create it»: εικόνα PNG 180 × 180 από το Site Icon (και -precomposed) ή η μία γραμμή importScripts του OneSignal v16. Χωρίς Site Icon, σύνδεσμος για να επιλέξεις. Τίποτα δεν γράφεται χωρίς το κλικ, ποτέ πάνω σε αρχείο του site· το Remove και η απεγκατάσταση σβήνουν μόνο αρχεία του ScrapeLock που δεν άλλαξαν.
+- **Site Health «Wordfence and the visitor address»** (όσο το Wordfence είναι ενεργό): συγκρίνει τη IP που βλέπει το Wordfence με αυτή του ScrapeLock στην επίσκεψή σου μέσω CDN· critical όταν το Wordfence βλέπει server του Bunny, με τα βήματα (X-Forwarded-For, Trusted Proxies) και τη λίστα διευθύνσεων του Bunny για αντιγραφή. Δεν αλλάζει τίποτα στο Wordfence.
+
 ## 3.10.0 — 2026-11-19
 
 Διορθώσεις από τα πραγματικά logs 7 ημερών του pharmacyneeds.gr (Bunny CDN, WP Rocket, OneSignal, Nginx).
