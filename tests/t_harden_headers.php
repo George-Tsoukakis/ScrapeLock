@@ -153,5 +153,19 @@ if ( null === $pncp_edge_before ) {
 }
 delete_transient( PNCP_Hardening::LIVE );
 
+// 5. Upgrade from 3.9: the cached live results (read from the first answer) are dropped once.
+$pncp_ver_before = get_option( 'pncp_version' );
+set_transient( PNCP_Hardening::LIVE, array( 'headers' => array( 'state' => 'off' ) ), HOUR_IN_SECONDS );
+update_option( 'pncp_version', '3.9.1', true );
+pncp_upgrade();
+t( 'upgrade from 3.9.1: cached live results dropped', false === get_transient( PNCP_Hardening::LIVE ) );
+set_transient( PNCP_Hardening::LIVE, array( 'headers' => array( 'state' => 'off' ) ), HOUR_IN_SECONDS );
+update_option( 'pncp_version', '3.10.0', true );
+pncp_upgrade();
+t( 'from 3.10.0: cached live results kept', false !== get_transient( PNCP_Hardening::LIVE ) );
+delete_transient( PNCP_Hardening::LIVE );
+update_option( 'pncp_version', $pncp_ver_before, true );
+delete_option( 'pncp_upgrade_files' );
+
 echo $fails ? "\n$fails FAIL\n" : "\nOK\n";
 exit( $fails ? 1 : 0 );
