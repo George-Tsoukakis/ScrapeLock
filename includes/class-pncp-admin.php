@@ -1626,7 +1626,8 @@ final class PNCP_Admin {
 		$message = isset( $_GET['pncp_message'] ) ? sanitize_key( wp_unslash( $_GET['pncp_message'] ) ) : '';
 		$open    = 0 === strpos( $message, 'edge' ) || ( $usable && ( '' !== $edge['error'] || ! empty( $s['trust_any_proxy'] ) ) )
 			|| false !== get_transient( 'pncp_bunny_msg_' . get_current_user_id() ) // 3.8: after a click on the Bunny card.
-			|| PNCP_Edge::trust_warning_due( $s ); // 3.9: Bunny in use, its addresses not trusted.
+			|| PNCP_Edge::trust_warning_due( $s ) // 3.9: Bunny in use, its addresses not trusted.
+			|| PNCP_Edge::section_requested(); // 3.9: back from one of its own buttons (Save, Test, Import now, Lock…).
 		printf(
 			'<details class="pncp-advanced" id="pncp-sec-edge"%1$s><summary><h2 class="pncp-advanced__title">%2$s</h2> <span class="pncp-advanced__state">%3$s</span></summary>',
 			$open ? ' open' : '',
@@ -3512,7 +3513,7 @@ final class PNCP_Admin {
 		// phpcs:disable WordPress.Security.NonceVerification.Missing -- The nonce is checked in verify().
 		self::verify( 'pncp_edge' );
 		if ( PNCP_Lockdown::is_locked() ) {
-			self::back( 'bots', 'error' );
+			self::back_edge( 'error' );
 		}
 		$op = isset( $_POST['op'] ) ? sanitize_key( wp_unslash( $_POST['op'] ) ) : '';
 		if ( 'test_block' === $op || 'diagnose' === $op ) {
@@ -3521,7 +3522,7 @@ final class PNCP_Admin {
 			self::keep_diagnosis( $diag );
 			$error = PNCP_Edge::diagnosis_error( $diag );
 			set_transient( 'pncp_edge_test_' . get_current_user_id(), '' === $error ? __( 'Connection test passed: blocking at the CDN works. The details are under “Blocking at the CDN”.', 'scrapelock' ) : $error, 2 * MINUTE_IN_SECONDS );
-			self::back( 'bots', '' === $error ? 'edge_test_ok' : 'edge_test_failed' );
+			self::back_edge( '' === $error ? 'edge_test_ok' : 'edge_test_failed' );
 		}
 		$old      = PNCP_Edge::config();
 		$provider = isset( $_POST['provider'] ) ? sanitize_key( wp_unslash( $_POST['provider'] ) ) : '';
@@ -3537,7 +3538,7 @@ final class PNCP_Admin {
 					'token'    => '',
 				)
 			);
-			self::back( 'bots', 'edge_off' );
+			self::back_edge( 'edge_off' );
 		}
 		$zone  = PNCP_Edge::clean_zone( $provider, $raw_zone );
 		$token = '' === trim( $raw ) ? ( $old['provider'] === $provider ? $old['token'] : '' ) : PNCP_Edge::clean_token( $raw );
@@ -3545,7 +3546,7 @@ final class PNCP_Admin {
 			$token = PNCP_Edge::config()['token'];
 		}
 		if ( '' === $zone || '' === $token ) {
-			self::back( 'bots', '' === $zone ? 'edge_zone' : 'edge_token' );
+			self::back_edge( '' === $zone ? 'edge_zone' : 'edge_token' );
 		}
 		$new  = array(
 			'provider' => $provider,
@@ -3558,10 +3559,20 @@ final class PNCP_Admin {
 		if ( '' !== $error ) {
 			// Not saved: a wrong token or zone would only fill the log with errors.
 			set_transient( 'pncp_edge_test_' . get_current_user_id(), $error, 2 * MINUTE_IN_SECONDS );
-			self::back( 'bots', 'edge_failed' );
+			self::back_edge( 'edge_failed' );
 		}
 		PNCP_Edge::save_config( $new );
-		self::back( 'bots', 'edge_ok' );
+		self::back_edge( 'edge_ok' );
+	}
+
+	/**
+	 * 3.9: back to "Blocking at the CDN (advanced)", opened, with a notice.
+	 *
+	 * @param string $message Notice code.
+	 */
+	private static function back_edge( $message ) {
+		wp_safe_redirect( PNCP_Edge::section_url( array( 'pncp_message' => $message ) ) );
+		exit;
 	}
 
 	/**

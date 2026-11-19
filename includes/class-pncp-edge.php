@@ -109,6 +109,12 @@ final class PNCP_Edge {
 	const SWITCH_ACTION = 'pncp_edge_switch';
 
 	/**
+	 * 3.9: query argument that opens the folded "Blocking at the CDN (advanced)" part after a redirect (value
+	 * 'edge'), so its buttons stay in view after Save, Test, Import now, Lock, Confirm, Unlock or Disconnect.
+	 */
+	const OPEN_ARG = 'pncp_open';
+
+	/**
 	 * Seconds the CDN asked to wait (Retry-After) in the last answer of this request.
 	 *
 	 * @var int
@@ -2395,15 +2401,62 @@ final class PNCP_Edge {
 	 * @param string $message Notice code.
 	 */
 	private static function switch_back( $message ) {
-		wp_safe_redirect(
-			PNCP_Status::settings_url(
+		wp_safe_redirect( self::section_url( array( 'pncp_message' => $message ), in_array( $message, array( 'edge_send_on', 'edge_send_off' ), true ) ? 'pncp-edge-send' : 'pncp-sec-edge' ) );
+		exit;
+	}
+
+	/**
+	 * 3.9: the address of the "Blocking at the CDN (advanced)" part of the "Bots and limits" tab, opened (see
+	 * OPEN_ARG), at an anchor inside it.
+	 *
+	 * @param array<string, string> $args   More query arguments (e.g. pncp_message).
+	 * @param string                $anchor Element id to go to: pncp-sec-edge, pncp-edge-send, pncp-bunny.
+	 * @return string
+	 */
+	public static function section_url( $args = array(), $anchor = 'pncp-sec-edge' ) {
+		return PNCP_Status::settings_url(
+			array_merge(
 				array(
 					'tab'          => 'bots',
-					'pncp_message' => $message,
-				)
-			) . '#pncp-sec-edge'
-		);
-		exit;
+					self::OPEN_ARG => 'edge',
+				),
+				$args
+			)
+		) . '#' . sanitize_html_class( $anchor );
+	}
+
+	/**
+	 * 3.9: a return address (the referer of a form) that opens the "Blocking at the CDN" part again: the
+	 * settings page gets OPEN_ARG and the anchor; any other page in wp-admin only the anchor.
+	 *
+	 * @param string $url    Address.
+	 * @param string $anchor Element id.
+	 * @return string
+	 */
+	public static function reopen( $url, $anchor = 'pncp-sec-edge' ) {
+		$url   = (string) strtok( (string) $url, '#' );
+		$query = array();
+		wp_parse_str( (string) wp_parse_url( $url, PHP_URL_QUERY ), $query );
+		if ( isset( $query['page'] ) && PNCP_Status::SETTINGS_PAGE === $query['page'] ) {
+			$url = add_query_arg(
+				array(
+					'tab'          => 'bots',
+					self::OPEN_ARG => 'edge',
+				),
+				$url
+			);
+		}
+		return $url . '#' . sanitize_html_class( $anchor );
+	}
+
+	/**
+	 * 3.9: whether this page load comes back from an action of the "Blocking at the CDN" part (OPEN_ARG).
+	 *
+	 * @return bool
+	 */
+	public static function section_requested() {
+		// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Only decides whether a part is shown open.
+		return isset( $_GET[ self::OPEN_ARG ] ) && 'edge' === sanitize_key( wp_unslash( $_GET[ self::OPEN_ARG ] ) );
 	}
 
 	/**

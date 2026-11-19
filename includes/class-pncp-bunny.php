@@ -3080,7 +3080,7 @@ final class PNCP_Bunny {
 		$id    = isset( $_GET['id'] ) ? sanitize_key( wp_unslash( $_GET['id'] ) ) : '';
 		$back  = self::preview_back( isset( $_GET['back'] ) ? esc_url_raw( wp_unslash( $_GET['back'] ) ) : '' );
 		// phpcs:enable
-		$card = $back . ( false === strpos( $back, '#' ) ? ( 'preset' === $kind ? '#pncp-bunny' : '#pncp-hardening' ) : '' );
+		$card = 'preset' === $kind ? PNCP_Edge::reopen( $back, 'pncp-bunny' ) : $back . ( false === strpos( $back, '#' ) ? '#pncp-hardening' : '' ); // 3.9: the card, opened.
 		echo '<div class="wrap pncp-bunny-preview">';
 		if ( ! wp_verify_nonce( $nonce, 'pncp_bunny_preview' ) ) {
 			echo '<h1>' . esc_html__( 'Lock at Bunny CDN', 'scrapelock' ) . '</h1><div class="notice notice-error"><p>' . esc_html__( 'The link has expired. Go back and click “Lock at Bunny” again.', 'scrapelock' ) . '</p></div>';
@@ -3381,7 +3381,8 @@ final class PNCP_Bunny {
 		if ( ! $back ) {
 			$back = PNCP_Status::settings_url( array( 'tab' => 'bots' ) );
 		}
-		wp_safe_redirect( remove_query_arg( array( 'pncp_message' ), $back ) . '#pncp-bunny' );
+		// 3.9: back to the card, with "Blocking at the CDN (advanced)" open.
+		wp_safe_redirect( PNCP_Edge::reopen( remove_query_arg( array( 'pncp_message' ), $back ), 'pncp-bunny' ) );
 		exit;
 	}
 
