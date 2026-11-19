@@ -4,7 +4,7 @@ Tags: ai crawlers, anti-scraping, bot protection, rate limit, content protection
 Requires at least: 6.2
 Tested up to: 7.2
 Requires PHP: 7.4
-Stable tag: 3.9.0
+Stable tag: 3.9.1
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -356,6 +356,11 @@ No, on purpose: only an app code, a recovery code or the SCRAPELOCK_UNLOCK line 
 
 == Changelog ==
 
+= 3.9.1 =
+* Fix: while wp-login.php is locked at Bunny with the "Allowed IPs for the login page at Bunny" list, that list can no longer be emptied, or saved without the IP of the administrator who saves it: the stored list is kept and the reason is shown. Before, an emptied list left the rule at Bunny with the old list without a word. A changed list is now sent to Bunny at once, and the Bunny card warns while the rule at Bunny still has the previous list.
+* Fix: `wp scrapelock bunny unlock preset_xmlrpc` (the ID as `wp scrapelock bunny rules` lists it) reported success without removing the rule made from Vulnerable points. It now removes the preset's rule whichever ID holds it, and ends with an error when there is nothing to remove.
+* Fix: `wp scrapelock settings set` reports only the settings that were really saved.
+
 = 3.9.0 =
 * New: "Send temporary blocks to the CDN", a switch of its own under "Blocking at the CDN". Off on new installs: saving the API key or token no longer sends any block. Sites upgraded from 3.8 that already sent their temporary blocks keep it on, and administrators see a one-time notice about it. "Save and test the connection" only connects and tests. In Monitor only nothing that blocks is sent to the CDN. Blocks sent before the switch is turned off are removed when their temporary block ends. Filter `pncp_edge_api_base`.
 * New: every Bunny log import (and "Import now") checks whether the log lines carry full IPs or anonymized ones (IPv4 ending in .0, IPv6 whose last group or second half is zero, masked or dropped addresses), also when no attack was found. The Bunny card shows "The logs have full IPs" or the warning "Log anonymization is on: ScrapeLock cannot block from the logs", with the time of the check; with anonymized logs, IPs too fast at the CDN are not counted toward a block. `wp scrapelock bunny status` shows the result (log_ips).
@@ -443,6 +448,9 @@ No, on purpose: only an app code, a recovery code or the SCRAPELOCK_UNLOCK line 
 The changes of 3.5.0 and earlier versions are in changelog.txt in the plugin folder.
 
 == Upgrade Notice ==
+
+= 3.9.1 =
+Fixes for the lock of wp-login.php at Bunny: the allowed IPs can no longer be emptied while the lock is on, and changes reach Bunny at once.
 
 = 3.9.0 =
 New switch "Send temporary blocks to the CDN": off on new installs. Sites that already send their temporary blocks to Cloudflare or Bunny CDN keep it on after the upgrade (a notice says so). Every lock at Bunny now asks for a Confirm first, and wp-login.php needs your IP in "Allowed IPs for the login page at Bunny".
