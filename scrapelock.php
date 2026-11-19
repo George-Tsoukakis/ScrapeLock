@@ -113,6 +113,7 @@ PNCP_Attacks::init(); // Where bots and attackers hit the site.
 PNCP_Attack_Report::init(); // The Attacks tab, the weekly email and the dashboard widget.
 PNCP_Hardening::init(); // Vulnerable points.
 PNCP_Plugin_Bots::init(); // 3.10: the service bots of active plugins (WP Rocket and others) are allowed.
+PNCP_Site_Files::init(); // 3.10.1: apple-touch-icon.png and OneSignalSDKWorker.js in Site Health, Wordfence's address check.
 
 if ( defined( 'WP_CLI' ) && WP_CLI ) {
 	require_once PNCP_DIR . 'includes/class-pncp-cli.php';
