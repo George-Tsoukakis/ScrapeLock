@@ -253,6 +253,14 @@ function pncp_upgrade() {
 		if ( version_compare( $from_settings, '3.8.0', '<' ) ) {
 			$added += PNCP_Options::new_in_380();
 		}
+		// 3.9: "Send temporary blocks to the CDN" is a switch of its own. A site with a saved CDN connection kept
+		// sending them, as up to 3.8, and is told about the new switch once (PNCP_Edge::render_upgrade_notice()).
+		if ( version_compare( $from_settings, '3.9.0', '<' ) && ! isset( $stored['edge_send_blocks'] ) ) {
+			$added += PNCP_Options::new_in_390();
+			if ( ! empty( $added['edge_send_blocks'] ) ) {
+				update_option( PNCP_Edge::NOTICE, 1, false );
+			}
+		}
 		$added = array_diff_key( $added, $stored );
 		// 3.4: the automatic Emergency Mode only tells the administrator on new installs; a site that had it on
 		// keeps starting it on its own, as before.

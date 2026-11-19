@@ -98,6 +98,17 @@ final class PNCP_Edge {
 	const CALL_BUDGET = 300;
 
 	/**
+	 * 3.9: option set by the upgrade when a site that already sent its blocks to the CDN got "Send temporary
+	 * blocks to the CDN" on: the administrators are told once about the new switch.
+	 */
+	const NOTICE = 'pncp_edge_send_notice';
+
+	/**
+	 * 3.9: admin-post action of the switch, the one-click "Trust Bunny CDN addresses" and the notice.
+	 */
+	const SWITCH_ACTION = 'pncp_edge_switch';
+
+	/**
 	 * Seconds the CDN asked to wait (Retry-After) in the last answer of this request.
 	 *
 	 * @var int
@@ -133,6 +144,9 @@ final class PNCP_Edge {
 		add_action( 'admin_init', array( __CLASS__, 'remember_staff' ) );
 		// Administrators who stopped opening wp-admin: their IPs go after 30 days all the same.
 		add_action( PNCP_Log::CRON, array( __CLASS__, 'prune_staff' ) );
+		// 3.9: "Send temporary blocks to the CDN".
+		add_action( 'admin_post_' . self::SWITCH_ACTION, array( __CLASS__, 'handle_switch' ) );
+		add_action( 'admin_notices', array( __CLASS__, 'render_upgrade_notice' ) );
 	}
 
 	/* ---------- Configuration ---------- */
@@ -225,6 +239,18 @@ final class PNCP_Edge {
 	public static function active() {
 		$s = PNCP_Options::stored();
 		return self::usable() && ! empty( $s['enabled'] ) && empty( $s['trust_any_proxy'] );
+	}
+
+	/**
+	 * 3.9: is "Send temporary blocks to the CDN" on? Off, the connection is only kept and tested: no new block is
+	 * sent, and the blocks sent before stay until their temporary block ends (or is lifted), then go as usual.
+	 * Edge Rules (the Bunny card, "Vulnerable points") and the CDN's own rules do not depend on it.
+	 *
+	 * @return bool
+	 */
+	public static function send_blocks() {
+		$s = PNCP_Options::stored();
+		return ! empty( $s['edge_send_blocks'] );
 	}
 
 	/**
@@ -797,6 +823,20 @@ final class PNCP_Edge {
 		$staff = self::staff();
 		$max   = self::max();
 		$out   = array();
+		// 3.9: with "Send temporary blocks to the CDN" off, only the blocks already at the CDN are kept (until
+		// their ban ends); nothing new is sent. An add whose answer never came is not kept: it is removed.
+		$send = self::send_blocks();
+		$sent = array();
+		if ( ! $send ) {
+			foreach ( self::state( true )['rules'] as $key => $rule ) {
+				if ( empty( $rule['pending'] ) ) {
+					$sent[ (string) $key ] = true;
+				}
+			}
+			if ( ! $sent ) {
+				return array();
+			}
+		}
 		// A few more than the maximum, so the addresses left out below do not take room from the others.
 		foreach ( PNCP_Log::active_bans( 2 * $max + 50 ) as $key => $ban ) {
 			if ( count( $out ) >= $max ) {
@@ -808,6 +848,9 @@ final class PNCP_Edge {
 				continue;
 			}
 			if ( 'bunny' === $provider && $base !== $key ) {
+				continue;
+			}
+			if ( ! $send && ! isset( $sent[ $key ] ) ) {
 				continue;
 			}
 			$out[ $key ] = array(
@@ -1786,6 +1829,7 @@ final class PNCP_Edge {
 		if ( null !== $body ) {
 			$args['body'] = (string) wp_json_encode( $body );
 		}
+		$url              = self::api_url( $c['provider'], $url );
 		$start            = microtime( true );
 		$response         = wp_remote_request( $url, $args );
 		self::$last['ms'] = (int) round( ( microtime( true ) - $start ) * 1000 );
@@ -1892,6 +1936,35 @@ final class PNCP_Edge {
 			'message' => '' !== $detail ? $message . ' (' . $detail . ')' : $message,
 			'kind'    => $kind,
 		);
+	}
+
+	/**
+	 * 3.9: the address of an API call, with the base address from the filter `pncp_edge_api_base` (for a test
+	 * server or a proxy in front of the CDN's API; an https or http address without a trailing slash). The token
+	 * is sent to that address, so only code on this site (a plugin, an mu-plugin) can change it.
+	 *
+	 * @param string $provider cloudflare | bunny.
+	 * @param string $url      Address built on CLOUDFLARE_API or BUNNY_API.
+	 * @return string
+	 */
+	private static function api_url( $provider, $url ) {
+		$def = 'cloudflare' === $provider ? self::CLOUDFLARE_API : self::BUNNY_API;
+		if ( 0 !== strpos( $url, $def ) ) {
+			return $url;
+		}
+		/**
+		 * Filters the base address of the CDN's API used by "Blocking at the CDN".
+		 *
+		 * @since 3.9.0
+		 *
+		 * @param string $base     https://api.cloudflare.com/client/v4 or https://api.bunny.net.
+		 * @param string $provider cloudflare | bunny.
+		 */
+		$base = untrailingslashit( (string) apply_filters( 'pncp_edge_api_base', $def, $provider ) );
+		if ( '' === $base || ! preg_match( '#^https?://[^\s/?\#]+(/[^\s?\#]*)?$#i', $base ) ) {
+			$base = $def;
+		}
+		return $base . substr( $url, strlen( $def ) );
 	}
 
 	/* ---------- Connection check ---------- */
@@ -2286,6 +2359,7 @@ final class PNCP_Edge {
 		$lines[] = 'WordPress ' . $wp_version . ', PHP ' . PHP_VERSION . ( isset( $curl['version'] ) ? ', cURL ' . $curl['version'] . ( isset( $curl['ssl_version'] ) ? ' ' . $curl['ssl_version'] : '' ) : '' );
 		$lines[] = 'WP_HTTP_BLOCK_EXTERNAL: ' . ( defined( 'WP_HTTP_BLOCK_EXTERNAL' ) && WP_HTTP_BLOCK_EXTERNAL ? 'yes' : 'no' ) . ', proxy: ' . ( defined( 'WP_PROXY_HOST' ) ? 'yes' : 'no' );
 		$lines[] = 'Account rule lists: not used by ScrapeLock';
+		$lines[] = 'Send temporary blocks to the CDN: ' . ( self::send_blocks() ? 'on' : 'off' ); // 3.9.
 		$text    = implode( "\n", $lines );
 		// Never a secret, even if an answer quoted it back.
 		$config = self::config();
@@ -2295,5 +2369,144 @@ final class PNCP_Edge {
 			}
 		}
 		return $text;
+	}
+
+	/* ---------- 3.9: "Send temporary blocks to the CDN" ---------- */
+
+	/**
+	 * The notices of the switch, for the settings page (PNCP_Admin::upgrade_notices()).
+	 *
+	 * @return array<string, array{0:string, 1:string}>
+	 */
+	public static function notices() {
+		return array(
+			'edge_send_on'  => array( 'success', __( '“Send temporary blocks to the CDN” is on: the IPs ScrapeLock blocks temporarily are also blocked at the CDN from now on (within a minute or two).', 'scrapelock' ) ),
+			'edge_send_off' => array( 'success', __( '“Send temporary blocks to the CDN” is off: no new block is sent. The blocks sent before stay at the CDN until their temporary block ends.', 'scrapelock' ) ),
+			'edge_send_nc'  => array( 'error', __( 'Connect the CDN first (“Save and test the connection”), then turn on sending.', 'scrapelock' ) ),
+		);
+	}
+
+	/**
+	 * Where the switch and its notices send the administrator back to: the "Blocking at the CDN" part of the
+	 * "Bots and limits" tab.
+	 *
+	 * @param string $message Notice code.
+	 */
+	private static function switch_back( $message ) {
+		wp_safe_redirect(
+			PNCP_Status::settings_url(
+				array(
+					'tab'          => 'bots',
+					'pncp_message' => $message,
+				)
+			) . '#pncp-sec-edge'
+		);
+		exit;
+	}
+
+	/**
+	 * The nonce fields of the switch's forms, without the id="_wpnonce" that would repeat on the page.
+	 */
+	private static function switch_nonce() {
+		echo preg_replace( '/ id="_wpnonce"/', '', wp_nonce_field( self::SWITCH_ACTION, '_wpnonce', true, false ), 1 ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Core markup.
+	}
+
+	/**
+	 * The switch, under the connection (only once a connection is saved). Its own small form: turning it on or off
+	 * is always a click of the administrator, never a side effect of saving or testing the connection.
+	 *
+	 * @param array<string, mixed> $s Settings.
+	 */
+	public static function render_send_switch( $s ) {
+		if ( ! self::usable() ) {
+			return;
+		}
+		$on     = self::send_blocks();
+		$cdn    = self::providers()[ self::config()['provider'] ];
+		$locked = PNCP_Lockdown::is_locked();
+		echo '<div class="pncp-edge-send" id="pncp-edge-send">';
+		echo '<h3>' . esc_html__( 'Send temporary blocks to the CDN', 'scrapelock' ) . '</h3>';
+		echo '<p class="pncp-edge-send__state"><strong>' . esc_html( $on ? __( 'On', 'scrapelock' ) : __( 'Off', 'scrapelock' ) ) . ':</strong> ';
+		if ( $on ) {
+			/* translators: %s: CDN name */
+			echo esc_html( sprintf( __( 'the IPs ScrapeLock blocks temporarily are also blocked at %s, and the block there is removed when the temporary block ends.', 'scrapelock' ), $cdn ) );
+		} else {
+			/* translators: %s: CDN name */
+			echo esc_html( sprintf( __( 'the connection to %s is only kept and tested; none of the temporary blocks are sent to it.', 'scrapelock' ), $cdn ) );
+		}
+		echo '</p><ul class="pncp-list-status">';
+		if ( $on && PNCP_Options::monitoring() ) {
+			echo '<li>' . esc_html__( '“Monitor only” is on: nothing is sent to the CDN until ScrapeLock starts blocking.', 'scrapelock' ) . '</li>';
+		} elseif ( $on && empty( $s['enabled'] ) ) {
+			echo '<li>' . esc_html__( 'Protection is off: nothing is sent to the CDN until it is turned on.', 'scrapelock' ) . '</li>';
+		}
+		if ( ! $on && self::count() ) {
+			/* translators: %s: number of addresses */
+			echo '<li>' . esc_html( sprintf( _n( '%s block sent earlier stays at the CDN until its temporary block ends (lifting it on the Log tab removes it there too).', '%s blocks sent earlier stay at the CDN until their temporary block ends (lifting one on the Log tab removes it there too).', self::count(), 'scrapelock' ), number_format_i18n( self::count() ) ) ) . '</li>';
+		}
+		echo '<li>' . esc_html__( 'Not affected by this switch: the Edge Rules you lock in the Bunny CDN card or under “Vulnerable points”, and the rules you made yourself at the CDN. Saving or testing the connection never turns it on.', 'scrapelock' ) . '</li>';
+		echo '</ul>';
+		if ( ! $locked ) {
+			printf( '<form method="post" action="%s" class="pncp-edge-send-form">', esc_url( admin_url( 'admin-post.php' ) ) );
+			printf( '<input type="hidden" name="action" value="%s">', esc_attr( self::SWITCH_ACTION ) );
+			printf( '<input type="hidden" name="op" value="%s">', esc_attr( $on ? 'send_off' : 'send_on' ) );
+			self::switch_nonce();
+			echo '<p>';
+			submit_button( $on ? __( 'Stop sending temporary blocks to the CDN', 'scrapelock' ) : __( 'Send temporary blocks to the CDN', 'scrapelock' ), $on ? 'secondary' : 'primary', 'submit', false, array( 'id' => 'pncp-edge-send-submit' ) );
+			echo '</p></form>';
+		}
+		echo '</div>';
+	}
+
+	/**
+	 * The switch and the upgrade notice (admin-post). Administrators only, with a nonce; not while the site is
+	 * locked with Lockdown (dismissing the notice changes no setting and is allowed).
+	 */
+	public static function handle_switch() {
+		if ( ! current_user_can( 'manage_options' ) ) {
+			wp_die( esc_html__( 'You are not allowed to change this setting.', 'scrapelock' ), '', array( 'response' => 403 ) );
+		}
+		check_admin_referer( self::SWITCH_ACTION );
+		// phpcs:ignore WordPress.Security.NonceVerification.Missing -- Checked just above.
+		$op = isset( $_POST['op'] ) ? sanitize_key( wp_unslash( $_POST['op'] ) ) : '';
+		if ( 'dismiss' === $op ) {
+			delete_option( self::NOTICE );
+			$back = wp_get_referer();
+			wp_safe_redirect( $back ? $back : admin_url() );
+			exit;
+		}
+		if ( PNCP_Lockdown::is_locked() || ! in_array( $op, array( 'send_on', 'send_off' ), true ) ) {
+			self::switch_back( 'error' );
+		}
+		$on = 'send_on' === $op;
+		if ( $on && ! self::usable() ) {
+			self::switch_back( 'edge_send_nc' );
+		}
+		update_option( PNCP_OPTION, array_merge( PNCP_Options::stored(), array( 'edge_send_blocks' => $on ? 1 : 0 ) ) );
+		PNCP_Options::flush();
+		delete_option( self::NOTICE ); // The administrator has seen the switch and decided.
+		self::soon();
+		self::switch_back( $on ? 'edge_send_on' : 'edge_send_off' );
+	}
+
+	/**
+	 * After the upgrade to 3.9, on a site that already sent its blocks to the CDN: the new switch, kept on, once
+	 * for administrators, until one of them dismisses it or uses the switch.
+	 */
+	public static function render_upgrade_notice() {
+		if ( ! current_user_can( 'manage_options' ) || ! get_option( self::NOTICE ) ) {
+			return;
+		}
+		$c   = self::config();
+		$cdn = isset( self::providers()[ $c['provider'] ] ) ? self::providers()[ $c['provider'] ] : __( 'the CDN', 'scrapelock' );
+		echo '<div class="notice notice-info pncp-edge-send-notice"><p><strong>' . esc_html__( 'ScrapeLock: “Send temporary blocks to the CDN” is now a switch of its own.', 'scrapelock' ) . '</strong> ';
+		/* translators: %s: CDN name */
+		echo esc_html( sprintf( __( 'Until now the temporary blocks went to the CDN as soon as a connection was saved. On this site it is on, so nothing changed: blocked IPs are still blocked at %s. New installs start with it off. You can turn it off under “Bots and limits” → “Blocking at the CDN”.', 'scrapelock' ), $cdn ) );
+		echo '</p><p>';
+		printf( '<a class="button button-secondary" href="%s">%s</a> ', esc_url( PNCP_Status::settings_url( array( 'tab' => 'bots' ) ) . '#pncp-edge-send' ), esc_html__( 'Open the setting', 'scrapelock' ) );
+		printf( '<form method="post" action="%s" style="display:inline">', esc_url( admin_url( 'admin-post.php' ) ) );
+		printf( '<input type="hidden" name="action" value="%s"><input type="hidden" name="op" value="dismiss">', esc_attr( self::SWITCH_ACTION ) );
+		self::switch_nonce();
+		echo '<button type="submit" class="button-link">' . esc_html__( 'Dismiss', 'scrapelock' ) . '</button></form></p></div>';
 	}
 }

@@ -169,6 +169,8 @@ final class PNCP_Options {
 			'stealth_sitemap',
 			'stealth_block_files',
 			'stealth_endpoints',
+			// 3.9.
+			'edge_send_blocks',
 		);
 	}
 
@@ -252,6 +254,9 @@ final class PNCP_Options {
 			// 3.8: Stealth has a form of its own (PNCP_Stealth::render_card()); no tab form submits this section,
 			// so saving a tab keeps these values.
 			'stealth' => array( 'stealth_enabled', 'stealth_base', 'stealth_rest_prefix', 'stealth_sitemap', 'stealth_block_files', 'stealth_endpoints' ),
+			// 3.9: the switch of "Blocking at the CDN" has a form of its own (PNCP_Edge::handle_switch()); saving a tab
+			// keeps it.
+			'edge'    => array( 'edge_send_blocks' ),
 		);
 	}
 
@@ -722,6 +727,9 @@ final class PNCP_Options {
 			'stealth_sitemap'         => 1,
 			'stealth_block_files'     => 1,
 			'stealth_endpoints'       => 1,
+			// 3.9: send the temporary blocks to the CDN of "Blocking at the CDN" (PNCP_Edge). Off: connecting a CDN
+			// only connects and tests it. Existing sites that already sent them keep doing so (new_in_390()).
+			'edge_send_blocks'        => 0,
 		);
 	}
 
@@ -813,6 +821,19 @@ final class PNCP_Options {
 			'auto_emergency_mode' => ! empty( $stored['auto_emergency'] ) ? 'start' : 'notify',
 			// The default before 3.4. Every site stores it, so this only matters for settings that lack it.
 			'block_selection'     => 1,
+		);
+	}
+
+	/**
+	 * The setting added in 3.9, with the value existing sites get on upgrade. Up to 3.8 the temporary blocks went
+	 * to the CDN as soon as a connection was saved: a site with a saved connection keeps sending them (on), every
+	 * other site starts with the switch off, as new installs do.
+	 *
+	 * @return array<string, int>
+	 */
+	public static function new_in_390() {
+		return array(
+			'edge_send_blocks' => class_exists( 'PNCP_Edge' ) && PNCP_Edge::usable() ? 1 : 0,
 		);
 	}
 
@@ -1557,6 +1578,10 @@ final class PNCP_Options {
 		// on its own keeps doing so.
 		if ( $stored && ! isset( $stored['auto_emergency_mode'] ) ) {
 			$stored += self::new_in_340( $stored );
+		}
+		// 3.9: likewise, a site whose upgrade could not store the switch keeps sending its blocks to the CDN.
+		if ( $stored && ! isset( $stored['edge_send_blocks'] ) ) {
+			$stored += self::new_in_390();
 		}
 		$defaults = self::defaults();
 		foreach ( $defaults as $key => $default ) {

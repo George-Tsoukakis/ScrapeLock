@@ -1631,10 +1631,13 @@ final class PNCP_Admin {
 			$open ? ' open' : '',
 			esc_html__( 'Blocking at the CDN (advanced)', 'scrapelock' ),
 			esc_html(
-				$usable
+				$usable && ! PNCP_Edge::send_blocks() && ! PNCP_Edge::count()
+					/* translators: %s: CDN name */
+					? sprintf( __( '%s: connected, temporary blocks not sent', 'scrapelock' ), PNCP_Edge::providers()[ PNCP_Edge::config()['provider'] ] ) // 3.9.
+					: ( $usable
 					/* translators: 1: CDN name, 2: number of addresses */
 					? sprintf( _n( '%1$s: %2$s address blocked now', '%1$s: %2$s addresses blocked now', PNCP_Edge::count(), 'scrapelock' ), PNCP_Edge::providers()[ PNCP_Edge::config()['provider'] ], number_format_i18n( PNCP_Edge::count() ) )
-					: __( 'Off', 'scrapelock' )
+					: __( 'Off', 'scrapelock' ) )
 			)
 		);
 		self::render_edge( $s );
@@ -1654,7 +1657,7 @@ final class PNCP_Admin {
 		$locked = PNCP_Lockdown::is_locked();
 		?>
 		<p class="description pncp-edge-own-save"><strong><?php esc_html_e( 'This part has its own button: it saves only the connection to the CDN, not the settings above.', 'scrapelock' ); ?></strong></p>
-		<p class="description pncp-edge-intro"><?php esc_html_e( 'The IPs ScrapeLock blocks temporarily are also blocked by your CDN, with your own account. A scraper that keeps going is then stopped at the CDN, before its requests reach your server: no PHP, no database, no bandwidth. Each block is removed when the temporary block ends. Only the blocked addresses are sent, with the reason and the end time; nothing about your visitors or content.', 'scrapelock' ); ?></p>
+		<p class="description pncp-edge-intro"><?php esc_html_e( 'With “Send temporary blocks to the CDN” on, the IPs ScrapeLock blocks temporarily are also blocked by your CDN, with your own account. Saving the connection only connects and tests it. A scraper that keeps going is then stopped at the CDN, before its requests reach your server: no PHP, no database, no bandwidth. Each block is removed when the temporary block ends. Only the blocked addresses are sent, with the reason and the end time; nothing about your visitors or content.', 'scrapelock' ); ?></p>
 		<?php
 		if ( $locked ) {
 			echo '<p class="description">' . esc_html__( 'The site is locked: this setting cannot be changed until it is unlocked.', 'scrapelock' ) . '</p>';
@@ -1738,6 +1741,7 @@ final class PNCP_Admin {
 		}
 		echo '<li>' . esc_html__( 'Never blocked at the CDN: the IPs administrators used in the last 30 days (a block at the CDN also covers wp-admin), search engines, AI search services and the CDN\'s own servers.', 'scrapelock' ) . '</li>';
 		echo '</ul>';
+		PNCP_Edge::render_send_switch( $s ); // 3.9.
 	}
 
 	/**
@@ -3664,7 +3668,7 @@ final class PNCP_Admin {
 			'bunny_ip'         => array( 'success', __( 'The real visitor IP is now read from X-Real-IP, only for requests from Bunny CDN.', 'scrapelock' ) ),
 			'bunny_ip_failed'  => array( 'warning', __( 'X-Real-IP is selected for Bunny CDN, but the list of Bunny addresses could not be downloaded. Until it is, the header is not trusted. It will try again tomorrow, or use “Refresh now” under “Official IP lists”.', 'scrapelock' ) ),
 			'lists_partial'    => array( 'warning', __( 'Some IP lists could not be downloaded; their previous version was kept. It will try again tomorrow.', 'scrapelock' ) ),
-			'edge_ok'          => array( 'success', __( 'Connected to the CDN. From now on the IPs ScrapeLock blocks temporarily are also blocked there (within a minute or two).', 'scrapelock' ) ),
+			'edge_ok'          => array( 'success', __( 'Connected to the CDN and tested. Temporary blocks are sent to it only while “Send temporary blocks to the CDN” is on (under “Blocking at the CDN”).', 'scrapelock' ) ),
 			'edge_off'         => array( 'success', __( 'Blocking at the CDN is off. The blocks ScrapeLock made there are being removed in the background.', 'scrapelock' ) ),
 			'edge_zone'        => array( 'error', __( 'The zone ID is not valid: Cloudflare uses 32 letters and digits (0–9, a–f), Bunny CDN a number. Nothing was saved.', 'scrapelock' ) ),
 			'edge_token'       => array( 'error', __( 'Enter the API token (letters, digits, “-” and “_”). Nothing was saved.', 'scrapelock' ) ),
@@ -3674,6 +3678,7 @@ final class PNCP_Admin {
 			'error'            => array( 'error', __( 'The action was not completed.', 'scrapelock' ) ),
 		);
 		$texts  += PNCP_Attacks::notices(); // 3.8: attacks_cleared, attacks_locked.
+		$texts  += PNCP_Edge::notices(); // 3.9: edge_send_on, edge_send_off, edge_send_nc.
 		if ( isset( $texts[ $message ] ) ) {
 			$text = $texts[ $message ][1];
 			if ( in_array( $message, array( 'edge_failed', 'edge_test_ok', 'edge_test_failed' ), true ) ) {
