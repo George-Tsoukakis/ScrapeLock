@@ -17,6 +17,9 @@ ScrapeLock — δοκιμές σε πραγματικό WordPress (όχι stubs)
   t_http.php        bots, ψεύτικο/πραγματικό Googlebot, όρια, αποκλεισμοί, παγίδα (και ότι ξένο site δεν παγιδεύει
                     επισκέπτες), REST, robots.txt, TDM, feeds με token (header/Bearer/URL, χάρη, ακύρωση),
                     Emergency Mode, Trusted Proxy, headers iframe, σειρά scripts στο <head>
+  t_metadata_paths.php 3.10: /.well-known/, favicon, apple-touch-icon χωρίς «Browsers only» / headless / όριο χωρίς
+                    επαλήθευση ανθρώπου (όχι POST, όχι ../), Google fetchers / Applebot / DuckDuckBot από τις επίσημες
+                    λίστες (αποθηκευμένες λίστες δοκιμής, χωρίς δίκτυο)
   t_fixes351.php    3.6 (διορθώσεις ασφαλείας): πλαστή τοπική IP στο header από edge του CDN (WordPress, early, pre-cache, HTTP), edge
                     χωρίς IP επισκέπτη, alloptions στο object cache, ατομικός προϋπολογισμός DNS, crawler με
                     αναπάντητο DNS και «Browsers only», Applebot / YandexBot χωρίς PTR, όριο αρχείων του pre-cache

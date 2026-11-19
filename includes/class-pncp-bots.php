@@ -808,17 +808,24 @@ final class PNCP_Bots {
 		// Mode turns that check on during the very attack that uses up the budget. The limits still apply to it.
 		$unverified_crawler = '' !== $family && $per_ip && self::$verify_inconclusive;
 
+		// 3.10: the files a site publishes about itself (/.well-known/…, favicon, apple-touch-icon, the web app
+		// manifest, ads.txt), read with GET / HEAD at their exact addresses. They are fetched by services and by
+		// the operating system, never by a browser tab (Android's app links check, Chrome's prefetch proxy, iOS
+		// passkeys and home-screen icons): the "looks like a bot" checks below skip them. The bot list, the
+		// limits and the attack checks still apply.
+		$metadata = 'page' === $context && self::is_metadata_request();
+
 		// Every browser sends Accept-Language and "Mozilla/" in the User-Agent; most scripts do not.
 		// Not on wc-ajax: some payment gateways / extensions call them server-side, without Accept-Language.
 		// 3.10: never for an address on Google's official lists (its crawlers, special crawlers and user-triggered
 		// fetchers): those never send browser headers, whatever their User-Agent.
-		if ( ! empty( $s['require_browser_headers'] ) && ! $allowed_ua && ! $feed && ! $unverified_crawler && in_array( $context, array( 'page', 'search' ), true ) && ! self::is_wc_ajax() && '' === self::wc_admin_ajax_action() && ! self::looks_like_browser( $ua ) && ! ( $per_ip && PNCP_Ip::in_any( $ip, PNCP_Ip::list_of( 'google' ) ) ) ) {
+		if ( ! empty( $s['require_browser_headers'] ) && ! $allowed_ua && ! $feed && ! $unverified_crawler && ! $metadata && in_array( $context, array( 'page', 'search' ), true ) && ! self::is_wc_ajax() && '' === self::wc_admin_ajax_action() && ! self::looks_like_browser( $ua ) && ! ( $per_ip && PNCP_Ip::in_any( $ip, PNCP_Ip::list_of( 'google' ) ) ) ) {
 			return self::verdict( 403, 'no_browser', $ip );
 		}
 
 		// Headless and fake browsers: what the browser itself sends does not match the User-Agent.
 		// Not for anyone claiming to be a search engine: those are verified (or blocked as fake) above.
-		if ( ! empty( $s['block_headless'] ) && ! $allowed_ua && ! $feed && '' === $family && in_array( $context, array( 'page', 'search' ), true ) && ! self::is_wc_ajax() && '' === self::wc_admin_ajax_action() ) {
+		if ( ! empty( $s['block_headless'] ) && ! $allowed_ua && ! $feed && ! $metadata && '' === $family && in_array( $context, array( 'page', 'search' ), true ) && ! self::is_wc_ajax() && '' === self::wc_admin_ajax_action() ) {
 			$fake = self::fake_browser( $ua );
 			if ( '' !== $fake ) {
 				return self::verdict( 403, $fake, $ip );
@@ -872,7 +879,7 @@ final class PNCP_Bots {
 			$stricter = array();
 			// Not for the always-allowed User-Agents and the allowed AI search bots: they cannot run the
 			// script, so they keep the normal page limit.
-			if ( ! empty( $s['human_check'] ) && ! $allowed_ua && (int) $s['rate_limit_unverified'] > 0 && ! PNCP_Human::verified( $ip ) ) {
+			if ( ! empty( $s['human_check'] ) && ! $allowed_ua && ! $metadata && (int) $s['rate_limit_unverified'] > 0 && ! PNCP_Human::verified( $ip ) ) {
 				$stricter['rate_unverified'] = (int) $s['rate_limit_unverified'];
 				if ( null === self::$dry ) {
 					PNCP_Human::forget_invalid();
@@ -1801,6 +1808,72 @@ final class PNCP_Bots {
 			return (string) $list;
 		}
 		return '';
+	}
+
+	/**
+	 * 3.10: the site files read by services and the operating system rather than by a browser tab (see check()):
+	 * patterns of paths relative to the site, where * stands for any letters, digits, dots, hyphens and
+	 * underscores within one part of the path. Filter `pncp_metadata_paths`.
+	 *
+	 * @return string[]
+	 */
+	public static function metadata_paths() {
+		$paths = apply_filters(
+			'pncp_metadata_paths',
+			array(
+				'/.well-known/*',
+				'/.well-known/*/*',
+				'/favicon.ico',
+				'/favicon*.ico',
+				'/favicon*.png',
+				'/favicon*.svg',
+				'/apple-touch-icon*.png',
+				'/site.webmanifest',
+				'/manifest.json',
+				'/manifest.webmanifest',
+				'/browserconfig.xml',
+				'/robots.txt',
+				'/ads.txt',
+				'/app-ads.txt',
+				'/sellers.json',
+				'/humans.txt',
+				'/security.txt',
+			)
+		);
+		return is_array( $paths ) ? array_values( array_filter( $paths, 'is_string' ) ) : array();
+	}
+
+	/**
+	 * 3.10: is this request a GET / HEAD of one of metadata_paths()? Strict: only letters, digits, dots, hyphens,
+	 * underscores and slashes in the path, no "..", no empty part; anything else is checked as before.
+	 *
+	 * @param string|null $path   Path relative to the site (null = this request).
+	 * @param string|null $method Request method (null = this request's; an explained request is a GET).
+	 * @return bool
+	 */
+	public static function is_metadata_request( $path = null, $method = null ) {
+		if ( null === $method ) {
+			$method = null !== self::$dry || ! isset( $_SERVER['REQUEST_METHOD'] ) ? 'GET' : sanitize_key( wp_unslash( $_SERVER['REQUEST_METHOD'] ) );
+		}
+		if ( ! in_array( strtoupper( (string) $method ), array( 'GET', 'HEAD' ), true ) ) {
+			return false;
+		}
+		if ( null === $path ) {
+			$path = PNCP_Private_Urls::relative_path( '/' . ltrim( self::request_path(), '/' ) );
+		}
+		$path = strtolower( (string) $path );
+		// Cheap first: a top-level file name, or something under /.well-known/.
+		$well_known = 0 === strpos( $path, '/.well-known/' );
+		if ( ( ! $well_known && ( 1 !== substr_count( $path, '/' ) || false === strpos( $path, '.' ) ) ) || false !== strpos( $path, '..' ) || false !== strpos( $path, '//' ) || preg_match( '#[^a-z0-9._/-]|/$#', $path ) ) {
+			return false;
+		}
+		foreach ( self::metadata_paths() as $pattern ) {
+			$regex = '#^' . str_replace( '\\*', '[a-z0-9._-]*', preg_quote( strtolower( $pattern ), '#' ) ) . '$#';
+			if ( preg_match( $regex, $path ) ) {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	/**
