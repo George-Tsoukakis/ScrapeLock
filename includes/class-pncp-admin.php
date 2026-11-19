@@ -823,7 +823,7 @@ final class PNCP_Admin {
 				/* translators: 1: layers on, 2: all layers */
 				sprintf( __( '%1$s of %2$s', 'scrapelock' ), number_format_i18n( $on ), number_format_i18n( count( $items ) ) ),
 				'',
-				$on === count( $items ) ? 'good' : 'neutral',
+				count( $items ) === $on ? 'good' : 'neutral',
 			),
 			array( __( 'Preset', 'scrapelock' ), isset( $names[ $profile ] ) ? $names[ $profile ] : __( 'Custom', 'scrapelock' ), PNCP_Status::settings_url() . '#pncp-profiles-title', 'neutral' ),
 		);

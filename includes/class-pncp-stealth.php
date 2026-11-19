@@ -1833,7 +1833,7 @@ final class PNCP_Stealth {
 		require_once ABSPATH . WPINC . '/class-phpass.php';
 		$hasher = new PasswordHash( 8, true );
 		/** This filter is documented in wp-login.php */
-		$expire = apply_filters( 'post_password_expires', time() + 10 * DAY_IN_SECONDS );
+		$expire = apply_filters( 'post_password_expires', time() + 10 * DAY_IN_SECONDS ); // phpcs:ignore WordPress.NamingConventions.PrefixAllGlobals.NonPrefixedHooknameFound -- Core filter.
 		$secure = '' !== $redirect_to && 'https' === wp_parse_url( $redirect_to, PHP_URL_SCHEME );
 		// phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- A password, hashed as it is typed.
 		setcookie( 'wp-postpass_' . COOKIEHASH, $hasher->HashPassword( wp_unslash( $_POST['post_password'] ) ), $expire, COOKIEPATH, COOKIE_DOMAIN, $secure );

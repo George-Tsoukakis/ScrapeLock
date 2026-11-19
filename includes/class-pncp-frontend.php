@@ -285,7 +285,7 @@ final class PNCP_Frontend {
 		 *
 		 * @param array{shot: int, away: int} $timeouts Durations.
 		 */
-		$t = (array) apply_filters(
+		$t   = (array) apply_filters(
 			'pncp_blur_timeouts',
 			array(
 				'shot' => 5000,
@@ -293,7 +293,10 @@ final class PNCP_Frontend {
 			)
 		);
 		$out = array();
-		foreach ( array( 'shot' => 5000, 'away' => 10000 ) as $key => $default ) {
+		foreach ( array(
+			'shot' => 5000,
+			'away' => 10000,
+		) as $key => $default ) {
 			$out[ $key ] = isset( $t[ $key ] ) ? max( 500, min( 60000, (int) $t[ $key ] ) ) : $default;
 		}
 		return $out;

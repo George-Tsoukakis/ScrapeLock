@@ -1224,7 +1224,7 @@ final class PNCP_Hardening {
 			'method'              => $method,
 			'timeout'             => 4,
 			'redirection'         => 0,
-			'sslverify'           => (bool) apply_filters( 'https_local_ssl_verify', false ),
+			'sslverify'           => (bool) apply_filters( 'https_local_ssl_verify', false ), // phpcs:ignore WordPress.NamingConventions.PrefixAllGlobals.NonPrefixedHooknameFound -- Core filter.
 			'limit_response_size' => 65536,
 			'user-agent'          => 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36 ScrapeLock-Selftest',
 			'headers'             => array(

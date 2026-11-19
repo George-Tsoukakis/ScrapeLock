@@ -177,7 +177,7 @@ final class PNCP_Ip {
 			if ( ! in_array( $name, $known, true ) ) {
 				return '';
 			}
-		} elseif ( ! isset( $known[ $name ] ) || ! self::dc_byte_listed( (string) $known[ $name ], ord( $bin[ 4 === strlen( $bin ) ? 1 : 2 ] ) ) ) {
+		} elseif ( ! isset( $known[ $name ] ) || ! self::dc_byte_listed( (string) $known[ $name ], ord( $bin[ strlen( $bin ) > 4 ? 2 : 1 ] ) ) ) {
 			// 3.6.1: the group also says which values of the next byte its ranges cover. Most visitors' addresses
 			// are in no range of their group: the group (an option of its own, often thousands of ranges) is
 			// then not read at all, where it was one query and a large unserialize() on every page.
