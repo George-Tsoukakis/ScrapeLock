@@ -2633,7 +2633,7 @@ final class PNCP_Edge {
 		/* translators: %s: CDN name */
 		echo esc_html( sprintf( __( 'Until now the temporary blocks went to the CDN as soon as a connection was saved. On this site it is on, so nothing changed: blocked IPs are still blocked at %s. New installs start with it off. You can turn it off under “Bots and limits” → “Blocking at the CDN”.', 'scrapelock' ), $cdn ) );
 		echo '</p><p>';
-		printf( '<a class="button button-secondary" href="%s">%s</a> ', esc_url( PNCP_Status::settings_url( array( 'tab' => 'bots' ) ) . '#pncp-edge-send' ), esc_html__( 'Open the setting', 'scrapelock' ) );
+		printf( '<a class="button button-secondary" href="%s">%s</a> ', esc_url( self::section_url( array(), 'pncp-edge-send' ) ), esc_html__( 'Open the setting', 'scrapelock' ) );
 		printf( '<form method="post" action="%s" style="display:inline">', esc_url( admin_url( 'admin-post.php' ) ) );
 		printf( '<input type="hidden" name="action" value="%s"><input type="hidden" name="op" value="dismiss">', esc_attr( self::SWITCH_ACTION ) );
 		self::switch_nonce();
