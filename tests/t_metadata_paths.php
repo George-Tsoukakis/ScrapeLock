@@ -87,6 +87,7 @@ settings(
 		'require_browser_headers' => 1,
 		'block_headless'          => 0,
 		'block_bots'              => 1,
+		'bot_list'                => PNCP_Options::defaults()['bot_list'], // An earlier test may have changed it.
 		'block_empty_ua'          => 1,
 		'block_fake_crawlers'     => 1,
 		'ban_strikes'             => 0,
