@@ -104,13 +104,16 @@ final class PNCP_Trace {
 			return $content;
 		}
 		$token = self::token( get_current_user_id() );
-		return (string) preg_replace_callback(
+		$out = preg_replace_callback(
 			'#(<(?:p|li)\b[^>]*>)([^<\s][^<\s]*\s)#u',
 			static function ( $m ) use ( $token ) {
 				return $m[1] . $m[2] . $token;
 			},
 			$content
 		);
+		// null on invalid UTF-8 (imported Latin-1 text, a broken shortcode) or a PCRE limit: the post is shown
+		// without the trace rather than blanked.
+		return null === $out ? $content : $out;
 	}
 
 	/**

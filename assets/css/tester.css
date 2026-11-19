@@ -1,174 +1,260 @@
-/* ScrapeLock – 3.5: "Check a request" card on the Log tab. Only .pncp-tester* selectors. */
+/* ScrapeLock – 3.5: "Check a request" card on the Log tab. Only .pncp-tester* selectors, inside the page
+   wrapper; the colours come from the tokens of admin.css (loaded first). */
 
-.pncp-tester {
-	margin: 16px 0;
+.pncp-admin .pncp-tester {
+	margin: 0;
 }
 
-.pncp-tester > .pncp-tester__summary {
-	cursor: pointer;
-}
-
-.pncp-tester > .pncp-tester__summary:focus-visible,
-.pncp-tester .pncp-tester__more > summary:focus-visible {
-	outline: 2px solid #2271b1;
-	outline-offset: 2px;
-}
-
-.pncp-tester .pncp-tester__title {
+.pncp-admin .pncp-tester .pncp-tester__title {
 	display: inline;
 	margin: 0;
-	font-size: 1.3em;
+	color: var(--pncp-text, #1d2327);
+	font-size: 16px;
+	font-weight: 600;
 }
 
-.pncp-tester .pncp-tester__state {
+.pncp-admin .pncp-tester .pncp-tester__state,
+.pncp-admin .pncp-trace .pncp-tester__state {
+	grid-column: 2;
 	display: block;
-	margin: 4px 0 0 18px;
-	color: #50575e;
-	font-size: 13px;
+	margin: 2px 0 0;
+	color: var(--pncp-muted, #50575e);
+	font-size: 12.5px;
 	font-weight: 400;
 }
 
-.pncp-tester[open] > .pncp-tester__summary {
-	margin-bottom: 12px;
-	padding-bottom: 12px;
-	border-bottom: 1px solid #dcdcde;
+.pncp-admin .pncp-tester .pncp-tester__body > .description:first-child {
+	margin-top: 0;
 }
 
-.pncp-tester .pncp-tester__presets {
+.pncp-admin .pncp-tester .pncp-tester__presets {
 	display: flex;
 	flex-wrap: wrap;
 	align-items: center;
 	gap: 6px;
-	margin: 12px 0;
+	margin: 12px 0 16px;
 }
 
-.pncp-tester .pncp-tester__try {
+.pncp-admin .pncp-tester .pncp-tester__try {
+	margin-right: 2px;
+	color: var(--pncp-muted, #50575e);
+	font-size: 12px;
 	font-weight: 600;
+	letter-spacing: 0.03em;
+	text-transform: uppercase;
 }
 
-.pncp-tester .pncp-tester__field label {
+.pncp-admin .pncp-tester .pncp-tester-preset.button {
+	min-height: 28px;
+	padding: 0 12px;
+	border-color: var(--pncp-border, #dcdcde);
+	border-radius: 999px;
+	background: var(--pncp-surface-2, #f6f7f7);
+	color: var(--pncp-text, #1d2327);
+	font-size: 12px;
+	line-height: 26px;
+}
+
+.pncp-admin .pncp-tester .pncp-tester-preset.button:hover {
+	border-color: var(--pncp-accent, #2271b1);
+	background: var(--pncp-accent-soft, #eef4fb);
+	color: var(--pncp-accent-strong, #135e96);
+}
+
+.pncp-admin .pncp-tester .pncp-tester-form {
+	padding: 16px;
+	border: 1px solid var(--pncp-border, #dcdcde);
+	border-radius: var(--pncp-radius-sm, 8px);
+	background: var(--pncp-surface-3, #fbfbfc);
+}
+
+.pncp-admin .pncp-tester .pncp-tester__field {
+	margin: 0 0 12px;
+}
+
+.pncp-admin .pncp-tester .pncp-tester__field label {
 	display: block;
 	margin-bottom: 4px;
+	color: var(--pncp-text, #1d2327);
 	font-weight: 600;
 }
 
-.pncp-tester .pncp-tester__field .description {
-	display: block;
-	margin-top: 4px;
+.pncp-admin .pncp-tester .pncp-tester__field input[type="text"] {
+	width: 100%;
+	max-width: none;
 }
 
-.pncp-tester .pncp-tester__check label {
+.pncp-admin .pncp-tester .pncp-tester__field .description {
+	display: block;
+	margin-top: 4px;
+	font-size: 12px;
+}
+
+.pncp-admin .pncp-tester .pncp-tester__check label {
+	display: flex;
+	align-items: flex-start;
+	gap: 8px;
 	font-weight: 400;
 }
 
-.pncp-tester .pncp-tester__field input[aria-invalid="true"] {
+.pncp-admin .pncp-tester .pncp-tester__check input {
+	margin-top: 2px;
+}
+
+.pncp-admin .pncp-tester .pncp-tester__field input[aria-invalid="true"] {
 	border-color: #d63638;
 	box-shadow: 0 0 0 1px #d63638;
 }
 
-.pncp-tester .pncp-tester__more {
-	margin: 8px 0;
+.pncp-admin .pncp-tester .pncp-tester__more {
+	margin: 0 0 12px;
 }
 
-.pncp-tester .pncp-tester__more > summary {
+.pncp-admin .pncp-tester .pncp-tester__more > summary {
+	color: var(--pncp-accent-strong, #135e96);
+	font-weight: 500;
 	cursor: pointer;
 }
 
-.pncp-tester .pncp-tester-preset:focus,
-.pncp-tester #pncp-tester-submit:focus,
-.pncp-tester .pncp-tester__result:focus {
-	outline: 2px solid #2271b1;
+.pncp-admin .pncp-tester .pncp-tester__actions {
+	margin: 4px 0 0;
+}
+
+.pncp-admin .pncp-tester #pncp-tester-submit {
+	min-height: 34px;
+	padding: 0 22px;
+	line-height: 32px;
+}
+
+.pncp-admin .pncp-tester .pncp-tester-preset:focus-visible,
+.pncp-admin .pncp-tester #pncp-tester-submit:focus-visible,
+.pncp-admin .pncp-tester .pncp-tester__result:focus-visible,
+.pncp-admin .pncp-tester .pncp-tester__more > summary:focus-visible {
+	outline: 2px solid var(--pncp-accent, #2271b1);
 	outline-offset: 2px;
 }
 
-.pncp-tester .pncp-tester__result:empty {
+.pncp-admin .pncp-tester .pncp-tester__result:empty {
 	display: none;
 }
 
-.pncp-tester .pncp-tester__result {
-	margin: 12px 0 16px;
-	padding: 12px 16px;
-	border: 1px solid #dcdcde;
-	border-radius: 4px;
-	background: #f6f7f7;
+.pncp-admin .pncp-tester .pncp-tester__result {
+	margin: 16px 0;
+	padding: 14px 16px;
+	border: 1px solid var(--pncp-border, #dcdcde);
+	border-left: 4px solid var(--pncp-accent, #2271b1);
+	border-radius: var(--pncp-radius-sm, 8px);
+	background: var(--pncp-surface, #fff);
+	box-shadow: var(--pncp-shadow, none);
 }
 
-.pncp-tester .pncp-tester__result > :first-child {
+.pncp-admin .pncp-tester .pncp-tester__result:has(.pncp-tester-verdict--allowed) {
+	border-left-color: #00a32a;
+}
+
+.pncp-admin .pncp-tester .pncp-tester__result:has(.pncp-tester-verdict--blocked),
+.pncp-admin .pncp-tester .pncp-tester__result:has(.pncp-tester__error) {
+	border-left-color: #d63638;
+}
+
+.pncp-admin .pncp-tester .pncp-tester__result:has(.pncp-tester-verdict--limited),
+.pncp-admin .pncp-tester .pncp-tester__result:has(.pncp-tester-verdict--monitor) {
+	border-left-color: #dba617;
+}
+
+.pncp-admin .pncp-tester .pncp-tester__result > :first-child {
 	margin-top: 0;
 }
 
-.pncp-tester .pncp-tester__result > :last-child {
+.pncp-admin .pncp-tester .pncp-tester__result > :last-child {
 	margin-bottom: 0;
 }
 
-.pncp-tester .pncp-tester__headline {
+.pncp-admin .pncp-tester .pncp-tester__headline {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 8px;
 	font-size: 14px;
 }
 
-.pncp-tester .pncp-tester-verdict {
+.pncp-admin .pncp-tester .pncp-tester-verdict {
 	display: inline-block;
-	margin-right: 4px;
-	padding: 2px 8px;
+	padding: 2px 10px;
 	border: 1px solid currentColor;
-	border-radius: 10px;
+	border-radius: 999px;
 	font-size: 12px;
 	font-weight: 600;
 	line-height: 1.5;
 }
 
-.pncp-tester .pncp-tester-verdict--allowed {
-	color: #1a7f37;
+.pncp-admin .pncp-tester .pncp-tester-verdict--allowed {
 	background: #edfaef;
+	color: #1a7f37;
 }
 
-.pncp-tester .pncp-tester-verdict--blocked {
-	color: #8a2424;
+.pncp-admin .pncp-tester .pncp-tester-verdict--blocked {
 	background: #fcf0f1;
+	color: #8a2424;
 }
 
-.pncp-tester .pncp-tester-verdict--limited,
-.pncp-tester .pncp-tester-verdict--monitor {
-	color: #6b3500;
+.pncp-admin .pncp-tester .pncp-tester-verdict--limited,
+.pncp-admin .pncp-tester .pncp-tester-verdict--monitor {
 	background: #fcf3e6;
+	color: #6b3500;
 }
 
-.pncp-tester .pncp-tester__error {
+.pncp-admin .pncp-tester .pncp-tester__error {
 	color: #8a2424;
 	font-weight: 600;
 }
 
-.pncp-tester .pncp-tester__notes {
+.pncp-admin .pncp-tester .pncp-tester__notes {
 	margin-left: 1.5em;
 	list-style: disc;
 }
 
-.pncp-tester .pncp-tester__request {
+.pncp-admin .pncp-tester .pncp-tester__request {
+	width: 100%;
 	max-width: 100%;
 	table-layout: fixed;
 }
 
-.pncp-tester .pncp-tester__request th {
+.pncp-admin .pncp-tester .pncp-tester__request th {
 	width: 9em;
 	font-weight: 600;
 }
 
-.pncp-tester .pncp-tester__request td {
+.pncp-admin .pncp-tester .pncp-tester__request td {
 	overflow-wrap: anywhere;
 }
 
-.pncp-tester .pncp-tester__headers code {
+.pncp-admin .pncp-tester .pncp-tester__headers code {
 	display: block;
 	margin: 0 0 2px;
 	background: transparent;
 }
 
-.pncp-tester .pncp-tester__limits {
-	margin-left: 1.5em;
-	list-style: disc;
+.pncp-admin .pncp-tester h3 {
+	margin: 20px 0 8px;
+	font-size: 14px;
 }
 
-.pncp-tester .pncp-tester__simulate {
+.pncp-admin .pncp-tester .pncp-tester__limits {
+	margin: 0 0 0 1.5em;
+	color: var(--pncp-muted, #50575e);
+	list-style: disc;
+	font-size: 12.5px;
+}
+
+.pncp-admin .pncp-tester .pncp-tester__simulate {
 	display: flex;
 	flex-wrap: wrap;
 	gap: 6px 16px;
+}
+
+@media screen and (max-width: 782px) {
+	.pncp-admin .pncp-tester .pncp-tester-form {
+		padding: 12px;
+	}
 }

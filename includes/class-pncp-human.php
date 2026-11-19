@@ -176,6 +176,11 @@ final class PNCP_Human {
 		if ( PNCP_Log::apcu_ok() ) {
 			return apcu_add( PNCP_Log::apcu_key( $key ), 1, self::CHALLENGE_TTL );
 		}
+		// 3.6.1: one row in the plugin's own table where it exists (atomic too); wp_options otherwise.
+		$added = PNCP_Log::kv_add( $key, 1, self::CHALLENGE_TTL );
+		if ( null !== $added ) {
+			return $added;
+		}
 		// phpcs:disable WordPress.DB.DirectDatabaseQuery -- Atomic insert; the options API has none.
 		$added = $wpdb->query(
 			$wpdb->prepare(
@@ -280,7 +285,9 @@ final class PNCP_Human {
 		// hammer the endpoint or brute-force many challenges at once.
 		$bucket = 'pncp_hv_' . md5( PNCP_Ip::limit_key( $ip ) ) . '_' . (int) floor( time() / MINUTE_IN_SECONDS );
 		$tries  = PNCP_Log::cache_incr( $bucket, MINUTE_IN_SECONDS ); // 3.4.3: atomic where it can be.
-		if ( $tries > self::max_per_minute() ) {
+		// 3.6.1: or not counted at all (a flood from many addresses used up the minute's allowance of new
+		// transients, on a site with no object cache, APCu or the plugin's table): refused rather than unlimited.
+		if ( $tries > self::max_per_minute() || PNCP_Log::unstored() ) {
 			$retry = PNCP_Bots::retry_after(); // 3.5: the bucket is per minute, like the limits.
 			header( 'Retry-After: ' . $retry );
 			wp_send_json_error( array( 'retry_after' => $retry ), 429 );

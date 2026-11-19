@@ -1,105 +1,1522 @@
-/* ScrapeLock – settings page */
+/*
+ * ScrapeLock – settings page (Settings → ScrapeLock).
+ *
+ * Every rule is scoped to the page: either under the page wrapper .pncp-admin, or under the body class
+ * .pncp-admin-page that PNCP_Admin::assets() adds only on this screen. Nothing here reaches other admin pages.
+ *
+ * Contents
+ *   1. Tokens (colours follow the wp-admin colour scheme through --wp-admin-theme-color)
+ *   2. Page frame: full width, header, overview figures, status pills, tabs
+ *   3. Cards, section titles, notices, callouts
+ *   4. Settings forms: card grid, fields, switches, choices, lists, save bar
+ *   5. Tables, lists, badges, code blocks
+ *   6. Tab specifics: presets, feeds, images, server rules, log, network/CDN
+ *   7. Lockdown tab
+ *   8. Responsive, reduced motion, forced colours
+ */
 
-.pncp-admin .nav-tab-wrapper {
-	margin-bottom: 16px;
+/* ---------- 1. Tokens ---------- */
+
+.pncp-admin {
+	/* Accent: the admin colour scheme's own colour (WordPress 5.7+), the classic blue otherwise. */
+	--pncp-accent: var(--wp-admin-theme-color, #2271b1);
+	--pncp-accent-strong: var(--wp-admin-theme-color-darker-20, #135e96);
+	--pncp-accent-soft: #eef4fb;
+	--pncp-accent-line: #c5d9ed;
+
+	--pncp-bg: #f0f0f1;
+	--pncp-surface: #fff;
+	--pncp-surface-2: #f6f7f7;
+	--pncp-surface-3: #fbfbfc;
+	--pncp-border: #dcdcde;
+	--pncp-border-strong: #c3c4c7;
+	--pncp-divider: #f0f0f1;
+	--pncp-text: #1d2327;
+	--pncp-muted: #50575e; /* 7.0:1 on white, 6.1:1 on the admin grey. */
+	--pncp-subtle: #646970; /* 5.7:1 on white. */
+
+	--pncp-on: #00733f;
+	--pncp-on-text: #005c32;
+	--pncp-on-soft: #e7f5ec;
+	--pncp-on-line: #b5dfc5;
+	--pncp-warn: #b35c00;
+	--pncp-warn-text: #7a3e00;
+	--pncp-warn-soft: #fcf3e6;
+	--pncp-warn-line: #f0c8a0;
+	--pncp-bad: #d63638;
+	--pncp-bad-text: #8a2424;
+	--pncp-bad-soft: #fcf0f1;
+	--pncp-bad-line: #f1b8bb;
+
+	--pncp-code-bg: #101828;
+	--pncp-code-text: #e4e7ec;
+
+	--pncp-s1: 4px;
+	--pncp-s2: 8px;
+	--pncp-s3: 12px;
+	--pncp-s4: 16px;
+	--pncp-s5: 20px;
+	--pncp-s6: 24px;
+	--pncp-s8: 32px;
+
+	--pncp-radius: 12px;
+	--pncp-radius-sm: 8px;
+	--pncp-shadow: 0 1px 2px rgba(16, 24, 40, 0.05), 0 1px 3px rgba(16, 24, 40, 0.04);
+	--pncp-shadow-raised: 0 4px 12px rgba(16, 24, 40, 0.08), 0 1px 3px rgba(16, 24, 40, 0.06);
+	--pncp-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+	--pncp-sticky-top: 32px; /* Height of the admin bar. */
+	--pncp-tabs-height: 50px;
+	--pncp-ring: 0 0 0 2px var(--pncp-surface), 0 0 0 4px var(--pncp-accent);
 }
 
-.pncp-cards {
+/* A softer accent tint where the browser can mix it from the scheme colour. */
+@supports (background: color-mix(in srgb, red 10%, white)) {
+	.pncp-admin {
+		--pncp-accent-soft: color-mix(in srgb, var(--pncp-accent) 9%, #fff);
+		--pncp-accent-line: color-mix(in srgb, var(--pncp-accent) 35%, #fff);
+	}
+}
+
+/* Dark admin themes (a dark-mode plugin that marks the body): the same page on dark surfaces. */
+body.pncp-admin-page:is(.dark-mode, .is-dark-theme, .wp-dark-mode-active, .pncp-dark) .pncp-admin {
+	--pncp-bg: #12151a;
+	--pncp-surface: #1c2027;
+	--pncp-surface-2: #232830;
+	--pncp-surface-3: #20242b;
+	--pncp-border: #343a44;
+	--pncp-border-strong: #454c58;
+	--pncp-divider: #2a2f37;
+	--pncp-text: #eceef1;
+	--pncp-muted: #b4bac4;
+	--pncp-subtle: #a3a9b3;
+	--pncp-accent-soft: #1d2a3a;
+	--pncp-accent-line: #2f4a69;
+	--pncp-accent-strong: #8cc0f0;
+	--pncp-on-text: #7ad6a2;
+	--pncp-on-soft: #15291f;
+	--pncp-on-line: #285a3d;
+	--pncp-warn-text: #f3bd7c;
+	--pncp-warn-soft: #2e2214;
+	--pncp-warn-line: #5d4321;
+	--pncp-bad-text: #f3a3a5;
+	--pncp-bad-soft: #301a1c;
+	--pncp-bad-line: #6a3034;
+	--pncp-code-bg: #0b0e13;
+	color: var(--pncp-text);
+}
+
+/* ---------- 2. Page frame ---------- */
+
+/* Full width: no cap on the page; the admin's own padding stays as the outer gutter. */
+body.pncp-admin-page #wpbody-content {
+	padding-bottom: 48px;
+}
+
+.pncp-admin.wrap {
+	max-width: none;
+	margin: 0 20px 0 0;
+	padding-top: var(--pncp-s5);
+	color: var(--pncp-text);
+}
+
+.pncp-admin *,
+.pncp-admin *::before,
+.pncp-admin *::after {
+	box-sizing: border-box;
+}
+
+.pncp-admin a {
+	color: var(--pncp-accent-strong);
+}
+
+.pncp-admin a:hover {
+	color: var(--pncp-accent);
+}
+
+.pncp-admin :focus-visible {
+	outline: 2px solid var(--pncp-accent);
+	outline-offset: 2px;
+	box-shadow: none;
+}
+
+.pncp-admin .description,
+.pncp-admin p.description {
+	color: var(--pncp-muted);
+}
+
+.pncp-admin hr.wp-header-end {
+	margin: 0;
+	border: 0;
+	visibility: hidden;
+}
+
+.pncp-admin .button {
+	border-radius: 6px;
+}
+
+.pncp-admin .button-small {
+	border-radius: 5px;
+}
+
+/* Header */
+.pncp-header {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: var(--pncp-s4) var(--pncp-s6);
+	margin: 0 0 var(--pncp-s4);
+	padding: var(--pncp-s5) var(--pncp-s6);
+	border: 1px solid var(--pncp-border);
+	border-radius: var(--pncp-radius);
+	background: var(--pncp-surface);
+	box-shadow: var(--pncp-shadow);
+}
+
+.pncp-header__brand {
+	display: flex;
+	flex: 1 1 320px;
+	align-items: center;
+	gap: var(--pncp-s4);
+	min-width: 0;
+}
+
+.pncp-logo {
+	display: inline-flex;
+	flex: 0 0 auto;
+	align-items: center;
+	justify-content: center;
+	width: 48px;
+	height: 48px;
+	border-radius: 12px;
+	background: linear-gradient(135deg, var(--pncp-accent), var(--pncp-accent-strong));
+	box-shadow: inset 0 -2px 0 rgba(0, 0, 0, 0.12), 0 2px 6px rgba(16, 24, 40, 0.15);
+	color: #fff;
+}
+
+.pncp-header__text {
+	min-width: 0;
+}
+
+.pncp-admin .pncp-title {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: var(--pncp-s2) var(--pncp-s3);
+	margin: 0;
+	padding: 0;
+	color: var(--pncp-text);
+	font-size: 22px;
+	font-weight: 650;
+	line-height: 1.25;
+	letter-spacing: -0.01em;
+}
+
+.pncp-version {
+	padding: 2px 8px;
+	border: 1px solid var(--pncp-border);
+	border-radius: 999px;
+	background: var(--pncp-surface-2);
+	color: var(--pncp-muted);
+	font-family: var(--pncp-mono);
+	font-size: 11px;
+	font-weight: 500;
+	line-height: 1.6;
+	letter-spacing: 0;
+}
+
+.pncp-admin .pncp-header__tagline {
+	margin: 2px 0 0;
+	color: var(--pncp-muted);
+	font-size: 13px;
+}
+
+.pncp-admin .pncp-header__state {
+	margin: 0;
+}
+
+.pncp-state-badge {
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+	padding: 6px 14px 6px 10px;
+	border: 1px solid var(--pncp-on-line);
+	border-radius: 999px;
+	background: var(--pncp-on-soft);
+	color: var(--pncp-on-text);
+	font-size: 13px;
+	font-weight: 600;
+	white-space: nowrap;
+}
+
+.pncp-state-badge .dashicons {
+	width: 18px;
+	height: 18px;
+	font-size: 18px;
+}
+
+.pncp-state-badge--monitor,
+.pncp-state-badge--emergency {
+	border-color: var(--pncp-warn-line);
+	background: var(--pncp-warn-soft);
+	color: var(--pncp-warn-text);
+}
+
+.pncp-state-badge--off {
+	border-color: var(--pncp-bad-line);
+	background: var(--pncp-bad-soft);
+	color: var(--pncp-bad-text);
+}
+
+.pncp-state-badge--locked {
+	border-color: var(--pncp-accent-line);
+	background: var(--pncp-accent-soft);
+	color: var(--pncp-accent-strong);
+}
+
+.pncp-header__actions {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: var(--pncp-s2) var(--pncp-s3);
+	margin-left: auto;
+}
+
+.pncp-header__actions .button {
+	min-height: 34px;
+	padding: 0 14px;
+	line-height: 32px;
+}
+
+.pncp-admin .pncp-header__off {
+	color: var(--pncp-muted);
+	font-size: 13px;
+}
+
+.pncp-admin .pncp-header__off:hover,
+.pncp-admin .pncp-header__off:focus {
+	color: var(--pncp-bad-text);
+}
+
+/* Overview figures */
+.pncp-kpis {
 	display: grid;
-	grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-	gap: 16px;
-	margin: 16px 0;
+	grid-template-columns: repeat(auto-fit, minmax(min(100%, 200px), 1fr));
+	gap: var(--pncp-s4);
+	margin: 0 0 var(--pncp-s4);
+	padding: 0;
+	list-style: none;
 }
 
-.pncp-card {
-	padding: 16px 20px;
-	border: 1px solid #c3c4c7;
+.pncp-kpi {
+	position: relative;
+	display: flex;
+	flex-direction: column;
+	gap: 6px;
+	margin: 0;
+	padding: var(--pncp-s4) var(--pncp-s5);
+	overflow: hidden;
+	border: 1px solid var(--pncp-border);
+	border-radius: var(--pncp-radius);
+	background: var(--pncp-surface);
+	box-shadow: var(--pncp-shadow);
+}
+
+.pncp-kpi::before {
+	content: "";
+	position: absolute;
+	top: 0;
+	bottom: 0;
+	left: 0;
+	width: 4px;
+	background: var(--pncp-border-strong);
+}
+
+.pncp-kpi--accent::before {
+	background: var(--pncp-accent);
+}
+
+.pncp-kpi--good::before {
+	background: var(--pncp-on);
+}
+
+.pncp-kpi--warn::before {
+	background: var(--pncp-warn);
+}
+
+.pncp-kpi__label {
+	color: var(--pncp-muted);
+	font-size: 12px;
+	font-weight: 600;
+	letter-spacing: 0.02em;
+	text-transform: uppercase;
+}
+
+.pncp-kpi__value {
+	color: var(--pncp-text);
+	font-size: 26px;
+	font-weight: 650;
+	font-variant-numeric: tabular-nums;
+	line-height: 1.15;
+	letter-spacing: -0.01em;
+}
+
+.pncp-admin .pncp-kpi__link {
+	align-self: flex-start;
 	border-radius: 4px;
-	background: #fff;
+	text-decoration: none;
 }
 
-.pncp-card--wide {
-	margin: 16px 0;
+.pncp-admin .pncp-kpi__link:hover .pncp-kpi__value,
+.pncp-admin .pncp-kpi__link:focus .pncp-kpi__value {
+	color: var(--pncp-accent-strong);
+	text-decoration: underline;
+	text-decoration-thickness: 2px;
+	text-underline-offset: 4px;
 }
 
-.pncp-card h2,
-.pncp-card h3 {
+/* Status pills */
+.pncp-status-bar {
+	display: flex;
+	flex-wrap: wrap;
+	gap: var(--pncp-s2);
+	margin: 0 0 var(--pncp-s4);
+	padding: 0;
+	list-style: none;
+}
+
+.pncp-pill {
+	display: inline-flex;
+	align-items: center;
+	gap: 7px;
+	margin: 0;
+	padding: 4px 12px;
+	border: 1px solid var(--pncp-border);
+	border-radius: 999px;
+	background: var(--pncp-surface);
+	color: var(--pncp-muted);
+	font-size: 12px;
+	font-weight: 500;
+	line-height: 1.6;
+}
+
+.pncp-pill::before {
+	content: "";
+	flex: 0 0 auto;
+	width: 8px;
+	height: 8px;
+	border-radius: 50%;
+	background: #8c8f94;
+}
+
+.pncp-pill--on {
+	border-color: var(--pncp-on-line);
+	background: var(--pncp-on-soft);
+	color: var(--pncp-on-text);
+}
+
+.pncp-pill--on::before {
+	background: var(--pncp-on);
+	box-shadow: 0 0 0 3px rgba(0, 115, 63, 0.15);
+}
+
+.pncp-pill--off {
+	border-style: dashed;
+	border-color: var(--pncp-border-strong);
+}
+
+.pncp-pill--alert {
+	border-color: var(--pncp-warn-line);
+	background: var(--pncp-warn-soft);
+	color: var(--pncp-warn-text);
+	font-weight: 600;
+}
+
+.pncp-pill--alert::before {
+	background: var(--pncp-warn);
+}
+
+.pncp-admin .pncp-pill a {
+	color: inherit;
+	text-decoration: none;
+}
+
+.pncp-admin .pncp-pill a:hover,
+.pncp-admin .pncp-pill a:focus {
+	text-decoration: underline;
+}
+
+.pncp-pill--off:hover {
+	border-color: var(--pncp-accent);
+	color: var(--pncp-accent-strong);
+}
+
+/* Tabs: sticky under the admin bar, an underline marks the open one. */
+.pncp-admin .nav-tab-wrapper.pncp-tabs {
+	position: sticky;
+	top: var(--pncp-sticky-top);
+	z-index: 20;
+	display: flex;
+	flex-wrap: nowrap;
+	gap: var(--pncp-s1);
+	margin: 0 0 var(--pncp-s5);
+	padding: 0 var(--pncp-s2);
+	overflow-x: auto;
+	border: 1px solid var(--pncp-border);
+	border-radius: var(--pncp-radius);
+	background: var(--pncp-surface);
+	box-shadow: var(--pncp-shadow);
+	scrollbar-width: thin;
+}
+
+.pncp-admin .pncp-tabs .nav-tab {
+	display: inline-flex;
+	flex: 0 0 auto;
+	align-items: center;
+	gap: 6px;
+	float: none;
+	margin: 0;
+	padding: 14px 14px 12px;
+	border: 0;
+	border-bottom: 3px solid transparent;
+	border-radius: 0;
+	background: transparent;
+	color: var(--pncp-muted);
+	font-size: 14px;
+	font-weight: 500;
+	line-height: 1.4;
+	white-space: nowrap;
+	text-decoration: none;
+	transition: color 0.15s ease, border-color 0.15s ease;
+}
+
+.pncp-admin .pncp-tabs .nav-tab .dashicons {
+	width: 18px;
+	height: 18px;
+	font-size: 18px;
+	opacity: 0.85;
+}
+
+.pncp-admin .pncp-tabs .nav-tab:hover {
+	border-bottom-color: var(--pncp-border-strong);
+	background: transparent;
+	color: var(--pncp-text);
+}
+
+.pncp-admin .pncp-tabs .nav-tab:focus-visible {
+	outline-offset: -4px;
+	border-radius: 8px 8px 0 0;
+}
+
+.pncp-admin .pncp-tabs .nav-tab-active,
+.pncp-admin .pncp-tabs .nav-tab-active:hover,
+.pncp-admin .pncp-tabs .nav-tab-active:focus {
+	border-bottom-color: var(--pncp-accent);
+	background: transparent;
+	color: var(--pncp-accent-strong);
+	font-weight: 600;
+	box-shadow: none;
+}
+
+.pncp-admin .pncp-tabs .nav-tab-active .dashicons {
+	opacity: 1;
+}
+
+.pncp-admin .pncp-tabs .pncp-tab-locked,
+.pncp-admin .pncp-tabs .pncp-tab-locked:hover {
+	border-bottom-color: transparent;
+	color: #8c8f94;
+	cursor: not-allowed;
+}
+
+.pncp-admin .pncp-tabs .pncp-tab-lockdown {
+	margin-left: auto;
+}
+
+/* Anchors (quick links, #pncp-sec-…) land below the sticky tabs. */
+.pncp-admin [id] {
+	scroll-margin-top: calc(var(--pncp-sticky-top) + var(--pncp-tabs-height) + 16px);
+}
+
+.pncp-panel {
+	min-width: 0;
+}
+
+.pncp-panel > :first-child {
 	margin-top: 0;
 }
 
-.pncp-card--emergency {
-	border-left: 4px solid #9a4a00;
+/* ---------- 3. Cards, titles, notices ---------- */
+
+.pncp-cards {
+	display: grid;
+	grid-template-columns: repeat(auto-fit, minmax(min(100%, 360px), 1fr));
+	gap: var(--pncp-s5);
+	margin: 0 0 var(--pncp-s5);
 }
 
-.pncp-profile {
+.pncp-card {
+	min-width: 0;
+	margin: 0;
+	padding: var(--pncp-s5) var(--pncp-s6);
+	border: 1px solid var(--pncp-border);
+	border-radius: var(--pncp-radius);
+	background: var(--pncp-surface);
+	box-shadow: var(--pncp-shadow);
+}
+
+.pncp-card--wide {
+	margin: 0 0 var(--pncp-s5);
+}
+
+.pncp-admin .pncp-card h2,
+.pncp-admin .pncp-card h3,
+.pncp-admin .pncp-card h4 {
+	margin-top: 0;
+	color: var(--pncp-text);
+}
+
+.pncp-admin .pncp-card > h2,
+.pncp-admin .pncp-card > summary > h2 {
 	display: flex;
-	align-items: flex-start;
-	gap: 12px;
-	margin: 0 0 12px;
-}
-
-.pncp-profile .button {
-	flex: 0 0 auto;
-	min-width: 120px;
-	justify-content: center;
-}
-
-.pncp-profile .description {
-	margin: 2px 0 0;
-}
-
-.pncp-profile.is-current .button {
-	box-shadow: 0 0 0 2px #fff, 0 0 0 4px #2271b1;
-}
-
-.pncp-emergency-on {
+	flex-wrap: wrap;
+	align-items: center;
+	gap: var(--pncp-s2);
+	margin-bottom: var(--pncp-s2);
+	font-size: 16px;
 	font-weight: 600;
-	color: #6b3500;
+	line-height: 1.4;
 }
 
-.pncp-admin .button.pncp-button-danger {
-	border-color: #9a4a00;
-	color: #6b3500;
-}
-
-.pncp-admin .button.pncp-button-danger:hover,
-.pncp-admin .button.pncp-button-danger:focus {
-	border-color: #6b3500;
-	background: #fcf3e6;
-	color: #6b3500;
-}
-
-.pncp-inline-warning {
-	padding: 8px 12px;
-	border-left: 4px solid #dba617;
-	background: #fcf9e8;
-	color: #1d2327;
-}
-
-.pncp-confirm {
-	padding-bottom: 4px;
-}
-
-.pncp-token {
-	display: inline-block;
-	padding: 4px 8px;
+.pncp-admin .pncp-card h3 {
+	margin: var(--pncp-s5) 0 var(--pncp-s2);
 	font-size: 14px;
+	font-weight: 600;
+}
+
+.pncp-admin .pncp-card > h3:first-child {
+	margin-top: 0;
+}
+
+.pncp-admin .pncp-card h4 {
+	margin: 0 0 var(--pncp-s3);
+	color: var(--pncp-muted);
+	font-size: 12px;
+	font-weight: 600;
+	letter-spacing: 0.03em;
+	text-transform: uppercase;
+}
+
+.pncp-card > :last-child {
+	margin-bottom: 0;
+}
+
+.pncp-card__footer {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	justify-content: space-between;
+	gap: var(--pncp-s3);
+	margin-top: var(--pncp-s4);
+	padding-top: var(--pncp-s4);
+	border-top: 1px solid var(--pncp-divider);
+}
+
+.pncp-card__footer > * {
+	margin: 0;
+}
+
+.pncp-admin .pncp-section-title,
+.pncp-admin .pncp-group-title {
+	display: flex;
+	align-items: center;
+	gap: var(--pncp-s3);
+	margin: var(--pncp-s8) 0 var(--pncp-s3);
+	padding: 0;
+	color: var(--pncp-text);
+	font-size: 18px;
+	font-weight: 650;
+	line-height: 1.3;
+}
+
+.pncp-admin .pncp-section-title::after,
+.pncp-admin .pncp-group-title::after {
+	content: "";
+	flex: 1 1 auto;
+	height: 1px;
+	background: var(--pncp-border);
+}
+
+.pncp-admin .pncp-subsection-title {
+	margin: var(--pncp-s5) 0 var(--pncp-s3);
+	color: var(--pncp-muted);
+	font-size: 13px;
+	font-weight: 600;
+	letter-spacing: 0.03em;
+	text-transform: uppercase;
+}
+
+.pncp-admin .pncp-group-intro {
+	max-width: 900px;
+	margin: calc(-1 * var(--pncp-s1)) 0 var(--pncp-s4);
+}
+
+.pncp-intro {
+	max-width: 1000px;
+	margin: 0 0 var(--pncp-s5);
+}
+
+.pncp-intro p {
+	margin: 0 0 var(--pncp-s2);
+	font-size: 14px;
+}
+
+/* Notices inside the page: rounded, full border, the core colour stays on the left edge. */
+.pncp-admin .notice,
+.pncp-admin div.updated,
+.pncp-admin div.error {
+	margin: 0 0 var(--pncp-s4);
+	padding: 4px 14px;
+	border: 1px solid var(--pncp-border);
+	border-left-width: 4px;
+	border-radius: var(--pncp-radius-sm);
+	background: var(--pncp-surface);
+	box-shadow: var(--pncp-shadow);
+}
+
+.pncp-admin .notice.inline {
+	margin: var(--pncp-s3) 0;
+	box-shadow: none;
+}
+
+.pncp-admin .notice-success {
+	border-color: var(--pncp-on-line);
+	border-left-color: #00a32a;
+	background: #f6fcf8;
+}
+
+.pncp-admin .notice-warning {
+	border-color: var(--pncp-warn-line);
+	border-left-color: #dba617;
+	background: #fffcf5;
+}
+
+.pncp-admin .notice-error {
+	border-color: var(--pncp-bad-line);
+	border-left-color: var(--pncp-bad);
+	background: #fffafa;
+}
+
+.pncp-admin .notice-info {
+	border-color: var(--pncp-accent-line);
+	border-left-color: #72aee6;
+	background: var(--pncp-surface);
+}
+
+.pncp-admin .notice p {
+	margin: 0.6em 0;
+}
+
+.pncp-admin .notice .notice-dismiss {
+	top: 4px;
+}
+
+/* Confirmations (disable, import, reset) */
+.pncp-admin .pncp-confirm {
+	padding: var(--pncp-s3) var(--pncp-s5) var(--pncp-s2);
+}
+
+.pncp-admin .pncp-confirm .pncp-table-wrap {
+	margin: var(--pncp-s3) 0;
+	background: var(--pncp-surface);
+}
+
+/* Callouts */
+.pncp-admin .pncp-inline-warning {
+	margin: var(--pncp-s3) 0;
+	padding: var(--pncp-s3) var(--pncp-s4);
+	border: 1px solid var(--pncp-warn-line);
+	border-left: 4px solid #dba617;
+	border-radius: var(--pncp-radius-sm);
+	background: var(--pncp-warn-soft);
+	color: var(--pncp-text);
+}
+
+.pncp-admin .pncp-inline-warning > :first-child {
+	margin-top: 0;
+}
+
+.pncp-admin .pncp-inline-warning > :last-child {
+	margin-bottom: 0;
+}
+
+.pncp-admin .pncp-inline-warning .pncp-field {
+	margin: 0;
+	padding: 0;
+	border: 0;
+}
+
+/* Empty states */
+.pncp-admin .pncp-empty {
+	display: flex;
+	align-items: center;
+	gap: var(--pncp-s2);
+	margin: var(--pncp-s2) 0;
+	padding: var(--pncp-s4);
+	border: 1px dashed var(--pncp-border-strong);
+	border-radius: var(--pncp-radius-sm);
+	background: var(--pncp-surface-3);
+	color: var(--pncp-muted);
+	font-size: 13px;
+}
+
+.pncp-admin .pncp-empty::before {
+	content: "";
+	flex: 0 0 auto;
+	width: 8px;
+	height: 8px;
+	border-radius: 50%;
+	background: var(--pncp-on);
+	box-shadow: 0 0 0 3px rgba(0, 115, 63, 0.15);
+}
+
+/* ---------- 4. Settings forms ---------- */
+
+/* Each row of a settings table is a card; the cards flow in columns: one on a phone, two on a laptop, three
+   on a wide screen. Cards never break across columns. */
+.pncp-admin .form-table,
+.pncp-admin .form-table > tbody,
+.pncp-admin .form-table > tbody > tr,
+.pncp-admin .form-table > tbody > tr > th,
+.pncp-admin .form-table > tbody > tr > td {
+	display: block;
+	width: auto;
+}
+
+.pncp-admin .form-table {
+	margin: 0;
+	border: 0;
+}
+
+.pncp-admin .form-table > tbody {
+	columns: 2 460px;
+	column-gap: var(--pncp-s5);
+}
+
+/* Very wide screens: a third column. */
+@media screen and (min-width: 2200px) {
+	.pncp-admin .form-table > tbody {
+		columns: 3 460px;
+	}
+}
+
+/* A part with a single card uses the whole width. */
+.pncp-admin .form-table > tbody:has(> tr:only-child) {
+	columns: auto;
+}
+
+.pncp-admin .form-table > tbody > tr {
+	display: inline-block;
+	width: 100%;
+	margin: 0 0 var(--pncp-s5);
+	padding: 0;
+	overflow: hidden;
+	break-inside: avoid;
+	border: 1px solid var(--pncp-border);
+	border-radius: var(--pncp-radius);
+	background: var(--pncp-surface);
+	box-shadow: var(--pncp-shadow);
+	vertical-align: top;
+}
+
+.pncp-admin .form-table > tbody > tr:target {
+	border-color: var(--pncp-accent);
+	box-shadow: 0 0 0 3px var(--pncp-accent-line);
+}
+
+.pncp-admin .form-table > tbody > tr > th {
+	margin: 0;
+	padding: 14px var(--pncp-s5);
+	border-bottom: 1px solid var(--pncp-divider);
+	background: var(--pncp-surface-3);
+	color: var(--pncp-text);
+	font-size: 14px;
+	font-weight: 600;
+	line-height: 1.4;
+}
+
+.pncp-admin .form-table > tbody > tr > th label {
+	color: inherit;
+	font-weight: inherit;
+}
+
+.pncp-admin .form-table > tbody > tr > td {
+	margin: 0;
+	padding: var(--pncp-s4) var(--pncp-s5);
+	color: var(--pncp-text);
+	font-size: 13px;
+	line-height: 1.55;
+}
+
+.pncp-admin .form-table td p {
+	margin: 0 0 var(--pncp-s2);
+}
+
+.pncp-admin .form-table td > p.description,
+.pncp-admin .form-table td > .description {
+	margin: var(--pncp-s2) 0;
+	font-size: 13px;
+}
+
+.pncp-admin .form-table td > :last-child {
+	margin-bottom: 0;
+}
+
+.pncp-admin .form-table input.regular-text,
+.pncp-admin .form-table input.large-text,
+.pncp-admin .form-table select,
+.pncp-admin .form-table textarea {
+	max-width: 100%;
+}
+
+.pncp-admin .form-table input.regular-text {
+	width: 100%;
+	max-width: 32em;
+}
+
+.pncp-admin .form-table select {
+	width: auto;
+	max-width: 100%;
+	min-width: 0;
+}
+
+/* Inputs: one shape for the whole page. */
+.pncp-admin input[type="text"],
+.pncp-admin input[type="url"],
+.pncp-admin input[type="number"],
+.pncp-admin input[type="password"],
+.pncp-admin select,
+.pncp-admin textarea {
+	border-color: var(--pncp-border-strong);
+	border-radius: 6px;
+}
+
+.pncp-admin input[type="text"]:focus,
+.pncp-admin input[type="url"]:focus,
+.pncp-admin input[type="number"]:focus,
+.pncp-admin input[type="password"]:focus,
+.pncp-admin select:focus,
+.pncp-admin textarea:focus {
+	border-color: var(--pncp-accent);
+	box-shadow: 0 0 0 1px var(--pncp-accent);
+	outline: 2px solid transparent;
+}
+
+.pncp-admin textarea.code,
+.pncp-admin input.code {
+	font-family: var(--pncp-mono);
+	font-size: 12px;
+}
+
+.pncp-admin textarea {
+	padding: 8px 10px;
+	line-height: 1.5;
+}
+
+/* Fields */
+.pncp-field {
+	margin: 0;
+	padding: var(--pncp-s3) 0;
+}
+
+.pncp-field:first-child {
+	padding-top: 0;
+}
+
+.pncp-field:last-child {
+	padding-bottom: 0;
+}
+
+/* A thin rule between settings of one card, as in a settings list. */
+.pncp-field + .pncp-field,
+.pncp-field + fieldset,
+fieldset + .pncp-field {
+	border-top: 1px solid var(--pncp-divider);
+}
+
+.pncp-admin .pncp-field .description,
+.pncp-admin .pncp-field p.description {
+	margin: 4px 0 0;
+	font-size: 12.5px;
+	line-height: 1.5;
+}
+
+.pncp-field--toggle {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	column-gap: var(--pncp-s2);
+}
+
+.pncp-admin .pncp-field--toggle > label {
+	display: inline-flex;
+	align-items: flex-start;
+	gap: var(--pncp-s3);
+	color: var(--pncp-text);
+	font-size: 13px;
+	font-weight: 500;
+	line-height: 22px;
+	cursor: pointer;
+}
+
+.pncp-field--toggle > .description,
+.pncp-field--toggle > .pncp-requires-note {
+	flex: 1 0 100%;
+	padding-left: 52px;
+}
+
+.pncp-field--number p,
+.pncp-field--text p {
+	margin: 0 0 6px;
+}
+
+.pncp-field--number p {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: var(--pncp-s2);
+}
+
+.pncp-admin .pncp-field--number label,
+.pncp-admin .pncp-field--text label,
+.pncp-admin .pncp-field > p > label {
+	color: var(--pncp-text);
+	font-weight: 500;
+}
+
+.pncp-admin .pncp-field--number input[type="number"] {
+	width: 96px;
+	margin: 0;
+	font-variant-numeric: tabular-nums;
+}
+
+.pncp-admin .pncp-field--text textarea {
+	display: block;
+	width: 100%;
+	background: var(--pncp-surface-3);
+}
+
+/* Switches: real checkboxes (keyboard, screen readers and form submission work as before), drawn as a switch. */
+.pncp-admin input.pncp-toggle {
+	-webkit-appearance: none;
+	appearance: none;
+	position: relative;
+	flex: 0 0 auto;
+	width: 40px;
+	height: 22px;
+	margin: 0;
+	border: 0;
+	border-radius: 999px;
+	/* Off: #8c8f94 on white is 3.2:1, enough for a control (WCAG 1.4.11 asks for 3:1). */
+	background: #8c8f94;
+	box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.15);
+	cursor: pointer;
+	transition: background-color 0.18s ease;
+}
+
+.pncp-admin input.pncp-toggle::before {
+	content: "";
+	position: absolute;
+	top: 3px;
+	left: 3px;
+	width: 16px;
+	height: 16px;
+	margin: 0;
+	border-radius: 50%;
+	background: #fff;
+	box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+	transition: transform 0.18s ease;
+}
+
+.pncp-admin input.pncp-toggle:checked {
+	background: var(--pncp-accent);
+}
+
+.pncp-admin input.pncp-toggle:checked::before {
+	content: "";
+	transform: translateX(18px);
+}
+
+.pncp-admin input.pncp-toggle:hover {
+	filter: brightness(0.95);
+}
+
+.pncp-admin input.pncp-toggle:focus {
+	box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.15);
+	outline: none;
+}
+
+.pncp-admin input.pncp-toggle:focus-visible {
+	box-shadow: var(--pncp-ring);
+}
+
+/* Plain checkboxes and radios outside switches keep the core look, with the scheme colour. */
+.pncp-admin input[type="checkbox"]:not(.pncp-toggle):checked::before {
+	filter: none;
+}
+
+/* Choices (radio groups): each choice is a row that shows which one is selected. */
+.pncp-admin .form-table fieldset {
+	display: grid;
+	gap: 6px;
+	margin: 0 0 var(--pncp-s3);
+}
+
+.pncp-admin .form-table fieldset > br {
+	display: none;
+}
+
+.pncp-admin .form-table fieldset > label {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 6px var(--pncp-s2);
+	margin: 0;
+	padding: 9px 12px;
+	border: 1px solid var(--pncp-border);
+	border-radius: var(--pncp-radius-sm);
+	background: var(--pncp-surface);
+	color: var(--pncp-text);
+	line-height: 1.4;
+	cursor: pointer;
+	transition: border-color 0.15s ease, background-color 0.15s ease;
+}
+
+.pncp-admin .form-table fieldset > label:hover {
+	border-color: var(--pncp-border-strong);
+	background: var(--pncp-surface-3);
+}
+
+.pncp-admin .form-table fieldset > label:has(input:checked) {
+	border-color: var(--pncp-accent);
+	background: var(--pncp-accent-soft);
+	box-shadow: inset 0 0 0 1px var(--pncp-accent);
+}
+
+.pncp-admin .form-table fieldset > label input[type="radio"] {
+	margin: 0 2px 0 0;
+}
+
+/* Folded long lists */
+.pncp-fold {
+	border: 1px solid var(--pncp-border);
+	border-radius: var(--pncp-radius-sm);
+	background: var(--pncp-surface-3);
+}
+
+.pncp-fold > summary {
+	display: block;
+	padding: 10px 12px;
+	border-radius: var(--pncp-radius-sm);
+	color: var(--pncp-text);
+	font-weight: 500;
+	list-style: none;
+	cursor: pointer;
+}
+
+.pncp-fold > summary::-webkit-details-marker {
+	display: none;
+}
+
+.pncp-fold > summary::before,
+.pncp-advanced > summary::before,
+.pncp-admin .pncp-public-routes > summary::before,
+.pncp-admin details.pncp-card > summary::before,
+.pncp-admin .pncp-edge-diag__copy > summary::before,
+.pncp-admin details.pncp-ld-box > summary::before,
+.pncp-admin .pncp-ld-unlocked > summary::before {
+	content: "";
+	display: inline-block;
+	flex: 0 0 auto;
+	width: 7px;
+	height: 7px;
+	margin: 0 8px 0 2px;
+	vertical-align: 2px;
+	border-right: 2px solid currentColor;
+	border-bottom: 2px solid currentColor;
+	color: var(--pncp-muted);
+	transform: rotate(-45deg);
+	transition: transform 0.15s ease;
+}
+
+.pncp-fold[open] > summary::before,
+.pncp-advanced[open] > summary::before,
+.pncp-admin .pncp-public-routes[open] > summary::before,
+.pncp-admin details.pncp-card[open] > summary::before,
+.pncp-admin .pncp-edge-diag__copy[open] > summary::before,
+.pncp-admin details.pncp-ld-box[open] > summary::before,
+.pncp-admin .pncp-ld-unlocked[open] > summary::before {
+	transform: rotate(45deg);
+}
+
+.pncp-fold[open] {
+	padding-bottom: var(--pncp-s3);
+}
+
+.pncp-fold[open] > summary {
+	margin-bottom: var(--pncp-s3);
+	border-bottom: 1px solid var(--pncp-border);
+	border-radius: var(--pncp-radius-sm) var(--pncp-radius-sm) 0 0;
+}
+
+.pncp-fold textarea,
+.pncp-fold .description,
+.pncp-fold .pncp-requires-note,
+.pncp-fold > .pncp-tag {
+	width: calc(100% - 24px);
+	margin-right: 12px;
+	margin-left: 12px;
+}
+
+.pncp-admin .pncp-fold textarea {
+	background: var(--pncp-surface);
+}
+
+/* Folded advanced parts (Network and CDN, Blocking at the CDN) */
+.pncp-advanced {
+	margin: 0 0 var(--pncp-s5);
+	border: 1px solid var(--pncp-border);
+	border-radius: var(--pncp-radius);
+	background: var(--pncp-surface);
+	box-shadow: var(--pncp-shadow);
+}
+
+.pncp-advanced > summary {
+	display: grid;
+	grid-template-columns: auto 1fr;
+	align-items: center;
+	column-gap: 6px;
+	padding: var(--pncp-s4) var(--pncp-s5);
+	border-radius: var(--pncp-radius);
+	list-style: none;
+	cursor: pointer;
+}
+
+.pncp-advanced > summary::-webkit-details-marker {
+	display: none;
+}
+
+.pncp-advanced > summary:hover {
+	background: var(--pncp-surface-3);
+}
+
+.pncp-admin .pncp-advanced__title {
+	display: inline;
+	margin: 0;
+	color: var(--pncp-text);
+	font-size: 16px;
+	font-weight: 600;
+}
+
+.pncp-advanced__state {
+	grid-column: 2;
+	display: block;
+	margin: 2px 0 0;
+	color: var(--pncp-muted);
+	font-size: 12.5px;
+}
+
+.pncp-advanced[open] > summary {
+	border-bottom: 1px solid var(--pncp-border);
+	border-radius: var(--pncp-radius) var(--pncp-radius) 0 0;
+}
+
+.pncp-advanced > :not(summary) {
+	margin-right: var(--pncp-s5);
+	margin-left: var(--pncp-s5);
+}
+
+.pncp-advanced > .description:first-of-type,
+.pncp-advanced > p:first-of-type {
+	margin-top: var(--pncp-s4);
+}
+
+.pncp-advanced > :last-child {
+	margin-bottom: var(--pncp-s5);
+}
+
+.pncp-advanced > .form-table,
+.pncp-advanced form > .form-table {
+	margin-top: var(--pncp-s4);
+}
+
+/* Inside a folded part the cards sit on white: a grey card surface keeps them apart. */
+.pncp-advanced .form-table > tbody > tr {
+	box-shadow: none;
+}
+
+/* Save bar: stays at the bottom while a long tab scrolls; it lights up while there are unsaved changes. */
+.pncp-admin .pncp-settings-form p.submit {
+	position: sticky;
+	bottom: var(--pncp-s3);
+	z-index: 15;
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: var(--pncp-s3);
+	margin: var(--pncp-s2) 0 0;
+	padding: var(--pncp-s3) var(--pncp-s4);
+	border: 1px solid var(--pncp-border);
+	border-radius: var(--pncp-radius);
+	background: var(--pncp-surface);
+	box-shadow: var(--pncp-shadow-raised);
+}
+
+.pncp-admin .pncp-settings-form p.submit .button-primary {
+	min-height: 34px;
+	padding: 0 18px;
+	line-height: 32px;
+}
+
+.pncp-admin .pncp-settings-form.is-dirty p.submit {
+	border-color: var(--pncp-warn-line);
+	box-shadow: 0 0 0 3px var(--pncp-warn-soft), var(--pncp-shadow-raised);
+}
+
+.pncp-unsaved {
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+	margin: 0;
+	color: #9a4f00; /* 4.5:1 also on the grey admin background. */
+	font-weight: 600;
+}
+
+.pncp-unsaved::before {
+	content: "";
+	width: 8px;
+	height: 8px;
+	border-radius: 50%;
+	background: #dba617;
+}
+
+.pncp-unsaved[hidden] {
+	display: none;
+}
+
+.pncp-admin .pncp-reset-tab {
+	margin: var(--pncp-s3) 0 var(--pncp-s5) var(--pncp-s1);
+	font-size: 12.5px;
+}
+
+.pncp-admin .pncp-reset-tab a {
+	color: var(--pncp-muted);
+}
+
+.pncp-admin .pncp-reset-tab a:hover,
+.pncp-admin .pncp-reset-tab a:focus {
+	color: var(--pncp-bad-text);
+}
+
+/* 3.5: a field that does nothing in the current state is dimmed (aria-disabled), but stays clickable and saved. */
+.pncp-admin .pncp-field.is-dimmed,
+.pncp-admin .is-dimmed {
+	opacity: 0.55;
+}
+
+.pncp-admin .pncp-requires-note {
+	margin-top: 4px;
+	color: var(--pncp-muted);
+	font-size: 12px;
+	font-style: italic;
+}
+
+/* 3.5: "Default" and "May affect visitors/SEO" tags, and the default value next to a changed field. */
+.pncp-tag {
+	display: inline-block;
+	margin-left: 2px;
+	padding: 0 7px;
+	border: 1px solid transparent;
+	border-radius: 999px;
+	font-size: 11px;
+	font-weight: 500;
+	line-height: 18px;
+	vertical-align: middle;
+	white-space: nowrap;
+}
+
+.pncp-tag--risk {
+	border-color: var(--pncp-warn-line);
+	background: var(--pncp-warn-soft);
+	color: var(--pncp-warn-text);
+}
+
+.pncp-tag--default {
+	border-color: var(--pncp-border);
+	background: var(--pncp-surface-2);
+	color: var(--pncp-muted);
+}
+
+.pncp-default-note {
+	color: var(--pncp-muted);
+	font-size: 12px;
+}
+
+/* Quick links of a long tab */
+.pncp-section-nav {
+	margin: 0 0 var(--pncp-s5);
+}
+
+.pncp-section-nav ul {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 6px;
+	margin: 0;
+	padding: 0;
+	list-style: none;
+}
+
+.pncp-section-nav li {
+	margin: 0;
+}
+
+.pncp-admin .pncp-section-nav a {
+	display: inline-block;
+	padding: 4px 12px;
+	border: 1px solid var(--pncp-border);
+	border-radius: 999px;
+	background: var(--pncp-surface);
+	color: var(--pncp-accent-strong);
+	font-size: 12px;
+	font-weight: 500;
+	text-decoration: none;
+}
+
+.pncp-admin .pncp-section-nav a:hover,
+.pncp-admin .pncp-section-nav a:focus {
+	border-color: var(--pncp-accent);
+	background: var(--pncp-accent-soft);
+}
+
+/* ---------- 5. Tables, lists, badges, code ---------- */
+
+/* Tables scroll inside their own box, never the page. */
+.pncp-table-wrap {
+	position: relative; /* Keeps absolutely placed screen-reader texts inside the scrolling box. */
+	max-width: 100%;
+	margin: var(--pncp-s3) 0;
+	overflow-x: auto;
+	border: 1px solid var(--pncp-border);
+	border-radius: var(--pncp-radius-sm);
+	-webkit-overflow-scrolling: touch;
+}
+
+.pncp-admin table.widefat {
+	border: 1px solid var(--pncp-border);
+	border-radius: var(--pncp-radius-sm);
+	border-collapse: separate;
+	border-spacing: 0;
+	overflow: hidden;
+	background: var(--pncp-surface);
+	box-shadow: none;
+}
+
+.pncp-admin .pncp-table-wrap > table.widefat {
+	margin: 0;
+	border: 0;
+	border-radius: 0;
+}
+
+.pncp-admin table.widefat thead th,
+.pncp-admin table.widefat thead td {
+	padding: 10px 12px;
+	border-bottom: 1px solid var(--pncp-border);
+	background: var(--pncp-surface-2);
+	color: var(--pncp-muted);
+	font-size: 11.5px;
+	font-weight: 600;
+	letter-spacing: 0.03em;
+	text-transform: uppercase;
+	white-space: nowrap;
+}
+
+.pncp-admin table.widefat td,
+.pncp-admin table.widefat tbody th {
+	padding: 10px 12px;
+	color: var(--pncp-text);
+	font-size: 13px;
+	line-height: 1.5;
+	vertical-align: top;
+	overflow-wrap: anywhere;
+}
+
+.pncp-admin table.widefat tbody tr + tr > * {
+	border-top: 1px solid var(--pncp-divider);
+}
+
+.pncp-admin table.widefat.striped > tbody > :nth-child(odd) {
+	background: var(--pncp-surface-3);
+}
+
+.pncp-admin table.widefat.striped > tbody > :nth-child(even) {
+	background: var(--pncp-surface);
+}
+
+.pncp-admin table.widefat > tbody > tr:hover {
+	background: var(--pncp-accent-soft);
+}
+
+.pncp-admin table.widefat code {
+	padding: 2px 6px;
+	border-radius: 4px;
+	background: var(--pncp-surface-2);
+	font-family: var(--pncp-mono);
+	font-size: 12px;
 	word-break: break-all;
 }
 
-.pncp-fresh-token code {
-	word-break: break-all;
+.pncp-admin table.widefat .button-small {
+	margin: 2px 0;
 }
 
 .pncp-table {
-	max-width: 1100px;
-	margin: 8px 0 16px;
+	width: 100%;
+	margin: 0;
+}
+
+.pncp-log-table {
+	min-width: 1000px;
+}
+
+.pncp-log-table td:first-child {
+	white-space: nowrap;
+	color: var(--pncp-muted);
+	font-variant-numeric: tabular-nums;
 }
 
 .pncp-log-table .pncp-ua {
-	max-width: 360px;
-	word-break: break-word;
+	min-width: 260px;
+	max-width: 420px;
+	color: var(--pncp-muted);
 	font-size: 12px;
+	word-break: break-word;
+}
+
+.pncp-admin .pncp-path-table code,
+.pncp-admin .pncp-log-table code {
+	font-size: 12px;
+	word-break: normal;
+	overflow-wrap: anywhere;
+}
+
+.pncp-admin .pncp-log-table td:nth-child(2) code {
+	white-space: nowrap;
+}
+
+.pncp-admin .pncp-path-table .num {
+	width: 80px;
+	text-align: right;
+	font-variant-numeric: tabular-nums;
+	white-space: nowrap;
 }
 
 .pncp-inline-form {
@@ -112,326 +1529,1130 @@
 	display: inline-flex;
 	flex-wrap: wrap;
 	gap: 4px;
-	margin-top: 4px;
+	margin-top: 6px;
 }
 
-.pncp-allow-ua-form .pncp-allow-ua-token {
+.pncp-admin .pncp-allow-ua-form .pncp-allow-ua-token {
 	width: 9em;
-	min-height: 24px;
+	min-height: 26px;
 	padding: 0 6px;
 	font-size: 12px;
-	line-height: 22px;
+	line-height: 24px;
 }
 
-.pncp-big-number {
-	margin: 4px 0 0;
-	font-size: 20px;
-	font-weight: 600;
-}
-
+/* Ranked lists (by reason, top IPs, top User-Agents) */
 .pncp-count-list {
-	margin: 0 0 0 20px;
+	margin: 0;
+	padding: 0;
+	list-style: none;
+	counter-reset: pncp-rank;
 }
 
 .pncp-count-list li {
 	display: flex;
+	align-items: flex-start;
 	justify-content: space-between;
-	gap: 12px;
-	word-break: break-word;
+	gap: var(--pncp-s3);
+	margin: 0;
+	padding: 9px 0;
+	border-bottom: 1px solid var(--pncp-divider);
+	counter-increment: pncp-rank;
+	overflow-wrap: anywhere;
 }
 
+.pncp-count-list li:last-child {
+	border-bottom: 0;
+}
+
+.pncp-count-list li > span {
+	flex: 1 1 auto;
+	min-width: 0;
+}
+
+.pncp-count-list li > span::before {
+	content: counter(pncp-rank);
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	min-width: 20px;
+	height: 20px;
+	margin-right: 8px;
+	padding: 0 4px;
+	border-radius: 6px;
+	background: var(--pncp-surface-2);
+	color: var(--pncp-muted);
+	font-size: 11px;
+	font-weight: 600;
+	vertical-align: 1px;
+}
+
+.pncp-count-list li > strong {
+	flex: 0 0 auto;
+	font-variant-numeric: tabular-nums;
+}
+
+.pncp-ip-list li > span {
+	font-family: var(--pncp-mono);
+	font-size: 12px;
+}
+
+.pncp-ua-list li > span {
+	font-size: 12px;
+}
+
+.pncp-ua-reason {
+	color: var(--pncp-subtle);
+}
+
+/* Badges */
 .pncp-badge {
 	display: inline-block;
-	margin-left: 6px;
+	margin-left: 4px;
 	padding: 1px 8px;
-	border-radius: 10px;
-	background: #f0f0f1;
-	color: #3c434a;
-	font-size: 12px;
-	font-weight: 400;
+	border: 1px solid var(--pncp-border);
+	border-radius: 999px;
+	background: var(--pncp-surface-2);
+	color: var(--pncp-muted);
+	font-family: inherit;
+	font-size: 11.5px;
+	font-weight: 500;
+	line-height: 1.6;
+	letter-spacing: 0;
+	text-transform: none;
 	vertical-align: middle;
 }
 
-.pncp-code textarea {
-	font-size: 12px;
-	white-space: pre;
+.pncp-badge--bad {
+	border-color: var(--pncp-bad-line);
+	background: var(--pncp-bad-soft);
+	color: var(--pncp-bad-text);
 }
 
+.pncp-badge--monitor {
+	border-color: var(--pncp-accent-line);
+	background: var(--pncp-accent-soft);
+	color: var(--pncp-accent-strong);
+}
+
+.pncp-admin .pncp-card > h2 .pncp-badge {
+	margin-left: 0;
+}
+
+/* Code blocks: dark, monospaced, scroll inside; the copy button sits on the block. */
+.pncp-code {
+	position: relative;
+	margin: var(--pncp-s2) 0 var(--pncp-s4);
+}
+
+.pncp-admin .pncp-code textarea {
+	display: block;
+	width: 100%;
+	max-width: 100%;
+	min-height: 64px;
+	margin: 0;
+	padding: 54px 16px 14px;
+	overflow: auto;
+	border: 1px solid var(--pncp-code-bg);
+	border-radius: var(--pncp-radius-sm);
+	/* A title bar for the copy button, so the button never covers the first line. */
+	background:
+		linear-gradient(#1d2939, #1d2939) top / 100% 42px no-repeat,
+		var(--pncp-code-bg);
+	color: var(--pncp-code-text);
+	font-family: var(--pncp-mono);
+	font-size: 12px;
+	line-height: 1.6;
+	white-space: pre;
+	tab-size: 4;
+	resize: vertical;
+	scrollbar-color: #475467 transparent;
+}
+
+.pncp-admin .pncp-code textarea:focus {
+	border-color: var(--pncp-accent);
+	box-shadow: 0 0 0 2px var(--pncp-accent-line);
+}
+
+.pncp-code > p {
+	position: absolute;
+	top: 7px;
+	right: 8px;
+	margin: 0;
+}
+
+.pncp-admin .pncp-code .pncp-copy {
+	min-height: 28px;
+	padding: 0 12px;
+	border: 1px solid rgba(255, 255, 255, 0.25);
+	border-radius: 6px;
+	background: rgba(255, 255, 255, 0.1);
+	color: #fff;
+	font-size: 12px;
+	line-height: 26px;
+}
+
+.pncp-admin .pncp-code .pncp-copy:hover,
+.pncp-admin .pncp-code .pncp-copy:focus {
+	border-color: rgba(255, 255, 255, 0.55);
+	background: rgba(255, 255, 255, 0.2);
+	color: #fff;
+}
+
+.pncp-admin .pncp-code .pncp-copy:focus-visible {
+	outline: 2px solid #fff;
+	outline-offset: 1px;
+}
+
+.pncp-admin code {
+	border-radius: 4px;
+	font-family: var(--pncp-mono);
+	font-size: 0.92em;
+}
+
+/* ---------- 6. Tab specifics ---------- */
+
+/* Presets and Emergency Mode */
+.pncp-profile {
+	display: flex;
+	align-items: flex-start;
+	gap: var(--pncp-s3);
+	margin: 0 0 var(--pncp-s2);
+	padding: var(--pncp-s3);
+	border: 1px solid var(--pncp-border);
+	border-radius: var(--pncp-radius-sm);
+}
+
+.pncp-profile.is-current {
+	border-color: var(--pncp-accent);
+	background: var(--pncp-accent-soft);
+	box-shadow: inset 0 0 0 1px var(--pncp-accent);
+}
+
+.pncp-admin .pncp-profile .button {
+	flex: 0 0 auto;
+	justify-content: center;
+	min-width: 110px;
+	text-align: center;
+}
+
+.pncp-admin .pncp-profile .description {
+	margin: 4px 0 0;
+	font-size: 12.5px;
+}
+
+.pncp-profile.is-current .button {
+	box-shadow: none;
+}
+
+.pncp-card--emergency {
+	border-top: 4px solid var(--pncp-warn);
+}
+
+.pncp-emergency-changes {
+	margin: var(--pncp-s2) 0 var(--pncp-s3);
+	padding-left: 18px;
+	color: var(--pncp-muted);
+	list-style: disc;
+	font-size: 12.5px;
+}
+
+.pncp-emergency-changes li {
+	margin: 2px 0;
+}
+
+.pncp-emergency-on {
+	color: var(--pncp-warn-text);
+	font-weight: 600;
+}
+
+.pncp-admin .button.pncp-button-danger {
+	border-color: #9a4a00;
+	background: var(--pncp-surface);
+	color: #6b3500;
+}
+
+.pncp-admin .button.pncp-button-danger:hover,
+.pncp-admin .button.pncp-button-danger:focus {
+	border-color: #6b3500;
+	background: #fcf3e6;
+	color: #6b3500;
+}
+
+/* Export, import and undo */
+.pncp-settings-io {
+	margin: var(--pncp-s5) 0;
+}
+
+.pncp-settings-io form + form {
+	margin-top: var(--pncp-s2);
+}
+
+.pncp-settings-io input[type="file"] {
+	max-width: 100%;
+}
+
+.pncp-backups {
+	margin: 0;
+}
+
+.pncp-backups li {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	justify-content: space-between;
+	gap: var(--pncp-s2);
+	margin: 0;
+	padding: var(--pncp-s2) 0;
+	border-bottom: 1px solid var(--pncp-divider);
+}
+
+.pncp-backups li:last-child {
+	border-bottom: 0;
+}
+
+.pncp-changes {
+	width: 100%;
+	margin: 0;
+}
+
+.pncp-changes td {
+	word-break: break-word;
+}
+
+.pncp-undo-notice .pncp-inline-form p {
+	margin: 0 0 8px;
+}
+
+/* Feeds and API */
+.pncp-token {
+	display: inline-block;
+	padding: 6px 10px;
+	font-size: 14px;
+	word-break: break-all;
+}
+
+.pncp-fresh-token code {
+	word-break: break-all;
+}
+
+.pncp-admin .pncp-token-form p {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: var(--pncp-s2);
+}
+
+.pncp-admin .pncp-public-routes > summary {
+	display: inline-flex;
+	align-items: center;
+	padding: 6px 0;
+	color: var(--pncp-accent-strong);
+	font-weight: 500;
+	list-style: none;
+	cursor: pointer;
+}
+
+.pncp-admin .pncp-public-routes > summary::-webkit-details-marker {
+	display: none;
+}
+
+/* Images */
 .pncp-tool-buttons {
 	display: flex;
 	flex-wrap: wrap;
-	gap: 8px;
+	gap: var(--pncp-s2);
+}
+
+.pncp-progress {
+	margin-top: var(--pncp-s3);
 }
 
 .pncp-progress progress {
 	width: 100%;
-	max-width: 480px;
-	height: 18px;
-}
-
-.pncp-list-status {
-	margin-left: 0;
-}
-
-/* ---------- 2.6: layout ---------- */
-
-.pncp-admin {
-	--pncp-accent: #2271b1;
-	--pncp-accent-soft: #e8f1fa;
-	--pncp-on: #00733f;
-	--pncp-on-soft: #e6f4ec;
-	--pncp-border: #dcdcde;
-	--pncp-muted: #50575e;
-	max-width: 1100px;
-}
-
-.pncp-title {
-	display: flex;
-	align-items: center;
-	gap: 10px;
-}
-
-.pncp-version {
-	padding: 2px 8px;
-	border-radius: 10px;
-	background: #f0f0f1;
-	color: var(--pncp-muted);
-	font-size: 12px;
-	font-weight: 400;
-	line-height: 1.6;
-}
-
-/* Status pills */
-.pncp-status-bar {
-	display: flex;
-	flex-wrap: wrap;
-	gap: 8px;
-	margin: 8px 0 16px;
-	padding: 0;
-	list-style: none;
-}
-
-.pncp-pill {
-	display: inline-flex;
-	align-items: center;
-	gap: 6px;
-	margin: 0;
-	padding: 4px 12px;
-	border: 1px solid var(--pncp-border);
-	border-radius: 999px;
-	background: #fff;
-	color: var(--pncp-muted);
-	font-size: 13px;
-}
-
-.pncp-pill::before {
-	content: "";
-	width: 8px;
-	height: 8px;
-	border-radius: 50%;
-	background: #a7aaad;
-}
-
-.pncp-pill--on {
-	border-color: #b8dfc8;
-	background: var(--pncp-on-soft);
-	color: #1d2327;
-}
-
-.pncp-pill--on::before {
-	background: var(--pncp-on);
-}
-
-.pncp-pill--alert {
-	border-color: #f0c8a0;
-	background: #fcf3e6;
-	color: #6b3500;
-	font-weight: 600;
-}
-
-.pncp-pill--alert::before {
-	background: #b35c00;
-}
-
-/* Tabs */
-.pncp-admin .nav-tab-wrapper {
-	display: flex;
-	flex-wrap: wrap;
-	gap: 4px;
-	padding: 0;
-	border-bottom: 1px solid var(--pncp-border);
-}
-
-.pncp-admin .nav-tab {
-	margin: 0;
-	padding: 8px 14px;
-	border: 1px solid transparent;
-	border-bottom: 0;
-	border-radius: 6px 6px 0 0;
-	background: transparent;
-	color: var(--pncp-muted);
-	font-weight: 500;
-}
-
-.pncp-admin .nav-tab:hover {
-	background: #f6f7f7;
-	color: #1d2327;
-}
-
-.pncp-admin .nav-tab-active,
-.pncp-admin .nav-tab-active:hover {
-	border-color: var(--pncp-border);
-	background: #fff;
-	color: var(--pncp-accent);
-	box-shadow: inset 0 3px 0 var(--pncp-accent);
-}
-
-/* Quick links of a long tab */
-.pncp-section-nav ul {
-	display: flex;
-	flex-wrap: wrap;
-	gap: 6px;
-	margin: 0 0 12px;
-	padding: 0;
-	list-style: none;
-}
-
-.pncp-section-nav li {
-	margin: 0;
-}
-
-.pncp-section-nav a {
-	display: inline-block;
-	padding: 3px 10px;
-	border: 1px solid var(--pncp-border);
-	border-radius: 999px;
-	background: #fff;
-	color: var(--pncp-accent);
-	font-size: 12px;
-	text-decoration: none;
-}
-
-.pncp-section-nav a:hover,
-.pncp-section-nav a:focus {
-	border-color: var(--pncp-accent);
-	background: var(--pncp-accent-soft);
-}
-
-/* Settings as cards: every row of the form table is a card */
-.pncp-admin .form-table,
-.pncp-admin .form-table tbody,
-.pncp-admin .form-table tr,
-.pncp-admin .form-table th,
-.pncp-admin .form-table td {
-	display: block;
-	width: auto;
-}
-
-.pncp-admin .form-table {
-	margin-top: 0;
-}
-
-.pncp-admin .form-table tr {
-	margin: 0 0 16px;
-	padding: 4px 20px 12px;
-	border: 1px solid var(--pncp-border);
-	border-radius: 8px;
-	background: #fff;
-	box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
-	scroll-margin-top: 48px;
-}
-
-.pncp-admin .form-table th {
-	margin: 0 -20px 8px;
-	padding: 12px 20px;
-	border-bottom: 1px solid #f0f0f1;
-	font-size: 15px;
-	font-weight: 600;
-}
-
-.pncp-admin .form-table td {
-	padding: 4px 0;
-}
-
-.pncp-field {
-	margin: 0 0 14px;
-}
-
-.pncp-field:last-child {
-	margin-bottom: 4px;
-}
-
-.pncp-field .description,
-.pncp-admin .form-table td > .description {
-	max-width: 760px;
-	margin-top: 4px;
-	color: var(--pncp-muted);
-}
-
-.pncp-field--toggle .description {
-	margin-left: 46px;
-}
-
-.pncp-field--toggle label {
-	display: inline-flex;
-	align-items: flex-start;
-	gap: 10px;
-	font-weight: 500;
-}
-
-.pncp-field--number p,
-.pncp-field--text p {
-	margin: 0 0 4px;
-}
-
-.pncp-field--number input[type="number"] {
-	width: 90px;
-	margin-left: 6px;
-}
-
-/* Toggle switches (still real checkboxes: keyboard, screen readers and forms work as before) */
-.pncp-admin input.pncp-toggle {
-	-webkit-appearance: none;
-	appearance: none;
-	position: relative;
-	flex: 0 0 auto;
-	width: 36px;
-	height: 20px;
-	margin: 1px 0 0;
+	max-width: 520px;
+	height: 10px;
+	overflow: hidden;
 	border: 0;
 	border-radius: 999px;
-	/* Off: #8c8f94 on white is 3.2:1, enough for a control (WCAG 1.4.11 asks for 3:1); #a7aaad was 2.3:1. */
-	background: #8c8f94;
-	box-shadow: none;
-	cursor: pointer;
-	transition: background-color 0.15s ease;
+	background: var(--pncp-surface-2);
+	accent-color: var(--pncp-accent);
 }
 
-.pncp-admin input.pncp-toggle::before {
-	content: "";
-	position: absolute;
-	top: 3px;
-	left: 3px;
-	width: 14px;
-	height: 14px;
-	margin: 0;
-	border-radius: 50%;
-	background: #fff;
-	transition: transform 0.15s ease;
+.pncp-progress progress::-webkit-progress-bar {
+	border-radius: 999px;
+	background: var(--pncp-surface-2);
 }
 
-.pncp-admin input.pncp-toggle:checked {
+.pncp-progress progress::-webkit-progress-value {
+	border-radius: 999px;
 	background: var(--pncp-accent);
 }
 
-.pncp-admin input.pncp-toggle:checked::before {
-	content: "";
-	transform: translateX(16px);
+.pncp-progress progress::-moz-progress-bar {
+	border-radius: 999px;
+	background: var(--pncp-accent);
 }
 
-.pncp-admin input.pncp-toggle:focus-visible {
-	outline: 2px solid var(--pncp-accent);
-	outline-offset: 2px;
+/* Server rules */
+.pncp-rules {
+	display: grid;
+	grid-template-columns: repeat(2, minmax(0, 1fr));
+	gap: var(--pncp-s5);
+	align-items: start;
+}
+
+.pncp-rules .pncp-card--wide {
+	grid-column: 1 / -1;
+	margin: 0;
+}
+
+.pncp-admin .pncp-rules-card h3 {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 6px;
+	margin: var(--pncp-s4) 0 var(--pncp-s2);
+}
+
+.pncp-rules-steps {
+	display: grid;
+	grid-template-columns: repeat(auto-fit, minmax(min(100%, 480px), 1fr));
+	gap: 0 var(--pncp-s6);
+	align-items: start;
+}
+
+.pncp-rules-step {
+	min-width: 0;
+}
+
+.pncp-admin .pncp-rules-card .ul-disc {
+	margin: 0 0 var(--pncp-s2) 18px;
+}
+
+.pncp-admin .pncp-rules-card .ul-disc li {
+	margin: 2px 0;
+}
+
+/* Log */
+.pncp-tools {
+	display: grid;
+	grid-template-columns: repeat(auto-fit, minmax(min(100%, 520px), 1fr));
+	gap: var(--pncp-s5);
+	align-items: start;
+	margin: 0 0 var(--pncp-s5);
+}
+
+.pncp-tools > .pncp-card {
+	margin: 0;
+}
+
+.pncp-admin details.pncp-card > summary {
+	display: grid;
+	grid-template-columns: auto 1fr;
+	align-items: center;
+	column-gap: 6px;
+	margin: calc(-1 * var(--pncp-s5)) calc(-1 * var(--pncp-s6));
+	padding: var(--pncp-s5) var(--pncp-s6);
+	border-radius: var(--pncp-radius);
+	list-style: none;
+	cursor: pointer;
+}
+
+.pncp-admin details.pncp-card > summary::-webkit-details-marker {
+	display: none;
+}
+
+.pncp-admin details.pncp-card > summary:hover {
+	background: var(--pncp-surface-3);
+}
+
+.pncp-admin details.pncp-card[open] > summary {
+	margin-bottom: var(--pncp-s4);
+	border-bottom: 1px solid var(--pncp-divider);
+	border-radius: var(--pncp-radius) var(--pncp-radius) 0 0;
+}
+
+.pncp-admin details.pncp-card > summary h2 {
+	margin: 0;
+}
+
+.pncp-log-toolbar {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	justify-content: space-between;
+	gap: var(--pncp-s3);
+	margin: 0 0 var(--pncp-s2);
+}
+
+.pncp-log-toolbar > .clear {
+	display: none;
+}
+
+.pncp-admin .subsubsub.pncp-log-views {
+	display: inline-flex;
+	flex-wrap: wrap;
+	float: none;
+	gap: 2px;
+	margin: 0;
+	padding: 3px;
+	border: 1px solid var(--pncp-border);
+	border-radius: 10px;
+	background: var(--pncp-surface);
+	box-shadow: var(--pncp-shadow);
+	font-size: 0; /* Hides the " |" separators of the core list; the links keep their size. */
+}
+
+.pncp-admin .pncp-log-views li {
+	margin: 0;
+	font-size: 0;
+}
+
+.pncp-admin .pncp-log-views a {
+	display: inline-block;
+	padding: 6px 14px;
+	border-radius: 7px;
+	color: var(--pncp-muted);
+	font-size: 13px;
+	font-weight: 500;
+	line-height: 1.4;
+	text-decoration: none;
+}
+
+.pncp-admin .pncp-log-views a:hover {
+	background: var(--pncp-surface-2);
+	color: var(--pncp-text);
+}
+
+.pncp-admin .pncp-log-views a.current {
+	background: var(--pncp-accent-soft);
+	color: var(--pncp-accent-strong);
+	font-weight: 600;
+	box-shadow: inset 0 0 0 1px var(--pncp-accent-line);
+}
+
+.pncp-refresh-figures {
+	display: inline-flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: var(--pncp-s2);
+	font-size: 12.5px;
+}
+
+.pncp-log-hero {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: baseline;
+	gap: var(--pncp-s2) var(--pncp-s5);
+	margin: 0 0 var(--pncp-s4);
+}
+
+.pncp-log-hero > p {
+	margin: 0;
+}
+
+.pncp-big-number {
+	margin: 4px 0 0;
+	color: var(--pncp-text);
+	font-size: 28px;
+	font-weight: 650;
+	font-variant-numeric: tabular-nums;
+	line-height: 1.2;
+	letter-spacing: -0.01em;
+}
+
+.pncp-card--table > h2 {
+	margin-bottom: var(--pncp-s2);
+}
+
+.pncp-card--table .pncp-table-wrap {
+	margin-bottom: 0;
+}
+
+.pncp-card--table form p.submit {
+	margin: var(--pncp-s3) 0 0;
+	padding: 0;
+}
+
+.pncp-monitor-box form {
+	margin: 0 0 8px;
+}
+
+.pncp-list-status {
+	margin: 0 0 var(--pncp-s3);
+	padding: 0;
+	list-style: none;
+}
+
+.pncp-list-status li {
+	margin: 0;
+	padding: 7px 0;
+	border-bottom: 1px solid var(--pncp-divider);
+}
+
+.pncp-list-status li:last-child {
+	border-bottom: 0;
+}
+
+.pncp-ip-lists .pncp-list-status {
+	columns: 2 420px;
+	column-gap: var(--pncp-s8);
+}
+
+.pncp-ip-lists .pncp-list-status li {
+	break-inside: avoid;
+}
+
+.pncp-ip-lists h3 {
+	margin-top: var(--pncp-s5);
+}
+
+.pncp-geo-status code {
+	font-size: 12px;
+}
+
+/* Network and CDN: what the server sees */
+.pncp-admin .pncp-advanced code {
+	overflow-wrap: anywhere;
+}
+
+/* 3.4.2: CDN connection check */
+.pncp-edge-diag {
+	margin: var(--pncp-s4) 0;
+}
+
+.pncp-edge-checks {
+	margin: 0;
+	padding: 0;
+	list-style: none;
+}
+
+.pncp-edge-check {
+	margin: 0 0 6px;
+	padding: 8px 12px;
+	border: 1px solid var(--pncp-border);
+	border-left: 4px solid var(--pncp-border);
+	border-radius: 6px;
+	background: var(--pncp-surface);
+}
+
+.pncp-edge-check__status {
+	display: inline-block;
+	min-width: 6.5em;
+	font-weight: 600;
+}
+
+.pncp-edge-check--ok {
+	border-left-color: var(--pncp-on);
+}
+
+.pncp-edge-check--ok .pncp-edge-check__status {
+	color: var(--pncp-on-text);
+}
+
+.pncp-edge-check--warn {
+	border-left-color: #996800;
+}
+
+.pncp-edge-check--warn .pncp-edge-check__status {
+	color: var(--pncp-warn-text);
+}
+
+.pncp-edge-check--fail {
+	border-left-color: var(--pncp-bad);
+	background: var(--pncp-bad-soft);
+}
+
+.pncp-edge-check--fail .pncp-edge-check__status {
+	color: var(--pncp-bad-text);
+}
+
+.pncp-edge-check--skip {
+	color: var(--pncp-muted);
+}
+
+.pncp-edge-check__fix {
+	display: inline-block;
+	margin-top: 2px;
+	color: var(--pncp-muted);
+}
+
+.pncp-admin .pncp-edge-diag__copy > summary {
+	display: inline-flex;
+	align-items: center;
+	padding: 6px 0;
+	color: var(--pncp-accent-strong);
+	list-style: none;
+	cursor: pointer;
+}
+
+.pncp-admin .pncp-edge-error {
+	color: var(--pncp-bad-text);
+}
+
+/* "Find whose copy this is" */
+.pncp-trace textarea {
+	width: 100%;
+}
+
+/* ---------- 7. Lockdown ---------- */
+
+.pncp-ld {
+	display: grid;
+	grid-template-columns: repeat(auto-fit, minmax(min(100%, 460px), 1fr));
+	gap: 0 var(--pncp-s5);
+	align-items: start;
+}
+
+/* Everything spans the full width, except the smaller boxes that sit side by side. */
+.pncp-ld > * {
+	grid-column: 1 / -1;
+	min-width: 0;
+}
+
+.pncp-ld > .pncp-ld-box:not(.pncp-ld-status):not(.pncp-ld-warning):not(.pncp-ld-report):not(.pncp-ld-integrity):not(details) {
+	grid-column: auto;
+}
+
+/* The one step box of the setup (connect the app, scan the QR code) uses the whole row. */
+.pncp-ld > div.pncp-ld-box:has(.pncp-ld-qr),
+.pncp-ld > .pncp-ld-warning + div.pncp-ld-box:has(+ .pncp-ld-report) {
+	grid-column: 1 / -1;
+}
+
+.pncp-ld code {
+	overflow-wrap: anywhere;
+}
+
+.pncp-ld-intro {
+	max-width: 1000px;
+	margin: 0 0 var(--pncp-s5);
+	font-size: 14px;
+}
+
+.pncp-ld-box {
+	margin: 0 0 var(--pncp-s5);
+	padding: var(--pncp-s5) var(--pncp-s6);
+	border: 1px solid var(--pncp-border);
+	border-radius: var(--pncp-radius);
+	background: var(--pncp-surface);
+	box-shadow: var(--pncp-shadow);
+}
+
+.pncp-admin .pncp-ld-box h2 {
+	margin: 0 0 var(--pncp-s3);
+	color: var(--pncp-text);
+	font-size: 16px;
+	font-weight: 600;
+	line-height: 1.4;
+}
+
+.pncp-admin .pncp-ld-box h2 small {
+	color: var(--pncp-muted);
+	font-size: 12.5px;
+	font-weight: 400;
+}
+
+.pncp-ld-box > :last-child {
+	margin-bottom: 0;
+}
+
+.pncp-ld-box hr {
+	margin: var(--pncp-s4) 0;
+	border: 0;
+	border-top: 1px solid var(--pncp-divider);
+}
+
+.pncp-admin details.pncp-ld-box > summary {
+	display: flex;
+	align-items: center;
+	font-weight: 600;
+	list-style: none;
+	cursor: pointer;
+}
+
+.pncp-admin details.pncp-ld-box > summary::-webkit-details-marker {
+	display: none;
+}
+
+.pncp-ld-status.is-locked {
+	border-top: 4px solid var(--pncp-on);
+	background: linear-gradient(180deg, var(--pncp-on-soft), var(--pncp-surface) 120px);
+}
+
+.pncp-ld-status.is-open {
+	border-top: 4px solid #dba617;
+	background: linear-gradient(180deg, var(--pncp-warn-soft), var(--pncp-surface) 120px);
+}
+
+.pncp-admin .pncp-ld-status h2 {
+	font-size: 18px;
+}
+
+.pncp-ld-status h2 .dashicons {
+	width: 22px;
+	height: 22px;
+	font-size: 22px;
+	vertical-align: -4px;
+}
+
+.pncp-ld-status.is-locked h2 .dashicons {
+	color: var(--pncp-on);
+}
+
+.pncp-ld-status.is-open h2 .dashicons {
+	color: var(--pncp-warn);
+}
+
+.pncp-ld-form p {
+	margin: 0 0 var(--pncp-s3);
+}
+
+.pncp-ld-form + .pncp-ld-form {
+	margin-top: var(--pncp-s2);
+}
+
+.pncp-ld-form label {
+	font-weight: 500;
+}
+
+.pncp-admin input.pncp-ld-code {
+	max-width: 16em;
+	font-family: var(--pncp-mono);
+	font-size: 18px;
+	letter-spacing: 0.2em;
+}
+
+.pncp-ld-qr svg {
+	display: block;
+	width: 220px;
+	height: 220px;
+	padding: 8px;
+	border: 1px solid var(--pncp-border);
+	border-radius: var(--pncp-radius-sm);
+	background: #fff;
+}
+
+.pncp-ld-secret {
+	font-size: 15px;
+	letter-spacing: 1px;
+}
+
+.pncp-ld-codes {
+	border-top: 4px solid var(--pncp-bad);
+}
+
+.pncp-ld-code-list {
+	display: grid;
+	grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+	gap: 6px;
+	max-width: 640px;
+	margin: 0;
+	padding: 0;
+	list-style: none;
+}
+
+.pncp-ld-code-list li {
+	margin: 0;
+}
+
+.pncp-ld-code-list code {
+	display: block;
+	padding: 6px 10px;
+	border: 1px dashed var(--pncp-border-strong);
+	text-align: center;
+	font-size: 15px;
+}
+
+.pncp-ld-warning {
+	border-color: var(--pncp-bad-line);
+	border-left: 4px solid var(--pncp-bad);
+	background: var(--pncp-bad-soft);
+}
+
+.pncp-ld-warning h2 .dashicons {
+	color: var(--pncp-bad);
+	vertical-align: -3px;
+}
+
+.pncp-ld-warning ul,
+.pncp-ld-box[role="note"] ul {
+	margin: 0;
+	padding-left: 20px;
+	list-style: disc;
+}
+
+.pncp-ld-warning li {
+	margin: 0 0 6px;
+}
+
+.pncp-ld-report-table {
+	width: 100%;
+	margin: 0 0 var(--pncp-s4);
+}
+
+.pncp-admin .pncp-ld-report-table th {
+	width: 160px;
+	font-weight: 600;
+}
+
+.pncp-ld-report-table ul,
+.pncp-ld-open,
+.pncp-ld-site {
+	margin: 0;
+}
+
+.pncp-ld-report-table li,
+.pncp-ld-open li {
+	display: flex;
+	gap: 6px;
+	margin: 2px 0 6px;
+}
+
+.pncp-ld-report-table .dashicons-lock {
+	flex: none;
+	margin-top: 2px;
+	color: var(--pncp-bad-text);
+	font-size: 16px;
+}
+
+.pncp-ld-open {
+	display: grid;
+	grid-template-columns: repeat(auto-fit, minmax(min(100%, 360px), 1fr));
+	gap: 0 var(--pncp-s6);
+	padding: 0;
+	list-style: none;
+}
+
+.pncp-ld-open .dashicons-yes {
+	flex: none;
+	color: var(--pncp-on);
+}
+
+.pncp-ld-site {
+	padding-left: 20px;
+	list-style: disc;
+}
+
+.pncp-ld-role-help {
+	margin: 0 0 var(--pncp-s3) 18px;
+	color: var(--pncp-muted);
+	list-style: disc;
+	font-size: 12.5px;
+}
+
+.pncp-ld-role-list {
+	columns: 2 220px;
+	margin: 0 0 var(--pncp-s3);
+	padding: 0;
+	list-style: none;
+}
+
+.pncp-ld-role-list li {
+	margin: 0 0 6px;
+	break-inside: avoid;
+}
+
+.pncp-ld-ok {
+	color: var(--pncp-on-text);
+	font-weight: 600;
+}
+
+.pncp-ld-ok .dashicons {
+	color: var(--pncp-on);
+}
+
+.pncp-ld-log,
+.pncp-ld > table.widefat {
+	width: 100%;
+	margin: 0 0 var(--pncp-s5);
+}
+
+.pncp-ld > h2 {
+	margin: var(--pncp-s6) 0 var(--pncp-s3);
+	color: var(--pncp-text);
+	font-size: 18px;
+	font-weight: 650;
+}
+
+.pncp-ld textarea.code {
+	width: 100%;
+	font-family: var(--pncp-mono);
+}
+
+/* ---------- 8. Responsive, motion, forced colours ---------- */
+
+@media screen and (min-width: 1600px) {
+	.pncp-admin.wrap {
+		margin-right: 32px;
+	}
+}
+
+@media screen and (max-width: 1100px) {
+	.pncp-rules {
+		grid-template-columns: minmax(0, 1fr);
+	}
+}
+
+@media screen and (max-width: 960px) {
+	.pncp-admin .pncp-tabs .pncp-tab-lockdown {
+		margin-left: 0;
+	}
+}
+
+@media screen and (max-width: 782px) {
+	.pncp-admin {
+		--pncp-sticky-top: 46px;
+	}
+
+	.pncp-admin.wrap {
+		margin-right: 12px;
+		padding-top: var(--pncp-s3);
+	}
+
+	.pncp-header {
+		padding: var(--pncp-s4);
+	}
+
+	.pncp-header__actions {
+		width: 100%;
+		margin-left: 0;
+	}
+
+	.pncp-header__actions .button {
+		min-height: 40px;
+		line-height: 38px;
+	}
+
+	.pncp-kpis {
+		grid-template-columns: repeat(2, minmax(0, 1fr));
+		gap: var(--pncp-s3);
+	}
+
+	.pncp-kpi {
+		padding: var(--pncp-s3) var(--pncp-s4);
+	}
+
+	.pncp-kpi__value {
+		font-size: 22px;
+	}
+
+	.pncp-admin .pncp-tabs .nav-tab {
+		padding: 12px 10px 10px;
+		font-size: 13px;
+	}
+
+	.pncp-card,
+	.pncp-ld-box {
+		padding: var(--pncp-s4);
+	}
+
+	.pncp-admin details.pncp-card > summary {
+		margin: calc(-1 * var(--pncp-s4));
+		padding: var(--pncp-s4);
+	}
+
+	.pncp-admin details.pncp-card[open] > summary {
+		margin-bottom: var(--pncp-s4);
+	}
+
+	.pncp-admin .form-table > tbody > tr > th {
+		padding: 12px var(--pncp-s4);
+	}
+
+	.pncp-admin .form-table > tbody > tr > td {
+		padding: var(--pncp-s3) var(--pncp-s4) var(--pncp-s4);
+	}
+
+	.pncp-field--toggle > .description,
+	.pncp-field--toggle > .pncp-requires-note {
+		padding-left: 0;
+	}
+
+	.pncp-admin input.pncp-toggle {
+		width: 44px;
+		height: 24px;
+	}
+
+	.pncp-admin input.pncp-toggle::before {
+		width: 18px;
+		height: 18px;
+	}
+
+	.pncp-admin input.pncp-toggle:checked::before {
+		transform: translateX(20px);
+	}
+
+	.pncp-admin .pncp-field--toggle > label {
+		line-height: 24px;
+	}
+
+	.pncp-admin .form-table input.regular-text,
+	.pncp-admin .form-table input.large-text {
+		max-width: 100%;
+	}
+
+	.pncp-admin .pncp-settings-form p.submit {
+		bottom: var(--pncp-s2);
+		padding: var(--pncp-s2) var(--pncp-s3);
+	}
+
+	.pncp-profile {
+		flex-direction: column;
+		gap: var(--pncp-s2);
+	}
+
+	.pncp-log-toolbar {
+		align-items: stretch;
+	}
+
+	.pncp-admin .subsubsub.pncp-log-views {
+		width: 100%;
+	}
+
+	.pncp-admin .pncp-log-views li {
+		flex: 1 1 auto;
+	}
+
+	.pncp-admin .pncp-log-views a {
+		display: block;
+		padding: 8px 10px;
+		text-align: center;
+	}
+
+	.pncp-admin .pncp-ld-report-table th {
+		width: auto;
+	}
+}
+
+/* Below 600px the admin bar scrolls away with the page: the tabs stick to the very top. */
+@media screen and (max-width: 600px) {
+	.pncp-admin {
+		--pncp-sticky-top: 0px;
+	}
+
+	.pncp-header__brand {
+		flex-basis: 100%;
+	}
+
+	.pncp-logo {
+		width: 40px;
+		height: 40px;
+	}
+
+	.pncp-admin .pncp-title {
+		font-size: 19px;
+	}
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.pncp-admin *,
+	.pncp-admin *::before,
+	.pncp-admin *::after {
+		transition: none !important;
+		animation: none !important;
+		scroll-behavior: auto !important;
+	}
 }
 
 /* Windows High Contrast and other forced colours: the browser drops background colours, so the switch would
@@ -470,442 +2691,29 @@
 	.pncp-admin input.pncp-toggle:disabled::before {
 		background: GrayText;
 	}
-}
 
-@media (prefers-reduced-motion: reduce) {
-	.pncp-admin input.pncp-toggle,
-	.pncp-admin input.pncp-toggle::before {
-		transition: none;
+	.pncp-admin .pncp-tabs .nav-tab-active {
+		border-bottom-color: Highlight;
+	}
+
+	.pncp-kpi::before,
+	.pncp-pill::before,
+	.pncp-unsaved::before {
+		forced-color-adjust: none;
+		background: CanvasText;
 	}
 }
 
-/* Parts of one long settings form (Bots, Limits) and the folded advanced parts (Network and CDN) */
-.pncp-group-title {
-	margin: 28px 0 4px;
-	font-size: 1.4em;
-}
-
-.pncp-group-intro {
-	margin: 0 0 8px;
-}
-
-.pncp-advanced {
-	margin: 28px 0 0;
-	border: 1px solid var(--pncp-border);
-	border-radius: 6px;
-	background: #fff;
-}
-
-.pncp-advanced > summary {
-	padding: 12px 16px;
-	cursor: pointer;
-}
-
-.pncp-advanced > summary:focus-visible {
-	outline: 2px solid var(--pncp-accent);
-	outline-offset: 2px;
-}
-
-.pncp-advanced__title {
-	display: inline;
-	margin: 0;
-	font-size: 1.3em;
-}
-
-.pncp-advanced__state {
-	display: block;
-	margin: 4px 0 0 18px;
-	color: #50575e;
-	font-size: 13px;
-}
-
-.pncp-advanced[open] > summary {
-	border-bottom: 1px solid var(--pncp-border);
-}
-
-.pncp-advanced > :not(summary) {
-	margin-right: 16px;
-	margin-left: 16px;
-}
-
-.pncp-advanced > .form-table {
-	margin-right: 0;
-	margin-left: 0;
-	padding: 0 16px;
-}
-
-/* Long lists, folded */
-.pncp-fold {
-	border: 1px solid #f0f0f1;
-	border-radius: 6px;
-	background: #fbfbfc;
-}
-
-.pncp-fold summary {
-	padding: 8px 12px;
-	cursor: pointer;
-	font-weight: 500;
-}
-
-.pncp-fold[open] {
-	padding-bottom: 8px;
-}
-
-.pncp-fold[open] summary {
-	border-bottom: 1px solid #f0f0f1;
-}
-
-.pncp-fold textarea,
-.pncp-fold .description {
-	margin-right: 12px;
-	margin-left: 12px;
-	width: calc(100% - 24px);
-}
-
-/* Save bar stays visible while scrolling a long tab */
-.pncp-admin .pncp-settings-form p.submit {
-	position: sticky;
-	bottom: 0;
-	z-index: 10;
-	margin: 0;
-	padding: 12px 0;
-	border-top: 1px solid var(--pncp-border);
-	background: #f0f0f1;
-}
-
-.pncp-geo-status code {
-	font-size: 12px;
-}
-
-@media screen and (max-width: 782px) {
-	.pncp-admin .form-table tr {
-		padding: 4px 14px 10px;
-	}
-
-	.pncp-admin .form-table th {
-		margin: 0 -14px 8px;
-		padding: 10px 14px;
-	}
-
-	.pncp-field--toggle .description {
-		margin-left: 0;
-	}
-
-	.pncp-admin input.pncp-toggle {
-		width: 44px;
-		height: 24px;
-	}
-
-	.pncp-admin input.pncp-toggle::before {
-		width: 18px;
-		height: 18px;
-	}
-
-	.pncp-admin input.pncp-toggle:checked::before {
-		transform: translateX(20px);
+@media print {
+	.pncp-admin .nav-tab-wrapper.pncp-tabs,
+	.pncp-admin .pncp-settings-form p.submit {
+		position: static;
+		box-shadow: none;
 	}
 }
 
-.pncp-path-table code {
-	font-size: 12px;
-	word-break: break-all;
-}
-
-.pncp-path-table .num {
-	width: 72px;
-	text-align: right;
-}
-
-.pncp-card h4 {
-	margin: 0 0 8px;
-}
-
-.pncp-badge--bad {
-	background: #fcf0f1;
-	color: #8a2424;
-}
-
-/* "Monitor only": entries let through, and the state in the status bar and the Log tab. */
-.pncp-badge--monitor {
-	background: var(--pncp-accent-soft);
-	color: #135e96;
-}
-
-.pncp-pill--monitor a {
-	color: inherit;
-	text-decoration: none;
-}
-
-.pncp-pill--monitor a:hover,
-.pncp-pill--monitor a:focus {
-	text-decoration: underline;
-}
-
-.pncp-monitor-box form {
-	margin: 0 0 8px;
-}
-
-.pncp-log-views {
-	float: none;
-	margin: 8px 0 0;
-}
-
-.pncp-ua-reason {
-	color: #646970;
-}
-
-/* ---------- Lockdown ---------- */
-
-.pncp-ld-intro {
-	max-width: 780px;
-}
-
-.pncp-ld-box {
-	max-width: 780px;
-	margin: 16px 0;
-	padding: 4px 20px 16px;
-	background: #fff;
-	border: 1px solid #c3c4c7;
-	border-radius: 4px;
-}
-
-.pncp-ld-status.is-locked {
-	border-left: 4px solid #00a32a;
-}
-
-.pncp-ld-status.is-open {
-	border-left: 4px solid #dba617;
-}
-
-.pncp-ld-status h2 .dashicons {
-	vertical-align: -3px;
-}
-
-.pncp-ld-qr svg {
-	display: block;
-	width: 220px;
-	height: 220px;
-	background: #fff;
-}
-
-.pncp-ld-secret {
-	font-size: 15px;
-	letter-spacing: 1px;
-}
-
-.pncp-ld-code-list {
-	columns: 2;
-	max-width: 320px;
-}
-
-.pncp-ld-code-list code {
-	font-size: 15px;
-}
-
-.pncp-ld-codes {
-	border-left: 4px solid #d63638;
-}
-
-.pncp-ld-form + .pncp-ld-form {
-	margin-top: 8px;
-}
-
-.pncp-ld-log {
-	max-width: 780px;
-}
-
-.pncp-ld-warning {
-	border-left: 4px solid #d63638;
-	background: #fcf0f1;
-}
-
-.pncp-ld-warning h2 .dashicons {
-	color: #d63638;
-	vertical-align: -3px;
-}
-
-.pncp-ld-warning ul {
-	list-style: disc;
-	padding-left: 20px;
-}
-
-.pncp-ld-report-table th {
-	width: 140px;
-	font-weight: 600;
-}
-
-.pncp-ld-report-table ul,
-.pncp-ld-open,
-.pncp-ld-site {
-	margin: 0;
-}
-
-.pncp-ld-report-table li,
-.pncp-ld-open li {
-	display: flex;
-	gap: 6px;
-	margin: 2px 0 6px;
-}
-
-.pncp-ld-report-table .dashicons-lock {
-	flex: none;
-	color: #8a2424;
-	font-size: 16px;
-	margin-top: 2px;
-}
-
-.pncp-ld-open .dashicons-yes {
-	flex: none;
-	color: #1a7f37;
-}
-
-.pncp-ld-site {
-	list-style: disc;
-	padding-left: 20px;
-}
-
-.pncp-tab-lockdown .dashicons {
-	font-size: 16px;
-	vertical-align: -3px;
-}
-
-.nav-tab.pncp-tab-locked {
-	color: #a7aaad;
-	cursor: not-allowed;
-}
-
-.pncp-ld-role-list {
-	columns: 2;
-	max-width: 620px;
-}
-
-.pncp-ld-role-list li {
-	margin: 0 0 6px;
-}
-
-/* Export, import and undo; reset a tab */
-.pncp-settings-io {
-	margin: 20px 0;
-	max-width: 960px;
-}
-
-.pncp-backups li {
-	display: flex;
-	flex-wrap: wrap;
-	gap: 8px;
-	align-items: center;
-}
-
-.pncp-changes {
-	margin: 8px 0 12px;
-	max-width: 960px;
-}
-
-.pncp-changes td {
-	word-break: break-word;
-}
-
-.pncp-undo-notice .pncp-inline-form p {
-	margin: 0 0 8px;
-}
-
-.pncp-reset-tab {
-	margin-top: -8px;
-}
-
-/* ---------- 3.4.2: CDN connection check ---------- */
-
-.pncp-edge-checks {
-	margin-left: 0;
-}
-
-.pncp-edge-check {
-	padding: 4px 0 4px 10px;
-	border-left: 4px solid var(--pncp-border, #dcdcde);
-}
-
-.pncp-edge-check__status {
-	display: inline-block;
-	min-width: 6.5em;
-	font-weight: 600;
-}
-
-.pncp-edge-check--ok {
-	border-left-color: #00733f;
-}
-
-.pncp-edge-check--warn {
-	border-left-color: #996800;
-}
-
-.pncp-edge-check--fail {
-	border-left-color: #d63638;
-}
-
-.pncp-edge-check--skip {
-	color: #50575e;
-}
-
-.pncp-edge-check__fix {
-	display: inline-block;
-	margin-top: 2px;
-	color: #50575e;
-}
-
-/* 3.5: a field that does nothing in the current state is dimmed (aria-disabled), but stays clickable and saved. */
-.pncp-field.is-dimmed,
-.is-dimmed {
-	opacity: .55;
-}
-
-.pncp-requires-note {
-	margin-top: 2px;
-	font-style: italic;
-}
-
-/* 3.5: "Default" and "May affect visitors/SEO" tags, and the default value next to a changed field. */
-.pncp-tag {
-	display: inline-block;
-	margin-left: 6px;
-	padding: 0 6px;
-	border-radius: 3px;
-	font-size: 11px;
-	font-weight: 400;
-	line-height: 18px;
-	vertical-align: middle;
-}
-
-.pncp-tag--risk {
-	background: #fcf3e6;
-	color: #6b3500;
-	border: 1px solid #f0c8a0;
-}
-
-.pncp-tag--default {
-	background: #f0f0f1;
-	color: #50575e;
-}
-
-.pncp-default-note {
-	margin-left: 6px;
-	color: var(--pncp-muted);
-	font-size: 12px;
-}
-
-/* 3.5: "Unsaved changes" next to the Save button. */
-.pncp-unsaved {
-	margin-left: 10px;
-	color: #9a4f00; /* 4.5:1 also on the grey admin background. */
-	font-weight: 600;
-}
-
-/* 3.5: "Off" status pills link to their setting (generalises .pncp-pill--monitor a). */
-.pncp-pill a {
-	color: inherit;
-	text-decoration: none;
-}
-
-.pncp-pill a:hover,
-.pncp-pill a:focus {
-	text-decoration: underline;
+/* Cloudflare expressions are one long line: wrapped on screen (the copied text is unchanged). */
+.pncp-admin .pncp-code textarea[id^="pncp-cf-"] {
+	white-space: pre-wrap;
+	overflow-wrap: anywhere;
 }

@@ -33,6 +33,30 @@ final class PNCP_Bots {
 	const DB_NEW_KEYS_PER_MINUTE = 2000;
 
 	/**
+	 * 3.6.1: the same cap when the counters live in the plugin's own table (PNCP_Log::kv_table()): one short row
+	 * each, removed by the hourly cleanup, so it can be much higher than in wp_options.
+	 *
+	 * @var int
+	 */
+	const KV_NEW_KEYS_PER_MINUTE = 10000;
+
+	/**
+	 * 3.6.1: how many new per-IP counters one network (IPv4 /24, IPv6 /48, see PNCP_Ip::network_key()) may take
+	 * from the cap each minute. Its further new addresses are counted together, under one counter of the
+	 * network (db_incr_capped()). Filter `pncp_new_counters_per_network`.
+	 *
+	 * @var int
+	 */
+	const NET_NEW_KEYS_PER_MINUTE = 64;
+
+	/**
+	 * 3.6.1: a network's shared counter (above) is held to this many times the per-IP limit.
+	 *
+	 * @var int
+	 */
+	const NET_SHARE_FACTOR = 4;
+
+	/**
 	 * Verifiable search engines: User-Agent patterns, reverse DNS domains and official IP list.
 	 *
 	 * @var array<string, array<string, mixed>>
@@ -67,6 +91,14 @@ final class PNCP_Bots {
 	 * @var bool
 	 */
 	private static $verify_inconclusive = false;
+
+	/**
+	 * 3.6.1: whether the last hit() was counted under its network's shared counter (the cap on new counters was
+	 * reached, see db_incr_capped()). Such a count is shared by many addresses: it limits, but earns no violation.
+	 *
+	 * @var bool
+	 */
+	private static $shared_hit = false;
 
 	/**
 	 * Whether this response must not be cached anywhere (set by no_cache()).
@@ -218,9 +250,14 @@ final class PNCP_Bots {
 	 * @return string
 	 */
 	public static function request_path() {
-		$uri  = isset( $_SERVER['REQUEST_URI'] ) ? (string) wp_unslash( $_SERVER['REQUEST_URI'] ) : ''; // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- Decoded and cleaned below, only compared against paths.
+		static $memo = array( null, '' ); // 3.6.1: the request address it was worked out from, and the path.
+		$uri = isset( $_SERVER['REQUEST_URI'] ) ? (string) wp_unslash( $_SERVER['REQUEST_URI'] ) : ''; // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- Decoded and cleaned below, only compared against paths.
+		if ( $uri === $memo[0] ) {
+			return $memo[1];
+		}
 		$path = wp_check_invalid_utf8( rawurldecode( (string) wp_parse_url( $uri, PHP_URL_PATH ) ) );
-		return (string) preg_replace( '/[\x00-\x1F\x7F]/', '', $path );
+		$memo = array( $uri, (string) preg_replace( '/[\x00-\x1F\x7F]/', '', $path ) );
+		return $memo[1];
 	}
 
 	/**
@@ -655,7 +692,9 @@ final class PNCP_Bots {
 		// A CDN edge (Cloudflare, Bunny) still seen as the visitor: many visitors share that one address, so
 		// nothing here is decided per IP (block list, bans, limits, strikes), as in the early check. The checks
 		// on the request itself (User-Agent, browser headers) still apply.
-		$per_ip = ! PNCP_Ip::is_cdn_edge( $ip );
+		// 3.6.1: nor for the address of a proxy that "Real visitor IP" does not trust (a container network or load
+		// balancer on a private address): every visitor shares it, and a ban on it refused the whole site.
+		$per_ip = ! PNCP_Ip::is_cdn_edge( $ip ) && ( null !== self::$dry || ! PNCP_Ip::untrusted_proxy_peer() );
 
 		// The administrator's lists: always blocked, before everything else.
 		if ( $per_ip && PNCP_Ip::in_any( $ip, PNCP_Options::parse_list( $s['block_ips'] ) ) ) {
@@ -899,7 +938,10 @@ final class PNCP_Bots {
 	 * @param string $reason Reason.
 	 */
 	private static function strike( $ip, $reason ) {
-		if ( null === self::$dry ) {
+		// 3.6.1: not for an IP that may be spoofed (PNCP_Ip::reliable(): a Bunny or Cloudflare edge without the
+		// CDN secret, "trust every proxy"), as the trap never did: anyone could get someone else's IP banned and
+		// blocked at the CDN. And not for a count shared by a whole network (hit()).
+		if ( null === self::$dry && ! self::$shared_hit && PNCP_Ip::reliable() ) {
 			PNCP_Log::strike( $ip, $reason );
 		}
 	}
@@ -1379,12 +1421,25 @@ final class PNCP_Bots {
 	 * @return bool
 	 */
 	public static function ua_in_list( $ua, $needles ) {
+		// 3.6.1: the User-Agent is lowercased once, not once per name (stripos() does it on every call, up to
+		// ~200 times per request); strtolower() + strpos() is the same comparison as stripos().
+		$ua    = (string) $ua;
+		$lower = null;
 		foreach ( $needles as $needle ) {
 			$needle = (string) $needle;
 			if ( '' === $needle || '=' === $needle ) {
 				continue;
 			}
-			if ( '=' === $needle[0] ? 0 === strcasecmp( trim( $ua ), substr( $needle, 1 ) ) : false !== stripos( $ua, $needle ) ) {
+			if ( '=' === $needle[0] ) {
+				if ( 0 === strcasecmp( trim( $ua ), substr( $needle, 1 ) ) ) {
+					return true;
+				}
+				continue;
+			}
+			if ( null === $lower ) {
+				$lower = strtolower( $ua );
+			}
+			if ( false !== strpos( $lower, strtolower( $needle ) ) ) {
 				return true;
 			}
 		}
@@ -1401,8 +1456,7 @@ final class PNCP_Bots {
 	 * @return bool
 	 */
 	public static function allow_list_match( $ua, $ip, $s ) {
-		foreach ( PNCP_Options::parse_list( $s['allow_list'] ) as $entry ) {
-			$entry = PNCP_Options::split_allow_entry( $entry );
+		foreach ( self::allow_entries( $s ) as $entry ) {
 			if ( '' === $entry['ua'] || false === stripos( $ua, $entry['ua'] ) ) {
 				continue;
 			}
@@ -1411,6 +1465,29 @@ final class PNCP_Bots {
 			}
 		}
 		return false;
+	}
+
+	/**
+	 * 3.6.1: the "always allowed" list, each entry split (PNCP_Options::split_allow_entry()), once per request:
+	 * check() asks up to three times.
+	 *
+	 * @param array<string, mixed> $s Settings.
+	 * @return array<int, array{ua:string, ips:string[], pinned:bool}>
+	 */
+	private static function allow_entries( $s ) {
+		static $memo = array( null, array() );
+		$raw = $s['allow_list'];
+		if ( is_string( $raw ) && $raw === $memo[0] ) {
+			return $memo[1];
+		}
+		$out = array();
+		foreach ( PNCP_Options::parse_list( $raw ) as $entry ) {
+			$out[] = PNCP_Options::split_allow_entry( $entry );
+		}
+		if ( is_string( $raw ) ) {
+			$memo = array( $raw, $out );
+		}
+		return $out;
 	}
 
 	/**
@@ -1424,8 +1501,7 @@ final class PNCP_Bots {
 	 * @return bool
 	 */
 	public static function allow_list_match_pinned( $ua, $ip, $s ) {
-		foreach ( PNCP_Options::parse_list( $s['allow_list'] ) as $entry ) {
-			$entry = PNCP_Options::split_allow_entry( $entry );
+		foreach ( self::allow_entries( $s ) as $entry ) {
 			if ( '' === $entry['ua'] || false === stripos( $ua, $entry['ua'] ) ) {
 				continue;
 			}
@@ -1642,8 +1718,8 @@ final class PNCP_Bots {
 	 * @param string $reason Reason.
 	 */
 	private static function strike_once_a_minute( $ip, $reason ) {
-		if ( null !== self::$dry ) {
-			return; // Explained, not acted on.
+		if ( null !== self::$dry || ! PNCP_Ip::reliable() ) {
+			return; // Explained, not acted on; 3.6.1: or an IP that may be spoofed (see strike()).
 		}
 		$key = 'pncp_sk_' . md5( $reason . '|' . PNCP_Ip::limit_key( $ip ) . '|' . (int) floor( time() / MINUTE_IN_SECONDS ) );
 		// 3.4.3: an atomic add, so parallel requests of the same minute cannot both count.
@@ -1667,6 +1743,7 @@ final class PNCP_Bots {
 		$net    = null === $net ? PNCP_Ip::limit_key( $ip ) : $net;
 		$minute = (int) floor( time() / MINUTE_IN_SECONDS );
 		$step   = max( 1, (int) $step );
+		self::$shared_hit = false;
 		if ( null !== self::$dry ) {
 			// Explained, not counted: what the counter holds, plus this request.
 			return self::peek( $bucket, $net, $minute ) + $step;
@@ -1687,7 +1764,7 @@ final class PNCP_Bots {
 		}
 		// 3.4.3: per-IP counters are capped in how many new rows they may add to wp_options each minute (see
 		// db_incr_capped()); the site-wide surge counter is one row, sampled instead.
-		$count = 'site' === $net ? self::db_incr( $key, 2 * MINUTE_IN_SECONDS, $step ) : self::db_incr_capped( $key, 2 * MINUTE_IN_SECONDS, $minute, $step );
+		$count = 'site' === $net ? self::db_incr( $key, 2 * MINUTE_IN_SECONDS, $step ) : self::db_incr_capped( $key, 2 * MINUTE_IN_SECONDS, $minute, $step, $ip, $bucket );
 		if ( null !== $count ) {
 			return $count;
 		}
@@ -1725,7 +1802,8 @@ final class PNCP_Bots {
 		if ( PNCP_Log::apcu_ok() ) {
 			return (int) apcu_fetch( PNCP_Log::apcu_key( $key ) );
 		}
-		return (int) get_transient( $key );
+		$count = PNCP_Log::kv_get( $key ); // 3.6.1: the plugin's table, where hit() counts (null = not there: a transient).
+		return (int) ( null !== $count ? $count : get_transient( $key ) );
 	}
 
 	/**
@@ -1785,6 +1863,11 @@ final class PNCP_Bots {
 	private static function db_incr( $key, $ttl, $step = 1 ) {
 		global $wpdb;
 		$step = max( 1, (int) $step );
+		// 3.6.1: in the plugin's own table (one row, one query) where it exists; wp_options otherwise.
+		$count = PNCP_Log::kv_incr( $key, $ttl, $step );
+		if ( null !== $count ) {
+			return $count;
+		}
 		if ( ! ( $wpdb instanceof wpdb ) || ! ( $wpdb->dbh instanceof mysqli ) ) {
 			return null;
 		}
@@ -1832,24 +1915,106 @@ final class PNCP_Bots {
 	 * IP seen in a minute added two rows to wp_options (the counter and its timeout), per type: a crawl from
 	 * thousands of addresses wrote thousands of rows a minute. An IP already counted this minute is counted as
 	 * before (one UPDATE, as the INSERT it replaces). A new one takes a row from a site-wide budget of
-	 * DB_NEW_KEYS_PER_MINUTE; once that is used up, IPs not seen yet this minute are not stored, and count as
-	 * their first request of the minute (no per-IP limit for them until the next minute; the site-wide surge
-	 * counter, bans and every other check still apply).
+	 * DB_NEW_KEYS_PER_MINUTE (3.6.1: KV_NEW_KEYS_PER_MINUTE in the plugin's own table, PNCP_Log::kv_table()).
+	 *
+	 * 3.6.1: until then, once the budget was used up, IPs not seen yet that minute were not counted at all, so an
+	 * attacker could switch the per-IP limits off for everyone by sending the first ~2000 requests of each minute
+	 * from new addresses (an IPv6 /48 holds 65,536 /64s). Now:
+	 * - one network (IPv4 /24, IPv6 /48: PNCP_Ip::network_key()) takes at most NET_NEW_KEYS_PER_MINUTE new
+	 *   counters a minute from the budget, so a single network cannot use it up;
+	 * - the further new addresses of a network, and every new address once the budget is used up, are counted
+	 *   together under one counter of their network (per type), held to NET_SHARE_FACTOR times the limit: they
+	 *   are still limited, never counted as nothing. Such a shared count earns no violation (strike()): it is
+	 *   not one visitor's;
+	 * - only when a second allowance of the same size for those shared counters is used up too (an attack from
+	 *   that many networks at once) is an address counted as its first request of the minute, as before.
+	 * Rows written per minute stay bounded: the budget, one row per network that takes from it, and the
+	 * allowance for shared counters.
 	 *
 	 * @param string $key    Transient key.
 	 * @param int    $ttl    Seconds.
 	 * @param int    $minute Minute (Unix time / 60).
 	 * @param int    $step   3.5: how much to add (the REST cost).
+	 * @param string $ip     3.6.1: the IP counted ('' = no network fallback).
+	 * @param string $bucket 3.6.1: the type (rate_page, ...), for the network's shared counter.
 	 * @return int|null Null if the database does not support it.
 	 */
-	private static function db_incr_capped( $key, $ttl, $minute, $step = 1 ) {
+	private static function db_incr_capped( $key, $ttl, $minute, $step = 1, $ip = '', $bucket = '' ) {
+		$step  = max( 1, (int) $step );
+		$count = self::db_bump( $key, $step );
+		if ( false !== $count ) {
+			return $count; // Counted (one UPDATE), or null: the database cannot do it.
+		}
+		$kv     = PNCP_Log::kv_on();
+		$limit  = (int) apply_filters( 'pncp_db_new_counters_per_minute', $kv ? self::KV_NEW_KEYS_PER_MINUTE : self::DB_NEW_KEYS_PER_MINUTE, $kv );
+		$budget = self::counter_key( 'db_new_keys', 'site', $minute );
+		// Read first, so that past the budget no new row is written for this address.
+		$used = $limit > 0 ? self::db_read( $budget ) : 0;
+		if ( null === $used ) {
+			return null;
+		}
+		if ( $limit <= 0 ) {
+			return self::db_incr( $key, $ttl, $step ); // No cap (filter): nothing to share either.
+		}
+		$net = '' !== (string) $ip ? PNCP_Ip::network_key( (string) $ip ) : '';
+		if ( $used < $limit ) {
+			$share = 1;
+			if ( '' !== $net ) {
+				$share = self::db_incr( self::counter_key( 'db_new_net', $net, $minute ), $ttl );
+				if ( null === $share ) {
+					return null;
+				}
+			}
+			if ( $share <= max( 1, (int) apply_filters( 'pncp_new_counters_per_network', self::NET_NEW_KEYS_PER_MINUTE ) ) ) {
+				self::db_incr( $budget, $ttl, '' !== $net && 1 === $share ? 2 : 1 ); // The network's own row on its first use.
+				return self::db_incr( $key, $ttl, $step );
+			}
+		}
+		if ( '' === $net ) {
+			return $step; // Nothing to count it with: as its first request of the minute (not stored).
+		}
+		// Counted with the other new addresses of its network.
+		$shared = self::counter_key( $bucket . '|net', $net, $minute );
+		$count  = self::db_bump( $shared, $step );
+		if ( null === $count ) {
+			return null;
+		}
+		if ( false === $count ) {
+			if ( $used < $limit ) {
+				self::db_incr( $budget, $ttl );
+			} elseif ( (int) self::db_incr( self::counter_key( 'db_new_shared', 'site', $minute ), $ttl ) > $limit ) {
+				return $step; // Too many networks at once: not stored (as before 3.6.1).
+			}
+			$count = self::db_incr( $shared, $ttl, $step );
+			if ( null === $count ) {
+				return null;
+			}
+		}
+		self::$shared_hit = true;
+		return (int) ceil( $count / self::NET_SHARE_FACTOR );
+	}
+
+	/**
+	 * 3.6.1: adds $step to a counter in the database that already exists (the plugin's table, or wp_options).
+	 *
+	 * @param string $key  Counter key.
+	 * @param int    $step How much to add.
+	 * @return int|false|null The new count; false when there is no such counter; null when the database cannot do it.
+	 */
+	private static function db_bump( $key, $step ) {
 		global $wpdb;
+		if ( PNCP_Log::kv_on() ) {
+			$count = PNCP_Log::kv_bump( $key, $step );
+			if ( null !== $count || PNCP_Log::kv_on() ) {
+				return $count; // Null with the table still on: an unexpected count (the caller falls back).
+			}
+			// The table failed in this request: wp_options, as before 3.6.1.
+		}
 		if ( ! ( $wpdb instanceof wpdb ) || ! ( $wpdb->dbh instanceof mysqli ) ) {
 			return null;
 		}
-		$step     = max( 1, (int) $step );
 		$suppress = $wpdb->suppress_errors( true );
-		// phpcs:disable WordPress.DB.DirectDatabaseQuery -- Atomic counter: not possible with the options API.
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery -- Atomic counter: not possible with the options API.
 		$rows = $wpdb->query(
 			$wpdb->prepare(
 				"UPDATE {$wpdb->options} SET option_value = LAST_INSERT_ID(option_value + %d) WHERE option_name = %s",
@@ -1861,28 +2026,35 @@ final class PNCP_Bots {
 			$wpdb->suppress_errors( $suppress );
 			return null;
 		}
-		if ( 1 === (int) $rows ) {
-			// wpdb reads insert_id only after an INSERT: LAST_INSERT_ID(expr) of the same (write) connection.
-			$count = (int) mysqli_insert_id( $wpdb->dbh ); // phpcs:ignore WordPress.DB.RestrictedFunctions -- LAST_INSERT_ID() of the UPDATE just run; wpdb has no accessor for it.
+		if ( 1 !== (int) $rows ) {
 			$wpdb->suppress_errors( $suppress );
-			return $count >= $step + 1 ? $count : null; // Unexpected: fall back to the transient, as db_incr() does.
+			return false;
 		}
-		// A new row: within this minute's budget? Read first, so that past the budget nothing is written at all.
-		$limit  = (int) apply_filters( 'pncp_db_new_counters_per_minute', self::DB_NEW_KEYS_PER_MINUTE );
-		$budget = self::counter_key( 'db_new_keys', 'site', $minute );
-		if ( $limit > 0 ) {
-			$used = (int) $wpdb->get_var( $wpdb->prepare( "SELECT option_value FROM {$wpdb->options} WHERE option_name = %s", '_transient_' . $budget ) );
-			if ( $used >= $limit ) {
-				$wpdb->suppress_errors( $suppress );
-				return $step; // Not stored: counted as this IP's first request of the minute (3.5: of $step units).
+		// wpdb reads insert_id only after an INSERT: LAST_INSERT_ID(expr) of the same (write) connection.
+		$count = (int) mysqli_insert_id( $wpdb->dbh ); // phpcs:ignore WordPress.DB.RestrictedFunctions -- LAST_INSERT_ID() of the UPDATE just run; wpdb has no accessor for it.
+		$wpdb->suppress_errors( $suppress );
+		return $count >= $step + 1 ? $count : null; // Unexpected: fall back to the transient, as db_incr() does.
+	}
+
+	/**
+	 * 3.6.1: reads a counter in the database (0 when there is none).
+	 *
+	 * @param string $key Counter key.
+	 * @return int|null Null when the database cannot do it.
+	 */
+	private static function db_read( $key ) {
+		global $wpdb;
+		if ( PNCP_Log::kv_on() ) {
+			$value = PNCP_Log::kv_get( $key );
+			if ( null !== $value ) {
+				return (int) $value;
 			}
 		}
-		// phpcs:enable
-		$wpdb->suppress_errors( $suppress );
-		if ( $limit > 0 ) {
-			self::db_incr( $budget, $ttl );
+		if ( ! ( $wpdb instanceof wpdb ) || ! ( $wpdb->dbh instanceof mysqli ) ) {
+			return null;
 		}
-		return self::db_incr( $key, $ttl, $step );
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery -- The counter as it is now; no cache.
+		return (int) $wpdb->get_var( $wpdb->prepare( "SELECT option_value FROM {$wpdb->options} WHERE option_name = %s", '_transient_' . $key ) );
 	}
 
 	/**
@@ -1927,7 +2099,11 @@ final class PNCP_Bots {
 	 * @return string e.g. /cp-a1b2c3d4e5/
 	 */
 	public static function trap_path() {
-		return '/cp-' . substr( hash_hmac( 'sha256', 'pncp-trap', wp_salt( 'nonce' ) ), 0, 10 ) . '/';
+		static $path = null; // 3.6.1: worked out once per request (read on every request by trap_guard()).
+		if ( null === $path ) {
+			$path = '/cp-' . substr( hash_hmac( 'sha256', 'pncp-trap', wp_salt( 'nonce' ) ), 0, 10 ) . '/';
+		}
+		return $path;
 	}
 
 	/**

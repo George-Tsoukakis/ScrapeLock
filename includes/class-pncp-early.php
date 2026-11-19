@@ -118,7 +118,8 @@ final class PNCP_Early {
 		// 3.4.1: only the edge that connected (REMOTE_ADDR); a Cloudflare address from the real-IP header is a
 		// client of its own (a Cloudflare Worker, which a scraper can rent).
 		// 3.6: and not when the edge sent no visitor IP (PNCP_Ip::is_cdn_edge()).
-		$per_ip = ! ( PNCP_Ip::is_cdn_edge( $ip ) && PNCP_Ip::in_any( $ip, PNCP_Ip::list_of( 'cloudflare' ) ) );
+		// 3.6.1: and not for the address of a proxy that "Real visitor IP" does not trust (PNCP_Ip::untrusted_proxy_peer()).
+		$per_ip = ! ( PNCP_Ip::is_cdn_edge( $ip ) && PNCP_Ip::in_any( $ip, PNCP_Ip::list_of( 'cloudflare' ) ) ) && ! PNCP_Ip::untrusted_proxy_peer();
 
 		if ( $per_ip && PNCP_Ip::in_any( $ip, PNCP_Options::parse_list( $s['block_ips'] ) ) ) {
 			return array( 403, 'blocked_ip', $ip );

@@ -51,6 +51,14 @@ final class PNCP_Lockdown {
 	private static $writing = false;
 
 	/**
+	 * 3.6.1: why the last save() failed: 'guard' (the guard file or lock file could not be changed), 'db' (the
+	 * database refused the write), 'tampered' (an untrusted state is not signed) or '' (it did not fail).
+	 *
+	 * @var string
+	 */
+	private static $save_failed = '';
+
+	/**
 	 * The state, read once per request.
 	 *
 	 * @var array<string, mixed>|null
@@ -123,6 +131,13 @@ final class PNCP_Lockdown {
 	 * @var array<int, string[]>
 	 */
 	private static $own = array();
+
+	/**
+	 * The capabilities that are refused when stored for a user alone (privileged_caps()), per request.
+	 *
+	 * @var string[]|null
+	 */
+	private static $privileged_caps = null;
 
 	/**
 	 * The capabilities refused to working roles while locked (limited_caps()), per request.
@@ -345,6 +360,9 @@ final class PNCP_Lockdown {
 					'since'     => 0,
 					'ack'       => false,
 					'roles'     => null,
+					// 3.6.1: every role that was offered when the roles were chosen (on any site of a network). A role
+					// not in it (another site's, or one a plugin added later) follows its default, not "unticked".
+					'roles_known' => array(),
 					'quarantine' => false,
 					// 3.3: who unlocked for a while (only that account gets its rights back), and the time of the
 					// file fingerprint (a deleted or older fingerprint is noticed).
@@ -573,15 +591,18 @@ final class PNCP_Lockdown {
 	 * @param array<string, mixed> $state State.
 	 * @param bool                 $free  3.4.1: an unlock for good. A guard file or lock file that still says
 	 *                                    "locked" is removed too, also when the stored state does not say so.
-	 * @return bool False when the guard file could not be changed (the state was not changed either).
+	 * @return bool False when the guard file could not be changed or the database refused the write (the
+	 *              state was not changed, and the guard is as before).
 	 */
 	private static function save( $state, $free = false ) {
+		self::$save_failed = 'db';
 		unset( $state['sig'] );
 		$prev = null === self::$state ? self::state() : self::$state;
 		// 3.4: the stored state is forged, or an older copy, while the guard says locked: saving it would sign
 		// its app secret and recovery codes (perhaps old ones) as current. Only a save that removes the app
 		// (with SCRAPELOCK_UNLOCK) goes through; anything else waits until the owner has dealt with it.
 		if ( in_array( self::$tamper, array( 'replay', 'forged' ), true ) && ( ! self::$sig_ok || self::$older ) && ! empty( $state['secret'] ) ) {
+			self::$save_failed = 'tampered';
 			return false;
 		}
 		$locked = ! empty( $state['locked'] );
@@ -606,6 +627,7 @@ final class PNCP_Lockdown {
 		// the lock file written instead of the guard when the guard cannot be written (PNCP_Seal::write_beacon()).
 		$less = ( ! $locked && ( $was || $file ) ) || ( $locked && $until > (int) $prev['until'] );
 		if ( $guard && $less && ! PNCP_Seal::write_lock_files( $locked, $until, $state['gen'], $state['snap'] ) && ( PNCP_Seal::guard_installed() || '' !== PNCP_Seal::beacon_path() ) ) {
+			self::$save_failed = 'guard';
 			return false;
 		}
 		// 3.4.1: unlocked for good, and no file says "locked" any more: a file of this lock or an earlier one
@@ -619,15 +641,26 @@ final class PNCP_Lockdown {
 		self::$writing   = true;
 		$saved           = update_site_option( self::OPTION, $stored );
 		self::$writing   = false;
-		if ( ! $saved && $guard && $less && ( $was || $file ) ) {
-			// The database refused the write after the guard was changed: the guard goes back to the state that
-			// is still stored, or every request would see the stored state as an older copy.
-			PNCP_Seal::write_lock_files( true, (int) $prev['until'], (int) $prev['gen'], (int) $prev['snap'] );
+		// The generation always changes, so false here is a real failure (database error, read-only replica, a
+		// filter that refused the write), never "nothing changed". 3.6.1: every failed write is reported and the
+		// state in memory stays as stored. Before, only the "less locked" case was rolled back: otherwise the
+		// save looked done, and the guard was then written with a generation the database never got, so every
+		// later request saw the stored state as an older copy and refused the owner's codes.
+		if ( ! $saved ) {
+			if ( $guard && $less ) {
+				// The guard (or lock file) was already changed: back to the state that is still stored.
+				if ( $was || $file ) {
+					PNCP_Seal::write_lock_files( true, (int) $prev['until'], (int) $prev['gen'], (int) $prev['snap'] );
+				} elseif ( ! PNCP_Seal::write_lock_files( false, 0, (int) $prev['gen'], (int) $prev['snap'] ) && '' !== PNCP_Seal::beacon_path() ) {
+					PNCP_Seal::remove_beacon(); // A new lock that was never stored: no file may say "locked".
+				}
+			}
 			return false;
 		}
-		self::$state      = $state;
-		self::$session_ok = array();
-		self::$tamper     = '';
+		self::$save_failed = '';
+		self::$state       = $state;
+		self::$session_ok  = array();
+		self::$tamper      = '';
 		self::$sig_ok     = true;
 		self::$older      = false;
 		// More locked, or as locked as before: the database first, then the guard.
@@ -1063,8 +1096,9 @@ final class PNCP_Lockdown {
 	 * Forgets who is staff (switch_blog: on multisite it depends on the site).
 	 */
 	public static function forget_staff() {
-		self::$staff = array();
-		self::$own   = array();
+		self::$staff           = array();
+		self::$own             = array();
+		self::$privileged_caps = null;
 	}
 
 	/**
@@ -1361,10 +1395,14 @@ final class PNCP_Lockdown {
 	 * @return string[]
 	 */
 	public static function frozen_roles() {
-		$chosen = self::state()['roles'];
+		$state  = self::state();
+		$chosen = $state['roles'];
+		$known  = is_array( $state['roles_known'] ) ? $state['roles_known'] : array();
 		$roles  = array();
 		foreach ( array_keys( wp_roles()->get_names() ) as $role ) {
-			if ( self::role_always( $role ) || ( is_array( $chosen ) ? in_array( $role, $chosen, true ) : self::role_default( $role ) ) ) {
+			// A choice made before 3.6.1 has no list of the roles offered: it covers every role, as before.
+			$picked = is_array( $chosen ) && ( ! $known || in_array( $role, $known, true ) );
+			if ( self::role_always( $role ) || ( $picked ? in_array( $role, $chosen, true ) : self::role_default( $role ) ) ) {
 				$roles[] = $role;
 			}
 		}
@@ -1497,7 +1535,7 @@ final class PNCP_Lockdown {
 
 	/**
 	 * 3.6: the capabilities stored for this user alone ({prefix}capabilities) that none of the user's roles
-	 * grants: refused while locked (map_meta_cap()). Reading and the user levels are not counted.
+	 * grants. The privileged ones among them (own_privileged()) are refused while locked (map_meta_cap()). Reading and the user levels are not counted.
 	 *
 	 * @param int $user_id User.
 	 * @return string[]
@@ -1527,6 +1565,94 @@ final class PNCP_Lockdown {
 			self::$own[ $user_id ] = array_values( array_diff( $single, $granted ) );
 		}
 		return self::$own[ $user_id ];
+	}
+
+	/**
+	 * The capabilities that may not be used while locked when they are stored for a user alone (own_caps()):
+	 * everything of limited_caps() (code, plugins, themes, users, settings, the Customizer, unfiltered HTML,
+	 * import and export, payments), the staff capabilities, WordPress's own editorial capabilities, and every
+	 * capability of a role the lock touches (frozen_roles() and limited_roles(): administrators, editors,
+	 * authors, shop managers ..., which also brings in the admin capabilities plugins add to those roles).
+	 * Capabilities that only members and customers get (membership levels, course or forum access, e.g.
+	 * s2Member's access_s2member_ccap_*) are not in it, so paying members keep their access while locked.
+	 *
+	 * @return string[]
+	 */
+	public static function privileged_caps() {
+		if ( null !== self::$privileged_caps ) {
+			return self::$privileged_caps;
+		}
+		$limited = self::limited_caps();
+		$caps    = array_merge(
+			$limited,
+			self::staff_caps(),
+			array(
+				'edit_posts',
+				'edit_others_posts',
+				'edit_published_posts',
+				'edit_private_posts',
+				'publish_posts',
+				'delete_posts',
+				'delete_others_posts',
+				'delete_published_posts',
+				'delete_private_posts',
+				'read_private_posts',
+				'edit_pages',
+				'edit_others_pages',
+				'edit_published_pages',
+				'edit_private_pages',
+				'publish_pages',
+				'delete_pages',
+				'delete_others_pages',
+				'delete_published_pages',
+				'delete_private_pages',
+				'read_private_pages',
+				'upload_files',
+				'manage_links',
+				'manage_categories',
+				'moderate_comments',
+				'list_users',
+				'edit_dashboard',
+				'unfiltered_upload',
+			)
+		);
+		foreach ( array_merge( self::frozen_roles(), self::limited_roles() ) as $role ) {
+			$caps = array_merge( $caps, self::role_caps( $role ) );
+		}
+		$caps = array_values(
+			array_filter(
+				array_unique( array_map( 'strval', $caps ) ),
+				static function ( $cap ) {
+					return ! in_array( $cap, array( 'read', 'exist' ), true ) && 0 !== strpos( $cap, 'level_' );
+				}
+			)
+		);
+		/**
+		 * Filters the capabilities refused while locked when they are stored for a user alone, not granted by
+		 * one of the user's roles. Add a plugin's admin capability here, or take out a member capability that a
+		 * staff role also has (so members who were given it on their own keep it). The capabilities of
+		 * limited_caps() cannot be taken out.
+		 *
+		 * @param string[] $caps    Capabilities.
+		 * @param string[] $limited Capabilities that always stay in.
+		 */
+		$more   = apply_filters( 'pncp_lockdown_privileged_caps', $caps, $limited );
+		$result = array_values( array_unique( array_merge( $limited, array_map( 'strval', is_array( $more ) ? $more : array() ) ) ) );
+		if ( self::$limited_final ) {
+			self::$privileged_caps = $result; // Kept once every plugin has added its filters.
+		}
+		return $result;
+	}
+
+	/**
+	 * The capabilities of own_caps() that are refused while locked (privileged_caps()).
+	 *
+	 * @param int $user_id User.
+	 * @return string[]
+	 */
+	public static function own_privileged( $user_id ) {
+		$own = self::own_caps( (int) $user_id );
+		return $own ? array_values( array_intersect( $own, self::privileged_caps() ) ) : array();
 	}
 
 	/**
@@ -1593,12 +1719,17 @@ final class PNCP_Lockdown {
 		$by     = (int) self::state()['unlocked_by'];
 		$frozen = self::is_locked() || ( $by > 0 && self::unlocked_until() && ( (int) $user_id !== $by || ! self::unlocking_session( (int) $user_id ) ) );
 		$level  = $frozen ? self::staff_level( $user_id ) : 0;
-		// 3.6: a capability stored for the user alone, which none of the user's roles grants, is refused while
-		// locked, whoever the user is. Before, a subscriber given edit_posts, delete_others_posts or a plugin's own
-		// capability directly in the database (SQL injection in another plugin) was not staff, so not frozen, and
-		// could use them. The rights that come with the user's roles stay as they are.
-		if ( $frozen && $level < 2 && array() !== self::own_caps( (int) $user_id ) && array() !== array_intersect( array_merge( array( (string) $cap ), array_map( 'strval', (array) $caps ) ), self::own_caps( (int) $user_id ) ) ) {
-			return array( 'do_not_allow' );
+		// 3.6: a privileged capability stored for the user alone, which none of the user's roles grants, is
+		// refused while locked, whoever the user is. Before, a subscriber given edit_posts, delete_others_posts or
+		// a plugin's admin capability directly in the database (SQL injection in another plugin) was not staff, so
+		// not frozen, and could use them. 3.6.1: only privileged ones (privileged_caps()): membership and course
+		// capabilities given to members one by one (s2Member ccaps, "additional capabilities") keep working.
+		// The rights that come with the user's roles stay as they are.
+		if ( $frozen && $level < 2 ) {
+			$own = self::own_privileged( (int) $user_id );
+			if ( $own && array() !== array_intersect( array_merge( array( (string) $cap ), array_map( 'strval', (array) $caps ) ), $own ) ) {
+				return array( 'do_not_allow' );
+			}
 		}
 		if ( $level < 1 ) {
 			return $caps;
@@ -2271,7 +2402,12 @@ final class PNCP_Lockdown {
 	 * @return string
 	 */
 	public static function hash_code( $code ) {
-		return password_hash( $code, PASSWORD_DEFAULT );
+		// 3.6.1: bcrypt with a fixed, lower cost. A recovery code has about 40 random bits and every wrong one is
+		// counted, so cost 8 is plenty; with PASSWORD_DEFAULT (cost 10, 12 from PHP 8.4) every recovery-shaped
+		// code typed costed up to CODES slow comparisons (recovery_match(), up to 2-3 s of CPU on PHP 8.4)
+		// before any counter could refuse it. Codes hashed before keep working (password_verify() reads the cost
+		// from the hash); new codes get the cheaper hash.
+		return password_hash( $code, PASSWORD_BCRYPT, array( 'cost' => 8 ) );
 	}
 
 	/**
@@ -2940,8 +3076,8 @@ final class PNCP_Lockdown {
 		$step   = '' !== $secret ? PNCP_Totp::verify( $secret, $code, (int) $state['last_step'] ) : false;
 		if ( false !== $step ) {
 			$state['last_step'] = $step;
-			self::save( $state );
-			return 'app';
+			// 3.6.1: not accepted unless the step is stored: otherwise the same code could be used again.
+			return self::save( $state ) ? 'app' : 'savefail';
 		}
 		$typed = strtolower( preg_replace( '/[^a-z0-9]/i', '', (string) $code ) );
 		if ( $allow_recovery && 8 === strlen( $typed ) && '' !== $found ) {
@@ -2951,7 +3087,9 @@ final class PNCP_Lockdown {
 				if ( null !== $found ? hash_equals( (string) $hash, $found ) : password_verify( $typed, $hash ) ) {
 					unset( $state['codes'][ $i ] );
 					$state['codes'] = array_values( $state['codes'] );
-					self::save( $state );
+					if ( ! self::save( $state ) ) {
+						return 'savefail'; // Not used up, so not accepted (it would still work again).
+					}
 					self::event( 'recovery_used' );
 					self::mail( __( 'A lockdown recovery code was used', 'scrapelock' ), __( 'A recovery code was used on the Lockdown page. If it was not you, change the administrators\' passwords and create new recovery codes.', 'scrapelock' ) );
 					return 'recovery';
@@ -4300,6 +4438,7 @@ final class PNCP_Lockdown {
 			'ack'       => array( 'error', __( 'Tick the box to confirm that you have saved your recovery codes and understand how to unlock the site.', 'scrapelock' ) ),
 			'tampered'  => array( 'error', __( 'The Lockdown data in the database was changed outside WordPress, so its code cannot be trusted and the site stays locked. To unlock, add define( \'SCRAPELOCK_UNLOCK\', true ); to wp-config.php, remove the app on this page, set it up again and lock. Then remove the line.', 'scrapelock' ) ),
 			'noguard'   => array( 'error', __( 'The site was not locked: the guard file wp-content/mu-plugins/scrapelock-lockdown-guard.php could not be written, because WordPress cannot write files to that folder directly. Without it, someone who can change the database directly (for example through a vulnerable plugin) could unlock the site. Let the web server write to wp-content/mu-plugins (create the folder if it is missing), then lock again. Or tick "Lock without the guard file (weaker)".', 'scrapelock' ) ),
+			'savefail'  => array( 'error', __( 'The change could not be saved: the database refused the write. Nothing was changed; your code was not used up and the site is as it was. Try again in a moment; if it keeps failing, check the database (disk space, read-only mode) or the PHP error log.', 'scrapelock' ) ),
 			'guard'     => array( 'error', __( 'The site was not unlocked: the guard file wp-content/mu-plugins/scrapelock-lockdown-guard.php could not be changed. Check that the web server may write to that folder, or unlock from the server with SCRAPELOCK_UNLOCK.', 'scrapelock' ) ),
 		);
 		if ( isset( $messages[ $code ] ) ) {
@@ -4947,16 +5086,25 @@ final class PNCP_Lockdown {
 	/* ---------- Actions ---------- */
 
 	/**
+	 * 3.6.1: the message for a save() that failed: the guard file, or the database.
+	 *
+	 * @return string Message code.
+	 */
+	private static function save_message() {
+		return in_array( self::$save_failed, array( 'guard', 'tampered' ), true ) ? self::$save_failed : 'savefail';
+	}
+
+	/**
 	 * The message for a code that did not pass attempt().
 	 *
 	 * @param string $how What attempt() returned.
 	 * @return string Message code.
 	 */
 	private static function code_message( $how ) {
-		if ( 'wait' === $how ) {
-			return 'wait';
+		if ( in_array( $how, array( 'wait', 'busy', 'savefail' ), true ) ) {
+			return $how;
 		}
-		return 'busy' === $how ? 'busy' : 'wrong';
+		return 'wrong';
 	}
 
 	/**
@@ -5073,7 +5221,7 @@ final class PNCP_Lockdown {
 			}
 			$state = self::state();
 			$codes = self::new_codes();
-			self::save(
+			$ok    = self::save(
 				array_merge(
 					$state,
 					array(
@@ -5087,6 +5235,9 @@ final class PNCP_Lockdown {
 					)
 				)
 			);
+			if ( ! $ok ) {
+				self::back( self::save_message() ); // The pending secret stays: the same code can be tried again.
+			}
 			delete_user_meta( $user, self::PENDING_META );
 			// A new app starts unlocked (it cannot be connected while the site is locked): a guard file or a
 			// snapshot left from an earlier lock (for example after the state was deleted and the site was opened
@@ -5164,7 +5315,13 @@ final class PNCP_Lockdown {
 			$state['ack']         = true;
 			$state['unlocked_by'] = 0;
 			$state['unlock_session'] = '';
-			self::save( $state );
+			if ( ! self::save( $state ) ) {
+				// 3.6.1: the database did not take the lock. The guard (or lock file) written above goes again, or
+				// it would say "locked" against a stored state that does not, and refuse every code of the owner
+				// as if the data had been changed outside WordPress. The site stays unlocked, and the owner is told.
+				PNCP_Seal::write_guard( false, 0 );
+				self::back( self::save_message() );
+			}
 			if ( PNCP_Seal::guard_installed() ) {
 				$how = '';
 			} elseif ( '' !== PNCP_Seal::beacon_path() ) {
@@ -5199,7 +5356,7 @@ final class PNCP_Lockdown {
 			// A new unlock starts with nothing noted (a record of an earlier unlock no longer matches anyway).
 			PNCP_Seal::forget_window();
 			if ( ! self::save( $state, 0 === $mins ) ) {
-				self::back( 'guard' );
+				self::back( self::save_message() );
 			}
 			$unknown = array();
 			if ( 0 === $mins ) {
@@ -5228,22 +5385,38 @@ final class PNCP_Lockdown {
 		}
 		if ( 'roles' === $op ) {
 			// Only existing roles; the roles that can take over the site are added in frozen_roles() anyway.
-			$state['roles'] = array_values( array_intersect( array_keys( wp_roles()->get_names() ), $pick ) );
-			self::save( $state );
+			// 3.6.1: the choice is stored for the whole network (the lock state is a network option), but a site
+			// only knows its own roles: the stored roles this site does not have (ticked on another site, where a
+			// plugin adds them) are kept, not dropped. Before the first choice (null) only this site's are stored.
+			$here           = array_keys( wp_roles()->get_names() );
+			$elsewhere      = is_multisite() && is_array( $state['roles'] ) ? array_diff( array_map( 'strval', $state['roles'] ), $here ) : array();
+			$state['roles'] = array_values( array_unique( array_merge( array_intersect( $here, $pick ), $elsewhere ) ) );
+			$known          = is_multisite() && is_array( $state['roles_known'] ) ? array_map( 'strval', $state['roles_known'] ) : array();
+			if ( is_multisite() && ! $known ) {
+				$known = $elsewhere; // A choice from before 3.6.1: the other sites' roles in it were offered there.
+			}
+			$state['roles_known'] = array_values( array_unique( array_merge( $known, $here ) ) );
+			if ( ! self::save( $state ) ) {
+				self::back( self::save_message() );
+			}
 			self::$staff = array();
 			self::event( 'roles', implode( ', ', self::frozen_roles() ) );
 			self::back( 'roles' );
 		}
 		if ( 'quarantine' === $op ) {
 			$state['quarantine'] = ! empty( $_POST['quarantine'] ); // phpcs:ignore WordPress.Security.NonceVerification.Missing -- Checked at the top of handle().
-			self::save( $state );
+			if ( ! self::save( $state ) ) {
+				self::back( self::save_message() );
+			}
 			self::event( 'quarantine_setting', $state['quarantine'] ? __( 'on', 'scrapelock' ) : __( 'off', 'scrapelock' ) );
 			self::back( 'quarantine' );
 		}
 		if ( 'codes' === $op ) {
 			$codes          = self::new_codes();
 			$state['codes'] = array_map( array( __CLASS__, 'hash_code' ), $codes );
-			self::save( $state );
+			if ( ! self::save( $state ) ) {
+				self::back( self::save_message() ); // The new codes are not shown: they were not stored, the old ones still work.
+			}
 			set_site_transient( 'pncp_ld_codes_' . $user, self::seal( (string) wp_json_encode( $codes ) ), 2 * MINUTE_IN_SECONDS ); // Encrypted, as the secret: not readable from a copy of the database or the object cache.
 			self::event( 'codes' );
 			self::back( 'codes' );
@@ -5268,7 +5441,7 @@ final class PNCP_Lockdown {
 		$state['fp']        = 0;
 		$state['net']       = 0;
 		if ( ! self::save( $state ) ) {
-			self::back( 'guard' );
+			self::back( self::save_message() );
 		}
 		// The lock is off: also when the stored state had been deleted (so save() saw nothing locked), the guard
 		// file or the lock file must not keep saying "locked" (with SCRAPELOCK_UNLOCK, after such an attack).

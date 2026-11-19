@@ -139,7 +139,7 @@ final class PNCP_Integrity {
 
 	/**
 	 * Where this site keeps its files, found with WordPress' functions (PNCP_Paths, wp_get_upload_dir(),
-	 * search_theme_directories()). The check reads them only (the optional quarantine renames a new PHP file
+	 * search_theme_directories()). The check reads them only (the optional quarantine renames a new code file
 	 * in uploads).
 	 *
 	 * @return array{core:string, content:string, plugins:string, mu_plugins:string, uploads:string, themes:string[], config:string}
@@ -1787,7 +1787,8 @@ final class PNCP_Integrity {
 
 	/**
 	 * Optional ("Quarantine" on the Lockdown tab): a plugin with new or changed files while locked is
-	 * deactivated, and a new PHP file in the uploads folder is renamed so the server no longer runs it. Nothing
+	 * deactivated, and a new code file in the uploads folder (PHP, .user.ini, .inc, an .htaccess that maps handlers) is renamed
+	 * so the server no longer runs or reads it (see quarantinable() and quarantine_name()). Nothing
 	 * is deleted. ScrapeLock itself is never deactivated here.
 	 */
 	private static function quarantine() {
@@ -1801,10 +1802,12 @@ final class PNCP_Integrity {
 			$path = wp_normalize_path( (string) $path );
 			if ( 0 === strpos( $path, $plugins ) ) {
 				$slugs[ strtok( substr( $path, strlen( $plugins ) ), '/' ) ] = true;
-			} elseif ( '/' !== $uploads && 0 === strpos( $path, $uploads ) && in_array( $path, (array) $report['added'], true ) && file_exists( $path ) && preg_match( '/\.(?:php[0-9]?|phtml|phar)$/i', $path ) ) {
-				$fs = self::filesystem( dirname( $path ) );
-				if ( $fs && $fs->move( $path, $path . '.pncp-quarantine' ) ) {
-					$handled[] = sprintf( /* translators: %s: file */ __( 'Renamed %s', 'scrapelock' ), self::relative( $path ) );
+			} elseif ( '/' !== $uploads && 0 === strpos( $path, $uploads ) && in_array( $path, (array) $report['added'], true ) && file_exists( $path ) && self::quarantinable( $path ) ) {
+				$dest = self::quarantine_name( $path );
+				$fs   = $dest ? self::filesystem( dirname( $path ) ) : null;
+				if ( $fs && $fs->move( $path, $dest ) ) {
+					$fs->chmod( $dest, 0400 );
+					$handled[] = sprintf( /* translators: 1: file, 2: new name */ __( 'Renamed %1$s to %2$s', 'scrapelock' ), self::relative( $path ), basename( $dest ) );
 				}
 			}
 		}
@@ -1829,6 +1832,51 @@ final class PNCP_Integrity {
 			self::put( self::REPORT, $report );
 			PNCP_Lockdown::record( 'quarantine', implode( ', ', array_slice( $report['handled'], 0, 5 ) ) );
 		}
+	}
+
+	/**
+	 * Is this new file in uploads one the quarantine renames? Every PHP file, .phtml, .phar, .inc and .user.ini
+	 * (auto_prepend_file). An .htaccess only when it can make files run or change PHP (AddHandler, SetHandler,
+	 * an AddType for PHP or CGI, ForceType, Action, php_value/php_flag, ExecCGI): plugins drop a protective
+	 * "deny from all" .htaccess into their new upload folders (WooCommerce logs, form uploads), and renaming
+	 * that would open the folder. Such a file is still reported, only not renamed.
+	 *
+	 * @param string $path File.
+	 * @return bool
+	 */
+	private static function quarantinable( $path ) {
+		if ( ! self::is_code( $path ) ) {
+			return false;
+		}
+		if ( '.htaccess' !== strtolower( basename( $path ) ) ) {
+			return true;
+		}
+		$text = (string) @file_get_contents( $path, false, null, 0, 65536 ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged, WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- A local file that may be unreadable.
+		$text = (string) preg_replace( '/^\s*#.*$/m', '', $text );
+		$text = (string) preg_replace( '/^\s*SetHandler\s+(?:none|default-handler)\s*$/im', '', $text ); // Turns PHP off.
+		return (bool) preg_match( '/^\s*(?:AddHandler|SetHandler|ForceType|Action|php_(?:admin_)?(?:value|flag)|AddType\s+\S*(?:php|cgi)|Options\b.*ExecCGI)\b/im', $text );
+	}
+
+	/**
+	 * The quarantine name of a code file: every dot of the old name becomes "_" and ".pncp-quarantine.txt" is
+	 * added (x.php -> x_php.pncp-quarantine.txt, .htaccess -> _htaccess.pncp-quarantine.txt). Appending to the
+	 * old name is not enough: Apache's mod_mime applies an AddHandler/AddType for .php to every extension in the
+	 * name (cPanel and many shared hosts map PHP that way), so x.php.anything would still run, and the
+	 * "No PHP in uploads" rule, anchored at the end of the name, would no longer match it. '' if no free name.
+	 *
+	 * @param string $path Code file.
+	 * @return string
+	 */
+	private static function quarantine_name( $path ) {
+		$dir  = dirname( $path ) . '/';
+		$base = (string) preg_replace( '/[^A-Za-z0-9_-]+/', '_', basename( $path ) );
+		for ( $i = 0; $i < 20; $i++ ) {
+			$dest = $dir . $base . ( $i ? '-' . $i : '' ) . '.pncp-quarantine.txt';
+			if ( ! file_exists( $dest ) ) {
+				return $dest;
+			}
+		}
+		return '';
 	}
 
 	/**

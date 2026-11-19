@@ -39,6 +39,27 @@ final class PNCP_Options {
 	private static $cache = null;
 
 	/**
+	 * 3.6.1: parse_list() of this request, by the text it was given.
+	 *
+	 * @var array<string, string[]>
+	 */
+	private static $lists = array();
+
+	/**
+	 * 3.6.1: defaults() of this request (forgotten by flush(), e.g. once the theme's filters are added).
+	 *
+	 * @var array<string, mixed>|null
+	 */
+	private static $defaults = null;
+
+	/**
+	 * 3.6.1: blocked_agents() of this request: the settings it was built from (bot list and switches), and the list.
+	 *
+	 * @var array{0:string, 1:string[]}|null
+	 */
+	private static $agents = null;
+
+	/**
 	 * Allowed values for the choice fields.
 	 *
 	 * @return array<string, string[]>
@@ -374,6 +395,11 @@ final class PNCP_Options {
 	 * @return string[]
 	 */
 	public static function blocked_agents( $s ) {
+		// 3.6.1: built once per request for the same settings (about 200 names, each lowercased).
+		$memo = is_string( $s['bot_list'] ) ? $s['bot_list'] . "\0" . ( empty( $s['block_archivers'] ) ? '0' : '1' ) . ( empty( $s['block_http_libs'] ) ? '0' : '1' ) : null;
+		if ( null !== $memo && null !== self::$agents && $memo === self::$agents[0] ) {
+			return self::$agents[1];
+		}
 		$out = array();
 		foreach ( array_merge( self::parse_list( $s['bot_list'] ), PNCP_Bots::known_ai_agents(), empty( $s['block_archivers'] ) ? array() : PNCP_Bots::archive_agents(), empty( $s['block_http_libs'] ) ? array() : self::http_library_agents() ) as $agent ) {
 			$agent = trim( (string) $agent );
@@ -381,7 +407,11 @@ final class PNCP_Options {
 				$out[ strtolower( $agent ) ] = $agent;
 			}
 		}
-		return array_values( $out );
+		$out = array_values( $out );
+		if ( null !== $memo ) {
+			self::$agents = array( $memo, $out );
+		}
+		return $out;
 	}
 
 	/**
@@ -445,6 +475,19 @@ final class PNCP_Options {
 	 * @return array<string, mixed>
 	 */
 	public static function defaults() {
+		if ( null === self::$defaults ) {
+			self::$defaults = self::build_defaults();
+		}
+		return self::$defaults;
+	}
+
+	/**
+	 * The defaults, as defaults() returns them (built once per request: the bot and allow lists in them go
+	 * through filters and string building, and stored() needs them on every request).
+	 *
+	 * @return array<string, mixed>
+	 */
+	private static function build_defaults() {
 		return array(
 			'enabled'                 => 1,
 			'scope_posts'             => 1,
@@ -1427,7 +1470,10 @@ final class PNCP_Options {
 	 * Forgets the request cache (after a settings change).
 	 */
 	public static function flush() {
-		self::$cache = null;
+		self::$cache    = null;
+		self::$defaults = null;
+		self::$lists    = array();
+		self::$agents   = null;
 	}
 
 	/**
@@ -1782,6 +1828,12 @@ final class PNCP_Options {
 		if ( ! is_scalar( $raw ) ) {
 			return array(); // Not text (a damaged setting): no lines.
 		}
+		// The same lists (allowed and blocked IPs, the bot and allow lists, the trusted proxies) are read several
+		// times on every request; each line goes through sanitize_text_field(). Read once per request.
+		$memo = is_string( $raw ) && strlen( $raw ) <= 65536;
+		if ( $memo && isset( self::$lists[ $raw ] ) ) {
+			return self::$lists[ $raw ];
+		}
 		$lines = preg_split( '/\r\n|\r|\n/', (string) $raw );
 		$out   = array();
 		foreach ( $lines as $line ) {
@@ -1791,7 +1843,14 @@ final class PNCP_Options {
 				$out[ strtolower( $line ) ] = mb_substr( $line, 0, 100 );
 			}
 		}
-		return array_slice( array_values( $out ), 0, 200 );
+		$out = array_slice( array_values( $out ), 0, 200 );
+		if ( $memo ) {
+			if ( count( self::$lists ) >= 64 ) {
+				self::$lists = array();
+			}
+			self::$lists[ $raw ] = $out;
+		}
+		return $out;
 	}
 
 	/**

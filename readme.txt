@@ -4,7 +4,7 @@ Tags: ai crawlers, anti-scraping, bot protection, rate limit, content protection
 Requires at least: 6.2
 Tested up to: 7.2
 Requires PHP: 7.4
-Stable tag: 3.6.0
+Stable tag: 3.6.1
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -281,6 +281,24 @@ No, on purpose: only an app code, a recovery code or the SCRAPELOCK_UNLOCK line 
 6. Dashboard widget with the protection status and the last 24 hours.
 
 == Changelog ==
+
+= 3.6.1 =
+* New: completely redesigned settings screens. The plugin now uses the full width of wp-admin, with a header showing the protection state and quick actions, overview figures (blocked in 24 hours, IPs blocked now, protection layers on, preset), sticky tabs with icons, settings grouped into cards with switches, a save bar that stays visible and marks unsaved changes, and colours that follow the admin colour scheme.
+* Change: right click is now blocked on links and buttons too (and on images inside links, and the long-press menu on iPhone and iPad). Only form fields and `.pncp-allow` keep the menu. Filter `pncp_protect_allow_link_menu` restores the menu on links.
+* Change: "Blur the page when Print Screen or a screenshot shortcut is pressed" blurs the whole page at once with a full-screen overlay, keeps the reader's mark (user name or IP and time) visible over it, and also reacts to Ctrl+Shift+S, Win+Shift+S and Cmd+Shift+3/4/5/6. Fixed: Ctrl+Shift+S and Win+Shift+S never blurred the page, because the Ctrl/Cmd+S block stopped them first. Filters: `pncp_blur_timeouts`, `pncp_mark_blurred_opacity`.
+* Security: with "Real visitor IP" set to X-Forwarded-For and Cloudflare trusted but no CDN secret, a visitor could choose its own IP through a Cloudflare Worker. The visitor IP is now taken from CF-Connecting-IP at the first Cloudflare edge, and Site Health recommends the CDN secret.
+* Security: IPs that may be spoofed (a Bunny edge without the CDN secret, "trust every proxy") no longer collect strikes, bans or CDN blocks; they still get 429 answers.
+* Security: the file quarantine renames a file to `name_php.pncp-quarantine.txt`, so it can no longer run on servers that map PHP with AddHandler, and also covers .user.ini, .inc and .htaccess files that enable PHP.
+* Security: the limit on new counters per minute can no longer be used up by one network to turn the per-IP limits off: one /24 (IPv6 /48) gets at most 64 new counters a minute, beyond that its addresses share one counter. Filter: `pncp_new_counters_per_network`.
+* Lockdown: capabilities given to one member alone (membership and course plugins) keep working while the site is locked; only privileged capabilities are refused. Filter: `pncp_lockdown_privileged_caps`.
+* Lockdown: a failed database write while locking, unlocking or checking a code no longer leaves the site locked with codes refused; the change is not made and a notice says so. Recovery codes are cheaper to check. On multisite, saving the roles on one site keeps the choices of the others.
+* Fix: a temporary ban can no longer be shortened (bot trap on a banned IP, Emergency Mode import) in the pre-cache check.
+* Fix: during an attack, blocked requests no longer wait 200 ms each once the log budget is used up.
+* Fix: behind an untrusted proxy with a private address, the proxy's address is never banned (which blocked the whole site), and a warning is shown.
+* Fix: a post with invalid UTF-8 was blank for signed-in readers when the invisible trace was on.
+* Fix: the minified protect.js and protect.css are used only when they match their source, so a change in the source always reaches visitors.
+* Fix: a symlinked wp-config.php stays a symlink when the pre-cache check is turned on or off; table names are compared case-insensitively; the pre-cache check uses APCu only where it is shared; the pre-cache sync no longer retries on every admin request; the upgrade cannot run twice at once.
+* Performance: without a persistent object cache or APCu, counters, strikes, human-check markers and DNS verdicts are kept in a small table of their own (`pncp_kv`) instead of two rows each in wp_options. Data center, Bunny CDN and IP range lookups, the settings lists and the User-Agent matching are worked out once per request; `pncp_surge` is no longer autoloaded, and old list options are no longer autoloaded.
 
 = 3.6.0 =
 * New: "Show who is reading over protected pages" (On the page → Members and readers, off by default). A faint line repeated over the page with the signed-in account's user name and the date and time, so every screenshot, screen recording or photo of the screen shows whose account it came from. No web page can stop those; this makes them traceable. It never takes clicks, taps or selections, comes back when it is removed or hidden, and the page is sent as private (not cached). Optional for visitors who are not signed in (their IP and the time, fetched by the page so cached pages still work). Filters: `pncp_mark_user_line`, `pncp_mark_guest_line`.

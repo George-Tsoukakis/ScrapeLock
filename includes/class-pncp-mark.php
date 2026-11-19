@@ -92,7 +92,14 @@ final class PNCP_Mark {
 		}
 		$s      = PNCP_Options::get();
 		$config = array(
-			'opacity' => max( 2, min( 60, (int) $s['user_mark_opacity'] ) ) / 100,
+			'opacity'        => max( 2, min( 60, (int) $s['user_mark_opacity'] ) ) / 100,
+			/**
+			 * Filters the mark's opacity (percent, 2 to 60) while the page is blurred for a screenshot attempt:
+			 * over the blurred page the line is the only readable thing, so it is drawn stronger.
+			 *
+			 * @param int $percent Opacity in percent.
+			 */
+			'blurredOpacity' => max( 2, min( 60, (int) apply_filters( 'pncp_mark_blurred_opacity', 35 ) ) ) / 100,
 		);
 		if ( 'user' === $mode ) {
 			$config['text'] = self::user_line( wp_get_current_user() );

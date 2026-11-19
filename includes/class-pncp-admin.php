@@ -98,6 +98,13 @@ final class PNCP_Admin {
 		if ( 'settings_page_' . self::PAGE !== $hook ) {
 			return;
 		}
+		// A body class of our own, so the page-wide layout rules (full width, background) stay on this page only.
+		add_filter(
+			'admin_body_class',
+			static function ( $classes ) {
+				return $classes . ' pncp-admin-page';
+			}
+		);
 		wp_enqueue_style( 'pncp-admin', PNCP_URL . 'assets/css/admin.css', array(), PNCP_VERSION );
 		wp_enqueue_script( 'pncp-admin', PNCP_URL . 'assets/js/admin.js', array(), PNCP_VERSION, true );
 		wp_localize_script(
@@ -473,17 +480,7 @@ final class PNCP_Admin {
 	 */
 	private static function render_status_bar( $s ) {
 		$emergency = PNCP_Options::emergency_until();
-		// 3.5: the third element is where the setting is (tab and anchor): an "Off" pill links to it.
-		$items = array(
-			array( ! empty( $s['enabled'] ), __( 'Protection', 'scrapelock' ), array( 'general', 'pncp-enabled' ) ),
-			array( ! empty( $s['early_mode'] ) && PNCP_Early::installed(), __( 'Early check', 'scrapelock' ), array( 'bots', 'pncp-sec-early' ) ),
-			// The row, not the checkbox: the checkbox is not there on multisite.
-			array( ! empty( $s['precheck'] ) && PNCP_Precheck::active(), __( 'Pre-cache check', 'scrapelock' ), array( 'bots', 'pncp-sec-early' ) ),
-			array( ! empty( $s['human_check'] ), __( 'Human check', 'scrapelock' ), array( 'bots', 'pncp-sec-human' ) ),
-			array( ! empty( $s['allow_ai_search'] ) && ! empty( $s['verify_ai_bots'] ), __( 'AI bots verified', 'scrapelock' ), array( 'bots', 'pncp-sec-ai' ) ),
-			array( ! empty( $s['block_headless'] ), __( 'Headless browsers', 'scrapelock' ), array( 'bots', 'pncp-block_headless' ) ),
-			array( '' !== $s['countries_block'] || '' !== $s['countries_strict'], __( 'Countries', 'scrapelock' ), array( 'bots', 'pncp-sec-countries' ) ),
-		);
+		$items     = self::status_items( $s );
 		echo '<ul class="pncp-status-bar" aria-label="' . esc_attr__( 'Protection status', 'scrapelock' ) . '">';
 		if ( ! empty( $s['enabled'] ) && PNCP_Options::monitoring( $s ) ) {
 			printf(
@@ -512,6 +509,26 @@ final class PNCP_Admin {
 			);
 		}
 		echo '</ul>';
+	}
+
+	/**
+	 * The protection layers shown in the status bar: on or off, label, and where the setting is.
+	 *
+	 * @param array<string, mixed> $s Settings.
+	 * @return array<int, array{0: bool, 1: string, 2: string[]}>
+	 */
+	private static function status_items( $s ) {
+		// 3.5: the third element is where the setting is (tab and anchor): an "Off" pill links to it.
+		return array(
+			array( ! empty( $s['enabled'] ), __( 'Protection', 'scrapelock' ), array( 'general', 'pncp-enabled' ) ),
+			array( ! empty( $s['early_mode'] ) && PNCP_Early::installed(), __( 'Early check', 'scrapelock' ), array( 'bots', 'pncp-sec-early' ) ),
+			// The row, not the checkbox: the checkbox is not there on multisite.
+			array( ! empty( $s['precheck'] ) && PNCP_Precheck::active(), __( 'Pre-cache check', 'scrapelock' ), array( 'bots', 'pncp-sec-early' ) ),
+			array( ! empty( $s['human_check'] ), __( 'Human check', 'scrapelock' ), array( 'bots', 'pncp-sec-human' ) ),
+			array( ! empty( $s['allow_ai_search'] ) && ! empty( $s['verify_ai_bots'] ), __( 'AI bots verified', 'scrapelock' ), array( 'bots', 'pncp-sec-ai' ) ),
+			array( ! empty( $s['block_headless'] ), __( 'Headless browsers', 'scrapelock' ), array( 'bots', 'pncp-block_headless' ) ),
+			array( '' !== $s['countries_block'] || '' !== $s['countries_strict'], __( 'Countries', 'scrapelock' ), array( 'bots', 'pncp-sec-countries' ) ),
+		);
 	}
 
 	/**
@@ -660,27 +677,42 @@ final class PNCP_Admin {
 		}
 		$tab    = self::current_tab();
 		$locked = PNCP_Lockdown::is_locked();
+		$stored = PNCP_Options::stored();
+		// Icons of the tabs (decorative: the label stays the accessible name).
+		$icons = array(
+			'general'  => 'visibility',
+			'bots'     => 'shield',
+			'content'  => 'rss',
+			'images'   => 'format-image',
+			'rules'    => 'editor-code',
+			'log'      => 'chart-bar',
+			'lockdown' => $locked ? 'lock' : 'unlock',
+		);
 		?>
-		<div class="wrap pncp-admin">
-			<h1 class="pncp-title"><?php esc_html_e( 'ScrapeLock', 'scrapelock' ); ?> <span class="pncp-version"><?php echo esc_html( PNCP_VERSION ); ?></span></h1>
+		<div class="wrap pncp-admin pncp-admin--<?php echo esc_attr( $tab ); ?><?php echo $locked ? ' is-site-locked' : ''; ?>">
+			<?php self::render_header( $stored, $locked ); ?>
+			<hr class="wp-header-end">
 			<?php
 			// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Only displays the confirmation.
 			if ( isset( $_GET['pncp_confirm'] ) && PNCP_Status::is_enabled() && ! $locked ) {
 				self::render_disable_confirm();
 			}
 			if ( ! $locked ) {
-				self::render_status_bar( PNCP_Options::stored() );
+				self::render_kpis( $stored );
+				self::render_status_bar( $stored );
 			}
 			?>
-			<nav class="nav-tab-wrapper" aria-label="<?php esc_attr_e( 'Settings sections', 'scrapelock' ); ?>">
+			<nav class="nav-tab-wrapper pncp-tabs" aria-label="<?php esc_attr_e( 'Settings sections', 'scrapelock' ); ?>">
 				<?php foreach ( self::tabs() as $key => $label ) : ?>
+					<?php $icon = '<span class="dashicons dashicons-' . esc_attr( $icons[ $key ] ) . '" aria-hidden="true"></span> '; ?>
 					<?php if ( $locked && 'lockdown' !== $key ) : ?>
-						<span class="nav-tab pncp-tab-locked" title="<?php esc_attr_e( 'Locked: unlock the site to change the settings', 'scrapelock' ); ?>"><?php echo esc_html( $label ); ?></span>
+						<span class="nav-tab pncp-tab-locked" title="<?php esc_attr_e( 'Locked: unlock the site to change the settings', 'scrapelock' ); ?>"><?php echo $icon; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Escaped above. ?><?php echo esc_html( $label ); ?></span>
 					<?php else : ?>
-						<a href="<?php echo esc_url( PNCP_Status::settings_url( array( 'tab' => $key ) ) ); ?>" class="nav-tab<?php echo $tab === $key ? ' nav-tab-active' : ''; ?><?php echo 'lockdown' === $key ? ' pncp-tab-lockdown' : ''; ?>"<?php echo $tab === $key ? ' aria-current="page"' : ''; ?>><?php echo 'lockdown' === $key ? '<span class="dashicons dashicons-' . ( $locked ? 'lock' : 'unlock' ) . '" aria-hidden="true"></span> ' : ''; ?><?php echo esc_html( $label ); ?></a>
+						<a href="<?php echo esc_url( PNCP_Status::settings_url( array( 'tab' => $key ) ) ); ?>" class="nav-tab<?php echo $tab === $key ? ' nav-tab-active' : ''; ?><?php echo 'lockdown' === $key ? ' pncp-tab-lockdown' : ''; ?>"<?php echo $tab === $key ? ' aria-current="page"' : ''; ?>><?php echo $icon; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Escaped above. ?><?php echo esc_html( $label ); ?></a>
 					<?php endif; ?>
 				<?php endforeach; ?>
 			</nav>
+			<div class="pncp-panel">
 			<?php
 			if ( 'lockdown' === $tab ) {
 				PNCP_Lockdown::render_tab();
@@ -694,11 +726,113 @@ final class PNCP_Admin {
 					self::render_import_confirm();
 				}
 				$method = 'tab_' . $tab;
-				self::$method( PNCP_Options::stored() );
+				self::$method( $stored );
 			}
 			?>
+			</div>
 		</div>
 		<?php
+	}
+
+	/**
+	 * Page header: product name and version, the state of the protection in one word, and the main actions.
+	 *
+	 * @param array<string, mixed> $s      Settings.
+	 * @param bool                 $locked Whether the site is locked.
+	 */
+	private static function render_header( $s, $locked ) {
+		if ( $locked ) {
+			$state = array( 'locked', 'lock', __( 'Site locked', 'scrapelock' ) );
+		} elseif ( empty( $s['enabled'] ) ) {
+			$state = array( 'off', 'warning', __( 'Protection off', 'scrapelock' ) );
+		} elseif ( PNCP_Options::emergency_until() ) {
+			$state = array( 'emergency', 'warning', __( 'Emergency Mode', 'scrapelock' ) );
+		} elseif ( PNCP_Options::monitoring( $s ) ) {
+			$state = array( 'monitor', 'visibility', __( 'Monitor only', 'scrapelock' ) );
+		} else {
+			$state = array( 'on', 'yes-alt', __( 'Protected', 'scrapelock' ) );
+		}
+		?>
+		<header class="pncp-header">
+			<div class="pncp-header__brand">
+				<span class="pncp-logo" aria-hidden="true">
+					<svg viewBox="0 0 24 24" width="28" height="28" focusable="false"><path fill="currentColor" d="M12 1.5 3.5 4.8v6.1c0 5.3 3.6 10.2 8.5 11.6 4.9-1.4 8.5-6.3 8.5-11.6V4.8L12 1.5Zm0 5.2a3 3 0 0 1 3 3V11h.6c.5 0 .9.4.9.9v4.2c0 .5-.4.9-.9.9H8.4a.9.9 0 0 1-.9-.9v-4.2c0-.5.4-.9.9-.9H9V9.7a3 3 0 0 1 3-3Zm0 1.6c-.8 0-1.4.6-1.4 1.4V11h2.8V9.7c0-.8-.6-1.4-1.4-1.4Z"/></svg>
+				</span>
+				<div class="pncp-header__text">
+					<h1 class="pncp-title"><?php esc_html_e( 'ScrapeLock', 'scrapelock' ); ?> <span class="pncp-version"><?php echo esc_html( PNCP_VERSION ); ?></span></h1>
+					<p class="pncp-header__tagline"><?php esc_html_e( 'Content, scraping and site protection', 'scrapelock' ); ?></p>
+				</div>
+			</div>
+			<p class="pncp-header__state">
+				<span class="pncp-state-badge pncp-state-badge--<?php echo esc_attr( $state[0] ); ?>">
+					<span class="dashicons dashicons-<?php echo esc_attr( $state[1] ); ?>" aria-hidden="true"></span>
+					<span class="screen-reader-text"><?php esc_html_e( 'Status:', 'scrapelock' ); ?> </span><?php echo esc_html( $state[2] ); ?>
+				</span>
+			</p>
+			<div class="pncp-header__actions">
+				<?php if ( $locked ) : ?>
+					<a class="button button-primary" href="<?php echo esc_url( PNCP_Status::settings_url( array( 'tab' => 'lockdown' ) ) ); ?>"><?php esc_html_e( 'Lockdown', 'scrapelock' ); ?></a>
+				<?php elseif ( empty( $s['enabled'] ) ) : ?>
+					<?php self::action_form_open( PNCP_Status::ACTION, PNCP_Status::ACTION, 'pncp-inline-form' ); ?>
+						<input type="hidden" name="state" value="on">
+						<button type="submit" class="button button-primary"><?php esc_html_e( 'Enable protection', 'scrapelock' ); ?></button>
+					</form>
+				<?php else : ?>
+					<a class="button" href="<?php echo esc_url( PNCP_Status::settings_url( array( 'tab' => 'log' ) ) . '#pncp-tester' ); ?>"><?php esc_html_e( 'Check a request', 'scrapelock' ); ?></a>
+					<a class="button button-primary" href="<?php echo esc_url( PNCP_Status::settings_url( array( 'tab' => 'log' ) ) ); ?>"><?php esc_html_e( 'View log', 'scrapelock' ); ?></a>
+					<a class="pncp-header__off" href="<?php echo esc_url( PNCP_Status::disable_url() ); ?>"><?php esc_html_e( 'Disable…', 'scrapelock' ); ?></a>
+				<?php endif; ?>
+			</div>
+		</header>
+		<?php
+	}
+
+	/**
+	 * Four figures under the header: blocked requests in the last 24 hours, IPs blocked now, protection layers
+	 * on and the preset. The 24-hour figure is the cached summary of the Log tab (counted at most every 5 minutes).
+	 *
+	 * @param array<string, mixed> $s Settings.
+	 */
+	private static function render_kpis( $s ) {
+		$monitor = ! empty( $s['enabled'] ) && PNCP_Options::monitoring( $s );
+		$summary = PNCP_Log::summary_cached( 24, $monitor ? 'monitor' : 'blocked' );
+		$total   = isset( $summary['value']['total'] ) ? (int) $summary['value']['total'] : 0;
+		$items   = self::status_items( $s );
+		$on      = count( array_filter( array_column( $items, 0 ) ) );
+		$profile = PNCP_Options::current_profile( $s );
+		$names   = array(
+			'balanced' => __( 'Balanced', 'scrapelock' ),
+			'strict'   => __( 'Strict', 'scrapelock' ),
+			'maximum'  => __( 'Maximum', 'scrapelock' ),
+		);
+		$kpis    = array(
+			array(
+				$monitor ? __( 'Would block, 24 h', 'scrapelock' ) : __( 'Blocked, 24 h', 'scrapelock' ),
+				number_format_i18n( $total ),
+				PNCP_Status::log_url( $monitor ? 'monitor' : 'blocked' ),
+				$monitor ? 'warn' : 'accent',
+			),
+			array( __( 'IPs blocked now', 'scrapelock' ), number_format_i18n( PNCP_Log::count_bans() ), PNCP_Status::settings_url( array( 'tab' => 'log' ) ) . '#pncp-sec-bans', 'neutral' ),
+			array(
+				__( 'Protection layers on', 'scrapelock' ),
+				/* translators: 1: layers on, 2: all layers */
+				sprintf( __( '%1$s of %2$s', 'scrapelock' ), number_format_i18n( $on ), number_format_i18n( count( $items ) ) ),
+				'',
+				$on === count( $items ) ? 'good' : 'neutral',
+			),
+			array( __( 'Preset', 'scrapelock' ), isset( $names[ $profile ] ) ? $names[ $profile ] : __( 'Custom', 'scrapelock' ), PNCP_Status::settings_url() . '#pncp-profiles-title', 'neutral' ),
+		);
+		echo '<ul class="pncp-kpis" aria-label="' . esc_attr__( 'Overview', 'scrapelock' ) . '">';
+		foreach ( $kpis as $kpi ) {
+			$value = '<span class="pncp-kpi__value">' . esc_html( $kpi[1] ) . '</span>';
+			printf(
+				'<li class="pncp-kpi pncp-kpi--%1$s"><span class="pncp-kpi__label">%2$s</span>%3$s</li>',
+				esc_attr( $kpi[3] ),
+				esc_html( $kpi[0] ),
+				'' !== $kpi[2] ? '<a class="pncp-kpi__link" href="' . esc_url( $kpi[2] ) . '">' . $value . '</a>' : $value // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Escaped above.
+			);
+		}
+		echo '</ul>';
 	}
 
 	/**
@@ -930,6 +1064,7 @@ final class PNCP_Admin {
 	 */
 	private static function render_changes( $changes, $label ) {
 		?>
+		<div class="pncp-table-wrap">
 		<table class="widefat striped pncp-changes">
 			<thead><tr><th scope="col"><?php esc_html_e( 'Setting', 'scrapelock' ); ?></th><th scope="col"><?php esc_html_e( 'Now', 'scrapelock' ); ?></th><th scope="col"><?php echo esc_html( $label ); ?></th></tr></thead>
 			<tbody>
@@ -942,6 +1077,7 @@ final class PNCP_Admin {
 				<?php endforeach; ?>
 			</tbody>
 		</table>
+		</div>
 		<?php
 	}
 
@@ -1627,6 +1763,7 @@ final class PNCP_Admin {
 			}
 		}
 		?>
+		<section class="pncp-card pncp-card--wide pncp-ip-lists" aria-labelledby="pncp-sec-lists">
 		<h2 id="pncp-sec-lists"><?php esc_html_e( 'Official IP lists', 'scrapelock' ); ?></h2>
 		<ul class="pncp-list-status">
 			<?php foreach ( $names as $key => $label ) : ?>
@@ -1671,6 +1808,7 @@ final class PNCP_Admin {
 				<?php submit_button( __( 'Download now', 'scrapelock' ), 'secondary', 'submit', false, self::submit_attrs() ); ?>
 			</form>
 		<?php endif; ?>
+		</section>
 		<?php
 	}
 
@@ -1763,11 +1901,13 @@ final class PNCP_Admin {
 			$total += count( $routes );
 		}
 		?>
-		<h2><?php esc_html_e( 'REST routes open to everyone', 'scrapelock' ); ?></h2>
+		<section class="pncp-card pncp-card--wide pncp-public-routes-card" aria-labelledby="pncp-public-routes-title">
+		<h2 id="pncp-public-routes-title"><?php esc_html_e( 'REST routes open to everyone', 'scrapelock' ); ?> <span class="pncp-badge"><?php echo esc_html( number_format_i18n( $total ) ); ?></span></h2>
 		<?php /* translators: %d: number of routes */ ?>
 		<p><?php echo esc_html( sprintf( _n( '%d route can be called without logging in, because its permission is open to everyone. Check after installing a plugin or updating WordPress whether a new one gives out content or data it should not.', '%d routes can be called without logging in, because their permission is open to everyone. Check after installing a plugin or updating WordPress whether a new one gives out content or data it should not.', $total, 'scrapelock' ), $total ) ); ?> <?php esc_html_e( 'Routes with their own permission check (e.g. published posts) are not listed: their text is covered by "Hide the text" above.', 'scrapelock' ); ?></p>
 		<details class="pncp-public-routes">
 			<summary><?php esc_html_e( 'Show the routes', 'scrapelock' ); ?></summary>
+			<div class="pncp-table-wrap">
 			<table class="widefat striped">
 				<thead><tr><th><?php esc_html_e( 'Namespace', 'scrapelock' ); ?></th><th><?php esc_html_e( 'Route', 'scrapelock' ); ?></th><th><?php esc_html_e( 'Methods', 'scrapelock' ); ?></th></tr></thead>
 				<tbody>
@@ -1778,7 +1918,9 @@ final class PNCP_Admin {
 					<?php endforeach; ?>
 				</tbody>
 			</table>
+			</div>
 		</details>
+		</section>
 		<?php
 	}
 
@@ -1867,6 +2009,7 @@ final class PNCP_Admin {
 
 			<?php if ( $paths ) : ?>
 				<h3><?php esc_html_e( 'Access per feed', 'scrapelock' ); ?></h3>
+				<div class="pncp-table-wrap">
 				<table class="widefat striped pncp-table">
 					<thead>
 						<tr>
@@ -1898,6 +2041,7 @@ final class PNCP_Admin {
 						<?php endforeach; ?>
 					</tbody>
 				</table>
+				</div>
 			<?php endif; ?>
 		</section>
 		<?php
@@ -2055,10 +2199,14 @@ final class PNCP_Admin {
 	 */
 	private static function tab_rules( $s ) { // phpcs:ignore Generic.CodeAnalysis.UnusedFunctionParameter.Found -- Same signature as the other tabs.
 		?>
+		<div class="pncp-intro">
 		<p><?php esc_html_e( 'The plugin only checks requests that reach PHP. Pages from page cache, images and static files are served directly by the server or the CDN. The rules below are generated for your site, with the current settings. Test them on staging first.', 'scrapelock' ); ?></p>
 		<p class="description"><?php esc_html_e( 'The plugin does not keep a Cloudflare API token in the database: you add the rules yourself, where you already have access.', 'scrapelock' ); ?></p>
+		</div>
 
-		<h2><?php esc_html_e( 'Cloudflare', 'scrapelock' ); ?></h2>
+		<div class="pncp-rules">
+		<section class="pncp-card pncp-rules-card" aria-labelledby="pncp-rules-cf">
+		<h2 id="pncp-rules-cf"><?php esc_html_e( 'Cloudflare', 'scrapelock' ); ?></h2>
 		<?php if ( PNCP_Ip::cloudflare_plugin_active() || PNCP_Ip::behind_cloudflare() ) : ?>
 			<div class="notice notice-info inline"><p><?php esc_html_e( 'APO and “Cache Everything”: pages served from the Cloudflare cache never reach the plugin, so the bot list, limits and the trap do not apply to them. The WAF rules below apply before the cache. ScrapeLock tells the Cloudflare plugin not to cache blocks and private feeds, and purges its cache when you save the settings.', 'scrapelock' ); ?></p></div>
 		<?php endif; ?>
@@ -2067,16 +2215,27 @@ final class PNCP_Admin {
 			<h3><?php echo esc_html( $rule['title'] ); ?> <span class="pncp-badge"><?php echo esc_html( $rule['action'] ); ?></span></h3>
 			<?php self::code_block( 'pncp-cf-' . $key, $rule['expression'], 3 ); ?>
 		<?php endforeach; ?>
+		</section>
 
-		<h2><?php esc_html_e( 'Nginx', 'scrapelock' ); ?></h2>
+		<section class="pncp-card pncp-rules-card" aria-labelledby="pncp-rules-apache">
+		<h2 id="pncp-rules-apache"><?php esc_html_e( 'Apache (.htaccess, above # BEGIN WordPress)', 'scrapelock' ); ?></h2>
+		<?php self::code_block( 'pncp-apache', PNCP_Rules::apache(), 14 ); ?>
+		</section>
+
+		<section class="pncp-card pncp-card--wide pncp-rules-card" aria-labelledby="pncp-rules-nginx">
+		<h2 id="pncp-rules-nginx"><?php esc_html_e( 'Nginx', 'scrapelock' ); ?></h2>
 		<?php self::render_nginx_status(); ?>
 		<p class="description"><?php esc_html_e( 'Optional: they stop the bots before PHP and the page cache, so the server does less work. Without access to the Nginx configuration (shared hosting) skip them: the plugin and the pre-cache check still protect the pages. The names carry this site\'s suffix, so several WordPress sites can use their rules on the same Nginx.', 'scrapelock' ); ?></p>
+		<div class="pncp-rules-steps">
+		<div class="pncp-rules-step">
 		<p class="description"><?php esc_html_e( '1) Inside http { }: a new file in a folder that nginx.conf includes there, e.g.', 'scrapelock' ); ?></p>
 		<ul class="ul-disc description">
 			<li><?php esc_html_e( 'Debian / Ubuntu, CentOS / RHEL, Plesk and most servers:', 'scrapelock' ); ?> <code><?php echo esc_html( '/etc/nginx/conf.d/scrapelock-' . PNCP_Rules::nginx_id() . '.conf' ); ?></code></li>
 			<li><?php esc_html_e( 'aaPanel:', 'scrapelock' ); ?> <code><?php echo esc_html( '/www/server/panel/vhost/nginx/0.scrapelock-' . PNCP_Rules::nginx_id() . '.conf' ); ?></code></li>
 		</ul>
 		<?php self::code_block( 'pncp-nginx-http', PNCP_Rules::nginx_http(), 8 ); ?>
+		</div>
+		<div class="pncp-rules-step">
 		<p class="description"><?php esc_html_e( '2) Inside the site\'s server { } (the one for HTTPS, and for HTTP if it serves pages too), before the other location blocks:', 'scrapelock' ); ?></p>
 		<ul class="ul-disc description">
 			<li><?php esc_html_e( 'Your own server: the site\'s file, e.g. /etc/nginx/sites-available/, or a file it includes.', 'scrapelock' ); ?></li>
@@ -2085,10 +2244,11 @@ final class PNCP_Admin {
 			<li><?php esc_html_e( 'Other panels: the place they give for custom server { } directives.', 'scrapelock' ); ?></li>
 		</ul>
 		<?php self::code_block( 'pncp-nginx-server', PNCP_Rules::nginx_server(), 18 ); ?>
+		</div>
+		</div>
 		<p class="description"><?php esc_html_e( '3) Run nginx -t: only if it says “test is successful”, reload Nginx (nginx -s reload or systemctl reload nginx). If it shows an error, nothing has changed yet: remove what you added. 4) Check the status above. After every change of the settings that changes the rules, it says “out of date”: copy the part it names again.', 'scrapelock' ); ?></p>
-
-		<h2><?php esc_html_e( 'Apache (.htaccess, above # BEGIN WordPress)', 'scrapelock' ); ?></h2>
-		<?php self::code_block( 'pncp-apache', PNCP_Rules::apache(), 14 ); ?>
+		</section>
+		</div>
 		<?php
 	}
 
@@ -2183,13 +2343,16 @@ final class PNCP_Admin {
 		endif;
 		// 3.5: "Check a request": what ScrapeLock would answer, without counting or logging anything.
 		require_once PNCP_DIR . 'includes/class-pncp-tester-view.php';
+		echo '<div class="pncp-tools">';
 		PNCP_Tester_View::render( $s );
 		PNCP_Trace::render(); // 3.6: "Find whose copy this is".
+		echo '</div>';
 		$views = array(
 			'all'     => __( 'All events', 'scrapelock' ),
 			'blocked' => __( 'Blocked', 'scrapelock' ),
 			'monitor' => __( 'Would block (Monitor only)', 'scrapelock' ),
 		);
+		echo '<div class="pncp-log-toolbar">';
 		echo '<ul class="subsubsub pncp-log-views">';
 		$last = array_key_last( $views );
 		foreach ( $views as $key => $label ) {
@@ -2218,7 +2381,9 @@ final class PNCP_Admin {
 			</span>
 			<button type="submit" class="button button-small"><?php esc_html_e( 'Refresh', 'scrapelock' ); ?></button>
 		</form>
-		<h2><?php esc_html_e( 'Last 24 hours', 'scrapelock' ); ?></h2>
+		</div>
+		<h2 class="pncp-section-title"><?php esc_html_e( 'Last 24 hours', 'scrapelock' ); ?></h2>
+		<div class="pncp-log-hero">
 		<?php if ( 'monitor' === $view ) : ?>
 			<p class="pncp-big-number"><?php echo esc_html( sprintf( /* translators: %s: count */ __( '%s requests would have been blocked', 'scrapelock' ), number_format_i18n( $summary['total'] ) ) ); ?></p>
 		<?php else : ?>
@@ -2231,6 +2396,7 @@ final class PNCP_Admin {
 				</p>
 			<?php endif; ?>
 		<?php endif; ?>
+		</div>
 		<div class="pncp-cards">
 			<section class="pncp-card">
 				<h3><?php esc_html_e( 'By reason', 'scrapelock' ); ?></h3>
@@ -2247,7 +2413,7 @@ final class PNCP_Admin {
 			</section>
 		</div>
 
-		<h2><?php esc_html_e( 'What they try to copy', 'scrapelock' ); ?></h2>
+		<h2 class="pncp-section-title"><?php esc_html_e( 'What they try to copy', 'scrapelock' ); ?></h2>
 		<p class="description"><?php esc_html_e( 'The blocked requests grouped by address. “Pages” exist on your site: what scrapers were after. “Addresses that do not exist” are random strings and guesses. “Files” are scanners looking for passwords, backups or admin areas. No content leaks in the last two, they only show what was tried.', 'scrapelock' ); ?></p>
 		<?php
 		$periods = array(
@@ -2257,7 +2423,7 @@ final class PNCP_Admin {
 		foreach ( $periods as $hours => $period ) :
 			$top = PNCP_Log::top_paths_cached( $hours, $which )['value'];
 			?>
-			<h3><?php echo esc_html( $period ); ?></h3>
+			<h3 class="pncp-subsection-title"><?php echo esc_html( $period ); ?></h3>
 			<div class="pncp-cards">
 				<section class="pncp-card">
 					<h4><?php esc_html_e( 'Pages', 'scrapelock' ); ?></h4>
@@ -2280,10 +2446,12 @@ final class PNCP_Admin {
 			<p class="description"><?php esc_html_e( 'The log is kept for 1 day, so the 7-day view shows only the last day. Change “Keep the block log for” under “Log settings” below to see more.', 'scrapelock' ); ?></p>
 		<?php endif; ?>
 
-		<h2><?php esc_html_e( 'IPs blocked now', 'scrapelock' ); ?></h2>
+		<section class="pncp-card pncp-card--wide pncp-card--table" id="pncp-sec-bans" aria-labelledby="pncp-bans-title">
+		<h2 id="pncp-bans-title"><?php esc_html_e( 'IPs blocked now', 'scrapelock' ); ?> <span class="pncp-badge"><?php echo esc_html( number_format_i18n( count( $bans ) ) ); ?></span></h2>
 		<?php if ( ! $bans ) : ?>
-			<p><?php esc_html_e( 'None.', 'scrapelock' ); ?></p>
+			<p class="pncp-empty"><?php esc_html_e( 'None.', 'scrapelock' ); ?></p>
 		<?php else : ?>
+			<div class="pncp-table-wrap">
 			<table class="widefat striped pncp-table">
 				<thead>
 					<tr>
@@ -2311,19 +2479,23 @@ final class PNCP_Admin {
 					<?php endforeach; ?>
 				</tbody>
 			</table>
+			</div>
 			<?php self::action_form_open( 'pncp_log', 'pncp_log' ); ?>
 				<input type="hidden" name="op" value="unban_all">
 				<?php submit_button( __( 'Unblock all', 'scrapelock' ), 'secondary', 'submit', true, self::submit_attrs() ); ?>
 			</form>
 		<?php endif; ?>
+		</section>
 
 		<?php self::render_repeat_offenders( $format, $reasons ); ?>
 
-		<h2><?php esc_html_e( 'Latest events', 'scrapelock' ); ?></h2>
+		<section class="pncp-card pncp-card--wide pncp-card--table" id="pncp-sec-events" aria-labelledby="pncp-events-title">
+		<h2 id="pncp-events-title"><?php esc_html_e( 'Latest events', 'scrapelock' ); ?></h2>
 		<?php $rows = PNCP_Log::recent( 100, $view ); ?>
 		<?php if ( ! $rows ) : ?>
-			<p><?php esc_html_e( 'No events.', 'scrapelock' ); ?></p>
+			<p class="pncp-empty"><?php esc_html_e( 'No events.', 'scrapelock' ); ?></p>
 		<?php else : ?>
+			<div class="pncp-table-wrap">
 			<table class="widefat striped pncp-table pncp-log-table">
 				<thead>
 					<tr>
@@ -2402,7 +2574,9 @@ final class PNCP_Admin {
 					<?php endforeach; ?>
 				</tbody>
 			</table>
+			</div>
 		<?php endif; ?>
+		<div class="pncp-card__footer">
 		<p class="description">
 			<?php
 			echo esc_html(
@@ -2418,6 +2592,8 @@ final class PNCP_Admin {
 			<input type="hidden" name="op" value="clear_log">
 			<?php submit_button( __( 'Delete log', 'scrapelock' ), 'delete', 'submit', false, self::submit_attrs() ); ?>
 		</form>
+		</div>
+		</section>
 		<?php
 		self::render_log_settings( $s );
 	}
@@ -2431,7 +2607,7 @@ final class PNCP_Admin {
 	 */
 	private static function render_log_settings( $s ) {
 		?>
-		<h2 id="pncp-sec-log-settings"><?php esc_html_e( 'Log settings', 'scrapelock' ); ?></h2>
+		<h2 id="pncp-sec-log-settings" class="pncp-section-title"><?php esc_html_e( 'Log settings', 'scrapelock' ); ?></h2>
 		<?php self::form_open( 'log' ); ?>
 		<tr>
 			<th scope="row"><label for="pncp-log_retention"><?php esc_html_e( 'Keep the block log for', 'scrapelock' ); ?></label></th>
@@ -2467,10 +2643,10 @@ final class PNCP_Admin {
 	 */
 	private static function path_table( $rows ) {
 		if ( ! $rows ) {
-			echo '<p>' . esc_html__( 'Nothing.', 'scrapelock' ) . '</p>';
+			echo '<p class="pncp-empty">' . esc_html__( 'Nothing.', 'scrapelock' ) . '</p>';
 			return;
 		}
-		echo '<table class="widefat striped pncp-path-table"><thead><tr>';
+		echo '<div class="pncp-table-wrap"><table class="widefat striped pncp-path-table"><thead><tr>';
 		echo '<th scope="col">' . esc_html__( 'Path', 'scrapelock' ) . '</th>';
 		echo '<th scope="col" class="num">' . esc_html__( 'Requests', 'scrapelock' ) . '</th>';
 		echo '<th scope="col" class="num">' . esc_html__( 'IPs', 'scrapelock' ) . '</th>';
@@ -2483,7 +2659,7 @@ final class PNCP_Admin {
 				esc_html( number_format_i18n( $row['ips'] ) )
 			);
 		}
-		echo '</tbody></table>';
+		echo '</tbody></table></div>';
 	}
 
 	/**
@@ -2494,7 +2670,7 @@ final class PNCP_Admin {
 	 */
 	private static function count_list( $counts, $labels = array() ) {
 		if ( ! $counts ) {
-			echo '<p>' . esc_html__( 'Nothing.', 'scrapelock' ) . '</p>';
+			echo '<p class="pncp-empty">' . esc_html__( 'Nothing.', 'scrapelock' ) . '</p>';
 			return;
 		}
 		echo '<ol class="pncp-count-list">';
@@ -2591,7 +2767,8 @@ final class PNCP_Admin {
 	private static function render_repeat_offenders( $format, $reasons ) {
 		$rows = PNCP_Log::repeat_offenders_cached()['value'];
 		?>
-		<h2><?php esc_html_e( 'Persistent IPs (last 7 days)', 'scrapelock' ); ?></h2>
+		<section class="pncp-card pncp-card--wide pncp-card--table" id="pncp-sec-persistent" aria-labelledby="pncp-persistent-title">
+		<h2 id="pncp-persistent-title"><?php esc_html_e( 'Persistent IPs (last 7 days)', 'scrapelock' ); ?></h2>
 		<p class="description">
 			<?php
 			echo esc_html(
@@ -2604,11 +2781,13 @@ final class PNCP_Admin {
 			?>
 		</p>
 		<?php if ( ! $rows ) : ?>
-			<p><?php esc_html_e( 'None.', 'scrapelock' ); ?></p>
+			<p class="pncp-empty"><?php esc_html_e( 'None.', 'scrapelock' ); ?></p>
+			</section>
 			<?php
 			return;
 		endif;
 		?>
+		<div class="pncp-table-wrap">
 		<table class="widefat striped pncp-table">
 			<thead>
 				<tr>
@@ -2633,6 +2812,8 @@ final class PNCP_Admin {
 				<?php endforeach; ?>
 			</tbody>
 		</table>
+		</div>
+		</section>
 		<?php
 	}
 
@@ -2643,7 +2824,7 @@ final class PNCP_Admin {
 	 */
 	private static function ip_list( $counts ) {
 		if ( ! $counts ) {
-			echo '<p>' . esc_html__( 'Nothing.', 'scrapelock' ) . '</p>';
+			echo '<p class="pncp-empty">' . esc_html__( 'Nothing.', 'scrapelock' ) . '</p>';
 			return;
 		}
 		echo '<ol class="pncp-count-list pncp-ip-list">';
@@ -2665,7 +2846,7 @@ final class PNCP_Admin {
 	 */
 	private static function ua_list( $counts, $why, $reasons ) {
 		if ( ! $counts ) {
-			echo '<p>' . esc_html__( 'Nothing.', 'scrapelock' ) . '</p>';
+			echo '<p class="pncp-empty">' . esc_html__( 'Nothing.', 'scrapelock' ) . '</p>';
 			return;
 		}
 		echo '<ol class="pncp-count-list pncp-ua-list">';

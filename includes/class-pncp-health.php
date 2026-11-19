@@ -250,6 +250,11 @@ final class PNCP_Health {
 		if ( 'bunny' === $cdn ) {
 			return self::result( 'real_ip', 'critical', __( 'All visitors appear with a Bunny CDN address', 'scrapelock' ), __( 'The site is behind Bunny CDN, but ScrapeLock sees Bunny\'s address instead of the visitor\'s. Limits and blocks then hit Bunny itself, i.e. many visitors at once. Use X-Real-IP from Bunny (one click on the Bots tab).', 'scrapelock' ), 'bots' );
 		}
+		// 3.6.1: a proxy on the server or a private network that "Real visitor IP" does not trust (not only with
+		// "Only through the CDN", see test_origin()).
+		if ( PNCP_Origin::peer_problem() && ! PNCP_Origin::proxy_problem() ) {
+			return self::result( 'real_ip', 'critical', __( 'ScrapeLock sees a proxy\'s address for every visitor', 'scrapelock' ), PNCP_Origin::peer_message(), 'bots', 'pncp-sec-ip' );
+		}
 		$s    = PNCP_Options::stored();
 		$wide = array();
 		foreach ( PNCP_Options::parse_list( $s['trusted_proxies'] ) as $range ) {
@@ -274,6 +279,15 @@ final class PNCP_Health {
 			// 3.4: saved by an earlier version. They are ignored now, but the setting should be corrected.
 			/* translators: %s: the IP ranges */
 			return self::result( 'real_ip', 'recommended', __( 'ScrapeLock trusted proxies include ranges that are too wide', 'scrapelock' ), sprintf( __( 'These trusted proxy ranges cover a large part of the internet: %s. With them any visitor could choose its own IP with a header, so ScrapeLock ignores them. Remove them and list only the addresses of your own proxy or load balancer.', 'scrapelock' ), implode( ', ', $wide ) ), 'bots' );
+		}
+		// 3.6.1: a CDN edge is trusted for a header that anyone can make it send (an account of their own at the same
+		// CDN, a Cloudflare Worker), and no CDN shared secret tells this site's own CDN apart. Such IPs are treated
+		// as unreliable (no allowed or private IPs, no violations or bans for them), so the protection is weaker.
+		$header = (string) $s['ip_header'];
+		$bunny  = ! empty( $s['trust_bunny'] ) && in_array( $header, array( 'x_real_ip', 'x_forwarded_for' ), true );
+		$cf     = ! empty( $s['trust_cloudflare'] ) && 'x_forwarded_for' === $header;
+		if ( PNCP_Status::is_enabled() && ( $bunny || $cf ) && '' === trim( (string) $s['cdn_secret'] ) ) {
+			return self::result( 'real_ip', 'recommended', __( 'Set a CDN shared secret for ScrapeLock', 'scrapelock' ), $cf && ! $bunny ? __( '“Real visitor IP” is X-Forwarded-For with Cloudflare trusted, and no CDN shared secret is set. Anyone can send requests through Cloudflare (a Worker, a zone of their own) with any X-Forwarded-For, so ScrapeLock reads the visitor from CF-Connecting-IP and treats a request whose X-Forwarded-For does not match it as one whose IP may be forged: it is limited, but it earns no violations or bans and does not match the always-allowed or private IPs. Use CF-Connecting-IP as “Real visitor IP”, or have Cloudflare add the CDN shared secret to every request (a request header Transform Rule) and enter it on the Bots tab.', 'scrapelock' ) : __( '“Real visitor IP” trusts a CDN edge (Bunny CDN) for a header, and no CDN shared secret is set. Anyone can point a pull zone of their own at this server and make it send any visitor IP, so ScrapeLock treats these IPs as possibly forged: they are limited, but earn no violations or bans and do not match the always-allowed or private IPs. Have the CDN add the CDN shared secret to every request (an edge rule) and enter it on the Bots tab.', 'scrapelock' ), 'bots', 'pncp-sec-ip' );
 		}
 		return self::result( 'real_ip', 'good', __( 'ScrapeLock sees the real visitor IP', 'scrapelock' ), __( 'No CDN was found hiding the visitors\' addresses on this request.', 'scrapelock' ) );
 	}
