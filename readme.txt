@@ -222,7 +222,7 @@ No. Verified search engines are never limited or blocked. Only fakes that preten
 
 = Can I allow ChatGPT or Perplexity search but block training? =
 
-Yes. Turn on "Allow AI search engines and assistants" (Bots and limits). Training crawlers stay blocked. With "Verify AI search bots" on, only requests from the official addresses count as those bots; copies of the name get a 403.
+Yes. Turn on "Allow AI search engines and assistants" (Bots and limits). Training crawlers stay blocked. With "Verify AI search bots" on, only requests from the official addresses count as those bots; copies of the name get a 403. Turn the option off and ScrapeLock blocks them again from its own list, whether or not they are in your bot list.
 
 = Does ScrapeLock block WP Rocket's or Jetpack's own services? =
 

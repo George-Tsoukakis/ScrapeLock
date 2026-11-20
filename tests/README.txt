@@ -128,6 +128,12 @@ ScrapeLock — δοκιμές σε πραγματικό WordPress (όχι stubs)
                     every pass / refuse reason drawn as tester.js draws them, the AJAX answer, every wp-admin tab with
                     log rows and bans of every reason (and an unknown one): never a raw snake_case reason key;
                     wp scrapelock check (needs WP_CLI, else that part SKIPs)
+  t_3121_ai_search.php 3.12.1: AI search bots with a bot list as the 3.11 upgrade left it: "Allow AI search" on,
+                    OAI-SearchBot from its official address (stored test list openai_search) passes in WordPress, the
+                    early check and the pre-cache check (stand-in page cache), from another address "Fake AI search
+                    bot"; turned off, 403 everywhere from the built-in list (also in the pre-cache configuration),
+                    "Always allowed" still first; on again, it passes; the bot list untouched in both transitions;
+                    the 3.11 migration never runs again; the Bots tab warning and "Remove from the list"
   t_cli.php         wp scrapelock … μέσα από το πραγματικό wp (χρειάζεται WP_CLI, αλλιώς SKIP)
   t_bunny_rules.php Edge Rules στο Bunny μέσα στα όριά του (το πολύ 5 μοτίβα ανά συνθήκη) με ψεύτικο API που δίνει
                     HTTP 400 όπως το πραγματικό: χωρισμός, κλείδωμα/Remove, rollback, Monitor only, sync, προεπισκόπηση,

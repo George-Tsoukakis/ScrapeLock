@@ -513,9 +513,23 @@ final class PNCP_Options {
 	}
 
 	/**
+	 * 3.12.1: the AI search bots blocked by the plugin itself while "Allow AI search" is off: ai_search_agents(),
+	 * whatever the stored bot list holds. The 3.11 upgrade (and the "Remove from the list" button) took them out of
+	 * the lists of sites that allowed AI search; turning the option off later must block them again without
+	 * writing them back into the list. Empty while the option is on.
+	 *
+	 * @param array<string, mixed> $s Settings.
+	 * @return string[]
+	 */
+	public static function ai_search_blocked( $s ) {
+		return empty( $s['allow_ai_search'] ) ? self::ai_search_agents() : array();
+	}
+
+	/**
 	 * The User-Agents blocked when "Block bots" is on: the editable bot list, the AI crawlers built into the
-	 * plugin (PNCP_Bots::known_ai_agents()), with "Block web archives" the archive crawlers and, with "Also block
-	 * generic HTTP libraries", the libraries of http_library_agents(); no duplicates.
+	 * plugin (PNCP_Bots::known_ai_agents()), 3.12.1: the AI search bots while "Allow AI search" is off
+	 * (ai_search_blocked()), with "Block web archives" the archive crawlers and, with "Also block generic HTTP
+	 * libraries", the libraries of http_library_agents(); no duplicates.
 	 *
 	 * @param array<string, mixed> $s Settings.
 	 * @return string[]
@@ -534,7 +548,9 @@ final class PNCP_Options {
 		// import), not only where the allowed ones were already let through first.
 		$skip = self::ai_search_skipped( $s );
 		// 3.7: the site rippers always (with the bot list), the SEO data crawlers with their option.
-		foreach ( array_merge( self::parse_list( $s['bot_list'] ), PNCP_Bots::known_ai_agents(), PNCP_Bots::ripper_agents(), empty( $s['block_archivers'] ) ? array() : PNCP_Bots::archive_agents(), empty( $s['block_seo_crawlers'] ) ? array() : PNCP_Bots::seo_agents(), empty( $s['block_http_libs'] ) ? array() : self::http_library_agents() ) as $agent ) {
+		// 3.12.1: with the option off, its bots are blocked from the built-in list, also when the stored list no longer
+		// names them (the 3.11 upgrade took them out); nothing is written back into the stored list.
+		foreach ( array_merge( self::parse_list( $s['bot_list'] ), PNCP_Bots::known_ai_agents(), self::ai_search_blocked( $s ), PNCP_Bots::ripper_agents(), empty( $s['block_archivers'] ) ? array() : PNCP_Bots::archive_agents(), empty( $s['block_seo_crawlers'] ) ? array() : PNCP_Bots::seo_agents(), empty( $s['block_http_libs'] ) ? array() : self::http_library_agents() ) as $agent ) {
 			$agent = trim( (string) $agent );
 			if ( '' !== $agent && '=' !== $agent && ! isset( $skip[ strtolower( $agent ) ] ) ) {
 				$out[ strtolower( $agent ) ] = $agent;
