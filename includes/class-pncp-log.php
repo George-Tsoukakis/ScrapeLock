@@ -1005,6 +1005,11 @@ final class PNCP_Log {
 		if ( PNCP_Paths::is_site_metadata( $path ) ) {
 			return false;
 		}
+		// 3.11: the probes of other software that "Ban scanners on their first probe" knows (PNCP_Probe::listed_paths(),
+		// filter pncp_probe_paths): /Dockerfile, /railway.toml, /www.git/config…, unless the site has a page there.
+		if ( PNCP_Probe::matches_listed( PNCP_Private_Urls::relative_path( $path ) ) ) {
+			return ! self::is_site_page( $path );
+		}
 		// 3.8: Stealth can move the REST API (another prefix) and the sitemaps (/sitemap-posts-post-1.xml).
 		if ( preg_match( '#(?:^|/)(?:wp-sitemap[a-z0-9_-]*|sitemap(?:_index)?|sitemap-[a-z0-9_-]+|[a-z0-9_-]+-sitemap[0-9]*)\.xml$#', $path ) || 0 === strpos( $path, '/wp-json/' ) || 0 === strpos( $path, '/' . rest_get_url_prefix() . '/' ) ) {
 			return false; // Sitemaps and the REST API lead to content.

@@ -101,6 +101,13 @@ function php_errors( $body ) {
 	return preg_match( '/(Warning|Notice|Deprecated|Fatal error)<\/b>:|PHP (Warning|Notice|Deprecated)/', $body );
 }
 
+/** Whether a request of the web server banned the IP (the caches of this process read again). */
+function banned( $ip ) {
+	wp_cache_flush();
+	PNCP_Log::reset_cache();
+	return PNCP_Log::is_banned( $ip );
+}
+
 /** Auth cookies of a user, and the user made current for nonces. */
 function login_cookies( $user_id ) {
 	$expire  = time() + DAY_IN_SECONDS;
@@ -299,6 +306,98 @@ settings(
 		'allow_ai_search' => $saved['allow_ai_search'],
 	)
 );
+
+/* ---------- A6. Scanner probes of other software ---------- */
+// The filter first (the list is built once per request).
+$extra_probe = static function ( $paths ) {
+	$paths[] = '/pncp-test-probe.cfg';
+	$paths[] = '/*';
+	return $paths;
+};
+add_filter( 'pncp_probe_paths', $extra_probe );
+t( 'A6 filter: an added path is on the list', PNCP_Probe::matches( '/pncp-test-probe.cfg' ) );
+t( 'A6 filter: a too broad path ("/*") is dropped, not the whole list', ! PNCP_Probe::matches( '/hello-world/' ) && ! PNCP_Probe::matches( '/' ) && PNCP_Probe::matches( '/Dockerfile' ) );
+
+$new_probes = array( '/actuator/env', '/actuator/health', '/admin/auth.json', '/Dockerfile', '/railway.toml', '/payment_gateways/stripe.yaml', '/config/parameters.yml', '/credentials.yml', '/credentials.json', '/secrets', '/www.git/config', '/wp-conflg.php', '/.env.production' );
+foreach ( $new_probes as $p ) {
+	t( "A6: $p is a probe (PNCP_Probe and the Log / attack record)", PNCP_Probe::matches( $p ) && PNCP_Log::is_probe_path( $p ) );
+}
+foreach ( array( '/', '/hello-world/', '/actuators-guide/', '/secrets-of-greek-cooking/', '/wp-config.php', '/.well-known/security.txt', '/favicon.ico', '/apple-touch-icon.png' ) as $p ) {
+	t( "A6: $p is not a probe", ! PNCP_Probe::matches( $p ) );
+}
+
+settings(
+	array(
+		'probe_ban'   => 1,
+		'ban_strikes' => 3,
+		'ban_minutes' => 60,
+		'bot_list'    => $saved['bot_list'],
+	)
+);
+PNCP_Log::unban_all();
+$scanner = 'zgrab/0.x'; // Not "Mozilla/": a browser without Sec-Fetch is banned only on its third probe.
+$n       = 10;
+foreach ( $new_probes as $p ) {
+	$ip = '198.51.100.' . ( 100 + ( ++$n ) );
+	list( $code ) = http( $p, $ip, $scanner );
+		t( "A6 HTTP: $p (404 on this site) gets 403 and a ban", 403 === $code && banned( $ip ), $code . ' ' . ( banned( $ip ) ? 'banned' : 'not banned' ) );
+	PNCP_Log::unban( $ip );
+}
+
+// A page at that address: WordPress answers 200, nothing is banned.
+$page_id = wp_insert_post(
+	array(
+		'post_type'    => 'page',
+		'post_status'  => 'publish',
+		'post_title'   => 'Secrets',
+		'post_name'    => 'secrets',
+		'post_content' => 'Our secrets page.',
+	)
+);
+$ip           = '198.51.100.150';
+list( $code ) = http( '/secrets/', $ip, $scanner );
+t( 'A6 HTTP: /secrets/ when the site has that page: 200, no ban', 200 === $code && ! banned( $ip ), $code . ( banned( $ip ) ? ' banned' : '' ) );
+t( 'A6: /secrets/ with a page there is not a probe in the Log', ! PNCP_Log::is_probe_path( '/secrets/' ) );
+wp_delete_post( $page_id, true );
+
+// A real file of that name: never banned.
+$real = ABSPATH . 'railway.toml';
+$made = ! file_exists( $real ) && false !== file_put_contents( $real, "[build]\n" );
+$ip           = '198.51.100.151';
+list( $code ) = http( '/railway.toml', $ip, $scanner );
+t( 'A6 HTTP: /railway.toml that exists: no ban', $made && ! banned( $ip ), $code . ( banned( $ip ) ? ' banned' : '' ) );
+if ( $made ) {
+	unlink( $real );
+}
+
+// Staff and verified search engines.
+$cookies      = login_cookies( $admin->ID );
+$ip           = '198.51.100.152';
+list( $code ) = http( '/actuator/env', $ip, $browser, null, $cookies );
+t( 'A6 HTTP: staff asking for /actuator/env: not banned', ! banned( $ip ), (string) $code );
+wp_set_current_user( 0 );
+$google_list = get_option( PNCP_Ip::LISTS_OPTION . '_google', null );
+PNCP_Ip::store_list( 'google', array( '66.249.64.0/27' ) );
+$ip           = '66.249.64.9';
+list( $code ) = http( '/Dockerfile', $ip, 'Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)' );
+t( 'A6 HTTP: verified Googlebot asking for /Dockerfile: not banned', ! banned( $ip ), (string) $code );
+if ( null === $google_list ) {
+	delete_option( PNCP_Ip::LISTS_OPTION . '_google' );
+} else {
+	update_option( PNCP_Ip::LISTS_OPTION . '_google', $google_list );
+}
+settings( array( 'probe_ban' => 0 ) );
+$ip           = '198.51.100.153';
+list( $code ) = http( '/Dockerfile', $ip, $scanner );
+t( 'A6 HTTP: with "Ban scanners on their first probe" off: no ban (404)', 404 === $code && ! banned( $ip ), (string) $code );
+settings(
+	array(
+		'probe_ban'   => $saved['probe_ban'],
+		'ban_strikes' => $saved['ban_strikes'],
+		'ban_minutes' => $saved['ban_minutes'],
+	)
+);
+PNCP_Log::unban_all();
 
 echo $fails ? "\n$fails FAIL\n" : "\nALL PASS\n";
 exit( $fails ? 1 : 0 );
