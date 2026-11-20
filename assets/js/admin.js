@@ -48,6 +48,18 @@
 			target.scrollIntoView();
 		}
 	}
+	/* ---------- Tab bar (3.11) ---------- */
+	// On a narrow screen the grouped tab bar scrolls sideways: the open tab is brought into view.
+	var tabBar = document.querySelector( '.pncp-admin .pncp-tabs' );
+	var activeTab = tabBar ? tabBar.querySelector( '.nav-tab-active' ) : null;
+	if ( activeTab && tabBar.scrollWidth > tabBar.clientWidth ) {
+		var barRect = tabBar.getBoundingClientRect();
+		var tabRect = activeTab.getBoundingClientRect();
+		if ( tabRect.left < barRect.left || tabRect.right > barRect.right ) {
+			tabBar.scrollLeft += tabRect.left - barRect.left - 16;
+		}
+	}
+
 	/* ---------- Long lists (3.11) ---------- */
 	// "85 entries" + "Edit": the button shows or hides the textarea (always in the form, so saving is the same).
 	// Each list gets an "open" property like a <details>, so the open lists stay open after a Save too.
