@@ -13,6 +13,12 @@
  * the configuration is read from config.json there, written by PNCP_Precheck (includes/class-pncp-precheck.php).
  * This file only defines the class: opened directly, it does nothing.
  *
+ * It is the only file wp-config.php includes, before WordPress, so it loads no other file of the plugin: the
+ * address and User-Agent helpers (client_ip(), normalize_ip(), in_any(), is_local(), ua_listed(), limit_key())
+ * repeat PNCP_Ip and PNCP_Bots on purpose. Those need WordPress, and a second file missing during a plugin update
+ * would be a fatal error in wp-config.php for every page. A change to one side must be made on the other too
+ * (tests/t_fixes351.php and t_311_integration.php send the same requests to both).
+ *
  * @package ScrapeLock
  */
 
@@ -1077,7 +1083,7 @@ final class PNCP_Precheck_Runtime {
 			if ( ! is_array( $entry ) || ! isset( $entry[0] ) || '' === (string) $entry[0] || false === strpos( $ua, (string) $entry[0] ) ) {
 				continue;
 			}
-			if ( ! isset( $entry[1] ) || null === $entry[1] || ( $reliable && is_array( $entry[1] ) && self::in_any( $ip, $entry[1] ) ) ) {
+			if ( ! isset( $entry[1] ) || ( $reliable && is_array( $entry[1] ) && self::in_any( $ip, $entry[1] ) ) ) {
 				return true;
 			}
 		}

@@ -342,7 +342,7 @@ final class PNCP_Lockdown {
 	/**
 	 * The stored state.
 	 *
-	 * @return array{secret:string, locked:bool, until:int, last_step:int, codes:string[], since:int}
+	 * @return array<string, mixed> secret, locked, until, last_step, codes, since and the other keys set below.
 	 */
 	public static function state() {
 		if ( null === self::$state ) {

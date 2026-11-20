@@ -606,7 +606,7 @@ final class PNCP_Integrity {
 	/**
 	 * The stored fingerprint.
 	 *
-	 * @return array{time:int, files:array<string,string>, complete:bool, stale:bool}
+	 * @return array{time:int, files:array<string,string>, complete:bool, stale:bool, tampered:bool, scope:int}
 	 */
 	public static function baseline() {
 		$stored   = self::get( self::BASELINE, true ); // 3.4.3: the row, also with a persistent object cache.

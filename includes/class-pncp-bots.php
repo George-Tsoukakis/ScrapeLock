@@ -1233,29 +1233,39 @@ final class PNCP_Bots {
 		if ( empty( $s['verify_ai_bots'] ) || '' === $ua || '' === $ip ) {
 			return '';
 		}
+		$list = self::claimed_ai_list( $ua );
+		if ( '' === $list || ! self::ua_in_list( $ua, PNCP_Options::allowed_ai_search() ) ) {
+			return '';
+		}
+		// 3.10: the ranges the official list lacks (PNCP_Ip::extra_ranges(), e.g. Anthropic's outbound range,
+		// which Claude-User fetches from) verify too, even before the list is downloaded.
+		if ( PNCP_Ip::in_any( $ip, PNCP_Ip::extra_ranges( $list ) ) ) {
+			return 'verified';
+		}
+		$ranges = PNCP_Ip::list_of( $list );
+		if ( ! $ranges ) {
+			return '';
+		}
+		if ( PNCP_Ip::in_any( $ip, $ranges ) ) {
+			return 'verified';
+		}
+		// 3.10: fail open with a list that has not been refreshed for a week (its download keeps failing):
+		// the service may have new addresses since, so a real bot must not be called fake. The bot list
+		// decides, as before the list was downloaded.
+		return PNCP_Ip::list_stale( $list ) ? '' : 'fake';
+	}
+
+	/**
+	 * The official list (ai_bot_lists()) of the first AI bot the User-Agent names, case-insensitive, or ''.
+	 *
+	 * @param string $ua User-Agent.
+	 * @return string
+	 */
+	public static function claimed_ai_list( $ua ) {
 		foreach ( self::ai_bot_lists() as $agent => $list ) {
-			if ( false === stripos( $ua, $agent ) ) {
-				continue;
+			if ( false !== stripos( (string) $ua, $agent ) ) {
+				return $list;
 			}
-			if ( ! self::ua_in_list( $ua, PNCP_Options::allowed_ai_search() ) ) {
-				return '';
-			}
-			// 3.10: the ranges the official list lacks (PNCP_Ip::extra_ranges(), e.g. Anthropic's outbound range,
-			// which Claude-User fetches from) verify too, even before the list is downloaded.
-			if ( PNCP_Ip::in_any( $ip, PNCP_Ip::extra_ranges( $list ) ) ) {
-				return 'verified';
-			}
-			$ranges = PNCP_Ip::list_of( $list );
-			if ( ! $ranges ) {
-				return '';
-			}
-			if ( PNCP_Ip::in_any( $ip, $ranges ) ) {
-				return 'verified';
-			}
-			// 3.10: fail open with a list that has not been refreshed for a week (its download keeps failing):
-			// the service may have new addresses since, so a real bot must not be called fake. The bot list
-			// decides, as before the list was downloaded.
-			return PNCP_Ip::list_stale( $list ) ? '' : 'fake';
 		}
 		return '';
 	}
@@ -1743,7 +1753,7 @@ final class PNCP_Bots {
 			}
 			return false;
 		}
-		if ( null === $host || '' === $host || $host === $ip ) {
+		if ( '' === $host || $host === $ip ) {
 			// No PTR record or DNS failure: perhaps temporary, so it is retried in 5 minutes.
 			self::$verify_inconclusive = true;
 			if ( $store ) {
@@ -1813,12 +1823,7 @@ final class PNCP_Bots {
 	 * @return bool
 	 */
 	public static function is_official_crawler_ip( $ip ) {
-		foreach ( array( 'google', 'bing', 'apple', 'duckduckgo' ) as $list ) { // 3.10: also Applebot and DuckDuckBot.
-			if ( PNCP_Ip::in_any( $ip, PNCP_Ip::list_of( $list ) ) ) {
-				return true;
-			}
-		}
-		return false;
+		return PNCP_Ip::in_lists( $ip, array( 'google', 'bing', 'apple', 'duckduckgo' ) ); // 3.10: also Applebot and DuckDuckBot.
 	}
 
 	/**
@@ -1984,7 +1989,7 @@ final class PNCP_Bots {
 	 * @return bool
 	 */
 	public static function is_google_or_apple_ip( $ip ) {
-		return '' !== (string) $ip && ( PNCP_Ip::in_any( $ip, PNCP_Ip::list_of( 'google' ) ) || PNCP_Ip::in_any( $ip, PNCP_Ip::list_of( 'apple' ) ) );
+		return '' !== (string) $ip && PNCP_Ip::in_lists( $ip, array( 'google', 'apple' ) );
 	}
 
 	/**
@@ -2555,6 +2560,7 @@ final class PNCP_Bots {
 		header( 'X-Robots-Tag: noindex, nofollow' );
 		$monitor = PNCP_Options::monitoring( $s );
 		$ban     = false;
+		$ip      = '';
 		// A real file is never logged or banned.
 		if ( ! PNCP_Probe::file_exists( $path ) ) {
 			$ip  = PNCP_Ip::client_ip();

@@ -1931,7 +1931,7 @@ final class PNCP_Edge {
 		if ( 'denied' === $status && 'cloudflare' === $c['provider'] && preg_match( '/^[0-9a-f]{37}$/i', (string) $c['token'] ) ) {
 			$message .= ' ' . __( 'This looks like a Global API Key: ScrapeLock needs an API token (My Profile > API Tokens), not the Global API Key.', 'scrapelock' );
 		}
-		if ( '' !== self::$last['ray'] && 'ok' !== $status ) {
+		if ( '' !== self::$last['ray'] ) {
 			$detail .= ( '' !== $detail ? '; ' : '' ) . 'Ray ID ' . self::$last['ray'];
 		}
 		self::$last['kind'] = $kind;

@@ -417,7 +417,7 @@ final class PNCP_Log {
 		$key    = 'pncp_lg_' . md5( $ip . '|' . $reason . '|' . (int) $code . '|' . $minute );
 		$orig   = $key;
 		$id     = self::row_id( $key );
-		$ua     = isset( $_SERVER['HTTP_USER_AGENT'] ) ? sanitize_text_field( wp_unslash( $_SERVER['HTTP_USER_AGENT'] ) ) : '';
+		$ua     = PNCP_Bots::user_agent();
 		if ( $id > 0 ) {
 			// The row keeps the first User-Agent and counts how many different ones there were (bots that rotate it).
 			$seen = self::uas_column() ? self::cache_get( $key . '_u' ) : false;

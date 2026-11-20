@@ -1418,11 +1418,7 @@ final class PNCP_Bunny {
 		if ( class_exists( 'PNCP_Login' ) ) {
 			// PNCP_Login serves the sign-in form at its own address and rewrites every link and form to it, so
 			// requests for wp-login.php itself then come from bots only.
-			if ( method_exists( 'PNCP_Login', 'custom_login_active' ) ) {
-				$on = (bool) PNCP_Login::custom_login_active();
-			} elseif ( method_exists( 'PNCP_Login', 'slug' ) ) {
-				$on = '' !== (string) PNCP_Login::slug();
-			}
+			$on = '' !== (string) PNCP_Login::slug();
 		}
 		/**
 		 * Filters whether the login page is moved away from wp-login.php (by PNCP_Login or another plugin that
@@ -3018,8 +3014,8 @@ final class PNCP_Bunny {
 	/**
 	 * Adds one raw line to a sample.
 	 *
-	 * @param array<string, int> $sample Sample.
-	 * @param string             $line   Raw line.
+	 * @param int[]  $sample Sample.
+	 * @param string $line   Raw line.
 	 */
 	public static function sample_ip( &$sample, $line ) {
 		$kind = self::ip_kind( $line );

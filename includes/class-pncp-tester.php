@@ -115,7 +115,7 @@ final class PNCP_Tester {
 		$ua      = self::clean( isset( $input['ua'] ) ? $input['ua'] : '' );
 		$address = self::clean( isset( $input['address'] ) ? $input['address'] : '' );
 		$referer = self::clean( isset( $input['referer'] ) ? $input['referer'] : '' );
-		$browser = ! empty( $input['browser'] ) && '0' !== $input['browser'];
+		$browser = ! empty( $input['browser'] );
 
 		// The address first: it is used in both modes.
 		$url = self::address_url( $address );
@@ -586,18 +586,13 @@ final class PNCP_Tester {
 	 * @return string '' when the User-Agent is not one of the verified AI bots.
 	 */
 	public static function ai_list_detail( $ua ) {
-		foreach ( PNCP_Bots::ai_bot_lists() as $agent => $list ) {
-			if ( false === stripos( (string) $ua, $agent ) ) {
-				continue;
-			}
-			$note = PNCP_Ip::list_note( $list );
-			if ( '' === $note ) {
-				return '';
-			}
-			/* translators: 1: list name, e.g. claude.com/crawling/bots.json, 2: e.g. "14 entries, updated 18 November 2026" */
-			return ' ' . sprintf( __( 'Compared with %1$s: %2$s.', 'scrapelock' ), self::list_source_name( $list ), $note );
+		$list = PNCP_Bots::claimed_ai_list( $ua );
+		$note = '' !== $list ? PNCP_Ip::list_note( $list ) : '';
+		if ( '' === $note ) {
+			return '';
 		}
-		return '';
+		/* translators: 1: list name, e.g. claude.com/crawling/bots.json, 2: e.g. "14 entries, updated 18 November 2026" */
+		return ' ' . sprintf( __( 'Compared with %1$s: %2$s.', 'scrapelock' ), self::list_source_name( $list ), $note );
 	}
 
 	/**

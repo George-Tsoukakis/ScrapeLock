@@ -935,7 +935,7 @@ final class PNCP_Options {
 	 * stays blocked, as it was by default before 3.4.
 	 *
 	 * @param array<string, mixed> $stored Stored settings.
-	 * @return array<string, string>
+	 * @return array<string, int|string>
 	 */
 	public static function new_in_340( $stored ) {
 		return array(
@@ -2223,6 +2223,7 @@ final class PNCP_Options {
 	 *
 	 * @param string        $raw      Text with one value per line.
 	 * @param string[]|null $rejected 3.5: optional, receives the lines that are not an IP or a CIDR range.
+	 * @param-out string[] $rejected
 	 * @return string[]
 	 */
 	public static function parse_ip_list( $raw, &$rejected = null ) {
