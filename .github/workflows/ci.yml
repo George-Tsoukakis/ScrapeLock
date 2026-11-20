@@ -1,4 +1,4 @@
-# ScrapeLock: phpcs, the basic tests on a real WordPress (SQLite) and the plugin zip.
+# ScrapeLock: phpcs, PHPStan, the basic tests on a real WordPress (SQLite) and the plugin zip.
 # Full-stack tests (FULL=1: MariaDB, Nginx, Apache, WooCommerce) run locally (tests/README.txt).
 name: CI
 
@@ -36,6 +36,23 @@ jobs:
       - name: phpcs (phpcs.xml.dist)
         # Only errors fail the build; the known warning (unused $request, filter signature) stays.
         run: phpcs -q --warning-severity=0
+
+  phpstan:
+    name: PHPStan
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: PHPStan and the WordPress stubs
+        # Outside the repository, as for phpcs: the plugin has no composer.json.
+        run: |
+          mkdir -p "$RUNNER_TEMP/phpstan" && cd "$RUNNER_TEMP/phpstan"
+          echo '{}' > composer.json
+          composer --no-interaction --quiet config allow-plugins.phpstan/extension-installer true
+          composer --no-interaction --quiet require --dev "phpstan/phpstan:2.1.56" "szepeviktor/phpstan-wordpress:2.0.4" "php-stubs/wordpress-stubs:6.9.4" "php-stubs/wp-cli-stubs:2.12.0" "phpstan/extension-installer:1.4.3"
+          echo "$RUNNER_TEMP/phpstan/vendor/bin" >> "$GITHUB_PATH"
+      - name: phpstan (phpstan.neon.dist)
+        run: phpstan analyse -c phpstan.neon.dist --no-progress --memory-limit=4G
 
   tests:
     name: Tests on WordPress (SQLite)
@@ -80,7 +97,7 @@ jobs:
     name: Plugin zip
     runs-on: ubuntu-24.04
     timeout-minutes: 5
-    needs: [lint, tests]
+    needs: [lint, phpstan, tests]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Build scrapelock.zip (only the plugin, as submitted to WordPress.org; see .gitattributes)
