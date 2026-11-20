@@ -272,21 +272,23 @@ final class PNCP_Wizard {
 				'link' => $link,
 			);
 		};
-		$bots = PNCP_Status::settings_url( array( 'tab' => 'bots' ) );
+		$bots      = PNCP_Status::settings_url( array( 'tab' => 'bots' ) );
+		$bots_link = __( 'Bots and limits', 'scrapelock' ); // Its own line: the translator comments below are for the sentences.
 		// Every known service bot of an active plugin (PNCP_Plugin_Bots: WP Rocket, Jetpack and those added with
 		// the pncp_plugin_bots filter) that the administrator stopped allowing.
 		foreach ( PNCP_Plugin_Bots::active() as $bot ) {
 			if ( empty( $bot['allowed'] ) ) {
 				$name = (string) $bot['name'];
 				/* translators: %s: plugin name */
-				$note( $name, sprintf( __( 'You stopped allowing the service bot of %s: its requests are checked like any other bot. Allow it again under “Bots and limits” if the plugin needs it.', 'scrapelock' ), $name ), $bots, __( 'Bots and limits', 'scrapelock' ) );
+				$note( $name, sprintf( __( 'You stopped allowing the service bot of %s: its requests are checked like any other bot. Allow it again under “Bots and limits” if the plugin needs it.', 'scrapelock' ), $name ), $bots, $bots_link );
 			}
 		}
 		// The pre-cache check is on but not running: the reason the status badges give (PNCP_Status_State).
 		$precheck = PNCP_Status_State::precheck( $s );
 		if ( PNCP_Status_State::SET === $precheck['state'] ) {
+			$precheck_name = __( 'Pre-cache check', 'scrapelock' );
 			/* translators: %s: why it is not running, e.g. "the loader is not in wp-config.php" */
-			$note( __( 'Pre-cache check', 'scrapelock' ), sprintf( __( 'The pre-cache check is on but not running: %s.', 'scrapelock' ), $precheck['reason'] ), $bots, __( 'Bots and limits', 'scrapelock' ) );
+			$note( $precheck_name, sprintf( __( 'The pre-cache check is on but not running: %s.', 'scrapelock' ), $precheck['reason'] ), $bots, $bots_link );
 		}
 		if ( ! empty( $env['fluentcommunity'] ) && PNCP_Fluent_Community::added_paths() ) {
 			$note( 'FluentCommunity', PNCP_Fluent_Community::note() );
