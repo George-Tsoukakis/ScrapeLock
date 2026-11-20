@@ -814,8 +814,8 @@ final class PNCP_Edge {
 
 	/**
 	 * The addresses that should be blocked at the CDN: the newest active bans, without the administrators'
-	 * IPs and without addresses of search engines, AI search services or the CDNs themselves. Bunny CDN blocks
-	 * single addresses only, so a banned IPv6 network (/64) is left to ScrapeLock there.
+	 * IPs, the server's own (3.12.1) and the addresses of search engines, AI search services or the CDNs
+	 * themselves. Bunny CDN blocks single addresses only, so a banned IPv6 network (/64) is left to ScrapeLock there.
 	 *
 	 * @param string $provider Provider.
 	 * @return array<string, array{until:int, reason:string}>
@@ -850,7 +850,9 @@ final class PNCP_Edge {
 			}
 			$key  = (string) $key;
 			$base = false === strpos( $key, '/' ) ? $key : strstr( $key, '/', true );
-			if ( isset( $staff[ $key ] ) || ! filter_var( $base, FILTER_VALIDATE_IP ) || PNCP_Ip::is_local( $base ) || PNCP_Ip::is_private( $base ) || '' !== PNCP_Ip::official_owner( $base ) || PNCP_Options::crawler_fallback_ip( $base ) ) {
+			// 3.12.1: never the server's own addresses (PNCP_Server_Ips): blocked at the CDN, the site's requests to
+			// itself through it (Vulnerable points, Site Health, cron, cache preloads) got a 403 from the CDN.
+			if ( isset( $staff[ $key ] ) || ! filter_var( $base, FILTER_VALIDATE_IP ) || PNCP_Ip::is_local( $base ) || PNCP_Ip::is_private( $base ) || '' !== PNCP_Ip::official_owner( $base ) || PNCP_Options::crawler_fallback_ip( $base ) || PNCP_Server_Ips::is_server_ip( $base ) ) {
 				continue;
 			}
 			if ( 'bunny' === $provider && $base !== $key ) {

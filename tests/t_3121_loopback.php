@@ -19,6 +19,8 @@
  * I. The server's addresses: the outbound one, detected from the site's signed requests (24-hour transient),
  *    and SCRAPELOCK_SERVER_IPS (a test mu-plugin defines it for the web server), in WordPress, the early check
  *    and the pre-cache check.
+ * E. ScrapeLock's own rules at the CDN never block the server: temporary blocks (PNCP_Edge), Bunny's logs, the
+ *    wp-login.php lock (stand-in Bunny API, within 5 entries per condition).
  * H. Vulnerable points "Check again" and the Stealth test's fetch through the "edge" get the real answers.
  *
  * The HTTP requests "come from the Bunny edge" with the harness's X-Test-Remote-Addr (REMOTE_ADDR in WordPress
@@ -162,7 +164,7 @@ $original    = (string) file_get_contents( $config_file );
 $had_cache   = file_exists( $cache_file ) ? (string) file_get_contents( $cache_file ) : null;
 $saved       = PNCP_Options::stored();
 $saved_opts  = array();
-foreach ( array( PNCP_Server_Ips::OPTION, 'pncp_ip_lists_bunny', 'pncp_ip_lists_cloudflare', PNCP_Ip::BUNNY_SUM, PNCP_Edge::CONFIG, PNCP_Edge::STATE, PNCP_Bunny::CONFIG, PNCP_Bunny::RULES, PNCP_Bunny::LOGIN_STRICT ) as $pncp_o ) {
+foreach ( array( PNCP_Server_Ips::OPTION, 'pncp_ip_lists_bunny', 'pncp_ip_lists_cloudflare', PNCP_Ip::BUNNY_SUM, PNCP_Edge::CONFIG, PNCP_Edge::STATE, PNCP_Edge::STAFF, PNCP_Bunny::CONFIG, PNCP_Bunny::RULES, PNCP_Bunny::LOGIN_STRICT ) as $pncp_o ) {
 	$saved_opts[ $pncp_o ] = get_option( $pncp_o, null );
 }
 $server_old = isset( $_SERVER['SERVER_ADDR'] ) ? $_SERVER['SERVER_ADDR'] : null;
@@ -576,6 +578,154 @@ t( 'I SCRAPELOCK_SERVER_IPS HTTP: no User-Agent from another address: 403', 403 
 settings( array( 'early_mode' => 0 ) );
 PNCP_Early::sync();
 @unlink( $const_mu );
+
+/* ---------- E. ScrapeLock's own rules at the CDN never block the server ---------- */
+forget_server_ips();
+set_transient( PNCP_Server_Ips::OUTBOUND, array( SERVER => time() ), DAY_IN_SECONDS ); // Detected (see I).
+// Temporary blocks sent to the CDN (PNCP_Edge): a ban of the server's address is never one of them.
+update_option( PNCP_Edge::CONFIG, array( 'provider' => 'bunny', 'zone' => '4242', 'token' => 'f1-test-bunny-key-1234567890' ), false );
+delete_option( PNCP_Edge::STAFF );
+settings( array( 'edge_send_blocks' => 1 ) );
+PNCP_Bunny::reset();
+PNCP_Log::ban( SERVER, 30, 'rate_page' );
+PNCP_Log::ban( '192.0.2.7', 30, 'rate_page' ); // In SCRAPELOCK_SERVER_IPS (I).
+PNCP_Log::ban( '198.51.100.120', 30, 'rate_page' );
+PNCP_Log::reset_cache();
+$wanted = PNCP_Edge::wanted( 'bunny' );
+t( 'E: a banned visitor is sent to the CDN', isset( $wanted['198.51.100.120'] ), wp_json_encode( array_keys( $wanted ) ) );
+t( 'E: a ban of the server\'s detected address is never sent to the CDN', ! isset( $wanted[ SERVER ] ), wp_json_encode( array_keys( $wanted ) ) );
+t( 'E: nor one of SCRAPELOCK_SERVER_IPS', ! isset( $wanted['192.0.2.7'] ), wp_json_encode( array_keys( $wanted ) ) );
+t( 'E: ... also for Cloudflare', ! isset( PNCP_Edge::wanted( 'cloudflare' )[ SERVER ] ) );
+foreach ( array( SERVER, '192.0.2.7', '198.51.100.120' ) as $pncp_ip ) {
+	PNCP_Log::unban( $pncp_ip );
+}
+delete_option( PNCP_Edge::CONFIG );
+PNCP_Bunny::reset();
+
+// Bunny's logs: the server's requests through Bunny are never counted (too fast, 4xx floods).
+$new = new ReflectionMethod( 'PNCP_Bunny', 'new_analysis' );
+$new->setAccessible( true );
+$a = $new->invoke( null );
+foreach ( array( SERVER, '198.51.100.121' ) as $pncp_ip ) {
+	PNCP_Bunny::analyse(
+		$a,
+		array(
+			'ip'     => $pncp_ip,
+			'status' => 404,
+			'ts'     => time() * 1000,
+			'url'    => home_url( '/wp-config-sample.php' ),
+			'path'   => '/wp-config-sample.php',
+			'ua'     => 'WordPress/6.9',
+			'cache'  => 'MISS',
+		)
+	);
+}
+t( 'E: Bunny log lines of the server are skipped (no flood, no "too fast", no ban)', 1 === (int) $a['skipped'] && ! isset( $a['errors'][ SERVER ] ) && isset( $a['errors']['198.51.100.121'] ), wp_json_encode( array( $a['skipped'], array_keys( (array) $a['errors'] ) ) ) );
+
+// The wp-login.php lock at Bunny lets the server's addresses through, within Bunny's 5 entries per condition.
+$bn_rules = array();
+$bn_mock  = static function ( $pre, $args, $url ) use ( &$bn_rules ) {
+	$api = PNCP_Bunny::base( 'api' ) . '/pullzone/4243';
+	if ( 0 !== strpos( $url, $api ) ) {
+		return $pre;
+	}
+	$reply  = static function ( $code, $data ) {
+		return array( 'headers' => array( 'content-type' => 'application/json' ), 'body' => null === $data ? '' : wp_json_encode( $data ), 'response' => array( 'code' => $code, 'message' => '' ), 'cookies' => array(), 'filename' => null );
+	};
+	$method = isset( $args['method'] ) ? $args['method'] : 'GET';
+	if ( 'POST' === $method && false !== strpos( $url, '/edgerules/addOrUpdate' ) ) {
+		$body                   = json_decode( (string) $args['body'], true );
+		$guid                   = isset( $body['Guid'] ) ? $body['Guid'] : wp_generate_uuid4();
+		$body['Guid']           = $guid;
+		$bn_rules[ $guid ]      = $body;
+		return $reply( 200, array( 'Guid' => $guid ) );
+	}
+	if ( 'DELETE' === $method ) {
+		unset( $bn_rules[ substr( (string) $url, strrpos( (string) $url, '/' ) + 1 ) ] );
+		return $reply( 204, null );
+	}
+	return $reply( 200, array( 'EdgeRules' => array_values( $bn_rules ), 'BlockedIps' => array() ) );
+};
+add_filter( 'pre_http_request', $bn_mock, 5, 3 );
+add_filter(
+	'pncp_bunny_call_budget',
+	static function () {
+		return 100000;
+	}
+);
+delete_option( PNCP_Bunny::RULES );
+delete_option( PNCP_Bunny::LOGIN_STRICT );
+update_option( PNCP_Bunny::CONFIG, array( 'zone' => '4243', 'token' => 'f1-test-bunny-key-1234567890' ), false );
+settings( array( 'bunny_login_allow' => '198.51.100.30' ) );
+PNCP_Bunny::reset();
+wp_set_current_user( 1 );
+as_request( '198.51.100.30', SELF_UA ); // The administrator who locks, from a listed IP.
+$locked = PNCP_Bunny::lock_preset( 'login' );
+t( 'E: wp-login.php locked at the (stand-in) Bunny', true === $locked, is_wp_error( $locked ) ? $locked->get_error_message() : '' );
+$blocks = static function ( $url, $ip ) use ( &$bn_rules ) {
+	foreach ( $bn_rules as $rule ) {
+		$results = array();
+		foreach ( $rule['Triggers'] as $tr ) {
+			$any = false;
+			foreach ( $tr['PatternMatches'] as $pattern ) {
+				$any = $any || ( PNCP_Bunny::TRIGGER_IP === (int) $tr['Type'] ? PNCP_Ip::in_any( $ip, array( $pattern ) ) : 1 === preg_match( '#^' . str_replace( '\*', '.*', preg_quote( $pattern, '#' ) ) . '$#i', $url ) );
+			}
+			$results[] = 2 === (int) $tr['PatternMatchingType'] ? ! $any : $any;
+		}
+		$m  = (int) $rule['TriggerMatchingType'];
+		$on = 0 === $m ? in_array( true, $results, true ) : ( 1 === $m ? ! in_array( false, $results, true ) : ! in_array( true, $results, true ) );
+		if ( $on && ! empty( $rule['Enabled'] ) ) {
+			return true;
+		}
+	}
+	return false;
+};
+$login = home_url( '/wp-login.php' );
+t( 'E: the login rule refuses a visitor', $blocks( $login, VISITOR ) );
+t( 'E: ... lets the listed administrator in', ! $blocks( $login, '198.51.100.30' ) );
+t( 'E: ... and the server\'s own addresses (detected, SCRAPELOCK_SERVER_IPS)', ! $blocks( $login, SERVER ) && ! $blocks( $login, '192.0.2.9' ), wp_json_encode( array_values( $bn_rules ) ) );
+$sent = get_option( PNCP_Bunny::RULES )['preset_login']['allow'];
+t( 'E: the server\'s addresses come after the listed ones', array( '198.51.100.30' ) === array_slice( $sent, 0, 1 ) && in_array( SERVER, $sent, true ), wp_json_encode( $sent ) );
+t( 'E: the out-of-date notice sees the rule as current', get_option( PNCP_Bunny::RULES )['preset_login']['allow'] === PNCP_Bunny::login_rule_allow(), wp_json_encode( PNCP_Bunny::login_rule_allow() ) );
+$every = true;
+foreach ( $bn_rules as $rule ) {
+	foreach ( $rule['Triggers'] as $tr ) {
+		$every = $every && count( $tr['PatternMatches'] ) <= 5;
+	}
+	$every = $every && count( $rule['Triggers'] ) <= 5;
+}
+t( 'E: at most 5 entries in a condition and 5 conditions in a rule', $every );
+// A full list: the listed IPs keep every place, and the rule still fits.
+$full = array();
+for ( $i = 1; $i <= PNCP_Bunny::login_allow_max(); $i++ ) {
+	$full[] = '198.51.100.' . ( 29 + $i );
+}
+settings( array( 'bunny_login_allow' => implode( "\n", $full ) ) );
+PNCP_Bunny::reset();
+$with = PNCP_Bunny::login_rule_allow();
+t( 'E: with a full list the listed IPs keep every place (no server address then)', $full === $with, wp_json_encode( $with ) );
+t( 'E: ... and the rule still fits Bunny\'s limits', ! is_wp_error( PNCP_Bunny::plan( array( 'patterns' => array( '*/wp-login.php*' ), 'allow' => $with, 'except' => array( '*action=postpass*' ) ) ) ) );
+// The next run (sync_rules()) keeps the rule on only for people, not for the server's addresses alone: a rule
+// locked before 3.9 follows the administrators' IPs, and none is left.
+wp_set_current_user( 0 );
+delete_option( PNCP_Bunny::LOGIN_STRICT );
+delete_option( PNCP_Edge::STAFF );
+settings( array( 'bunny_login_allow' => '' ) );
+PNCP_Bunny::reset();
+$rules                          = get_option( PNCP_Bunny::RULES );
+$rules['preset_login']['allow'] = array( SERVER );
+update_option( PNCP_Bunny::RULES, $rules, false );
+PNCP_Bunny::sync_rules( null, microtime( true ) + 8 );
+$rules = get_option( PNCP_Bunny::RULES );
+t( 'E: only server addresses left in the list: the rule is switched off at the next run (never the server alone)', empty( $rules['preset_login']['enabled'] ), wp_json_encode( $rules['preset_login'] ) );
+remove_filter( 'pre_http_request', $bn_mock, 5 );
+delete_option( PNCP_Bunny::RULES );
+delete_option( PNCP_Bunny::CONFIG );
+delete_option( PNCP_Bunny::LOGIN_STRICT );
+settings( array( 'bunny_login_allow' => '', 'edge_send_blocks' => 0 ) );
+PNCP_Bunny::reset();
+wp_set_current_user( 0 );
+forget_server_ips();
 
 /* ---------- H. Vulnerable points "Check again", the Stealth test, Site Health: through the "edge" ---------- */
 unset( $_SERVER['HTTPS'] ); // This process: home_url() as stored (the "edge" requests say HTTPS with X-Test-HTTPS).

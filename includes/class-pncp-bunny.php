@@ -1370,13 +1370,14 @@ final class PNCP_Bunny {
 				// The administrators' IPs follow. While the sign-in page is at wp-login.php again (the address
 				// was opened again, cleared, or turned off with SCRAPELOCK_LOGIN_SLUG_OFF), the rule never blocks
 				// everyone: without a known administrator IP it is switched off.
-				$allow = self::login_rule_allow(); // 3.9: the explicit list, for a lock made since 3.9.
-				if ( $allow ) {
-					$want['allow'] = $allow;
-				}
-				if ( empty( $want['allow'] ) && ! self::custom_login_active() ) {
+				// 3.12.1: the server's own addresses are let through too (with_server_ips()), but they never keep the
+				// rule on by themselves.
+				$admins = self::login_rule_admins(); // 3.9: the explicit list, for a lock made since 3.9.
+				$people = $admins ? $admins : array_values( array_diff( isset( $rule['allow'] ) ? array_map( 'strval', (array) $rule['allow'] ) : array(), self::server_ips_for_edge() ) );
+				if ( ! $people && ! self::custom_login_active() ) {
 					$rule_on = false;
 				}
+				$want['allow'] = self::with_server_ips( $people );
 			}
 			$same_allow = ( isset( $rule['allow'] ) ? (array) $rule['allow'] : array() ) === ( isset( $want['allow'] ) ? (array) $want['allow'] : array() );
 			// Only ScrapeLock's own record is compared: a rule switched off by hand in the Bunny dashboard stays off.
@@ -1485,7 +1486,59 @@ final class PNCP_Bunny {
 	 * @return string[]
 	 */
 	public static function login_rule_allow() {
+		return self::with_server_ips( self::login_rule_admins() );
+	}
+
+	/**
+	 * 3.12.1: the people the login rule at Bunny lets through (login_rule_allow() before 3.12.1): since 3.9 only the
+	 * explicit list; a rule locked before 3.9 keeps following the administrators' IPs too.
+	 *
+	 * @return string[]
+	 */
+	public static function login_rule_admins() {
 		return get_option( self::LOGIN_STRICT, false ) ? self::login_allow_list() : self::login_allowlist();
+	}
+
+	/**
+	 * 3.12.1: the server's own public addresses and ranges (PNCP_Server_Ips::ips(), without loopback, private and
+	 * CDN addresses, which never reach Bunny as a visitor), sorted.
+	 *
+	 * @return string[]
+	 */
+	public static function server_ips_for_edge() {
+		$out = array();
+		foreach ( PNCP_Server_Ips::ips() as $range ) {
+			$base = false === strpos( $range, '/' ) ? $range : (string) strstr( $range, '/', true );
+			if ( '' !== $base && ! PNCP_Ip::is_private( $base ) && ! PNCP_Ip::is_cdn( $base ) ) {
+				$out[] = $range;
+			}
+		}
+		sort( $out );
+		return array_values( array_unique( $out ) );
+	}
+
+	/**
+	 * 3.12.1: an allowed list of the login rule with the server's own addresses added, so the site's requests to
+	 * its own wp-login.php through Bunny (Site Health of other plugins, uptime checks run by the server) are not
+	 * refused at the edge. Only as many as fit next to the listed IPs (login_allow_max(): Bunny takes 5 entries a
+	 * condition and 5 conditions a rule, see plan()); the listed IPs always come first.
+	 *
+	 * @param string[] $allow The listed IPs and ranges.
+	 * @return string[]
+	 */
+	public static function with_server_ips( $allow ) {
+		$allow = array_values( array_map( 'strval', (array) $allow ) );
+		$room  = self::login_allow_max() - count( $allow );
+		foreach ( self::server_ips_for_edge() as $ip ) {
+			if ( $room <= 0 ) {
+				break;
+			}
+			if ( ! in_array( $ip, $allow, true ) && ( false !== strpos( $ip, '/' ) || ! PNCP_Ip::in_any( $ip, $allow ) ) ) {
+				$allow[] = $ip;
+				--$room;
+			}
+		}
+		return $allow;
 	}
 
 	/**
@@ -1694,7 +1747,7 @@ final class PNCP_Bunny {
 		if ( $blockers ) {
 			return new WP_Error( 'pncp_login_allow', implode( ' ', $blockers ) );
 		}
-		$options['allow'] = self::login_allow_list();
+		$options['allow'] = self::with_server_ips( self::login_allow_list() ); // 3.12.1: and the server's addresses.
 		$result           = self::edge_block( 'preset_login', $preset['patterns'], $preset['label'], $options );
 		if ( true === $result ) {
 			update_option( self::LOGIN_STRICT, time(), false );
@@ -2737,8 +2790,9 @@ final class PNCP_Bunny {
 	}
 
 	/**
-	 * Is an IP one ScrapeLock never counts: the server, private networks, the administrators of the last
-	 * 30 days, CDN edges, search engines' official addresses, always-allowed User-Agents from their IPs?
+	 * Is an IP one ScrapeLock never counts: the server (3.12.1: also its public addresses), private networks, the
+	 * administrators of the last 30 days, CDN edges, search engines' official addresses, always-allowed User-Agents
+	 * from their IPs?
 	 *
 	 * @param array<string, mixed> $a   Analysis.
 	 * @param array<string, mixed> $row Line.
@@ -2750,7 +2804,10 @@ final class PNCP_Bunny {
 			return $a['skip'][ $memo ];
 		}
 		$ip    = (string) $row['ip'];
-		$spare = PNCP_Ip::is_local( $ip ) || PNCP_Ip::is_private( $ip ) || isset( $a['staff'][ PNCP_Ip::limit_key( $ip ) ] ) || PNCP_Ip::is_cdn_edge( $ip ) || PNCP_Bots::is_official_crawler_ip( $ip ) || '' !== PNCP_Ip::official_owner( $ip )
+		// 3.12.1: and the server's own addresses (PNCP_Server_Ips): its requests to itself through Bunny (cache
+		// preloads, Vulnerable points, cron) are fast and hit 4xx on purpose; counted, they banned the server, and
+		// the ban was sent to Bunny's block list.
+		$spare = PNCP_Ip::is_local( $ip ) || PNCP_Ip::is_private( $ip ) || isset( $a['staff'][ PNCP_Ip::limit_key( $ip ) ] ) || PNCP_Ip::is_cdn_edge( $ip ) || PNCP_Bots::is_official_crawler_ip( $ip ) || '' !== PNCP_Ip::official_owner( $ip ) || PNCP_Server_Ips::is_server_ip( $ip )
 			// While the Google / Bing lists are not downloaded: their core ranges (log lines have no DNS check).
 			|| PNCP_Options::crawler_fallback_ip( $ip );
 		if ( ! $spare && isset( $a['s']['allow_list'] ) ) {
