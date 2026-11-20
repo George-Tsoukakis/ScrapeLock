@@ -237,8 +237,18 @@ final class PNCP_Server_Ips {
 			arsort( $state['learned'] );
 			$state['learned'] = array_slice( $state['learned'], 0, self::MAX_LEARNED, true );
 			update_option( self::OPTION, $state, true );
-			if ( ! $known && function_exists( 'wp_schedule_single_event' ) && ! wp_next_scheduled( self::CHANGED ) ) {
-				wp_schedule_single_event( time(), self::CHANGED );
+			if ( ! $known ) {
+				// The pre-cache check gets the new address in this request, once every plugin has loaded (its
+				// configuration also holds what other plugins add with filters): until then its configuration was
+				// out of date, and Site Health called the check "on but not running" until WP cron ran.
+				if ( did_action( 'wp_loaded' ) ) {
+					self::changed();
+				} else {
+					add_action( 'wp_loaded', array( __CLASS__, 'changed' ) );
+				}
+				if ( function_exists( 'wp_schedule_single_event' ) && ! wp_next_scheduled( self::CHANGED ) ) {
+					wp_schedule_single_event( time(), self::CHANGED ); // In case this request ends before wp_loaded.
+				}
 			}
 		}
 		return true;

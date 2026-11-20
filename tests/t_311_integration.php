@@ -560,6 +560,38 @@ if ( null === $google_list ) {
 	update_option( 'pncp_ip_lists_google', $google_list );
 }
 
+/* ---------- A learned server address reaches the pre-cache check in the same request ---------- */
+$saved_pc   = PNCP_Options::stored();
+$saved_self = get_option( PNCP_Server_Ips::OPTION, null );
+$wp_config  = PNCP_Precheck::config_path();
+$wp_config0 = (string) file_get_contents( $wp_config );
+require_once ABSPATH . 'wp-admin/includes/admin.php';
+WP_Screen::get( 'settings_page_scrapelock' )->set_current_screen(); // wp-config.php is changed only in wp-admin.
+settings( array( 'enabled' => 1, 'monitor_mode' => 0, 'precheck' => 1 ) );
+PNCP_Precheck::sync();
+delete_option( PNCP_Server_Ips::OPTION );
+wp_clear_scheduled_hook( PNCP_Server_Ips::CHANGED );
+PNCP_Precheck::refresh();
+t( 'pre-cache check: running before the address is learned', PNCP_Precheck::active() );
+$signed = PNCP_Server_Ips::sign( array( 'headers' => array() ), home_url( '/' ) );
+list( $code ) = http( '/', '203.0.113.77', 'WordPress/6.9; ' . home_url( '/' ), null, array(), array( PNCP_Server_Ips::HEADER . ': ' . $signed['headers'][ PNCP_Server_Ips::HEADER ] ) );
+wp_cache_flush();
+$learned = get_option( PNCP_Server_Ips::OPTION );
+t( 'a signed request from 203.0.113.77 (the server through the CDN) passes and is learned', 200 === $code && isset( $learned['learned']['203.0.113.77'] ), $code . ' ' . wp_json_encode( $learned ) );
+$pc_config = json_decode( (string) file_get_contents( PNCP_Precheck::config_file() ), true );
+t( '... and the pre-cache check\'s configuration has it at once (no wait for WP cron)', is_array( $pc_config ) && isset( $pc_config['self_ips'][0]['203.0.113.77'] ), wp_json_encode( isset( $pc_config['self_ips'] ) ? $pc_config['self_ips'] : null ) );
+t( '... so Site Health does not call the pre-cache check "on but not running"', PNCP_Precheck::active() );
+update_option( PNCP_OPTION, $saved_pc );
+PNCP_Options::flush();
+PNCP_Precheck::sync();
+file_put_contents( $wp_config, $wp_config0 );
+if ( null === $saved_self ) {
+	delete_option( PNCP_Server_Ips::OPTION );
+} else {
+	update_option( PNCP_Server_Ips::OPTION, $saved_self );
+}
+wp_clear_scheduled_hook( PNCP_Server_Ips::CHANGED );
+
 // @@NEXT@@
 
 echo $fails ? "\n$fails FAIL\n" : "\nALL PASS\n";
