@@ -9,6 +9,10 @@
  * - "For my site" (PNCP_Wizard) uses the FluentCommunity integration (its portal is counted already, so it is
  *   not proposed), every service bot of an active plugin, the status of the pre-cache check and the setting
  *   labels (never a bare key).
+ * - The new tab layout (tab groups, the Bots tab accordion, the folded long lists) still shows the warnings and
+ *   buttons of 3.11: the AI search warning with "Remove from the list" (and a link that opens the folded bot
+ *   list), "Network and CDN" opened while one of its settings is set but not active, the badge link of "Only
+ *   through the CDN", the "For my site" panel, the FluentCommunity note and "Allow this service" in the Log.
  *
  * Same requirements as t_http.php (mu-test-harness.php, router.php). Changes the database: test sites only.
  */
@@ -284,6 +288,83 @@ t( 'wizard: "on but not running" with the status reason', PNCP_Status_State::SET
 
 // Labels: a setting the assistant has no name for (e.g. proposed through its filter) is named in words.
 t( 'wizard: a setting without a name of its own gets the settings page label, never the bare key', 'block_headless' !== PNCP_Wizard::label( 'block_headless' ) && PNCP_Setting_Labels::label( 'block_headless' ) === PNCP_Wizard::label( 'block_headless' ) && 'Trust Bunny CDN addresses' === PNCP_Wizard::label( 'trust_bunny' ), PNCP_Wizard::label( 'block_headless' ) );
+
+/* ---------- The tab layout and the 3.11 warnings ---------- */
+
+$fc_dir     = WP_PLUGIN_DIR . '/fluent-community';
+$fc_created = ! file_exists( $fc_dir . '/fluent-community.php' );
+if ( $fc_created ) {
+	if ( ! is_dir( $fc_dir ) ) {
+		mkdir( $fc_dir );
+	}
+	file_put_contents( $fc_dir . '/fluent-community.php', "<?php\n/*\nPlugin Name: fluent-community (test stand-in)\nVersion: 0.0.1\n*/\nif ( ! defined( 'FLUENT_COMMUNITY_PORTAL_SLUG' ) ) {\n\tdefine( 'FLUENT_COMMUNITY_PORTAL_SLUG', 'hub' );\n}\n" );
+}
+register_shutdown_function(
+	static function () use ( $fc_dir, $fc_created ) {
+		if ( $fc_created ) {
+			@unlink( $fc_dir . '/fluent-community.php' );
+			@rmdir( $fc_dir );
+		}
+	}
+);
+activate_plugin( 'fluent-community/fluent-community.php', '', false, true );
+settings(
+	array(
+		'enabled'         => 1,
+		'monitor_mode'    => 0,
+		'monitor_until'   => 0,
+		'block_bots'      => 1,
+		'block_http_libs' => 1,
+		'allow_ai_search' => 1,
+		'bot_list'        => "GPTBot\nOAI-SearchBot\nCCBot",
+		'cdn_only'        => 1,
+		'cdn_secret'      => '',
+	)
+);
+delete_option( 'pncp_upgrade_files' );
+PNCP_Log::clear();
+list( $code ) = http( '/', '198.51.100.181', 'python-requests/2.31.0' );
+t( 'layout: python-requests refused (for the Log row)', 403 === $code, (string) $code );
+
+$admin   = get_user_by( 'id', 1 );
+$cookies = login_cookies( $admin->ID );
+wp_set_current_user( 0 );
+$browser = 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0 Safari/537.36';
+$page    = '/wp-admin/options-general.php?page=scrapelock';
+
+list( $code, $body ) = http( $page . '&tab=bots', '192.0.2.212', $browser, null, $cookies );
+$notice = strpos( $body, 'pncp-ai-search-list-notice' );
+$form   = strpos( $body, 'action="options.php"' );
+t( 'bots tab: 200, no PHP warnings, active inside its group', 200 === $code && ! php_errors( $body ) && 1 === preg_match( '#pncp-tab-group--bots.*?nav-tab-active" aria-current="page">(<span[^>]*></span>)?\s*Bots and limits</a>#s', $body ), (string) $code );
+t( 'bots tab: the AI search warning and its button, before (outside) the settings form', false !== $notice && false !== $form && $notice < $form && false !== strpos( $body, 'id="pncp-ai-search-list-remove"' ) );
+t( 'bots tab: the warning links to the folded bot list, which is on the page', false !== strpos( $body, 'href="#pncp-bot_list"' ) && false !== strpos( $body, 'id="pncp-bot_list"' ) && false !== strpos( $body, 'data-pncp-list' ) );
+t( 'bots tab: "Network and CDN" is open while "Only through the CDN" is set but not active', 1 === preg_match( '/<details class="pncp-advanced" id="pncp-sec-network" open>/', $body ) );
+t( 'status bar: "Only through the CDN" is "set", its link goes to its row', 1 === preg_match( '#<li class="pncp-pill [^"]*" data-pncp-state="set">\s*<a href="[^"]*tab=bots[^"]*\#pncp-sec-ip"[^>]*>[^<]*Only through the CDN#s', $body ) && false !== strpos( $body, 'id="pncp-sec-ip"' ) );
+
+list( $code, $body ) = http( $page . '&tab=general', '192.0.2.212', $browser, null, $cookies );
+$nav = strpos( $body, 'nav-tab-active' );
+$wiz = strpos( $body, 'id="pncp-wizard"' );
+t( 'first tab: the "For my site" panel, after the grouped tab bar', 200 === $code && ! php_errors( $body ) && false !== $nav && false !== $wiz && $nav < $wiz );
+
+list( $code, $body ) = http( $page . '&tab=log', '192.0.2.212', $browser, null, $cookies );
+t( 'log tab: the FluentCommunity note under "Content addresses"', 200 === $code && ! php_errors( $body ) && false !== strpos( $body, 'id="pncp-content_paths-added"' ) && false !== strpos( $body, '/hub/' ) );
+t( 'log tab: the matched entry and "Allow this service" for the python-requests row', false !== strpos( $body, 'pncp-bot-match' ) && false !== strpos( $body, 'Allow this service' ) );
+
+deactivate_plugins( 'fluent-community/fluent-community.php', true );
+settings(
+	array(
+		'enabled'         => $saved['enabled'],
+		'monitor_mode'    => $saved['monitor_mode'],
+		'monitor_until'   => $saved['monitor_until'],
+		'block_bots'      => $saved['block_bots'],
+		'block_http_libs' => $saved['block_http_libs'],
+		'allow_ai_search' => $saved['allow_ai_search'],
+		'bot_list'        => $saved['bot_list'],
+		'cdn_only'        => $saved['cdn_only'],
+		'cdn_secret'      => $saved['cdn_secret'],
+	)
+);
+PNCP_Log::clear();
 
 // @@NEXT@@
 

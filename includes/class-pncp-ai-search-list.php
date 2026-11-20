@@ -139,6 +139,7 @@ final class PNCP_Ai_Search_List {
 		printf( '<form method="post" action="%s">', esc_url( admin_url( 'admin-post.php' ) ) );
 		printf( '<input type="hidden" name="action" value="%s">', esc_attr( self::ACTION ) );
 		echo preg_replace( '/ id="_wpnonce"/', '', wp_nonce_field( self::ACTION, '_wpnonce', true, false ), 1 ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Core markup.
-		echo '<p><button type="submit" class="button button-primary" id="pncp-ai-search-list-remove">' . esc_html__( 'Remove from the list', 'scrapelock' ) . '</button></p></form></div>';
+		// 3.11: the bot list is folded (an entry count with "Edit", PNCP_Admin_Lists): a link opens it (admin.js).
+		echo '<p><button type="submit" class="button button-primary" id="pncp-ai-search-list-remove">' . esc_html__( 'Remove from the list', 'scrapelock' ) . '</button> <a class="button-link pncp-ai-search-list-open" href="#pncp-bot_list">' . esc_html__( 'Show the bot list', 'scrapelock' ) . '</a></p></form></div>';
 	}
 }

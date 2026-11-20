@@ -453,7 +453,10 @@ final class PNCP_Admin {
 			|| in_array( $message, array( 'cf_ip', 'bunny_ip', 'bunny_ip_failed' ), true )
 			|| '' !== PNCP_Ip::cdn_hides_visitors()
 			|| ( ! empty( $s['early_mode'] ) && ! PNCP_Early::installed() )
-			|| ( ! is_multisite() && ! empty( $s['enabled'] ) && ! empty( $s['precheck'] ) && ! PNCP_Precheck::active() );
+			// 3.11: every setting of this part that the status badges show as "set but not active" (PNCP_Status_State),
+			// "Only through the CDN" without its secret included; not while protection itself is off.
+			|| ( ! empty( $s['enabled'] ) && ! is_multisite() && PNCP_Status_State::SET === PNCP_Status_State::precheck( $s )['state'] )
+			|| ( ! empty( $s['enabled'] ) && PNCP_Status_State::SET === PNCP_Status_State::cdn_only( $s )['state'] );
 	}
 
 	/**
@@ -566,7 +569,7 @@ final class PNCP_Admin {
 		);
 		// 3.11: "Only through the CDN" once it is set (a pill while it is off would only add noise for most sites).
 		if ( ! empty( $s['cdn_only'] ) ) {
-			$items[] = array( PNCP_Status_State::cdn_only( $s ), __( 'Only through the CDN', 'scrapelock' ), array( 'bots', 'pncp-sec-early' ) );
+			$items[] = array( PNCP_Status_State::cdn_only( $s ), __( 'Only through the CDN', 'scrapelock' ), array( 'bots', 'pncp-sec-ip' ) ); // Its row in "Network and CDN".
 		}
 		foreach ( $items as $i => $item ) {
 			$items[ $i ] = array( PNCP_Status_State::ON === $item[0]['state'], $item[1], $item[2], $item[0] );
