@@ -1885,7 +1885,8 @@ final class PNCP_Attack_Report {
 			</section>
 			<section class="pncp-card" id="pncp-ar-email" aria-labelledby="pncp-ar-email-title">
 				<h2 id="pncp-ar-email-title"><?php esc_html_e( 'Weekly email', 'scrapelock' ); ?>
-					<span class="pncp-badge<?php echo $on ? ' pncp-badge--monitor' : ''; ?>"><?php echo $on ? esc_html__( 'On', 'scrapelock' ) : esc_html__( 'Off', 'scrapelock' ); ?></span>
+					<?php $pncp_badge = PNCP_Status_State::weekly_report( $s ); // 3.11: three states, with the reason. ?>
+					<span class="pncp-badge<?php echo $on ? ' pncp-badge--monitor' : ''; ?>" data-pncp-state="<?php echo esc_attr( $pncp_badge['state'] ); ?>"><?php echo esc_html( PNCP_Status_State::text( $pncp_badge ) ); ?></span>
 				</h2>
 				<p class="description">
 					<?php

@@ -145,6 +145,87 @@ register_shutdown_function(
 settings( array( 'enabled' => 1, 'monitor_mode' => 0, 'monitor_until' => 0 ) );
 update_option( 'pncp_emergency_until', 0 );
 
+/* ---------- 1. A7: three states ---------- */
+// The states themselves.
+$s = array_merge( PNCP_Options::stored(), array( 'precheck' => 1, 'cdn_only' => 1, 'cdn_secret' => '' ) );
+$st = PNCP_Status_State::cdn_only( $s );
+t( 'A7: «Only through the CDN» on without a secret: set but not active, «the CDN secret is missing»', 'set' === $st['state'] && false !== strpos( $st['reason'], 'CDN secret is missing' ), wp_json_encode( $st ) );
+$st = PNCP_Status_State::cdn_only( array_merge( $s, array( 'cdn_secret' => 'abc123abc123abc123' ) ) );
+t( 'A7: «Only through the CDN» with a secret: on', 'on' === $st['state'], wp_json_encode( $st ) );
+$st = PNCP_Status_State::cdn_only( array_merge( $s, array( 'cdn_only' => 0 ) ) );
+t( 'A7: «Only through the CDN» off: off', 'off' === $st['state'] );
+$st = PNCP_Status_State::cdn_only( array_merge( $s, array( 'enabled' => 0 ) ) );
+t( 'A7: protection off: set but not active, «protection is off»', 'set' === $st['state'] && 'protection is off' === $st['reason'], wp_json_encode( $st ) );
+t( 'A7: badge text «Set but not active: …»', 'Set but not active: protection is off' === PNCP_Status_State::text( $st ) );
+$st = PNCP_Status_State::precheck( array_merge( $s, array( 'precheck' => 0 ) ) );
+t( 'A7: pre-cache check off: off', 'off' === $st['state'] );
+
+// The pre-cache check on, but its line not in wp-config.php (a front-end save defers it; a failed write waits an hour).
+settings( array( 'precheck' => 1, 'cdn_only' => 1, 'cdn_secret' => '', 'early_mode' => 0 ) );
+update_option( PNCP_Precheck::STATUS, 'not_writable', false );
+set_transient( PNCP_Precheck::RETRY, 1, HOUR_IN_SECONDS );
+$st = PNCP_Status_State::precheck( PNCP_Options::stored() );
+t( 'A7: pre-cache check on, line not in wp-config.php: «the loader is not in wp-config.php»', ! PNCP_Precheck::in_config() && 'set' === $st['state'] && false !== strpos( $st['reason'], 'loader is not in wp-config.php' ), wp_json_encode( $st ) );
+list( $code, $body ) = http( $page . '&tab=bots', $admin_cookies );
+t( 'A7: Bots tab loads without PHP warnings', 200 === $code && ! php_errors( $body ), (string) $code );
+$p = pill( $body, 'Pre-cache check' );
+t( 'A7: status bar: «Pre-cache check: Set but not active: the loader is not in wp-config.php» (not «Off»)', 0 === strpos( $p, 'set | ' ) && false !== strpos( $p, 'Set but not active: the loader is not in wp-config.php' ), $p );
+$p = pill( $body, 'Only through the CDN' );
+t( 'A7: status bar: «Only through the CDN: Set but not active: the CDN secret is missing»', 0 === strpos( $p, 'set | ' ) && false !== strpos( $p, 'the CDN secret is missing' ), $p );
+$p = pill( $body, 'Protection' );
+t( 'A7: status bar: «Protection» on', 0 === strpos( $p, 'on | ' ), $p );
+$p = pill( $body, 'Human check' );
+t( 'A7: status bar: «Human check» off (the setting is off)', 0 === strpos( $p, 'off | ' ), $p );
+$text = html_entity_decode( wp_strip_all_tags( $body ) );
+t( 'A7: «Network and CDN» summary: pre-cache check «set but not active», not «off»', false !== strpos( $text, 'Pre-cache check: set but not active: the loader is not in wp-config.php' ) );
+t( 'A7: «Network and CDN» summary: «Only through the CDN: set but not active: the CDN secret is missing»', false !== strpos( $text, 'Only through the CDN: set but not active: the CDN secret is missing' ) );
+t( 'A7: «Network and CDN» summary: early check off', false !== strpos( $text, 'Early check: off' ) );
+$info = PNCP_Health::info( array() );
+$rows = isset( $info['scrapelock']['fields'] ) ? $info['scrapelock']['fields'] : array();
+t( 'A7: Site Health info: pre-cache check with the reason', isset( $rows['precheck'] ) && false !== strpos( (string) $rows['precheck']['value'], 'loader is not in wp-config.php' ), isset( $rows['precheck'] ) ? (string) $rows['precheck']['value'] : 'no row' );
+t( 'A7: Site Health info: «Only through the CDN» with the reason (was «No»)', isset( $rows['cdn_only'] ) && false !== strpos( (string) $rows['cdn_only']['value'], 'CDN secret is missing' ), isset( $rows['cdn_only'] ) ? (string) $rows['cdn_only']['value'] : 'no row' );
+
+// The pre-cache check running: on, everywhere.
+delete_transient( PNCP_Precheck::RETRY );
+update_option( PNCP_Precheck::STATUS, 'deferred', false );
+list( , $body ) = http( $page . '&tab=bots', $admin_cookies ); // maybe_sync() adds the line from wp-admin.
+wp_cache_delete( 'alloptions', 'options' );
+$p = pill( $body, 'Pre-cache check' );
+t( 'A7: pre-cache check running (line added from wp-admin): on', PNCP_Precheck::active() && 0 === strpos( $p, 'on | ' ), $p );
+t( 'A7: «Network and CDN» summary: pre-cache check on', false !== strpos( html_entity_decode( wp_strip_all_tags( $body ) ), 'Pre-cache check: on' ) );
+
+// The early check: on with its file, set but not active while protection is off.
+settings( array( 'early_mode' => 1, 'precheck' => 0, 'cdn_only' => 0, 'trap_enabled' => 1, 'human_check' => 0 ) );
+PNCP_Early::sync();
+t( 'A7: early check on with its file: on', PNCP_Early::installed() && 'on' === PNCP_Status_State::early( PNCP_Options::stored() )['state'] );
+settings( array( 'enabled' => 0 ) );
+list( , $body ) = http( $page . '&tab=bots', $admin_cookies );
+$p = pill( $body, 'Early check' );
+t( 'A7: protection off: «Early check: Set but not active: protection is off»', 0 === strpos( $p, 'set | ' ) && false !== strpos( $p, 'protection is off' ), $p );
+list( $code, $body ) = http( '/wp-admin/index.php', $admin_cookies );
+$text = preg_replace( '/\s+/', ' ', html_entity_decode( wp_strip_all_tags( $body ) ) );
+t( 'A7: Dashboard widget, protection off: the layers that are set read «Set but not active: protection is off»', 200 === $code && false !== strpos( $body, 'pncp-layer--set' ) && false !== strpos( $text, 'Bot trap (Set but not active: protection is off)' ) && ! php_errors( $body ), (string) $code );
+settings( array( 'enabled' => 1 ) );
+list( , $body ) = http( '/wp-admin/index.php', $admin_cookies );
+t( 'A7: Dashboard widget, protection on: the bot trap on, a setting that is off off', false !== strpos( $body, 'pncp-layer pncp-layer--on' ) && false !== strpos( $body, 'pncp-layer pncp-layer--off' ) && false === strpos( $body, 'pncp-layer--set' ), preg_match( '#<li class="pncp-layer pncp-layer--set">.*?</li>#s', $body, $mm ) ? preg_replace( '/\s+/', ' ', wp_strip_all_tags( $mm[0] ) ) : '' );
+settings( array( 'early_mode' => 0 ) );
+PNCP_Early::sync();
+
+// Stealth and the weekly email.
+$st = PNCP_Status_State::stealth( array_merge( PNCP_Stealth::settings(), array( 'stealth_enabled' => 1 ) ) );
+t( 'A7: Stealth on but not tested: set but not active (with the reason)', ! PNCP_Stealth::active() && 'set' === $st['state'] && '' !== $st['reason'], wp_json_encode( $st ) );
+t( 'A7: Stealth off: off', 'off' === PNCP_Status_State::stealth( array_merge( PNCP_Stealth::settings(), array( 'stealth_enabled' => 0 ) ) )['state'] );
+wp_clear_scheduled_hook( PNCP_Attack_Report::CRON );
+$st = PNCP_Status_State::weekly_report( array_merge( PNCP_Options::stored(), array( 'report_weekly' => 1 ) ) );
+t( 'A7: weekly email on, not scheduled: set but not active', 'set' === $st['state'] && false !== strpos( $st['reason'], 'not scheduled' ), wp_json_encode( $st ) );
+wp_schedule_event( time() + HOUR_IN_SECONDS, 'weekly', PNCP_Attack_Report::CRON );
+t( 'A7: weekly email on and scheduled: on', 'on' === PNCP_Status_State::weekly_report( array_merge( PNCP_Options::stored(), array( 'report_weekly' => 1 ) ) )['state'] );
+wp_clear_scheduled_hook( PNCP_Attack_Report::CRON );
+if ( $saved_cron ) {
+	wp_schedule_event( $saved_cron, 'weekly', PNCP_Attack_Report::CRON );
+}
+t( 'A7: weekly email off: off', 'off' === PNCP_Status_State::weekly_report( array_merge( PNCP_Options::stored(), array( 'report_weekly' => 0 ) ) )['state'] );
+
 /* ---------- 2. A8: no setting keys in the screens ---------- */
 settings( array( 'block_ip_host' => 0, 'block_seo_crawlers' => 1 ) );
 $changes = PNCP_Options::emergency_changes( PNCP_Options::stored() );

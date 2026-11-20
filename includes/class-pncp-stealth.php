@@ -2589,12 +2589,13 @@ final class PNCP_Stealth {
 		?>
 		<section class="pncp-card pncp-card--wide pncp-stealth" id="pncp-stealth" aria-labelledby="pncp-stealth-title">
 			<h2 id="pncp-stealth-title"><?php esc_html_e( 'Stealth: do not show that the site runs on WordPress', 'scrapelock' ); ?>
+				<?php $pncp_badge = PNCP_Status_State::stealth( $s ); // 3.11: three states, with the reason. ?>
 				<?php if ( $active ) : ?>
-					<span class="pncp-badge"><?php esc_html_e( 'On', 'scrapelock' ); ?></span>
-				<?php elseif ( ! empty( $s['stealth_enabled'] ) ) : ?>
-					<span class="pncp-badge pncp-badge--bad"><?php esc_html_e( 'Not working', 'scrapelock' ); ?></span>
+					<span class="pncp-badge" data-pncp-state="on"><?php esc_html_e( 'On', 'scrapelock' ); ?></span>
+				<?php elseif ( PNCP_Status_State::SET === $pncp_badge['state'] ) : ?>
+					<span class="pncp-badge pncp-badge--bad" data-pncp-state="set"><?php echo esc_html( PNCP_Status_State::text( $pncp_badge ) ); ?></span>
 				<?php else : ?>
-					<span class="pncp-badge"><?php esc_html_e( 'Off', 'scrapelock' ); ?></span>
+					<span class="pncp-badge" data-pncp-state="off"><?php esc_html_e( 'Off', 'scrapelock' ); ?></span>
 				<?php endif; ?>
 			</h2>
 			<p class="description"><?php esc_html_e( 'Tools like BuiltWith and Wappalyzer, and the scanners that look for known holes, first find out what a site is built with: from the addresses of the theme and plugin files (/wp-content/, /wp-includes/), the REST API (/wp-json/), the sitemap (/wp-sitemap.xml), markup only WordPress prints and files only WordPress has. With Stealth, visitors get neutral addresses instead (for example /assets/3fa9c1/style.css), served by rules of your web server. Nothing stored changes: turning it off puts everything back at once.', 'scrapelock' ); ?></p>

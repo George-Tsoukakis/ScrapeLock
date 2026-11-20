@@ -451,15 +451,16 @@ final class PNCP_Admin {
 			'x_real_ip'        => 'X-Real-IP',
 			'true_client_ip'   => 'True-Client-IP',
 		);
-		$on      = __( 'on', 'scrapelock' );
-		$off     = __( 'off', 'scrapelock' );
+		// 3.11: three states (PNCP_Status_State): "set but not active: <reason>" instead of "off" for a setting that is
+		// on but not in effect (before: "Pre-cache check: off" with the setting on, "Only through the CDN: off" without
+		// the secret), and "on" only when it runs (the early check is on only with its file in place).
 		return sprintf(
-			/* translators: 1: name of an HTTP header (e.g. REMOTE_ADDR), 2: "on" or "off" (early check), 3: "on" or "off" (pre-cache check), 4: "on" or "off" (only through the CDN) */
+			/* translators: 1: name of an HTTP header (e.g. REMOTE_ADDR), 2: "on", "off" or "set but not active: <reason>" (early check), 3: the same for the pre-cache check, 4: the same for "only through the CDN" */
 			__( 'Real visitor IP: %1$s · Early check: %2$s · Pre-cache check: %3$s · Only through the CDN: %4$s', 'scrapelock' ),
 			isset( $headers[ $s['ip_header'] ] ) ? $headers[ $s['ip_header'] ] : (string) $s['ip_header'],
-			! empty( $s['early_mode'] ) ? $on : $off,
-			! is_multisite() && ! empty( $s['precheck'] ) ? $on : $off,
-			PNCP_Origin::active( $s ) ? $on : $off
+			PNCP_Status_State::inline_text( PNCP_Status_State::early( $s ) ),
+			PNCP_Status_State::inline_text( PNCP_Status_State::precheck( $s ) ),
+			PNCP_Status_State::inline_text( PNCP_Status_State::cdn_only( $s ) )
 		);
 	}
 
@@ -498,14 +499,24 @@ final class PNCP_Admin {
 		foreach ( $items as $item ) {
 			if ( $item[0] ) {
 				printf(
-					'<li class="pncp-pill pncp-pill--on"><span class="screen-reader-text">%1$s </span>%2$s</li>',
+					'<li class="pncp-pill pncp-pill--on" data-pncp-state="on"><span class="screen-reader-text">%1$s </span>%2$s</li>',
 					esc_html__( 'On:', 'scrapelock' ),
 					esc_html( $item[1] )
 				);
 				continue;
 			}
+			// 3.11: on in the settings, not in effect: the reason is on the pill, which links to the setting.
+			if ( PNCP_Status_State::SET === $item[3]['state'] ) {
+				printf(
+					'<li class="pncp-pill pncp-pill--set" data-pncp-state="set"><a href="%1$s">%2$s: <span class="pncp-pill__reason">%3$s</span></a></li>',
+					esc_url( PNCP_Status::settings_url( array( 'tab' => $item[2][0] ) ) . '#' . $item[2][1] ),
+					esc_html( $item[1] ),
+					esc_html( PNCP_Status_State::text( $item[3] ) )
+				);
+				continue;
+			}
 			printf(
-				'<li class="pncp-pill pncp-pill--off"><a href="%1$s"><span class="screen-reader-text">%2$s </span>%3$s</a></li>',
+				'<li class="pncp-pill pncp-pill--off" data-pncp-state="off"><a href="%1$s"><span class="screen-reader-text">%2$s </span>%3$s</a></li>',
 				esc_url( PNCP_Status::settings_url( array( 'tab' => $item[2][0] ) ) . '#' . $item[2][1] ),
 				esc_html__( 'Off:', 'scrapelock' ),
 				esc_html( $item[1] )
@@ -518,20 +529,30 @@ final class PNCP_Admin {
 	 * The protection layers shown in the status bar: on or off, label, and where the setting is.
 	 *
 	 * @param array<string, mixed> $s Settings.
-	 * @return array<int, array{0: bool, 1: string, 2: string[]}>
+	 * @return array<int, array{0: bool, 1: string, 2: string[], 3: array{state:string, reason:string}}>
 	 */
 	private static function status_items( $s ) {
 		// 3.5: the third element is where the setting is (tab and anchor): an "Off" pill links to it.
-		return array(
-			array( ! empty( $s['enabled'] ), __( 'Protection', 'scrapelock' ), array( 'general', 'pncp-enabled' ) ),
-			array( ! empty( $s['early_mode'] ) && PNCP_Early::installed(), __( 'Early check', 'scrapelock' ), array( 'bots', 'pncp-sec-early' ) ),
+		// 3.11: the fourth is the state in three (PNCP_Status_State): on, set but not active (with the reason), off.
+		// The first stays "in effect now", for the count of layers on.
+		$items = array(
+			array( PNCP_Status_State::protection( $s ), __( 'Protection', 'scrapelock' ), array( 'general', 'pncp-enabled' ) ),
+			array( PNCP_Status_State::early( $s ), __( 'Early check', 'scrapelock' ), array( 'bots', 'pncp-sec-early' ) ),
 			// The row, not the checkbox: the checkbox is not there on multisite.
-			array( ! empty( $s['precheck'] ) && PNCP_Precheck::active(), __( 'Pre-cache check', 'scrapelock' ), array( 'bots', 'pncp-sec-early' ) ),
-			array( ! empty( $s['human_check'] ), __( 'Human check', 'scrapelock' ), array( 'bots', 'pncp-sec-human' ) ),
-			array( ! empty( $s['allow_ai_search'] ) && ! empty( $s['verify_ai_bots'] ), __( 'AI bots verified', 'scrapelock' ), array( 'bots', 'pncp-sec-ai' ) ),
-			array( ! empty( $s['block_headless'] ), __( 'Headless browsers', 'scrapelock' ), array( 'bots', 'pncp-block_headless' ) ),
-			array( '' !== $s['countries_block'] || '' !== $s['countries_strict'], __( 'Countries', 'scrapelock' ), array( 'bots', 'pncp-sec-countries' ) ),
+			array( PNCP_Status_State::precheck( $s ), __( 'Pre-cache check', 'scrapelock' ), array( 'bots', 'pncp-sec-early' ) ),
+			array( PNCP_Status_State::setting( $s, ! empty( $s['human_check'] ) ), __( 'Human check', 'scrapelock' ), array( 'bots', 'pncp-sec-human' ) ),
+			array( PNCP_Status_State::ai_verified( $s ), __( 'AI bots verified', 'scrapelock' ), array( 'bots', 'pncp-sec-ai' ) ),
+			array( PNCP_Status_State::setting( $s, ! empty( $s['block_headless'] ) ), __( 'Headless browsers', 'scrapelock' ), array( 'bots', 'pncp-block_headless' ) ),
+			array( PNCP_Status_State::countries( $s ), __( 'Countries', 'scrapelock' ), array( 'bots', 'pncp-sec-countries' ) ),
 		);
+		// 3.11: "Only through the CDN" once it is set (a pill while it is off would only add noise for most sites).
+		if ( ! empty( $s['cdn_only'] ) ) {
+			$items[] = array( PNCP_Status_State::cdn_only( $s ), __( 'Only through the CDN', 'scrapelock' ), array( 'bots', 'pncp-sec-early' ) );
+		}
+		foreach ( $items as $i => $item ) {
+			$items[ $i ] = array( PNCP_Status_State::ON === $item[0]['state'], $item[1], $item[2], $item[0] );
+		}
+		return $items;
 	}
 
 	/**

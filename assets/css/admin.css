@@ -424,6 +424,18 @@ body.pncp-admin-page #wpbody-content {
 	border-color: var(--pncp-border-strong);
 }
 
+/* 3.11: on in the settings, not in effect (the reason is on the pill). */
+.pncp-pill--set {
+	border-color: var(--pncp-warn-line);
+	background: var(--pncp-warn-soft);
+	color: var(--pncp-warn-text);
+	white-space: normal;
+}
+
+.pncp-pill--set::before {
+	background: var(--pncp-warn);
+}
+
 .pncp-pill--alert {
 	border-color: var(--pncp-warn-line);
 	background: var(--pncp-warn-soft);

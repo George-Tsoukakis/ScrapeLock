@@ -1807,6 +1807,13 @@ final class PNCP_Health {
 			$value = (string) $s[ $key ];
 			return isset( $choices[ $key ][ $value ] ) ? $choices[ $key ][ $value ] : $value;
 		};
+		// 3.11: a layer in three states: the text for "on", "Set but not active: <reason>", or "No".
+		$three = static function ( $state, $on_text ) use ( $no ) {
+			if ( PNCP_Status_State::ON === $state['state'] ) {
+				return $on_text;
+			}
+			return PNCP_Status_State::SET === $state['state'] ? PNCP_Status_State::text( $state ) : $no;
+		};
 		// A limit per minute as it is stored, or "off" for 0.
 		$per_min = static function ( $key ) use ( $s ) {
 			/* translators: %d: requests per minute */
@@ -1860,8 +1867,9 @@ final class PNCP_Health {
 			'rest_content'   => array( __( 'Content hidden in the REST API', 'scrapelock' ), $flag( 'rest_hide_content' ) ),
 			'ip_header'      => array( __( 'Real visitor IP', 'scrapelock' ), $choice( 'ip_header' ) ),
 			'ip_lists'       => array( __( 'Official IP lists updated', 'scrapelock' ), $lists ? implode( ', ', $lists ) : '-' ),
-			'early'          => array( __( 'Early check', 'scrapelock' ), empty( $s['early_mode'] ) ? $no : ( PNCP_Early::installed() ? __( 'Running', 'scrapelock' ) : __( 'On, not running', 'scrapelock' ) ) ),
-			'precheck'       => array( __( 'Pre-cache check', 'scrapelock' ), empty( $s['precheck'] ) ? $no : ( PNCP_Precheck::active() ? __( 'Running', 'scrapelock' ) : __( 'On, not running', 'scrapelock' ) ) ),
+			// 3.11: three states with the reason (PNCP_Status_State), as on the settings page.
+			'early'          => array( __( 'Early check', 'scrapelock' ), $three( PNCP_Status_State::early( $s ), __( 'Running', 'scrapelock' ) ) ),
+			'precheck'       => array( __( 'Pre-cache check', 'scrapelock' ), $three( PNCP_Status_State::precheck( $s ), __( 'Running', 'scrapelock' ) ) ),
 			'user_enum'      => array( __( 'Hide usernames', 'scrapelock' ), $flag( 'block_user_enum' ) ),
 			'pingback'       => array( __( 'Pingbacks off', 'scrapelock' ), $flag( 'disable_pingback' ) ),
 			'rest_map'       => array( __( 'REST map hidden from visitors', 'scrapelock' ), $flag( 'hide_rest_discovery' ) ),
@@ -1887,7 +1895,7 @@ final class PNCP_Health {
 			'bunny_import'   => array( __( 'Attacks imported from Bunny CDN\'s logs', 'scrapelock' ), $flag( 'bunny_import' ) ),
 			'auto_emergency' => array( __( 'Automatic Emergency Mode', 'scrapelock' ), empty( $s['auto_emergency'] ) ? $no : ( 'start' === $s['auto_emergency_mode'] ? __( 'Starts on its own', 'scrapelock' ) : __( 'Alerts only', 'scrapelock' ) ) ),
 			'edge'           => array( __( 'Blocking at the CDN', 'scrapelock' ), $edge ),
-			'cdn_only'       => array( __( 'Only through the CDN', 'scrapelock' ), PNCP_Origin::active( $s ) ? $yes : $no ),
+			'cdn_only'       => array( __( 'Only through the CDN', 'scrapelock' ), $three( PNCP_Status_State::cdn_only( $s ), $yes ) ),
 			'integrity'      => array( __( 'File integrity fingerprint', 'scrapelock' ), $fp_time ? wp_date( 'Y-m-d H:i', $fp_time ) : '-' ),
 			'lockdown'       => array( __( 'Lockdown', 'scrapelock' ), $lock ),
 			'lockdown_roles' => array( __( 'Roles frozen while locked', 'scrapelock' ), implode( ', ', PNCP_Lockdown::frozen_roles() ) ),
