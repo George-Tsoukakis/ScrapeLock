@@ -48,12 +48,28 @@ final class PNCP_Admin_Traffic {
 		'key'     => 'tr_key',
 		'act'     => 'tr_act',
 		'confirm' => 'tr_confirm',
+		'fts'     => 'tr_fts',
+		'tts'     => 'tr_tts',
+	);
+
+	/**
+	 * Other names the tab reads when its own parameter is missing (the links of the traffic alert emails):
+	 * parameter => state key. "from" and "to" there are Unix times.
+	 */
+	const ALIASES = array(
+		'view'    => 'view',
+		'status'  => 'status',
+		'src'     => 'src',
+		'problem' => 'type',
+		'ua'      => 'ua',
+		'from'    => 'fts',
+		'to'      => 'tts',
 	);
 
 	/**
 	 * The filters every view keeps when another view is opened.
 	 */
-	const KEEP = array( 'period', 'from', 'to', 'src', 'status', 'q', 'fam', 'ua', 'path', 'ip', 'country' );
+	const KEEP = array( 'period', 'from', 'to', 'fts', 'tts', 'src', 'status', 'q', 'fam', 'ua', 'path', 'ip', 'country' );
 
 	/**
 	 * The views.
@@ -119,12 +135,24 @@ final class PNCP_Admin_Traffic {
 	 * @return array<string, mixed>
 	 */
 	public static function state( $in ) {
-		$in     = is_array( $in ) ? $in : array();
+		$in = is_array( $in ) ? $in : array();
+		foreach ( self::ALIASES as $alias => $key ) {
+			if ( ! isset( $in[ self::PARAMS[ $key ] ] ) && isset( $in[ $alias ] ) ) {
+				$in[ self::PARAMS[ $key ] ] = $in[ $alias ];
+			}
+		}
 		$get    = static function ( $key ) use ( $in ) {
 			$name = self::PARAMS[ $key ];
 			return isset( $in[ $name ] ) && is_scalar( $in[ $name ] ) ? trim( (string) $in[ $name ] ) : '';
 		};
 		$view   = sanitize_key( $get( 'view' ) );
+		$names  = array(
+			'raw'     => 'log',
+			'sources' => 'settings',
+		);
+		$view   = isset( $names[ $view ] ) ? $names[ $view ] : $view;
+		$fts    = ctype_digit( $get( 'fts' ) ) ? (int) $get( 'fts' ) : 0;
+		$tts    = ctype_digit( $get( 'tts' ) ) ? (int) $get( 'tts' ) : 0;
 		$period = sanitize_key( $get( 'period' ) );
 		$date   = static function ( $value ) {
 			return preg_match( '/^(\d{4})-(\d{2})-(\d{2})$/', $value, $m ) && checkdate( (int) $m[2], (int) $m[3], (int) $m[1] ) ? $value : '';
@@ -141,9 +169,9 @@ final class PNCP_Admin_Traffic {
 		$country = strtoupper( $get( 'country' ) );
 		return array(
 			'view'    => in_array( $view, self::VIEWS, true ) ? $view : 'overview',
-			'period'  => in_array( $period, array_keys( self::periods() ), true ) ? $period : '24h',
-			'from'    => $date( $get( 'from' ) ),
-			'to'      => $date( $get( 'to' ) ),
+			'period'  => $fts > 0 ? 'custom' : ( in_array( $period, array_keys( self::periods() ), true ) ? $period : '24h' ),
+			'from'    => '' !== $date( $get( 'from' ) ) || ! $fts ? $date( $get( 'from' ) ) : wp_date( 'Y-m-d', $fts ),
+			'to'      => '' !== $date( $get( 'to' ) ) || ! $tts ? $date( $get( 'to' ) ) : wp_date( 'Y-m-d', $tts ),
 			'src'     => in_array( $src, PNCP_Traffic::SOURCES, true ) ? $src : '',
 			'status'  => in_array( $status, array( '2xx', '3xx', '4xx', '404', '5xx' ), true ) ? $status : '',
 			'q'       => PNCP_Traffic::text( sanitize_text_field( $get( 'q' ) ), 200 ),
@@ -159,6 +187,9 @@ final class PNCP_Admin_Traffic {
 			'key'     => PNCP_Traffic::text( $get( 'key' ), 512 ),
 			'act'     => in_array( $get( 'act' ), array( 'block', 'allow' ), true ) ? $get( 'act' ) : '',
 			'confirm' => 'purge' === $get( 'confirm' ) ? 'purge' : '',
+			// Exact Unix times (a link from an alert): a custom period to the second.
+			'fts'     => $fts > 0 ? (string) $fts : '',
+			'tts'     => $tts > 0 && $tts >= $fts ? (string) $tts : '',
 		);
 	}
 
@@ -203,7 +234,11 @@ final class PNCP_Admin_Traffic {
 			'30d' => 30,
 			'90d' => 90,
 		);
-		if ( 'custom' === $st['period'] ) {
+		if ( '' !== $st['fts'] ) {
+			$from = (int) $st['fts'];
+			$to   = '' !== $st['tts'] ? min( $now, (int) $st['tts'] ) : $now;
+			$from = min( $from, $to );
+		} elseif ( 'custom' === $st['period'] ) {
 			$to   = '' !== $st['to'] ? min( $now, PNCP_Traffic::add_days( self::midnight( $st['to'] ) ) - 1 ) : $now;
 			$from = '' !== $st['from'] ? self::midnight( $st['from'] ) : $to - 7 * DAY_IN_SECONDS;
 			$from = min( $from, $to );
@@ -259,7 +294,7 @@ final class PNCP_Admin_Traffic {
 		if ( ! isset( $over['view'] ) || $over['view'] === $st['view'] ) {
 			$keep = array_merge( $keep, array( 'view', 'order', 'type', 'scan', 'key' ) );
 		}
-		$args = array();
+		$args = array( 'view' => isset( $over['view'] ) ? $over['view'] : $st['view'] ); // The view first: easier to read.
 		foreach ( $keep as $key ) {
 			$args[ $key ] = $st[ $key ];
 		}
@@ -727,6 +762,26 @@ final class PNCP_Admin_Traffic {
 			'country' => __( 'Country', 'scrapelock' ),
 		);
 		$chips  = '';
+		if ( '' !== $st['fts'] ) {
+			$chips .= sprintf(
+				'<li><span class="pncp-tr__chip">%1$s: <code>%2$s</code> <a href="%3$s" class="pncp-tr__chip-x" aria-label="%4$s">×</a></span></li>',
+				esc_html__( 'Exact period', 'scrapelock' ),
+				esc_html( wp_date( get_option( 'date_format' ) . ' ' . get_option( 'time_format' ), (int) $st['fts'] ) . ' – ' . ( '' !== $st['tts'] ? wp_date( get_option( 'time_format' ), (int) $st['tts'] ) : __( 'now', 'scrapelock' ) ) ),
+				esc_url(
+					self::url(
+						array(
+							'fts'    => '',
+							'tts'    => '',
+							'period' => '24h',
+							'from'   => '',
+							'to'     => '',
+						)
+					)
+				),
+				/* translators: %s: name of a filter, e.g. IP */
+				esc_attr( sprintf( __( 'Remove the filter %s', 'scrapelock' ), __( 'Exact period', 'scrapelock' ) ) )
+			);
+		}
 		foreach ( $labels as $key => $label ) {
 			if ( '' === $st[ $key ] ) {
 				continue;
