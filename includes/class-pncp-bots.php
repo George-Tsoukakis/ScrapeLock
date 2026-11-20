@@ -157,6 +157,11 @@ final class PNCP_Bots {
 	private static $rest_seen = false;
 
 	/**
+	 * 3.11: the User-Agent refusals after which a scanner probe is still banned (ban_refused_probe()).
+	 */
+	const PROBE_UA_REASONS = array( 'no_browser', 'empty_ua', 'bot_ua', 'bad_ua', 'headless', 'fake_browser' );
+
+	/**
 	 * Registers the hooks.
 	 */
 	public static function init() {
@@ -1413,6 +1418,54 @@ final class PNCP_Bots {
 	}
 
 	/**
+	 * 3.11: "Ban scanners on their first probe" also for a probe that a User-Agent check refuses first. With
+	 * "Browsers only", the headless check, "No User-Agent" or the bot list on, most scanners (python-requests,
+	 * Go, zgrab…) were refused for their User-Agent before probe_guard() ran: never banned, they went on probing
+	 * (live logs: /actuator/env from a new address every few minutes). The request is refused as before; the IP is
+	 * also banned as by probe_guard(), with its safety: only a path on the probe list that is not a real file,
+	 * not a Private URL, and only when WordPress answered a 404 (the main query ran: page_guard()) or, before
+	 * the query (the early check), for the paths that can never be a WordPress page (PNCP_Probe::RUNTIME_KEYS);
+	 * the exemptions of should_ban_on_sight() and the filter pncp_probe_ban; never in "Monitor only".
+	 *
+	 * @param string $ip Visitor IP.
+	 * @return bool Whether the IP was banned (the request is logged as a probe then).
+	 */
+	private static function ban_refused_probe( $ip ) {
+		$s = PNCP_Options::get();
+		if ( empty( $s['enabled'] ) || empty( $s['probe_ban'] ) || (int) $s['ban_strikes'] <= 0 || PNCP_Options::monitoring( $s ) || '' === $ip ) {
+			return false;
+		}
+		$path = PNCP_Probe::request_path();
+		if ( did_action( 'parse_query' ) ) {
+			if ( ! ( is_404() || '' === (string) get_option( 'permalink_structure' ) ) || ! PNCP_Probe::matches( $path ) ) {
+				return false;
+			}
+		} else {
+			$body = PNCP_Probe::body( 'runtime' );
+			if ( '' === $body || 1 !== preg_match( '#^/' . $body . '$#i', '/' . ltrim( $path, '/' ) ) || PNCP_Paths::is_site_metadata( $path ) ) {
+				return false;
+			}
+		}
+		if ( '' !== trim( (string) $s['private_paths'] ) && '' !== PNCP_Private_Urls::matching_pattern( $path, PNCP_Options::parse_list( $s['private_paths'] ) ) ) {
+			return false;
+		}
+		if ( PNCP_Probe::file_exists( $path ) || PNCP_Ip::is_cdn_edge( $ip ) || PNCP_Log::is_banned( $ip ) ) {
+			return false;
+		}
+		$ua = self::user_agent();
+		if ( ( '' !== $ua && self::allow_list_match( $ua, $ip, $s ) ) || ! self::should_ban_on_sight( $ip, 'pncp_pr_' ) ) {
+			return false;
+		}
+		/** This filter is documented in includes/class-pncp-bots.php (probe_guard()). */
+		if ( ! apply_filters( 'pncp_probe_ban', true, $path, $ip ) ) {
+			return false;
+		}
+		self::no_cache();
+		PNCP_Log::ban( $ip, self::probe_ban_minutes( $ip, (int) $s['ban_minutes'] ), 'probe' );
+		return true;
+	}
+
+	/**
 	 * Logs and returns the decision.
 	 *
 	 * In "Monitor only" (PNCP_Options::monitoring()) the verdict is logged as "would block" and the request
@@ -1431,6 +1484,10 @@ final class PNCP_Bots {
 				'code'   => $code,
 				'reason' => $reason,
 			);
+		}
+		// 3.11: a scanner probe refused first by a User-Agent check is still banned on its first probe.
+		if ( 403 === $code && in_array( $reason, self::PROBE_UA_REASONS, true ) && self::ban_refused_probe( $ip ) ) {
+			$reason = 'probe';
 		}
 		PNCP_Reputation::record_reason( $ip, $reason ); // 3.7: what the IP did counts toward its reputation.
 		if ( PNCP_Options::monitoring() ) {

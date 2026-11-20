@@ -499,6 +499,67 @@ proc_close( $echo_srv );
 wp_delete_file( $echo_dir . '/router.php' );
 rmdir( $echo_dir );
 
+/* ---------- A probe refused for its User-Agent is still banned on the first probe ---------- */
+$saved_probe = PNCP_Options::stored();
+$google_list = get_option( 'pncp_ip_lists_google', null );
+PNCP_Ip::store_list( 'google', array( '66.249.64.0/19' ) );
+settings(
+	array(
+		'enabled'                 => 1,
+		'monitor_mode'            => 0,
+		'monitor_until'           => 0,
+		'require_browser_headers' => 1,
+		'block_headless'          => 1,
+		'block_empty_ua'          => 1,
+		'probe_ban'               => 1,
+		'ban_strikes'             => 3,
+		'early_mode'              => 0,
+		'precheck'                => 0,
+	)
+);
+$py = 'python-requests/2.32.3';
+foreach ( array( '198.51.100.211', '198.51.100.212', '198.51.100.213', '198.51.100.214', '198.51.100.215', '198.51.100.216', '66.249.66.1' ) as $pip ) {
+	PNCP_Log::unban( $pip );
+}
+list( $code ) = http( '/actuator/env', '198.51.100.211', $py );
+t( 'probe refused by "Browsers only": still 403', 403 === $code, (string) $code );
+t( '... and banned on the first probe (/actuator/env, python-requests)', banned( '198.51.100.211' ) );
+$rows = (array) PNCP_Log::recent( 5 );
+$last = $rows ? (array) $rows[0] : array();
+t( '... logged as a probe', isset( $last['reason'] ) && 'probe' === $last['reason'], wp_json_encode( $last ) );
+list( $code ) = http( '/.env', '198.51.100.212', '' );
+t( '/.env without a User-Agent: 403 and banned', 403 === $code && banned( '198.51.100.212' ), (string) $code );
+list( $code ) = http( '/arthro-not-a-probe/', '198.51.100.213', $py );
+t( 'python-requests on a page that is not a probe: 403 as before, not banned', 403 === $code && ! banned( '198.51.100.213' ), (string) $code );
+list( $code ) = http( '/actuator/env', '66.249.66.1', 'Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)' );
+t( 'Googlebot from Google\'s list asking for /actuator/env: not banned', ! banned( '66.249.66.1' ), (string) $code );
+settings( array( 'probe_ban' => 0 ) );
+list( $code ) = http( '/actuator/env', '198.51.100.214', $py );
+t( '"Ban scanners on their first probe" off: 403 for the User-Agent, no ban', 403 === $code && ! banned( '198.51.100.214' ), (string) $code );
+settings( array( 'probe_ban' => 1, 'monitor_mode' => 1 ) );
+list( $code ) = http( '/actuator/env', '198.51.100.215', $py );
+t( '"Monitor only": no ban', ! banned( '198.51.100.215' ), (string) $code );
+settings( array( 'monitor_mode' => 0 ) );
+$keep = static function ( $ban, $path, $ip ) {
+	return '198.51.100.216' === $ip ? false : $ban;
+};
+add_filter( 'pncp_probe_ban', $keep, 10, 3 );
+file_put_contents( WP_CONTENT_DIR . '/mu-plugins/pncp-t-probe-filter.php', "<?php add_filter( 'pncp_probe_ban', function ( \$b, \$p, \$ip ) { return '198.51.100.216' === \$ip ? false : \$b; }, 10, 3 );\n" );
+list( $code ) = http( '/actuator/env', '198.51.100.216', $py );
+t( 'filter pncp_probe_ban = false: no ban', ! banned( '198.51.100.216' ), (string) $code );
+wp_delete_file( WP_CONTENT_DIR . '/mu-plugins/pncp-t-probe-filter.php' );
+remove_filter( 'pncp_probe_ban', $keep, 10 );
+foreach ( array( '198.51.100.211', '198.51.100.212', '198.51.100.213', '198.51.100.214', '198.51.100.215', '198.51.100.216', '66.249.66.1' ) as $pip ) {
+	PNCP_Log::unban( $pip );
+}
+update_option( PNCP_OPTION, $saved_probe );
+PNCP_Options::flush();
+if ( null === $google_list ) {
+	delete_option( 'pncp_ip_lists_google' );
+} else {
+	update_option( 'pncp_ip_lists_google', $google_list );
+}
+
 // @@NEXT@@
 
 echo $fails ? "\n$fails FAIL\n" : "\nALL PASS\n";
