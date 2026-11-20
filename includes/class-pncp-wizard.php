@@ -527,7 +527,7 @@ final class PNCP_Wizard {
 				</h2>
 			</summary>
 			<?php self::render_result( $result ); ?>
-			<p class="description"><?php esc_html_e( 'ScrapeLock looked at the active plugins, the CDN and the server, and suggests settings that suit them. Nothing changes until you choose and click “Apply selected”. The settings as they are now are saved first under “Earlier versions”, so you can undo.', 'scrapelock' ); ?></p>
+			<?php echo PNCP_Admin_Fields::para( __( 'Settings that suit the plugins, CDN and server found here.', 'scrapelock' ), __( 'ScrapeLock looked at the active plugins, the CDN and the server, and suggests settings that suit them. Nothing changes until you choose and click “Apply selected”. The settings as they are now are saved first under “Earlier versions”, so you can undo.', 'scrapelock' ) ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Escaped in PNCP_Admin_Fields. ?>
 			<p><?php esc_html_e( 'Found on this site:', 'scrapelock' ); ?> <strong><?php echo esc_html( $found ? implode( ', ', $found ) : __( 'nothing that needs other settings', 'scrapelock' ) ); ?></strong></p>
 			<?php if ( $proposals ) : ?>
 				<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>" class="pncp-wizard-form">
@@ -595,8 +595,8 @@ final class PNCP_Wizard {
 		$texts = array(
 			'applied' => array( 'success', __( 'The selected changes were applied. The previous settings are under “Earlier versions”.', 'scrapelock' ) ),
 			'none'    => array( 'info', __( 'Nothing was selected, so nothing changed.', 'scrapelock' ) ),
-			'locked'  => array( 'error', __( 'The site is locked: the settings cannot be changed until it is unlocked.', 'scrapelock' ) ),
-			'error'   => array( 'error', __( 'The action was not completed.', 'scrapelock' ) ),
+			'locked'  => array( 'error', __( 'The site is locked: unlock it on the Lockdown tab to apply these changes.', 'scrapelock' ) ),
+			'error'   => array( 'error', __( 'The changes were not applied: reload this page and try again.', 'scrapelock' ) ),
 		);
 		if ( ! isset( $texts[ $result ] ) ) {
 			return;

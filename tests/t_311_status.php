@@ -291,7 +291,7 @@ settings( array( 'content_paths' => "/hub/\n" ) );
 t( 'A9: already in the list: not added twice', array( '/hub' ) === PNCP_Log::content_paths(), wp_json_encode( PNCP_Log::content_paths() ) );
 settings( array( 'content_paths' => "/forum/\n" ) );
 list( , $body ) = http( $page . '&tab=log', $admin_cookies );
-t( 'A9: Log tab: «added because FluentCommunity is active»', false !== strpos( $body, 'id="pncp-content_paths-added"' ) && false !== strpos( $body, 'added because FluentCommunity is active' ) && false !== strpos( $body, '/hub/' ) );
+t( 'A9: Log tab: «Also counted: /hub/, because FluentCommunity is active»', false !== strpos( $body, 'id="pncp-content_paths-added"' ) && false !== strpos( $body, 'because FluentCommunity is active' ) && false !== strpos( $body, '/hub/' ) );
 t( 'A9: Log tab: the field still holds only the stored list', (bool) preg_match( '#<textarea[^>]*name="pncp_settings\[content_paths\]"[^>]*>\s*/forum/\s*</textarea>#', $body ) );
 
 // The REST limit (3 per minute). Addresses of their own on every run (the counters last a minute).

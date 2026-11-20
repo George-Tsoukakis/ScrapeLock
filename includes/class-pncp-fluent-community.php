@@ -133,19 +133,32 @@ final class PNCP_Fluent_Community {
 	}
 
 	/**
-	 * The note under "Content addresses" on the Log tab.
+	 * The note under "Content addresses" on the Log tab, in two parts: one short line, and the rest (shown under
+	 * "More", PNCP_Admin_Fields::help()).
+	 *
+	 * @return array{0: string, 1: string} Two '' while FluentCommunity is not active.
+	 */
+	public static function note_help() {
+		$paths = self::added_paths();
+		if ( ! $paths ) {
+			return array( '', '' );
+		}
+		return array(
+			sprintf(
+				/* translators: %s: a path prefix, e.g. /hub/ */
+				__( 'Also counted: %s, because FluentCommunity is active.', 'scrapelock' ),
+				implode( ', ', array_map( 'trailingslashit', $paths ) )
+			),
+			__( 'Your list above is not changed. Its REST reads by signed-in members do not count toward the REST API limit.', 'scrapelock' ),
+		);
+	}
+
+	/**
+	 * The same note as one text (the "For my site" advice).
 	 *
 	 * @return string '' while FluentCommunity is not active.
 	 */
 	public static function note() {
-		$paths = self::added_paths();
-		if ( ! $paths ) {
-			return '';
-		}
-		return sprintf(
-			/* translators: %s: a path prefix, e.g. /hub/ */
-			__( 'Also counted: %s (added because FluentCommunity is active; your list above is not changed). Its REST reads by signed-in members do not count toward the REST API limit.', 'scrapelock' ),
-			implode( ', ', array_map( 'trailingslashit', $paths ) )
-		);
+		return trim( implode( ' ', self::note_help() ) );
 	}
 }

@@ -13,6 +13,8 @@
  *   buttons of 3.11: the AI search warning with "Remove from the list" (and a link that opens the folded bot
  *   list), "Network and CDN" opened while one of its settings is set but not active, the badge link of "Only
  *   through the CDN", the "For my site" panel, the FluentCommunity note and "Allow this service" in the Log.
+ * - The short help texts (one line, the rest under "More") also on what 3.11 added: those warnings, the
+ *   assistant's intro, the FluentCommunity note, the "Advanced" intro, the probe list of "Ban scanners…".
  *
  * Same requirements as t_http.php (mu-test-harness.php, router.php). Changes the database: test sites only.
  */
@@ -122,6 +124,24 @@ function login_cookies( $user_id ) {
 	$_COOKIE[ LOGGED_IN_COOKIE ] = $cookies[ LOGGED_IN_COOKIE ];
 	wp_set_current_user( $user_id );
 	return $cookies;
+}
+
+/** The .description texts over $max words outside the "More" folds (as t_311_texts.php counts them). */
+function long_descriptions( $body, $max = 20 ) {
+	$dom = new DOMDocument();
+	libxml_use_internal_errors( true );
+	$dom->loadHTML( '<?xml encoding="UTF-8">' . $body );
+	libxml_clear_errors();
+	$xp   = new DOMXPath( $dom );
+	$long = array();
+	foreach ( $xp->query( '//*[@id="wpbody-content"]//*[self::p or self::span][contains(concat(" ", normalize-space(@class), " "), " description ")][not(ancestor::details[contains(concat(" ", normalize-space(@class), " "), " pncp-more ")])][not(contains(@class, "pncp-requires-note"))]' ) as $el ) {
+		$text = trim( preg_replace( '/\s+/u', ' ', $el->textContent ) );
+		$n    = count( preg_split( '/\s+/u', $text, -1, PREG_SPLIT_NO_EMPTY ) );
+		if ( $n > $max ) {
+			$long[] = $n . ': ' . mb_substr( $text, 0, 80 );
+		}
+	}
+	return $long;
 }
 
 $saved         = PNCP_Options::stored();
@@ -341,13 +361,23 @@ t( 'bots tab: the warning links to the folded bot list, which is on the page', f
 t( 'bots tab: "Network and CDN" is open while "Only through the CDN" is set but not active', 1 === preg_match( '/<details class="pncp-advanced" id="pncp-sec-network" open>/', $body ) );
 t( 'status bar: "Only through the CDN" is "set", its link goes to its row', 1 === preg_match( '#<li class="pncp-pill [^"]*" data-pncp-state="set">\s*<a href="[^"]*tab=bots[^"]*\#pncp-sec-ip"[^>]*>[^<]*Only through the CDN#s', $body ) && false !== strpos( $body, 'id="pncp-sec-ip"' ) );
 
+$long = long_descriptions( $body );
+t( 'texts: on the Bots tab with these warnings, no description over 20 words outside "More"', ! $long, implode( ' | ', $long ) );
+t( 'texts: the AI search warning is one short sentence, the rest under "More"', 1 === preg_match( '#pncp-ai-search-list-notice"><p>([^<]*)</p><details class="pncp-more">#', $body, $m ) && count( preg_split( '/\s+/', trim( $m[1] ) ) ) <= 30, isset( $m[1] ) ? $m[1] : '' );
+t( 'texts: "Ban scanners on their first probe" names the probes of other software (under "More")', false !== strpos( $body, 'Spring Boot /actuator' ) );
+
 list( $code, $body ) = http( $page . '&tab=general', '192.0.2.212', $browser, null, $cookies );
 $nav = strpos( $body, 'nav-tab-active' );
 $wiz = strpos( $body, 'id="pncp-wizard"' );
 t( 'first tab: the "For my site" panel, after the grouped tab bar', 200 === $code && ! php_errors( $body ) && false !== $nav && false !== $wiz && $nav < $wiz );
 
+$long = long_descriptions( $body );
+t( 'texts: the "For my site" panel has a short intro, the rest under "More"', ! $long && false !== strpos( $body, 'Settings that suit the plugins, CDN and server found here.' ), implode( ' | ', $long ) );
+
 list( $code, $body ) = http( $page . '&tab=log', '192.0.2.212', $browser, null, $cookies );
 t( 'log tab: the FluentCommunity note under "Content addresses"', 200 === $code && ! php_errors( $body ) && false !== strpos( $body, 'id="pncp-content_paths-added"' ) && false !== strpos( $body, '/hub/' ) );
+$long = long_descriptions( $body );
+t( 'texts: the FluentCommunity note is one short line, the rest under "More"', ! $long && 1 === preg_match( '#id="pncp-content_paths-added">Also counted: /hub/, because FluentCommunity is active\.</p><details class="pncp-more">#', $body ), implode( ' | ', $long ) );
 t( 'log tab: the matched entry and "Allow this service" for the python-requests row', false !== strpos( $body, 'pncp-bot-match' ) && false !== strpos( $body, 'Allow this service' ) );
 
 deactivate_plugins( 'fluent-community/fluent-community.php', true );

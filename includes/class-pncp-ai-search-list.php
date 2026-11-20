@@ -111,7 +111,7 @@ final class PNCP_Ai_Search_List {
 			$text = __( 'The AI search bots were removed from the bot list. The training crawlers stay in it. The settings before the change are under “Earlier versions”.', 'scrapelock' );
 			$type = 'success';
 		} else {
-			$text = __( 'Nothing changed: the bot list has no allowed AI search bots, or the site is locked.', 'scrapelock' );
+			$text = __( 'Nothing was removed: the bot list has no allowed AI search bots, or the site is locked (unlock it on the Lockdown tab and try again).', 'scrapelock' );
 			$type = 'error';
 		}
 		printf( '<div class="notice notice-%1$s is-dismissible"><p>%2$s</p></div>', esc_attr( $type ), esc_html( $text ) );
@@ -131,11 +131,12 @@ final class PNCP_Ai_Search_List {
 		echo esc_html(
 			sprintf(
 				/* translators: %s: list of User-Agents, e.g. "OAI-SearchBot, ChatGPT-User" */
-				__( 'These AI search bots are in the bot list but AI search is allowed: they are let through (%s). Remove them from the list so that it shows what is blocked. Training crawlers (GPTBot, ClaudeBot, CCBot, Google-Extended…) stay blocked.', 'scrapelock' ),
+				__( 'These AI search bots are in the bot list but AI search is allowed: they are let through (%s). Remove them from the list.', 'scrapelock' ),
 				implode( ', ', $found )
 			)
 		);
 		echo '</p>';
+		echo PNCP_Admin_Fields::more( __( 'Then the bot list shows only what is blocked. Training crawlers (GPTBot, ClaudeBot, CCBot, Google-Extended…) stay in it and stay blocked.', 'scrapelock' ) ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Escaped in PNCP_Admin_Fields.
 		printf( '<form method="post" action="%s">', esc_url( admin_url( 'admin-post.php' ) ) );
 		printf( '<input type="hidden" name="action" value="%s">', esc_attr( self::ACTION ) );
 		echo preg_replace( '/ id="_wpnonce"/', '', wp_nonce_field( self::ACTION, '_wpnonce', true, false ), 1 ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Core markup.

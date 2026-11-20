@@ -224,9 +224,9 @@ final class PNCP_Bot_Match {
 		$texts = array(
 			'allow_service_added'  => array( 'success', __( 'The service\'s User-Agent was added to “Always allowed User-Agents” (“Bots and limits” → “Always allowed”). Other programs of the same library stay blocked. The settings before the change are under “Earlier versions”.', 'scrapelock' ) ),
 			'allow_service_exists' => array( 'info', __( 'This User-Agent is already always allowed.', 'scrapelock' ) ),
-			'allow_service_full'   => array( 'error', __( 'The always-allowed User-Agents already have 200 lines. Remove some there first.', 'scrapelock' ) ),
+			'allow_service_full'   => array( 'error', __( 'The always-allowed User-Agents already have 200 lines: remove some under “Always allowed”, then try again.', 'scrapelock' ) ),
 		);
-		$text = isset( $texts[ $message ] ) ? $texts[ $message ] : array( 'error', __( 'Nothing changed: this User-Agent was not blocked by a generic HTTP library, it is too generic, or the site is locked.', 'scrapelock' ) );
+		$text = isset( $texts[ $message ] ) ? $texts[ $message ] : array( 'error', __( 'Nothing was added: this User-Agent was not blocked by a generic HTTP library, is too generic, or the site is locked (unlock it on the Lockdown tab and try again).', 'scrapelock' ) );
 		printf( '<div class="notice notice-%1$s is-dismissible"><p>%2$s</p></div>', esc_attr( $text[0] ), esc_html( $text[1] ) );
 	}
 }
