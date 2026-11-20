@@ -2018,7 +2018,7 @@ final class PNCP_Admin_Traffic {
 		}
 		$owner = PNCP_Ip::official_owner( $ip );
 		if ( '' !== $owner ) {
-			/* translators: %s: company, e.g. Google */
+			/* translators: %s: company, e.g. Anthropic or Cloudflare */
 			$out[] = '<span class="pncp-badge">' . esc_html( sprintf( __( 'Official %s address', 'scrapelock' ), $owner ) ) . '</span>';
 		}
 		return implode( ' ', $out );
