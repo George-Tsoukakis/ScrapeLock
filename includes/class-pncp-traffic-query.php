@@ -39,6 +39,24 @@ final class PNCP_Traffic_Query {
 	const CACHE_TTL = 60;
 
 	/**
+	 * Most keys (groups) one raw top() / problems() query reads: up to this many the number of keys is exact
+	 * (total_rows), beyond it unknown (-1, has_more says whether there is a next page). Saves a second pass over
+	 * the rows only to count them.
+	 */
+	const GROUPS = 1000;
+
+	/**
+	 * Most raw rows a detail (one User-Agent, path or IP) reads in one pass for its breakdowns: of a busier key
+	 * the newest ones (the result is "clipped" to the first of them).
+	 */
+	const DETAIL_SCAN = 200000;
+
+	/**
+	 * Raw rows per batch of that pass.
+	 */
+	const SCAN_BATCH = 10000;
+
+	/**
 	 * The dimensions top() takes.
 	 */
 	const TOP = array( 'ua', 'ua_family', 'path', 'referer', 'ip', 'country', 'status' );
@@ -59,8 +77,8 @@ final class PNCP_Traffic_Query {
 	 * @return array{from:int, to:int, src:string, status:array{0:int, 1:int}|null, ua:string, ua_family:string, path:string, path_like:string, ip:string, country:string, cache:string, search:string}
 	 */
 	public static function filters( $filters ) {
-		$f   = is_array( $filters ) ? $filters : array();
-		$get = static function ( $key ) use ( $f ) {
+		$f    = is_array( $filters ) ? $filters : array();
+		$get  = static function ( $key ) use ( $f ) {
 			return isset( $f[ $key ] ) && is_scalar( $f[ $key ] ) ? trim( (string) $f[ $key ] ) : '';
 		};
 		$now  = time();
@@ -184,19 +202,19 @@ final class PNCP_Traffic_Query {
 			$args[] = (int) $f['status'][0];
 			$args[] = (int) $f['status'][1];
 		}
+		// The User-Agent and the path by their hashes only (64 bits), which the covering index holds: the
+		// queries then read the index, not the rows.
 		if ( '' !== $f['ua'] ) {
-			$w[]    = 'ua_hash = %s AND ua = %s';
+			$w[]    = 'ua_hash = %s';
 			$args[] = PNCP_Traffic::hash( $f['ua'] );
-			$args[] = $f['ua'];
 		}
 		if ( '' !== $f['ua_family'] ) {
 			$w[]    = 'fam = %s';
 			$args[] = $f['ua_family'];
 		}
 		if ( '' !== $f['path'] ) {
-			$w[]    = 'path_hash = %s AND path = %s';
+			$w[]    = 'path_hash = %s';
 			$args[] = PNCP_Traffic::hash( $f['path'] );
-			$args[] = $f['path'];
 		}
 		if ( '' !== $f['path_like'] ) {
 			$w[]    = 'path LIKE %s';
@@ -233,6 +251,19 @@ final class PNCP_Traffic_Query {
 		global $wpdb;
 		// phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared -- Built from fixed SQL with placeholders only; the values are prepared here.
 		return PNCP_Traffic::rows( $wpdb->prepare( $sql, $args ) );
+	}
+
+	/**
+	 * Prepares SQL built from fixed parts with placeholders only.
+	 *
+	 * @param string            $sql  SQL.
+	 * @param array<int, mixed> $args Values.
+	 * @return string
+	 */
+	private static function sql( $sql, $args ) {
+		global $wpdb;
+		// phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared -- Built from fixed SQL with placeholders only; the values are prepared here.
+		return (string) $wpdb->prepare( $sql, $args );
 	}
 
 	/**
@@ -540,10 +571,13 @@ final class PNCP_Traffic_Query {
 	 * @param int                  $limit     Rows, 1 to 500.
 	 * @param int                  $offset    Rows to skip.
 	 * @param string               $order     hits | ips | bytes | s4xx | s5xx | misses | last | first.
-	 * @return array{rows:array<int, array<string, mixed>>, total_rows:int, dimension:string, order:string, src_used:string, from:int, to:int, basis:string, clipped:bool, ips_approx:bool}
+	 * @return array{rows:array<int, array<string, mixed>>, total_rows:int, has_more:bool, dimension:string, order:string, src_used:string, from:int, to:int, basis:string, clipped:bool, ips_approx:bool}
 	 *         rows: key (the User-Agent, path, referrer ('' = none), IP, country, status code or family), hits, ips,
 	 *         bytes, s4xx, s5xx, misses, first, last (Unix time); for ua also family and name, for ua_family name
-	 *         (the family's label). total_rows: how many keys there are in all (for paging).
+	 *         (the family's label). total_rows: how many keys there are in all (for paging), -1 when there are
+	 *         more than GROUPS over the raw rows (has_more then says whether a next page exists). A status class
+	 *         filter (2xx, 3xx, 4xx, 404, 5xx) over a range longer than the raw window is answered from the daily
+	 *         figures: hits exact, ips (ips_approx), bytes and misses in proportion, first / last of the key.
 	 */
 	public static function top( $dimension, $filters = array(), $limit = 50, $offset = 0, $order = 'hits' ) {
 		$dimension = in_array( (string) $dimension, self::TOP, true ) ? (string) $dimension : 'path';
@@ -579,10 +613,38 @@ final class PNCP_Traffic_Query {
 		}
 		$cond = self::agg_top_condition( $dim, $f );
 		if ( null === $cond ) {
+			// A status class (2xx, 3xx, 4xx, 404, 5xx) is counted per key in the daily figures too.
+			$column = 'status' !== $dim ? self::status_column( $f ) : '';
+			$cond   = '' !== $column ? self::agg_top_condition( $dim, array_merge( $f, array( 'status' => null ) ) ) : null;
+			if ( null !== $cond ) {
+				return array_merge( self::agg_top_status( $dim, $f, $limit, $offset, $order, $cond, $column ), $base, self::meta( $f, 'agg', false ) );
+			}
 			list( $f, $clipped ) = self::clip( $f );
 			return array_merge( self::raw_top( $dim, $f, $limit, $offset, $order ), $base, self::meta( $f, 'raw', $clipped ) );
 		}
 		return array_merge( self::agg_top( $dim, $f, $limit, $offset, $order, $cond ), $base, self::meta( $f, 'agg', false ) );
+	}
+
+	/**
+	 * The column of the daily figures that counts the requests of the status filter (s2xx, s3xx, s4xx, s404,
+	 * s5xx), or '' when the filter is another one (a single code other than 404) or not set.
+	 *
+	 * @param array<string, mixed> $f Filters.
+	 * @return string
+	 */
+	private static function status_column( $f ) {
+		if ( null === $f['status'] ) {
+			return '';
+		}
+		$map = array(
+			'200-299' => 's2xx',
+			'300-399' => 's3xx',
+			'400-499' => 's4xx',
+			'404-404' => 's404',
+			'500-599' => 's5xx',
+		);
+		$key = (int) $f['status'][0] . '-' . (int) $f['status'][1];
+		return isset( $map[ $key ] ) ? $map[ $key ] : '';
 	}
 
 	/**
@@ -648,21 +710,34 @@ final class PNCP_Traffic_Query {
 	private static function raw_top( $dim, $f, $limit, $offset, $order ) {
 		list( $where, $args ) = self::raw_where( $f );
 		$col                  = PNCP_Traffic::dimension_column( $dim );
-		$label                = PNCP_Traffic::label_column( $dim );
 		$group                = 'ua' === $dim ? $col . ', fam' : $col;
 		$table                = PNCP_Traffic::table( 'raw' );
-		$rows                 = self::q(
-			'SELECT MAX(' . $label . ') AS label_key, MAX(fam) AS fam, COUNT(*) AS hits, COUNT(DISTINCT ip) AS ips, SUM(bytes) AS bytes, SUM(CASE WHEN status >= 400 AND status < 500 THEN 1 ELSE 0 END) AS s4xx, SUM(CASE WHEN status >= 500 AND status < 600 THEN 1 ELSE 0 END) AS s5xx, SUM(CASE WHEN hit = 0 THEN 1 ELSE 0 END) AS misses, MIN(ts) AS first, MAX(ts) AS last FROM %i WHERE ' . $where . ' GROUP BY ' . $group . ' ORDER BY ' . self::order_sql( $order ) . ' LIMIT %d OFFSET %d',
-			array_merge( array( $table ), $args, array( $limit, $offset ) )
+		// One pass, from the covering index: the long texts (User-Agent, path) are read afterwards, for the keys
+		// shown only. Up to GROUPS keys are read at once, which also counts them; beyond that the count is unknown.
+		$window = $offset + $limit + 1 <= self::GROUPS;
+		$rows   = self::q(
+			'SELECT ' . $col . ' AS g, MAX(fam) AS fam, COUNT(*) AS hits, COUNT(DISTINCT ip) AS ips, SUM(bytes) AS bytes, SUM(CASE WHEN status >= 400 AND status < 500 THEN 1 ELSE 0 END) AS s4xx, SUM(CASE WHEN status >= 500 AND status < 600 THEN 1 ELSE 0 END) AS s5xx, SUM(CASE WHEN hit = 0 THEN 1 ELSE 0 END) AS misses, MIN(ts) AS first, MAX(ts) AS last FROM %i WHERE ' . $where . ' GROUP BY ' . $group . ' ORDER BY ' . self::order_sql( $order ) . ', g LIMIT %d OFFSET %d',
+			array_merge( array( $table ), $args, $window ? array( self::GROUPS, 0 ) : array( $limit + 1, $offset ) )
 		);
-		$count                = self::q( 'SELECT COUNT(*) AS n FROM (SELECT 1 AS one FROM %i WHERE ' . $where . ' GROUP BY ' . $group . ') AS t', array_merge( array( $table ), $args ) );
-		$out                  = array();
+		$count  = count( $rows );
+		if ( $window ) {
+			$total = $count < self::GROUPS ? $count : -1;
+			$rows  = array_slice( $rows, $offset, $limit + 1 );
+		} else {
+			$total = $count <= $limit ? $offset + $count : -1;
+		}
+		$more   = count( $rows ) > $limit;
+		$rows   = array_slice( $rows, 0, $limit );
+		$labels = PNCP_Traffic::labels( $dim, array_column( $rows, 'g' ) );
+		$out    = array();
 		foreach ( $rows as $r ) {
-			$out[] = self::top_row( $dim, $r );
+			$r['label_key'] = isset( $labels[ (string) $r['g'] ] ) ? $labels[ (string) $r['g'] ] : (string) $r['g'];
+			$out[]          = self::top_row( $dim, $r );
 		}
 		return array(
 			'rows'       => $out,
-			'total_rows' => isset( $count[0]['n'] ) ? (int) $count[0]['n'] : count( $out ),
+			'total_rows' => $total,
+			'has_more'   => $more,
 		);
 	}
 
@@ -733,9 +808,51 @@ final class PNCP_Traffic_Query {
 		foreach ( $rows as $r ) {
 			$out[] = self::top_row( $dim, $r );
 		}
+		$total = isset( $count[0]['n'] ) ? (int) $count[0]['n'] : count( $out );
 		return array(
 			'rows'       => $out,
-			'total_rows' => isset( $count[0]['n'] ) ? (int) $count[0]['n'] : count( $out ),
+			'total_rows' => $total,
+			'has_more'   => $offset + count( $out ) < $total,
+		);
+	}
+
+	/**
+	 * top() with a status class over the daily figures: the requests of that class per key (exact); its IPs at
+	 * most the key's IPs of the day (ips_approx), its bytes and cache misses the key's in proportion, first and
+	 * last the key's.
+	 *
+	 * @param string                                $dim    Dimension.
+	 * @param array<string, mixed>                  $f      Filters.
+	 * @param int                                   $limit  Rows.
+	 * @param int                                   $offset Offset.
+	 * @param string                                $order  Order.
+	 * @param array{0:string, 1:array<int, mixed>} $cond   Condition of the other filters (agg_top_condition()).
+	 * @param string                                $column s2xx | s3xx | s4xx | s404 | s5xx.
+	 * @return array{rows:array<int, array<string, mixed>>, total_rows:int, has_more:bool}
+	 */
+	private static function agg_top_status( $dim, $f, $limit, $offset, $order, $cond, $column ) {
+		$table = PNCP_Traffic::table( 'day' );
+		$base  = array( $table, $f['src'], $dim, PNCP_Traffic::day_start( (int) $f['from'] ), PNCP_Traffic::day_start( (int) $f['to'] ) );
+		$where = 'src = %s AND dim = %s AND day >= %d AND day <= %d AND ' . $cond[0] . ' AND ' . $column . ' > 0';
+		$s4xx  = in_array( $column, array( 's4xx', 's404' ), true ) ? 'SUM(' . $column . ')' : '0';
+		$s5xx  = 's5xx' === $column ? 'SUM(' . $column . ')' : '0';
+		$rows  = self::q(
+			'SELECT MAX(label) AS label_key, MAX(fam) AS fam, SUM(' . $column . ') AS hits, SUM(ips) AS ips, SUM(bytes * ' . $column . ' / hits) AS bytes, ' . $s4xx . ' AS s4xx, ' . $s5xx . ' AS s5xx, SUM(misses * ' . $column . ' / hits) AS misses, MIN(first_ts) AS first, MAX(last_ts) AS last FROM %i WHERE ' . $where . ' GROUP BY k ORDER BY ' . self::order_sql( $order ) . ' LIMIT %d OFFSET %d',
+			array_merge( $base, $cond[1], array( $limit, $offset ) )
+		);
+		$count = self::q( 'SELECT COUNT(DISTINCT k) AS n FROM %i WHERE ' . $where, array_merge( $base, $cond[1] ) );
+		$out   = array();
+		foreach ( $rows as $r ) {
+			$r['ips']    = min( (int) $r['ips'], (int) $r['hits'] );
+			$r['bytes']  = (int) round( (float) $r['bytes'] );
+			$r['misses'] = (int) round( (float) $r['misses'] );
+			$out[]       = self::top_row( $dim, $r );
+		}
+		$total = isset( $count[0]['n'] ) ? (int) $count[0]['n'] : count( $out );
+		return array(
+			'rows'       => $out,
+			'total_rows' => $total,
+			'has_more'   => $offset + count( $out ) < $total,
 		);
 	}
 
@@ -754,7 +871,7 @@ final class PNCP_Traffic_Query {
 	 * @param array<string, mixed> $filters Filters (see filters()).
 	 * @param int                  $limit   Rows, 1 to 500.
 	 * @param int                  $offset  Rows to skip.
-	 * @return array{rows:array<int, array<string, mixed>>, total_rows:int, type:string, available:bool, src_used:string, from:int, to:int, basis:string, clipped:bool, ips_approx:bool}
+	 * @return array{rows:array<int, array<string, mixed>>, total_rows:int, has_more:bool, type:string, available:bool, src_used:string, from:int, to:int, basis:string, clipped:bool, ips_approx:bool}
 	 *         rows: path, hits, ips, last, statuses (code => hits; over the aggregates for uncached / large / slow:
 	 *         "2xx" … "5xx" => hits), top_referers (up to 5: referer, hits, internal = from this site), sample_ua,
 	 *         bytes, avg_bytes, misses, miss_rate (0–1), avg_rt_ms (null when unknown). available: false when the
@@ -784,7 +901,31 @@ final class PNCP_Traffic_Query {
 	 */
 	private static function compute_problems( $type, $f, $limit, $offset ) {
 		$base = array( 'type' => $type );
-		$set  = self::set_filters( $f );
+		// A status filter that holds every status of the type (404 with "4xx", 5xx with "5xx") changes nothing; one
+		// that holds none of them leaves nothing.
+		$range = array(
+			'404' => array( 404, 404 ),
+			'5xx' => array( 500, 599 ),
+			'3xx' => array( 300, 399 ),
+		);
+		if ( null !== $f['status'] && isset( $range[ $type ] ) ) {
+			list( $low, $high ) = $range[ $type ];
+			if ( (int) $f['status'][0] <= $low && (int) $f['status'][1] >= $high ) {
+				$f['status'] = null;
+			} elseif ( (int) $f['status'][1] < $low || (int) $f['status'][0] > $high ) {
+				return array_merge(
+					array(
+						'rows'       => array(),
+						'total_rows' => 0,
+						'has_more'   => false,
+						'available'  => true,
+					),
+					$base,
+					self::meta( $f, self::in_raw( $f ) ? 'raw' : 'agg', false )
+				);
+			}
+		}
+		$set = self::set_filters( $f );
 		if ( self::in_raw( $f ) || ! PNCP_Traffic::ready() ) {
 			return array_merge( self::raw_problems( $type, $f, $limit, $offset ), $base, self::meta( $f, 'raw', false ) );
 		}
@@ -883,6 +1024,7 @@ final class PNCP_Traffic_Query {
 	 * @return array{rows:array<int, array<string, mixed>>, total_rows:int, available:bool}
 	 */
 	private static function raw_problems( $type, $f, $limit, $offset ) {
+		global $wpdb;
 		list( $where, $args ) = self::raw_where( $f );
 		$table                = PNCP_Traffic::table( 'raw' );
 		$cond                 = self::problem_condition( $type );
@@ -891,14 +1033,28 @@ final class PNCP_Traffic_Query {
 			'large'    => 'bytes DESC',
 			'slow'     => 'SUM(rt_ms) / COUNT(rt_ms) DESC',
 		);
-		$rows                 = self::q(
-			'SELECT path_hash AS k, MAX(path) AS path, COUNT(*) AS hits, COUNT(DISTINCT ip) AS ips, MAX(ts) AS last, SUM(bytes) AS bytes, SUM(CASE WHEN hit = 0 THEN 1 ELSE 0 END) AS misses, SUM(rt_ms) AS rt_sum, COUNT(rt_ms) AS rt_n, MAX(ua) AS sample_ua FROM %i WHERE ' . $where . ' AND ' . $cond . ' GROUP BY path_hash ORDER BY ' . ( isset( $order[ $type ] ) ? $order[ $type ] : 'hits DESC' ) . ' LIMIT %d OFFSET %d',
-			array_merge( array( $table ), $args, array( $limit, $offset ) )
+		// One pass over the covering index (see raw_top()); the path and a User-Agent of each row shown come after.
+		$window = $offset + $limit + 1 <= self::GROUPS;
+		$rows   = self::q(
+			'SELECT path_hash AS k, COUNT(*) AS hits, COUNT(DISTINCT ip) AS ips, MAX(ts) AS last, SUM(bytes) AS bytes, SUM(CASE WHEN hit = 0 THEN 1 ELSE 0 END) AS misses, SUM(rt_ms) AS rt_sum, COUNT(rt_ms) AS rt_n FROM %i WHERE ' . $where . ' AND ' . $cond . ' GROUP BY path_hash ORDER BY ' . ( isset( $order[ $type ] ) ? $order[ $type ] : 'hits DESC' ) . ', k LIMIT %d OFFSET %d',
+			array_merge( array( $table ), $args, $window ? array( self::GROUPS, 0 ) : array( $limit + 1, $offset ) )
 		);
-		$count                = self::q( 'SELECT COUNT(DISTINCT path_hash) AS n FROM %i WHERE ' . $where . ' AND ' . $cond, array_merge( array( $table ), $args ) );
-		$out                  = array();
+		$count  = count( $rows );
+		if ( $window ) {
+			$total = $count < self::GROUPS ? $count : -1;
+			$rows  = array_slice( $rows, $offset, $limit + 1 );
+		} else {
+			$total = $count <= $limit ? $offset + $count : -1;
+		}
+		$more  = count( $rows ) > $limit;
+		$rows  = array_slice( $rows, 0, $limit );
+		$paths = PNCP_Traffic::labels( 'path', array_column( $rows, 'k' ) );
+		$out   = array();
 		foreach ( $rows as $r ) {
-			$out[ (string) $r['k'] ] = self::problem_row( $r );
+			$k              = (string) $r['k'];
+			$r['path']      = isset( $paths[ $k ] ) ? $paths[ $k ] : '';
+			$r['sample_ua'] = (string) $wpdb->get_var( self::sql( 'SELECT ua FROM %i WHERE path_hash = %s AND ' . $where . ' AND ' . $cond . ' ORDER BY ts DESC LIMIT 1', array_merge( array( $table, $k ), $args ) ) ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery, WordPress.DB.PreparedSQL.NotPrepared -- Prepared in sql().
+			$out[ $k ]      = self::problem_row( $r );
 		}
 		if ( $out ) {
 			$keys = array_keys( $out );
@@ -911,7 +1067,7 @@ final class PNCP_Traffic_Query {
 			if ( 'uncached' === $type ) {
 				// The share of misses among all requests of the page.
 				foreach ( self::q( 'SELECT path_hash AS k, COUNT(*) AS hits FROM %i WHERE ' . $where . ' AND path_hash IN (' . $in . ') GROUP BY path_hash', array_merge( array( $table ), $args, $keys ) ) as $r ) {
-					$k                       = (string) $r['k'];
+					$k                      = (string) $r['k'];
 					$out[ $k ]['hits']      = (int) $r['hits'];
 					$out[ $k ]['miss_rate'] = (int) $r['hits'] > 0 ? round( $out[ $k ]['misses'] / (int) $r['hits'], 3 ) : 0.0;
 				}
@@ -925,7 +1081,8 @@ final class PNCP_Traffic_Query {
 		}
 		return array(
 			'rows'       => array_values( $out ),
-			'total_rows' => isset( $count[0]['n'] ) ? (int) $count[0]['n'] : count( $out ),
+			'total_rows' => $total,
+			'has_more'   => $more,
 			'available'  => $available,
 		);
 	}
@@ -967,9 +1124,11 @@ final class PNCP_Traffic_Query {
 				}
 				self::add_referers( $out, self::q( 'SELECT k, MAX(referer) AS referer, SUM(hits) AS hits FROM %i WHERE ' . $where . ' AND k IN (' . $in . ') GROUP BY k, rk ORDER BY hits DESC', array_merge( $args, $keys ) ) );
 			}
+			$total = isset( $count[0]['n'] ) ? (int) $count[0]['n'] : count( $out );
 			return array(
 				'rows'       => array_values( $out ),
-				'total_rows' => isset( $count[0]['n'] ) ? (int) $count[0]['n'] : count( $out ),
+				'total_rows' => $total,
+				'has_more'   => $offset + count( $out ) < $total,
 				'available'  => true,
 			);
 		}
@@ -995,9 +1154,11 @@ final class PNCP_Traffic_Query {
 			);
 			$out[]           = $row;
 		}
+		$total = isset( $count[0]['n'] ) ? (int) $count[0]['n'] : count( $out );
 		return array(
 			'rows'       => $out,
-			'total_rows' => isset( $count[0]['n'] ) ? (int) $count[0]['n'] : count( $out ),
+			'total_rows' => $total,
+			'has_more'   => $offset + count( $out ) < $total,
 			'available'  => (bool) $out || 'large' === $type,
 		);
 	}
@@ -1015,17 +1176,17 @@ final class PNCP_Traffic_Query {
 	 * @return array{kind:string, key:string, summary:array<string, mixed>, paths?:array<string, mixed>, uas?:array<string, mixed>, statuses:array<string, mixed>, countries:array<string, mixed>, referers:array<string, mixed>, ips?:array<string, mixed>, family?:string, name?:string, src_used:string, from:int, to:int, basis:string, clipped:bool, ips_approx:bool}
 	 */
 	public static function detail( $kind, $key, $filters = array() ) {
-		$kind           = in_array( (string) $kind, array( 'ua', 'path', 'ip' ), true ) ? (string) $kind : 'path';
-		$filters        = is_array( $filters ) ? $filters : array();
+		$kind             = in_array( (string) $kind, array( 'ua', 'path', 'ip' ), true ) ? (string) $kind : 'path';
+		$filters          = is_array( $filters ) ? $filters : array();
 		$filters[ $kind ] = (string) $key;
-		$f              = self::filters( $filters );
-		$summary        = self::overview( $f );
-		$out            = array(
+		$f                = self::filters( $filters );
+		$summary          = self::overview( $f );
+		$out              = array(
 			'kind'    => $kind,
 			'key'     => (string) $f[ $kind ],
 			'summary' => $summary,
 		);
-		$parts          = array(
+		$parts            = array(
 			'paths'     => 'path',
 			'uas'       => 'ua',
 			'statuses'  => 'status',
@@ -1033,22 +1194,205 @@ final class PNCP_Traffic_Query {
 			'referers'  => 'referer',
 			'ips'       => 'ip',
 		);
+		$dims             = array_values( array_diff( $parts, array( $kind ) ) );
+		if ( 'ua' === $kind ) {
+			$dims[] = 'ua_family';
+		}
+		$scan = self::detail_scan( $dims, $f );
 		foreach ( $parts as $name => $dim ) {
 			if ( $dim === $kind ) {
 				continue;
 			}
-			$out[ $name ] = self::top( $dim, $f, 10 );
+			$out[ $name ] = isset( $scan[ $dim ] ) ? $scan[ $dim ] : self::top( $dim, $f, 10 );
 		}
 		if ( 'ua' === $kind ) {
 			$c             = PNCP_Traffic_Ua::classify( $out['key'] );
 			$out['family'] = $c['family'];
 			$out['name']   = $c['name'];
-			$families      = self::top( 'ua_family', $f, 10 );
+			$families      = isset( $scan['ua_family'] ) ? $scan['ua_family'] : self::top( 'ua_family', $f, 10 );
 			if ( ! empty( $families['rows'][0]['key'] ) ) {
 				$out['family'] = (string) $families['rows'][0]['key']; // As stored: verified or fake by the IPs seen.
 			}
 		}
 		return array_merge( $out, array_intersect_key( $summary, array_flip( array( 'src_used', 'from', 'to', 'basis', 'clipped', 'ips_approx' ) ) ) );
+	}
+
+	/**
+	 * Would top() answer a dimension with these filters from the raw rows?
+	 *
+	 * @param string               $dim Dimension.
+	 * @param array<string, mixed> $f   Filters.
+	 * @return bool
+	 */
+	private static function answers_raw( $dim, $f ) {
+		if ( self::in_raw( $f ) || ! PNCP_Traffic::ready() ) {
+			return true;
+		}
+		if ( null !== self::agg_top_condition( $dim, $f ) ) {
+			return false;
+		}
+		$column = 'status' !== $dim ? self::status_column( $f ) : '';
+		return '' === $column || null === self::agg_top_condition( $dim, array_merge( $f, array( 'status' => null ) ) );
+	}
+
+	/**
+	 * The breakdowns of a detail (the 10 busiest keys of each dimension, as top() orders them) that come from the
+	 * raw rows, from one pass over the rows of that User-Agent, path or IP instead of one query per dimension (at
+	 * most DETAIL_SCAN of them, the newest); the dimensions the daily figures answer are left to top().
+	 *
+	 * @param string[]             $dims Dimensions.
+	 * @param array<string, mixed> $f    Filters (filters(), with the key's filter).
+	 * @return array<string, array<string, mixed>> dimension => top() result.
+	 */
+	private static function detail_scan( $dims, $f ) {
+		$dims = array_values(
+			array_filter(
+				$dims,
+				static function ( $dim ) use ( $f ) {
+					return self::answers_raw( $dim, $f );
+				}
+			)
+		);
+		if ( ! $dims || ! PNCP_Traffic::ready() ) {
+			return array();
+		}
+		/**
+		 * Filters the most raw rows the breakdowns of a User-Agent, path or IP detail read (the newest ones).
+		 *
+		 * @since 3.12.0
+		 * @param int $rows Rows (default 200,000).
+		 */
+		$max = max( 1, (int) apply_filters( 'pncp_traffic_detail_rows', self::DETAIL_SCAN ) );
+		return self::cached(
+			'detail_scan|' . implode( ',', $dims ) . '|' . $max . '|' . wp_json_encode( $f ),
+			static function () use ( $dims, $f, $max ) {
+				return self::compute_detail_scan( $dims, $f, $max );
+			}
+		);
+	}
+
+	/**
+	 * See detail_scan().
+	 *
+	 * @param string[]             $dims Dimensions.
+	 * @param array<string, mixed> $f    Filters.
+	 * @param int                  $max  Most rows.
+	 * @return array<string, array<string, mixed>>
+	 */
+	private static function compute_detail_scan( $dims, $f, $max ) {
+		list( $f, $clipped )  = self::in_raw( $f ) ? array( $f, false ) : self::clip( $f );
+		list( $where, $args ) = self::raw_where( $f );
+		$table                = PNCP_Traffic::table( 'raw' );
+		$n                    = self::q( 'SELECT COUNT(*) AS n FROM %i WHERE ' . $where, array_merge( array( $table ), $args ) );
+		if ( isset( $n[0]['n'] ) && (int) $n[0]['n'] > $max ) {
+			// A very busy key: its newest requests ("clipped", from the first of them).
+			$edge = self::q( 'SELECT ts FROM %i WHERE ' . $where . ' ORDER BY ts DESC LIMIT 1 OFFSET %d', array_merge( array( $table ), $args, array( $max - 1 ) ) );
+			if ( isset( $edge[0]['ts'] ) ) {
+				$f['from']            = max( (int) $f['from'], (int) $edge[0]['ts'] );
+				$clipped              = true;
+				list( $where, $args ) = self::raw_where( $f );
+			}
+		}
+		$groups = array_fill_keys( $dims, array() );
+		// In batches, by time (the key's own index orders them): memory holds the groups and one batch only.
+		$last_ts = -1;
+		$last_id = 0;
+		while ( true ) {
+			$batch = self::q( 'SELECT id, ts, ip, country, status, path_hash, ua_hash, fam, referer, bytes, hit FROM %i WHERE ' . $where . ' AND (ts > %d OR (ts = %d AND id > %d)) ORDER BY ts, id LIMIT %d', array_merge( array( $table ), $args, array( $last_ts, $last_ts, $last_id, self::SCAN_BATCH ) ) );
+			if ( ! $batch ) {
+				break;
+			}
+			self::scan_rows( $groups, $dims, $batch );
+			$end     = end( $batch );
+			$last_ts = (int) $end['ts'];
+			$last_id = (int) $end['id'];
+			if ( count( $batch ) < self::SCAN_BATCH ) {
+				break;
+			}
+		}
+		$out = array();
+		foreach ( $dims as $dim ) {
+			$list = array_values( $groups[ $dim ] );
+			usort(
+				$list,
+				static function ( $a, $b ) use ( $dim ) {
+					if ( $a['hits'] !== $b['hits'] ) {
+						return $b['hits'] - $a['hits'];
+					}
+					return 'status' === $dim ? (int) $a['g'] - (int) $b['g'] : strcmp( $a['g'], $b['g'] );
+				}
+			);
+			$top    = array_slice( $list, 0, 10 );
+			$labels = PNCP_Traffic::labels( $dim, array_column( $top, 'g' ) );
+			$rows   = array();
+			foreach ( $top as $r ) {
+				$r['ips']       = count( $r['ips'] );
+				$r['label_key'] = isset( $labels[ $r['g'] ] ) ? $labels[ $r['g'] ] : $r['g'];
+				$rows[]         = self::top_row( $dim, $r );
+			}
+			$out[ $dim ] = array_merge(
+				array(
+					'rows'       => $rows,
+					'total_rows' => count( $list ),
+					'has_more'   => count( $list ) > 10,
+					'dimension'  => $dim,
+					'order'      => 'hits',
+				),
+				self::meta( $f, 'raw', $clipped )
+			);
+		}
+		return $out;
+	}
+
+	/**
+	 * Adds raw rows to the groups of each dimension (compute_detail_scan()).
+	 *
+	 * @param array<string, array<string, array<string, mixed>>> $groups Groups (changed in place).
+	 * @param string[]                                            $dims   Dimensions.
+	 * @param array<int, array<string, mixed>>                    $rows   Raw rows.
+	 */
+	private static function scan_rows( &$groups, $dims, $rows ) {
+		$cols = array(
+			'ua'        => 'ua_hash',
+			'ua_family' => 'fam',
+			'path'      => 'path_hash',
+			'referer'   => 'referer',
+			'ip'        => 'ip',
+			'country'   => 'country',
+			'status'    => 'status',
+		);
+		foreach ( $rows as $r ) {
+			$status = (int) $r['status'];
+			foreach ( $dims as $dim ) {
+				$g = (string) $r[ $cols[ $dim ] ];
+				$k = 'ua' === $dim ? $g . '|' . $r['fam'] : $g;
+				if ( ! isset( $groups[ $dim ][ $k ] ) ) {
+					$groups[ $dim ][ $k ] = array(
+						'g'      => $g,
+						'fam'    => (string) $r['fam'],
+						'hits'   => 0,
+						'ips'    => array(),
+						'bytes'  => 0,
+						's4xx'   => 0,
+						's5xx'   => 0,
+						'misses' => 0,
+						'first'  => PHP_INT_MAX,
+						'last'   => 0,
+					);
+				}
+				$x                             = &$groups[ $dim ][ $k ];
+				$x['hits']                    += 1;
+				$x['ips'][ (string) $r['ip'] ] = true;
+				$x['bytes']                   += (int) $r['bytes'];
+				$x['s4xx']                    += $status >= 400 && $status < 500 ? 1 : 0;
+				$x['s5xx']                    += $status >= 500 && $status < 600 ? 1 : 0;
+				$x['misses']                  += 0 === (int) $r['hit'] ? 1 : 0;
+				$x['first']                    = min( $x['first'], (int) $r['ts'] );
+				$x['last']                     = max( $x['last'], (int) $r['ts'] );
+				$x['fam']                      = strcmp( (string) $r['fam'], $x['fam'] ) > 0 ? (string) $r['fam'] : $x['fam'];
+				unset( $x );
+			}
+		}
 	}
 
 	/* ---------- Raw rows ---------- */

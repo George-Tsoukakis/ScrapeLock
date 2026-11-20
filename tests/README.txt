@@ -75,7 +75,10 @@ ScrapeLock — δοκιμές σε πραγματικό WordPress (όχι stubs)
                     "Test this path" also with open_basedir and a symlink in a child PHP), the WordPress source over HTTP
                     (404 recorded; off, loopback and admin-ajax not), every query with filters and paging, CSV (formula
                     injection), the aggregates over a range longer than the raw window, retention, caps, masked IPs,
-                    sources, purge and uninstall (on SQLite the drop-in cannot drop tables: they are emptied)
+                    sources, purge and uninstall (on SQLite the drop-in cannot drop tables: they are emptied); the
+                    fast paths: a status class from the daily figures, problems with their own status, one pass for a
+                    detail (and its newest rows only for a very busy key), more keys than one query reads (has_more),
+                    schema 1 -> 2 (the covering index) without dbDelta()
   t_traffic_ops.php 3.12: Traffic operations (PNCP_Traffic_Alerts, PNCP_Traffic_Cli) on 8 days of seeded traffic:
                     the alert settings (defaults off, bad address refused, export/import), the 5xx, 404 (probes and
                     metadata files excluded), new heavy User-Agent and stopped-source alerts firing and not firing

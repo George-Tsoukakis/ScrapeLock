@@ -736,6 +736,52 @@ $cl = PNCP_Traffic::top( 'path', array_merge( $lf, array( 'country' => 'US' ) ) 
 t( 'aggregates: a filter on another dimension is answered from the raw window ("clipped")', 'raw' === $cl['basis'] && $cl['clipped'] && $cl['from'] === PNCP_Traffic::raw_floor() );
 $rw = PNCP_Traffic::raw( $lf );
 t( 'raw() never reads before the raw window', $rw['clipped'] && $rw['from'] >= PNCP_Traffic::raw_floor() && 14 === count( $rw['rows'] ) );
+// 3.12 performance: a status class over the daily figures, the problems with the status of their type.
+$s404 = PNCP_Traffic::top( 'ua', array_merge( $lf, array( 'status' => 404 ) ) );
+$want = 2 + raw_count( $wpdb->prepare( "src = 'bunny' AND status = 404 AND ua = %s", $gpt ) ); // The 2 of 6 days ago are counted only in the daily figures.
+$hits = 0;
+$okay = true;
+$gh   = 0;
+foreach ( $s404['rows'] as $r ) {
+	$hits += $r['hits'];
+	$okay  = $okay && $r['s4xx'] === $r['hits'] && 0 === $r['s5xx'] && $r['ips'] <= $r['hits'] && $r['ips'] >= 1;
+	$gh    = $gpt === $r['key'] ? $r['hits'] : $gh;
+}
+t( 'aggregates: top ua with status 404 over 10 days from the daily figures (not clipped), exact requests', 'agg' === $s404['basis'] && ! $s404['clipped'] && $okay && $hits === PNCP_Traffic::overview( array_merge( $lf, array( 'status' => 404 ) ) )['total'] && $want === $gh, wp_json_encode( $s404 ) );
+$s4p = PNCP_Traffic::top( 'path', array_merge( $lf, array( 'status' => '4xx' ) ), 50, 0, 's4xx' );
+t( 'aggregates: top path with status 4xx, the totals add up, total_rows', 'agg' === $s4p['basis'] && array_sum( wp_list_pluck( $s4p['rows'], 'hits' ) ) === $ov['s4xx'] && count( $s4p['rows'] ) === $s4p['total_rows'] && ! $s4p['has_more'] );
+t( 'aggregates: a single code other than 404 still comes from the raw window', 'raw' === PNCP_Traffic::top( 'ua', array_merge( $lf, array( 'status' => 403 ) ) )['basis'] );
+$p4 = PNCP_Traffic::problems( '404', array_merge( $lf, array( 'status' => '4xx' ) ) );
+t( 'problems 404 with the status 4xx: the same as without it, from the daily figures', 'agg' === $p4['basis'] && wp_list_pluck( $p4['rows'], 'path' ) === wp_list_pluck( $pr['rows'], 'path' ) && wp_list_pluck( $p4['rows'], 'hits' ) === wp_list_pluck( $pr['rows'], 'hits' ) );
+$p5 = PNCP_Traffic::problems( '404', array_merge( $lf, array( 'status' => '5xx' ) ) );
+t( 'problems 404 with the status 5xx: nothing, without a query of the raw rows', array() === $p5['rows'] && 0 === $p5['total_rows'] && ! $p5['clipped'] );
+// The detail reads the rows of its key once: the same breakdowns as top() with the key as filter.
+$f24 = array( 'src' => 'bunny' );
+$dg  = PNCP_Traffic::detail( 'ua', $gpt, $f24 );
+$same = true;
+foreach ( array( 'paths' => 'path', 'statuses' => 'status', 'countries' => 'country', 'referers' => 'referer', 'ips' => 'ip' ) as $part => $dim ) {
+	$tq   = PNCP_Traffic::top( $dim, array_merge( $f24, array( 'ua' => $gpt ) ), 10 );
+	$same = $same && wp_json_encode( $tq['rows'] ) === wp_json_encode( $dg[ $part ]['rows'] ) && $tq['total_rows'] === $dg[ $part ]['total_rows'];
+}
+t( 'detail ua: the breakdowns of the one pass are those of top()', $same && 'raw' === $dg['paths']['basis'], wp_json_encode( $dg['paths']['rows'] ) );
+$few = static function () {
+	return 2;
+};
+add_filter( 'pncp_traffic_detail_rows', $few );
+$dc = PNCP_Traffic::detail( 'ua', $gpt, $f24 );
+remove_filter( 'pncp_traffic_detail_rows', $few );
+$newest = $wpdb->get_col( $wpdb->prepare( "SELECT ts FROM %i WHERE src = 'bunny' AND ua = %s ORDER BY ts DESC LIMIT 2", PNCP_Traffic::table( 'raw' ), $gpt ) );
+t( 'detail ua of a very busy key: the breakdowns of its newest requests only, "clipped" to the first of them', $dc['paths']['clipped'] && (int) end( $newest ) === $dc['paths']['from'] && 2 === array_sum( wp_list_pluck( $dc['statuses']['rows'], 'hits' ) ), wp_json_encode( array( $dc['paths']['from'], $newest, $dc['statuses']['rows'] ) ) );
+// More keys than one query reads (GROUPS): no second pass to count them, has_more for the pages.
+$many = array();
+for ( $i = 0; $i < PNCP_Traffic_Query::GROUPS + 20; $i++ ) {
+	$many[] = array( 30 + $i % 600, '192.0.2.' . ( $i % 250 + 1 ), 200, '/many-' . $i . '/', $chrome );
+}
+feed( 'wp', $many );
+$m1 = PNCP_Traffic::top( 'path', array( 'src' => 'wp' ), 50 );
+$m2 = PNCP_Traffic::top( 'path', array( 'src' => 'wp' ), 50, PNCP_Traffic_Query::GROUPS );
+t( 'more keys than GROUPS: total_rows -1, has_more, and the pages beyond GROUPS', -1 === $m1['total_rows'] && $m1['has_more'] && 50 === count( $m1['rows'] ) && 20 <= count( $m2['rows'] ) && ! $m2['has_more'] && ! array_intersect( wp_list_pluck( $m1['rows'], 'key' ), wp_list_pluck( $m2['rows'], 'key' ) ), $m1['total_rows'] . ' ' . count( $m2['rows'] ) );
+$wpdb->query( $wpdb->prepare( 'DELETE FROM %i WHERE src = %s', PNCP_Traffic::table( 'raw' ), 'wp' ) );
 
 // Retention of the aggregates, caps.
 global $wpdb;
@@ -801,6 +847,32 @@ t( 'masked: the ip filter masks too', 1 === PNCP_Traffic::overview( array( 'src'
 settings( array( 'traffic_ip_mode' => 'full' ) );
 
 /* ---------- 8. Sources, run, purge, uninstall ---------- */
+
+// Schema 1 (the tables of a 3.12 development version) to 2: the covering index is added, without dbDelta().
+function cover_index() {
+	global $wpdb, $sqlite;
+	$table = PNCP_Traffic::table( 'raw' );
+	if ( $sqlite ) {
+		return (bool) $wpdb->get_var( $wpdb->prepare( "SELECT name FROM sqlite_master WHERE type = 'index' AND tbl_name = %s AND sql LIKE %s", $table, '%ua_hash%path_hash%' ) );
+	}
+	return (bool) $wpdb->get_results( $wpdb->prepare( 'SHOW INDEX FROM %i WHERE Key_name = %s', $table, 'src_cover' ) );
+}
+t( 'schema 2: the covering index is there', cover_index() && PNCP_Traffic::DB_VERSION === (int) get_option( PNCP_Traffic::DB_OPTION ) );
+$wpdb->suppress_errors( true );
+if ( $sqlite ) {
+	foreach ( (array) $wpdb->get_col( $wpdb->prepare( "SELECT name FROM sqlite_master WHERE type = 'index' AND tbl_name = %s AND sql LIKE %s", PNCP_Traffic::table( 'raw' ), '%ua_hash%path_hash%' ) ) as $name ) {
+		$wpdb->query( 'DROP INDEX IF EXISTS ' . $name ); // phpcs:ignore
+	}
+} else {
+	$wpdb->query( $wpdb->prepare( 'ALTER TABLE %i DROP INDEX src_cover', PNCP_Traffic::table( 'raw' ) ) );
+}
+$wpdb->suppress_errors( false );
+update_option( PNCP_Traffic::DB_OPTION, 1, true );
+$was_ready = PNCP_Traffic::ready();
+ob_start();
+PNCP_Traffic::maybe_install();
+$printed = (string) ob_get_clean();
+t( 'schema 1 -> 2: maybe_install() adds the index, the rows stay, nothing printed', ! $was_ready && cover_index() && PNCP_Traffic::ready() && '' === $printed, $printed );
 
 PNCP_Traffic::purge_all();
 settings( array( 'traffic_wp' => 1, 'traffic_log_path' => '' ) );

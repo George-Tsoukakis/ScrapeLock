@@ -37,9 +37,16 @@ final class PNCP_Traffic {
 	const DB_OPTION = 'pncp_traffic_db';
 
 	/**
-	 * Schema version.
+	 * Schema version. 2: the covering index of the raw rows (src_cover), which the queries of the Traffic screens
+	 * read instead of the rows themselves.
 	 */
-	const DB_VERSION = 1;
+	const DB_VERSION = 2;
+
+	/**
+	 * The columns of the covering index of the raw rows: every column the queries filter, group or add up by,
+	 * except the long texts (path, User-Agent, referrer), which are found through their hashes.
+	 */
+	const COVER = 'src,ts,status,hit,ptype,fam,country,bytes,rt_ms,ip,ua_hash,path_hash';
 
 	/**
 	 * Option with the run's state: the rollup cursor, the days left to count, the server log cursor and the last
@@ -297,10 +304,11 @@ final class PNCP_Traffic {
 		$day     = self::table( 'day' );
 		$err     = self::table( 'err' );
 		$tables  = array( $raw, $hour, $day, $err );
-		if ( false === get_option( self::DB_OPTION, false ) && count( array_filter( array_map( array( __CLASS__, 'table_exists' ), $tables ) ) ) === count( $tables ) ) {
-			// The tables of this schema are there but their option is not (an uninstall on a database layer that
-			// cannot drop tables, a copy of the database without the options): no dbDelta(), which fails on the
-			// composite keys on the SQLite drop-in.
+		if ( count( array_filter( array_map( array( __CLASS__, 'table_exists' ), $tables ) ) ) === count( $tables ) ) {
+			// The tables are there (an older schema, or this one without its option: an uninstall on a database
+			// layer that cannot drop tables, a copy of the database without the options): no dbDelta(), which fails
+			// on the composite keys on the SQLite drop-in; the index of schema 2 is added on its own.
+			self::upgrade_indexes();
 			update_option( self::DB_OPTION, self::DB_VERSION, true );
 			return true;
 		}
@@ -328,6 +336,7 @@ final class PNCP_Traffic {
 			rt_ms int(10) unsigned DEFAULT NULL,
 			PRIMARY KEY  (id),
 			KEY src_ts (src,ts),
+			KEY src_cover (" . self::COVER . "),
 			KEY status_ts (status,ts),
 			KEY ua_ts (ua_hash,ts),
 			KEY path_ts (path_hash,ts),
@@ -395,6 +404,18 @@ final class PNCP_Traffic {
 			update_option( self::DB_OPTION, self::DB_VERSION, true );
 		}
 		return $ok;
+	}
+
+	/**
+	 * Schema 1 to 2: the covering index. ALTER TABLE … ADD INDEX, which the SQLite drop-in turns into CREATE INDEX
+	 * IF NOT EXISTS; on MySQL an index that is already there is an error, which is suppressed.
+	 */
+	private static function upgrade_indexes() {
+		global $wpdb;
+		$suppress = $wpdb->suppress_errors( true );
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery, WordPress.DB.DirectDatabaseQuery.SchemaChange, WordPress.DB.PreparedSQL.NotPrepared -- Plugin table; fixed column list.
+		$wpdb->query( $wpdb->prepare( 'ALTER TABLE %i ADD INDEX src_cover (', self::table( 'raw' ) ) . self::COVER . ')' );
+		$wpdb->suppress_errors( $suppress );
 	}
 
 	/**
@@ -770,7 +791,7 @@ final class PNCP_Traffic {
 		while ( $mask['days'] > 0 && microtime( true ) < $deadline ) {
 			$below = $mask['days'] > 1 ? $mask['days'] : PHP_INT_MAX;
 			$next  = self::rows( $wpdb->prepare( 'SELECT MAX(day) AS d FROM %i WHERE dim = %s AND day < %d', $day_table, 'ip', min( $below, 4294967295 ) ) );
-			$day  = isset( $next[0]['d'] ) ? (int) $next[0]['d'] : 0;
+			$day   = isset( $next[0]['d'] ) ? (int) $next[0]['d'] : 0;
 			if ( $day <= 0 ) {
 				$mask = array();
 				break;
@@ -870,7 +891,7 @@ final class PNCP_Traffic {
 		foreach ( array_chunk( $rows, self::INSERT_BATCH ) as $chunk ) {
 			$values = array();
 			foreach ( $chunk as $r ) {
-				$tuple = $wpdb->prepare(
+				$tuple    = $wpdb->prepare(
 					'(%d, %s, %s, %s, %s, %d, %s, %s, %s, %s, %s, %s, %s, %s, %d, %s, %d, %s, ',
 					$r['ts'],
 					$r['src'],
@@ -1034,9 +1055,9 @@ final class PNCP_Traffic {
 	 * @return array<string, mixed>
 	 */
 	public static function state() {
-		$s        = get_option( self::STATE, array() );
-		$s        = is_array( $s ) ? $s : array();
-		$defaults = array(
+		$s            = get_option( self::STATE, array() );
+		$s            = is_array( $s ) ? $s : array();
+		$defaults     = array(
 			'cursor'     => 0,
 			'pending'    => array(),
 			'rolled_at'  => 0,
@@ -1044,7 +1065,7 @@ final class PNCP_Traffic {
 			'server'     => array(),
 			'mask'       => array(),
 		);
-		$s        = array_merge( $defaults, array_intersect_key( $s, $defaults ) );
+		$s            = array_merge( $defaults, array_intersect_key( $s, $defaults ) );
 		$s['pending'] = is_array( $s['pending'] ) ? array_values( array_map( 'intval', $s['pending'] ) ) : array();
 		$s['server']  = is_array( $s['server'] ) ? $s['server'] : array();
 		$s['mask']    = is_array( $s['mask'] ) && isset( $s['mask']['id'], $s['mask']['days'] ) ? array_map( 'intval', $s['mask'] ) : array();
@@ -1272,6 +1293,34 @@ final class PNCP_Traffic {
 	}
 
 	/**
+	 * The texts of hashed keys (User-Agent, path) from one raw row each, through the hash indexes.
+	 *
+	 * @param string   $dim  ua | path (any other dimension: nothing).
+	 * @param string[] $keys Hashes.
+	 * @return array<string, string> hash => text.
+	 */
+	public static function labels( $dim, $keys ) {
+		global $wpdb;
+		$columns = array(
+			'ua'   => array( 'ua_hash', 'ua' ),
+			'path' => array( 'path_hash', 'path' ),
+		);
+		$out     = array();
+		if ( ! isset( $columns[ $dim ] ) ) {
+			return $out;
+		}
+		$table = self::table( 'raw' );
+		foreach ( array_unique( array_map( 'strval', $keys ) ) as $key ) {
+			if ( self::OTHER === $key ) {
+				continue;
+			}
+			// phpcs:ignore WordPress.DB.DirectDatabaseQuery -- Plugin table, hash index; fixed column names.
+			$out[ $key ] = (string) $wpdb->get_var( $wpdb->prepare( 'SELECT %i FROM %i WHERE %i = %s LIMIT 1', $columns[ $dim ][1], $table, $columns[ $dim ][0], $key ) );
+		}
+		return $out;
+	}
+
+	/**
 	 * One dimension of one source and day: the KEYS_PER_DAY busiest keys, plus the keys with errors among the
 	 * next ones, and one "other" row with the rest (so the day adds up).
 	 *
@@ -1291,11 +1340,13 @@ final class PNCP_Traffic {
 		 * @param int    $keys Keys (default 2,000).
 		 * @param string $dim  Dimension.
 		 */
-		$cap    = max( 10, (int) apply_filters( 'pncp_traffic_keys_per_day', self::KEYS_PER_DAY, $dim ) );
-		$col    = self::dimension_column( $dim );
-		$label  = self::label_column( $dim );
-		$group  = 'ua' === $dim ? $col . ', fam' : $col;
-		$select = 'SELECT ' . $col . ' AS g, MAX(' . $label . ') AS label, MAX(fam) AS fam, MAX(ptype) AS ptype, COUNT(*) AS hits, SUM(bytes) AS bytes, ' . self::status_sums() . ', SUM(CASE WHEN hit = 1 THEN 1 ELSE 0 END) AS chits, SUM(CASE WHEN hit = 0 THEN 1 ELSE 0 END) AS misses, COUNT(DISTINCT ip) AS ips, SUM(rt_ms) AS rt_sum, COUNT(rt_ms) AS rt_n, MIN(ts) AS first_ts, MAX(ts) AS last_ts FROM %i WHERE src = %s AND ts >= %d AND ts < %d GROUP BY ' . $group;
+		$cap   = max( 10, (int) apply_filters( 'pncp_traffic_keys_per_day', self::KEYS_PER_DAY, $dim ) );
+		$col   = self::dimension_column( $dim );
+		$label = self::label_column( $dim );
+		$group = 'ua' === $dim ? $col . ', fam' : $col;
+		// The User-Agents and paths are grouped by their hashes from the covering index; their texts are read
+		// afterwards for the rows kept (one row each).
+		$select = 'SELECT ' . $col . ' AS g, ' . ( $label === $col ? 'MAX(' . $label . ')' : "''" ) . ' AS label, MAX(fam) AS fam, MAX(ptype) AS ptype, COUNT(*) AS hits, SUM(bytes) AS bytes, ' . self::status_sums() . ', SUM(CASE WHEN hit = 1 THEN 1 ELSE 0 END) AS chits, SUM(CASE WHEN hit = 0 THEN 1 ELSE 0 END) AS misses, COUNT(DISTINCT ip) AS ips, SUM(rt_ms) AS rt_sum, COUNT(rt_ms) AS rt_n, MIN(ts) AS first_ts, MAX(ts) AS last_ts FROM %i WHERE src = %s AND ts >= %d AND ts < %d GROUP BY ' . $group;
 		// phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared -- Fixed column names from dimension_column().
 		$rows = self::rows( $wpdb->prepare( $select . ' ORDER BY hits DESC LIMIT %d', self::table( 'raw' ), $src, $day, $end, $cap + 1 ) );
 		if ( count( $rows ) > $cap ) {
@@ -1338,6 +1389,12 @@ final class PNCP_Traffic {
 						'last_ts'  => $end - 1,
 					)
 				);
+			}
+		}
+		if ( $label !== $col ) {
+			$texts = self::labels( $dim, array_column( $rows, 'g' ) );
+			foreach ( $rows as $i => $r ) {
+				$rows[ $i ]['label'] = isset( $texts[ (string) $r['g'] ] ) ? $texts[ (string) $r['g'] ] : '';
 			}
 		}
 		$out = array();
@@ -1632,9 +1689,9 @@ final class PNCP_Traffic {
 			'anonymized'    => PNCP_Bunny::logs_anonymized( $bunny_state ),
 		);
 
-		$path   = self::settings()['log_path'];
-		$server = $state['server'];
-		$counts = self::source_counts( 'server' );
+		$path          = self::settings()['log_path'];
+		$server        = $state['server'];
+		$counts        = self::source_counts( 'server' );
 		$out['server'] = array(
 			'on'          => $on && '' !== $path,
 			'path'        => $path,
@@ -1644,8 +1701,8 @@ final class PNCP_Traffic {
 			'lines_today' => $counts['today'],
 		);
 
-		$counts    = self::source_counts( 'wp' );
-		$out['wp'] = array(
+		$counts         = self::source_counts( 'wp' );
+		$out['wp']      = array(
 			'on'          => $on && self::settings()['wp'],
 			'last_ingest' => $counts['last'],
 			'last_run'    => $counts['last'],
@@ -1682,9 +1739,9 @@ final class PNCP_Traffic {
 			foreach ( self::SOURCES as $src ) {
 				$status[ $src ] = array( 'last_ingest' => self::source_counts( $src )['last'] );
 			}
-			$status['bunny']['on']       = self::bunny_on();
-			$status['bunny']['last_run'] = (int) $bunny['last_ok'];
-			$status['server']['on']      = '' !== self::settings()['log_path'];
+			$status['bunny']['on']        = self::bunny_on();
+			$status['bunny']['last_run']  = (int) $bunny['last_ok'];
+			$status['server']['on']       = '' !== self::settings()['log_path'];
 			$status['server']['last_run'] = isset( $state['server']['last_ok'] ) ? (int) $state['server']['last_ok'] : 0;
 			$status['wp']['on']           = self::settings()['wp'];
 		}

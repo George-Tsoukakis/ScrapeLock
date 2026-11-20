@@ -361,8 +361,10 @@ t( 'agents tr_order=s4xx: sorted by 4xx, the heading marked', preg_match( '#<tbo
 list( , $body ) = http( tab( '&tr_view=agents&tr_paged=2' ) );
 $page2 = PNCP_Traffic::top( 'ua', $f24, 50, 50 );
 t( 'agents tr_paged=2: the API\'s second page', $page2['rows'] && count( $page2['rows'] ) === substr_count( $body, 'class="pncp-tr__link"' ) && false !== strpos( $body, 'Page 2 of' ), wp_json_encode( $page2['rows'][0] ) . ' ' . ( preg_match( '#pncp-tr__pageno">[^<]+#', $body, $mm ) ? $mm[0] : 'no pager' ) );
-list( , $body ) = http( tab( '&tr_view=agents&tr_period=7d&tr_status=404' ) );
+list( , $body ) = http( tab( '&tr_view=agents&tr_period=7d&tr_country=GR' ) );
 t( 'clipped: a filter the daily figures cannot answer says so', false !== strpos( $body, 'pncp-tr__clipped' ) && false !== strpos( $body, 'This filter covers only the last 3 days' ) );
+list( , $body ) = http( tab( '&tr_view=agents&tr_period=7d&tr_status=404' ) );
+t( 'a status class over 7 days comes from the daily figures (no clipped notice)', false === strpos( $body, 'pncp-tr__clipped' ) && false !== strpos( $body, 'class="pncp-tr__link"' ) );
 list( , $body ) = http( tab( '&tr_view=agents' ) );
 t( 'no clipped notice for 24 hours', false === strpos( $body, 'pncp-tr__clipped' ) );
 list( , $body ) = http( tab( '&tr_view=log&tr_src=wp' ) );

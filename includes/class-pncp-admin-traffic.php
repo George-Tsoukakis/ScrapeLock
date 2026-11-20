@@ -1243,8 +1243,9 @@ final class PNCP_Admin_Traffic {
 			}
 			echo '</tbody></table></div>';
 		}
+		$count = (int) $result['total_rows'];
 		/* translators: %s: number of rows */
-		printf( '<p class="pncp-tr__more"><a href="%1$s">%2$s</a></p></section>', esc_url( $more ), esc_html( sprintf( __( 'See all (%s)', 'scrapelock' ), self::n( (int) $result['total_rows'] ) ) ) );
+		printf( '<p class="pncp-tr__more"><a href="%1$s">%2$s</a></p></section>', esc_url( $more ), esc_html( $count >= 0 ? sprintf( __( 'See all (%s)', 'scrapelock' ), self::n( $count ) ) : __( 'See all', 'scrapelock' ) ) );
 	}
 
 	/**
@@ -1419,7 +1420,7 @@ final class PNCP_Admin_Traffic {
 				);
 			}
 			echo '</tbody></table></div>';
-			self::pager( (int) $uas['total_rows'] );
+			self::pager( (int) $uas['total_rows'], ! empty( $uas['has_more'] ) );
 		}
 		echo '</section>';
 	}
@@ -1809,7 +1810,7 @@ final class PNCP_Admin_Traffic {
 		}
 		if ( ! $rows ) {
 			self::empty_note();
-			self::pager( (int) $p['total_rows'] );
+			self::pager( (int) $p['total_rows'], ! empty( $p['has_more'] ) );
 			echo '</section>';
 			return;
 		}
@@ -1872,7 +1873,7 @@ final class PNCP_Admin_Traffic {
 			);
 			echo $advice; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Escaped in PNCP_Admin_Fields.
 		}
-		self::pager( (int) $p['total_rows'] );
+		self::pager( (int) $p['total_rows'], ! empty( $p['has_more'] ) );
 		echo '</section>';
 	}
 
@@ -2066,7 +2067,7 @@ final class PNCP_Admin_Traffic {
 				);
 			}
 			echo '</tbody></table></div>';
-			self::pager( (int) $ips['total_rows'] );
+			self::pager( (int) $ips['total_rows'], ! empty( $ips['has_more'] ) );
 		}
 		echo '</section>';
 		$countries = PNCP_Traffic::top( 'country', $f, 25 );
