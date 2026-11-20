@@ -339,5 +339,67 @@ for ( $i = 0; $i < 5; $i++ ) {
 }
 t( 'A9: deactivated: the member\'s REST reads count again (429 on the 4th)', 429 === $codes[3], implode( ',', $codes ) );
 
+/* ---------- 4. Part Γ: defaults of new installs only ---------- */
+$new = PNCP_Options::new_install();
+t( 'Γ: new install: probe_ban 1, block_ip_host 1, reputation 1, ban_minutes 120', 1 === $new['probe_ban'] && 1 === $new['block_ip_host'] && 1 === $new['reputation'] && 120 === $new['ban_minutes'], wp_json_encode( $new ) );
+$d = PNCP_Options::defaults();
+t( 'Γ: defaults() (missing keys of existing sites) keep the values before 3.11', 0 === (int) $d['probe_ban'] && 0 === (int) $d['block_ip_host'] && 0 === (int) $d['reputation'] && 60 === (int) $d['ban_minutes'] );
+t( 'Γ: unchanged defaults: blur_on_capture 0, block_devtools 0, user_mark_guests 0, ban_strikes 3', 0 === (int) $d['blur_on_capture'] && 0 === (int) $d['block_devtools'] && 0 === (int) $d['user_mark_guests'] && 3 === (int) $d['ban_strikes'] );
+
+// A fresh install.
+delete_option( PNCP_OPTION );
+delete_option( 'pncp_version' );
+PNCP_Options::flush();
+pncp_upgrade();
+no_file_sync();
+wp_cache_delete( 'alloptions', 'options' );
+PNCP_Options::flush();
+$s = PNCP_Options::stored();
+t( 'Γ: fresh install stores the new values', 1 === (int) $s['probe_ban'] && 1 === (int) $s['block_ip_host'] && 1 === (int) $s['reputation'] && 120 === (int) $s['ban_minutes'] && 3 === (int) $s['ban_strikes'] && 0 === (int) $s['blur_on_capture'] && 0 === (int) $s['block_devtools'] && 0 === (int) $s['user_mark_guests'], wp_json_encode( array_intersect_key( $s, $new ) ) );
+
+// A 3.10.1 site: its settings as 3.10.1 stored them (the defaults of 3.10.1), upgraded.
+$old = PNCP_Options::defaults();
+update_option( PNCP_OPTION, $old );
+update_option( 'pncp_version', '3.10.1' );
+PNCP_Options::flush();
+pncp_upgrade();
+no_file_sync();
+wp_cache_delete( 'alloptions', 'options' );
+PNCP_Options::flush();
+$s = PNCP_Options::stored();
+t( 'Γ: a 3.10.1 site upgraded: its values unchanged', 0 === (int) $s['probe_ban'] && 0 === (int) $s['block_ip_host'] && 0 === (int) $s['reputation'] && 60 === (int) $s['ban_minutes'] && empty( $s['monitor_mode'] ), wp_json_encode( array_intersect_key( $s, $new ) ) );
+$diff = array();
+foreach ( $old as $k => $v ) {
+	if ( (string) $v !== (string) $s[ $k ] ) {
+		$diff[] = $k;
+	}
+}
+t( 'Γ: a 3.10.1 site upgraded: no setting changed at all', ! $diff, implode( ', ', $diff ) );
+
+// A site that never stored the 3.5 / 3.7 keys (settings of an older version).
+$older = array_diff_key( $old, array_flip( array( 'probe_ban', 'block_ip_host', 'reputation' ) ) );
+update_option( PNCP_OPTION, $older );
+update_option( 'pncp_version', '3.4.0' );
+PNCP_Options::flush();
+pncp_upgrade();
+no_file_sync();
+wp_cache_delete( 'alloptions', 'options' );
+PNCP_Options::flush();
+$s = PNCP_Options::stored();
+t( 'Γ: an upgraded site without those keys gets the old values, not the new-install ones', 0 === (int) $s['probe_ban'] && 0 === (int) $s['block_ip_host'] && 0 === (int) $s['reputation'] && 60 === (int) $s['ban_minutes'], wp_json_encode( array_intersect_key( $s, $new ) ) );
+
+// The "Default" notes: the new-install values, and the old value of sites installed before 3.11.
+update_option( PNCP_OPTION, array_merge( $saved, array( 'probe_ban' => 0, 'ban_minutes' => 60, 'block_ip_host' => 1 ) ) );
+update_option( 'pncp_version', $saved_ver );
+PNCP_Options::flush();
+$note = wp_strip_all_tags( PNCP_Admin_Fields::default_note( 'probe_ban', PNCP_Options::stored() ) );
+t( 'Γ: «Default» note: on for new installs, off on sites installed before 3.11', false !== strpos( $note, 'Default on new installs: on' ) && false !== strpos( $note, '3.11' ), $note );
+$note = wp_strip_all_tags( PNCP_Admin_Fields::default_note( 'ban_minutes', PNCP_Options::stored() ) );
+t( 'Γ: «Default» note of the block duration: 120 for new installs, 60 before 3.11', false !== strpos( $note, '120' ) && false !== strpos( $note, '60' ) && false !== strpos( $note, '3.11' ), $note );
+t( 'Γ: the new-install value: no note', '' === PNCP_Admin_Fields::default_note( 'block_ip_host', PNCP_Options::stored() ) );
+t( 'Γ: «Reset this tab» uses the new-install values', 1 === (int) PNCP_Settings_Io::section_defaults( 'bots' )['probe_ban'] && 120 === (int) PNCP_Settings_Io::section_defaults( 'bots' )['ban_minutes'] );
+list( $code, $body ) = http( $page . '&tab=bots', $admin_cookies );
+t( 'Γ: Bots tab shows the note next to the field', 200 === $code && false !== strpos( $body, 'id="pncp-probe_ban-default"' ) && ! php_errors( $body ), (string) $code );
+
 echo $fails ? "\n$fails FAIL\n" : "\nALL PASS\n";
 exit( $fails ? 1 : 0 );

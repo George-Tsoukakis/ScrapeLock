@@ -110,6 +110,9 @@ settings(
 		'human_check'             => 0,
 		'block_headless'          => 0,
 		'ban_strikes'             => 3,
+		// 3.11: νέα εγκατάσταση με ban σαρωτών και φήμη IP· εδώ όπως ένα site πριν από την 3.11.
+		'probe_ban'               => 0,
+		'reputation'              => 0,
 		'ip_header'               => 'remote_addr',
 		'exempt_cap'              => 'edit_posts',
 		'scope_posts'             => 1,

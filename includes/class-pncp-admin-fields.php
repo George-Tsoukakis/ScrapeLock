@@ -240,7 +240,9 @@ final class PNCP_Admin_Fields {
 		if ( in_array( $key, array( 'monitor_mode', 'trust_any_proxy', 'watermark_image_id' ), true ) ) {
 			return '';
 		}
-		$defaults = PNCP_Options::defaults();
+		// 3.11: the defaults of a new install (PNCP_Options::install_defaults()), e.g. "Ban scanners on their first
+		// probe" is on there; a site installed before 3.11 that still has the old value is told so (upgrade_note()).
+		$defaults = PNCP_Options::install_defaults();
 		if ( ! isset( $defaults[ $key ], $s[ $key ] ) ) {
 			return '';
 		}
@@ -277,7 +279,7 @@ final class PNCP_Admin_Fields {
 		if ( ! isset( $upgrade[ $key ] ) || (string) $s[ $key ] !== (string) $upgrade[ $key ]['value'] ) {
 			return $text;
 		}
-		$defaults = PNCP_Options::defaults();
+		$defaults = PNCP_Options::install_defaults();
 		if ( in_array( $key, PNCP_Options::bool_keys(), true ) ) {
 			$text = empty( $defaults[ $key ] )
 				/* translators: %s: version number, e.g. 2.6 */
@@ -299,7 +301,7 @@ final class PNCP_Admin_Fields {
 	 * @return bool
 	 */
 	public static function is_default( $key, $value ) {
-		$defaults = PNCP_Options::defaults();
+		$defaults = PNCP_Options::install_defaults();
 		return isset( $defaults[ $key ] ) && (string) $defaults[ $key ] === (string) $value;
 	}
 

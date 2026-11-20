@@ -821,10 +821,47 @@ final class PNCP_Options {
 	 * @return array<string, int>
 	 */
 	public static function new_install() {
-		return array(
-			'monitor_mode'  => 1,
-			'monitor_until' => time() + self::MONITOR_DAYS * DAY_IN_SECONDS,
+		return array_merge(
+			array(
+				'monitor_mode'  => 1,
+				'monitor_until' => time() + self::MONITOR_DAYS * DAY_IN_SECONDS,
+			),
+			self::install_values()
 		);
+	}
+
+	/**
+	 * 3.11: the settings whose default on a brand-new install differs from defaults(). defaults() also fills in a
+	 * setting an existing site has not stored (PNCP_Options::stored()), so it keeps the values those sites always
+	 * had; the new values are only stored by the first install (new_install()), never by an upgrade.
+	 *
+	 * - Ban scanners on their first probe, refuse requests that open the site by its IP address, remember the
+	 *   reputation of each IP: they only act on requests no visitor makes (a probe of /.env, a bare IP as the
+	 *   host) or on IPs that misbehaved, and the first week of a new install is "Monitor only" anyway.
+	 * - A temporary block lasts 2 hours instead of 1.
+	 *
+	 * Already the default before 3.11, listed here for the record: blur_on_capture 0, block_devtools 0,
+	 * user_mark_guests 0, ban_strikes 3.
+	 *
+	 * @return array<string, int>
+	 */
+	public static function install_values() {
+		return array(
+			'probe_ban'     => 1,
+			'block_ip_host' => 1,
+			'reputation'    => 1,
+			'ban_minutes'   => 120,
+		);
+	}
+
+	/**
+	 * 3.11: the defaults of a brand-new install, without the first-week "Monitor only" (shown as "Default: …" next
+	 * to the fields and used by "Reset this tab to defaults").
+	 *
+	 * @return array<string, mixed>
+	 */
+	public static function install_defaults() {
+		return array_merge( self::defaults(), self::install_values() );
 	}
 
 	/**
@@ -914,17 +951,22 @@ final class PNCP_Options {
 	 * @return array<string, array{value:int|string, since:string}>
 	 */
 	public static function upgrade_values() {
-		$defaults = self::defaults();
+		$defaults = self::install_defaults();
 		$out      = array();
 		$sets     = array(
-			'3.0' => self::new_in_300(),
-			'2.9' => self::new_in_290(),
-			'2.6' => self::new_in_260(),
-			'2.5' => self::new_in_250(),
-			'2.4' => self::new_in_240(),
+			// 3.11: the values sites installed before 3.11 have (defaults()), where new installs get others.
+			'3.11' => array_intersect_key( self::defaults(), self::install_values() ),
+			'3.0'  => self::new_in_300(),
+			'2.9'  => self::new_in_290(),
+			'2.6'  => self::new_in_260(),
+			'2.5'  => self::new_in_250(),
+			'2.4'  => self::new_in_240(),
 		);
 		foreach ( $sets as $since => $values ) {
 			foreach ( $values as $key => $value ) {
+				if ( isset( $out[ $key ] ) && '3.11' === $out[ $key ]['since'] ) {
+					continue; // 3.11 is the version that changed it last.
+				}
 				if ( isset( $defaults[ $key ] ) && (string) $defaults[ $key ] !== (string) $value ) {
 					$out[ $key ] = array(
 						'value' => $value,

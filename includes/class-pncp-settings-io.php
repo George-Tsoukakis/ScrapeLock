@@ -432,7 +432,8 @@ final class PNCP_Settings_Io {
 		if ( ! isset( $sections[ $section ] ) ) {
 			return array();
 		}
-		$defaults = PNCP_Options::defaults();
+		// 3.11: the defaults of a new install, the same values the "Default: …" notes next to the fields show.
+		$defaults = PNCP_Options::install_defaults();
 		$values   = array();
 		foreach ( $sections[ $section ] as $key ) {
 			if ( isset( $defaults[ $key ] ) && in_array( $key, self::public_keys(), true ) ) {
