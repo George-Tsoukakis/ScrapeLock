@@ -149,7 +149,9 @@ final class PNCP_Early {
 			return array( 403, 'banned', $ip );
 		}
 
-		$allowed_ua = '' !== $ua && ( PNCP_Bots::allow_list_match( $ua, $ip, $s ) || PNCP_Bots::ua_in_list( $ua, PNCP_Options::allowed_ai_search() ) || null !== PNCP_Plugin_Bots::match( $ua, $ip ) );
+		// 3.11: and the stored list of the plugin bots (PNCP_Plugin_Bots::stored_match()): the other plugins'
+		// pncp_plugin_bots filters are not added yet here.
+		$allowed_ua = '' !== $ua && ( PNCP_Bots::allow_list_match( $ua, $ip, $s ) || PNCP_Bots::ua_in_list( $ua, PNCP_Options::allowed_ai_search() ) || null !== PNCP_Plugin_Bots::match( $ua, $ip ) || PNCP_Plugin_Bots::stored_match( $ua, $ip ) );
 		if ( ! empty( $s['block_bots'] ) && ! $allowed_ua ) {
 			if ( '' === trim( $ua ) && ! empty( $s['block_empty_ua'] ) ) {
 				return array( 403, 'empty_ua', $ip );

@@ -41,6 +41,14 @@ final class PNCP_Plugin_Bots {
 	const REASONS = array( 'bot_ua', 'no_browser', 'headless', 'fake_browser' );
 
 	/**
+	 * 3.11: option with the allowed bots' User-Agent parts, for the checks that run before the other plugins load
+	 * (the early check: their `pncp_plugin_bots` filters are not added yet). Written whenever a plugin is
+	 * activated or deactivated, a bot is allowed or stopped, the settings are saved and daily; each entry keeps
+	 * its plugins, so a plugin deactivated meanwhile no longer counts. Not a setting of pncp_settings.
+	 */
+	const AGENTS_OPTION = 'pncp_plugin_bot_agents';
+
+	/**
 	 * Registry memo for this request.
 	 *
 	 * @var array<string, array<string, mixed>>|null
@@ -53,6 +61,96 @@ final class PNCP_Plugin_Bots {
 	public static function init() {
 		add_action( 'admin_post_' . self::ACTION, array( __CLASS__, 'handle' ) );
 		add_action( 'admin_notices', array( __CLASS__, 'render_result_notice' ) );
+		// 3.11: the stored list for the early check and the pre-cache check's configuration follow the plugins.
+		// After the list of active plugins was saved (deactivated_plugin fires before that).
+		add_action( 'update_option_active_plugins', array( __CLASS__, 'plugins_changed' ), 99, 0 );
+		add_action( 'update_site_option_active_sitewide_plugins', array( __CLASS__, 'plugins_changed' ), 99, 0 );
+		add_action( 'update_option_' . PNCP_OPTION, array( __CLASS__, 'store' ), 10, 0 );
+		add_action( PNCP_Ip::CRON, array( __CLASS__, 'store' ), 5, 0 );
+		add_action( 'admin_init', array( __CLASS__, 'maybe_store' ) );
+	}
+
+	/**
+	 * 3.11: the User-Agent parts of the allowed bots of active plugins, as the checks before WordPress use them:
+	 * lowercase part, the address list it is pinned to (empty = any address) and its plugins.
+	 *
+	 * @return array<int, array{ua:string, ips:string[], plugins:string[]}>
+	 */
+	public static function allowed_agents() {
+		$out = array();
+		foreach ( self::registry() as $id => $entry ) {
+			if ( ! self::allowed( $id ) ) {
+				continue;
+			}
+			foreach ( $entry['agents'] as $agent ) {
+				$out[] = array(
+					'ua'      => strtolower( $agent ),
+					'ips'     => $entry['ips'],
+					'plugins' => $entry['plugins'],
+				);
+			}
+		}
+		return $out;
+	}
+
+	/**
+	 * 3.11: writes the list of allowed_agents() for the early check (only when it changed).
+	 */
+	public static function store() {
+		self::reset();
+		$agents = self::allowed_agents();
+		if ( get_option( self::AGENTS_OPTION, null ) !== $agents ) {
+			update_option( self::AGENTS_OPTION, $agents, true );
+		}
+	}
+
+	/**
+	 * 3.11: in wp-admin, the list written once when it is missing (sites upgraded from 3.10).
+	 */
+	public static function maybe_store() {
+		if ( null === get_option( self::AGENTS_OPTION, null ) ) {
+			self::store();
+		}
+	}
+
+	/**
+	 * 3.11: a plugin was activated or deactivated: the stored list and the pre-cache check's configuration (its
+	 * always-allowed User-Agents) follow.
+	 */
+	public static function plugins_changed() {
+		self::store();
+		if ( class_exists( 'PNCP_Precheck' ) ) {
+			PNCP_Precheck::refresh();
+		}
+	}
+
+	/**
+	 * 3.11: does the User-Agent match a stored allowed bot (the early check, before the other plugins load)? An
+	 * entry pinned to addresses only from them, with a reliable address; its plugin must still be active.
+	 *
+	 * @param string $ua User-Agent.
+	 * @param string $ip IP.
+	 * @return bool
+	 */
+	public static function stored_match( $ua, $ip ) {
+		$ua = strtolower( (string) $ua );
+		if ( '' === trim( $ua ) ) {
+			return false;
+		}
+		$list = get_option( self::AGENTS_OPTION, array() );
+		foreach ( is_array( $list ) ? $list : array() as $entry ) {
+			if ( ! is_array( $entry ) || empty( $entry['ua'] ) || ! is_string( $entry['ua'] ) || false === strpos( $ua, $entry['ua'] ) ) {
+				continue;
+			}
+			if ( empty( $entry['plugins'] ) || ! self::plugin_active( (array) $entry['plugins'] ) ) {
+				continue;
+			}
+			$ips = isset( $entry['ips'] ) ? array_filter( (array) $entry['ips'], 'is_string' ) : array();
+			if ( ! $ips || ( PNCP_Ip::reliable() && PNCP_Ip::in_any( $ip, $ips ) ) ) {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	/**
@@ -289,6 +387,7 @@ final class PNCP_Plugin_Bots {
 			$off[] = $id;
 		}
 		update_option( self::OPTION, array( 'off' => array_values( array_unique( $off ) ) ), true );
+		self::plugins_changed(); // 3.11: the early check's list and the pre-cache check follow.
 		return true;
 	}
 

@@ -318,6 +318,63 @@ t( 'A1 HTTP: no User-Agent from another address: 403 in the early check (before 
 settings( array( 'early_mode' => 0 ) );
 PNCP_Early::sync();
 
+/* ---------- A2. WP Rocket's SaaS while WP Rocket is active ---------- */
+$saas = 'Mozilla/5.0 (compatible; WP-Rocket-SaaS/1.0; +https://wp-rocket.me/bot/)';
+if ( $created ) {
+	mkdir( $plugin_dir );
+	file_put_contents( $plugin_dir . '/wp-rocket.php', "<?php\n/*\nPlugin Name: WP Rocket (test stand-in)\nVersion: 0.0.1\n*/\n" );
+}
+deactivate_plugins( 'wp-rocket/wp-rocket.php', true );
+PNCP_Plugin_Bots::reset();
+as_request( '127.0.0.1', $saas, array( 'HTTP_X_REAL_IP' => $other_ip ) );
+t( 'A2: WP Rocket inactive: the SaaS without Accept-Language gets 403 no_browser, as before', '403 no_browser' === verdict(), verdict() );
+activate_plugin( 'wp-rocket/wp-rocket.php', '', false, false ); // Not silent: the hooks run, as in wp-admin.
+PNCP_Plugin_Bots::reset();
+$stored = get_option( PNCP_Plugin_Bots::AGENTS_OPTION );
+t( 'A2: activating WP Rocket stores its bots for the checks before plugins load', is_array( $stored ) && in_array( 'wp-rocket-saas', wp_list_pluck( $stored, 'ua' ), true ), wp_json_encode( $stored ) );
+as_request( '127.0.0.1', $saas, array( 'HTTP_X_REAL_IP' => $other_ip ) );
+t( 'A2: WP Rocket active: that exact User-Agent without Accept-Language passes (WordPress)', 'pass' === verdict(), verdict() );
+as_request( '127.0.0.1', $saas, array( 'HTTP_X_REAL_IP' => $other_ip, 'HTTP_ACCEPT_LANGUAGE' => 'en' ) );
+t( 'A2: ... and with browser headers too', 'pass' === verdict(), verdict() );
+// A bot list line that matches it: the allowance comes first, in WordPress and in the early check.
+settings( array( 'bot_list' => $saved['bot_list'] . "\nwp-rocket.me/bot", 'early_mode' => 1 ) );
+as_request( '127.0.0.1', $saas, array( 'HTTP_X_REAL_IP' => $other_ip ) );
+t( 'A2: a bot list line "wp-rocket.me/bot" does not refuse it (WordPress)', 'pass' === verdict(), verdict() );
+t( 'A2: ... nor the early check', null === PNCP_Early::check(), wp_json_encode( PNCP_Early::check() ) );
+// A bot added by another plugin's filter is not known to the early check's registry (plugins load later): the
+// stored list has it.
+$filter = static function ( $known ) {
+	$known['acme'] = array(
+		'name'    => 'Acme',
+		'plugins' => array( 'wp-rocket/wp-rocket.php' ),
+		'agents'  => array( 'AcmeServiceBot' ),
+	);
+	return $known;
+};
+settings( array( 'bot_list' => $saved['bot_list'] . "\nAcmeServiceBot" ) );
+add_filter( 'pncp_plugin_bots', $filter );
+PNCP_Plugin_Bots::store();
+remove_filter( 'pncp_plugin_bots', $filter );
+PNCP_Plugin_Bots::reset();
+as_request( '127.0.0.1', 'AcmeServiceBot/2.0', array( 'HTTP_X_REAL_IP' => $other_ip ) );
+t( 'A2 early check: a plugin bot from another plugin\'s filter (stored list) passes before plugins load', null === PNCP_Early::check(), wp_json_encode( PNCP_Early::check() ) );
+deactivate_plugins( 'wp-rocket/wp-rocket.php', false );
+PNCP_Plugin_Bots::reset();
+as_request( '127.0.0.1', 'AcmeServiceBot/2.0', array( 'HTTP_X_REAL_IP' => $other_ip ) );
+$e = PNCP_Early::check();
+t( 'A2 early check: ... and no longer once its plugin is inactive (403 bot_ua)', is_array( $e ) && 'bot_ua' === $e[1], wp_json_encode( $e ) );
+t( 'A2: deactivating the plugin updates the stored list', ! in_array( 'wp-rocket-saas', wp_list_pluck( (array) get_option( PNCP_Plugin_Bots::AGENTS_OPTION ), 'ua' ), true ) );
+activate_plugin( 'wp-rocket/wp-rocket.php', '', false, false ); // Not silent: the hooks run, as in wp-admin.
+PNCP_Plugin_Bots::reset();
+settings( array( 'bot_list' => $saved['bot_list'] . "\nwp-rocket.me/bot" ) );
+PNCP_Early::sync();
+list( $code, $h ) = req( '/', via_cdn( $other_ip, $saas ) );
+t( 'A2 HTTP: the SaaS, no Accept-Language, bot list line, WP Rocket active: 200 (early check and WordPress)', 200 === $code, (string) $code );
+list( $code, $h ) = req( '/', via_cdn( $other_ip, 'Mozilla/5.0 (compatible; SomeBot/1.0; +https://wp-rocket.me/bot/)' ) );
+t( 'A2 HTTP: another User-Agent with the same bot list line: 403 in the early check', 403 === $code && false === strpos( $h, 'x-test-muplugins-loaded' ), $code . ' ' . $h );
+settings( array( 'early_mode' => 0 ) );
+PNCP_Early::sync();
+
 /* ---------- The pre-cache check (stand-in page cache) ---------- */
 file_put_contents( $config_file, "<?php\ndefine( 'WP_CACHE', true ); // test cache\n" . substr( $original, 6 ) );
 file_put_contents( $cache_file, "<?php\nif ( isset( \$_SERVER['REQUEST_URI'] ) && 0 === strpos( \$_SERVER['REQUEST_URI'], '/cached-page/' ) ) {\n\theader( 'X-Test-Cache: HIT' );\n\techo 'CACHED PAGE';\n\texit;\n}\n" );
@@ -337,6 +394,23 @@ $c = codes( '/cached-page/', via_cdn( '198.51.100.72', $wp_ua ), 5 );
 t( 'A1 pre-cache: the same User-Agent from another address is limited as before', in_array( 429, $c, true ), implode( ',', $c ) );
 list( $code ) = req( '/cached-page/', via_cdn( '198.51.100.73', '' ) );
 t( 'A1 pre-cache: no User-Agent from another address: 403', 403 === $code, (string) $code );
+
+// A2: the SaaS on cached pages: the bot list line and the human check's stricter limit do not apply to it.
+settings( array( 'human_check' => 1, 'rate_limit_unverified' => 1, 'rate_limit' => 20 ) );
+PNCP_Precheck::sync();
+sleep( 3 );
+same_minute();
+$c = codes( '/cached-page/', via_cdn( '198.51.100.74', $saas ), 4 );
+t( 'A2 pre-cache: WP-Rocket-SaaS, no Accept-Language, bot list line, human check limit 1: all 200', array_fill( 0, 4, 200 ) === $c, implode( ',', $c ) );
+$c = codes( '/cached-page/', via_cdn( '198.51.100.75', 'Mozilla/5.0 (compatible; SomeBot/1.0; +https://wp-rocket.me/bot/)' ), 1 );
+t( 'A2 pre-cache: another User-Agent with the bot list line: 403', array( 403 ) === $c, implode( ',', $c ) );
+deactivate_plugins( 'wp-rocket/wp-rocket.php', false ); // Rewrites the pre-cache check's configuration.
+sleep( 3 );
+$c = codes( '/cached-page/', via_cdn( '198.51.100.76', $saas ), 1 );
+t( 'A2 pre-cache: WP Rocket deactivated: the SaaS is refused by the bot list line again', array( 403 ) === $c, implode( ',', $c ) );
+settings( array( 'human_check' => 0, 'rate_limit_unverified' => 0, 'rate_limit' => 3, 'bot_list' => $saved['bot_list'] ) );
+PNCP_Precheck::sync();
+sleep( 3 );
 
 if ( null === $server_old ) {
 	unset( $_SERVER['SERVER_ADDR'] );

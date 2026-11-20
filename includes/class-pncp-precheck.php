@@ -427,6 +427,11 @@ final class PNCP_Precheck {
 				$out[] = array( strtolower( (string) $ua ), null );
 			}
 		}
+		// 3.11: the service bots of active plugins (WP Rocket's "WP-Rocket-SaaS"), as in the normal check; rewritten
+		// when a plugin is activated or deactivated (PNCP_Plugin_Bots::plugins_changed()).
+		foreach ( PNCP_Plugin_Bots::allowed_agents() as $bot ) {
+			$out[] = array( $bot['ua'], $bot['ips'] ? self::set( $bot['ips'] ) : null );
+		}
 		return $out;
 	}
 
