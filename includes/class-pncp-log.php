@@ -424,6 +424,11 @@ final class PNCP_Log {
 	 */
 	public static function add( $reason, $code, $ip, $account = '' ) {
 		global $wpdb;
+		// 3.12.2: a refusal of this request: the header "X-ScrapeLock: refused" and the diagnostics of the site's own
+		// requests (only a 403 / 429 of a web request).
+		if ( class_exists( 'PNCP_Self_Check' ) ) {
+			PNCP_Self_Check::refused( (string) $reason, (int) $code );
+		}
 		if ( ! self::ready() ) {
 			return;
 		}

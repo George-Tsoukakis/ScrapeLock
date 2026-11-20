@@ -981,7 +981,10 @@ final class PNCP_Hardening {
 			}
 			return false;
 		}
-		if ( ! $local ) {
+		PNCP_Self_Check::set_layer( 'hardening' );
+		if ( $local ) {
+			PNCP_Self_Check::refused( $reason, $code, true ); // 3.12.2: "X-ScrapeLock: refused harden_…" (the locked point's answer).
+		} else {
 			PNCP_Log::add( $reason, $code, $ip );
 			// Only XML-RPC counts toward a temporary block: people do not use it by hand, while a signed-out
 			// editor may open an old wp-admin bookmark a few times.

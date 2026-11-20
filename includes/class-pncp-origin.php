@@ -313,6 +313,7 @@ final class PNCP_Origin {
 			PNCP_Log::add( 'not_via_cdn', PNCP_Log::MONITOR_CODE, $from );
 			return;
 		}
+		PNCP_Self_Check::set_layer( 'origin' );
 		PNCP_Log::add( 'not_via_cdn', 403, $from );
 		if ( ! headers_sent() ) {
 			status_header( 403 );

@@ -121,6 +121,12 @@ final class PNCP_Server_Ips {
 		add_filter( 'http_request_args', array( __CLASS__, 'sign' ), 10, 2 );
 		add_filter( 'http_response', array( __CLASS__, 'seen' ), 10, 3 );
 		add_action( 'requests-requests.before_redirect', array( __CLASS__, 'unsign_redirect' ), 10, 4 );
+		// 3.12.2: a request that carries the site's signature is checked once, also when it comes from the loopback
+		// (which every check exempts before asking for the signature): its diagnostics and the answer's header
+		// "X-ScrapeLock: ok" tell the site's own request that this WordPress answered it (PNCP_Self_Check).
+		if ( ! empty( $_SERVER['HTTP_X_SCRAPELOCK_SIG'] ) && 'cli' !== PHP_SAPI ) {
+			self::sig_check();
+		}
 	}
 
 	/**
@@ -647,6 +653,9 @@ final class PNCP_Server_Ips {
 			if ( '' !== $from ) {
 				set_transient( self::SEEN . $check['nonce'], $from, 2 * self::SIG_WINDOW + 10 );
 			}
+		}
+		if ( class_exists( 'PNCP_Self_Check' ) ) {
+			PNCP_Self_Check::note_sig( $out );
 		}
 		return $out;
 	}

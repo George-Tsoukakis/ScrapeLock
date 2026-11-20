@@ -13,6 +13,10 @@
  *    encoded characters and another query; a HEAD passed on as GET; the 3.12.1 format; the pre-cache check the same.
  * N. The nonce: once per request across the early check and WordPress, also with a persistent object cache, and
  *    the pre-cache check's own use of it never makes WordPress refuse the same request.
+ * D. The diagnostics of the receiving side: ring buffer (not autoloaded, at most MAX, the minute's allowance), its
+ *    contents and privacy (no IP, User-Agent, query or cookie).
+ * M. The refusal header "X-ScrapeLock: refused …" (and "ok" for a valid signature), in WordPress, the pre-cache
+ *    check and over HTTP.
  *
  * Self-requests are made from this test process to the test server, never from a page the single-process
  * server is serving (it would wait for itself). Only on a test WordPress.
@@ -349,6 +353,110 @@ as_request( EDGE, SELF_UA, array( 'HTTP_X_FORWARDED_FOR' => SERVER, 'HTTP_X_SCRA
 t( 'N: ... and a replay is refused by each layer', ! PNCP_Precheck_Runtime::self_signed( $cfg, time() ) && 'nonce_reused' === PNCP_Server_Ips::sig_check()['result'] && '403 fake_browser' === verdict() );
 wp_using_ext_object_cache( $was_ext );
 settings( array( 'early_mode' => 0 ) );
+
+/* ---------- D. The receiving side's notes ---------- */
+delete_option( PNCP_Self_Check::LOG );
+$dt = sig( '/private-path/' );
+as_request( EDGE, SELF_UA, array( 'HTTP_X_FORWARDED_FOR' => SERVER, 'HTTP_X_SCRAPELOCK_SIG' => $dt, 'HTTP_HOST' => ORIGIN_HOST, 'HTTP_COOKIE' => 'secret=cookievalue' ), '/private-path/?email=someone%40example.com' );
+PNCP_Server_Ips::sig_check();
+PNCP_Self_Check::flush();
+$list  = PNCP_Self_Check::entries();
+$entry = isset( $list[0] ) ? $list[0] : array();
+t( 'D: a signed request is noted (side "in")', isset( $entry['side'] ) && 'in' === $entry['side'] && 'ok' === $entry['sig'] && 'passed' === $entry['verdict'], wp_json_encode( $entry ) );
+t( 'D: ... with the host it got, the host it was signed for, the path and where it came from', ORIGIN_HOST === $entry['host'] && $own_host === $entry['sig_host'] && '/private-path/' === $entry['path'] && 'cdn' === $entry['from'], wp_json_encode( $entry ) );
+t( 'D: ... and the id of its nonce (8 digits), as the sending side notes it', explode( '.', $dt )[1] !== $entry['id'] && 0 === strpos( explode( '.', $dt )[1], $entry['id'] ) && 8 === strlen( $entry['id'] ) );
+$json = wp_json_encode( $list );
+t( 'D: privacy: no IP address, User-Agent, query string, cookie or the full nonce in the notes', false === strpos( $json, SERVER ) && false === strpos( $json, EDGE ) && false === strpos( $json, 'ScrapeLock-Selftest' ) && false === strpos( $json, 'email' ) && false === strpos( $json, 'cookievalue' ) && false === strpos( $json, explode( '.', $dt )[1] ) && false === strpos( $json, explode( '.', $dt )[2] ), $json );
+global $wpdb;
+$autoload = (string) $wpdb->get_var( $wpdb->prepare( "SELECT autoload FROM {$wpdb->options} WHERE option_name = %s", PNCP_Self_Check::LOG ) );
+t( 'D: the notes are not autoloaded', in_array( $autoload, array( 'no', 'off' ), true ), $autoload );
+// A refusal: the layer and the reason.
+as_request( EDGE, SELF_UA, array( 'HTTP_X_FORWARDED_FOR' => SERVER, 'HTTP_X_SCRAPELOCK_SIG' => $dt, 'HTTP_HOST' => ORIGIN_HOST ), '/private-path/' );
+PNCP_Server_Ips::sig_check();
+PNCP_Self_Check::refused( 'fake_browser', 403 );
+PNCP_Self_Check::flush();
+$entry = PNCP_Self_Check::entries()[0];
+t( 'D: a refused replay: sig nonce_reused, refused by WordPress for fake_browser, 403', 'nonce_reused' === $entry['sig'] && 'refused' === $entry['verdict'] && 'fake_browser' === $entry['reason'] && 'wp' === $entry['layer'] && 403 === (int) $entry['code'], wp_json_encode( $entry ) );
+// The pre-cache check's result reaches the note of WordPress.
+as_request( EDGE, SELF_UA, array( 'HTTP_X_SCRAPELOCK_SIG' => sig( '/cached-page/' ), 'HTTP_HOST' => ORIGIN_HOST ), '/cached-page/' );
+PNCP_Precheck_Runtime::self_signed( $cfg, time() );
+PNCP_Server_Ips::sig_check();
+PNCP_Self_Check::flush();
+$entry = PNCP_Self_Check::entries()[0];
+t( 'D: the pre-cache check\'s result is in the note', 'ok' === $entry['precache'] && 'ok' === $entry['sig'], wp_json_encode( $entry ) );
+// The early check is named as the layer that decided.
+settings( array( 'early_mode' => 1 ) );
+as_request( EDGE, '', array( 'HTTP_X_SCRAPELOCK_SIG' => 'garbage' ), '/' );
+PNCP_Self_Check::set_layer( 'early' );
+$e = PNCP_Early::check();
+if ( is_array( $e ) ) {
+	PNCP_Log::add( $e[1], $e[0], $e[2] );
+}
+PNCP_Self_Check::set_layer( 'wp' );
+PNCP_Self_Check::flush();
+$entry = PNCP_Self_Check::entries()[0];
+t( 'D: a garbage signature refused by the early check: noted with the layer "early" and bad_format', 'early' === $entry['layer'] && 'bad_format' === $entry['sig'] && 'empty_ua' === $entry['reason'], wp_json_encode( $entry ) );
+settings( array( 'early_mode' => 0 ) );
+// An unsigned request from the server's address: only a refusal is noted.
+set_transient( PNCP_Server_Ips::OUTBOUND, array( SERVER => time() ), DAY_IN_SECONDS );
+$count = count( PNCP_Self_Check::entries() );
+as_request( SERVER, 'WordPress/6.9', array(), '/' );
+PNCP_Self_Check::flush();
+t( 'D: an unsigned request of the server that passes is not noted (cache preloads would fill the buffer)', count( PNCP_Self_Check::entries() ) === $count );
+as_request( SERVER, 'WordPress/6.9', array(), '/xmlrpc.php', 'POST' );
+PNCP_Self_Check::set_layer( 'hardening' );
+PNCP_Self_Check::refused( 'harden_xmlrpc', 403, true );
+PNCP_Self_Check::flush();
+$entry = PNCP_Self_Check::entries()[0];
+t( 'D: ... a refusal of it is (Vulnerable points, harden_xmlrpc)', 'hardening' === $entry['layer'] && 'harden_xmlrpc' === $entry['reason'] && 'server' === $entry['from'], wp_json_encode( $entry ) );
+delete_transient( PNCP_Server_Ips::OUTBOUND );
+// The minute's allowance for signatures that are not the site's (anyone can send a header).
+$count = count( PNCP_Self_Check::entries() );
+for ( $i = 0; $i < PNCP_Self_Check::LIMIT_OTHER + 3; $i++ ) {
+	as_request( VISITOR, 'curl/8', array( 'HTTP_X_SCRAPELOCK_SIG' => 'forged-' . $i ), '/' );
+	PNCP_Server_Ips::sig_check();
+	PNCP_Self_Check::flush();
+}
+$added = count( PNCP_Self_Check::entries() ) - $count;
+t( 'D: forged signatures: at most ' . PNCP_Self_Check::LIMIT_OTHER . ' notes a minute', $added <= PNCP_Self_Check::LIMIT_OTHER && $added >= 0, (string) $added );
+for ( $i = 0; $i < PNCP_Self_Check::MAX + 5; $i++ ) {
+	PNCP_Self_Check::add( array( 'side' => 'out', 'time' => time(), 'n' => $i ) );
+}
+t( 'D: the ring buffer keeps at most ' . PNCP_Self_Check::MAX . ' entries, newest first', PNCP_Self_Check::MAX === count( PNCP_Self_Check::entries() ) && PNCP_Self_Check::MAX + 4 === PNCP_Self_Check::entries()[0]['n'] );
+delete_option( PNCP_Self_Check::LOG );
+
+/* ---------- M. The refusal header ---------- */
+unset( $_SERVER['HTTPS'] ); // This process: home_url() as stored (the requests "through the edge" say HTTPS themselves).
+$origin_host = ORIGIN_HOST . ( wp_parse_url( $base, PHP_URL_PORT ) ? ':' . wp_parse_url( $base, PHP_URL_PORT ) : '' ); // Same port: no canonical redirect.
+t( 'M: marker without a signature: "refused" (no reason for strangers)', 'refused' === PNCP_Self_Check::marker( 'fake_browser', '', false ) );
+t( 'M: marker with a signature that is not the site\'s: the layer and the result only', 'refused layer=wp sig=bad_mac' === PNCP_Self_Check::marker( 'fake_browser', 'bad_mac', false ) );
+t( 'M: marker of the site\'s own request: the reason too', 'refused fake_browser layer=wp sig=nonce_reused' === PNCP_Self_Check::marker( 'fake_browser', 'nonce_reused', true ) );
+PNCP_Precheck_Runtime::$self_result = '';
+t( 'M: the pre-cache check: "refused" without a signature', 'refused' === PNCP_Precheck_Runtime::refusal_marker( 'banned' ) );
+PNCP_Precheck_Runtime::$self_result = 'nonce_reused';
+t( 'M: ... with the site\'s replayed signature: reason, layer pre-cache and result', 'refused banned layer=pre-cache sig=nonce_reused' === PNCP_Precheck_Runtime::refusal_marker( 'banned' ) );
+PNCP_Precheck_Runtime::$self_result = 'host_mismatch';
+t( 'M: ... with a signature for another host: no reason', 'refused layer=pre-cache sig=host_mismatch' === PNCP_Precheck_Runtime::refusal_marker( 'banned' ) );
+PNCP_Precheck_Runtime::$self_result = '';
+// Over HTTP, against the test server, as the site's request coming back through the edge.
+$ht = sig( '/' );
+list( $code, $h ) = req( $home_path, from_edge( array( 'X-ScrapeLock-Sig' => $ht, 'Host' => $origin_host ) ) );
+t( 'M HTTP: a valid signature with the CDN\'s Host header: 200 with "X-ScrapeLock: ok"', 200 === $code && 'ok' === hdr( $h, 'x-scrapelock' ), $code . ' ' . hdr( $h, 'x-scrapelock' ) );
+list( $code, $h ) = req( $home_path, from_edge( array( 'X-ScrapeLock-Sig' => $ht, 'Host' => $origin_host ) ) );
+t( 'M HTTP: the same signature again: 403 "refused fake_browser layer=wp sig=nonce_reused"', 403 === $code && 'refused fake_browser layer=wp sig=nonce_reused' === hdr( $h, 'x-scrapelock' ), $code . ' ' . hdr( $h, 'x-scrapelock' ) );
+list( $code, $h ) = req( $home_path, array( 'X-Test-Remote-Addr' => VISITOR, 'User-Agent' => 'python-requests/2.32.3' ) );
+t( 'M HTTP: a bot: 403 with just "refused"', 403 === $code && 'refused' === hdr( $h, 'x-scrapelock' ), $code . ' ' . hdr( $h, 'x-scrapelock' ) );
+list( $code, $h ) = req( $home_path, array( 'X-Test-Remote-Addr' => VISITOR, 'User-Agent' => SELF_UA, 'Accept-Language' => 'en', 'Sec-Fetch-Mode' => 'navigate', 'Sec-Fetch-Dest' => 'document', 'Sec-CH-UA' => '"Chromium";v="130"' ) );
+t( 'M HTTP: a visitor who passes gets no X-ScrapeLock header', '' === hdr( $h, 'x-scrapelock' ), $code . ' ' . hdr( $h, 'x-scrapelock' ) );
+$seen = PNCP_Self_Check::entries();
+$hid  = substr( explode( '.', $ht )[1], 0, 8 );
+$hits = array();
+foreach ( $seen as $one ) {
+	if ( isset( $one['id'] ) && $hid === $one['id'] ) {
+		$hits[] = $one['verdict'] . ':' . $one['sig'];
+	}
+}
+t( 'M HTTP: the server noted both requests (passed:ok, refused:nonce_reused)', in_array( 'passed:ok', $hits, true ) && in_array( 'refused:nonce_reused', $hits, true ), wp_json_encode( $hits ) );
 
 // Clean up the temporary data folder.
 foreach ( glob( $pc_dir . '/self/*' ) ?: array() as $pncp_f ) {

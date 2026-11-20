@@ -186,6 +186,7 @@ final class PNCP_Precheck_Runtime {
 			header( 'Content-Type: text/html; charset=utf-8' );
 			header( 'Cache-Control: no-store, no-cache, must-revalidate, max-age=0' );
 			header( 'X-Robots-Tag: noindex' );
+			header( 'X-ScrapeLock: ' . self::refusal_marker( $reason ) ); // 3.12.2: who refused (PNCP_Self_Check).
 			if ( 429 === $code ) {
 				header( 'Retry-After: 60' );
 			}
@@ -194,6 +195,23 @@ final class PNCP_Precheck_Runtime {
 			echo 429 === $code ? 'Too many requests.' : 'Access denied.';
 		}
 		exit;
+	}
+
+	/**
+	 * 3.12.2: the value of the X-ScrapeLock header of this check's 403 / 429, as PNCP_Self_Check::marker() makes it
+	 * in WordPress: "refused"; for a request that carries the site's signature also the layer and the signature's
+	 * result, and the reason only when the signature is the site's own (its MAC matched). No address or other data
+	 * of the visitor.
+	 *
+	 * @param string $reason The reason of the refusal.
+	 * @return string
+	 */
+	public static function refusal_marker( $reason ) {
+		if ( '' === self::$self_result ) {
+			return 'refused';
+		}
+		$own = in_array( self::$self_result, array( 'ok', 'nonce_reused' ), true );
+		return 'refused' . ( $own && preg_match( '/^[a-z0-9_]{1,40}$/', (string) $reason ) ? ' ' . $reason : '' ) . ' layer=pre-cache sig=' . self::$self_result;
 	}
 
 	/**
@@ -234,6 +252,9 @@ final class PNCP_Precheck_Runtime {
 		// 3.12.1: the site's own request, signed by WordPress (PNCP_Server_Ips::sig_ok()): from any address, before
 		// "Only through the CDN" and every other check (Vulnerable points, Site Health, the Stealth test).
 		if ( self::self_signed( $c, $now ) ) {
+			if ( ! headers_sent() ) {
+				header( 'X-ScrapeLock: ok' ); // 3.12.2: this server answered the site's own request (PNCP_Self_Check).
+			}
 			return null;
 		}
 		$direct = self::not_via_cdn( $c );
