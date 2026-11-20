@@ -767,8 +767,8 @@ t( 'T: the script gets the self-check action and its nonce', PNCP_Self_Check::AC
 wp_set_current_user( 0 );
 
 /** Runs PNCP_Self_Check::ajax() as admin-ajax.php would: [status, decoded JSON]. */
-function self_ajax( $user, $nonce ) {
-	$_SERVER['REQUEST_METHOD'] = 'POST';
+function self_ajax( $user, $nonce, $method = 'POST' ) {
+	$_SERVER['REQUEST_METHOD'] = $method;
 	$_POST                     = array( 'nonce' => $nonce );
 	$_REQUEST                  = $_POST;
 	wp_set_current_user( $user );
@@ -820,6 +820,15 @@ list( $st, $j ) = self_ajax( $sub, $sub_nonce );
 t( 'T: ... a subscriber with a valid nonce: refused (manage_options)', isset( $j['success'] ) && false === $j['success'] && false !== strpos( (string) $j['data']['message'], 'not allowed' ), $st . ' ' . wp_json_encode( $j ) );
 wp_set_current_user( 1 );
 $admin_nonce = wp_create_nonce( PNCP_Self_Check::ACTION );
+delete_option( PNCP_Self_Check::LAST );
+list( $st, $j ) = self_ajax( 1, $admin_nonce, 'GET' );
+t( 'T: ... the administrator with a valid nonce but GET: refused, and nothing was requested', isset( $j['success'] ) && false === $j['success'] && false !== strpos( (string) $j['data']['message'], 'POST' ) && null === PNCP_Self_Check::last(), wp_json_encode( $j ) );
+$tester_nonce = wp_create_nonce( PNCP_Tester::ACTION );
+list( $st, $j ) = self_ajax( 1, $tester_nonce );
+t( 'T: ... the nonce of "Check a request" is not the self-check\'s', isset( $j['success'] ) && false === $j['success'] && null === PNCP_Self_Check::last(), wp_json_encode( $j ) );
+$_SERVER['REQUEST_METHOD'] = 'POST';
+t( 'T: "Run a real self-check now" is for signed-in users only (no wp_ajax_nopriv_)', false !== has_action( 'wp_ajax_' . PNCP_Self_Check::ACTION ) && false === has_action( 'wp_ajax_nopriv_' . PNCP_Self_Check::ACTION ) );
+wp_set_current_user( 1 );
 list( $st, $j ) = self_ajax( 1, $admin_nonce );
 t( 'T: ... the administrator: a real self-check with its headline and trace', ! empty( $j['success'] ) && '' !== (string) $j['data']['headline'] && is_array( $j['data']['lines'] ) && $j['data']['lines'], wp_json_encode( $j ) );
 require_once ABSPATH . 'wp-admin/includes/user.php';
