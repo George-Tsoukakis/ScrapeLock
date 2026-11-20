@@ -52,7 +52,19 @@ function t( $label, $ok, $extra = '' ) {
 function settings( $changes ) {
 	update_option( PNCP_OPTION, array_merge( PNCP_Options::stored(), $changes ) );
 	PNCP_Options::flush();
+	test_lists(); // Saving the settings lets the next wp-admin page download the missing lists (with internet).
 	PNCP_Ip::reset();
+}
+
+/**
+ * The stage's Bunny and Cloudflare lists, stored again: with internet (CI), WP cron downloads the real lists (the
+ * daily refresh, or the "missing lists" one a settings change allows), and the stand-in edge would no longer be one.
+ */
+function test_lists() {
+	wp_unschedule_hook( PNCP_Ip::CRON );
+	set_transient( 'pncp_lists_missing_try', 1, HOUR_IN_SECONDS );
+	PNCP_Ip::store_list( 'bunny', array( EDGE, '198.51.100.11' ) );
+	PNCP_Ip::store_list( 'cloudflare', array( '104.16.0.0/13', '173.245.48.0/20' ) );
 }
 
 const EDGE      = '198.51.100.10'; // A Bunny edge (in the stored Bunny list below).
@@ -187,6 +199,9 @@ register_shutdown_function(
 			}
 		}
 		delete_transient( 'pncp_server_outbound' );
+		if ( ! wp_next_scheduled( PNCP_Ip::CRON ) ) {
+			wp_schedule_event( time() + DAY_IN_SECONDS, 'daily', PNCP_Ip::CRON ); // test_lists() unscheduled it.
+		}
 		PNCP_Bunny::reset();
 		PNCP_Early::sync();
 		PNCP_Precheck::sync();
@@ -197,8 +212,7 @@ register_shutdown_function(
 update_option( PNCP_Options::EMERGENCY_OPTION, 0 );
 PNCP_Log::unban_all();
 // The stored Bunny list of the stage (an earlier test or WP cron may have changed it; put back at the end).
-PNCP_Ip::store_list( 'bunny', array( EDGE, '198.51.100.11' ) );
-PNCP_Ip::store_list( 'cloudflare', array( '104.16.0.0/13', '173.245.48.0/20' ) );
+test_lists();
 delete_option( PNCP_Server_Ips::OPTION );
 delete_transient( 'pncp_server_outbound' );
 $_SERVER['SERVER_ADDR'] = '10.66.0.5'; // NAT: the server's own interface has a private address.
@@ -338,6 +352,7 @@ $m->setAccessible( true );
 t( 'S: the trap and the probe ban never ban a signed request', false === $m->invoke( null, VISITOR, 'pncp_tr_' ) );
 
 /* ---------- S over HTTP: WordPress and the early check, the request "from the edge" ---------- */
+test_lists();
 forget_server_ips();
 list( $code ) = req( '/', from_edge() );
 t( 'S HTTP: the self-test through the edge, unsigned: 403 (the bug)', 403 === $code, (string) $code );
@@ -359,6 +374,7 @@ settings( array( 'early_mode' => 0 ) );
 PNCP_Early::sync();
 
 /* ---------- R. Redirects ---------- */
+test_lists();
 // A stand-in server on 127.0.0.1 (one of the site's host names, as home_url() is here): /redirect-out sends the
 // request on to localhost (another host), /redirect-in to /echo on 127.0.0.1, /echo answers with the headers.
 $echo_dir = sys_get_temp_dir() . '/pncp-echo3121-' . getmypid();
@@ -405,6 +421,7 @@ wp_delete_file( $echo_dir . '/router.php' );
 rmdir( $echo_dir );
 
 /* ---------- P. The pre-cache check ---------- */
+test_lists();
 forget_server_ips();
 file_put_contents( $config_file, "<?php\ndefine( 'WP_CACHE', true ); // test cache\n" . substr( $original, 6 ) );
 file_put_contents( $cache_file, "<?php\nif ( isset( \$_SERVER['REQUEST_URI'] ) && 0 === strpos( \$_SERVER['REQUEST_URI'], '/cached-page/' ) ) {\n\theader( 'X-Test-Cache: HIT' );\n\techo 'CACHED PAGE';\n\texit;\n}\n" );
@@ -489,6 +506,7 @@ file_put_contents( $config_file, $original );
 sleep( 2 ); // OPcache of the server: wp-config.php.
 
 /* ---------- I. The server's addresses: the detected outbound one and SCRAPELOCK_SERVER_IPS ---------- */
+test_lists();
 delete_transient( PNCP_Server_Ips::OUTBOUND );
 delete_option( PNCP_Server_Ips::OPTION );
 $wp_ua = 'WordPress/6.9; ' . home_url( '/' );
@@ -607,6 +625,7 @@ PNCP_Early::sync();
 @unlink( $const_mu );
 
 /* ---------- E. ScrapeLock's own rules at the CDN never block the server ---------- */
+test_lists();
 forget_server_ips();
 set_transient( PNCP_Server_Ips::OUTBOUND, array( SERVER => time() ), DAY_IN_SECONDS ); // Detected (see I).
 // Temporary blocks sent to the CDN (PNCP_Edge): a ban of the server's address is never one of them.
@@ -755,6 +774,7 @@ wp_set_current_user( 0 );
 forget_server_ips();
 
 /* ---------- H. Vulnerable points "Check again", the Stealth test, Site Health: through the "edge" ---------- */
+test_lists();
 forget_server_ips();
 unset( $_SERVER['HTTPS'] ); // This process: home_url() as stored (the "edge" requests say HTTPS with X-Test-HTTPS).
 $to_edge = static function ( $args, $url ) {
