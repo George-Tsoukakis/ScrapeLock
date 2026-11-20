@@ -1360,10 +1360,11 @@ final class PNCP_Cli {
 		$proposals = PNCP_Wizard::proposals( null, $env );
 		$items     = array();
 		foreach ( $proposals as $key => $row ) {
+			$texts         = PNCP_Wizard::row_texts( $row ); // 3.12.1: a row may change two settings (ban_strikes, ban_minutes).
 			$items[ $key ] = array(
 				'setting'  => $key,
-				'now'      => PNCP_Wizard::value_text( $key, $row['current'] ),
-				'proposed' => PNCP_Wizard::value_text( $key, $row['proposed'] ),
+				'now'      => $texts[0],
+				'proposed' => $texts[1],
 				'risk'     => $row['risk'],
 				'reason'   => $row['reason'],
 			);

@@ -68,6 +68,13 @@ ScrapeLock — δοκιμές σε πραγματικό WordPress (όχι stubs)
                     placeholders / tags, .mo ίδιο με το .po, χωρίς μισές προτάσεις· φορτώνεται από το languages/ του
                     plugin (και όπως στις WordPress 6.2–6.6, με pncp_load_textdomain() στο init), ενώ ένα language pack
                     στο wp-content/languages/plugins/ προηγείται
+  t_3121_wizard.php 3.12.1: «For my site» also checks sensible values: each proposal at its boundary values (probe_ban,
+                    block_ip_host, reputation, temporary blocks as one row of two settings, rate_limit with the human
+                    check, rate_limit_rest with WooCommerce / FluentCommunity, rate_limit_account with FluentCommunity
+                    or a membership plugin, blur_on_capture / block_devtools / user_mark_guests, OneSignal in «Always
+                    allowed»), stand-in MemberPress detected, the panel (ticked rows, diff, «Nothing to change»),
+                    «Apply selected» (nonce, subscriber / editor 403, locked, only ticked rows, recomputed on the
+                    server, saved version first), wp scrapelock wizard
   t_3121_fluent.php 3.12.1: FluentCommunity (stand-in with one REST route): a signed-in member's portal reads count
                     per account at 4 × the REST limit (13th of 12 → 429 for that account only, another member on the
                     same address unaffected, guests and a cookie without the nonce per IP, no violation), the log row

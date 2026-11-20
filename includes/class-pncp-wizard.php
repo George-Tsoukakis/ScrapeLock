@@ -56,7 +56,8 @@ final class PNCP_Wizard {
 	 * class or constant they define (a renamed folder).
 	 *
 	 * @return array<string, mixed> woocommerce, fluentcommunity, wp_rocket, onesignal, jetpack, wordfence (bool);
-	 *                              seo, multilingual, object_cache, server (name or ''); bunny, cloudflare (bool).
+	 *                              seo, multilingual, membership, object_cache, server (name or ''); bunny,
+	 *                              cloudflare (bool).
 	 */
 	public static function detect() {
 		$active = static function ( $plugins ) {
@@ -90,8 +91,9 @@ final class PNCP_Wizard {
 		} elseif ( false !== strpos( $software, 'apache' ) ) {
 			$server = 'Apache';
 		}
-		$edge = PNCP_Edge::config()['provider'];
-		$env  = array(
+		$membership = self::membership_plugin();
+		$edge       = PNCP_Edge::config()['provider'];
+		$env        = array(
 			'woocommerce'     => $active( 'woocommerce/woocommerce.php' ) || class_exists( 'WooCommerce', false ),
 			'fluentcommunity' => PNCP_Fluent_Community::active(), // Its file, constant or classes (PNCP_Fluent_Community).
 			'wp_rocket'       => $active( 'wp-rocket/wp-rocket.php' ) || defined( 'WP_ROCKET_VERSION' ),
@@ -100,6 +102,7 @@ final class PNCP_Wizard {
 			'wordfence'       => $active( 'wordfence/wordfence.php' ) || PNCP_Site_Files::wordfence_active(),
 			'seo'             => $seo,
 			'multilingual'    => $multilingual,
+			'membership'      => $membership, // 3.12.1: a membership or community plugin (membership_plugins()).
 			'object_cache'    => $cache,
 			'server'          => $server,
 			'bunny'           => PNCP_Ip::behind_bunny() || PNCP_Edge::bunny_in_use() || $active( 'bunnycdn/bunnycdn.php' ),
@@ -136,7 +139,7 @@ final class PNCP_Wizard {
 				$out[] = $name;
 			}
 		}
-		foreach ( array( 'seo', 'multilingual', 'server' ) as $key ) {
+		foreach ( array( 'seo', 'multilingual', 'membership', 'server' ) as $key ) {
 			if ( ! empty( $env[ $key ] ) ) {
 				$out[] = (string) $env[ $key ];
 			}
@@ -148,6 +151,47 @@ final class PNCP_Wizard {
 		return $out;
 	}
 
+	/**
+	 * 3.12.1: the membership and community plugins whose members sign in to read (the per-account page limit is
+	 * for them), by their main file (folder/file.php, as PNCP_Plugin_Bots::plugin_active() reads the list of active
+	 * plugins). Filter `pncp_wizard_membership_plugins`.
+	 *
+	 * @return array<string, string[]> Name => main files.
+	 */
+	public static function membership_plugins() {
+		$plugins = array(
+			'MemberPress'             => array( 'memberpress/memberpress.php' ),
+			'Paid Memberships Pro'    => array( 'paid-memberships-pro/paid-memberships-pro.php' ),
+			'WooCommerce Memberships' => array( 'woocommerce-memberships/woocommerce-memberships.php' ),
+			'Restrict Content Pro'    => array( 'restrict-content-pro/restrict-content-pro.php', 'restrict-content/restrictcontent.php' ),
+			'Ultimate Member'         => array( 'ultimate-member/ultimate-member.php' ),
+			'BuddyPress'              => array( 'buddypress/bp-loader.php' ),
+			'BuddyBoss'               => array( 'buddyboss-platform/bp-loader.php' ),
+		);
+		/**
+		 * The membership plugins "For my site" looks for.
+		 *
+		 * @since 3.12.1
+		 * @param array<string, string[]> $plugins Name => main files (folder/file.php).
+		 */
+		$plugins = apply_filters( 'pncp_wizard_membership_plugins', $plugins );
+		return is_array( $plugins ) ? $plugins : array();
+	}
+
+	/**
+	 * 3.12.1: the first active membership plugin (membership_plugins()).
+	 *
+	 * @return string Its name, or ''.
+	 */
+	public static function membership_plugin() {
+		foreach ( self::membership_plugins() as $name => $files ) {
+			if ( PNCP_Plugin_Bots::plugin_active( array_map( 'strval', (array) $files ) ) ) {
+				return (string) $name;
+			}
+		}
+		return '';
+	}
+
 	/* ---------- Proposals ---------- */
 
 	/**
@@ -156,27 +200,35 @@ final class PNCP_Wizard {
 	 *
 	 * @param array<string, mixed>|null $s   Settings (null = stored).
 	 * @param array<string, mixed>|null $env detect() (null = now).
-	 * @return array<string, array{key:string, current:mixed, proposed:mixed, reason:string, risk:string, for:string}>
+	 * 3.12.1: a row may also change other settings with it ('also': key => value, shown and applied together),
+	 * and carry its own short texts for the "Now" and "Proposed" columns ('now_text', 'proposed_text').
+	 *
+	 * @return array<string, array{key:string, current:mixed, proposed:mixed, reason:string, risk:string, for:string, also?:array<string, mixed>, now_text?:string, proposed_text?:string}>
 	 */
 	public static function proposals( $s = null, $env = null ) {
 		$s   = null === $s ? PNCP_Options::stored() : $s;
 		$env = null === $env ? self::detect() : $env;
 		$out = array();
-		$add = static function ( $key, $proposed, $reason, $risk, $for ) use ( &$out, $s ) {
+		$add = static function ( $key, $proposed, $reason, $risk, $for, $extra = array() ) use ( &$out, $s ) {
 			if ( isset( $out[ $key ] ) || ! array_key_exists( $key, $s ) || ! in_array( $key, PNCP_Settings_Io::public_keys(), true ) ) {
 				return;
 			}
-			if ( (string) $s[ $key ] === (string) $proposed ) {
-				return;
-			}
-			$out[ $key ] = array(
-				'key'      => $key,
-				'current'  => $s[ $key ],
-				'proposed' => $proposed,
-				'reason'   => $reason,
-				'risk'     => self::RISK_MORE === $risk ? self::RISK_MORE : self::RISK_NONE,
-				'for'      => $for,
+			$row = self::clean_row(
+				$key,
+				array_merge(
+					(array) $extra,
+					array(
+						'proposed' => $proposed,
+						'reason'   => $reason,
+						'risk'     => self::RISK_MORE === $risk ? self::RISK_MORE : self::RISK_NONE,
+						'for'      => $for,
+					)
+				),
+				$s
 			);
+			if ( null !== $row ) {
+				$out[ $key ] = $row;
+			}
 		};
 
 		// The visitor address first: every limit and block depends on it.
@@ -228,6 +280,8 @@ final class PNCP_Wizard {
 			$add( 'edge_send_blocks', 1, sprintf( __( '%s is connected under “Blocking at the CDN”: temporary blocks could be sent to it, so blocked IPs stop at the CDN, also on cached pages.', 'scrapelock' ), $provider ), self::RISK_MORE, $provider );
 		}
 
+		self::sensible( $s, $env, $add ); // 3.12.1: values that suit (almost) every site.
+
 		/**
 		 * The changes the "For my site" assistant proposes.
 		 *
@@ -238,19 +292,186 @@ final class PNCP_Wizard {
 		$filtered = apply_filters( 'pncp_wizard_proposals', $out, $s, $env );
 		$clean    = array();
 		foreach ( is_array( $filtered ) ? $filtered : array() as $key => $row ) {
-			// Only existing, public settings, and only real changes.
-			if ( is_array( $row ) && isset( $row['proposed'], $row['reason'] ) && array_key_exists( $key, $s ) && in_array( $key, PNCP_Settings_Io::public_keys(), true ) && (string) $s[ $key ] !== (string) $row['proposed'] ) {
-				$clean[ $key ] = array(
-					'key'      => (string) $key,
-					'current'  => $s[ $key ],
-					'proposed' => $row['proposed'],
-					'reason'   => (string) $row['reason'],
-					'risk'     => isset( $row['risk'] ) && self::RISK_NONE === $row['risk'] ? self::RISK_NONE : self::RISK_MORE,
-					'for'      => isset( $row['for'] ) ? (string) $row['for'] : '',
-				);
+			$row = is_array( $row ) ? self::clean_row( (string) $key, $row, $s ) : null;
+			if ( null !== $row ) {
+				$clean[ (string) $key ] = $row;
 			}
 		}
 		return $clean;
+	}
+
+	/**
+	 * A proposal as proposals() returns it, or null: only existing, public settings (also those of 'also'), and
+	 * only real changes (the row's own setting or one of 'also' differs from now). No risk = "blocks more".
+	 *
+	 * @param string               $key Setting (the row's id).
+	 * @param array<string, mixed> $row proposed, reason; risk, for, also, now_text, proposed_text.
+	 * @param array<string, mixed> $s   Settings.
+	 * @return array{key:string, current:mixed, proposed:mixed, reason:string, risk:string, for:string, also?:array<string, mixed>, now_text?:string, proposed_text?:string}|null
+	 */
+	private static function clean_row( $key, $row, $s ) {
+		$public = PNCP_Settings_Io::public_keys();
+		if ( ! isset( $row['proposed'], $row['reason'] ) || ! array_key_exists( $key, $s ) || ! in_array( $key, $public, true ) ) {
+			return null;
+		}
+		$changes = (string) $s[ $key ] !== (string) $row['proposed'];
+		$also    = array();
+		foreach ( isset( $row['also'] ) && is_array( $row['also'] ) ? $row['also'] : array() as $other => $value ) {
+			$other = (string) $other;
+			if ( $other === $key || ! array_key_exists( $other, $s ) || ! in_array( $other, $public, true ) || ! is_scalar( $value ) ) {
+				return null; // The whole row or nothing.
+			}
+			$also[ $other ] = $value;
+			$changes        = $changes || (string) $s[ $other ] !== (string) $value;
+		}
+		if ( ! $changes ) {
+			return null;
+		}
+		$clean = array(
+			'key'      => $key,
+			'current'  => $s[ $key ],
+			'proposed' => $row['proposed'],
+			'reason'   => (string) $row['reason'],
+			'risk'     => isset( $row['risk'] ) && self::RISK_NONE === $row['risk'] ? self::RISK_NONE : self::RISK_MORE,
+			'for'      => isset( $row['for'] ) ? (string) $row['for'] : '',
+		);
+		if ( $also ) {
+			$clean['also'] = $also;
+		}
+		foreach ( array( 'now_text', 'proposed_text' ) as $text ) {
+			if ( isset( $row[ $text ] ) && is_scalar( $row[ $text ] ) && '' !== (string) $row[ $text ] ) {
+				$clean[ $text ] = (string) $row[ $text ];
+			}
+		}
+		return $clean;
+	}
+
+	/**
+	 * 3.12.1: the check of sensible values: settings that suit nearly every site, proposed whatever was detected
+	 * (some only with a plugin that needs them). Each one blocks only what no visitor does, or blocks less, so
+	 * each is ticked by default. "Off" (0) of a limit is the administrator's choice and is never proposed away.
+	 *
+	 * @param array<string, mixed> $s   Settings.
+	 * @param array<string, mixed> $env detect().
+	 * @param callable             $add The proposals()'s adder: key, proposed, reason, risk, for, extra.
+	 */
+	private static function sensible( $s, $env, $add ) {
+		$for = __( 'Sensible values', 'scrapelock' );
+		$add( 'probe_ban', 1, __( 'Bans scanners on their first .env or .git probe; visitors never send those.', 'scrapelock' ), self::RISK_NONE, $for );
+		$add( 'block_ip_host', 1, __( 'Only scanners open the site by its bare IP address; visitors use its name.', 'scrapelock' ), self::RISK_NONE, $for );
+		$add( 'reputation', 1, __( 'Remembers IPs that misbehaved; signed-in and verified visitors are treated more gently.', 'scrapelock' ), self::RISK_NONE, $for );
+
+		// Temporary blocks: at least 3 violations, at most 120 minutes (never longer than now). 0 = never block.
+		$strikes = (int) $s['ban_strikes'];
+		$minutes = (int) $s['ban_minutes'];
+		if ( $minutes > 240 || ( $strikes > 0 && $strikes < 3 ) ) {
+			$new_strikes = $strikes > 0 && $strikes < 3 ? 3 : $strikes;
+			$new_minutes = min( $minutes, 120 );
+			$add(
+				'ban_strikes',
+				$new_strikes,
+				__( 'Real users behind a shared mobile IP stay blocked too long.', 'scrapelock' ),
+				self::RISK_NONE,
+				$for,
+				array(
+					'also'          => array( 'ban_minutes' => $new_minutes ),
+					'now_text'      => self::ban_text( $strikes, $minutes ),
+					'proposed_text' => self::ban_text( $new_strikes, $new_minutes ),
+				)
+			);
+		}
+
+		if ( ! empty( $s['human_check'] ) && (int) $s['rate_limit'] > 0 && (int) $s['rate_limit'] < 40 ) {
+			$add( 'rate_limit', 45, __( 'The human check already slows bots; this low limit stops fast readers.', 'scrapelock' ), self::RISK_NONE, $for );
+		}
+
+		$rest_for = ! empty( $env['fluentcommunity'] ) ? 'FluentCommunity' : ( ! empty( $env['woocommerce'] ) ? 'WooCommerce' : '' );
+		if ( '' !== $rest_for && (int) $s['rate_limit_rest'] > 0 && (int) $s['rate_limit_rest'] < 60 ) {
+			/* translators: %s: FluentCommunity or WooCommerce */
+			$add( 'rate_limit_rest', 60, sprintf( __( '%s loads its pages through the REST API; this limit is too low.', 'scrapelock' ), $rest_for ), self::RISK_NONE, $rest_for );
+		}
+
+		$members = ! empty( $env['fluentcommunity'] ) ? 'FluentCommunity' : ( isset( $env['membership'] ) ? (string) $env['membership'] : '' );
+		if ( '' !== $members && 0 === (int) $s['rate_limit_account'] ) {
+			/* translators: %s: plugin name, e.g. MemberPress */
+			$add( 'rate_limit_account', 60, sprintf( __( '%s members sign in: also limit each account, whatever its IP.', 'scrapelock' ), $members ), self::RISK_NONE, $members );
+		}
+
+		$annoys = __( 'Low value, annoys visitors: it stops no bot or scraper.', 'scrapelock' );
+		foreach ( array( 'blur_on_capture', 'block_devtools', 'user_mark_guests' ) as $key ) {
+			if ( ! empty( $s[ $key ] ) ) {
+				$add( $key, 0, $annoys, self::RISK_NONE, $for );
+			}
+		}
+
+		// OneSignal's servers read the site (its service worker, /.well-known/): "OneSignal" as in the list of new
+		// installs (PNCP_Options::default_allow_list(); PNCP_Bots::well_known_agents() covers /.well-known/ only).
+		if ( ! empty( $env['onesignal'] ) && ! self::allow_list_has( (string) $s['allow_list'], 'OneSignal' ) ) {
+			$lines = PNCP_Options::parse_list( (string) $s['allow_list'] );
+			if ( count( $lines ) < 200 ) {
+				$lines[] = 'OneSignal';
+				$add(
+					'allow_list',
+					implode( "\n", $lines ),
+					__( 'OneSignal\'s servers read this site; never refuse them as a bot.', 'scrapelock' ),
+					self::RISK_NONE,
+					'OneSignal',
+					array(
+						/* translators: %s: a line of the list, e.g. OneSignal */
+						'now_text'      => sprintf( __( 'without %s', 'scrapelock' ), 'OneSignal' ),
+						/* translators: %s: a line of the list, e.g. OneSignal */
+						'proposed_text' => sprintf( __( '+ %s', 'scrapelock' ), 'OneSignal' ),
+					)
+				);
+			}
+		}
+	}
+
+	/**
+	 * 3.12.1: does the "Always allowed User-Agents" list have this name as a line of its own (also tied to IPs with
+	 * "@")?
+	 *
+	 * @param string $list Setting value.
+	 * @param string $name E.g. OneSignal.
+	 * @return bool
+	 */
+	public static function allow_list_has( $list, $name ) {
+		foreach ( PNCP_Options::parse_list( $list ) as $entry ) {
+			if ( 0 === strcasecmp( PNCP_Options::split_allow_entry( $entry )['ua'], $name ) ) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	/**
+	 * 3.12.1: the temporary block settings in short text.
+	 *
+	 * @param int $strikes Violations (0 = never).
+	 * @param int $minutes Minutes.
+	 * @return string
+	 */
+	private static function ban_text( $strikes, $minutes ) {
+		if ( $strikes <= 0 ) {
+			/* translators: %d: minutes */
+			return sprintf( __( 'never (%d min)', 'scrapelock' ), $minutes );
+		}
+		/* translators: 1: number of violations, 2: minutes */
+		return sprintf( __( 'after %1$d violations, for %2$d min', 'scrapelock' ), $strikes, $minutes );
+	}
+
+	/**
+	 * 3.12.1: the "Now" and "Proposed" texts of a row (its own, or value_text() of the setting).
+	 *
+	 * @param array<string, mixed> $row A proposal.
+	 * @return array{0: string, 1: string}
+	 */
+	public static function row_texts( $row ) {
+		$key = (string) $row['key'];
+		return array(
+			isset( $row['now_text'] ) ? (string) $row['now_text'] : self::value_text( $key, $row['current'] ),
+			isset( $row['proposed_text'] ) ? (string) $row['proposed_text'] : self::value_text( $key, $row['proposed'] ),
+		);
 	}
 
 	/**
@@ -376,6 +597,10 @@ final class PNCP_Wizard {
 		foreach ( array_unique( array_map( 'strval', (array) $keys ) ) as $key ) {
 			if ( isset( $proposals[ $key ] ) ) {
 				$values[ $key ] = $proposals[ $key ]['proposed'];
+				// 3.12.1: the settings that change with it (one row, e.g. violations and block duration).
+				foreach ( isset( $proposals[ $key ]['also'] ) ? $proposals[ $key ]['also'] : array() as $other => $value ) {
+					$values[ $other ] = $value;
+				}
 			}
 		}
 		if ( ! $values ) {
@@ -457,15 +682,27 @@ final class PNCP_Wizard {
 	 */
 	public static function label( $key ) {
 		$labels = array(
-			'trust_bunny'       => __( 'Trust Bunny CDN addresses', 'scrapelock' ),
-			'trust_cloudflare'  => __( 'Trust Cloudflare addresses', 'scrapelock' ),
-			'ip_header'         => __( 'Real visitor IP', 'scrapelock' ),
-			'skip_woo_pages'    => __( 'Leave the cart, checkout and My account pages alone', 'scrapelock' ),
-			'rate_limit_cart'   => __( 'Cart and checkout writes per minute', 'scrapelock' ),
-			'rate_limit_coupon' => __( 'Coupon attempts per minute', 'scrapelock' ),
-			'content_paths'     => __( 'Content addresses', 'scrapelock' ),
-			'precheck'          => __( 'Check before the page cache', 'scrapelock' ),
-			'edge_send_blocks'  => __( 'Send temporary blocks to the CDN', 'scrapelock' ),
+			'trust_bunny'        => __( 'Trust Bunny CDN addresses', 'scrapelock' ),
+			'trust_cloudflare'   => __( 'Trust Cloudflare addresses', 'scrapelock' ),
+			'ip_header'          => __( 'Real visitor IP', 'scrapelock' ),
+			'skip_woo_pages'     => __( 'Leave the cart, checkout and My account pages alone', 'scrapelock' ),
+			'rate_limit_cart'    => __( 'Cart and checkout writes per minute', 'scrapelock' ),
+			'rate_limit_coupon'  => __( 'Coupon attempts per minute', 'scrapelock' ),
+			'content_paths'      => __( 'Content addresses', 'scrapelock' ),
+			'precheck'           => __( 'Check before the page cache', 'scrapelock' ),
+			'edge_send_blocks'   => __( 'Send temporary blocks to the CDN', 'scrapelock' ),
+			// 3.12.1: the check of sensible values.
+			'probe_ban'          => __( 'Ban scanners on their first probe', 'scrapelock' ),
+			'block_ip_host'      => __( 'Refuse requests that open the site by its IP address', 'scrapelock' ),
+			'reputation'         => __( 'IP reputation', 'scrapelock' ),
+			'ban_strikes'        => __( 'Temporary blocks', 'scrapelock' ),
+			'rate_limit'         => __( 'Pages per minute', 'scrapelock' ),
+			'rate_limit_rest'    => __( 'REST API requests per minute', 'scrapelock' ),
+			'rate_limit_account' => __( 'Pages per minute per signed-in account', 'scrapelock' ),
+			'blur_on_capture'    => __( 'Blur the page on screenshot shortcuts', 'scrapelock' ),
+			'block_devtools'     => __( 'Block the developer tools shortcuts', 'scrapelock' ),
+			'user_mark_guests'   => __( 'Reader watermark also for visitors', 'scrapelock' ),
+			'allow_list'         => __( 'Always allowed User-Agents', 'scrapelock' ),
 		);
 		return isset( $labels[ $key ] ) ? $labels[ $key ] : PNCP_Setting_Labels::label( $key ); // Never the bare key.
 	}
@@ -549,10 +786,11 @@ final class PNCP_Wizard {
 										<?php if ( $more ) : ?>
 											<span class="pncp-tag pncp-tag--risk"><?php esc_html_e( 'Blocks more: not ticked', 'scrapelock' ); ?></span>
 										<?php endif; ?>
-										<br><code><?php echo esc_html( $key ); ?></code>
+										<br><code><?php echo esc_html( implode( ', ', array_merge( array( $key ), array_keys( isset( $row['also'] ) ? $row['also'] : array() ) ) ) ); ?></code>
 									</td>
-									<td><?php echo esc_html( self::value_text( $key, $row['current'] ) ); ?></td>
-									<td><?php echo esc_html( self::value_text( $key, $row['proposed'] ) ); ?></td>
+									<?php list( $now_text, $proposed_text ) = self::row_texts( $row ); ?>
+									<td><?php echo esc_html( $now_text ); ?></td>
+									<td><?php echo esc_html( $proposed_text ); ?></td>
 									<td><?php echo esc_html( $row['reason'] ); ?></td>
 								</tr>
 							<?php endforeach; ?>
