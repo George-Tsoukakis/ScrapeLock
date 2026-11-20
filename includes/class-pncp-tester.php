@@ -244,12 +244,12 @@ final class PNCP_Tester {
 	 * refused it. Null when no limit applies (a limit of 0, a refusal before the limits, a verified search engine).
 	 * Also used by "wp scrapelock check".
 	 *
-	 * @param array<string, mixed> $result What PNCP_Bots::explain() returns.
-	 * @param string               $ip     IP.
-	 * @param array<string, mixed> $s      Settings.
 	 * 3.12.2: for a link preview of the "Always allowed" list on a static file (pass "media_preview"), which is not
 	 * counted at all: "Not counted: …" with counted false, instead of "N of M".
 	 *
+	 * @param array<string, mixed> $result What PNCP_Bots::explain() returns.
+	 * @param string               $ip     IP.
+	 * @param array<string, mixed> $s      Settings.
 	 * @return array{bucket:string, label:string, count:int, limit:int, text:string, counted:bool}|null
 	 */
 	public static function counter( array $result, $ip, array $s ) {
