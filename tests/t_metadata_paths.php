@@ -212,8 +212,12 @@ $code = req( '/.well-known/%2e%2e/x', array( 'X-Test-IP' => '203.0.113.25', 'Use
 t( '/.well-known/%2e%2e/: checked as before (403)', 403 === $code, (string) $code );
 $code = req( '/.well-known/assetlinks.json', array( 'X-Test-IP' => '203.0.113.26', 'User-Agent' => 'GPTBot/1.0' ) );
 t( 'bot list still applies on site files (GPTBot): 403', 403 === $code, (string) $code );
+// 3.11: /.well-known/* is read by services that may send no User-Agent at all (t_311_pipeline.php, A3); the
+// other site files keep the empty User-Agent check.
 $code = req( '/.well-known/assetlinks.json', array( 'X-Test-IP' => '203.0.113.27', 'User-Agent' => '' ) );
-t( 'empty User-Agent still applies on site files: 403', 403 === $code, (string) $code );
+t( 'empty User-Agent on /.well-known/: not refused (3.11)', 403 !== $code, (string) $code );
+$code = req( '/favicon-32x32.png', array( 'X-Test-IP' => '203.0.113.27', 'User-Agent' => '' ) );
+t( 'empty User-Agent still applies on the other site files: 403', 403 === $code, (string) $code );
 $code = req( $page, array( 'X-Test-IP' => '203.0.113.28', 'User-Agent' => $plain ) );
 t( 'a page without Accept-Language: 403 as before', 403 === $code, (string) $code );
 $code = req( $page, array( 'X-Test-IP' => '203.0.113.28', 'User-Agent' => $plain, 'Accept-Language' => 'el' ) );

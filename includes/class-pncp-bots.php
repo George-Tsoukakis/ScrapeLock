@@ -771,8 +771,25 @@ final class PNCP_Bots {
 		$plugin_bot = PNCP_Plugin_Bots::match( $ua, $ip );
 		$allowed_ua = '' !== $ua && ( self::allow_list_match( $ua, $ip, $s ) || self::ua_in_list( $ua, PNCP_Options::allowed_ai_search() ) || null !== $plugin_bot );
 
+		// 3.10: the files a site publishes about itself (/.well-known/…, favicon, apple-touch-icon, the web app
+		// manifest, ads.txt), read with GET / HEAD at their exact addresses. They are fetched by services and by
+		// the operating system, never by a browser tab (Android's app links check, Chrome's prefetch proxy, iOS
+		// passkeys and home-screen icons): the "looks like a bot" checks below skip them. The bot list, the
+		// limits and the attack checks still apply.
+		$metadata = 'page' === $context && self::is_metadata_request();
+		// 3.11: /.well-known/* also without a User-Agent, and the services that read it (well_known_agents(): Google's
+		// app links check, Chrome's prefetch proxy, Apple's passkeys, OneSignal) count as always allowed there, also
+		// on sites whose "Always allowed" list was saved before they were in it.
+		$well_known = $metadata && self::is_well_known_request();
+		if ( $well_known && ! $allowed_ua && '' !== $ua && self::ua_in_list( $ua, self::well_known_agents() ) ) {
+			$allowed_ua = true;
+		}
+		// 3.11: an address on Google's or Apple's official lists is never refused by the header checks (no
+		// User-Agent, "Browsers only", headless): their fetchers never send browser headers.
+		$official_ip = $per_ip && self::is_google_or_apple_ip( $ip );
+
 		if ( ! empty( $s['block_bots'] ) && ! $allowed_ua ) {
-			if ( '' === trim( $ua ) && ! empty( $s['block_empty_ua'] ) ) {
+			if ( '' === trim( $ua ) && ! empty( $s['block_empty_ua'] ) && ! $well_known && ! $official_ip ) {
 				return self::verdict( 403, 'empty_ua', $ip );
 			}
 			if ( '' !== $ua && self::ua_in_list( $ua, PNCP_Options::blocked_agents( $s ) ) ) {
@@ -813,24 +830,17 @@ final class PNCP_Bots {
 		// Mode turns that check on during the very attack that uses up the budget. The limits still apply to it.
 		$unverified_crawler = '' !== $family && $per_ip && self::$verify_inconclusive;
 
-		// 3.10: the files a site publishes about itself (/.well-known/…, favicon, apple-touch-icon, the web app
-		// manifest, ads.txt), read with GET / HEAD at their exact addresses. They are fetched by services and by
-		// the operating system, never by a browser tab (Android's app links check, Chrome's prefetch proxy, iOS
-		// passkeys and home-screen icons): the "looks like a bot" checks below skip them. The bot list, the
-		// limits and the attack checks still apply.
-		$metadata = 'page' === $context && self::is_metadata_request();
-
 		// Every browser sends Accept-Language and "Mozilla/" in the User-Agent; most scripts do not.
 		// Not on wc-ajax: some payment gateways / extensions call them server-side, without Accept-Language.
 		// 3.10: never for an address on Google's official lists (its crawlers, special crawlers and user-triggered
 		// fetchers): those never send browser headers, whatever their User-Agent.
-		if ( ! empty( $s['require_browser_headers'] ) && ! $allowed_ua && ! $feed && ! $unverified_crawler && ! $metadata && in_array( $context, array( 'page', 'search' ), true ) && ! self::is_wc_ajax() && '' === self::wc_admin_ajax_action() && ! self::looks_like_browser( $ua ) && ! ( $per_ip && PNCP_Ip::in_any( $ip, PNCP_Ip::list_of( 'google' ) ) ) ) {
+		if ( ! empty( $s['require_browser_headers'] ) && ! $allowed_ua && ! $feed && ! $unverified_crawler && ! $metadata && in_array( $context, array( 'page', 'search' ), true ) && ! self::is_wc_ajax() && '' === self::wc_admin_ajax_action() && ! self::looks_like_browser( $ua ) && ! $official_ip ) {
 			return self::verdict( 403, 'no_browser', $ip );
 		}
 
 		// Headless and fake browsers: what the browser itself sends does not match the User-Agent.
 		// Not for anyone claiming to be a search engine: those are verified (or blocked as fake) above.
-		if ( ! empty( $s['block_headless'] ) && ! $allowed_ua && ! $feed && ! $metadata && '' === $family && in_array( $context, array( 'page', 'search' ), true ) && ! self::is_wc_ajax() && '' === self::wc_admin_ajax_action() ) {
+		if ( ! empty( $s['block_headless'] ) && ! $allowed_ua && ! $feed && ! $metadata && ! $official_ip && '' === $family && in_array( $context, array( 'page', 'search' ), true ) && ! self::is_wc_ajax() && '' === self::wc_admin_ajax_action() ) {
 			$fake = self::fake_browser( $ua );
 			if ( '' !== $fake ) {
 				return self::verdict( 403, $fake, $ip );
@@ -1855,6 +1865,42 @@ final class PNCP_Bots {
 			return false;
 		}
 		return PNCP_Paths::is_site_metadata( $path );
+	}
+
+	/**
+	 * 3.11: is this a metadata request (is_metadata_request()) under /.well-known/?
+	 *
+	 * @param string|null $path Path relative to the site (null = this request).
+	 * @return bool
+	 */
+	public static function is_well_known_request( $path = null ) {
+		if ( null === $path ) {
+			$path = PNCP_Private_Urls::relative_path( '/' . ltrim( self::request_path(), '/' ) );
+		}
+		return 0 === strpos( strtolower( (string) $path ), '/.well-known/' ) && self::is_metadata_request( $path );
+	}
+
+	/**
+	 * 3.11: the services that read /.well-known/* (Digital Asset Links, Chrome's private prefetch proxy, Apple's
+	 * passkeys / associated domains, OneSignal): always allowed there, whatever the "Always allowed" list holds.
+	 * Filter `pncp_well_known_agents`.
+	 *
+	 * @return string[]
+	 */
+	public static function well_known_agents() {
+		$agents = apply_filters( 'pncp_well_known_agents', array( 'GoogleAssociationService', 'Chrome Privacy Preserving Prefetch Proxy', 'AuthenticationServices', 'OneSignal' ) );
+		return array_values( array_filter( array_map( 'strval', is_array( $agents ) ? $agents : array() ) ) );
+	}
+
+	/**
+	 * 3.11: is the address on Google's (crawlers, special crawlers, user-triggered fetchers) or Apple's official
+	 * list?
+	 *
+	 * @param string $ip IP.
+	 * @return bool
+	 */
+	public static function is_google_or_apple_ip( $ip ) {
+		return '' !== (string) $ip && ( PNCP_Ip::in_any( $ip, PNCP_Ip::list_of( 'google' ) ) || PNCP_Ip::in_any( $ip, PNCP_Ip::list_of( 'apple' ) ) );
 	}
 
 	/**

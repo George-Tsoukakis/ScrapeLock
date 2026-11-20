@@ -360,6 +360,11 @@ final class PNCP_Precheck {
 			'bots'            => self::bot_needles( $s ),
 			'empty_ua'        => ! empty( $s['block_bots'] ) && ! empty( $s['block_empty_ua'] ),
 			'allow_ua'        => self::allow_entries( $s ),
+			// 3.11: /.well-known/*: the services that read it count as allowed there (PNCP_Bots::well_known_agents()),
+			// and an empty User-Agent is not refused there, nor from Google's or Apple's official addresses (their
+			// sets in crawlers.json, at these positions).
+			'wk_agents'       => array_values( array_filter( array_map( 'strtolower', PNCP_Bots::well_known_agents() ) ) ),
+			'official'        => self::official_sets(),
 			// 3.4.3: the stricter limit of visitors who have not passed the human check (see human()).
 			'human'           => self::human( $s ),
 		);
@@ -563,7 +568,28 @@ final class PNCP_Precheck {
 			$ips    = '' !== $def['list'] ? PNCP_Ip::list_of( $def['list'] ) : array();
 			$sets[] = $ips ? self::set( $ips ) : null;
 		}
+		// 3.11: Apple's list after the families (its crawler is verified by DNS, so it has no family list).
+		$apple  = PNCP_Ip::list_of( 'apple' );
+		$sets[] = $apple ? self::set( $apple ) : null;
 		return (string) wp_json_encode( $sets, JSON_UNESCAPED_SLASHES ) . "\n";
+	}
+
+	/**
+	 * 3.11: the positions in crawlers.json of Google's list and of Apple's (written last by crawlers_json()).
+	 *
+	 * @return int[]
+	 */
+	private static function official_sets() {
+		$out = array();
+		$i   = 0;
+		foreach ( PNCP_Bots::crawler_families() as $def ) {
+			if ( 'google' === $def['list'] ) {
+				$out[] = $i;
+			}
+			++$i;
+		}
+		$out[] = $i; // Apple.
+		return $out;
 	}
 
 	/**

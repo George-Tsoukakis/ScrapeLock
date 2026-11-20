@@ -375,6 +375,68 @@ t( 'A2 HTTP: another User-Agent with the same bot list line: 403 in the early ch
 settings( array( 'early_mode' => 0 ) );
 PNCP_Early::sync();
 
+/* ---------- A3. /.well-known/ and Google's / Apple's fetchers ---------- */
+$lists_saved = array(
+	'google' => get_option( 'pncp_ip_lists_google', null ),
+	'apple'  => get_option( 'pncp_ip_lists_apple', null ),
+);
+PNCP_Ip::store_list( 'google', array( '66.249.64.0/19', '74.125.0.0/16' ) );
+PNCP_Ip::store_list( 'apple', array( '17.58.0.0/16' ) );
+PNCP_Ip::reset();
+$passkey_ua = 'com.apple.AuthenticationServicesCore.AuthenticationServicesAgent/26.1 CFNetwork/3860.200.71 Darwin/25.1.0';
+as_request( '127.0.0.1', '', array( 'HTTP_X_REAL_IP' => $other_ip ), '/.well-known/assetlinks.json' );
+t( 'A3: /.well-known/assetlinks.json without a User-Agent: passes (block_empty_ua on)', 'pass' === verdict(), verdict() );
+as_request( '127.0.0.1', '', array( 'HTTP_X_REAL_IP' => $other_ip ), '/' );
+t( 'A3: a page without a User-Agent: 403 empty_ua as before', '403 empty_ua' === verdict(), verdict() );
+$_SERVER['REQUEST_METHOD'] = 'POST';
+$_SERVER['REQUEST_URI']    = '/.well-known/assetlinks.json';
+PNCP_Ip::reset();
+t( 'A3: a POST to /.well-known/ without a User-Agent: still 403', '403 empty_ua' === verdict(), verdict() );
+as_request( '127.0.0.1', $passkey_ua, array( 'HTTP_X_REAL_IP' => $other_ip ), '/.well-known/passkey-endpoints' );
+t( 'A3: Apple\'s passkeys agent, no Accept-Language: passes', 'pass' === verdict(), verdict() );
+settings( array( 'bot_list' => $saved['bot_list'] . "\nCFNetwork\nAssociationService\nPrefetch Proxy" ) );
+as_request( '127.0.0.1', $passkey_ua, array( 'HTTP_X_REAL_IP' => $other_ip ), '/.well-known/passkey-endpoints' );
+t( 'A3: ... also with a bot list line that matches it (AuthenticationServices is allowed on /.well-known/)', 'pass' === verdict(), verdict() );
+as_request( '127.0.0.1', 'GoogleAssociationService', array( 'HTTP_X_REAL_IP' => $other_ip ), '/.well-known/assetlinks.json' );
+t( 'A3: GoogleAssociationService (off Google\'s list) on assetlinks.json with a matching bot list line: passes', 'pass' === verdict(), verdict() );
+as_request( '127.0.0.1', 'GoogleAssociationService', array( 'HTTP_X_REAL_IP' => $other_ip ), '/' );
+t( 'A3: ... the same on a page: the bot list applies (403 bot_ua)', '403 bot_ua' === verdict(), verdict() );
+as_request( '127.0.0.1', 'Chrome Privacy Preserving Prefetch Proxy', array( 'HTTP_X_REAL_IP' => $other_ip ), '/.well-known/traffic-advice' );
+t( 'A3: Chrome Privacy Preserving Prefetch Proxy on traffic-advice: passes', 'pass' === verdict(), verdict() );
+as_request( '127.0.0.1', 'OneSignal/1.0', array( 'HTTP_X_REAL_IP' => $other_ip ), '/.well-known/apple-app-site-association' );
+t( 'A3: OneSignal on /.well-known/: passes', 'pass' === verdict(), verdict() );
+settings( array( 'bot_list' => $saved['bot_list'] ) );
+// Google's and Apple's official addresses: never refused by the header checks.
+as_request( '127.0.0.1', '', array( 'HTTP_X_REAL_IP' => '74.125.10.1' ), '/' );
+t( 'A3: Google address, no User-Agent, a page: passes the header checks', 'pass' === verdict(), verdict() );
+as_request( '127.0.0.1', 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Mobile Safari/537.36', array( 'HTTP_X_REAL_IP' => '74.125.10.1', 'HTTP_SEC_CH_UA' => '"HeadlessChrome";v="141"' ), '/' );
+t( 'A3: Google address, headless client hints: not refused as headless', 'pass' === verdict(), verdict() );
+as_request( '127.0.0.1', '', array( 'HTTP_X_REAL_IP' => '17.58.1.1' ), '/' );
+t( 'A3: Apple address, no User-Agent: passes', 'pass' === verdict(), verdict() );
+as_request( '127.0.0.1', 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko)', array( 'HTTP_X_REAL_IP' => '17.58.1.1' ), '/' );
+t( 'A3: Apple address, no Accept-Language: passes "Browsers only"', 'pass' === verdict(), verdict() );
+as_request( '127.0.0.1', 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko)', array( 'HTTP_X_REAL_IP' => '17.59.1.1' ), '/' );
+t( 'A3: the same from an address off the lists: 403 no_browser as before', '403 no_browser' === verdict(), verdict() );
+// Early check (unit).
+settings( array( 'early_mode' => 1 ) );
+as_request( '127.0.0.1', '', array( 'HTTP_X_REAL_IP' => $other_ip ), '/.well-known/assetlinks.json' );
+t( 'A3 early check: /.well-known/ without a User-Agent passes', null === PNCP_Early::check(), wp_json_encode( PNCP_Early::check() ) );
+as_request( '127.0.0.1', '', array( 'HTTP_X_REAL_IP' => '17.58.1.1' ), '/' );
+t( 'A3 early check: Apple address without a User-Agent passes', null === PNCP_Early::check(), wp_json_encode( PNCP_Early::check() ) );
+settings( array( 'bot_list' => $saved['bot_list'] . "\nCFNetwork" ) );
+as_request( '127.0.0.1', $passkey_ua, array( 'HTTP_X_REAL_IP' => $other_ip ), '/.well-known/passkey-endpoints' );
+t( 'A3 early check: the passkeys agent with a matching bot list line passes on /.well-known/', null === PNCP_Early::check(), wp_json_encode( PNCP_Early::check() ) );
+as_request( '127.0.0.1', $passkey_ua, array( 'HTTP_X_REAL_IP' => $other_ip ), '/' );
+$e = PNCP_Early::check();
+t( 'A3 early check: ... but not on a page (403 bot_ua)', is_array( $e ) && 'bot_ua' === $e[1], wp_json_encode( $e ) );
+PNCP_Early::sync();
+list( $code, $h ) = req( '/.well-known/assetlinks.json', via_cdn( $other_ip, '' ) );
+t( 'A3 HTTP: /.well-known/assetlinks.json without a User-Agent: not refused (early check and WordPress)', 403 !== $code && false !== strpos( $h, 'x-test-muplugins-loaded' ), $code . ' ' . $h );
+list( $code, $h ) = req( '/.well-known/passkey-endpoints', via_cdn( $other_ip, $passkey_ua ) );
+t( 'A3 HTTP: the passkeys agent, bot list line, no browser headers: not refused', 403 !== $code, (string) $code );
+settings( array( 'early_mode' => 0, 'bot_list' => $saved['bot_list'] ) );
+PNCP_Early::sync();
+
 /* ---------- The pre-cache check (stand-in page cache) ---------- */
 file_put_contents( $config_file, "<?php\ndefine( 'WP_CACHE', true ); // test cache\n" . substr( $original, 6 ) );
 file_put_contents( $cache_file, "<?php\nif ( isset( \$_SERVER['REQUEST_URI'] ) && 0 === strpos( \$_SERVER['REQUEST_URI'], '/cached-page/' ) ) {\n\theader( 'X-Test-Cache: HIT' );\n\techo 'CACHED PAGE';\n\texit;\n}\n" );
@@ -396,7 +458,8 @@ list( $code ) = req( '/cached-page/', via_cdn( '198.51.100.73', '' ) );
 t( 'A1 pre-cache: no User-Agent from another address: 403', 403 === $code, (string) $code );
 
 // A2: the SaaS on cached pages: the bot list line and the human check's stricter limit do not apply to it.
-settings( array( 'human_check' => 1, 'rate_limit_unverified' => 1, 'rate_limit' => 20 ) );
+settings( array( 'human_check' => 1, 'rate_limit_unverified' => 1, 'rate_limit' => 20, 'bot_list' => $saved['bot_list'] . "\nwp-rocket.me/bot" ) );
+activate_plugin( 'wp-rocket/wp-rocket.php', '', false, false );
 PNCP_Precheck::sync();
 sleep( 3 );
 same_minute();
@@ -409,6 +472,34 @@ sleep( 3 );
 $c = codes( '/cached-page/', via_cdn( '198.51.100.76', $saas ), 1 );
 t( 'A2 pre-cache: WP Rocket deactivated: the SaaS is refused by the bot list line again', array( 403 ) === $c, implode( ',', $c ) );
 settings( array( 'human_check' => 0, 'rate_limit_unverified' => 0, 'rate_limit' => 3, 'bot_list' => $saved['bot_list'] ) );
+PNCP_Precheck::sync();
+sleep( 3 );
+
+// A3 on the pre-cache check.
+settings( array( 'bot_list' => $saved['bot_list'] . "\nCFNetwork" ) );
+PNCP_Precheck::sync(); // Also crawlers.json with Google's and Apple's lists.
+sleep( 3 );
+list( $code ) = req( '/.well-known/assetlinks.json', via_cdn( '198.51.100.77', '' ) );
+t( 'A3 pre-cache: /.well-known/assetlinks.json without a User-Agent: not refused', 403 !== $code, (string) $code );
+list( $code ) = req( '/.well-known/passkey-endpoints', via_cdn( '198.51.100.77', $passkey_ua ) );
+t( 'A3 pre-cache: the passkeys agent with a matching bot list line: not refused on /.well-known/', 403 !== $code, (string) $code );
+list( $code ) = req( '/cached-page/', via_cdn( '198.51.100.77', $passkey_ua ) );
+t( 'A3 pre-cache: ... but refused on a page (bot list)', 403 === $code, (string) $code );
+list( $code ) = req( '/cached-page/', via_cdn( '17.58.2.2', '' ) );
+t( 'A3 pre-cache: Apple address without a User-Agent: 200', 200 === $code, (string) $code );
+list( $code ) = req( '/cached-page/', via_cdn( '74.125.2.2', '' ) );
+t( 'A3 pre-cache: Google address without a User-Agent: 200', 200 === $code, (string) $code );
+list( $code ) = req( '/cached-page/', via_cdn( '17.59.2.2', '' ) );
+t( 'A3 pre-cache: another address without a User-Agent: 403', 403 === $code, (string) $code );
+settings( array( 'bot_list' => $saved['bot_list'] ) );
+foreach ( $lists_saved as $name => $list ) {
+	if ( null === $list ) {
+		delete_option( 'pncp_ip_lists_' . $name );
+	} else {
+		update_option( 'pncp_ip_lists_' . $name, $list );
+	}
+}
+PNCP_Ip::reset();
 PNCP_Precheck::sync();
 sleep( 3 );
 

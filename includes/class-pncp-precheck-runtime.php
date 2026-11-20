@@ -260,8 +260,14 @@ final class PNCP_Precheck_Runtime {
 		}
 		// 3.4.3: the bot list (and an empty User-Agent), as the normal check, unless "always allowed".
 		$allowed = self::ua_allowed( $c, $ua, $ip, $reliable );
+		// 3.11: /.well-known/*, as the normal check: its services count as allowed there, and no User-Agent is no
+		// reason to refuse it; nor from an address on Google's or Apple's official lists.
+		$well_known = self::is_well_known( $c );
+		if ( ! $allowed && $well_known && '' !== $ua && ! empty( $c['wk_agents'] ) && self::ua_in( $ua, array_filter( array_map( 'strval', (array) $c['wk_agents'] ) ) ) ) {
+			$allowed = true;
+		}
 		if ( ! $allowed ) {
-			if ( '' === trim( $ua ) && ! empty( $c['empty_ua'] ) ) {
+			if ( '' === trim( $ua ) && ! empty( $c['empty_ua'] ) && ! $well_known && ! ( $per_ip && self::official_ip( $c, $ip ) ) ) {
 				return array( 403, 'empty_ua', $ip );
 			}
 			if ( '' !== $ua && ! empty( $c['bots'] ) && self::ua_listed( $ua, (array) $c['bots'] ) ) {
@@ -890,6 +896,44 @@ final class PNCP_Precheck_Runtime {
 			}
 		}
 		return true;
+	}
+
+	/**
+	 * 3.11: a GET / HEAD of a file under /.well-known/ (relative to the home path), as PNCP_Bots::is_well_known_request()
+	 * sees it: letters, digits, dots, hyphens, underscores and slashes only, no "..", no empty part.
+	 *
+	 * @param array<string, mixed> $c Configuration.
+	 * @return bool
+	 */
+	public static function is_well_known( $c ) {
+		if ( ! in_array( self::method(), array( 'GET', 'HEAD' ), true ) ) {
+			return false;
+		}
+		$uri  = isset( $_SERVER['REQUEST_URI'] ) ? (string) $_SERVER['REQUEST_URI'] : '/';
+		$path = '/' . ltrim( rawurldecode( (string) parse_url( $uri, PHP_URL_PATH ) ), '/' );
+		$home = isset( $c['home'] ) ? (string) $c['home'] : '';
+		if ( '' !== $home && 0 === stripos( $path, $home . '/' ) ) {
+			$path = substr( $path, strlen( $home ) );
+		}
+		$path = strtolower( $path );
+		return 0 === strpos( $path, '/.well-known/' ) && false === strpos( $path, '..' ) && false === strpos( $path, '//' ) && ! preg_match( '#[^a-z0-9._/-]|/$|\.(?:php[0-9]?|phtml|phar)$#', $path );
+	}
+
+	/**
+	 * 3.11: is the address on Google's or Apple's official list (crawlers.json, the positions in "official")?
+	 *
+	 * @param array<string, mixed> $c  Configuration.
+	 * @param string               $ip IP.
+	 * @return bool
+	 */
+	public static function official_ip( $c, $ip ) {
+		foreach ( isset( $c['official'] ) ? (array) $c['official'] : array() as $i ) {
+			$set = self::crawler_set( $c, (int) $i );
+			if ( is_array( $set ) && isset( $set[1] ) && self::in_any( $ip, $set ) ) {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	/**

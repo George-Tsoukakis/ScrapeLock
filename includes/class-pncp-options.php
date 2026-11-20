@@ -510,6 +510,13 @@ final class PNCP_Options {
 				'WP Umbrella',
 				'Freshping',
 				'Uptime-Kuma',
+				// The services that read /.well-known/* (since 3.11, new installs only; existing sites get them
+				// there through PNCP_Bots::well_known_agents()): Android app links, Chrome's private prefetch proxy,
+				// Apple's passkeys / associated domains, OneSignal.
+				'GoogleAssociationService',
+				'Chrome Privacy Preserving Prefetch Proxy',
+				'AuthenticationServices',
+				'OneSignal',
 			)
 		);
 	}
