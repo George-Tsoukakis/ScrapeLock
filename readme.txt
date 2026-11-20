@@ -4,7 +4,7 @@ Tags: ai crawlers, anti-scraping, bot protection, rate limit, content protection
 Requires at least: 6.2
 Tested up to: 7.2
 Requires PHP: 7.4
-Stable tag: 3.11.0
+Stable tag: 3.12.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -87,7 +87,8 @@ Whatever a visitor sees has already reached their device, so nothing stops a det
 * Settings that explain themselves: rejected lines are named, unsaved changes flagged, defaults labelled, options that may affect visitors or SEO tagged.
 * Presets (Balanced, Strict, Maximum) with undo, settings export and import, and a block log with a 24-hour summary and automatic deletion.
 * **3.7:** visitors from AI assistants (ChatGPT, Perplexity, Claude, Gemini…) per assistant and page, counted on your server without personal data.
-* WP-CLI: `wp scrapelock status`, `block`, `unblock`, `blocked`, `emergency`, `log`, `check --ip=<ip>` (what ScrapeLock would answer, without side effects), `settings`, `lockdown status`, `reputation`, `crowdsec`, `ai-referrals`, and in 3.8 `attacks`, `attack-report`, `login`, `harden`, `bunny` and `stealth`.
+* **Traffic (3.12):** every request, from the Bunny CDN logs, your web server's access log or WordPress itself: User-Agents by family, pages answering 404 or 5xx with the links that lead there, visitors, CSV and email alerts. Kept only in your database; off until you start it.
+* WP-CLI: `wp scrapelock status`, `block`, `unblock`, `blocked`, `emergency`, `log`, `check --ip=<ip>` (what ScrapeLock would answer, without side effects), `settings`, `lockdown status`, `reputation`, `crowdsec`, `ai-referrals`, in 3.8 `attacks`, `attack-report`, `login`, `harden`, `bunny` and `stealth`, and in 3.12 `traffic`.
 * Abilities API (WordPress 6.9+) for administrators: read the summary, block or unblock an IP and start Emergency Mode from an AI agent or MCP client. None of them unlocks Lockdown.
 
 = On the page and images =
@@ -151,7 +152,7 @@ Optional blocking at the CDN (off by default) uses the API of the CDN you choose
 
 **Bunny CDN, deeper (3.8, off until you use it).** With the Bunny CDN connection of "Blocking at the CDN" (or a pull zone ID and API key entered in the Bunny card), and your API key:
 
-* **Bunny CDN logging API (logging.bunnycdn.com)** – only when "Import attacks from Bunny CDN's logs" is on: every 15 minutes the site downloads the new lines of its own pull zone's log, from https://logging.bunnycdn.com/DATE/PULL_ZONE_ID.log. Nothing about your visitors is sent; the log Bunny returns contains your visitors' IPs, addresses asked for, referrers, User-Agents and countries. Only attack-looking lines are kept. Provided by BunnyWay d.o.o. (bunny.net): [Terms of service](https://bunny.net/tos/), [Privacy policy](https://bunny.net/privacy/).
+* **Bunny CDN logging API (logging.bunnycdn.com)** – only when "Import attacks from Bunny CDN's logs" is on: every 15 minutes the site downloads the new lines of its own pull zone's log, from https://logging.bunnycdn.com/DATE/PULL_ZONE_ID.log. Nothing about your visitors is sent; the log Bunny returns contains your visitors' IPs, addresses asked for, referrers, User-Agents and countries. Only attack-looking lines are kept, unless Traffic collects (3.12): then every line is kept in your own database for the days you choose. Provided by BunnyWay d.o.o. (bunny.net): [Terms of service](https://bunny.net/tos/), [Privacy policy](https://bunny.net/privacy/).
 * **Bunny CDN API (api.bunny.net)** – when Bunny CDN is connected: reads the pull zone (https://api.bunny.net/pullzone/PULL_ZONE_ID: logging status, Edge Rules); when you click "Lock at Bunny" or "Turn on logging at Bunny" it creates, updates or deletes Edge Rules made by ScrapeLock (URL patterns, a description starting with "ScrapeLock:", and for the login page the IPs administrators used in the last 30 days) or turns logging on. Same provider and terms as above.
 
 Vulnerable points and Stealth (3.8) only request the site's own pages and files, from the site itself (loopback), to check what a visitor gets. The weekly attack report and the sign-in protection's emails go through the site's own wp_mail().
@@ -366,6 +367,16 @@ No, on purpose: only an app code, a recovery code or the SCRAPELOCK_UNLOCK line 
 
 == Changelog ==
 
+= 3.12.0 =
+* New: Traffic tab (Records → Traffic), off until "Start collecting". Every request the site answers, from the Bunny CDN logs while their import is on (they include the pages served from the CDN cache), else the web server's access log (Nginx or Apache "combined" format, rotated files included, with "Test this path"), else the pages WordPress serves itself. Only one source is counted at a time, so no request is counted twice.
+* New: views for the requests over time, the User-Agents by family (browsers, verified and fake search engines, AI bots, SEO tools, link previews, scripts…), problem URLs (404 with the links that lead there, a link on your own site marked as the one to fix; 5xx, redirects, pages not served from the cache, the largest and slowest), visitors with their country and block status, and every single request with "Export CSV". Every filter is in the address, so a view can be bookmarked.
+* New: from a User-Agent, "Block this User-Agent" or "Always allow", after a confirmation that shows the exact line added and warns for search engines and browsers; the settings are saved under "Earlier versions" first, with Undo. Your own browser is never blocked.
+* New: email alerts about unusual traffic (server errors or pages not found far above the usual, a new heavy User-Agent, a source that stopped), at most one of each kind every 6 hours; a Traffic part in the weekly attack report and the dashboard widget, and a Site Health test while it collects.
+* New: `wp scrapelock traffic` (status, overview, top, problems, raw, export, purge, run, test-path).
+* Privacy: everything stays in the site's database. Single requests are kept 3 days by default (1 to 14, at most one million), the daily figures 90 days (7 to 365). With "Masked" IPs the last part of every address is removed, also from the addresses stored before. Signed-in administrators, wp-admin, AJAX, cron and the site's requests to itself are never recorded. On a network only a network administrator may set or test the access log.
+* Performance: with a million requests stored every view answers in a few seconds (a covering index, status filters over long periods from the daily figures, one pass for a User-Agent, path or IP).
+* Greek translation of the new texts.
+
 = 3.11.0 =
 * Fix: the site's own requests through the CDN (Site Health, the Security headers check, cron, cache preloads) got "No browser headers" (403), because behind Bunny the server's public address was not known. The server's addresses (SERVER_ADDR, what the site's names resolve to without CDN addresses, and addresses learned from the site's own signed requests) pass every check, also the early and pre-cache checks and the Vulnerable points log. Never by User-Agent, and only with a visitor IP that can be trusted. The signature is never sent on when such a request is redirected to another host, and a newly learned address reaches the pre-cache check in the same request (Site Health no longer calls it "on but not running" until WP cron runs). Filter `pncp_server_ips`.
 * Fix: the service bots of active plugins (WP-Rocket-SaaS) are also allowed in the pre-cache check, and the early check knows the bots that other plugins add with `pncp_plugin_bots`.
@@ -492,6 +503,9 @@ No, on purpose: only an app code, a recovery code or the SCRAPELOCK_UNLOCK line 
 The changes of 3.5.0 and earlier versions are in changelog.txt in the plugin folder.
 
 == Upgrade Notice ==
+
+= 3.12.0 =
+New Traffic tab: every request from the Bunny CDN logs, the access log or WordPress, with User-Agents, problem URLs, visitors, CSV and email alerts. Off until you press "Start collecting"; nothing is stored or scheduled before. Settings and exports from 3.11 are kept.
 
 = 3.11.0 =
 Fewer false blocks: the site's own requests through the CDN, /.well-known/, static files, plugin service bots and allowed AI search bots. A "For my site" assistant, grouped tabs and shorter help texts. Settings and exports from 3.10 are kept; with "Allow AI search" on, its bots are removed from the bot list once (a saved version is kept).
