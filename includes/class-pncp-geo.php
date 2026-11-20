@@ -386,6 +386,7 @@ final class PNCP_Geo {
 	 *
 	 * @param string                           $out   Records written so far.
 	 * @param array{0:string,1:string,2:string}|null $last  The range being built.
+	 * @param-out array{0:string,1:string,2:string} $last
 	 * @param string                           $start Start.
 	 * @param string                           $end   End.
 	 * @param string                           $code  Country.
