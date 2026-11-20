@@ -372,7 +372,7 @@ $list  = PNCP_Self_Check::entries();
 $entry = isset( $list[0] ) ? $list[0] : array();
 t( 'D: a signed request is noted (side "in")', isset( $entry['side'] ) && 'in' === $entry['side'] && 'ok' === $entry['sig'] && 'passed' === $entry['verdict'], wp_json_encode( $entry ) );
 t( 'D: ... with the host it got, the host it was signed for, the path and where it came from', ORIGIN_HOST === $entry['host'] && $own_host === $entry['sig_host'] && '/private-path/' === $entry['path'] && 'cdn' === $entry['from'], wp_json_encode( $entry ) );
-t( 'D: ... and the id of its nonce (8 digits), as the sending side notes it', explode( '.', $dt )[1] !== $entry['id'] && 0 === strpos( explode( '.', $dt )[1], $entry['id'] ) && 8 === strlen( $entry['id'] ) );
+t( 'D: ... and the id of its signature (8 digits, a hash of the nonce, not part of it), as the sending side notes it', PNCP_Self_Check::request_id( $dt ) === $entry['id'] && 8 === strlen( $entry['id'] ) && false === strpos( explode( '.', $dt )[1], $entry['id'] ), $entry['id'] );
 $json = wp_json_encode( $list );
 t( 'D: privacy: no IP address, User-Agent, query string, cookie or the full nonce in the notes', false === strpos( $json, SERVER ) && false === strpos( $json, EDGE ) && false === strpos( $json, 'ScrapeLock-Selftest' ) && false === strpos( $json, 'email' ) && false === strpos( $json, 'cookievalue' ) && false === strpos( $json, explode( '.', $dt )[1] ) && false === strpos( $json, explode( '.', $dt )[2] ), $json );
 global $wpdb;
@@ -466,7 +466,7 @@ t( 'M HTTP: ... an unreadable one: just "refused"', 403 === $code && 'refused' =
 list( $code, $h ) = req( $home_path, array( 'X-Test-Remote-Addr' => VISITOR, 'User-Agent' => SELF_UA, 'Accept-Language' => 'en', 'Sec-Fetch-Mode' => 'navigate', 'Sec-Fetch-Dest' => 'document', 'Sec-CH-UA' => '"Chromium";v="130"' ) );
 t( 'M HTTP: a visitor who passes gets no X-ScrapeLock header', '' === hdr( $h, 'x-scrapelock' ), $code . ' ' . hdr( $h, 'x-scrapelock' ) );
 $seen = PNCP_Self_Check::entries();
-$hid  = substr( explode( '.', $ht )[1], 0, 8 );
+$hid  = PNCP_Self_Check::request_id( $ht );
 $hits = array();
 foreach ( $seen as $one ) {
 	if ( isset( $one['id'] ) && $hid === $one['id'] ) {
@@ -771,6 +771,19 @@ $origin = 'error';
 delete_transient( PNCP_Self_Check::ROUTE );
 $res = PNCP_Health::test_selfrequest();
 t( 'K: ... critical when the server cannot be reached either', 'critical' === $res['status'], wp_json_encode( $res ) );
+$notes = array_values(
+	array_filter(
+		PNCP_Self_Check::entries(),
+		static function ( $one ) {
+			return 'out' === $one['side'];
+		}
+	)
+);
+$notes = wp_json_encode( $notes );
+t( 'D: the sending side\'s notes keep no address, not even the server\'s (nor the one in a transport error)', false === strpos( $notes, '127.0.0.1' ) && false !== strpos( $notes, 'Failed to connect to [address] port 443' ) && false === strpos( $notes, '"ip"' ), $notes );
+t( 'D: ... while the last self-check\'s own trace names the server\'s address', false !== strpos( (string) wp_json_encode( PNCP_Self_Check::last() ), '127.0.0.1' ) );
+t( 'D: a note without the address in words: "Straight to the server"', 0 === strpos( PNCP_Self_Check::step_line( PNCP_Self_Check::entries()[0] ), 'Straight to the server /' ), PNCP_Self_Check::step_line( PNCP_Self_Check::entries()[0] ) );
+t( 'D: scrub(): addresses and query strings out of a text', 'Failed to connect to [address] port 80 and [address]: /x' === PNCP_Self_Check::scrub( 'Failed to connect to 203.0.113.9 port 80 and [2001:db8::1]: /x?email=a@b.c' ), PNCP_Self_Check::scrub( 'Failed to connect to 203.0.113.9 port 80 and [2001:db8::1]: /x?email=a@b.c' ) );
 remove_filter( 'pre_http_request', $mock, 5 );
 delete_transient( PNCP_Self_Check::ROUTE );
 $tests = PNCP_Health::tests( array( 'direct' => array(), 'async' => array() ) );

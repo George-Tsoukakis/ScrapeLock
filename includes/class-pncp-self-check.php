@@ -259,7 +259,9 @@ final class PNCP_Self_Check {
 	}
 
 	/**
-	 * The first 8 digits of the nonce of this request's signature: the same on the sending side's entry.
+	 * The id of this request's signature: 8 hex digits of a hash of its nonce (never the nonce or part of it, which
+	 * the notes do not keep), the same on the sending side's entry. The pre-cache check makes the same
+	 * (PNCP_Precheck_Runtime::self_id()).
 	 *
 	 * @param string|null $sent The header (null = this request's).
 	 * @return string
@@ -268,7 +270,7 @@ final class PNCP_Self_Check {
 		if ( null === $sent ) {
 			$sent = isset( $_SERVER['HTTP_X_SCRAPELOCK_SIG'] ) ? sanitize_text_field( wp_unslash( $_SERVER['HTTP_X_SCRAPELOCK_SIG'] ) ) : '';
 		}
-		return preg_match( '/^\d{9,11}\.([0-9a-f]{8})/', (string) $sent, $m ) ? $m[1] : '';
+		return preg_match( '/^\d{9,11}\.([0-9a-f]{24})\./', (string) $sent, $m ) ? substr( md5( 'id|' . $m[1] ), 0, 8 ) : '';
 	}
 
 	/**
@@ -301,6 +303,12 @@ final class PNCP_Self_Check {
 	 * @param array<string, mixed> $entry Entry.
 	 */
 	public static function add( $entry ) {
+		if ( isset( $entry['side'] ) && 'out' === $entry['side'] ) {
+			// No address in the notes, not even the server's own: the step's address and any address or query
+			// string in a transport error stay in the trace of run() (option LAST) only.
+			unset( $entry['ip'] );
+			$entry['error'] = isset( $entry['error'] ) ? self::scrub( (string) $entry['error'] ) : '';
+		}
 		self::uncache();
 		$list = get_option( self::LOG, array() );
 		$list = is_array( $list ) ? $list : array();
@@ -311,6 +319,18 @@ final class PNCP_Self_Check {
 		} else {
 			update_option( self::LOG, $list, false );
 		}
+	}
+
+	/**
+	 * A text without IP addresses and query strings (a transport error names the address it could not reach).
+	 *
+	 * @param string $text Text.
+	 * @return string
+	 */
+	public static function scrub( $text ) {
+		$text = (string) preg_replace( '/\?\S*/', '', (string) $text );
+		$text = (string) preg_replace( '/\[?(?:[0-9a-f]{0,4}:){2,7}[0-9a-f]{0,4}\]?|\b\d{1,3}(?:\.\d{1,3}){3}\b/i', '[address]', $text );
+		return substr( $text, 0, 160 );
 	}
 
 	/**
@@ -976,6 +996,9 @@ final class PNCP_Self_Check {
 	public static function step_line( $step ) {
 		/* translators: %s: server address */
 		$via   = 'origin' === $step['via'] ? sprintf( __( 'Straight to the server (%s)', 'scrapelock' ), $step['ip'] ) : __( 'Through the public address', 'scrapelock' );
+		if ( 'origin' === $step['via'] && empty( $step['ip'] ) ) {
+			$via = __( 'Straight to the server', 'scrapelock' ); // A note of the ring buffer, which keeps no address.
+		}
 		$parts = array();
 		if ( '' !== (string) $step['error'] ) {
 			$parts[] = (string) $step['error'];
