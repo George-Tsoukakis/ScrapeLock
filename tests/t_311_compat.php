@@ -93,9 +93,10 @@ register_shutdown_function(
 
 $now     = array_keys( PNCP_Options::defaults() );
 $missing = array_values( array_diff( $keys['defaults'], $now ) );
-$added   = array_values( array_diff( $now, $keys['defaults'] ) );
+// 3.12 adds the Traffic keys (PNCP_Options::new_in_3120()); 3.11 itself added none.
+$added   = array_values( array_diff( $now, $keys['defaults'], array_keys( PNCP_Options::new_in_3120() ) ) );
 t( 'every settings key of 3.10.1 is still in PNCP_Options::defaults() (' . count( $keys['defaults'] ) . ' keys)', ! $missing, implode( ',', $missing ) );
-t( 'no new settings key in 3.11 (' . count( $now ) . ' keys)', ! $added, implode( ',', $added ) );
+t( 'no new settings key in 3.11, only the 3.12 Traffic keys (' . count( $now ) . ' keys)', ! $added, implode( ',', $added ) );
 $public  = PNCP_Settings_Io::public_keys();
 $missing = array_values( array_diff( array_keys( $export['settings'] ), $public ) );
 t( 'every exported setting of 3.10.1 can still be imported (public_keys())', ! $missing, implode( ',', $missing ) );

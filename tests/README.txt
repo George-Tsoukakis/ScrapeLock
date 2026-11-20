@@ -68,6 +68,14 @@ ScrapeLock — δοκιμές σε πραγματικό WordPress (όχι stubs)
                     placeholders / tags, .mo ίδιο με το .po, χωρίς μισές προτάσεις· φορτώνεται από το languages/ του
                     plugin (και όπως στις WordPress 6.2–6.6, με pncp_load_textdomain() στο init), ενώ ένα language pack
                     στο wp-content/languages/plugins/ προηγείται
+  t_traffic.php     3.12: Traffic (PNCP_Traffic), the data layer: settings (path checks, upgrade, export/import),
+                    nothing hooked or stored while off, ~40 User-Agents classified (verified / fake with stored official
+                    lists), Bunny lines through parse_line() and the real import (mocked log API), the server access log
+                    (combined / vhost / Nginx with rt and X-Forwarded-For, cursor, rotation to .1 and .1.gz, budget,
+                    "Test this path" also with open_basedir and a symlink in a child PHP), the WordPress source over HTTP
+                    (404 recorded; off, loopback and admin-ajax not), every query with filters and paging, CSV (formula
+                    injection), the aggregates over a range longer than the raw window, retention, caps, masked IPs,
+                    sources, purge and uninstall (on SQLite the drop-in cannot drop tables: they are emptied)
   t_cli.php         wp scrapelock … μέσα από το πραγματικό wp (χρειάζεται WP_CLI, αλλιώς SKIP)
   t_bunny_rules.php Edge Rules στο Bunny μέσα στα όριά του (το πολύ 5 μοτίβα ανά συνθήκη) με ψεύτικο API που δίνει
                     HTTP 400 όπως το πραγματικό: χωρισμός, κλείδωμα/Remove, rollback, Monitor only, sync, προεπισκόπηση,
