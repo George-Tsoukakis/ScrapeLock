@@ -823,9 +823,9 @@ final class PNCP_Traffic {
 	/* ---------- Source: WordPress ---------- */
 
 	/**
-	 * Should this request be recorded by the WordPress source? Not wp-admin (nor admin-ajax), cron, WP-CLI, the
-	 * REST API used by a signed-in administrator, or the site's own requests to itself (the loopback, or its own
-	 * address through the CDN: PNCP_Server_Ips).
+	 * Should this request be recorded by the WordPress source? Not wp-admin (nor admin-ajax), cron, WP-CLI, a
+	 * signed-in administrator (the pages and the REST API they open while working on the site), or the site's own
+	 * requests to itself (the loopback, or its own address through the CDN: PNCP_Server_Ips).
 	 *
 	 * @return bool
 	 */
@@ -833,7 +833,7 @@ final class PNCP_Traffic {
 		if ( is_admin() || wp_doing_cron() || ( defined( 'WP_CLI' ) && WP_CLI ) || empty( $_SERVER['REQUEST_METHOD'] ) ) {
 			return false;
 		}
-		if ( defined( 'REST_REQUEST' ) && REST_REQUEST && current_user_can( 'manage_options' ) ) {
+		if ( current_user_can( 'manage_options' ) ) {
 			return false;
 		}
 		if ( PNCP_Ip::is_local_request() || PNCP_Server_Ips::is_request() ) {

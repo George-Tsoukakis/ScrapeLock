@@ -89,6 +89,8 @@ ScrapeLock — δοκιμές σε πραγματικό WordPress (όχι stubs)
                     filters, formulas), nonce and manage_options on every action (editor 403, wrong nonce), Block /
                     Always allow write one line after the confirmation and save an earlier version (Undo), search
                     engine and own-browser guards, Test this path, the settings form, Delete, off state, Start collecting
+  t_traffic_sec.php 3.12: the security review of Traffic: the read-only actions (CSV, Test this path) refused while
+                    the site is locked, the WordPress source never records a signed-in administrator
   t_cli.php         wp scrapelock … μέσα από το πραγματικό wp (χρειάζεται WP_CLI, αλλιώς SKIP)
   t_bunny_rules.php Edge Rules στο Bunny μέσα στα όριά του (το πολύ 5 μοτίβα ανά συνθήκη) με ψεύτικο API που δίνει
                     HTTP 400 όπως το πραγματικό: χωρισμός, κλείδωμα/Remove, rollback, Monitor only, sync, προεπισκόπηση,
