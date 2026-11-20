@@ -1419,6 +1419,22 @@ final class PNCP_Ip {
 	}
 
 	/**
+	 * Is the IP on any of these official lists (list_of())?
+	 *
+	 * @param string   $ip    IP.
+	 * @param string[] $names List names (sources()).
+	 * @return bool
+	 */
+	public static function in_lists( $ip, $names ) {
+		foreach ( $names as $name ) {
+			if ( self::in_any( $ip, self::list_of( $name ) ) ) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	/**
 	 * Does the IP belong to any of the addresses/CIDRs?
 	 *
 	 * @param string   $ip     IP.

@@ -1823,12 +1823,7 @@ final class PNCP_Bots {
 	 * @return bool
 	 */
 	public static function is_official_crawler_ip( $ip ) {
-		foreach ( array( 'google', 'bing', 'apple', 'duckduckgo' ) as $list ) { // 3.10: also Applebot and DuckDuckBot.
-			if ( PNCP_Ip::in_any( $ip, PNCP_Ip::list_of( $list ) ) ) {
-				return true;
-			}
-		}
-		return false;
+		return PNCP_Ip::in_lists( $ip, array( 'google', 'bing', 'apple', 'duckduckgo' ) ); // 3.10: also Applebot and DuckDuckBot.
 	}
 
 	/**
@@ -1994,7 +1989,7 @@ final class PNCP_Bots {
 	 * @return bool
 	 */
 	public static function is_google_or_apple_ip( $ip ) {
-		return '' !== (string) $ip && ( PNCP_Ip::in_any( $ip, PNCP_Ip::list_of( 'google' ) ) || PNCP_Ip::in_any( $ip, PNCP_Ip::list_of( 'apple' ) ) );
+		return '' !== (string) $ip && PNCP_Ip::in_lists( $ip, array( 'google', 'apple' ) );
 	}
 
 	/**
