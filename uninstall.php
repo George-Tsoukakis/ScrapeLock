@@ -89,8 +89,10 @@ function pncp_uninstall_site() {
 	delete_option( 'pncp_bunny_login_strict' ); // 3.9: the login lock at Bunny uses the explicit list.
 	delete_option( 'pncp_xmlrpc_use' ); // 3.9: when XML-RPC was last used for real.
 	delete_option( 'pncp_plugin_bots' ); // 3.10: the service bots of plugins the administrator stopped allowing.
+	delete_option( 'pncp_server_ips' ); // 3.11: the server's own addresses (PNCP_Server_Ips).
+	delete_option( 'pncp_server_key' ); // 3.11: the key of the site's signed requests to itself.
 	// Every event of each hook, whatever its arguments (wp_clear_scheduled_hook() only removes the ones without).
-	foreach ( array( 'pncp_refresh_ip_lists', 'pncp_log_cleanup', 'pncp_log_cleanup_more', 'pncp_wm_unmark', 'pncp_edge_sync', 'pncp_integrity_official', 'pncp_integrity_resume', 'pncp_surge_mail', 'pncp_surge_mail_alert', 'pncp_background_purge', 'pncp_upgrade_files', 'pncp_crowdsec_sync', 'pncp_attack_report_weekly', 'pncp_bunny_run', 'pncp_stealth_check', 'pncp_stealth_refresh', 'pncp_stealth_restart' ) as $pncp_hook ) {
+	foreach ( array( 'pncp_refresh_ip_lists', 'pncp_log_cleanup', 'pncp_log_cleanup_more', 'pncp_wm_unmark', 'pncp_edge_sync', 'pncp_integrity_official', 'pncp_integrity_resume', 'pncp_surge_mail', 'pncp_surge_mail_alert', 'pncp_background_purge', 'pncp_upgrade_files', 'pncp_crowdsec_sync', 'pncp_attack_report_weekly', 'pncp_bunny_run', 'pncp_stealth_check', 'pncp_stealth_refresh', 'pncp_stealth_restart', 'pncp_server_ips_changed' ) as $pncp_hook ) {
 		wp_unschedule_hook( $pncp_hook );
 	}
 	// The Lockdown guard (must-use plugin), only if it is ours.

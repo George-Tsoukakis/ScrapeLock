@@ -332,6 +332,8 @@ final class PNCP_Precheck {
 			'cdn_cf'          => self::set( PNCP_Ip::list_of( 'cloudflare' ) ),
 			'cdn_bunny'       => self::set( PNCP_Ip::list_of( 'bunny' ) ),
 			'allow'           => self::set( PNCP_Options::parse_list( $s['allow_ips'] ) ),
+			// 3.11: the server's own addresses (PNCP_Server_Ips): the site's requests to itself through the CDN.
+			'self_ips'        => self::set( PNCP_Server_Ips::ips() ),
 			'block'           => self::set( PNCP_Options::parse_list( $s['block_ips'] ) ),
 			'crawlers'        => $crawlers,
 			'apcu'            => (bool) apply_filters( 'pncp_precheck_apcu', true ),

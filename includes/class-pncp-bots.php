@@ -670,7 +670,9 @@ final class PNCP_Bots {
 		$ip = null !== self::$dry ? (string) self::$dry['ip'] : PNCP_Ip::client_ip();
 
 		// 3.6: the server itself only when the address did not come from far away (PNCP_Ip::is_local_request()).
-		if ( '' === $ip || ( null !== self::$dry ? PNCP_Ip::is_local( $ip ) : PNCP_Ip::is_local_request() ) ) {
+		// 3.11: also its public address, verified, when the site's request to itself came back through the CDN
+		// (PNCP_Server_Ips): Site Health and the "Security headers" check got a 403 from their own site.
+		if ( '' === $ip || ( null !== self::$dry ? PNCP_Ip::is_local( $ip ) || PNCP_Server_Ips::is_server_ip( $ip ) : PNCP_Ip::is_local_request() || PNCP_Server_Ips::is_request() ) ) {
 			return self::pass( 'local' );
 		}
 		// Always-allowed IPs: only if the IP cannot be spoofed (not "trust every proxy").
@@ -2634,7 +2636,7 @@ final class PNCP_Bots {
 	 */
 	private static function should_ban_on_sight( $ip, $seen ) {
 		$s = PNCP_Options::get();
-		if ( '' === $ip || PNCP_Options::user_is_exempt( $s ) || PNCP_Ip::is_local( $ip ) || ! PNCP_Ip::reliable() || self::is_official_crawler_ip( $ip ) ) {
+		if ( '' === $ip || PNCP_Options::user_is_exempt( $s ) || PNCP_Ip::is_local( $ip ) || ! PNCP_Ip::reliable() || self::is_official_crawler_ip( $ip ) || PNCP_Server_Ips::is_request() ) {
 			return false;
 		}
 		if ( PNCP_Ip::in_any( $ip, PNCP_Options::parse_list( $s['allow_ips'] ) ) ) {

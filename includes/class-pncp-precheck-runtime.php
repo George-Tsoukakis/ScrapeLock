@@ -211,7 +211,7 @@ final class PNCP_Precheck_Runtime {
 			return array( 403, 'not_via_cdn', $direct );
 		}
 		$ip = self::client_ip( $c, $reliable );
-		if ( '' === $ip || self::is_local_request( $ip, $reliable ) ) {
+		if ( '' === $ip || self::is_local_request( $ip, $reliable ) || self::is_server_request( $c, $ip, $reliable ) ) {
 			return null;
 		}
 		if ( $reliable && self::in_any( $ip, $c['allow'] ) ) {
@@ -890,6 +890,27 @@ final class PNCP_Precheck_Runtime {
 			}
 		}
 		return true;
+	}
+
+	/**
+	 * 3.11: the server's public address (SERVER_ADDR, or one of the configuration's "self_ips", PNCP_Server_Ips),
+	 * as the visitor IP the trusted proxy or CDN gave: the site's request to itself came back through the CDN.
+	 * Loopback and private addresses only through is_local_request(); never a CDN edge; never when the IP may be
+	 * spoofed.
+	 *
+	 * @param array<string, mixed> $c        Configuration.
+	 * @param string               $ip       The visitor IP from client_ip().
+	 * @param bool                 $reliable The reliability client_ip() gave.
+	 * @return bool
+	 */
+	public static function is_server_request( $c, $ip, $reliable ) {
+		if ( ! $reliable || '' === $ip || false === filter_var( $ip, FILTER_VALIDATE_IP, FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE ) || self::is_cdn( $ip, $c ) ) {
+			return false;
+		}
+		if ( isset( $_SERVER['SERVER_ADDR'] ) && self::normalize_ip( (string) $_SERVER['SERVER_ADDR'] ) === $ip ) {
+			return true;
+		}
+		return isset( $c['self_ips'] ) && is_array( $c['self_ips'] ) && isset( $c['self_ips'][1] ) && self::in_any( $ip, $c['self_ips'] );
 	}
 
 	/**

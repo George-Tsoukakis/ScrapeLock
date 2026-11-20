@@ -6,7 +6,7 @@ PHP=${PHP:-php}
 fail=0
 # Βασικές δοκιμές (και σε SQLite). Οι δοκιμές πραγματικής στοίβας (WooCommerce, WPGraphQL, κανόνες server,
 # cache, ασφάλεια, φορτίο) τρέχουν με FULL=1 σε WordPress με MariaDB/MySQL, Nginx + PHP-FPM και Apache.
-TESTS="t_http t_metadata_paths t_fixes351 t_360 t_watermark t_admin t_precheck t_lockdown t_edge t_private_folders t_cli t_harden_headers t_metadata t_ai_lists t_plugin_bots t_bunny_rules t_site_files"
+TESTS="t_http t_metadata_paths t_fixes351 t_360 t_watermark t_admin t_precheck t_lockdown t_edge t_private_folders t_cli t_harden_headers t_metadata t_ai_lists t_plugin_bots t_bunny_rules t_site_files t_311_pipeline"
 [ "${FULL:-0}" = "1" ] && TESTS="$TESTS t_woocommerce t_graphql_rest t_security t_cache t_server_rules"
 [ "${LOAD:-0}" = "1" ] && TESTS="$TESTS t_load"
 for t in $TESTS; do

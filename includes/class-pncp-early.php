@@ -38,7 +38,7 @@ final class PNCP_Early {
 		// All the files first: a plugin folder that is only partly there (an update copying its files, an
 		// incomplete upload) must not stop the whole site with a fatal error. The normal check decides then.
 		$files = array();
-		foreach ( array( 'options', 'ip', 'log', 'private-urls', 'bots', 'plugin-bots' ) as $name ) {
+		foreach ( array( 'options', 'ip', 'log', 'private-urls', 'bots', 'plugin-bots', 'server-ips' ) as $name ) {
 			$file = $dir . 'includes/class-pncp-' . $name . '.php';
 			if ( ! is_readable( $file ) ) {
 				return;
@@ -111,7 +111,8 @@ final class PNCP_Early {
 		}
 
 		$ip = PNCP_Ip::client_ip();
-		if ( '' === $ip || PNCP_Ip::is_local_request() ) {
+		// 3.11: and the server's public address, when the site's request to itself came back through the CDN.
+		if ( '' === $ip || PNCP_Ip::is_local_request() || PNCP_Server_Ips::is_request() ) {
 			return null;
 		}
 		if ( PNCP_Ip::reliable() && PNCP_Ip::in_any( $ip, PNCP_Options::parse_list( $s['allow_ips'] ) ) ) {
