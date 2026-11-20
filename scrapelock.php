@@ -114,6 +114,7 @@ PNCP_Attack_Report::init(); // The Attacks tab, the weekly email and the dashboa
 PNCP_Hardening::init(); // Vulnerable points.
 PNCP_Plugin_Bots::init(); // 3.10: the service bots of active plugins (WP Rocket and others) are allowed.
 PNCP_Server_Ips::init(); // 3.11: the server's own addresses (the site's requests to itself through the CDN).
+PNCP_Ai_Search_List::init(); // 3.11: "Remove from the list" for allowed AI search bots still in the bot list.
 PNCP_Site_Files::init(); // 3.10.1: apple-touch-icon.png and OneSignalSDKWorker.js in Site Health, Wordfence's address check.
 
 if ( defined( 'WP_CLI' ) && WP_CLI ) {
@@ -319,6 +320,11 @@ function pncp_upgrade() {
 	// redirect): checked again with the public home page at the next visit of the tab.
 	if ( '' !== $from && version_compare( $from, '3.10.0', '<' ) ) {
 		delete_transient( PNCP_Hardening::LIVE );
+	}
+	// 3.11: with "Allow AI search" on, its bots are removed from the stored bot list (once; a saved version is kept
+	// under "Earlier versions"). The training crawlers stay; sites with the option off keep their list.
+	if ( '' !== $from && version_compare( $from, '3.11.0', '<' ) ) {
+		PNCP_Ai_Search_List::migrate_311();
 	}
 	// Autoload: read on every request, without a separate query.
 	add_option( PNCP_Options::EMERGENCY_OPTION, 0, '', true );

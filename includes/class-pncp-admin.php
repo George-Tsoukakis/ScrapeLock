@@ -1318,6 +1318,7 @@ final class PNCP_Admin {
 	private static function tab_bots( $s ) {
 		self::render_cloudflare_hint( $s );
 		PNCP_Plugin_Bots::render_notice_and_form(); // 3.10: before the settings form (the buttons have a form of their own).
+		PNCP_Ai_Search_List::render_notice( $s ); // 3.11: allowed AI search bots still in the bot list.
 		self::section_nav(
 			array(
 				'monitor'    => __( 'Monitor only', 'scrapelock' ),

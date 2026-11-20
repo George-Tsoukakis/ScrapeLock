@@ -388,6 +388,73 @@ final class PNCP_Options {
 	}
 
 	/**
+	 * 3.11: the AI search bots that "Allow AI search" takes out of the bot list, lowercase => true (empty when the
+	 * option is off). The one place that decides the precedence of the setting over the list: blocked_agents()
+	 * uses it, and so can any code that compiles the list for a check of its own (the early and pre-cache checks
+	 * read blocked_agents(), so they get it too).
+	 *
+	 * @param array<string, mixed> $s Settings.
+	 * @return array<string, bool>
+	 */
+	public static function ai_search_skipped( $s ) {
+		if ( empty( $s['allow_ai_search'] ) ) {
+			return array();
+		}
+		$out = array();
+		foreach ( self::ai_search_agents() as $agent ) {
+			$agent = strtolower( trim( (string) $agent ) );
+			if ( '' !== $agent ) {
+				$out[ $agent ] = true;
+			}
+		}
+		return $out;
+	}
+
+	/**
+	 * 3.11: the lines of the stored bot list that are AI search bots let through by "Allow AI search" (as they are
+	 * written in the list). Empty when the option is off: then the list blocks them, as intended.
+	 *
+	 * @param array<string, mixed> $s Settings.
+	 * @return string[]
+	 */
+	public static function ai_search_in_bot_list( $s ) {
+		$skip = self::ai_search_skipped( $s );
+		$out  = array();
+		if ( ! $skip ) {
+			return $out;
+		}
+		foreach ( self::parse_list( isset( $s['bot_list'] ) ? (string) $s['bot_list'] : '' ) as $line ) {
+			if ( isset( $skip[ strtolower( trim( $line ) ) ] ) ) {
+				$out[] = trim( $line );
+			}
+		}
+		return $out;
+	}
+
+	/**
+	 * 3.11: the settings with the allowed AI search bots removed from the bot list (ai_search_in_bot_list()); the
+	 * other lines (training crawlers such as GPTBot, ClaudeBot, CCBot, Google-Extended) stay as they are, in the
+	 * same order. Unchanged settings when there is nothing to remove.
+	 *
+	 * @param array<string, mixed> $s Stored settings.
+	 * @return array<string, mixed>
+	 */
+	public static function without_ai_search_in_bot_list( $s ) {
+		$skip = self::ai_search_skipped( $s );
+		if ( ! $skip || ! isset( $s['bot_list'] ) || ! self::ai_search_in_bot_list( $s ) ) {
+			return $s;
+		}
+		$keep = array();
+		foreach ( preg_split( '/\r\n|\r|\n/', (string) $s['bot_list'] ) as $line ) {
+			if ( ! isset( $skip[ strtolower( trim( $line ) ) ] ) ) {
+				$keep[] = $line;
+			}
+		}
+		$s['bot_list'] = trim( implode( "\n", $keep ) );
+		return $s;
+	}
+
+	/**
 	 * The AI search engines allowed with the current settings (empty if the option is off).
 	 *
 	 * @return string[]
@@ -440,15 +507,21 @@ final class PNCP_Options {
 	 */
 	public static function blocked_agents( $s ) {
 		// 3.6.1: built once per request for the same settings (about 200 names, each lowercased).
-		$memo = is_string( $s['bot_list'] ) ? $s['bot_list'] . "\0" . ( empty( $s['block_archivers'] ) ? '0' : '1' ) . ( empty( $s['block_http_libs'] ) ? '0' : '1' ) . ( empty( $s['block_seo_crawlers'] ) ? '0' : '1' ) : null;
+		// 3.11: "Allow AI search" is part of the key too: its bots are left out of the list (below).
+		$memo = is_string( $s['bot_list'] ) ? $s['bot_list'] . "\0" . ( empty( $s['block_archivers'] ) ? '0' : '1' ) . ( empty( $s['block_http_libs'] ) ? '0' : '1' ) . ( empty( $s['block_seo_crawlers'] ) ? '0' : '1' ) . ( empty( $s['allow_ai_search'] ) ? '0' : '1' ) : null;
 		if ( null !== $memo && null !== self::$agents && $memo === self::$agents[0] ) {
 			return self::$agents[1];
 		}
 		$out = array();
+		// 3.11: with "Allow AI search" on, its bots (ai_search_agents()) are never in the list, also when the stored
+		// bot list still names them (lists saved before 3.11, or typed in again): the setting wins over the list
+		// everywhere the list is used (WordPress, the early and pre-cache checks, the server rules, the Bunny log
+		// import), not only where the allowed ones were already let through first.
+		$skip = self::ai_search_skipped( $s );
 		// 3.7: the site rippers always (with the bot list), the SEO data crawlers with their option.
 		foreach ( array_merge( self::parse_list( $s['bot_list'] ), PNCP_Bots::known_ai_agents(), PNCP_Bots::ripper_agents(), empty( $s['block_archivers'] ) ? array() : PNCP_Bots::archive_agents(), empty( $s['block_seo_crawlers'] ) ? array() : PNCP_Bots::seo_agents(), empty( $s['block_http_libs'] ) ? array() : self::http_library_agents() ) as $agent ) {
 			$agent = trim( (string) $agent );
-			if ( '' !== $agent && '=' !== $agent ) {
+			if ( '' !== $agent && '=' !== $agent && ! isset( $skip[ strtolower( $agent ) ] ) ) {
 				$out[ strtolower( $agent ) ] = $agent;
 			}
 		}
