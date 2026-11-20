@@ -29,6 +29,19 @@ require $wp_dir . '/wp-load.php';
 $wp_cli = (string) getenv( 'WP_CLI' );
 
 $fails = 0;
+/**
+ * Runs an upgrade step as the plugin does, without the SQLite drop-in's own "Deprecated" notices and database
+ * errors inside dbDelta() (CI runs on SQLite; they are the drop-in's, not the plugin's), as t_admin.php does.
+ */
+function quiet( $step ) {
+	global $wpdb;
+	$er       = error_reporting( error_reporting() & ~E_DEPRECATED );
+	$suppress = $wpdb->suppress_errors( true );
+	call_user_func( $step );
+	$wpdb->suppress_errors( $suppress );
+	error_reporting( $er );
+}
+
 function t( $label, $ok, $extra = '' ) {
 	global $fails;
 	if ( ! $ok ) {
@@ -156,7 +169,7 @@ t( 'D1 new-install defaults: traffic_ip_mode "masked"', 'masked' === PNCP_Option
 delete_option( PNCP_OPTION );
 delete_option( 'pncp_version' );
 PNCP_Options::flush();
-pncp_upgrade();
+quiet( 'pncp_upgrade' );
 no_file_sync();
 t( 'D1 a brand-new install stores traffic_ip_mode "masked" (and Traffic off)', 'masked' === stored()['traffic_ip_mode'] && empty( stored()['traffic'] ), wp_json_encode( array_intersect_key( stored(), array_flip( array( 'traffic', 'traffic_ip_mode' ) ) ) ) );
 foreach ( array( '3.11.2', '3.12.0' ) as $from ) {
@@ -169,7 +182,7 @@ foreach ( array( '3.11.2', '3.12.0' ) as $from ) {
 	update_option( PNCP_OPTION, $old );
 	update_option( 'pncp_version', $from );
 	PNCP_Options::flush();
-	pncp_upgrade();
+	quiet( 'pncp_upgrade' );
 	no_file_sync();
 	t( "D1 upgrade from $from: traffic_ip_mode \"full\" as the site had it (no migration)", 'full' === stored()['traffic_ip_mode'], (string) stored()['traffic_ip_mode'] );
 }
@@ -182,7 +195,7 @@ $saved_collecting['traffic_ip_mode'] = 'full';
 update_option( PNCP_OPTION, $saved_collecting );
 update_option( 'pncp_version', '3.12.0' );
 PNCP_Options::flush();
-pncp_upgrade();
+quiet( 'pncp_upgrade' );
 no_file_sync();
 t( 'D1 a site that already collects with full addresses keeps them full after the upgrade', 'full' === stored()['traffic_ip_mode'] && 1 === (int) stored()['traffic'] );
 update_option( 'pncp_version', $saved_ver );

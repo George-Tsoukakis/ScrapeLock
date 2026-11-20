@@ -30,6 +30,22 @@ define( 'WP_USE_THEMES', false );
 require $wp_dir . '/wp-load.php';
 
 $fails = 0;
+/**
+ * Runs an upgrade step as the plugin does, without the SQLite drop-in's own "Deprecated" notices and database
+ * errors inside dbDelta() (CI runs on SQLite; they are the drop-in's, not the plugin's), as t_admin.php does.
+ */
+function quiet( $step ) {
+	global $wpdb;
+	$er       = error_reporting( error_reporting() & ~E_DEPRECATED );
+	$suppress = $wpdb->suppress_errors( true );
+	call_user_func( $step );
+	// pncp_upgrade() hands the file part to WP cron, which would download the real lists (CI has internet).
+	delete_option( 'pncp_upgrade_files' );
+	wp_clear_scheduled_hook( 'pncp_upgrade_files' );
+	$wpdb->suppress_errors( $suppress );
+	error_reporting( $er );
+}
+
 function t( $label, $ok, $extra = '' ) {
 	global $fails;
 	if ( ! $ok ) {
@@ -298,7 +314,7 @@ settings( array( 'bot_list' => $list . "\nOAI-SearchBot\nPerplexityBot" ) );
 $typed = PNCP_Options::stored()['bot_list'];
 foreach ( array( '3.11.0', '3.11.2', '3.12.0' ) as $from ) {
 	update_option( 'pncp_version', $from );
-	pncp_upgrade();
+	quiet( 'pncp_upgrade' );
 	t( "C4 upgrade from $from: the 3.11 migration does not run again (the bot list is unchanged)", PNCP_Options::stored()['bot_list'] === $typed );
 }
 // The warning of the Bots tab names them and says they are blocked again on their own when AI search is off.
@@ -311,7 +327,7 @@ settings( array( 'allow_ai_search' => 0 ) );
 ob_start();
 PNCP_Ai_Search_List::render_notice( PNCP_Options::get() );
 t( 'C4 Bots tab: no warning while AI search is off (the list blocks them, as intended)', '' === (string) ob_get_clean() );
-pncp_upgrade();
+quiet( 'pncp_upgrade' );
 t( 'C4 upgrade with AI search off: the bot list is unchanged', PNCP_Options::stored()['bot_list'] === $typed );
 // "Remove from the list" removes only what the list names, and nothing is ever added back by turning the option off.
 settings( array( 'allow_ai_search' => 1 ) );

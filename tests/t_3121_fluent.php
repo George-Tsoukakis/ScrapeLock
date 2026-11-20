@@ -30,6 +30,19 @@ require_once ABSPATH . 'wp-admin/includes/plugin.php';
 require_once ABSPATH . 'wp-admin/includes/user.php';
 
 $fails = 0;
+/**
+ * Runs an upgrade step as the plugin does, without the SQLite drop-in's own "Deprecated" notices and database
+ * errors inside dbDelta() (CI runs on SQLite; they are the drop-in's, not the plugin's), as t_admin.php does.
+ */
+function quiet( $step ) {
+	global $wpdb;
+	$er       = error_reporting( error_reporting() & ~E_DEPRECATED );
+	$suppress = $wpdb->suppress_errors( true );
+	call_user_func( $step );
+	$wpdb->suppress_errors( $suppress );
+	error_reporting( $er );
+}
+
 function t( $label, $ok, $extra = '' ) {
 	global $fails;
 	if ( ! $ok ) {
@@ -161,7 +174,7 @@ settings(
 );
 
 /* ---------- 1. The log column ---------- */
-PNCP_Log::install(); // As the upgrade does (also when the table was made by an older version).
+quiet( array( 'PNCP_Log', 'install' ) ); // As the upgrade does (also when the table was made by an older version).
 t( 'log table: the account column is there', PNCP_Log::account_column() && (int) PNCP_Log::DB_VERSION === (int) get_option( 'pncp_db_version' ), (string) get_option( 'pncp_db_version' ) );
 t( 'log reasons: rate_member has a name', isset( PNCP_Log::reasons()['rate_member'] ) );
 t( 'FluentCommunity active (stand-in)', PNCP_Fluent_Community::active() );
