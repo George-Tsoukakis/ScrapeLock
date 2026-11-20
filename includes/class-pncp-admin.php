@@ -3733,9 +3733,9 @@ final class PNCP_Admin {
 			'unchanged'        => array( 'info', __( 'Nothing changed: the settings were already like that.', 'scrapelock' ) ),
 			'import_cancelled' => array( 'info', __( 'Import cancelled. Nothing changed.', 'scrapelock' ) ),
 			'import_nofile'    => array( 'error', __( 'No file was received. Choose the JSON file exported from ScrapeLock and try again.', 'scrapelock' ) ),
-			'import_invalid'   => array( 'error', __( 'The file is not a ScrapeLock settings export (or it is damaged). Nothing changed.', 'scrapelock' ) ),
-			'import_expired'   => array( 'error', __( 'The checked file is no longer available (it is kept for 15 minutes). Choose it again. Nothing changed.', 'scrapelock' ) ),
-			'restore_missing'  => array( 'error', __( 'This saved version no longer exists (only the last 5 are kept). Nothing changed.', 'scrapelock' ) ),
+			'import_invalid'   => array( 'error', __( 'Nothing changed: the file is not a ScrapeLock settings export, so export it again.', 'scrapelock' ) ),
+			'import_expired'   => array( 'error', __( 'Nothing changed: the checked file expired after 15 minutes, so choose it again.', 'scrapelock' ) ),
+			'restore_missing'  => array( 'error', __( 'Nothing changed: only the last 5 versions are kept, so choose another one.', 'scrapelock' ) ),
 			'token'            => array( 'success', __( 'New token created.', 'scrapelock' ) ),
 			'revoked'          => array( 'success', __( 'Previous token revoked.', 'scrapelock' ) ),
 			'unbanned'         => array( 'success', __( 'Block lifted.', 'scrapelock' ) ),
@@ -3747,26 +3747,26 @@ final class PNCP_Admin {
 			'allow_ua_added'   => array( 'success', __( 'The User-Agent was added to “Always allowed User-Agents” (“Bots and limits” → “Always allowed”). You can remove it there. The page limits still apply to it.', 'scrapelock' ) ),
 			'allow_ua_exists'  => array( 'info', __( 'This User-Agent is already always allowed.', 'scrapelock' ) ),
 			'allow_ua_full'    => array( 'error', __( 'The always-allowed User-Agents already have 200 lines. Remove some there first.', 'scrapelock' ) ),
-			'allow_ua_refused' => array( 'error', __( 'This User-Agent part was not added: it is empty, too short or too generic (it would also match ordinary browsers, e.g. “Mozilla” or “Chrome”), or contains “@”. Use the name of the app or service, e.g. “Dart/” or “okhttp”.', 'scrapelock' ) ),
-			'perm_refused'     => array( 'error', __( 'This IP cannot be blocked permanently: it is the server itself, your own IP, a private address, an always-allowed IP or an address in an official list (Google, Bing, AI search services, Cloudflare, Bunny CDN).', 'scrapelock' ) ),
+			'allow_ua_refused' => array( 'error', __( 'Not added: use the name of the app or service, e.g. “Dart/” or “okhttp”, not a browser word or “@”.', 'scrapelock' ) ),
+			'perm_refused'     => array( 'error', __( 'Not blocked: this is the server, your own, a private, an always-allowed or an official (search engine, CDN) address.', 'scrapelock' ) ),
 			'lists'            => array( 'success', __( 'IP lists refreshed.', 'scrapelock' ) ),
 			'crowdsec'         => array( 'success', __( 'CrowdSec blocklist updated.', 'scrapelock' ) ),
-			'crowdsec_failed'  => array( 'error', __( 'The CrowdSec blocklist could not be updated; the previous one was kept. The reason is shown under “Official IP lists”.', 'scrapelock' ) ),
+			'crowdsec_failed'  => array( 'error', __( 'The CrowdSec blocklist was not updated and the previous one stays: see the reason under “Official IP lists”.', 'scrapelock' ) ),
 			'ai_cleared'       => array( 'success', __( 'The counts of visits from AI assistants were deleted.', 'scrapelock' ) ),
 			'geo'              => array( 'success', __( 'Country database downloaded.', 'scrapelock' ) ),
-			'geo_failed'       => array( 'error', __( 'The country database could not be downloaded or read; the previous one (if any) was kept. It will try again tomorrow.', 'scrapelock' ) ),
+			'geo_failed'       => array( 'error', __( 'The country database could not be downloaded, so the previous one stays: try “Download now” later.', 'scrapelock' ) ),
 			'cf_ip'            => array( 'success', __( 'The real visitor IP is now read from CF-Connecting-IP, only for requests from Cloudflare.', 'scrapelock' ) ),
 			'bunny_ip'         => array( 'success', __( 'The real visitor IP is now read from X-Real-IP, only for requests from Bunny CDN.', 'scrapelock' ) ),
-			'bunny_ip_failed'  => array( 'warning', __( 'X-Real-IP is selected for Bunny CDN, but the list of Bunny addresses could not be downloaded. Until it is, the header is not trusted. It will try again tomorrow, or use “Refresh now” under “Official IP lists”.', 'scrapelock' ) ),
-			'lists_partial'    => array( 'warning', __( 'Some IP lists could not be downloaded; their previous version was kept. It will try again tomorrow.', 'scrapelock' ) ),
+			'bunny_ip_failed'  => array( 'warning', __( 'X-Real-IP stays untrusted until the Bunny address list downloads: use “Refresh now” under “Official IP lists”.', 'scrapelock' ) ),
+			'lists_partial'    => array( 'warning', __( 'Some IP lists kept their previous version because the download failed: use “Refresh now” under “Official IP lists”.', 'scrapelock' ) ),
 			'edge_ok'          => array( 'success', __( 'Connected to the CDN and tested. Temporary blocks are sent to it only while “Send temporary blocks to the CDN” is on (under “Blocking at the CDN”).', 'scrapelock' ) ),
 			'edge_off'         => array( 'success', __( 'Blocking at the CDN is off. The blocks ScrapeLock made there are being removed in the background.', 'scrapelock' ) ),
-			'edge_zone'        => array( 'error', __( 'The zone ID is not valid: Cloudflare uses 32 letters and digits (0–9, a–f), Bunny CDN a number. Nothing was saved.', 'scrapelock' ) ),
-			'edge_token'       => array( 'error', __( 'Enter the API token (letters, digits, “-” and “_”). Nothing was saved.', 'scrapelock' ) ),
+			'edge_zone'        => array( 'error', __( 'Nothing was saved: enter a valid zone ID (Cloudflare: 32 characters 0–9 and a–f; Bunny CDN: a number).', 'scrapelock' ) ),
+			'edge_token'       => array( 'error', __( 'Nothing was saved: enter the API token (letters, digits, “-” and “_”).', 'scrapelock' ) ),
 			'edge_failed'      => array( 'error', __( 'The connection test failed, so nothing was saved.', 'scrapelock' ) ),
 			'edge_test_ok'     => array( 'success', '' ),
 			'edge_test_failed' => array( 'error', '' ),
-			'error'            => array( 'error', __( 'The action was not completed.', 'scrapelock' ) ),
+			'error'            => array( 'error', __( 'The action was not completed: reload the page and try again.', 'scrapelock' ) ),
 		);
 		$texts  += PNCP_Attacks::notices(); // 3.8: attacks_cleared, attacks_locked.
 		$texts  += PNCP_Edge::notices(); // 3.9: edge_send_on, edge_send_off, edge_send_nc.
@@ -3797,7 +3797,7 @@ final class PNCP_Admin {
 			delete_option( 'pncp_legacy_token_migrated' );
 			printf(
 				'<div class="notice notice-info"><p>%1$s <a href="%2$s">%3$s</a></p></div>',
-				esc_html__( 'Since 2.1 the feed token is stored only as a hash. The old token is still valid but can no longer be shown. If you have not saved it, create a new token.', 'scrapelock' ),
+				esc_html__( 'The old feed token still works but can no longer be shown since 2.1: create a new token if you did not save it.', 'scrapelock' ),
 				esc_url( PNCP_Status::settings_url( array( 'tab' => 'content' ) ) ),
 				esc_html__( 'Feeds and token', 'scrapelock' )
 			);
@@ -3805,7 +3805,7 @@ final class PNCP_Admin {
 		if ( ! empty( PNCP_Options::stored()['trust_any_proxy'] ) && PNCP_Status::notice_screen() ) {
 			printf(
 				'<div class="notice notice-warning"><p>%1$s <a href="%2$s">%3$s</a></p></div>',
-				esc_html__( 'ScrapeLock: the real IP is read from a header without checking the proxy (as in 1.4). This allows IP spoofing.', 'scrapelock' ),
+				esc_html__( 'ScrapeLock reads the visitor IP from a header without checking the proxy (as in 1.4), so it can be spoofed: fix it in the', 'scrapelock' ),
 				esc_url( PNCP_Status::settings_url( array( 'tab' => 'bots' ) ) ),
 				esc_html__( 'Trusted Proxy settings', 'scrapelock' )
 			);
