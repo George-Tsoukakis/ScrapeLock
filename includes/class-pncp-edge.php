@@ -148,6 +148,7 @@ final class PNCP_Edge {
 		// Protection turned off or on, or the real-IP setting changed: the blocks follow.
 		add_action( 'update_option_' . PNCP_OPTION, array( __CLASS__, 'soon' ) );
 		add_action( 'admin_init', array( __CLASS__, 'remember_staff' ) );
+		add_action( 'admin_init', array( __CLASS__, 'spare_server_ips' ) ); // 3.12.2: see there.
 		// Administrators who stopped opening wp-admin: their IPs go after 30 days all the same.
 		add_action( PNCP_Log::CRON, array( __CLASS__, 'prune_staff' ) );
 		// 3.9: "Send temporary blocks to the CDN".
@@ -810,6 +811,31 @@ final class PNCP_Edge {
 			wp_clear_scheduled_hook( self::CRON );
 		}
 		wp_schedule_single_event( $time, self::CRON );
+	}
+
+	/**
+	 * 3.12.2: a block at the CDN of one of the server's own addresses (sent before 3.12.1 knew them, or before the
+	 * address was detected) is removed at once, not only by the run after the next ban change: the CDN refused the
+	 * site's own requests in the meantime. Checked on wp-admin pages (at most every 10 minutes) and when a new
+	 * outbound address of the server is detected (PNCP_Server_Ips::note_outbound()).
+	 *
+	 * @param bool $now Check now, also within the 10 minutes.
+	 * @return bool Whether a run was started for it.
+	 */
+	public static function spare_server_ips( $now = false ) {
+		if ( ! $now && false !== get_transient( 'pncp_edge_spare' ) ) {
+			return false;
+		}
+		set_transient( 'pncp_edge_spare', 1, 10 * MINUTE_IN_SECONDS );
+		foreach ( array_keys( self::state()['rules'] ) as $key ) {
+			$key  = (string) $key;
+			$base = false === strpos( $key, '/' ) ? $key : (string) strstr( $key, '/', true );
+			if ( '' !== $base && PNCP_Server_Ips::is_server_ip( $base ) ) {
+				self::soon();
+				return true;
+			}
+		}
+		return false;
 	}
 
 	/**

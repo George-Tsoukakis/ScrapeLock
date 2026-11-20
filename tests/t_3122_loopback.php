@@ -21,6 +21,7 @@
  * F. The way straight to the server: answers mocked with pre_http_request (CURLOPT_RESOLVE entry, the route for the
  *    site's other requests), and over real HTTP against the test server (a host name that does not resolve).
  * H. Vulnerable points: the note names who refused, details folded, results checked at the server marked so.
+ * E. A block of the server's address at the CDN is removed at once; the Bunny presets never match the home page.
  *
  * Self-requests are made from this test process to the test server, never from a page the single-process
  * server is serving (it would wait for itself). Only on a test WordPress.
@@ -600,6 +601,47 @@ if ( ! function_exists( 'curl_init' ) || ! defined( 'CURLOPT_RESOLVE' ) ) {
 	t( 'F HTTP: run(): the answer carried "X-ScrapeLock: ok"', 'ok' === $trace['steps'][0]['marker'], wp_json_encode( $trace['steps'][0] ) );
 	t( 'F HTTP: run() is kept for Site Health and WP-CLI', is_array( PNCP_Self_Check::last() ) );
 }
+
+/* ---------- E. The CDN never refuses the server because of ScrapeLock ---------- */
+set_transient( PNCP_Server_Ips::OUTBOUND, array( SERVER => time() ), DAY_IN_SECONDS );
+update_option( PNCP_Edge::CONFIG, array( 'provider' => 'bunny', 'zone' => '4242', 'token' => 'g1-test-bunny-key-1234567890' ), false );
+update_option(
+	PNCP_Edge::STATE,
+	array(
+		'rules' => array(
+			SERVER => array(
+				'until'  => time() + DAY_IN_SECONDS,
+				'own'    => true,
+				'reason' => 'rate_page',
+			),
+		),
+		'time'  => time(),
+	),
+	false
+);
+wp_clear_scheduled_hook( PNCP_Edge::CRON );
+t( 'E: a block of the server\'s address sent to the CDN before: a run to remove it starts at once', PNCP_Edge::spare_server_ips( true ) && false !== wp_next_scheduled( PNCP_Edge::CRON ) );
+t( 'E: ... on wp-admin pages at most every 10 minutes', false === PNCP_Edge::spare_server_ips() );
+t( 'E: ... and the server\'s address is not among the blocks the run wants', ! isset( PNCP_Edge::wanted( 'bunny' )[ SERVER ] ) );
+update_option( PNCP_Edge::STATE, array( 'rules' => array( '198.51.100.120' => array( 'until' => time() + 60, 'own' => true ) ) ), false );
+wp_clear_scheduled_hook( PNCP_Edge::CRON );
+t( 'E: a visitor\'s block: nothing to do', false === PNCP_Edge::spare_server_ips( true ) );
+delete_option( PNCP_Edge::CONFIG );
+delete_option( PNCP_Edge::STATE );
+wp_clear_scheduled_hook( PNCP_Edge::CRON );
+$home_match = array();
+foreach ( PNCP_Bunny::presets() as $id => $preset ) {
+	foreach ( (array) $preset['patterns'] as $pattern ) {
+		$re = '#^' . str_replace( '\*', '.*', preg_quote( (string) $pattern, '#' ) ) . '$#i';
+		foreach ( array( home_url( '/' ), home_url( '/hello-world/' ) ) as $u ) {
+			if ( preg_match( $re, $u ) ) {
+				$home_match[] = $id;
+			}
+		}
+	}
+}
+t( 'E: no Bunny preset of ScrapeLock (login lock, xmlrpc, probes …) matches the home page or a post', ! $home_match, wp_json_encode( $home_match ) );
+delete_transient( PNCP_Server_Ips::OUTBOUND );
 
 // Clean up the temporary data folder.
 foreach ( glob( $pc_dir . '/self/*' ) ?: array() as $pncp_f ) {

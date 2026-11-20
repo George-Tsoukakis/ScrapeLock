@@ -360,6 +360,9 @@ final class PNCP_Server_Ips {
 		}
 		if ( ! $known ) {
 			self::changed_later();
+			if ( class_exists( 'PNCP_Edge' ) ) {
+				PNCP_Edge::spare_server_ips( true ); // 3.12.2: a block of it at the CDN goes at once.
+			}
 		}
 		self::remember( $ip );
 	}
