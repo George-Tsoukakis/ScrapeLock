@@ -23,6 +23,7 @@
  * H. Vulnerable points: the note names who refused, details folded, results checked at the server marked so.
  * E. A block of the server's address at the CDN is removed at once; the Bunny presets never match the home page.
  * O. "Only through the CDN" without a secret never refuses anything; with one, a signed request passes.
+ * T. "Check a request": the preset "The site itself (loopback)", "Run a real self-check now" (nonce, capability).
  *
  * Self-requests are made from this test process to the test server, never from a page the single-process
  * server is serving (it would wait for itself). Only on a test WordPress.
@@ -664,6 +665,88 @@ t( 'O: ... and the pre-cache check knows it as the site\'s, the step before "not
 as_request( '192.0.2.44', SELF_UA, array(), '/' );
 t( 'O: ... an unsigned one is refused there (not via the CDN)', '192.0.2.44' === PNCP_Precheck_Runtime::not_via_cdn( $cfg2 ), PNCP_Precheck_Runtime::not_via_cdn( $cfg2 ) );
 settings( array( 'cdn_secret' => '' ) );
+
+/* ---------- T. "Check a request" ---------- */
+$presets = PNCP_Tester::presets();
+t( 'T: the preset "The site itself (loopback)"', isset( $presets['loopback'] ) && 'loopback' === $presets['loopback']['mode'] && '' !== $presets['loopback']['label'] );
+$lb = PNCP_Tester::loopback( array( 'address' => '/' ) );
+$by = array();
+foreach ( isset( $lb['layers'] ) ? $lb['layers'] : array() as $row ) {
+	$by[ $row['layer'] ] = $row['verdict'];
+}
+t( 'T: the loopback check: allowed, layer by layer (signature, pre-cache, Only through the CDN, early, WordPress)', 'allowed' === $lb['verdict'] && array( 'sig', 'pre-cache', 'origin', 'early', 'wp' ) === array_keys( $by ) && 'pass' === $by['sig'] && 'pass' === $by['wp'], wp_json_encode( $lb['layers'] ) );
+t( 'T: ... "Only through the CDN" without a secret: off', 'off' === $by['origin'] );
+t( 'T: ... as the server\'s own request: WordPress\'s User-Agent, signed, nothing sent', 0 === strpos( $lb['request']['ua'], 'WordPress/' ) && isset( $lb['request']['headers']->{'X-ScrapeLock-Sig'} ) && 'loopback' === $lb['request']['mode'] );
+t( 'T: a bad address is refused', is_wp_error( PNCP_Tester::loopback( array( 'address' => 'https://example.com/' ) ) ) );
+$js = (string) file_get_contents( dirname( __DIR__ ) . '/assets/js/tester.js' );
+t( 'T: tester.js sends the loopback mode, draws the layers and has the self-check button', false !== strpos( $js, "'loopback' === mode" ) && false !== strpos( $js, 'data.layers' ) && false !== strpos( $js, 'pncp-tester-selfcheck' ) );
+wp_set_current_user( 1 );
+ob_start();
+PNCP_Tester_View::render( PNCP_Options::get() );
+$view = (string) ob_get_clean();
+t( 'T: the card has "Run a real self-check now" and the loopback preset', false !== strpos( $view, 'id="pncp-tester-selfcheck"' ) && false !== strpos( $view, 'data-preset="loopback"' ) );
+$data = PNCP_Tester::js_data();
+t( 'T: the script gets the self-check action and its nonce', PNCP_Self_Check::ACTION === $data['selfcheck']['action'] && false !== wp_verify_nonce( $data['selfcheck']['nonce'], PNCP_Self_Check::ACTION ) );
+wp_set_current_user( 0 );
+
+/** Runs PNCP_Self_Check::ajax() as admin-ajax.php would: [status, decoded JSON]. */
+function self_ajax( $user, $nonce ) {
+	$_SERVER['REQUEST_METHOD'] = 'POST';
+	$_POST                     = array( 'nonce' => $nonce );
+	$_REQUEST                  = $_POST;
+	wp_set_current_user( $user );
+	$doing   = static function () {
+		return true;
+	};
+	$handler = static function () {
+		return static function ( $message, $title, $args ) {
+			throw new RuntimeException( 'done' );
+		};
+	};
+	add_filter( 'wp_doing_ajax', $doing );
+	add_filter( 'wp_die_ajax_handler', $handler );
+	$status = 200;
+	$keep   = static function ( $header, $code ) use ( &$status ) {
+		$status = (int) $code;
+		return $header;
+	};
+	add_filter( 'status_header', $keep, 10, 2 );
+	ob_start();
+	try {
+		PNCP_Self_Check::ajax();
+	} catch ( RuntimeException $e ) {
+		unset( $e );
+	}
+	$out = (string) ob_get_clean();
+	remove_filter( 'wp_doing_ajax', $doing );
+	remove_filter( 'wp_die_ajax_handler', $handler );
+	remove_filter( 'status_header', $keep, 10 );
+	wp_set_current_user( 0 );
+	$_POST    = array();
+	$_REQUEST = array();
+	return array( $status, json_decode( $out, true ) );
+}
+list( $st, $j ) = self_ajax( 1, 'bad-nonce' );
+// (The status line cannot be seen from the command line, where output has already started.)
+t( 'T: "Run a real self-check now" without a valid nonce: refused', isset( $j['success'] ) && false === $j['success'] && false !== strpos( (string) $j['data']['message'], 'expired' ), $st . ' ' . wp_json_encode( $j ) );
+$sub = get_user_by( 'login', 'g1-t3122-sub' );
+$sub = $sub ? $sub->ID : wp_insert_user(
+	array(
+		'user_login' => 'g1-t3122-sub',
+		'user_pass'  => wp_generate_password(),
+		'role'       => 'subscriber',
+	)
+);
+wp_set_current_user( $sub );
+$sub_nonce = wp_create_nonce( PNCP_Self_Check::ACTION );
+list( $st, $j ) = self_ajax( $sub, $sub_nonce );
+t( 'T: ... a subscriber with a valid nonce: refused (manage_options)', isset( $j['success'] ) && false === $j['success'] && false !== strpos( (string) $j['data']['message'], 'not allowed' ), $st . ' ' . wp_json_encode( $j ) );
+wp_set_current_user( 1 );
+$admin_nonce = wp_create_nonce( PNCP_Self_Check::ACTION );
+list( $st, $j ) = self_ajax( 1, $admin_nonce );
+t( 'T: ... the administrator: a real self-check with its headline and trace', ! empty( $j['success'] ) && '' !== (string) $j['data']['headline'] && is_array( $j['data']['lines'] ) && $j['data']['lines'], wp_json_encode( $j ) );
+require_once ABSPATH . 'wp-admin/includes/user.php';
+wp_delete_user( $sub );
 
 // Clean up the temporary data folder.
 foreach ( glob( $pc_dir . '/self/*' ) ?: array() as $pncp_f ) {

@@ -26,7 +26,8 @@
  *   (action http_api_curl), so the Host header and TLS name stay the site's. While the public way refuses it and
  *   the server answers, the site's other requests to itself (Site Health's loopback, WP cron) go that way too
  *   (route(), for ROUTE_TTL).
- * - run() is a real self-check now: the home page through the public address, then the server if needed, with
+ * - run() is a real self-check now (the "Run a real self-check now" button of "Check a request", the Site Health
+ *   test, "wp scrapelock selfcheck"): the home page through the public address, then the server if needed, with
  *   what each side saw.
  *
  * @package ScrapeLock
@@ -70,6 +71,11 @@ final class PNCP_Self_Check {
 	const HEADER = 'X-ScrapeLock';
 
 	/**
+	 * AJAX action and nonce action of "Run a real self-check now".
+	 */
+	const ACTION = 'pncp_selfcheck';
+
+	/**
 	 * Entries written in a minute at most (for a signature that is not the site's own: LIMIT_OTHER).
 	 */
 	const LIMIT = 60;
@@ -106,6 +112,7 @@ final class PNCP_Self_Check {
 	public static function init() {
 		add_action( 'http_api_curl', array( __CLASS__, 'curl_resolve' ), 10, 3 );
 		add_filter( 'pre_http_request', array( __CLASS__, 'route_request' ), 1000, 3 );
+		add_action( 'wp_ajax_' . self::ACTION, array( __CLASS__, 'ajax' ) );
 	}
 
 	/* ---------- Receiving side ---------- */
@@ -1059,6 +1066,38 @@ final class PNCP_Self_Check {
 			'path_mismatch' => __( 'made for another address', 'scrapelock' ),
 			'bad_mac'       => __( 'does not match', 'scrapelock' ),
 			'nonce_reused'  => __( 'used twice', 'scrapelock' ),
+		);
+	}
+
+	/**
+	 * The AJAX action of "Run a real self-check now": POST, nonce, manage_options.
+	 */
+	public static function ajax() {
+		$method = isset( $_SERVER['REQUEST_METHOD'] ) ? strtoupper( sanitize_key( wp_unslash( $_SERVER['REQUEST_METHOD'] ) ) ) : '';
+		if ( 'POST' !== $method ) {
+			wp_send_json_error( array( 'message' => __( 'The check must be sent with POST.', 'scrapelock' ) ), 405 );
+		}
+		if ( false === check_ajax_referer( self::ACTION, 'nonce', false ) ) {
+			wp_send_json_error( array( 'message' => __( 'This page has expired. Reload it and try again.', 'scrapelock' ) ), 403 );
+		}
+		if ( ! current_user_can( 'manage_options' ) || PNCP_Lockdown::is_locked() ) {
+			wp_send_json_error( array( 'message' => __( 'You are not allowed to do this.', 'scrapelock' ) ), 403 );
+		}
+		wp_send_json_success( self::view( self::run() ) );
+	}
+
+	/**
+	 * What the card shows of a self-check.
+	 *
+	 * @param array<string, mixed> $trace What run() returned.
+	 * @return array{ok:bool, origin:bool, headline:string, lines:string[]}
+	 */
+	public static function view( $trace ) {
+		return array(
+			'ok'       => ! empty( $trace['ok'] ),
+			'origin'   => ! empty( $trace['origin'] ),
+			'headline' => self::summary( $trace ),
+			'lines'    => self::lines( $trace ),
 		);
 	}
 }

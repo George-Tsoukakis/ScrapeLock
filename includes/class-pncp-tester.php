@@ -70,7 +70,7 @@ final class PNCP_Tester {
 			// phpcs:ignore WordPress.Security.NonceVerification.Missing, WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- Nonce checked above; run() strips control characters, checks lengths and validates each field.
 			$input[ $key ] = isset( $_POST[ $key ] ) && is_string( $_POST[ $key ] ) ? (string) wp_unslash( $_POST[ $key ] ) : '';
 		}
-		$data = self::run( $input );
+		$data = 'loopback' === $input['mode'] ? self::loopback( $input ) : self::run( $input );
 		if ( is_wp_error( $data ) ) {
 			$extra = $data->get_error_data();
 			self::send_error(
@@ -161,10 +161,10 @@ final class PNCP_Tester {
 
 		$result = self::explain_as_visitor( $ip, $ua, $url, $headers );
 
-		$passes  = self::pass_reasons();
-		$code    = (int) $result['code'];
-		$reason  = $code ? (string) $result['reason'] : '';
-		$pass    = $code ? '' : (string) $result['pass'];
+		$passes = self::pass_reasons();
+		$code   = (int) $result['code'];
+		$reason = $code ? (string) $result['reason'] : '';
+		$pass   = $code ? '' : (string) $result['pass'];
 		// 3.12.1: never the internal key itself, also for a reason added later without a label here.
 		$r_label = '' === $reason ? '' : PNCP_Log::reason_label( $reason );
 		$p_label = '' === $pass ? '' : ( isset( $passes[ $pass ] ) ? $passes[ $pass ] : __( 'another rule lets it through', 'scrapelock' ) );
@@ -263,7 +263,7 @@ final class PNCP_Tester {
 			return null;
 		}
 		list( $bucket, $limit ) = $buckets[ $context ];
-		$code = (int) $result['code'];
+		$code                   = (int) $result['code'];
 		if ( $code ? (string) $result['reason'] !== $bucket : ! in_array( (string) $result['pass'], array( 'passed', 'media' ), true ) ) {
 			return null;
 		}
@@ -441,6 +441,111 @@ final class PNCP_Tester {
 				'ua'      => '',
 				'browser' => false,
 			),
+			// 3.12.2: the site's own request to itself (Vulnerable points, Site Health), signed, layer by layer.
+			'loopback'        => array(
+				'label'   => __( 'The site itself (loopback)', 'scrapelock' ),
+				'mode'    => 'loopback',
+				'ua'      => '',
+				'browser' => false,
+			),
+		);
+	}
+
+	/**
+	 * 3.12.2: the preset "The site itself (loopback)": the request the site makes to itself (from the server's
+	 * address, WordPress's User-Agent, signed with X-ScrapeLock-Sig), and the verdict of each layer it passes:
+	 * the signature, the pre-cache check, "Only through the CDN", the early check and ScrapeLock in WordPress, and
+	 * what WordPress would answer without the signature. Nothing is counted or logged; the signature made for it
+	 * is never sent.
+	 *
+	 * @param array<string, mixed> $input address (already unslashed).
+	 * @return array<string, mixed>|WP_Error
+	 */
+	public static function loopback( array $input ) {
+		$url = self::address_url( self::clean( isset( $input['address'] ) ? $input['address'] : '' ) );
+		if ( '' === $url ) {
+			return self::field_error( 'address', __( 'Enter an address on this site, e.g. /shop/ or /?s=shoes.', 'scrapelock' ) );
+		}
+		$s   = PNCP_Options::get();
+		$ips = array_merge( PNCP_Server_Ips::outbound_ips(), PNCP_Server_Ips::const_ips(), PNCP_Server_Ips::stored_ips() );
+		$ip  = '127.0.0.1';
+		foreach ( $ips as $one ) {
+			if ( false === strpos( $one, '/' ) ) {
+				$ip = $one;
+				break;
+			}
+		}
+		$ua     = 'WordPress/' . get_bloginfo( 'version' ) . '; ' . home_url( '/' );
+		$sig    = PNCP_Server_Ips::sig_token( 'GET', $url );
+		$path   = PNCP_Server_Ips::sig_path( (string) wp_parse_url( $url, PHP_URL_PATH ) );
+		$check  = PNCP_Server_Ips::verify( $sig, 'GET', $path, PNCP_Server_Ips::own_hosts(), PNCP_Server_Ips::sig_key(), time() );
+		$valid  = 'ok' === $check['result'];
+		$sigs   = PNCP_Self_Check::sig_results();
+		$layers = array();
+		$add    = static function ( $layer, $verdict, $text ) use ( &$layers ) {
+			$labels   = PNCP_Self_Check::layers();
+			$layers[] = array(
+				'layer'   => $layer,
+				'label'   => isset( $labels[ $layer ] ) ? $labels[ $layer ] : __( 'The signature', 'scrapelock' ),
+				'verdict' => $verdict,
+				'text'    => $text,
+			);
+		};
+		/* translators: %s: result of the signature check, e.g. "valid" */
+		$add( 'sig', $valid ? 'pass' : 'refuse', sprintf( __( 'Signature: %s. It is checked against the site\'s own host names, whatever Host header the CDN passes on.', 'scrapelock' ), isset( $sigs[ $check['result'] ] ) ? $sigs[ $check['result'] ] : $check['result'] ) );
+		if ( ! PNCP_Precheck::wanted() ) {
+			$add( 'pre-cache', 'off', __( 'Off.', 'scrapelock' ) );
+		} elseif ( ! PNCP_Precheck::in_config() ) {
+			$add( 'pre-cache', 'refuse', __( 'Its line in wp-config.php does not have the current key yet: the site\'s signature is not recognised there until WP cron or the next wp-admin page writes it again.', 'scrapelock' ) );
+		} else {
+			$add( 'pre-cache', $valid ? 'pass' : 'refuse', $valid ? __( 'Passes: the site\'s signed request goes on before every other check.', 'scrapelock' ) : PNCP_Self_Check::sig_advice( $check['result'] ) );
+		}
+		if ( ! PNCP_Origin::active() ) {
+			$add( 'origin', 'off', ! empty( $s['cdn_only'] ) ? __( 'On, but without a CDN secret it refuses nothing.', 'scrapelock' ) : __( 'Off.', 'scrapelock' ) );
+		} else {
+			$add( 'origin', $valid ? 'pass' : 'refuse', $valid ? __( 'Passes: a signed request needs no CDN secret.', 'scrapelock' ) : __( 'Refused when the request reaches the server without the CDN secret.', 'scrapelock' ) );
+		}
+		$add( 'early', empty( $s['early_mode'] ) ? 'off' : ( $valid ? 'pass' : 'refuse' ), empty( $s['early_mode'] ) ? __( 'Off.', 'scrapelock' ) : ( $valid ? __( 'Passes (signed).', 'scrapelock' ) : __( 'Checked like a visitor.', 'scrapelock' ) ) );
+		// Without the signature: what WordPress answers the same request from the server's address.
+		$plain = self::explain_as_visitor( $ip, $ua, $url, array() );
+		if ( $plain['code'] ) {
+			/* translators: %s: reason, e.g. "No browser headers" */
+			$without = sprintf( __( 'Without the signature it would be refused: %s.', 'scrapelock' ), PNCP_Log::reason_label( (string) $plain['reason'] ) );
+		} else {
+			$without = __( 'Without the signature it would pass too.', 'scrapelock' );
+		}
+		$add( 'wp', $valid || ! $plain['code'] ? 'pass' : 'refuse', ( $valid ? __( 'Passes every check (signed).', 'scrapelock' ) : __( 'Checked like a visitor.', 'scrapelock' ) ) . ' ' . $without );
+		$refused = false;
+		foreach ( $layers as $row ) {
+			$refused = $refused || 'refuse' === $row['verdict'];
+		}
+		return array(
+			'verdict'          => $refused ? 'blocked' : 'allowed',
+			'code'             => $refused ? 403 : 0,
+			'status'           => $refused ? 403 : 200,
+			'badge'            => $refused ? __( 'Blocked', 'scrapelock' ) : __( 'Allowed', 'scrapelock' ),
+			'headline'         => $refused ? __( 'The site\'s own request would be refused: see the layers below.', 'scrapelock' ) : __( 'Allowed: the site\'s own request passes every layer.', 'scrapelock' ),
+			'reason'           => '',
+			'reason_label'     => '',
+			'pass'             => $refused ? '' : 'signed',
+			'pass_label'       => '',
+			'why'              => __( 'Simulated: nothing was sent. “Run a real self-check now” sends the request and shows who answered.', 'scrapelock' ),
+			'link'             => null,
+			'notes'            => array(),
+			'layers'           => $layers,
+			'checked_as'       => 'page',
+			'checked_as_label' => __( 'Page', 'scrapelock' ),
+			'counter'          => null,
+			'feed'             => false,
+			'monitor'          => false,
+			'inconclusive'     => false,
+			'request'          => array(
+				'mode'    => 'loopback',
+				'ip'      => $ip,
+				'ua'      => $ua,
+				'address' => $url,
+				'headers' => (object) array( PNCP_Server_Ips::SIG_HEADER => substr( $sig, 0, 36 ) . '…' ),
+			),
 		);
 	}
 
@@ -564,12 +669,17 @@ final class PNCP_Tester {
 	 */
 	public static function js_data() {
 		return array(
-			'ajaxUrl'  => admin_url( 'admin-ajax.php' ),
-			'action'   => self::ACTION,
-			'nonce'    => wp_create_nonce( self::ACTION ),
-			'sampleIp' => self::SAMPLE_IP,
-			'presets'  => self::presets(),
-			'i18n'     => array(
+			'ajaxUrl'   => admin_url( 'admin-ajax.php' ),
+			'action'    => self::ACTION,
+			'nonce'     => wp_create_nonce( self::ACTION ),
+			'sampleIp'  => self::SAMPLE_IP,
+			'presets'   => self::presets(),
+			// 3.12.2: "Run a real self-check now".
+			'selfcheck' => array(
+				'action' => PNCP_Self_Check::ACTION,
+				'nonce'  => wp_create_nonce( PNCP_Self_Check::ACTION ),
+			),
+			'i18n'      => array(
 				'checking'    => __( 'Checking…', 'scrapelock' ),
 				'checkingDns' => __( 'Checking… A search engine is verified with a DNS lookup, which can take a few seconds.', 'scrapelock' ),
 				'failed'      => __( 'The check could not run. Reload the page and try again.', 'scrapelock' ),
@@ -581,6 +691,8 @@ final class PNCP_Tester {
 				'headers'     => __( 'Headers', 'scrapelock' ),
 				'selfIp'      => __( 'your IP', 'scrapelock' ),
 				'selfNote'    => __( 'Your own request: your IP and the headers your browser sent with this check.', 'scrapelock' ),
+				'layers'      => __( 'Layer by layer', 'scrapelock' ),
+				'running'     => __( 'Sending the site\'s request to itself…', 'scrapelock' ),
 			),
 		);
 	}
@@ -825,7 +937,7 @@ final class PNCP_Tester {
 					$link = $limits;
 					break;
 				case 'media': // 3.12.1.
-					$why  = sprintf(
+					$why = sprintf(
 						/* translators: %d: how many times the page limit the media limit is (e.g. 10) */
 						__( 'A static file (image, video, audio, font, CSS or JavaScript) that reaches WordPress counts toward its own limit, %d times the page limit, never toward the page limits. A link preview in “Always allowed” is not counted at all.', 'scrapelock' ),
 						PNCP_Bots::MEDIA_FACTOR
