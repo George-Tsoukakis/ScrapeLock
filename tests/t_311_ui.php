@@ -148,6 +148,101 @@ t( 'bots μετά από «Refresh lists now»: το Official IP lists ανοι�
 list( $code, $body ) = http( $page . '&tab=content' );
 t( 'άλλες καρτέλες: χωρίς accordion (πίνακας ρυθμίσεων όπως πριν)', 200 === $code && false === strpos( $body, 'pncp-acc' ) && false !== strpos( $body, '<table class="form-table"' ) );
 
+/* ---------- Μακριές λίστες: «N entries» + «Edit» ---------- */
+// All fields of the tab's settings form as the browser would send them (no JavaScript involved).
+function form_fields( $body ) {
+	$doc = new DOMDocument();
+	libxml_use_internal_errors( true );
+	$doc->loadHTML( '<?xml encoding="utf-8"?>' . $body );
+	libxml_clear_errors();
+	$xp     = new DOMXPath( $doc );
+	$form   = $xp->query( '//form[@action="options.php"]' )->item( 0 );
+	$fields = array();
+	if ( ! $form ) {
+		return $fields;
+	}
+	foreach ( $xp->query( './/input|.//textarea|.//select', $form ) as $el ) {
+		$name = $el->getAttribute( 'name' );
+		$type = strtolower( $el->getAttribute( 'type' ) );
+		if ( '' === $name || $el->hasAttribute( 'disabled' ) || in_array( $type, array( 'submit', 'button', 'file' ), true ) ) {
+			continue;
+		}
+		if ( ( 'checkbox' === $type || 'radio' === $type ) && ! $el->hasAttribute( 'checked' ) ) {
+			continue;
+		}
+		if ( 'textarea' === $el->nodeName ) {
+			$value = $el->textContent;
+			$value = preg_replace( '/^\r?\n/', '', $value ); // The browser drops one newline after <textarea>.
+		} elseif ( 'select' === $el->nodeName ) {
+			$value = '';
+			foreach ( $xp->query( './/option', $el ) as $i => $opt ) {
+				if ( 0 === $i || $opt->hasAttribute( 'selected' ) ) {
+					$value = $opt->hasAttribute( 'value' ) ? $opt->getAttribute( 'value' ) : $opt->textContent;
+				}
+			}
+		} else {
+			$value = $el->getAttribute( 'value' );
+		}
+		$fields[] = rawurlencode( $name ) . '=' . rawurlencode( $value );
+	}
+	return implode( '&', $fields );
+}
+
+$bots = array();
+for ( $i = 1; $i <= 85; $i++ ) {
+	$bots[] = 'TestBot' . $i;
+}
+$bots[1]  = 'Evil & Bot "quoted"';
+$bots[2]  = 'A-very-long-user-agent-entry-that-goes-on-and-on-and-on-for-the-preview';
+$bot_list = implode( "\n", $bots );
+$block    = implode( "\n", array( '203.0.113.1', '203.0.113.2', '203.0.113.3', '203.0.113.4', '203.0.113.5', '203.0.113.6', '198.51.100.0/24' ) );
+settings(
+	array(
+		'bot_list'  => $bot_list,
+		'allow_ips' => "192.0.2.50\n192.0.2.51",
+		'block_ips' => $block,
+	)
+);
+list( $code, $body ) = http( $page . '&tab=bots' );
+$ed = preg_match( '#<div class="pncp-list" id="pncp-bot_list-list" data-pncp-list="1">.*?<textarea[^>]*name="pncp_settings\[bot_list\]"[^>]*>(.*?)</textarea>#s', $body, $m ) ? $m : array( '', '' );
+t( 'bot_list: «85 entries» και κουμπί Edit με aria-expanded/aria-controls', '' !== $ed[0] && false !== strpos( $ed[0], '<span class="pncp-badge">85 entries</span>' ) && (bool) preg_match( '#<button type="button" class="button button-small pncp-list__edit" aria-expanded="false" aria-controls="pncp-bot_list-list-editor"#', $ed[0] ) && false !== strpos( $ed[0], 'id="pncp-bot_list-list-editor"' ) );
+t( 'bot_list: το textarea με όλη την τιμή (85 γραμμές, escaped)', $bot_list === htmlspecialchars_decode( preg_replace( '/^\r?\n/', '', $ed[1] ), ENT_QUOTES ) && false !== strpos( $ed[1], 'Evil &amp; Bot &quot;quoted&quot;' ), strlen( $ed[1] ) );
+t( 'bot_list: προεπισκόπηση των πρώτων γραμμών, κομμένη, «and 81 more»', (bool) preg_match( '#<p class="pncp-list__preview description">TestBot1, Evil &amp; Bot &quot;quoted&quot;, A-very-long-user-agent-entry-that-goes-…, TestBot4 and 81 more</p>#', $ed[0] ), preg_match( '#pncp-list__preview description">([^<]*)#', $body, $pm ) ? $pm[1] : '' );
+t( 'block_ips (7 γραμμές): επίσης με «Edit»', false !== strpos( $body, 'id="pncp-block_ips-list"' ) && false !== strpos( $body, '7 entries' ) );
+t( 'allow_ips (2 γραμμές): απλό textarea όπως πριν', false === strpos( $body, 'id="pncp-allow_ips-list"' ) && (bool) preg_match( '#<textarea[^>]*name="pncp_settings\[allow_ips\]"#', $body ) );
+t( 'χωρίς JS: το κουμπί κρύβεται με CSS (.js), όχι με hidden στο textarea', false === strpos( $ed[0], ' hidden' ) );
+list( , $body2 ) = http( $page . '&tab=bots&pncp_sections=pncp-bot_list-list' );
+t( 'μετά από Save με ανοιχτή λίστα: ανοιχτή (is-open, aria-expanded=true, Done)', (bool) preg_match( '#<div class="pncp-list is-open" id="pncp-bot_list-list"[^>]*>.*?aria-expanded="true"[^>]*>Done</button>#s', $body2 ) );
+
+// Save of the whole tab's form, as the browser sends it: the lists come back unchanged.
+$post = form_fields( $body );
+t( 'η φόρμα της καρτέλας έχει τα πεδία των λιστών', false !== strpos( $post, rawurlencode( 'pncp_settings[bot_list]' ) . '=' ) && false !== strpos( $post, rawurlencode( 'pncp_settings[block_ips]' ) . '=' ) );
+$ch = curl_init( $base . '/wp-admin/options.php' );
+$jar = array();
+foreach ( $cookies as $k => $v ) {
+	$jar[] = $k . '=' . rawurlencode( $v );
+}
+curl_setopt_array(
+	$ch,
+	array(
+		CURLOPT_RETURNTRANSFER => true,
+		CURLOPT_HEADER         => true,
+		CURLOPT_COOKIE         => implode( '; ', $jar ),
+		CURLOPT_HTTPHEADER     => array( 'X-Test-IP: 192.0.2.210', 'User-Agent: Mozilla/5.0 Chrome/141', 'Accept-Language: en', 'Referer: ' . $base . $page . '&tab=bots' ),
+		CURLOPT_POST           => true,
+		CURLOPT_POSTFIELDS     => $post,
+		CURLOPT_TIMEOUT        => 60,
+	)
+);
+$out  = (string) curl_exec( $ch );
+$code = (int) curl_getinfo( $ch, CURLINFO_HTTP_CODE );
+curl_close( $ch );
+PNCP_Options::flush();
+wp_cache_delete( 'alloptions', 'options' );
+$after = PNCP_Options::stored();
+t( 'Save μέσα από τη φόρμα: 302 και η λίστα bots ίδια (85 γραμμές)', 302 === $code && $bot_list === $after['bot_list'], $code . ' ' . count( PNCP_Options::parse_list( $after['bot_list'] ) ) );
+t( 'Save μέσα από τη φόρμα: block_ips και allow_ips ίδια', $block === $after['block_ips'] && "192.0.2.50\n192.0.2.51" === $after['allow_ips'] );
+
 /* __MORE__ */
 
 update_option( PNCP_OPTION, $saved );

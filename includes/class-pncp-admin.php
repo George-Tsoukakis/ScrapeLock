@@ -357,6 +357,12 @@ final class PNCP_Admin {
 	private static function textarea( $s, $key, $label, $help = '', $rows = 4, $fold = false ) {
 		$id = 'pncp-' . $key;
 		echo '<div class="pncp-field pncp-field--text">';
+		// 3.11: a long list shows "N entries", a preview and an "Edit" button (PNCP_Admin_Lists) instead of a fold.
+		$list = PNCP_Admin_Lists::folds( $key, count( PNCP_Options::parse_list( (string) $s[ $key ] ) ), $fold );
+		if ( $list ) {
+			$fold = false;
+			PNCP_Admin_Lists::open( $key, $label, (string) $s[ $key ], isset( PNCP_Admin_Fields::risky()[ $key ] ) ? '<span class="pncp-tag pncp-tag--risk">' . esc_html__( 'May affect visitors/SEO', 'scrapelock' ) . '</span>' : '' );
+		}
 		if ( $fold ) {
 			$count = count( PNCP_Options::parse_list( (string) $s[ $key ] ) );
 			// 3.5: a folded list shows its risk tag on the summary too (without the id, which the tag below has).
@@ -368,7 +374,7 @@ final class PNCP_Admin {
 				$risk // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Escaped in risk_icon().
 			);
 		}
-		printf( '<p><label for="%s"%s>%s</label></p>', esc_attr( $id ), $fold ? ' class="screen-reader-text"' : '', esc_html( $label ) );
+		printf( '<p><label for="%s"%s>%s</label></p>', esc_attr( $id ), $fold || $list ? ' class="screen-reader-text"' : '', esc_html( $label ) );
 		echo PNCP_Admin_Fields::risk_tag( $key ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Escaped in risk_tag().
 		printf(
 			'<textarea class="large-text code" rows="%1$d" id="%2$s" name="%3$s[%4$s]"%5$s%6$s>%7$s</textarea>',
@@ -384,6 +390,9 @@ final class PNCP_Admin {
 			echo PNCP_Admin_Fields::description( $id . '-help', $help ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Escaped in description().
 		}
 		echo PNCP_Admin_Fields::requires_note( $key, $s ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Escaped in requires_note().
+		if ( $list ) {
+			PNCP_Admin_Lists::close();
+		}
 		echo $fold ? '</details></div>' : '</div>';
 	}
 

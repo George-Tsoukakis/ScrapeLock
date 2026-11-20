@@ -1350,6 +1350,50 @@ fieldset + .pncp-field {
 	padding-block: var(--pncp-s4) var(--pncp-s5);
 }
 
+/* 3.11: long lists: "85 entries", the first entries and "Edit". Without JavaScript the textarea is shown
+   (WordPress turns the body class "no-js" into "js" before the page is drawn). */
+.pncp-admin .pncp-list {
+	padding: 10px 12px;
+	border: 1px solid var(--pncp-border);
+	border-radius: var(--pncp-radius-sm);
+	background: var(--pncp-surface-3);
+}
+
+.pncp-admin .pncp-list__bar {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: var(--pncp-s2);
+}
+
+.pncp-admin .pncp-list__label {
+	font-weight: 500;
+}
+
+.pncp-admin .pncp-list .pncp-list__edit,
+.pncp-admin .pncp-list .pncp-list__preview {
+	display: none;
+}
+
+.js .pncp-admin .pncp-list .pncp-list__edit {
+	display: inline-block;
+	margin-inline-start: auto;
+}
+
+.js .pncp-admin .pncp-list:not(.is-open) .pncp-list__preview {
+	display: block;
+	margin: var(--pncp-s2) 0 0;
+	overflow-wrap: anywhere;
+}
+
+.js .pncp-admin .pncp-list:not(.is-open) .pncp-list__editor {
+	display: none;
+}
+
+.pncp-admin .pncp-list__editor textarea {
+	background: var(--pncp-surface);
+}
+
 /* Save bar: stays at the bottom while a long tab scrolls; it lights up while there are unsaved changes. */
 .pncp-admin .pncp-settings-form p.submit {
 	position: sticky;

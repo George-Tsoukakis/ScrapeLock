@@ -78,11 +78,10 @@ try {
 	await page.goto( PAGE + '&tab=bots' );
 	await page.evaluate( () => {
 		document.querySelector( '#pncp-sec-network' ).open = true;
-		const fold = document.querySelector( 'details.pncp-fold' );
-		fold.open = true;
-		fold.setAttribute( 'data-test-fold', '1' );
 	} );
-	const foldKey = await page.evaluate( () => document.querySelector( '[data-test-fold] [id]' ).id );
+	// 3.11: the bot list is a list editor ("N entries" + "Edit") instead of a fold.
+	await page.click( '#pncp-bot_list-list .pncp-list__edit' );
+	const foldKey = 'pncp-bot_list';
 	const saveTop = await docTop( page, 'form[action="options.php"] #submit' );
 	await page.locator( 'form[action="options.php"] #submit' ).scrollIntoViewIfNeeded();
 	await Promise.all( [ page.waitForNavigation(), page.click( 'form[action="options.php"] #submit' ) ] );
@@ -91,7 +90,7 @@ try {
 	t( 'Save (bots): το «Network and CDN» ξανά ανοιχτό (από την PHP)', await page.evaluate( () => document.querySelector( '#pncp-sec-network' ).hasAttribute( 'open' ) ) );
 	t( 'Save (bots): η ανοιχτή λίστα (fold) ξανά ανοιχτή', await page.evaluate( ( id ) => {
 		const el = document.getElementById( id );
-		return !! ( el && el.closest( 'details' ) && el.closest( 'details' ).open );
+		return !! ( el && el.closest( '[data-pncp-list]' ) && el.closest( '[data-pncp-list]' ).classList.contains( 'is-open' ) && el.offsetParent );
 	}, foldKey ), foldKey );
 	t( 'Save (bots): το «Blocking at the CDN» μένει κλειστό', ! await isOpen( page, '#pncp-sec-edge' ) );
 	t( 'Save (bots): η σελίδα κυλά στο κουμπί Save', await scrolledTo( page, 'form[action="options.php"] #submit', saveTop ), String( saveTop ) );
