@@ -1640,8 +1640,8 @@ final class PNCP_Admin {
 						PNCP_Admin_Fields::help( __( 'Behind a CDN or proxy, choose the header that carries the visitor IP.', 'scrapelock' ), __( 'Behind a CDN or reverse proxy all visitors appear with the CDN\'s IP. Choose the header with the real IP.', 'scrapelock' ) )
 					);
 					?>
-					<p><strong><?php esc_html_e( 'Trusted Proxy:', 'scrapelock' ); ?></strong> <?php esc_html_e( 'the header is read only from proxies you trust.', 'scrapelock' ); ?></p>
-					<?php echo PNCP_Admin_Fields::more( __( 'the header is read only when the request comes from a proxy you trust. Otherwise anyone could write any IP they want and bypass limits and blocks. CF-Connecting-IP: only from Cloudflare. X-Real-IP / X-Forwarded-For: from Bunny CDN, the server itself or a private network (Nginx in front of Apache). True-Client-IP: only from the proxies in the list.', 'scrapelock' ) ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Escaped in PNCP_Admin_Fields. ?>
+					<p><?php echo wp_kses( __( '<strong>Trusted Proxy:</strong> the header is read only from proxies you trust.', 'scrapelock' ), array( 'strong' => array() ) ); ?></p>
+					<?php echo PNCP_Admin_Fields::more( __( 'The header is read only when the request comes from a proxy you trust. Otherwise anyone could write any IP they want and bypass limits and blocks. CF-Connecting-IP: only from Cloudflare. X-Real-IP / X-Forwarded-For: from Bunny CDN, the server itself or a private network (Nginx in front of Apache). True-Client-IP: only from the proxies in the list.', 'scrapelock' ) ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Escaped in PNCP_Admin_Fields. ?>
 					<?php
 					self::checkbox( $s, 'trust_cloudflare', __( 'Trust Cloudflare addresses', 'scrapelock' ), __( 'The official Cloudflare list is refreshed every day.', 'scrapelock' ) );
 					self::checkbox( $s, 'trust_bunny', __( 'Trust Bunny CDN addresses', 'scrapelock' ), PNCP_Admin_Fields::help( __( 'For X-Real-IP / X-Forwarded-For and Bunny\'s country header.', 'scrapelock' ), __( 'For X-Real-IP / X-Forwarded-For and Bunny\'s country header. The official list of Bunny edge servers is refreshed every day.', 'scrapelock' ) ) );
@@ -3877,11 +3877,14 @@ final class PNCP_Admin {
 			);
 		}
 		if ( ! empty( PNCP_Options::stored()['trust_any_proxy'] ) && PNCP_Status::notice_screen() ) {
+			$link = '<a href="' . esc_url( PNCP_Status::settings_url( array( 'tab' => 'bots' ) ) ) . '">' . esc_html__( 'Trusted Proxy settings', 'scrapelock' ) . '</a>';
 			printf(
-				'<div class="notice notice-warning"><p>%1$s <a href="%2$s">%3$s</a></p></div>',
-				esc_html__( 'ScrapeLock reads the visitor IP from a header without checking the proxy (as in 1.4), so it can be spoofed: fix it in the', 'scrapelock' ),
-				esc_url( PNCP_Status::settings_url( array( 'tab' => 'bots' ) ) ),
-				esc_html__( 'Trusted Proxy settings', 'scrapelock' )
+				'<div class="notice notice-warning"><p>%s</p></div>',
+				sprintf(
+					/* translators: %s: link "Trusted Proxy settings" */
+					esc_html__( 'ScrapeLock reads the visitor IP from a header without checking the proxy (as in 1.4), so it can be spoofed: fix it in the %s.', 'scrapelock' ),
+					$link // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Built from esc_url() and esc_html__() above.
+				)
 			);
 		}
 	}
