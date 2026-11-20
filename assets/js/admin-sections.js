@@ -30,11 +30,12 @@
 	}
 
 	// A key for every folded part: its id, else the id of the first element inside it ("in.<id>"), else the id
-	// of the nearest element around it ("<id>.d"); a repeated key gets ".2", ".3"… in page order.
+	// of the nearest element around it ("<id>.d"); a repeated key gets ".2", ".3"… in page order. 3.11: the
+	// "More" folds of the help texts (details.pncp-more) are not carried: dozens of them would crowd out the parts.
 	function parts() {
 		var seen = {};
 		var out = [];
-		Array.prototype.forEach.call( wrap.querySelectorAll( 'details' ), function ( el ) {
+		Array.prototype.forEach.call( wrap.querySelectorAll( 'details:not(.pncp-more)' ), function ( el ) {
 			var base = el.id;
 			if ( ! base ) {
 				var inner = el.querySelector( '[id]' );

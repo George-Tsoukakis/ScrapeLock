@@ -181,7 +181,7 @@ final class PNCP_Admin {
 	 * @param array<string, mixed> $s     Settings.
 	 * @param string               $key   Key.
 	 * @param string               $label Label text.
-	 * @param string               $help  Help text (optional).
+	 * @param string|array<int, string> $help Help text (optional): a string, or PNCP_Admin_Fields::help( short, more ).
 	 */
 	private static function checkbox( $s, $key, $label, $help = '' ) {
 		$id = 'pncp-' . $key;
@@ -199,7 +199,7 @@ final class PNCP_Admin {
 		);
 		echo PNCP_Admin_Fields::risk_tag( $key ) . PNCP_Admin_Fields::default_note( $key, $s ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Escaped in PNCP_Admin_Fields.
 		if ( $help ) {
-			printf( '<p class="description" id="%s">%s</p>', esc_attr( $id . '-help' ), esc_html( $help ) );
+			echo PNCP_Admin_Fields::description( $id . '-help', $help ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Escaped in description().
 		}
 		echo PNCP_Admin_Fields::requires_note( $key, $s ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Escaped in requires_note().
 		echo '</div>';
@@ -243,7 +243,7 @@ final class PNCP_Admin {
 	 * @param array<string, mixed>  $s       Settings.
 	 * @param string                $key     Key.
 	 * @param array<string, string> $options value => label.
-	 * @param string                $help    Help text.
+	 * @param string|array<int, string> $help Help text: a string, or PNCP_Admin_Fields::help( short, more ).
 	 */
 	private static function select( $s, $key, $options, $help = '' ) {
 		$id = 'pncp-' . $key;
@@ -269,7 +269,7 @@ final class PNCP_Admin {
 		}
 		echo '</select>';
 		if ( $help ) {
-			printf( '<p class="description" id="%s">%s</p>', esc_attr( $id . '-help' ), esc_html( $help ) );
+			echo PNCP_Admin_Fields::description( $id . '-help', $help ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Escaped in description().
 		}
 		echo PNCP_Admin_Fields::requires_note( $key, $s ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Escaped in requires_note().
 	}
@@ -280,7 +280,7 @@ final class PNCP_Admin {
 	 * @param array<string, mixed> $s     Settings.
 	 * @param string               $key   Key.
 	 * @param string               $label Label text.
-	 * @param string               $help  Help text.
+	 * @param string|array<int, string> $help Help text: a string, or PNCP_Admin_Fields::help( short, more ).
 	 */
 	private static function number( $s, $key, $label, $help = '' ) {
 		$range = PNCP_Options::int_ranges()[ $key ];
@@ -301,7 +301,7 @@ final class PNCP_Admin {
 			PNCP_Admin_Fields::risk_tag( $key ) . PNCP_Admin_Fields::default_note( $key, $s ) // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Escaped in PNCP_Admin_Fields.
 		);
 		if ( $help ) {
-			printf( '<p class="description" id="%s">%s</p>', esc_attr( $id . '-help' ), esc_html( $help ) );
+			echo PNCP_Admin_Fields::description( $id . '-help', $help ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Escaped in description().
 		}
 		echo PNCP_Admin_Fields::requires_note( $key, $s ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Escaped in requires_note().
 		echo '</div>';
@@ -313,7 +313,7 @@ final class PNCP_Admin {
 	 * @param array<string, mixed> $s     Settings.
 	 * @param string               $key   Key.
 	 * @param string               $label Label.
-	 * @param string               $help  Help text.
+	 * @param string|array<int, string> $help Help text: a string, or PNCP_Admin_Fields::help( short, more ).
 	 * @param int                  $rows  Rows.
 	 * @param bool                 $fold  Long list: shown folded, with the number of entries.
 	 */
@@ -323,7 +323,7 @@ final class PNCP_Admin {
 	 * @param array<string, mixed> $s     Settings.
 	 * @param string               $key   Option key.
 	 * @param string               $label Label.
-	 * @param string               $help  Help text.
+	 * @param string|array<int, string> $help Help text: a string, or PNCP_Admin_Fields::help( short, more ).
 	 */
 	private static function password( $s, $key, $label, $help = '' ) {
 		$id = 'pncp-' . $key;
@@ -349,7 +349,7 @@ final class PNCP_Admin {
 			);
 		}
 		if ( $help ) {
-			printf( '<p class="description" id="%s">%s</p>', esc_attr( $id . '-help' ), esc_html( $help ) );
+			echo PNCP_Admin_Fields::description( $id . '-help', $help ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Escaped in description().
 		}
 		echo '</div>';
 	}
@@ -360,12 +360,12 @@ final class PNCP_Admin {
 		if ( $fold ) {
 			$count = count( PNCP_Options::parse_list( (string) $s[ $key ] ) );
 			// 3.5: a folded list shows its risk tag on the summary too (without the id, which the tag below has).
-			$risk = isset( PNCP_Admin_Fields::risky()[ $key ] ) ? ' <span class="pncp-tag pncp-tag--risk">' . esc_html__( 'May affect visitors/SEO', 'scrapelock' ) . '</span>' : '';
+			$risk = isset( PNCP_Admin_Fields::risky()[ $key ] ) ? ' ' . PNCP_Admin_Fields::risk_icon() : '';
 			printf(
 				'<details class="pncp-fold"><summary>%s <span class="pncp-badge">%s</span>%s</summary>',
 				esc_html( $label ),
 				esc_html( sprintf( /* translators: %s: number of entries */ _n( '%s entry', '%s entries', $count, 'scrapelock' ), number_format_i18n( $count ) ) ),
-				$risk // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Escaped above.
+				$risk // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Escaped in risk_icon().
 			);
 		}
 		printf( '<p><label for="%s"%s>%s</label></p>', esc_attr( $id ), $fold ? ' class="screen-reader-text"' : '', esc_html( $label ) );
@@ -381,7 +381,7 @@ final class PNCP_Admin {
 			esc_textarea( (string) $s[ $key ] )
 		);
 		if ( $help ) {
-			printf( '<p class="description" id="%s">%s</p>', esc_attr( $id . '-help' ), esc_html( $help ) );
+			echo PNCP_Admin_Fields::description( $id . '-help', $help ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Escaped in description().
 		}
 		echo PNCP_Admin_Fields::requires_note( $key, $s ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Escaped in requires_note().
 		echo $fold ? '</details></div>' : '</div>';
