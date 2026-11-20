@@ -1,5 +1,19 @@
 # Αλλαγές
 
+## 3.12.2 — 2026-11-20
+
+Διορθώσεις: τα αιτήματα του site προς τον εαυτό του πίσω από Bunny CDN χωρίς «Forward Host Header», και ποιος τα αρνείται.
+
+- **Η υπογραφή για τον host που έγινε**: το Bunny χωρίς «Forward Host Header» (η προεπιλογή του) στέλνει στον server το όνομα του origin της pull zone ως Host, και η υπογραφή της 3.12.1 ήταν δεμένη σε αυτό, οπότε το «Check again» στα Vulnerable points και το Site Health έπαιρναν ακόμα 403. Η υπογραφή λέει τώρα για ποιον host του site και ποια διαδρομή έγινε (`χρόνος.nonce.hmac.hint`) και επαληθεύεται για εκείνον, ό,τι Host κι αν φτάσει· «//» στη διαδρομή και HEAD που έγινε GET ταιριάζουν κι αυτά. Οι υπογραφές της 3.12.1 γίνονται δεκτές όσο γίνεται η αλλαγή, και στο pre-cache check.
+- **Ποιος αρνήθηκε**: όταν κάτι στον δρόμο αρνείται το αίτημα του site, η σημείωση λέει ποιος: το ScrapeLock (με τον έλεγχο), το edge του Bunny, το Cloudflare, το Wordfence, άλλο plugin ή ο web server, και τι να ελέγξεις εκεί. Οι αρνήσεις του ScrapeLock έχουν header `X-ScrapeLock: refused` (ο λόγος μόνο για το αίτημα του ίδιου του site· ένας άγνωστος με πλαστή υπογραφή βλέπει μόνο «refused»), και μια έγκυρη υπογραφή παίρνει `X-ScrapeLock: ok id=…`.
+- **Κατευθείαν στον server**: τότε το αίτημα γίνεται ξανά απευθείας στον server (ο host και η θύρα του site καρφωμένα στο 127.0.0.1, στη διεύθυνση του server ή στο `SCRAPELOCK_SERVER_IPS` με CURLOPT_RESOLVE, ο έλεγχος TLS όπως πριν). Τα Vulnerable points δίνουν πραγματικό αποτέλεσμα με την ένδειξη «Checked at the server», με τις λεπτομέρειες στο «More». Για 6 ώρες και τα άλλα αιτήματα του site προς τον εαυτό του (Site Health, WP cron) πάνε από εκεί, μόνο αφού απάντησε εκεί αυτό το ίδιο το WordPress, μόνο για τον host και τη θύρα του site, ώσπου να απαντήσει ξανά η δημόσια διεύθυνση ή να σταματήσει να απαντά ο server.
+- **Εργαλεία**: «Run a real self-check now» και το preset «The site itself (loopback)» (κάθε επίπεδο, χωρίς να σταλεί τίποτα) στο Log → Check a request, ο έλεγχος «ScrapeLock self-request test» στο Site Health και `wp scrapelock selfcheck [--log]`. Τα τελευταία 30 αιτήματα του site σημειώνονται (option `pncp_selfcheck_log`, όχι autoload) χωρίς IP, User-Agent, query string, cookie ή nonce· η απεγκατάσταση τα σβήνει.
+- **Αποκλεισμός του server στο CDN**: ένας αποκλεισμός της διεύθυνσης του server που στάλθηκε στο CDN παλιότερα αφαιρείται αμέσως, όχι στην επόμενη αλλαγή των bans.
+- **«=» στο «Always allowed User-Agents»** (ολόκληρο το User-Agent): ισχύει στο WordPress και στο pre-cache check· πριν δεν ταίριαζε με τίποτα.
+- **«Check a request»** και `wp scrapelock check`: για προεπισκόπηση συνδέσμου του «Always allowed» σε εικόνα ή αρχείο λένε «Not counted», όχι μετρητή.
+- **«For my site»**: κάθε ρύθμιση με την ετικέτα της· το εσωτερικό όνομα σε tooltip «?».
+- **Ελληνική μετάφραση** των νέων κειμένων. Οι ρυθμίσεις και τα exports της 3.12.1 μένουν ίδια.
+
 ## 3.12.1 — 2026-11-20
 
 Διορθώσεις: τα αιτήματα του site προς τον εαυτό του πίσω από CDN, τα μέλη του FluentCommunity, τα AI search bots, και πιο προσεκτικές προεπιλογές.
