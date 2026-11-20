@@ -22,6 +22,7 @@
  *    site's other requests), and over real HTTP against the test server (a host name that does not resolve).
  * H. Vulnerable points: the note names who refused, details folded, results checked at the server marked so.
  * E. A block of the server's address at the CDN is removed at once; the Bunny presets never match the home page.
+ * O. "Only through the CDN" without a secret never refuses anything; with one, a signed request passes.
  *
  * Self-requests are made from this test process to the test server, never from a page the single-process
  * server is serving (it would wait for itself). Only on a test WordPress.
@@ -642,6 +643,27 @@ foreach ( PNCP_Bunny::presets() as $id => $preset ) {
 }
 t( 'E: no Bunny preset of ScrapeLock (login lock, xmlrpc, probes …) matches the home page or a post', ! $home_match, wp_json_encode( $home_match ) );
 delete_transient( PNCP_Server_Ips::OUTBOUND );
+
+/* ---------- O. "Only through the CDN" ---------- */
+t( 'O: on without a secret: not in effect', ! PNCP_Origin::active() );
+as_request( '192.0.2.44', SELF_UA, array(), '/' );
+t( 'O: ... a request straight to the server is not refused by it', ! PNCP_Origin::active() );
+$cfg2        = json_decode( PNCP_Precheck::config_json(), true );
+$cfg2['dir'] = $pc_dir;
+t( 'O: ... nor by the pre-cache check', '' === PNCP_Precheck_Runtime::not_via_cdn( $cfg2 ) );
+settings( array( 'cdn_secret' => 'g1-secret-0123456789' ) );
+t( 'O: with a secret it is in effect', PNCP_Origin::active() );
+as_request( '192.0.2.44', SELF_UA, array( 'HTTP_X_SCRAPELOCK_SIG' => sig( '/' ), 'HTTP_HOST' => ORIGIN_HOST ), $home_path );
+t( 'O: ... a signed request without the secret is exempt (another Host header too)', PNCP_Origin::exempt() );
+$cfg2                = json_decode( PNCP_Precheck::config_json(), true );
+$cfg2['dir']         = $pc_dir;
+$cfg2['self_key']    = PNCP_Server_Ips::sig_key();
+as_request( '192.0.2.44', SELF_UA, array( 'HTTP_X_SCRAPELOCK_SIG' => sig( '/' ), 'HTTP_HOST' => ORIGIN_HOST ), $home_path );
+// (verdict() itself never runs on the command line: its first step, the site's signature, is what lets it pass.)
+t( 'O: ... and the pre-cache check knows it as the site\'s, the step before "not via the CDN"', PNCP_Precheck_Runtime::self_signed( $cfg2, time() ) );
+as_request( '192.0.2.44', SELF_UA, array(), '/' );
+t( 'O: ... an unsigned one is refused there (not via the CDN)', '192.0.2.44' === PNCP_Precheck_Runtime::not_via_cdn( $cfg2 ), PNCP_Precheck_Runtime::not_via_cdn( $cfg2 ) );
+settings( array( 'cdn_secret' => '' ) );
 
 // Clean up the temporary data folder.
 foreach ( glob( $pc_dir . '/self/*' ) ?: array() as $pncp_f ) {
