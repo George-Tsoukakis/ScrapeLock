@@ -75,6 +75,7 @@ final class PNCP_Server_Ips {
 		add_action( 'admin_init', array( __CLASS__, 'maybe_refresh' ) );
 		add_action( self::CHANGED, array( __CLASS__, 'changed' ) );
 		add_filter( 'http_request_args', array( __CLASS__, 'sign' ), 10, 2 );
+		add_action( 'requests-requests.before_redirect', array( __CLASS__, 'unsign_redirect' ), 10, 2 );
 	}
 
 	/**
@@ -264,6 +265,30 @@ final class PNCP_Server_Ips {
 			$args['headers'][ self::HEADER ] = self::token( time(), $key );
 		}
 		return $args;
+	}
+
+	/**
+	 * A signed request that is redirected to another host does not take the signature there: Requests sends the
+	 * same headers to the new address, so a redirect from the site to someone else's server (an open redirect of
+	 * a plugin, a moved page) would hand them a signature that makes their address one of the server's for 30
+	 * days (learn()). Action requests-requests.before_redirect.
+	 *
+	 * @param string               $location The new address.
+	 * @param array<string, mixed> $headers  The request headers.
+	 */
+	public static function unsign_redirect( &$location, &$headers ) {
+		if ( ! is_array( $headers ) ) {
+			return;
+		}
+		$host = strtolower( (string) wp_parse_url( (string) $location, PHP_URL_HOST ) );
+		if ( '' !== $host && in_array( $host, self::own_hosts(), true ) ) {
+			return;
+		}
+		foreach ( array_keys( $headers ) as $name ) {
+			if ( 0 === strcasecmp( (string) $name, self::HEADER ) ) {
+				unset( $headers[ $name ] );
+			}
+		}
 	}
 
 	/**

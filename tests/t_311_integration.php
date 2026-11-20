@@ -466,6 +466,39 @@ settings(
 );
 PNCP_Log::clear();
 
+/* ---------- The site's signature never follows a redirect to another host ---------- */
+// A stand-in server on 127.0.0.1 (one of the site's host names, as home_url() is here): /redirect-out sends the
+// request on to localhost (another host), /redirect-in to 127.0.0.1, /echo answers with the headers it got.
+$echo_dir = sys_get_temp_dir() . '/pncp-echo-' . getmypid();
+wp_mkdir_p( $echo_dir );
+file_put_contents(
+	$echo_dir . '/router.php',
+	'<?php $p = parse_url( $_SERVER["REQUEST_URI"], PHP_URL_PATH );' .
+	' if ( "/redirect-out" === $p ) { header( "Location: http://localhost:8952/echo", true, 302 ); exit; }' .
+	' if ( "/redirect-in" === $p ) { header( "Location: http://127.0.0.1:8952/echo", true, 302 ); exit; }' .
+	' header( "Content-Type: application/json" ); echo json_encode( array_change_key_case( getallheaders(), CASE_LOWER ) );'
+);
+$echo_srv = proc_open( array( PHP_BINARY, '-S', '0.0.0.0:8952', $echo_dir . '/router.php' ), array( array( 'file', '/dev/null', 'r' ), array( 'file', '/dev/null', 'w' ), array( 'file', '/dev/null', 'w' ) ), $echo_pipes );
+usleep( 700000 );
+$echo = static function ( $url ) {
+	$r = wp_remote_get( $url, array( 'timeout' => 10 ) );
+	$h = is_wp_error( $r ) ? null : json_decode( wp_remote_retrieve_body( $r ), true );
+	return is_array( $h ) ? $h : array( 'error' => is_wp_error( $r ) ? $r->get_error_message() : wp_remote_retrieve_body( $r ) );
+};
+$self = strtolower( PNCP_Server_Ips::HEADER );
+$h    = $echo( 'http://127.0.0.1:8952/echo' );
+t( 'signature: a request to the site\'s own host carries it', isset( $h[ $self ] ), wp_json_encode( $h ) );
+$h = $echo( 'http://127.0.0.1:8952/redirect-in' );
+t( 'signature: still there after a redirect to the site\'s own host', isset( $h[ $self ] ), wp_json_encode( $h ) );
+$h = $echo( 'http://127.0.0.1:8952/redirect-out' );
+t( 'signature: not sent on after a redirect to another host (it would make that host one of the server\'s)', ! isset( $h[ $self ] ) && ! isset( $h['error'] ), wp_json_encode( $h ) );
+$h = $echo( 'http://localhost:8952/echo' );
+t( 'signature: never sent to another host', ! isset( $h[ $self ] ) && ! isset( $h['error'] ), wp_json_encode( $h ) );
+proc_terminate( $echo_srv );
+proc_close( $echo_srv );
+wp_delete_file( $echo_dir . '/router.php' );
+rmdir( $echo_dir );
+
 // @@NEXT@@
 
 echo $fails ? "\n$fails FAIL\n" : "\nALL PASS\n";
