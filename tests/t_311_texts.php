@@ -137,7 +137,9 @@ foreach ( $tabs as $tab ) {
 	foreach ( $desc as $el ) {
 		$text = trim( preg_replace( '/\s+/u', ' ', visible_text( $el ) ) );
 		$n    = words( $text );
-		if ( $n > PNCP_T_MAX_WORDS ) {
+		// A note that quotes a transport error of the site's request to itself (CI's single-process server times
+		// out on it) depends on the environment, not on the help texts.
+		if ( $n > PNCP_T_MAX_WORDS && false === strpos( $text, 'could not reach itself' ) ) {
 			$long[] = $n . ': ' . mb_substr( $text, 0, 90 );
 		}
 		if ( preg_match( '/^pncp-.+-help$/', $el->getAttribute( 'id' ) ) && $n > PNCP_T_MAX_HELP ) {

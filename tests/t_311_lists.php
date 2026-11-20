@@ -294,7 +294,9 @@ settings(
 );
 $version = get_option( 'pncp_version' );
 update_option( 'pncp_version', '3.10.1' );
+$pncp_er = error_reporting( error_reporting() & ~E_DEPRECATED ); // The SQLite drop-in's own Deprecated in dbDelta (CI).
 pncp_upgrade();
+error_reporting( $pncp_er );
 $after = reread();
 t( 'A5 upgrade from 3.10.1 with AI search on: removed from the stored list', array() === PNCP_Options::ai_search_in_bot_list( $after ) && false === stripos( $after['bot_list'], 'ChatGPT-User' ), $after['bot_list'] );
 t( 'A5 upgrade: the training crawlers stay', false !== strpos( $after['bot_list'], 'GPTBot' ) && false !== strpos( $after['bot_list'], 'Bytespider' ) && false !== strpos( $after['bot_list'], 'Google-Extended' ) );
@@ -305,7 +307,9 @@ settings(
 	)
 );
 update_option( 'pncp_version', '3.10.1' );
+$pncp_er = error_reporting( error_reporting() & ~E_DEPRECATED ); // The SQLite drop-in's own Deprecated in dbDelta (CI).
 pncp_upgrade();
+error_reporting( $pncp_er );
 $after = reread();
 t( 'A5 upgrade with AI search off: the list is left as it is', $list === $after['bot_list'], $after['bot_list'] );
 update_option( 'pncp_version', $version );

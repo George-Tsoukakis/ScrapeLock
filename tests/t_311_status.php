@@ -350,7 +350,9 @@ t( 'Γ: unchanged defaults: blur_on_capture 0, block_devtools 0, user_mark_guest
 delete_option( PNCP_OPTION );
 delete_option( 'pncp_version' );
 PNCP_Options::flush();
+$pncp_er = error_reporting( error_reporting() & ~E_DEPRECATED ); // The SQLite drop-in's own Deprecated in dbDelta (CI).
 pncp_upgrade();
+error_reporting( $pncp_er );
 no_file_sync();
 wp_cache_delete( 'alloptions', 'options' );
 PNCP_Options::flush();
@@ -362,7 +364,9 @@ $old = PNCP_Options::defaults();
 update_option( PNCP_OPTION, $old );
 update_option( 'pncp_version', '3.10.1' );
 PNCP_Options::flush();
+$pncp_er = error_reporting( error_reporting() & ~E_DEPRECATED ); // The SQLite drop-in's own Deprecated in dbDelta (CI).
 pncp_upgrade();
+error_reporting( $pncp_er );
 no_file_sync();
 wp_cache_delete( 'alloptions', 'options' );
 PNCP_Options::flush();
@@ -381,7 +385,9 @@ $older = array_diff_key( $old, array_flip( array( 'probe_ban', 'block_ip_host', 
 update_option( PNCP_OPTION, $older );
 update_option( 'pncp_version', '3.4.0' );
 PNCP_Options::flush();
+$pncp_er = error_reporting( error_reporting() & ~E_DEPRECATED ); // The SQLite drop-in's own Deprecated in dbDelta (CI).
 pncp_upgrade();
+error_reporting( $pncp_er );
 no_file_sync();
 wp_cache_delete( 'alloptions', 'options' );
 PNCP_Options::flush();

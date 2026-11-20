@@ -558,6 +558,12 @@ PNCP_Precheck::sync();
 sleep( 3 );
 
 // A3 on the pre-cache check.
+// With internet (CI), WP cron may have downloaded the real Google and Apple lists in the meantime: no download
+// during this part, and the test lists stored again before crawlers.json is written.
+wp_unschedule_hook( PNCP_Ip::CRON );
+set_transient( 'pncp_lists_missing_try', 1, HOUR_IN_SECONDS );
+PNCP_Ip::store_list( 'google', array( '66.249.64.0/19', '74.125.0.0/16' ) );
+PNCP_Ip::store_list( 'apple', array( '17.58.0.0/16' ) );
 settings( array( 'bot_list' => $saved['bot_list'] . "\nCFNetwork", 'allow_list' => $old_allow ) );
 PNCP_Precheck::sync(); // Also crawlers.json with Google's and Apple's lists.
 sleep( 3 );
