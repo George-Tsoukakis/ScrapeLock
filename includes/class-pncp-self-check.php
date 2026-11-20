@@ -1052,10 +1052,13 @@ final class PNCP_Self_Check {
 	 * @return string
 	 */
 	public static function step_line( $step ) {
-		/* translators: %s: server address */
-		$via   = 'origin' === $step['via'] ? sprintf( __( 'Straight to the server (%s)', 'scrapelock' ), $step['ip'] ) : __( 'Through the public address', 'scrapelock' );
-		if ( 'origin' === $step['via'] && empty( $step['ip'] ) ) {
+		if ( 'origin' !== $step['via'] ) {
+			$via = __( 'Through the public address', 'scrapelock' );
+		} elseif ( empty( $step['ip'] ) ) {
 			$via = __( 'Straight to the server', 'scrapelock' ); // A note of the ring buffer, which keeps no address.
+		} else {
+			/* translators: %s: server address */
+			$via = sprintf( __( 'Straight to the server (%s)', 'scrapelock' ), $step['ip'] );
 		}
 		$parts = array();
 		if ( '' !== (string) $step['error'] ) {
