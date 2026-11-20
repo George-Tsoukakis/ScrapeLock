@@ -16,6 +16,9 @@
  * R. Redirects: re-signed on the site's own host, never sent on to another host (stand-in server on 8953).
  * P. The pre-cache check: the same signature, its key passed by the line in wp-config.php (never in the data
  *    folder in uploads), nonces used once (a file each).
+ * I. The server's addresses: the outbound one, detected from the site's signed requests (24-hour transient),
+ *    and SCRAPELOCK_SERVER_IPS (a test mu-plugin defines it for the web server), in WordPress, the early check
+ *    and the pre-cache check.
  * H. Vulnerable points "Check again" and the Stealth test's fetch through the "edge" get the real answers.
  *
  * The HTTP requests "come from the Bunny edge" with the harness's X-Test-Remote-Addr (REMOTE_ADDR in WordPress
@@ -52,6 +55,7 @@ function settings( $changes ) {
 const EDGE      = '198.51.100.10'; // A Bunny edge (in the stored Bunny list below).
 const SERVER    = '203.0.113.50';  // The server's public address, as the edge sees it.
 const VISITOR   = '198.51.100.81';
+const BANNED    = '198.51.100.99';
 const SELF_UA   = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36 ScrapeLock-Selftest';
 const STEALTH_UA = 'Mozilla/5.0 (compatible; ScrapeLock self-test)';
 
@@ -93,6 +97,12 @@ function as_request( $remote, $ua, $headers = array(), $path = '/', $method = 'G
 function verdict( $context = 'page' ) {
 	$v = PNCP_Bots::check( $context, false );
 	return is_array( $v ) ? $v['code'] . ' ' . $v['reason'] : 'pass';
+}
+
+/** Forgets the server's addresses learned so far (each signed request teaches the address it came from). */
+function forget_server_ips() {
+	delete_transient( PNCP_Server_Ips::OUTBOUND );
+	delete_option( PNCP_Server_Ips::OPTION );
 }
 
 /** A signature of this site for a path ($time: a moment other than now). */
@@ -258,17 +268,18 @@ foreach (
 }
 
 // Countries, limits, bans, the block list: a signed request passes them all, from any address.
-settings( array( 'countries_block' => 'ZZ,US,GR,XX', 'rate_limit' => 1, 'rate_limit_unverified' => 1, 'block_ips' => VISITOR ) );
-PNCP_Log::ban( VISITOR, 10, 'test' );
-as_request( VISITOR, SELF_UA );
+settings( array( 'countries_block' => 'ZZ,US,GR,XX', 'rate_limit' => 1, 'rate_limit_unverified' => 1, 'block_ips' => BANNED ) );
+PNCP_Log::ban( BANNED, 10, 'test' );
+as_request( BANNED, SELF_UA );
 t( 'S: a banned, blocked address, unsigned: 403', 0 === strpos( verdict(), '403' ), verdict() );
 $v = array();
 for ( $i = 0; $i < 3; $i++ ) {
-	as_request( VISITOR, SELF_UA, array( 'HTTP_X_SCRAPELOCK_SIG' => sig( '/' ) ), $home_path );
+	as_request( BANNED, SELF_UA, array( 'HTTP_X_SCRAPELOCK_SIG' => sig( '/' ) ), $home_path );
 	$v[] = PNCP_Bots::check( 'page', true ) ? 'refused' : 'pass';
 }
 t( 'S: signed from a blocked and banned address, page limit 1, three times: passes', array( 'pass', 'pass', 'pass' ) === $v, implode( ',', $v ) );
-PNCP_Log::unban( VISITOR );
+PNCP_Log::unban( BANNED );
+forget_server_ips();
 settings( array( 'countries_block' => '', 'rate_limit' => 60, 'rate_limit_unverified' => 20, 'block_ips' => '' ) );
 
 // What does not pass.
@@ -289,6 +300,7 @@ foreach ( $bad as $label => $case ) {
 	t( "S: a signature $label: refused (403)", '403 fake_browser' === verdict() && ! PNCP_Server_Ips::is_request(), verdict() );
 }
 // A visitor naming the server in X-Forwarded-For, through the edge or straight to the origin.
+forget_server_ips();
 as_request( EDGE, 'WordPress/6.9; ' . home_url( '/' ), array( 'HTTP_X_FORWARDED_FOR' => SERVER ) );
 t( 'S: X-Forwarded-For = the server, through the edge: not exempt (403)', '403 no_browser' === verdict(), verdict() );
 as_request( VISITOR, 'WordPress/6.9; ' . home_url( '/' ), array( 'HTTP_X_FORWARDED_FOR' => SERVER, 'HTTP_X_REAL_IP' => SERVER ) );
@@ -306,10 +318,12 @@ settings( array( 'early_mode' => 0 ) );
 
 // "Only through the CDN" (in effect with a secret only): a signed request reaching the server around the CDN.
 settings( array( 'cdn_secret' => 'stage-secret-1234567890' ) );
+forget_server_ips();
 as_request( SERVER, SELF_UA );
 t( 'S cdn_only: the server\'s request straight to the origin, unsigned: not exempt', ! PNCP_Origin::exempt() );
 as_request( SERVER, SELF_UA, array( 'HTTP_X_SCRAPELOCK_SIG' => sig( '/' ) ), $home_path );
 t( 'S cdn_only: signed: exempt', PNCP_Origin::exempt() );
+forget_server_ips();
 as_request( VISITOR, SELF_UA, array( 'HTTP_X_SCRAPELOCK_SIG' => 'x' . sig( '/' ) ), $home_path );
 t( 'S cdn_only: a forged signature: not exempt', ! PNCP_Origin::exempt() );
 settings( array( 'cdn_secret' => '' ) );
@@ -321,6 +335,7 @@ $m->setAccessible( true );
 t( 'S: the trap and the probe ban never ban a signed request', false === $m->invoke( null, VISITOR, 'pncp_tr_' ) );
 
 /* ---------- S over HTTP: WordPress and the early check, the request "from the edge" ---------- */
+forget_server_ips();
 list( $code ) = req( '/', from_edge() );
 t( 'S HTTP: the self-test through the edge, unsigned: 403 (the bug)', 403 === $code, (string) $code );
 $tok = sig( '/' );
@@ -387,6 +402,7 @@ wp_delete_file( $echo_dir . '/router.php' );
 rmdir( $echo_dir );
 
 /* ---------- P. The pre-cache check ---------- */
+forget_server_ips();
 file_put_contents( $config_file, "<?php\ndefine( 'WP_CACHE', true ); // test cache\n" . substr( $original, 6 ) );
 file_put_contents( $cache_file, "<?php\nif ( isset( \$_SERVER['REQUEST_URI'] ) && 0 === strpos( \$_SERVER['REQUEST_URI'], '/cached-page/' ) ) {\n\theader( 'X-Test-Cache: HIT' );\n\techo 'CACHED PAGE';\n\texit;\n}\n" );
 // The visitor through a proxy on the server (X-Real-IP from 127.0.0.1): the pre-cache check runs before the
@@ -441,6 +457,8 @@ $cached = static function ( $headers ) {
 	list( $code, , $body ) = req( '/cached-page/', array_merge( array( 'X-Real-IP' => VISITOR ), $headers ) );
 	return $code . ( false !== strpos( $body, 'CACHED PAGE' ) ? ' cached' : '' );
 };
+forget_server_ips();
+PNCP_Precheck::sync();
 // OPcache of the server keeps the previous wp-config.php for a few seconds: wait for the stand-in page cache.
 for ( $i = 0; $i < 20 && '200 cached' !== $cached( array( 'User-Agent' => SELF_UA, 'Accept-Language' => 'en', 'X-Real-IP' => '198.51.100.9' . ( $i % 10 ) ) ); $i++ ) {
 	usleep( 500000 );
@@ -466,6 +484,98 @@ settings( array( 'cdn_secret' => '', 'precheck' => 0, 'ip_header' => 'remote_add
 PNCP_Precheck::sync();
 file_put_contents( $config_file, $original );
 sleep( 2 ); // OPcache of the server: wp-config.php.
+
+/* ---------- I. The server's addresses: the detected outbound one and SCRAPELOCK_SERVER_IPS ---------- */
+delete_transient( PNCP_Server_Ips::OUTBOUND );
+delete_option( PNCP_Server_Ips::OPTION );
+$wp_ua = 'WordPress/6.9; ' . home_url( '/' );
+// Through the edge without real_ip: the address the edge saw is the last of X-Forwarded-For.
+as_request( EDGE, SELF_UA, array( 'HTTP_X_FORWARDED_FOR' => '192.0.2.200, 203.0.113.51', 'HTTP_X_SCRAPELOCK_SIG' => sig( '/' ) ), $home_path );
+t( 'I: a signed request through the edge passes', 'pass' === verdict(), verdict() );
+t( 'I: ... and the address the edge saw it from (the last of X-Forwarded-For) is the server\'s outbound address', in_array( '203.0.113.51', PNCP_Server_Ips::outbound_ips(), true ) && PNCP_Server_Ips::is_server_ip( '203.0.113.51' ), wp_json_encode( get_transient( PNCP_Server_Ips::OUTBOUND ) ) );
+t( 'I: ... not the address the client wrote before it', ! PNCP_Server_Ips::is_server_ip( '192.0.2.200' ) );
+if ( ! wp_using_ext_object_cache() ) {
+	$until = (int) get_option( '_transient_timeout_' . PNCP_Server_Ips::OUTBOUND );
+	t( 'I: kept in a transient for 24 hours', abs( $until - ( time() + DAY_IN_SECONDS ) ) < 30, (string) ( $until - time() ) );
+}
+t( 'I: ... and in the pre-cache check\'s configuration', isset( PNCP_Precheck::config()['self_ips'][0]['203.0.113.51'] ) );
+// With Nginx real_ip (REMOTE_ADDR is the address the edge saw).
+as_request( '203.0.113.52', SELF_UA, array( 'HTTP_X_SCRAPELOCK_SIG' => sig( '/' ) ), $home_path );
+verdict();
+t( 'I: with real_ip: the signed request\'s REMOTE_ADDR is detected', in_array( '203.0.113.52', PNCP_Server_Ips::outbound_ips(), true ) );
+as_request( '203.0.113.52', $wp_ua );
+t( 'I: then the WordPress User-Agent from that address, unsigned, passes (cron, preloads that are not WordPress\'s)', 'pass' === verdict(), verdict() );
+as_request( VISITOR, $wp_ua );
+t( 'I: the same User-Agent from another address: 403', '403 no_browser' === verdict(), verdict() );
+as_request( EDGE, $wp_ua, array( 'HTTP_X_FORWARDED_FOR' => '203.0.113.52' ) );
+t( 'I: X-Forwarded-For = that address through the edge (unsigned): 403', '403 no_browser' === verdict(), verdict() );
+// A forged or replayed signature teaches nothing.
+$tok = sig( '/' );
+as_request( '203.0.113.53', SELF_UA, array( 'HTTP_X_SCRAPELOCK_SIG' => 'x' . $tok ), $home_path );
+verdict();
+as_request( EDGE, SELF_UA, array( 'HTTP_X_FORWARDED_FOR' => '203.0.113.54', 'HTTP_X_SCRAPELOCK_SIG' => sig( '/', 'GET', time() - 300 ) ), $home_path );
+verdict();
+t( 'I: a forged or expired signature teaches no address', ! PNCP_Server_Ips::is_server_ip( '203.0.113.53' ) && ! PNCP_Server_Ips::is_server_ip( '203.0.113.54' ) );
+// An address seen more than 24 hours ago is forgotten.
+set_transient( PNCP_Server_Ips::OUTBOUND, array( '203.0.113.55' => time() - DAY_IN_SECONDS - 60 ), DAY_IN_SECONDS );
+t( 'I: an address last seen more than 24 hours ago no longer counts', ! in_array( '203.0.113.55', PNCP_Server_Ips::outbound_ips(), true ) );
+delete_transient( PNCP_Server_Ips::OUTBOUND );
+delete_option( PNCP_Server_Ips::OPTION );
+
+// SCRAPELOCK_SERVER_IPS (wp-config.php): here and, through a test mu-plugin, in the web server's requests.
+define( 'SCRAPELOCK_SERVER_IPS', '192.0.2.0/28, 10.77.0.9 2001:db8:5::/64;0.0.0.0/0, not-an-ip' );
+$const_mu = WP_CONTENT_DIR . '/mu-plugins/pncp-t3121-server-ips.php';
+file_put_contents( $const_mu, "<?php\n// TESTS ONLY: written and removed by tests/t_3121_loopback.php.\ndefined( 'SCRAPELOCK_SERVER_IPS' ) || define( 'SCRAPELOCK_SERVER_IPS', '192.0.2.0/28, 10.77.0.9' );\n" );
+register_shutdown_function(
+	static function () use ( $const_mu ) {
+		@unlink( $const_mu );
+	}
+);
+t( 'I SCRAPELOCK_SERVER_IPS: addresses and ranges, a range wider than /8 and a non-address left out', array( '192.0.2.0/28', '10.77.0.9', '2001:db8:5::/64' ) === PNCP_Server_Ips::const_ips(), wp_json_encode( PNCP_Server_Ips::const_ips() ) );
+as_request( '192.0.2.5', $wp_ua );
+t( 'I SCRAPELOCK_SERVER_IPS: the WordPress User-Agent from an address in its range: passes', 'pass' === verdict(), verdict() );
+as_request( '2001:db8:5::77', '' );
+t( 'I SCRAPELOCK_SERVER_IPS: no User-Agent from its IPv6 range: passes', 'pass' === verdict(), verdict() );
+as_request( '10.77.0.9', $wp_ua );
+t( 'I SCRAPELOCK_SERVER_IPS: its private address, straight from the server\'s network: passes', 'pass' === verdict(), verdict() );
+as_request( '10.77.0.9', $wp_ua, array( 'HTTP_X_FORWARDED_FOR' => VISITOR ) );
+t( 'I SCRAPELOCK_SERVER_IPS: that private address passing a visitor on (a proxy): 403', '403 no_browser' === verdict(), verdict() );
+as_request( EDGE, $wp_ua, array( 'HTTP_X_FORWARDED_FOR' => '192.0.2.5' ) );
+t( 'I SCRAPELOCK_SERVER_IPS: X-Forwarded-For with its address through the edge: 403', '403 no_browser' === verdict(), verdict() );
+settings( array( 'early_mode' => 1 ) );
+as_request( '192.0.2.5', '' );
+t( 'I SCRAPELOCK_SERVER_IPS: the early check lets its address pass', null === PNCP_Early::check(), wp_json_encode( PNCP_Early::check() ) );
+settings( array( 'early_mode' => 0 ) );
+$c = PNCP_Precheck::config();
+t( 'I SCRAPELOCK_SERVER_IPS: in the pre-cache check\'s configuration', isset( $c['self_ips'][1] ) && in_array( '192.0.2.0/28', $c['self_ips'][1], true ) && isset( $c['self_const'][0]['10.77.0.9'] ), wp_json_encode( array( $c['self_ips'], $c['self_const'] ) ) );
+$c['dir'] = sys_get_temp_dir();
+foreach (
+	array(
+		array( '192.0.2.5', array(), true, 'an address of its range' ),
+		array( '10.77.0.9', array(), true, 'its private address from the server\'s network' ),
+		array( '10.77.0.9', array( 'HTTP_X_FORWARDED_FOR' => VISITOR ), false, 'its private address passing a visitor on' ),
+		array( VISITOR, array(), false, 'another address' ),
+	) as $case
+) {
+	as_request( $case[0], '', $case[1] );
+	$ip = PNCP_Precheck_Runtime::client_ip( $c, $reliable );
+	t( 'I SCRAPELOCK_SERVER_IPS pre-cache check: ' . $case[3] . ( $case[2] ? ': the server' : ': not the server' ), $case[2] === PNCP_Precheck_Runtime::is_server_request( $c, $ip, $reliable ), $ip );
+}
+// A change of the constant reaches the stored fingerprint (and so the pre-cache check) on the next wp-admin page.
+update_option( PNCP_Server_Ips::OPTION, array_merge( PNCP_Server_Ips::stored(), array( 'time' => time(), 'host' => implode( ',', PNCP_Server_Ips::own_hosts() ), 'const' => 'old' ) ) );
+PNCP_Server_Ips::maybe_refresh();
+t( 'I SCRAPELOCK_SERVER_IPS: a change is picked up by the next wp-admin page', md5( implode( ',', PNCP_Server_Ips::const_ips() ) ) === PNCP_Server_Ips::stored()['const'] );
+// Over HTTP (the mu-plugin defines it in the web server's requests).
+settings( array( 'early_mode' => 1 ) );
+PNCP_Early::sync();
+sleep( 2 ); // OPcache of the server: the new mu-plugins.
+list( $code ) = req( '/', array( 'X-Test-Remote-Addr' => '192.0.2.6' ) );
+t( 'I SCRAPELOCK_SERVER_IPS HTTP: no User-Agent from its range: 200 (early check and WordPress)', 200 === $code, (string) $code );
+list( $code ) = req( '/', array( 'X-Test-Remote-Addr' => VISITOR ) );
+t( 'I SCRAPELOCK_SERVER_IPS HTTP: no User-Agent from another address: 403', 403 === $code, (string) $code );
+settings( array( 'early_mode' => 0 ) );
+PNCP_Early::sync();
+@unlink( $const_mu );
 
 /* ---------- H. Vulnerable points "Check again", the Stealth test, Site Health: through the "edge" ---------- */
 unset( $_SERVER['HTTPS'] ); // This process: home_url() as stored (the "edge" requests say HTTPS with X-Test-HTTPS).

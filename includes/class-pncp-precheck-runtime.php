@@ -534,7 +534,9 @@ final class PNCP_Precheck_Runtime {
 			return '';
 		}
 		if ( ! self::is_local( $remote ) ) {
-			return $remote;
+			// 3.12.1: the server's own address (PNCP_Server_Ips): its request reached it around the CDN.
+			$ip = self::client_ip( $c, $reliable );
+			return self::is_server_request( $c, $ip, $reliable ) ? '' : $remote;
 		}
 		// The server itself only when no proxy passed the request on: behind a local reverse proxy (Nginx in
 		// front of Apache, Varnish) every request comes from 127.0.0.1, also the ones that went around the CDN.
@@ -1054,7 +1056,23 @@ final class PNCP_Precheck_Runtime {
 	 * @return bool
 	 */
 	public static function is_server_request( $c, $ip, $reliable ) {
-		if ( ! $reliable || '' === $ip || false === filter_var( $ip, FILTER_VALIDATE_IP, FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE ) || self::is_cdn( $ip, $c ) ) {
+		if ( ! $reliable || '' === $ip ) {
+			return false;
+		}
+		// 3.12.1: a private address of SCRAPELOCK_SERVER_IPS ("self_const"), as PNCP_Server_Ips::is_request(): only
+		// when every hop was on the server's network and it is not a proxy passing visitors on.
+		if ( false === filter_var( $ip, FILTER_VALIDATE_IP, FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE ) ) {
+			if ( empty( $c['self_const'] ) || ! is_array( $c['self_const'] ) || ! isset( $c['self_const'][1] ) || ! self::in_any( $ip, $c['self_const'] ) || self::untrusted_proxy_peer( $ip ) ) {
+				return false;
+			}
+			foreach ( self::$hops as $hop ) {
+				if ( ! self::is_local( $hop ) && false !== filter_var( $hop, FILTER_VALIDATE_IP, FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE ) ) {
+					return false;
+				}
+			}
+			return true;
+		}
+		if ( self::is_cdn( $ip, $c ) ) {
 			return false;
 		}
 		if ( isset( $_SERVER['SERVER_ADDR'] ) && self::normalize_ip( (string) $_SERVER['SERVER_ADDR'] ) === $ip ) {

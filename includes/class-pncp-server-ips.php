@@ -38,8 +38,9 @@ defined( 'ABSPATH' ) || exit;
 final class PNCP_Server_Ips {
 
 	/**
-	 * Option: array{ips: string[], host: string, time: int, learned: array<string, int>} (autoloaded: the early
-	 * check reads it on every request).
+	 * Option: array{ips: string[], host: string, time: int, learned: array<string, int>, const: string}
+	 * (autoloaded: the early check reads it on every request). 3.12.1: "const" is a fingerprint of
+	 * SCRAPELOCK_SERVER_IPS, so a change in wp-config.php reaches the pre-cache check.
 	 */
 	const OPTION = 'pncp_server_ips';
 
@@ -72,6 +73,17 @@ final class PNCP_Server_Ips {
 	 * Single event that rewrites the pre-cache check's configuration after an address was learned.
 	 */
 	const CHANGED = 'pncp_server_ips_changed';
+
+	/**
+	 * 3.12.1: transient: the addresses the server's own requests were seen leaving from (address => time), found
+	 * from the site's signed requests (note_outbound()), each kept 24 hours after it was last seen.
+	 */
+	const OUTBOUND = 'pncp_server_outbound';
+
+	/**
+	 * 3.12.1: how long a detected outbound address is kept after it was last seen, in seconds (24 hours).
+	 */
+	const OUTBOUND_KEEP = 86400;
 
 	/**
 	 * 3.12.1: the request header ScrapeLock adds to the site's requests to itself: a signature of the method, the
@@ -107,7 +119,7 @@ final class PNCP_Server_Ips {
 	/**
 	 * The stored state, cleaned.
 	 *
-	 * @return array{ips: string[], host: string, time: int, learned: array<string, int>}
+	 * @return array{ips: string[], host: string, time: int, learned: array<string, int>, const: string}
 	 */
 	public static function stored() {
 		$raw = get_option( self::OPTION, array() );
@@ -117,6 +129,7 @@ final class PNCP_Server_Ips {
 			'host'    => isset( $raw['host'] ) && is_string( $raw['host'] ) ? $raw['host'] : '',
 			'time'    => isset( $raw['time'] ) ? (int) $raw['time'] : 0,
 			'learned' => array(),
+			'const'   => isset( $raw['const'] ) && is_string( $raw['const'] ) ? $raw['const'] : '',
 		);
 		foreach ( isset( $raw['ips'] ) && is_array( $raw['ips'] ) ? $raw['ips'] : array() as $ip ) {
 			$ip = PNCP_Ip::normalize( is_string( $ip ) ? $ip : '' );
@@ -145,7 +158,8 @@ final class PNCP_Server_Ips {
 	}
 
 	/**
-	 * Every address of the server: loopback, SERVER_ADDR, the stored ones and the filter's.
+	 * Every address of the server: loopback, SERVER_ADDR, 3.12.1: the detected outbound ones (outbound_ips()) and
+	 * SCRAPELOCK_SERVER_IPS (const_ips()), the stored ones and the filter's.
 	 *
 	 * @return string[] Addresses and CIDRs.
 	 */
@@ -155,6 +169,8 @@ final class PNCP_Server_Ips {
 		if ( '' !== $server ) {
 			$ips[] = $server;
 		}
+		// 3.12.1: the addresses the server's requests leave from (detected, 24 hours) and SCRAPELOCK_SERVER_IPS.
+		$ips = array_merge( $ips, self::outbound_ips(), self::const_ips() );
 		/**
 		 * 3.11: the server's own addresses. A request whose verified visitor IP is one of them (loopback and
 		 * private addresses only when they did not come from far away) is never checked: Site Health, cron,
@@ -162,7 +178,8 @@ final class PNCP_Server_Ips {
 		 * Read by the early check (only mu-plugins can add to it there) and written into the pre-cache check's
 		 * configuration. Addresses or CIDRs (no wider than /8, IPv6 /16).
 		 *
-		 * @param string[] $ips Addresses: 127.0.0.1, ::1, SERVER_ADDR, the resolved and learned ones.
+		 * @param string[] $ips Addresses: 127.0.0.1, ::1, SERVER_ADDR, the detected outbound ones, those of
+		 *                      SCRAPELOCK_SERVER_IPS, the resolved and learned ones.
 		 */
 		$filtered = apply_filters( 'pncp_server_ips', array_merge( $ips, self::stored_ips() ) );
 		$out      = array();
@@ -188,6 +205,102 @@ final class PNCP_Server_Ips {
 	}
 
 	/**
+	 * 3.12.1: the addresses and ranges of SCRAPELOCK_SERVER_IPS in wp-config.php (comma- or space-separated, e.g.
+	 * define( 'SCRAPELOCK_SERVER_IPS', '203.0.113.50, 2001:db8:5::/64' );): the addresses the server's own
+	 * requests leave from, when ScrapeLock cannot find them itself. Read by the early check as well; written into
+	 * the pre-cache check's configuration. A range wider than /8 (IPv6 /16) is ignored. List only the server: a
+	 * proxy or load balancer in front of the site is not the server, and every visitor would pass through it.
+	 *
+	 * @return string[]
+	 */
+	public static function const_ips() {
+		if ( ! defined( 'SCRAPELOCK_SERVER_IPS' ) ) {
+			return array();
+		}
+		$raw = constant( 'SCRAPELOCK_SERVER_IPS' );
+		$raw = is_array( $raw ) ? implode( ',', array_map( 'strval', $raw ) ) : ( is_scalar( $raw ) ? (string) $raw : '' );
+		$out = array();
+		foreach ( (array) preg_split( '/[\s,;]+/', $raw, -1, PREG_SPLIT_NO_EMPTY ) as $range ) {
+			$range = trim( (string) $range );
+			if ( ! PNCP_Ip::valid_range( $range ) || PNCP_Options::range_too_wide( $range ) ) {
+				continue;
+			}
+			$range = false === strpos( $range, '/' ) ? PNCP_Ip::normalize( $range ) : $range;
+			if ( '' !== $range ) {
+				$out[] = $range;
+			}
+		}
+		return array_values( array_unique( $out ) );
+	}
+
+	/**
+	 * 3.12.1: the addresses the server's own requests were seen leaving from in the last 24 hours (OUTBOUND).
+	 *
+	 * @return string[]
+	 */
+	public static function outbound_ips() {
+		$list = get_transient( self::OUTBOUND );
+		$out  = array();
+		foreach ( is_array( $list ) ? $list : array() as $ip => $seen ) {
+			$ip = PNCP_Ip::normalize( (string) $ip );
+			if ( '' !== $ip && (int) $seen > time() - self::OUTBOUND_KEEP ) {
+				$out[] = $ip;
+			}
+		}
+		return $out;
+	}
+
+	/**
+	 * 3.12.1: the address a request arrived from, as the first proxy in front of the site saw it: behind a CDN edge
+	 * (REMOTE_ADDR on its list) the last address of X-Forwarded-For, which the edge appends itself (Cloudflare:
+	 * CF-Connecting-IP); otherwise the visitor IP, when it can be trusted. Only for a request the site signed
+	 * (note_outbound()): for anyone else these headers say whatever they like. '' for a private or CDN address.
+	 *
+	 * @return string
+	 */
+	public static function arrived_from() {
+		$remote = PNCP_Ip::remote_addr();
+		$ip     = '';
+		if ( '' !== $remote && PNCP_Ip::is_cdn( $remote ) ) {
+			$cf = isset( $_SERVER['HTTP_CF_CONNECTING_IP'] ) ? sanitize_text_field( wp_unslash( $_SERVER['HTTP_CF_CONNECTING_IP'] ) ) : '';
+			if ( '' !== $cf && PNCP_Ip::in_any( $remote, PNCP_Ip::list_of( 'cloudflare' ) ) ) {
+				$ip = $cf;
+			} elseif ( ! empty( $_SERVER['HTTP_X_FORWARDED_FOR'] ) ) {
+				$parts = explode( ',', sanitize_text_field( wp_unslash( $_SERVER['HTTP_X_FORWARDED_FOR'] ) ) );
+				$ip    = (string) end( $parts );
+			}
+		} elseif ( PNCP_Ip::reliable() ) {
+			$ip = PNCP_Ip::client_ip();
+		}
+		$ip = PNCP_Ip::normalize( $ip );
+		return '' === $ip || PNCP_Ip::is_private( $ip ) || PNCP_Ip::is_cdn( $ip ) ? '' : $ip;
+	}
+
+	/**
+	 * 3.12.1: a request the site signed arrived: the address it left the server from is one of the server's, kept
+	 * 24 hours after it was last seen (OUTBOUND; at most 4, written at most once an hour per address) and among the
+	 * learned addresses of 3.11 (30 days). A new one goes into the pre-cache check's configuration.
+	 */
+	private static function note_outbound() {
+		$ip = self::arrived_from();
+		if ( '' === $ip ) {
+			return;
+		}
+		$list  = get_transient( self::OUTBOUND );
+		$list  = is_array( $list ) ? array_map( 'intval', $list ) : array();
+		$known = isset( $list[ $ip ] ) && $list[ $ip ] > time() - self::OUTBOUND_KEEP;
+		if ( ! $known || $list[ $ip ] < time() - HOUR_IN_SECONDS ) {
+			$list[ $ip ] = time();
+			arsort( $list );
+			set_transient( self::OUTBOUND, array_slice( $list, 0, 4, true ), self::OUTBOUND_KEEP );
+		}
+		if ( ! $known ) {
+			self::changed_later();
+		}
+		self::remember( $ip );
+	}
+
+	/**
 	 * Does this request come from the server itself, through a proxy or CDN in front of the site? Its visitor IP
 	 * (client_ip(): only from a trusted proxy's header) is a public address of the server and can be trusted.
 	 * Loopback and private addresses are left to PNCP_Ip::is_local_request() (every hop must be local): a
@@ -205,7 +318,15 @@ final class PNCP_Server_Ips {
 			return true;
 		}
 		$ip = PNCP_Ip::client_ip();
-		if ( '' === $ip || PNCP_Ip::is_private( $ip ) || ! PNCP_Ip::reliable() || PNCP_Ip::is_cdn_edge( $ip ) || PNCP_Ip::is_cdn( $ip ) ) {
+		if ( '' === $ip || ! PNCP_Ip::reliable() ) {
+			return false;
+		}
+		// 3.12.1: a private address only from SCRAPELOCK_SERVER_IPS, the administrator's own word, and only when it
+		// came no further than the server's network and is not a proxy passing visitors on.
+		if ( PNCP_Ip::is_private( $ip ) ) {
+			return PNCP_Ip::in_any( $ip, self::const_ips() ) && PNCP_Ip::came_from_near() && ! PNCP_Ip::untrusted_proxy_peer();
+		}
+		if ( PNCP_Ip::is_cdn_edge( $ip ) || PNCP_Ip::is_cdn( $ip ) ) {
 			return false;
 		}
 		return self::is_server_ip( $ip ) || self::learn( $ip );
@@ -296,20 +417,26 @@ final class PNCP_Server_Ips {
 			$state['learned'] = array_slice( $state['learned'], 0, self::MAX_LEARNED, true );
 			update_option( self::OPTION, $state, true );
 			if ( ! $known ) {
-				// The pre-cache check gets the new address in this request, once every plugin has loaded (its
-				// configuration also holds what other plugins add with filters): until then its configuration was
-				// out of date, and Site Health called the check "on but not running" until WP cron ran.
-				if ( did_action( 'wp_loaded' ) ) {
-					self::changed();
-				} else {
-					add_action( 'wp_loaded', array( __CLASS__, 'changed' ) );
-				}
-				if ( function_exists( 'wp_schedule_single_event' ) && ! wp_next_scheduled( self::CHANGED ) ) {
-					wp_schedule_single_event( time(), self::CHANGED ); // In case this request ends before wp_loaded.
-				}
+				self::changed_later();
 			}
 		}
 		return true;
+	}
+
+	/**
+	 * The pre-cache check gets a new address in this request, once every plugin has loaded (its configuration also
+	 * holds what other plugins add with filters): until then its configuration was out of date, and Site Health
+	 * called the check "on but not running" until WP cron ran.
+	 */
+	private static function changed_later() {
+		if ( did_action( 'wp_loaded' ) ) {
+			self::changed();
+		} elseif ( ! has_action( 'wp_loaded', array( __CLASS__, 'changed' ) ) ) {
+			add_action( 'wp_loaded', array( __CLASS__, 'changed' ) );
+		}
+		if ( function_exists( 'wp_schedule_single_event' ) && ! wp_next_scheduled( self::CHANGED ) ) {
+			wp_schedule_single_event( time(), self::CHANGED ); // In case this request ends before wp_loaded.
+		}
 	}
 
 	/**
@@ -434,6 +561,9 @@ final class PNCP_Server_Ips {
 			&& hash_equals( self::sig_mac( $method, $host, $path, $time, $m[2], $key ), $m[3] )
 			&& PNCP_Log::cache_add( 'pncp_sn_' . $m[2], 1, 2 * self::SIG_WINDOW + 10 );
 		self::$sig_seen[ $memo ] = $ok;
+		if ( $ok ) {
+			self::note_outbound();
+		}
 		return $ok;
 	}
 
@@ -506,7 +636,8 @@ final class PNCP_Server_Ips {
 			return;
 		}
 		$state = self::stored();
-		if ( $state['time'] < time() - DAY_IN_SECONDS || $state['time'] > time() + HOUR_IN_SECONDS || implode( ',', self::own_hosts() ) !== $state['host'] ) {
+		// 3.12.1: and when SCRAPELOCK_SERVER_IPS was changed in wp-config.php (the pre-cache check gets it at once).
+		if ( $state['time'] < time() - DAY_IN_SECONDS || $state['time'] > time() + HOUR_IN_SECONDS || implode( ',', self::own_hosts() ) !== $state['host'] || md5( implode( ',', self::const_ips() ) ) !== $state['const'] ) {
 			self::refresh();
 		}
 	}
@@ -533,12 +664,14 @@ final class PNCP_Server_Ips {
 			}
 		}
 		$ips      = array_values( array_unique( $ips ) );
-		$changed  = $ips !== $state['ips'];
+		$const    = md5( implode( ',', self::const_ips() ) );
+		$changed  = $ips !== $state['ips'] || $const !== $state['const'];
 		$new      = array(
 			'ips'     => $ips,
 			'host'    => implode( ',', self::own_hosts() ),
 			'time'    => time(),
 			'learned' => $state['learned'],
+			'const'   => $const,
 		);
 		update_option( self::OPTION, $new, true );
 		if ( $changed ) {

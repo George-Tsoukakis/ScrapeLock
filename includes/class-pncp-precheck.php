@@ -344,6 +344,9 @@ final class PNCP_Precheck {
 			'allow'           => self::set( PNCP_Options::parse_list( $s['allow_ips'] ) ),
 			// 3.11: the server's own addresses (PNCP_Server_Ips): the site's requests to itself through the CDN.
 			'self_ips'        => self::set( PNCP_Server_Ips::ips() ),
+			// 3.12.1: SCRAPELOCK_SERVER_IPS: its private addresses count too, when they came no further than the
+			// server's network (PNCP_Precheck_Runtime::is_server_request()).
+			'self_const'      => self::set( PNCP_Server_Ips::const_ips() ),
 			// 3.12.1: the site's signed requests to itself (PNCP_Server_Ips::sig_ok()): its host names and the window.
 			// The key is never in this folder: the line in wp-config.php passes it (block()).
 			'self_sig'        => array(
