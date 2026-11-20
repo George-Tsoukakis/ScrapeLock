@@ -1743,7 +1743,7 @@ final class PNCP_Bots {
 			}
 			return false;
 		}
-		if ( null === $host || '' === $host || $host === $ip ) {
+		if ( '' === $host || $host === $ip ) {
 			// No PTR record or DNS failure: perhaps temporary, so it is retried in 5 minutes.
 			self::$verify_inconclusive = true;
 			if ( $store ) {
@@ -2555,6 +2555,7 @@ final class PNCP_Bots {
 		header( 'X-Robots-Tag: noindex, nofollow' );
 		$monitor = PNCP_Options::monitoring( $s );
 		$ban     = false;
+		$ip      = '';
 		// A real file is never logged or banned.
 		if ( ! PNCP_Probe::file_exists( $path ) ) {
 			$ip  = PNCP_Ip::client_ip();
