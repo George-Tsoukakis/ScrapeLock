@@ -94,7 +94,8 @@ ScrapeLock — δοκιμές σε πραγματικό WordPress (όχι stubs)
                     engine and own-browser guards, Test this path, the settings form, Delete, off state, Start collecting
   t_traffic_sec.php 3.12: the security review of Traffic: the read-only actions (CSV, Test this path) refused while
                     the site is locked, the WordPress source never records a signed-in administrator, "Masked" IPs
-                    turned on with full addresses stored (raw rows and per-IP figures masked, nothing shown unmasked)
+                    turned on with full addresses stored (raw rows and per-IP figures masked, nothing shown unmasked),
+                    the sample of "Test this path" masked too
   t_traffic_ms.php  3.12: Traffic on a multisite network (SKIP on a single site; SITE=/two/ with a "subadmin"): only a
                     network administrator may test the access log or have "Start collecting" pick it
   t_cli.php         wp scrapelock … μέσα από το πραγματικό wp (χρειάζεται WP_CLI, αλλιώς SKIP)

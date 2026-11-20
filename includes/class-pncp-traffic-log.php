@@ -213,6 +213,9 @@ final class PNCP_Traffic_Log {
 				$out['sample'] = $row;
 			}
 		}
+		if ( is_array( $out['sample'] ) && isset( $out['sample']['ip'] ) ) {
+			$out['sample']['ip'] = PNCP_Traffic::shown_ip( (string) $out['sample']['ip'] ); // As the record would hold it.
+		}
 		$out['code'] = $out['lines'] > 0 && 0 === $out['parsed'] ? 'not_access_log' : 'ok';
 		return $out;
 	}

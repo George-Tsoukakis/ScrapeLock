@@ -11,6 +11,7 @@
  * 3. "Masked" IPs turned on with full addresses already stored: the raw rows and the per-IP daily figures are
  *    masked (merged by masked address, the totals unchanged), also when it takes more than one run, and the
  *    queries, the CSV and the visitors view never show a full address meanwhile.
+ * 4. "Test this path" with masked IPs shows the sample request's address masked (tab and WP-CLI).
  *
  * Same requirements as t_http.php (mu-test-harness.php, router.php). Changes the database: test sites only.
  */
@@ -274,6 +275,14 @@ t( 'masked: a run out of time leaves the rest for the next one', ! $done && arra
 PNCP_Log::cache_delete( 'pncp_traffic_lock' );
 PNCP_Traffic::run();
 t( 'masked: the scheduled run finishes it', array() === PNCP_Traffic::state()['mask'] && 0 === (int) $wpdb->get_var( "SELECT COUNT(*) FROM " . PNCP_Traffic::table( 'raw' ) . " WHERE ip LIKE '198.51.100.%' AND ip <> '198.51.100.0'" ) ); // phpcs:ignore
+settings( array( 'traffic_ip_mode' => 'full' ) );
+
+/* ---------- 4. "Test this path" with masked IPs ---------- */
+file_put_contents( $log, '198.51.100.77 - - [' . gmdate( 'd/M/Y:H:i:s O' ) . '] "GET /sample/ HTTP/1.1" 200 512 "-" "Mozilla/5.0"' . "\n" );
+$full_test = PNCP_Traffic::test_log_path( $log );
+settings( array( 'traffic_ip_mode' => 'masked' ) );
+$masked_test = PNCP_Traffic::test_log_path( $log );
+t( 'Test this path: the sample address as the record holds it (full, or masked)', 'ok' === $masked_test['code'] && '198.51.100.77' === $full_test['sample']['ip'] && '198.51.100.0' === $masked_test['sample']['ip'], wp_json_encode( array( $full_test['sample'], $masked_test['sample'] ) ) );
 settings( array( 'traffic_ip_mode' => 'full' ) );
 
 exit( $fails ? 1 : 0 );
