@@ -115,7 +115,7 @@ final class PNCP_Tester {
 		$ua      = self::clean( isset( $input['ua'] ) ? $input['ua'] : '' );
 		$address = self::clean( isset( $input['address'] ) ? $input['address'] : '' );
 		$referer = self::clean( isset( $input['referer'] ) ? $input['referer'] : '' );
-		$browser = ! empty( $input['browser'] ) && '0' !== $input['browser'];
+		$browser = ! empty( $input['browser'] );
 
 		// The address first: it is used in both modes.
 		$url = self::address_url( $address );
