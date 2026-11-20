@@ -217,7 +217,7 @@ msgstr ""
 "άνθρωποι"
 
 #: includes/class-pncp-admin-fields.php:80
-#: includes/class-pncp-options.php:2255
+#: includes/class-pncp-options.php:2259
 msgid "Countries with a stricter page limit"
 msgstr "Χώρες με αυστηρότερο όριο σελίδων"
 
@@ -407,7 +407,7 @@ msgstr "Επεξεργασία"
 msgid "Done"
 msgstr "Τέλος"
 
-#: includes/class-pncp-admin-tabs.php:85 includes/class-pncp-lockdown.php:4685
+#: includes/class-pncp-admin-tabs.php:85 includes/class-pncp-lockdown.php:4688
 msgid "Content"
 msgstr "Περιεχόμενο"
 
@@ -416,8 +416,8 @@ msgid "Bots & limits"
 msgstr "Bots & όρια"
 
 #: includes/class-pncp-admin-tabs.php:93 includes/class-pncp-attacks.php:1819
-#: includes/class-pncp-bunny.php:4473 includes/class-pncp-hardening.php:2485
-#: includes/class-pncp-health.php:149 includes/class-pncp-login.php:1692
+#: includes/class-pncp-bunny.php:4469 includes/class-pncp-hardening.php:2485
+#: includes/class-pncp-health.php:149 includes/class-pncp-login.php:1693
 #: includes/class-pncp-site-files.php:608 includes/class-pncp-stealth.php:2758
 msgid "Security"
 msgstr "Ασφάλεια"
@@ -475,13 +475,13 @@ msgstr ""
 msgid "Copied"
 msgstr "Αντιγράφηκε"
 
-#: includes/class-pncp-admin.php:139 includes/class-pncp-lockdown.php:4681
+#: includes/class-pncp-admin.php:139 includes/class-pncp-lockdown.php:4684
 #: includes/class-pncp-status.php:557 includes/class-pncp-status.php:633
 msgid "Settings"
 msgstr "Ρυθμίσεις"
 
 #: includes/class-pncp-admin.php:150 includes/class-pncp-settings-io.php:234
-#: includes/class-pncp-tester.php:738
+#: includes/class-pncp-tester.php:733
 msgid "On the page"
 msgstr "Στη σελίδα"
 
@@ -548,7 +548,7 @@ msgid "%s (may affect visitors/SEO)"
 msgstr "%s (μπορεί να επηρεάσει επισκέπτες/SEO)"
 
 #: includes/class-pncp-admin.php:340 includes/class-pncp-admin.php:1791
-#: includes/class-pncp-bunny.php:4273
+#: includes/class-pncp-bunny.php:4269
 msgid "Saved. Leave empty to keep it."
 msgstr "Αποθηκεύτηκε. Αφήστε το κενό για να διατηρηθεί."
 
@@ -608,7 +608,7 @@ msgstr "Έλεγχος πριν από την cache"
 
 #: includes/class-pncp-admin.php:558 includes/class-pncp-admin.php:1405
 #: includes/class-pncp-admin.php:1543 includes/class-pncp-health.php:1852
-#: includes/class-pncp-tester.php:632
+#: includes/class-pncp-tester.php:627
 msgid "Human check"
 msgstr "Έλεγχος ανθρώπου"
 
@@ -621,7 +621,7 @@ msgid "Headless browsers"
 msgstr "Headless browsers"
 
 #: includes/class-pncp-admin.php:561 includes/class-pncp-admin.php:1407
-#: includes/class-pncp-admin.php:1556 includes/class-pncp-tester.php:630
+#: includes/class-pncp-admin.php:1556 includes/class-pncp-tester.php:625
 msgid "Countries"
 msgstr "Χώρες"
 
@@ -809,8 +809,8 @@ msgid "Yes, disable"
 msgstr "Ναι, απενεργοποίηση"
 
 #: includes/class-pncp-admin.php:929 includes/class-pncp-admin.php:1214
-#: includes/class-pncp-admin.php:1249 includes/class-pncp-bunny.php:3829
-#: includes/class-pncp-lockdown.php:4795
+#: includes/class-pncp-admin.php:1249 includes/class-pncp-bunny.php:3825
+#: includes/class-pncp-lockdown.php:4798
 msgid "Cancel"
 msgstr "Ακύρωση"
 
@@ -822,7 +822,7 @@ msgstr "Κατάσταση"
 msgid "Protection is active"
 msgstr "Η προστασία είναι ενεργή"
 
-#: includes/class-pncp-admin.php:951 includes/class-pncp-lockdown.php:4689
+#: includes/class-pncp-admin.php:951 includes/class-pncp-lockdown.php:4692
 msgid "Where it applies"
 msgstr "Πού εφαρμόζεται"
 
@@ -1142,7 +1142,7 @@ msgstr "Να επιτρέπεται κανονικά"
 msgid "Not allowed"
 msgstr "Να μην επιτρέπεται"
 
-#: includes/class-pncp-admin.php:1036
+#: includes/class-pncp-admin.php:1036 includes/class-pncp-health.php:1859
 #: includes/class-pncp-setting-labels.php:89
 msgid "Who is excluded"
 msgstr "Ποιοι εξαιρούνται"
@@ -1387,8 +1387,8 @@ msgid "This tab already has its default settings: nothing would change."
 msgstr ""
 "Αυτή η καρτέλα έχει ήδη τις προεπιλεγμένες ρυθμίσεις: δεν θα άλλαζε τίποτα."
 
-#: includes/class-pncp-admin.php:1254 includes/class-pncp-bunny.php:3793
-#: includes/class-pncp-bunny.php:3799
+#: includes/class-pncp-admin.php:1254 includes/class-pncp-bunny.php:3789
+#: includes/class-pncp-bunny.php:3795
 msgid "Back"
 msgstr "Πίσω"
 
@@ -1513,7 +1513,7 @@ msgstr ""
 msgid "Duration:"
 msgstr "Διάρκεια:"
 
-#: includes/class-pncp-admin.php:1350 includes/class-pncp-lockdown.php:4874
+#: includes/class-pncp-admin.php:1350 includes/class-pncp-lockdown.php:4877
 msgid "1 hour"
 msgstr "1 ώρα"
 
@@ -1569,23 +1569,23 @@ msgstr ""
 "το αναιρέσετε. Συνέχεια;"
 
 #: includes/class-pncp-admin.php:1399 includes/class-pncp-admin.php:1440
-#: includes/class-pncp-tester.php:626
+#: includes/class-pncp-tester.php:621
 msgid "Bots"
 msgstr "Bots"
 
-#: includes/class-pncp-admin.php:1400 includes/class-pncp-tester.php:629
+#: includes/class-pncp-admin.php:1400 includes/class-pncp-tester.php:624
 msgid "AI"
 msgstr "AI"
 
 #: includes/class-pncp-admin.php:1401 includes/class-pncp-admin.php:1492
 #: includes/class-pncp-attack-report.php:1494
-#: includes/class-pncp-tester.php:627
+#: includes/class-pncp-tester.php:622
 msgid "Always allowed"
 msgstr "Πάντα επιτρεπόμενα"
 
 #: includes/class-pncp-admin.php:1402 includes/class-pncp-admin.php:1499
 #: includes/class-pncp-attack-report.php:1486
-#: includes/class-pncp-tester.php:628
+#: includes/class-pncp-tester.php:623
 msgid "Always blocked"
 msgstr "Πάντα αποκλεισμένα"
 
@@ -1594,18 +1594,18 @@ msgid "Sign-in"
 msgstr "Σύνδεση"
 
 #: includes/class-pncp-admin.php:1404 includes/class-pncp-admin.php:1507
-#: includes/class-pncp-tester.php:631
+#: includes/class-pncp-tester.php:626
 msgid "Limits"
 msgstr "Όρια"
 
 #: includes/class-pncp-admin.php:1406 includes/class-pncp-admin.php:1549
 #: includes/class-pncp-attack-report.php:1713
-#: includes/class-pncp-tester.php:712
+#: includes/class-pncp-tester.php:707
 msgid "Reputation"
 msgstr "Φήμη"
 
-#: includes/class-pncp-admin.php:1408 includes/class-pncp-tester.php:704
-#: includes/class-pncp-tester.php:708
+#: includes/class-pncp-admin.php:1408 includes/class-pncp-tester.php:699
+#: includes/class-pncp-tester.php:703
 msgid "CrowdSec"
 msgstr "CrowdSec"
 
@@ -2920,22 +2920,22 @@ msgstr ""
 "CDN. Επιλέξτε την κεφαλίδα με την πραγματική IP."
 
 #: includes/class-pncp-admin.php:1643
-msgid "Trusted Proxy:"
-msgstr "Trusted Proxy:"
-
-#: includes/class-pncp-admin.php:1643
-msgid "the header is read only from proxies you trust."
-msgstr "η κεφαλίδα διαβάζεται μόνο από proxies που εμπιστεύεστε."
+msgid ""
+"<strong>Trusted Proxy:</strong> the header is read only from proxies you "
+"trust."
+msgstr ""
+"<strong>Trusted Proxy:</strong> η κεφαλίδα διαβάζεται μόνο από proxies που "
+"εμπιστεύεστε."
 
 #: includes/class-pncp-admin.php:1644
 msgid ""
-"the header is read only when the request comes from a proxy you trust. "
+"The header is read only when the request comes from a proxy you trust. "
 "Otherwise anyone could write any IP they want and bypass limits and blocks. "
 "CF-Connecting-IP: only from Cloudflare. X-Real-IP / X-Forwarded-For: from "
 "Bunny CDN, the server itself or a private network (Nginx in front of "
 "Apache). True-Client-IP: only from the proxies in the list."
 msgstr ""
-"η κεφαλίδα διαβάζεται μόνο όταν το αίτημα έρχεται από proxy που "
+"Η κεφαλίδα διαβάζεται μόνο όταν το αίτημα έρχεται από proxy που "
 "εμπιστεύεστε. Διαφορετικά ο καθένας θα μπορούσε να γράψει όποια IP θέλει και"
 " να παρακάμψει όρια και αποκλεισμούς. CF-Connecting-IP: μόνο από Cloudflare."
 " X-Real-IP / X-Forwarded-For: από Bunny CDN, τον ίδιο τον διακομιστή ή "
@@ -3449,7 +3449,7 @@ msgid "Last update: %s"
 msgstr "Τελευταία ενημέρωση: %s"
 
 #. translators: 1: date and time, 2: error message
-#: includes/class-pncp-admin.php:1825 includes/class-pncp-bunny.php:4323
+#: includes/class-pncp-admin.php:1825 includes/class-pncp-bunny.php:4319
 #, php-format
 msgid "Last error (%1$s): %2$s"
 msgstr "Τελευταίο σφάλμα (%1$s): %2$s"
@@ -3841,7 +3841,7 @@ msgid ""
 "articles. With this on, visitors see an excerpt and a “Read the full "
 "article” link there, and each article has to be opened (and counted toward "
 "the page limit) on its own. The article pages do not change; the staff in "
-"“Who is exempt” see the full text. Changes how your lists look, so check "
+"“Who is excluded” see the full text. Changes how your lists look, so check "
 "them after turning it on. Always on in Emergency Mode."
 msgstr ""
 "Πολλά θέματα τυπώνουν ολόκληρο το κείμενο κάθε άρθρου στην αρχική σελίδα, "
@@ -4047,7 +4047,7 @@ msgstr "Νέο token. Αντιγράψτε το τώρα: δεν θα εμφαν
 
 #: includes/class-pncp-admin.php:2206 includes/class-pncp-admin.php:2212
 #: includes/class-pncp-admin.php:2707 includes/class-pncp-hardening.php:2405
-#: includes/class-pncp-lockdown.php:4550
+#: includes/class-pncp-lockdown.php:4553
 #: includes/class-pncp-tester-view.php:110
 msgid "Copy"
 msgstr "Αντιγραφή"
@@ -4402,7 +4402,7 @@ msgstr ""
 
 #: includes/class-pncp-admin.php:2462
 #: includes/class-pncp-attack-report.php:1621
-#: includes/class-pncp-login.php:1615
+#: includes/class-pncp-login.php:1616
 msgid "Failed sign-ins"
 msgstr "Αποτυχημένες συνδέσεις"
 
@@ -4546,7 +4546,7 @@ msgstr ""
 "Αποκλεισμένες IP, ονόματα χρηστών σε παύση και τα ονόματα χρηστών που "
 "δοκιμάστηκαν"
 
-#: includes/class-pncp-admin.php:2473 includes/class-pncp-login.php:1556
+#: includes/class-pncp-admin.php:2473 includes/class-pncp-login.php:1557
 #: includes/class-pncp-setting-labels.php:106
 msgid "Sign-in address"
 msgstr "Διεύθυνση σύνδεσης"
@@ -4652,7 +4652,7 @@ msgstr "Διαγραφή του αρχείου επιθέσεων"
 msgid "Unlock the site on the Lockdown tab to delete it."
 msgstr "Ξεκλειδώστε τον ιστότοπο στην καρτέλα Lockdown για να το διαγράψετε."
 
-#: includes/class-pncp-admin.php:2549 includes/class-pncp-login.php:1534
+#: includes/class-pncp-admin.php:2549 includes/class-pncp-login.php:1535
 msgid "Sign-in protection"
 msgstr "Προστασία σύνδεσης"
 
@@ -5070,9 +5070,9 @@ msgstr "Κανένα."
 #: includes/class-pncp-admin.php:3322
 #: includes/class-pncp-attack-report.php:1619
 #: includes/class-pncp-attack-report.php:1710
-#: includes/class-pncp-attacks.php:1638 includes/class-pncp-bunny.php:3975
+#: includes/class-pncp-attacks.php:1638 includes/class-pncp-bunny.php:3971
 #: includes/class-pncp-cli.php:427 includes/class-pncp-lockdown.php:2993
-#: includes/class-pncp-lockdown.php:5081 includes/class-pncp-login.php:1577
+#: includes/class-pncp-lockdown.php:5084 includes/class-pncp-login.php:1578
 #: includes/class-pncp-tester.php:522
 msgid "IP"
 msgstr "IP"
@@ -5087,12 +5087,12 @@ msgid "Expires"
 msgstr "Λήγει"
 
 #: includes/class-pncp-admin.php:2856 includes/class-pncp-admin.php:3327
-#: includes/class-pncp-bunny.php:4388 includes/class-pncp-bunny.php:4435
+#: includes/class-pncp-bunny.php:4384 includes/class-pncp-bunny.php:4431
 #: includes/class-pncp-hardening.php:2236
 msgid "Action"
 msgstr "Ενέργεια"
 
-#: includes/class-pncp-admin.php:2869 includes/class-pncp-login.php:1585
+#: includes/class-pncp-admin.php:2869 includes/class-pncp-login.php:1586
 msgid "Unblock"
 msgstr "Ξεμπλοκάρισμα"
 
@@ -5114,7 +5114,7 @@ msgstr "Ώρα"
 
 #: includes/class-pncp-admin.php:2900 includes/class-pncp-admin.php:3159
 #: includes/class-pncp-attack-report.php:1774
-#: includes/class-pncp-bunny.php:3922 includes/class-pncp-bunny.php:4368
+#: includes/class-pncp-bunny.php:3918 includes/class-pncp-bunny.php:4364
 msgid "Requests"
 msgstr "Αιτήματα"
 
@@ -5410,7 +5410,7 @@ msgstr "Τίποτα."
 #: includes/class-pncp-attack-report.php:1774
 #: includes/class-pncp-attack-report.php:1846
 #: includes/class-pncp-attacks.php:1604 includes/class-pncp-attacks.php:1712
-#: includes/class-pncp-bunny.php:4368 includes/class-pncp-login.php:1616
+#: includes/class-pncp-bunny.php:4364 includes/class-pncp-login.php:1617
 msgid "IPs"
 msgstr "IP"
 
@@ -5508,9 +5508,9 @@ msgstr "Γνωστό όνομα bot, χωρίς επαλήθευση"
 
 #: includes/class-pncp-admin.php:3411
 #: includes/class-pncp-ai-search-list.php:82
-#: includes/class-pncp-bot-match.php:195 includes/class-pncp-bunny.php:3781
-#: includes/class-pncp-bunny.php:4007 includes/class-pncp-edge.php:2522
-#: includes/class-pncp-hardening.php:2037 includes/class-pncp-login.php:1657
+#: includes/class-pncp-bot-match.php:195 includes/class-pncp-bunny.php:3777
+#: includes/class-pncp-bunny.php:4003 includes/class-pncp-edge.php:2522
+#: includes/class-pncp-hardening.php:2037 includes/class-pncp-login.php:1658
 #: includes/class-pncp-plugin-bots.php:401 includes/class-pncp-status.php:153
 #: includes/class-pncp-status.php:192 includes/class-pncp-status.php:210
 #: includes/class-pncp-status.php:254 includes/class-pncp-stealth.php:2494
@@ -5816,17 +5816,19 @@ msgstr ""
 msgid "Feeds and token"
 msgstr "Feeds και token"
 
-#: includes/class-pncp-admin.php:3882
-msgid ""
-"ScrapeLock reads the visitor IP from a header without checking the proxy (as"
-" in 1.4), so it can be spoofed: fix it in the"
-msgstr ""
-"Το ScrapeLock διαβάζει την IP του επισκέπτη από κεφαλίδα χωρίς έλεγχο του "
-"proxy (όπως στην 1.4), οπότε μπορεί να πλαστογραφηθεί: διορθώστε το στις"
-
-#: includes/class-pncp-admin.php:3884
+#: includes/class-pncp-admin.php:3880
 msgid "Trusted Proxy settings"
 msgstr "ρυθμίσεις Trusted Proxy"
+
+#. translators: %s: link "Trusted Proxy settings"
+#: includes/class-pncp-admin.php:3885
+#, php-format
+msgid ""
+"ScrapeLock reads the visitor IP from a header without checking the proxy (as"
+" in 1.4), so it can be spoofed: fix it in the %s."
+msgstr ""
+"Το ScrapeLock διαβάζει την IP του επισκέπτη από κεφαλίδα χωρίς έλεγχο του "
+"proxy (όπως στην 1.4), οπότε μπορεί να πλαστογραφηθεί: διορθώστε το στις %s."
 
 #: includes/class-pncp-ai-search-list.php:111
 msgid ""
@@ -5934,7 +5936,7 @@ msgstr ""
 "διεύθυνση μοιράζεται από πολλούς επισκέπτες)."
 
 #: includes/class-pncp-attack-report.php:712
-#: includes/class-pncp-bunny.php:4079 includes/class-pncp-hardening.php:2098
+#: includes/class-pncp-bunny.php:4075 includes/class-pncp-hardening.php:2098
 #: includes/class-pncp-site-files.php:366
 msgid "Unknown action."
 msgstr "Άγνωστη ενέργεια."
@@ -6057,7 +6059,7 @@ msgstr "Διευθύνσεις με τις περισσότερες επιθέσ
 #: includes/class-pncp-attack-report.php:1435
 #: includes/class-pncp-attack-report.php:1597
 #: includes/class-pncp-attack-report.php:1837
-#: includes/class-pncp-attacks.php:1609 includes/class-pncp-bunny.php:4370
+#: includes/class-pncp-attacks.php:1609 includes/class-pncp-bunny.php:4366
 msgid "(many addresses)"
 msgstr "(πολλές διευθύνσεις)"
 
@@ -6467,8 +6469,8 @@ msgid "No failed sign-in."
 msgstr "Καμία αποτυχημένη σύνδεση."
 
 #: includes/class-pncp-attack-report.php:1571
-#: includes/class-pncp-attacks.php:1683 includes/class-pncp-login.php:1594
-#: includes/class-pncp-login.php:1614
+#: includes/class-pncp-attacks.php:1683 includes/class-pncp-login.php:1595
+#: includes/class-pncp-login.php:1615
 msgid "Username"
 msgstr "Όνομα χρήστη"
 
@@ -7007,8 +7009,8 @@ msgstr "Διευθύνσεις με τις περισσότερες επιθέσ
 msgid "Addresses that attacked most"
 msgstr "Διευθύνσεις που επιτέθηκαν περισσότερο"
 
-#: includes/class-pncp-attacks.php:1642 includes/class-pncp-login.php:1579
-#: includes/class-pncp-login.php:1597
+#: includes/class-pncp-attacks.php:1642 includes/class-pncp-login.php:1580
+#: includes/class-pncp-login.php:1598
 msgid "Actions"
 msgstr "Ενέργειες"
 
@@ -7208,7 +7210,7 @@ msgstr "Άγνωστο --category. Χρησιμοποιήστε: %s."
 msgid "Unknown --top. Use: paths, ips, users or details."
 msgstr "Άγνωστο --top. Χρησιμοποιήστε: paths, ips, users ή details."
 
-#: includes/class-pncp-attacks.php:1940 includes/class-pncp-bunny.php:4525
+#: includes/class-pncp-attacks.php:1940 includes/class-pncp-bunny.php:4521
 msgid "Unknown --format. Use: table, json, csv, yaml or count."
 msgstr "Άγνωστο --format. Χρησιμοποιήστε: table, json, csv, yaml ή count."
 
@@ -7310,13 +7312,13 @@ msgid "Sorry, you are not allowed to list users."
 msgstr "Λυπούμαστε, δεν έχετε δικαίωμα να βλέπετε τη λίστα χρηστών."
 
 #: includes/class-pncp-bots.php:389 includes/class-pncp-bots.php:595
-#: includes/class-pncp-bots.php:2391 includes/class-pncp-graphql.php:68
+#: includes/class-pncp-bots.php:2396 includes/class-pncp-graphql.php:68
 msgid "Too many requests. Please try again in a minute."
 msgstr "Πάρα πολλά αιτήματα. Δοκιμάστε ξανά σε ένα λεπτό."
 
 #: includes/class-pncp-bots.php:396 includes/class-pncp-bots.php:595
-#: includes/class-pncp-bots.php:2393 includes/class-pncp-graphql.php:76
-#: includes/class-pncp-login.php:977 includes/class-pncp-login.php:1244
+#: includes/class-pncp-bots.php:2398 includes/class-pncp-graphql.php:76
+#: includes/class-pncp-login.php:978 includes/class-pncp-login.php:1245
 msgid "Access denied."
 msgstr "Δεν επιτρέπεται η πρόσβαση."
 
@@ -7328,7 +7330,7 @@ msgstr "Πάρα πολλές δοκιμές κουπονιών. Δοκιμάσ�
 msgid "Too many cart requests. Please try again in a minute."
 msgstr "Πάρα πολλά αιτήματα καλαθιού. Δοκιμάστε ξανά σε ένα λεπτό."
 
-#: includes/class-pncp-bots.php:2446
+#: includes/class-pncp-bots.php:2451
 msgid "Archive"
 msgstr "Αρχείο"
 
@@ -7413,7 +7415,7 @@ msgstr ""
 "τη σελίδα σύνδεσης στο Bunny» και μετά κλειδώστε ξανά."
 
 #: includes/class-pncp-bunny.php:939 includes/class-pncp-bunny.php:1197
-#: includes/class-pncp-bunny.php:3803 includes/class-pncp-bunny.php:4025
+#: includes/class-pncp-bunny.php:3799 includes/class-pncp-bunny.php:4021
 msgid ""
 "The site is locked with Lockdown: unlock it to change the rules at Bunny "
 "CDN."
@@ -7445,7 +7447,7 @@ msgstr ""
 "Το Bunny CDN δεν είναι συνδεδεμένο: αφαιρέστε τον κανόνα στο dashboard του "
 "bunny.net (Edge Rules, περιγραφή «ScrapeLock: …»)."
 
-#: includes/class-pncp-bunny.php:1524
+#: includes/class-pncp-bunny.php:1520
 msgid ""
 "ScrapeLock cannot see your real IP (it appears as the address of a proxy, of"
 " Bunny or of this server), so it cannot check that the lock leaves you a way"
@@ -7457,7 +7459,7 @@ msgstr ""
 "επισκέπτη» στα Bots και μετά κλειδώστε ξανά."
 
 #. translators: 1: entries in the list, 2: most entries
-#: includes/class-pncp-bunny.php:1530
+#: includes/class-pncp-bunny.php:1526
 #, php-format
 msgid ""
 "“Allowed IPs for the login page at Bunny” holds %1$d IPs and ranges, but one"
@@ -7469,7 +7471,7 @@ msgstr ""
 "Αφαιρέστε παλιές καταχωρίσεις στο Bots → Logs του Bunny CDN (ένα IPv6 /64 "
 "καλύπτει ολόκληρη σύνδεση) και μετά κλειδώστε ξανά."
 
-#: includes/class-pncp-bunny.php:1536
+#: includes/class-pncp-bunny.php:1532
 msgid ""
 "The list “Allowed IPs for the login page at Bunny” is empty, so the lock "
 "would refuse everyone at wp-login.php, you included. Add your IP with “Add "
@@ -7484,7 +7486,7 @@ msgstr ""
 
 #. translators: 1: the administrator's IP, 2: the entry to add (the IP, or its
 #. IPv6 /64)
-#: includes/class-pncp-bunny.php:1540
+#: includes/class-pncp-bunny.php:1536
 #, php-format
 msgid ""
 "Your IP now (%1$s) is not in “Allowed IPs for the login page at Bunny”, so "
@@ -7498,20 +7500,20 @@ msgstr ""
 "προτάσεις σε αυτή την κάρτα (ή στο Bots → Logs του Bunny CDN) και μετά "
 "κλειδώστε ξανά."
 
-#: includes/class-pncp-bunny.php:1592
+#: includes/class-pncp-bunny.php:1588
 msgid "The site is locked with Lockdown: unlock it to change the settings."
 msgstr ""
 "Ο ιστότοπος είναι κλειδωμένος με Lockdown: ξεκλειδώστε τον για να αλλάξετε "
 "τις ρυθμίσεις."
 
-#: includes/class-pncp-bunny.php:1603
+#: includes/class-pncp-bunny.php:1599
 msgid "Tick at least one of the suggested IPs, then click “Add selected”."
 msgstr ""
 "Επιλέξτε τουλάχιστον μία από τις προτεινόμενες IP και πατήστε «Προσθήκη "
 "επιλεγμένων»."
 
 #. translators: %d: most entries
-#: includes/class-pncp-bunny.php:1609
+#: includes/class-pncp-bunny.php:1605
 #, php-format
 msgid ""
 "The list may hold at most %d IPs and ranges (what Bunny accepts in one "
@@ -7521,7 +7523,7 @@ msgstr ""
 "έναν κανόνα): αφαιρέστε πρώτα παλιές στο Bots → Logs του Bunny CDN."
 
 #. translators: %d: most entries
-#: includes/class-pncp-bunny.php:1652
+#: includes/class-pncp-bunny.php:1648
 #, php-format
 msgid ""
 "“Allowed IPs for the login page at Bunny” was not changed: wp-login.php is "
@@ -7532,7 +7534,7 @@ msgstr ""
 "login.php είναι κλειδωμένο στο Bunny με αυτή τη λίστα και ένα Edge Rule στο "
 "Bunny μπορεί να επιτρέψει το πολύ %d IP και εύρη."
 
-#: includes/class-pncp-bunny.php:1656
+#: includes/class-pncp-bunny.php:1652
 msgid ""
 "“Allowed IPs for the login page at Bunny” was not emptied: wp-login.php is "
 "locked at Bunny with this list, and an empty list would leave the rule there"
@@ -7545,7 +7547,7 @@ msgstr ""
 "σύνδεσης στην κάρτα Bunny και μετά αδειάστε τη λίστα."
 
 #. translators: %s: the administrator's IP
-#: includes/class-pncp-bunny.php:1662
+#: includes/class-pncp-bunny.php:1658
 #, php-format
 msgid ""
 "“Allowed IPs for the login page at Bunny” was not changed: the new list does"
@@ -7557,19 +7559,19 @@ msgstr ""
 "κλειδωμένο στο Bunny με αυτή τη λίστα, οπότε θα μένατε έξω. Κρατήστε την IP "
 "σας (ή το IPv6 /64 της) στη λίστα."
 
-#: includes/class-pncp-bunny.php:1743 includes/class-pncp-options.php:2257
+#: includes/class-pncp-bunny.php:1739 includes/class-pncp-options.php:2261
 msgid "Allowed IPs for the login page at Bunny"
 msgstr "Επιτρεπόμενες IP για τη σελίδα σύνδεσης στο Bunny"
 
 #. translators: %s: list of IPs and ranges
-#: includes/class-pncp-bunny.php:1746
+#: includes/class-pncp-bunny.php:1742
 #, php-format
 msgid "A lock of wp-login.php lets only these IPs and ranges through: %s."
 msgstr ""
 "Ένα κλείδωμα του wp-login.php αφήνει να περάσουν μόνο αυτές οι IP και τα "
 "εύρη: %s."
 
-#: includes/class-pncp-bunny.php:1748
+#: includes/class-pncp-bunny.php:1744
 msgid ""
 "The list is empty: wp-login.php cannot be locked at Bunny until it holds at "
 "least your IP."
@@ -7578,18 +7580,18 @@ msgstr ""
 "να περιέχει τουλάχιστον την IP σας."
 
 #. translators: %s: IP
-#: includes/class-pncp-bunny.php:1755
+#: includes/class-pncp-bunny.php:1751
 #, php-format
 msgid "Your IP now (%s) is in the list."
 msgstr "Η τρέχουσα IP σας (%s) είναι στη λίστα."
 
 #. translators: %s: IP
-#: includes/class-pncp-bunny.php:1757
+#: includes/class-pncp-bunny.php:1753
 #, php-format
 msgid "Your IP now (%s) is not in the list."
 msgstr "Η τρέχουσα IP σας (%s) δεν είναι στη λίστα."
 
-#: includes/class-pncp-bunny.php:1758
+#: includes/class-pncp-bunny.php:1754
 msgid ""
 "The lock at Bunny keeps you out of wp-login.php from here: add it below."
 msgstr ""
@@ -7597,7 +7599,7 @@ msgstr ""
 "την παρακάτω."
 
 #. translators: %s: list of IPs and ranges
-#: includes/class-pncp-bunny.php:1765
+#: includes/class-pncp-bunny.php:1761
 #, php-format
 msgid ""
 "The rule at Bunny still lets through the previous list (%s). ScrapeLock "
@@ -7608,7 +7610,7 @@ msgstr ""
 "ScrapeLock στέλνει τη νέα λίστα στην επόμενη εκτέλεσή του, μέσα σε 15 λεπτά·"
 " αν αυτό παραμείνει, ελέγξτε τη σύνδεση παραπάνω."
 
-#: includes/class-pncp-bunny.php:1771
+#: includes/class-pncp-bunny.php:1767
 msgid ""
 "This lock was made before ScrapeLock 3.9: it also lets in the IPs "
 "administrators used in the last 30 days, without asking. To use only this "
@@ -7619,7 +7621,7 @@ msgstr ""
 "ερώτηση. Για να χρησιμοποιείται μόνο αυτή η λίστα, αφαιρέστε το κλείδωμα και"
 " κλειδώστε ξανά."
 
-#: includes/class-pncp-bunny.php:1777
+#: includes/class-pncp-bunny.php:1773
 msgid ""
 "Suggested: the IPs administrators used in wp-admin in the last 30 days. Tick"
 " the ones that are yours or your team's, then add them."
@@ -7628,17 +7630,17 @@ msgstr ""
 "τελευταίες 30 ημέρες. Επιλέξτε όσες είναι δικές σας ή της ομάδας σας και "
 "προσθέστε τες."
 
-#: includes/class-pncp-bunny.php:1780
+#: includes/class-pncp-bunny.php:1776
 msgid "your IP now"
 msgstr "η τρέχουσα IP σας"
 
 #. translators: %s: date and time
-#: includes/class-pncp-bunny.php:1782
+#: includes/class-pncp-bunny.php:1778
 #, php-format
 msgid "last seen in wp-admin %s"
 msgstr "τελευταία φορά στο wp-admin %s"
 
-#: includes/class-pncp-bunny.php:1790
+#: includes/class-pncp-bunny.php:1786
 msgid ""
 "An IPv6 address is suggested as its /64 network: the address of an IPv6 "
 "connection changes within it."
@@ -7646,11 +7648,11 @@ msgstr ""
 "Μια διεύθυνση IPv6 προτείνεται ως το δίκτυο /64 της: η διεύθυνση μιας "
 "σύνδεσης IPv6 αλλάζει μέσα σε αυτό."
 
-#: includes/class-pncp-bunny.php:1791
+#: includes/class-pncp-bunny.php:1787
 msgid "Add selected"
 msgstr "Προσθήκη επιλεγμένων"
 
-#: includes/class-pncp-bunny.php:1793
+#: includes/class-pncp-bunny.php:1789
 msgid ""
 "Edit or remove entries in Bots → Bunny CDN logs → “Allowed IPs for the login"
 " page at Bunny” (one IP or range per line, an IPv6 /64 such as "
@@ -7660,7 +7662,7 @@ msgstr ""
 "«Επιτρεπόμενες IP για τη σελίδα σύνδεσης στο Bunny» (μία IP ή εύρος ανά "
 "γραμμή, και ένα IPv6 /64 όπως το 2001:db8:1:2::/64)."
 
-#: includes/class-pncp-bunny.php:1930
+#: includes/class-pncp-bunny.php:1926
 msgid ""
 "Jetpack is active: it talks to WordPress.com through xmlrpc.php, so its "
 "connection, Stats, Publicize, backups and the WordPress.com app stop "
@@ -7671,7 +7673,7 @@ msgstr ""
 "ασφαλείας και η εφαρμογή WordPress.com σταματούν να λειτουργούν."
 
 #. translators: %s: number of users
-#: includes/class-pncp-bunny.php:1936
+#: includes/class-pncp-bunny.php:1932
 #, php-format
 msgid ""
 "%s user has application passwords: apps and publishing tools that sign in "
@@ -7693,7 +7695,7 @@ msgstr[1] ""
 "λειτουργούν. Μέσω του REST API συνεχίζουν να λειτουργούν."
 
 #. translators: 1: date and time, 2: method name, 3: number of hours
-#: includes/class-pncp-bunny.php:1944
+#: includes/class-pncp-bunny.php:1940
 #, php-format
 msgid ""
 "Someone signed in through xmlrpc.php successfully in the last 30 days (last "
@@ -7714,7 +7716,7 @@ msgstr[1] ""
 "λειτουργεί."
 
 #. translators: %s: date and time
-#: includes/class-pncp-bunny.php:1954
+#: includes/class-pncp-bunny.php:1950
 #, php-format
 msgid ""
 "Pingbacks from other sites were accepted in the last 30 days (last %s): no "
@@ -7723,7 +7725,7 @@ msgstr ""
 "Έγιναν δεκτά pingbacks από άλλους ιστότοπους τις τελευταίες 30 ημέρες "
 "(τελευταίο %s): δεν θα έρχονται νέα pingbacks μόλις κλειδωθεί το xmlrpc.php."
 
-#: includes/class-pncp-bunny.php:1959
+#: includes/class-pncp-bunny.php:1955
 msgid ""
 "Locked at Bunny, xmlrpc.php is refused for everyone, Jetpack's servers "
 "included, before WordPress sees the request."
@@ -7731,17 +7733,17 @@ msgstr ""
 "Κλειδωμένο στο Bunny, το xmlrpc.php απορρίπτεται για όλους, και για τους "
 "διακομιστές του Jetpack, πριν το WordPress δει το αίτημα."
 
-#: includes/class-pncp-bunny.php:1975
+#: includes/class-pncp-bunny.php:1971
 msgid "Before you lock XML-RPC (xmlrpc.php) at Bunny, this will stop working:"
 msgstr ""
 "Πριν κλειδώσετε το XML-RPC (xmlrpc.php) στο Bunny, αυτά θα σταματήσουν να "
 "λειτουργούν:"
 
-#: includes/class-pncp-bunny.php:1993 includes/class-pncp-hardening.php:285
+#: includes/class-pncp-bunny.php:1989 includes/class-pncp-hardening.php:285
 msgid "Login page (wp-login.php)"
 msgstr "Σελίδα σύνδεσης (wp-login.php)"
 
-#: includes/class-pncp-bunny.php:1995
+#: includes/class-pncp-bunny.php:1991
 msgid ""
 "Every request for wp-login.php: the login page has its own address, so only "
 "bots still ask for wp-login.php."
@@ -7749,7 +7751,7 @@ msgstr ""
 "Κάθε αίτημα για το wp-login.php: η σελίδα σύνδεσης έχει δική της διεύθυνση, "
 "οπότε μόνο τα bots ζητούν ακόμη το wp-login.php."
 
-#: includes/class-pncp-bunny.php:1996
+#: includes/class-pncp-bunny.php:1992
 msgid ""
 "Every request for wp-login.php, except from the IPs and ranges listed under "
 "“Allowed IPs for the login page at Bunny”. The list must hold your IP now; "
@@ -7761,7 +7763,7 @@ msgstr ""
 "περιέχει την τρέχουσα IP σας· οι IP που χρησιμοποίησαν οι διαχειριστές τις "
 "τελευταίες 30 ημέρες προτείνονται παρακάτω, για προσθήκη με ένα κλικ."
 
-#: includes/class-pncp-bunny.php:1997
+#: includes/class-pncp-bunny.php:1993
 msgid ""
 "Anyone else who signs in at wp-login.php (authors, members, customers "
 "without a shop account page) is refused, and so are you from an IP that is "
@@ -7781,11 +7783,11 @@ msgstr ""
 "σύνδεσης ή SCRAPELOCK_LOGIN_SLUG_OFF στο wp-config.php), ο κανόνας συνεχίζει"
 " να αφήνει να μπαίνουν οι IP της λίστας."
 
-#: includes/class-pncp-bunny.php:2004 includes/class-pncp-hardening.php:263
+#: includes/class-pncp-bunny.php:2000 includes/class-pncp-hardening.php:263
 msgid "XML-RPC (xmlrpc.php)"
 msgstr "XML-RPC (xmlrpc.php)"
 
-#: includes/class-pncp-bunny.php:2005
+#: includes/class-pncp-bunny.php:2001
 msgid ""
 "Every request for xmlrpc.php, where bots try hundreds of passwords in one "
 "request."
@@ -7793,19 +7795,19 @@ msgstr ""
 "Κάθε αίτημα για το xmlrpc.php, όπου τα bots δοκιμάζουν εκατοντάδες κωδικούς "
 "σε ένα αίτημα."
 
-#: includes/class-pncp-bunny.php:2006
+#: includes/class-pncp-bunny.php:2002
 msgid ""
 "Jetpack, the WordPress mobile app and old publishing tools that use XML-RPC."
 msgstr ""
 "Το Jetpack, η εφαρμογή WordPress για κινητά και παλιά εργαλεία δημοσίευσης "
 "που χρησιμοποιούν XML-RPC."
 
-#: includes/class-pncp-bunny.php:2013
+#: includes/class-pncp-bunny.php:2009
 msgid "Secret files: .env, .git, backups, database dumps"
 msgstr ""
 "Μυστικά αρχεία: .env, .git, αντίγραφα ασφαλείας, dumps βάσης δεδομένων"
 
-#: includes/class-pncp-bunny.php:2014
+#: includes/class-pncp-bunny.php:2010
 msgid ""
 "Requests for .env, .git, .svn, wp-config.php copies, .sql dumps, phpMyAdmin "
 "and the usual backup and web shell names. A real site never serves them."
@@ -7814,7 +7816,7 @@ msgstr ""
 "phpMyAdmin και τα συνηθισμένα ονόματα αντιγράφων ασφαλείας και web shells. "
 "Ένας πραγματικός ιστότοπος δεν τα σερβίρει ποτέ."
 
-#: includes/class-pncp-bunny.php:2015
+#: includes/class-pncp-bunny.php:2011
 msgid ""
 "Nothing a visitor uses. /.well-known/ (certificates, app links) is not "
 "touched."
@@ -7822,12 +7824,12 @@ msgstr ""
 "Τίποτα που χρησιμοποιεί ένας επισκέπτης. Το /.well-known/ (πιστοποιητικά, "
 "app links) δεν αγγίζεται."
 
-#: includes/class-pncp-bunny.php:2044 includes/class-pncp-hardening.php:296
+#: includes/class-pncp-bunny.php:2040 includes/class-pncp-hardening.php:296
 msgid "WordPress's own files: readme.html, license.txt, install.php…"
 msgstr ""
 "Τα αρχεία του ίδιου του WordPress: readme.html, license.txt, install.php…"
 
-#: includes/class-pncp-bunny.php:2045
+#: includes/class-pncp-bunny.php:2041
 msgid ""
 "readme.html, license.txt, wp-config-sample.php, wp-admin/install.php and "
 "setup-config.php, which scanners open to learn that the site runs WordPress,"
@@ -7837,15 +7839,15 @@ msgstr ""
 "setup-config.php, που ανοίγουν οι scanners για να μάθουν ότι ο ιστότοπος "
 "τρέχει WordPress και ποια έκδοση."
 
-#: includes/class-pncp-bunny.php:2046
+#: includes/class-pncp-bunny.php:2042
 msgid "Nothing a visitor uses."
 msgstr "Τίποτα που χρησιμοποιεί ένας επισκέπτης."
 
-#: includes/class-pncp-bunny.php:2061
+#: includes/class-pncp-bunny.php:2057
 msgid "ScrapeLock's private folders"
 msgstr "Οι ιδιωτικοί φάκελοι του ScrapeLock"
 
-#: includes/class-pncp-bunny.php:2062
+#: includes/class-pncp-bunny.php:2058
 msgid ""
 "Every request for the folders where ScrapeLock keeps its own data: the pre-"
 "cache check's counters and bans (visitor IP addresses), the country "
@@ -7858,7 +7860,7 @@ msgstr ""
 "των εικόνων με υδατογράφημα και το αρχείο κλειδώματος του Lockdown. Το "
 "ScrapeLock τα διαβάζει από τον δίσκο, ποτέ από το web."
 
-#: includes/class-pncp-bunny.php:2063
+#: includes/class-pncp-bunny.php:2059
 msgid ""
 "Nothing a visitor uses. The rule protects only the requests that go through "
 "Bunny: a request sent straight to the server (its IP address) still reads "
@@ -7871,11 +7873,11 @@ msgstr ""
 "απορρίψτε επίσης τους φακέλους στον διακομιστή όταν μπορείτε (το Εργαλεία → "
 "Υγεία ιστότοπου δείχνει τις γραμμές)."
 
-#: includes/class-pncp-bunny.php:2180 includes/class-pncp-bunny.php:3526
+#: includes/class-pncp-bunny.php:2176 includes/class-pncp-bunny.php:3522
 msgid "Unknown preset."
 msgstr "Άγνωστη προρύθμιση."
 
-#: includes/class-pncp-bunny.php:2223
+#: includes/class-pncp-bunny.php:2219
 msgid ""
 "In the bunny.net dashboard: CDN → your pull zone → Logging → turn on “Enable"
 " logging”, then save. Logs are kept by Bunny for 3 days; ScrapeLock reads "
@@ -7890,12 +7892,12 @@ msgstr ""
 "εξακολουθεί να βλέπει πού χτυπούν τα bots, αλλά δεν μπορεί να μπλοκάρει "
 "μεμονωμένες διευθύνσεις από τα logs."
 
-#: includes/class-pncp-bunny.php:2245 includes/class-pncp-bunny.php:3806
-#: includes/class-pncp-bunny.php:4528 includes/class-pncp-hardening.php:2007
+#: includes/class-pncp-bunny.php:2241 includes/class-pncp-bunny.php:3802
+#: includes/class-pncp-bunny.php:4524 includes/class-pncp-hardening.php:2007
 msgid "Bunny CDN is not connected."
 msgstr "Το Bunny CDN δεν είναι συνδεδεμένο."
 
-#: includes/class-pncp-bunny.php:2267
+#: includes/class-pncp-bunny.php:2263
 msgid ""
 "Logging is on, with IP anonymization: ScrapeLock sees where bots hit, but "
 "not their full IPs, so it blocks no address because of the logs."
@@ -7904,21 +7906,21 @@ msgstr ""
 "χτυπούν τα bots, αλλά όχι τις πλήρεις IP τους, οπότε δεν μπλοκάρει καμία "
 "διεύθυνση εξαιτίας των logs."
 
-#: includes/class-pncp-bunny.php:2268 includes/class-pncp-bunny.php:4660
+#: includes/class-pncp-bunny.php:2264 includes/class-pncp-bunny.php:4656
 msgid "Logging is on at the pull zone."
 msgstr "Το logging είναι ενεργό στο pull zone."
 
-#: includes/class-pncp-bunny.php:2271
+#: includes/class-pncp-bunny.php:2267
 msgid "Logging is off at the pull zone: Bunny keeps no logs to read."
 msgstr ""
 "Το logging είναι ανενεργό στο pull zone: το Bunny δεν κρατά logs για "
 "ανάγνωση."
 
-#: includes/class-pncp-bunny.php:2273
+#: includes/class-pncp-bunny.php:2269
 msgid "Bunny did not say whether logging is on."
 msgstr "Το Bunny δεν απάντησε αν το logging είναι ενεργό."
 
-#: includes/class-pncp-bunny.php:2307
+#: includes/class-pncp-bunny.php:2303
 msgid ""
 "Bunny accepted the change, but logging is still off. Turn it on in the "
 "bunny.net dashboard."
@@ -7926,26 +7928,26 @@ msgstr ""
 "Το Bunny δέχτηκε την αλλαγή, αλλά το logging είναι ακόμη ανενεργό. "
 "Ενεργοποιήστε το στο dashboard του bunny.net."
 
-#: includes/class-pncp-bunny.php:2332
+#: includes/class-pncp-bunny.php:2328
 msgid "Another import is running."
 msgstr "Εκτελείται ήδη άλλη εισαγωγή."
 
-#: includes/class-pncp-bunny.php:2783
+#: includes/class-pncp-bunny.php:2779
 msgid "blocked IP"
 msgstr "μπλοκαρισμένη IP"
 
-#: includes/class-pncp-bunny.php:2827
+#: includes/class-pncp-bunny.php:2823
 msgid "blocked at Bunny"
 msgstr "μπλοκαρισμένη στο Bunny"
 
 #. translators: 1: date and time, 2: number of log lines
-#: includes/class-pncp-bunny.php:3106
+#: includes/class-pncp-bunny.php:3102
 #, php-format
 msgid "The logs have full IPs (checked %1$s, on %2$s lines)."
 msgstr "Τα logs έχουν πλήρεις IP (έλεγχος %1$s, σε %2$s γραμμές)."
 
 #. translators: 1: lines with a hidden IP, 2: lines checked, 3: date and time
-#: includes/class-pncp-bunny.php:3114
+#: includes/class-pncp-bunny.php:3110
 #, php-format
 msgid ""
 "Log anonymization is on: ScrapeLock cannot block from the logs (%1$s of %2$s"
@@ -7962,7 +7964,7 @@ msgstr ""
 "και αποθηκεύστε."
 
 #. translators: 1: lines read so far, 2: lines needed, 3: date and time
-#: includes/class-pncp-bunny.php:3126
+#: includes/class-pncp-bunny.php:3122
 #, php-format
 msgid ""
 "Not yet known whether the logs have full IPs: %1$s of %2$s log lines needed "
@@ -7971,29 +7973,29 @@ msgstr ""
 "Δεν είναι ακόμη γνωστό αν τα logs έχουν πλήρεις IP: %1$s από τις %2$s "
 "γραμμές log που χρειάζονται μέχρι τώρα (τελευταίος έλεγχος %3$s)."
 
-#: includes/class-pncp-bunny.php:3130
+#: includes/class-pncp-bunny.php:3126
 msgid ""
 "Not yet checked whether the logs have full IPs: every import checks it."
 msgstr ""
 "Δεν έχει ελεγχθεί ακόμη αν τα logs έχουν πλήρεις IP: κάθε εισαγωγή το "
 "ελέγχει."
 
-#: includes/class-pncp-bunny.php:3376 includes/class-pncp-bunny.php:3382
-#: includes/class-pncp-bunny.php:3792 includes/class-pncp-bunny.php:3798
+#: includes/class-pncp-bunny.php:3372 includes/class-pncp-bunny.php:3378
+#: includes/class-pncp-bunny.php:3788 includes/class-pncp-bunny.php:3794
 msgid "Lock at Bunny CDN"
 msgstr "Κλείδωμα στο Bunny CDN"
 
-#: includes/class-pncp-bunny.php:3548 includes/class-pncp-hardening.php:2000
+#: includes/class-pncp-bunny.php:3544 includes/class-pncp-hardening.php:2000
 msgid "This point cannot be locked at the CDN."
 msgstr "Αυτό το σημείο δεν μπορεί να κλειδωθεί στο CDN."
 
-#: includes/class-pncp-bunny.php:3599
+#: includes/class-pncp-bunny.php:3595
 msgid "This point is already locked at Bunny: Confirm sends the rule again."
 msgstr ""
 "Αυτό το σημείο είναι ήδη κλειδωμένο στο Bunny: η Επιβεβαίωση στέλνει ξανά "
 "τον κανόνα."
 
-#: includes/class-pncp-bunny.php:3602
+#: includes/class-pncp-bunny.php:3598
 msgid ""
 "ScrapeLock does not block now (Monitor only or protection off): the rule is "
 "created switched off, and switched on when ScrapeLock blocks again."
@@ -8003,7 +8005,7 @@ msgstr ""
 "ScrapeLock μπλοκάρει ξανά."
 
 #. translators: %s: number of IPs
-#: includes/class-pncp-bunny.php:3607
+#: includes/class-pncp-bunny.php:3603
 #, php-format
 msgid ""
 "%s IP that hit these addresses also used the site normally: check the list "
@@ -8018,80 +8020,80 @@ msgstr[1] ""
 "%s IP που χτύπησαν αυτές τις διευθύνσεις χρησιμοποίησαν επίσης κανονικά τον "
 "ιστότοπο: ελέγξτε τη λίστα παραπάνω πριν κλειδώσετε."
 
-#: includes/class-pncp-bunny.php:3741
+#: includes/class-pncp-bunny.php:3737
 msgid "an administrator used wp-admin from it (last 30 days)"
 msgstr ""
 "ένας διαχειριστής χρησιμοποίησε το wp-admin από αυτήν (τελευταίες 30 ημέρες)"
 
-#: includes/class-pncp-bunny.php:3744
+#: includes/class-pncp-bunny.php:3740
 msgid "someone signed in to an account from it (last 30 days)"
 msgstr "κάποιος συνδέθηκε σε λογαριασμό από αυτήν (τελευταίες 30 ημέρες)"
 
-#: includes/class-pncp-bunny.php:3749
+#: includes/class-pncp-bunny.php:3745
 msgid "signed in"
 msgstr "συνδέθηκε"
 
-#: includes/class-pncp-bunny.php:3750
+#: includes/class-pncp-bunny.php:3746
 msgid "passed the human check"
 msgstr "πέρασε τον έλεγχο ανθρώπου"
 
-#: includes/class-pncp-bunny.php:3751
+#: includes/class-pncp-bunny.php:3747
 msgid "opened pages"
 msgstr "άνοιξε σελίδες"
 
 #. translators: %s: what the IP did
-#: includes/class-pncp-bunny.php:3756
+#: includes/class-pncp-bunny.php:3752
 #, php-format
 msgid "%s (reputation record, last 7 days)"
 msgstr "%s (αρχείο φήμης, τελευταίες 7 ημέρες)"
 
 #. translators: %s: number of pages
-#: includes/class-pncp-bunny.php:3762
+#: includes/class-pncp-bunny.php:3758
 #, php-format
 msgid "opened %s pages through Bunny (logs)"
 msgstr "άνοιξε %s σελίδες μέσω του Bunny (logs)"
 
-#: includes/class-pncp-bunny.php:3792
+#: includes/class-pncp-bunny.php:3788
 msgid "The link has expired. Go back and click “Lock at Bunny” again."
 msgstr ""
 "Ο σύνδεσμος έχει λήξει. Επιστρέψτε και πατήστε ξανά «Κλείδωμα στο Bunny»."
 
 #. translators: %s: name of the point
-#: includes/class-pncp-bunny.php:3809
+#: includes/class-pncp-bunny.php:3805
 #, php-format
 msgid "Lock at Bunny CDN: %s"
 msgstr "Κλείδωμα στο Bunny CDN: %s"
 
-#: includes/class-pncp-bunny.php:3810
+#: includes/class-pncp-bunny.php:3806
 msgid "Nothing is sent to Bunny until you click “Confirm”."
 msgstr "Τίποτα δεν στέλνεται στο Bunny μέχρι να πατήσετε «Επιβεβαίωση»."
 
-#: includes/class-pncp-bunny.php:3828
+#: includes/class-pncp-bunny.php:3824
 msgid "Confirm: lock at Bunny"
 msgstr "Επιβεβαίωση: κλείδωμα στο Bunny"
 
-#: includes/class-pncp-bunny.php:3839
+#: includes/class-pncp-bunny.php:3835
 msgid "Addresses Bunny will refuse (403)"
 msgstr "Διευθύνσεις που θα απορρίπτει το Bunny (403)"
 
 #. translators: %s: URL patterns
-#: includes/class-pncp-bunny.php:3850
+#: includes/class-pncp-bunny.php:3846
 #, php-format
 msgid "Except the addresses: %s"
 msgstr "Εκτός από τις διευθύνσεις: %s"
 
 #. translators: %s: list of IPs
-#: includes/class-pncp-bunny.php:3854
+#: includes/class-pncp-bunny.php:3850
 #, php-format
 msgid "Except from these IPs: %s"
 msgstr "Εκτός από αυτές τις IP: %s"
 
-#: includes/class-pncp-bunny.php:3858
+#: includes/class-pncp-bunny.php:3854
 msgid "What may stop working:"
 msgstr "Τι μπορεί να σταματήσει να λειτουργεί:"
 
 #. translators: 1: most entries in one condition, 2: number of rules
-#: includes/class-pncp-bunny.php:3875
+#: includes/class-pncp-bunny.php:3871
 #, php-format
 msgid ""
 "Bunny accepts at most %1$d entries in one condition, so this lock is sent as"
@@ -8104,7 +8106,7 @@ msgstr ""
 "δημιουργηθεί, δεν κρατιέται κανένα."
 
 #. translators: 1: number of conditions, 2: most entries in one condition
-#: includes/class-pncp-bunny.php:3884
+#: includes/class-pncp-bunny.php:3880
 #, php-format
 msgid ""
 "Sent as one Edge Rule with %1$d conditions of at most %2$d entries each "
@@ -8113,11 +8115,11 @@ msgstr ""
 "Στέλνεται ως ένα Edge Rule με %1$d συνθήκες των %2$d καταχωρίσεων το πολύ η "
 "καθεμία (όσα δέχεται το Bunny)."
 
-#: includes/class-pncp-bunny.php:3899
+#: includes/class-pncp-bunny.php:3895
 msgid "Requests on these addresses, last 7 days"
 msgstr "Αιτήματα σε αυτές τις διευθύνσεις, τελευταίες 7 ημέρες"
 
-#: includes/class-pncp-bunny.php:3902
+#: includes/class-pncp-bunny.php:3898
 msgid ""
 "Not available: the attack record is off or not set up, so ScrapeLock cannot "
 "say who asked for these addresses."
@@ -8127,18 +8129,18 @@ msgstr ""
 "διευθύνσεις."
 
 #. translators: 1: requests, 2: IPs, 3: requests already refused
-#: includes/class-pncp-bunny.php:3908
+#: includes/class-pncp-bunny.php:3904
 #, php-format
 msgid "%1$s requests from %2$s IPs (%3$s of them already refused)."
 msgstr "%1$s αιτήματα από %2$s IP (τα %3$s από αυτά έχουν ήδη απορριφθεί)."
 
 #. translators: %s: requests
-#: includes/class-pncp-bunny.php:3916
+#: includes/class-pncp-bunny.php:3912
 #, php-format
 msgid "%s requests were recorded without their address."
 msgstr "%s αιτήματα καταγράφηκαν χωρίς τη διεύθυνσή τους."
 
-#: includes/class-pncp-bunny.php:3919
+#: includes/class-pncp-bunny.php:3915
 msgid ""
 "From the attack record: what WordPress saw, and what Bunny served itself "
 "(imported from its logs, when the import is on). Normal visits are not "
@@ -8148,13 +8150,13 @@ msgstr ""
 "Bunny (εισαγωγή από τα logs του, όταν η εισαγωγή είναι ενεργή). Οι κανονικές"
 " επισκέψεις δεν καταγράφονται εκεί."
 
-#: includes/class-pncp-bunny.php:3922 includes/class-pncp-hardening.php:2442
+#: includes/class-pncp-bunny.php:3918 includes/class-pncp-hardening.php:2442
 #: includes/class-pncp-integrity.php:1982
 #: includes/class-pncp-integrity.php:2011
 msgid "What"
 msgstr "Τι"
 
-#: includes/class-pncp-bunny.php:3938
+#: includes/class-pncp-bunny.php:3934
 msgid ""
 "From the Bunny logs: not available (the import from Bunny's logs is off or "
 "has not run since ScrapeLock 3.9)."
@@ -8163,26 +8165,26 @@ msgstr ""
 " είναι ανενεργή ή δεν έχει εκτελεστεί από το ScrapeLock 3.9)."
 
 #. translators: 1: requests, 2: IPs
-#: includes/class-pncp-bunny.php:3943
+#: includes/class-pncp-bunny.php:3939
 #, php-format
 msgid "From the Bunny logs: %1$s requests from %2$s IPs, attacks or not."
 msgstr "Από τα logs του Bunny: %1$s αιτήματα από %2$s IP, επιθέσεις ή όχι."
 
 #. translators: %s: date and time
-#: includes/class-pncp-bunny.php:3949
+#: includes/class-pncp-bunny.php:3945
 #, php-format
 msgid "Counted since %s, so less than 7 days."
 msgstr "Μετρώνται από %s, άρα λιγότερο από 7 ημέρες."
 
 #. translators: %s: number of IPs
-#: includes/class-pncp-bunny.php:3953
+#: includes/class-pncp-bunny.php:3949
 #, php-format
 msgid "%s of these IPs is in the allowed list and is let through."
 msgid_plural "%s of these IPs are in the allowed list and are let through."
 msgstr[0] "%s από αυτές τις IP είναι στη λίστα επιτρεπόμενων και περνά."
 msgstr[1] "%s από αυτές τις IP είναι στη λίστα επιτρεπόμενων και περνούν."
 
-#: includes/class-pncp-bunny.php:3956
+#: includes/class-pncp-bunny.php:3952
 msgid ""
 "Bunny anonymizes the IPs in the logs, so several visitors may share one "
 "shortened address."
@@ -8190,17 +8192,17 @@ msgstr ""
 "Το Bunny ανωνυμοποιεί τις IP στα logs, οπότε πολλοί επισκέπτες μπορεί να "
 "μοιράζονται μία συντομευμένη διεύθυνση."
 
-#: includes/class-pncp-bunny.php:3968
+#: includes/class-pncp-bunny.php:3964
 msgid "Normal traffic from the same IPs"
 msgstr "Κανονική κίνηση από τις ίδιες IP"
 
-#: includes/class-pncp-bunny.php:3970
+#: includes/class-pncp-bunny.php:3966
 msgid "No IP to check: no recorded request on these addresses."
 msgstr ""
 "Καμία IP για έλεγχο: κανένα καταγεγραμμένο αίτημα σε αυτές τις διευθύνσεις."
 
 #. translators: %s: number of IPs
-#: includes/class-pncp-bunny.php:3973
+#: includes/class-pncp-bunny.php:3969
 #, php-format
 msgid "The %s IP checked had no normal traffic in the data below."
 msgid_plural ""
@@ -8211,34 +8213,34 @@ msgstr[1] ""
 "Καμία από τις %s IP που ελέγχθηκαν δεν είχε κανονική κίνηση στα παρακάτω "
 "δεδομένα."
 
-#: includes/class-pncp-bunny.php:3975
+#: includes/class-pncp-bunny.php:3971
 msgid "Requests on these addresses"
 msgstr "Αιτήματα σε αυτές τις διευθύνσεις"
 
-#: includes/class-pncp-bunny.php:3975
+#: includes/class-pncp-bunny.php:3971
 msgid "Also"
 msgstr "Επίσης"
 
-#: includes/class-pncp-bunny.php:3983
+#: includes/class-pncp-bunny.php:3979
 msgid "Administrators' IPs of the last 30 days: checked."
 msgstr "IP διαχειριστών των τελευταίων 30 ημερών: ελέγχθηκαν."
 
-#: includes/class-pncp-bunny.php:3984
+#: includes/class-pncp-bunny.php:3980
 msgid "Sign-ins to accounts of the last 30 days: checked."
 msgstr "Συνδέσεις σε λογαριασμούς των τελευταίων 30 ημερών: ελέγχθηκαν."
 
-#: includes/class-pncp-bunny.php:3984
+#: includes/class-pncp-bunny.php:3980
 msgid "Sign-ins to accounts: not available."
 msgstr "Συνδέσεις σε λογαριασμούς: δεν είναι διαθέσιμο."
 
-#: includes/class-pncp-bunny.php:3985
+#: includes/class-pncp-bunny.php:3981
 msgid ""
 "Reputation record (pages read, human check, sign-ins, last 7 days): checked."
 msgstr ""
 "Αρχείο φήμης (σελίδες που διαβάστηκαν, έλεγχος ανθρώπου, συνδέσεις, "
 "τελευταίες 7 ημέρες): ελέγχθηκε."
 
-#: includes/class-pncp-bunny.php:3985
+#: includes/class-pncp-bunny.php:3981
 msgid ""
 "Reputation record (pages read, human check): not available, the IP "
 "reputation is off."
@@ -8246,11 +8248,11 @@ msgstr ""
 "Αρχείο φήμης (σελίδες που διαβάστηκαν, έλεγχος ανθρώπου): δεν είναι "
 "διαθέσιμο, η φήμη IP είναι ανενεργή."
 
-#: includes/class-pncp-bunny.php:3986
+#: includes/class-pncp-bunny.php:3982
 msgid "Page views through Bunny in the imported logs: checked."
 msgstr "Προβολές σελίδων μέσω του Bunny στα logs που εισήχθησαν: ελέγχθηκαν."
 
-#: includes/class-pncp-bunny.php:3986
+#: includes/class-pncp-bunny.php:3982
 msgid ""
 "Page views through Bunny in the logs: not available (the import is off, has "
 "not run yet, or the logs have anonymized IPs)."
@@ -8260,26 +8262,26 @@ msgstr ""
 "IP)."
 
 #. translators: %s: number of IPs
-#: includes/class-pncp-bunny.php:3994
+#: includes/class-pncp-bunny.php:3990
 #, php-format
 msgid "Only the %s IPs with the most requests were checked."
 msgstr "Ελέγχθηκαν μόνο οι %s IP με τα περισσότερα αιτήματα."
 
 #. translators: 1: number of log lines, 2: number of attacks
-#: includes/class-pncp-bunny.php:4022
+#: includes/class-pncp-bunny.php:4018
 #, php-format
 msgid "Imported %1$s log lines from Bunny; %2$s attack requests found."
 msgstr ""
 "Εισήχθησαν %1$s γραμμές log από το Bunny· βρέθηκαν %2$s αιτήματα επιθέσεων."
 
 #. translators: %s: what is locked
-#: includes/class-pncp-bunny.php:4039
+#: includes/class-pncp-bunny.php:4035
 #, php-format
 msgid "Locked at Bunny CDN: %s."
 msgstr "Κλειδώθηκε στο Bunny CDN: %s."
 
 #. translators: %s: what is locked
-#: includes/class-pncp-bunny.php:4039
+#: includes/class-pncp-bunny.php:4035
 msgid ""
 "The rule is switched off until ScrapeLock blocks (Monitor only or protection"
 " off)."
@@ -8287,19 +8289,19 @@ msgstr ""
 "Ο κανόνας είναι απενεργοποιημένος μέχρι να μπλοκάρει το ScrapeLock (Μόνο "
 "παρακολούθηση ή προστασία ανενεργή)."
 
-#: includes/class-pncp-bunny.php:4042 includes/class-pncp-bunny.php:4048
-#: includes/class-pncp-bunny.php:4050
+#: includes/class-pncp-bunny.php:4038 includes/class-pncp-bunny.php:4044
+#: includes/class-pncp-bunny.php:4046
 msgid "The rule was removed at Bunny CDN."
 msgstr "Ο κανόνας αφαιρέθηκε από το Bunny CDN."
 
 #. translators: %s: list of IPs
-#: includes/class-pncp-bunny.php:4057
+#: includes/class-pncp-bunny.php:4053
 #, php-format
 msgid "Added to “Allowed IPs for the login page at Bunny”: %s."
 msgstr ""
 "Προστέθηκαν στις «Επιτρεπόμενες IP για τη σελίδα σύνδεσης στο Bunny»: %s."
 
-#: includes/class-pncp-bunny.php:4060
+#: includes/class-pncp-bunny.php:4056
 msgid ""
 "Logging is on at the pull zone. The first lines can be read within 15 "
 "minutes."
@@ -8307,7 +8309,7 @@ msgstr ""
 "Το logging είναι ενεργό στο pull zone. Οι πρώτες γραμμές μπορούν να "
 "διαβαστούν μέσα σε 15 λεπτά."
 
-#: includes/class-pncp-bunny.php:4070
+#: includes/class-pncp-bunny.php:4066
 msgid ""
 "The pull zone ID is a number: see the address of the pull zone's page in the"
 " bunny.net dashboard."
@@ -8315,15 +8317,15 @@ msgstr ""
 "Το pull zone ID είναι αριθμός: δείτε τη διεύθυνση της σελίδας του pull zone "
 "στο dashboard του bunny.net."
 
-#: includes/class-pncp-bunny.php:4070
+#: includes/class-pncp-bunny.php:4066
 msgid "The API key is not valid."
 msgstr "Το API key δεν είναι έγκυρο."
 
-#: includes/class-pncp-bunny.php:4072
+#: includes/class-pncp-bunny.php:4068
 msgid "Connected to the Bunny pull zone."
 msgstr "Συνδέθηκε με το pull zone του Bunny."
 
-#: includes/class-pncp-bunny.php:4076
+#: includes/class-pncp-bunny.php:4072
 msgid ""
 "The Bunny connection of this card was removed, with the rules ScrapeLock "
 "made with it."
@@ -8331,18 +8333,18 @@ msgstr ""
 "Η σύνδεση Bunny αυτής της κάρτας αφαιρέθηκε, μαζί με τους κανόνες που "
 "δημιούργησε με αυτήν το ScrapeLock."
 
-#: includes/class-pncp-bunny.php:4219
+#: includes/class-pncp-bunny.php:4215
 msgid "Bunny CDN: attacks and locks at the edge"
 msgstr "Bunny CDN: επιθέσεις και κλειδώματα στο edge"
 
-#: includes/class-pncp-bunny.php:4220
+#: includes/class-pncp-bunny.php:4216
 msgid ""
 "Sees attacks on pages Bunny serves from cache, and locks addresses there."
 msgstr ""
 "Βλέπει επιθέσεις σε σελίδες που σερβίρει το Bunny από την cache και "
 "κλειδώνει διευθύνσεις εκεί."
 
-#: includes/class-pncp-bunny.php:4220
+#: includes/class-pncp-bunny.php:4216
 msgid ""
 "Every visitor passes through Bunny CDN, also for pages Bunny serves from its"
 " cache, which never reach WordPress. ScrapeLock reads the pull zone's logs "
@@ -8358,7 +8360,7 @@ msgstr ""
 "«ScrapeLock:»). Κανόνες που δεν δημιούργησε το ScrapeLock δεν αγγίζονται "
 "ποτέ."
 
-#: includes/class-pncp-bunny.php:4224
+#: includes/class-pncp-bunny.php:4220
 msgid ""
 "The site is locked: unlock it on the Lockdown tab to change the rules at "
 "Bunny."
@@ -8367,20 +8369,20 @@ msgstr ""
 "αλλάξετε τους κανόνες στο Bunny."
 
 #. translators: %s: pull zone ID
-#: includes/class-pncp-bunny.php:4249
+#: includes/class-pncp-bunny.php:4245
 #, php-format
 msgid "Uses the Bunny connection of “Blocking at the CDN” (pull zone %s)."
 msgstr ""
 "Χρησιμοποιεί τη σύνδεση Bunny του «Αποκλεισμός στο CDN» (pull zone %s)."
 
-#: includes/class-pncp-bunny.php:4253
+#: includes/class-pncp-bunny.php:4249
 msgid ""
 "Behind Bunny anyway? Connect its pull zone here for logs and Edge Rules."
 msgstr ""
 "Πίσω από Bunny παρ' όλα αυτά; Συνδέστε εδώ το pull zone του για logs και "
 "Edge Rules."
 
-#: includes/class-pncp-bunny.php:4253
+#: includes/class-pncp-bunny.php:4249
 msgid ""
 "“Blocking at the CDN” is not set to Bunny CDN. If this site is served by "
 "Bunny all the same, connect its pull zone here (only for the logs and the "
@@ -8391,23 +8393,23 @@ msgstr ""
 "του (μόνο για τα logs και τα Edge Rules παρακάτω· οι αποκλεισμοί μένουν τότε"
 " στο CDN που έχει επιλεγεί εκεί)."
 
-#: includes/class-pncp-bunny.php:4263
+#: includes/class-pncp-bunny.php:4259
 msgid "Pull zone ID"
 msgstr "Pull zone ID"
 
-#: includes/class-pncp-bunny.php:4265
+#: includes/class-pncp-bunny.php:4261
 msgid "The number in the pull zone's address in the bunny.net dashboard."
 msgstr "Ο αριθμός στη διεύθυνση του pull zone στο dashboard του bunny.net."
 
-#: includes/class-pncp-bunny.php:4268
+#: includes/class-pncp-bunny.php:4264
 msgid "API key"
 msgstr "API key"
 
-#: includes/class-pncp-bunny.php:4271
+#: includes/class-pncp-bunny.php:4267
 msgid "Set in wp-config.php (SCRAPELOCK_BUNNY_KEY)."
 msgstr "Ορισμένο στο wp-config.php (SCRAPELOCK_BUNNY_KEY)."
 
-#: includes/class-pncp-bunny.php:4275
+#: includes/class-pncp-bunny.php:4271
 msgid ""
 "bunny.net dashboard → Account settings → API. Never shown again after "
 "saving."
@@ -8415,7 +8417,7 @@ msgstr ""
 "Dashboard του bunny.net → Account settings → API. Δεν εμφανίζεται ξανά μετά "
 "την αποθήκευση."
 
-#: includes/class-pncp-bunny.php:4275
+#: includes/class-pncp-bunny.php:4271
 msgid ""
 "Account settings → API in the bunny.net dashboard. It gives access to the "
 "whole account; it is stored in the database and never shown again. To keep "
@@ -8427,35 +8429,35 @@ msgstr ""
 "ξανά. Για να μη βρίσκεται στη βάση δεδομένων, προσθέστε αντί γι' αυτό "
 "define( 'SCRAPELOCK_BUNNY_KEY', '…' ); στο wp-config.php."
 
-#: includes/class-pncp-bunny.php:4279 includes/class-pncp-stealth.php:2655
+#: includes/class-pncp-bunny.php:4275 includes/class-pncp-stealth.php:2655
 msgid "Save and test"
 msgstr "Αποθήκευση και δοκιμή"
 
-#: includes/class-pncp-bunny.php:4283
+#: includes/class-pncp-bunny.php:4279
 msgid "Disconnect"
 msgstr "Αποσύνδεση"
 
-#: includes/class-pncp-bunny.php:4283
+#: includes/class-pncp-bunny.php:4279
 msgid "Remove this connection and the rules ScrapeLock made at Bunny with it?"
 msgstr ""
 "Αφαίρεση αυτής της σύνδεσης και των κανόνων που δημιούργησε με αυτήν το "
 "ScrapeLock στο Bunny;"
 
-#: includes/class-pncp-bunny.php:4297
+#: includes/class-pncp-bunny.php:4293
 msgid "Logs"
 msgstr "Logs"
 
 #. translators: 1: status, 2: date and time
-#: includes/class-pncp-bunny.php:4300
+#: includes/class-pncp-bunny.php:4296
 #, php-format
 msgid "%1$s (checked %2$s)"
 msgstr "%1$s (έλεγχος %2$s)"
 
-#: includes/class-pncp-bunny.php:4302
+#: includes/class-pncp-bunny.php:4298
 msgid "Not checked yet whether logging is on at the pull zone."
 msgstr "Δεν έχει ελεγχθεί ακόμη αν το logging είναι ενεργό στο pull zone."
 
-#: includes/class-pncp-bunny.php:4309
+#: includes/class-pncp-bunny.php:4305
 msgid ""
 "Importing the logs is off: turn on “Import attacks from Bunny CDN's logs” in"
 " the settings above."
@@ -8464,7 +8466,7 @@ msgstr ""
 " τα logs του Bunny CDN» στις ρυθμίσεις παραπάνω."
 
 #. translators: 1: date and time, 2: lines, 3: attack requests
-#: includes/class-pncp-bunny.php:4312
+#: includes/class-pncp-bunny.php:4308
 #, php-format
 msgid "Last import: %1$s, %2$s lines read, %3$s attack requests found."
 msgstr ""
@@ -8472,12 +8474,12 @@ msgstr ""
 "επιθέσεων."
 
 #. translators: %s: date and time
-#: includes/class-pncp-bunny.php:4316
+#: includes/class-pncp-bunny.php:4312
 #, php-format
 msgid "Next import: %s"
 msgstr "Επόμενη εισαγωγή: %s"
 
-#: includes/class-pncp-bunny.php:4319
+#: includes/class-pncp-bunny.php:4315
 msgid ""
 "The first import starts within 15 minutes. It begins with the last 15 "
 "minutes of the log, not with older lines."
@@ -8485,7 +8487,7 @@ msgstr ""
 "Η πρώτη εισαγωγή ξεκινά μέσα σε 15 λεπτά. Αρχίζει με τα τελευταία 15 λεπτά "
 "του log, όχι με παλαιότερες γραμμές."
 
-#: includes/class-pncp-bunny.php:4328
+#: includes/class-pncp-bunny.php:4324
 msgid ""
 "IPs too fast at the CDN are not blocked: Bunny anonymizes the IPs in its "
 "logs."
@@ -8494,7 +8496,7 @@ msgstr ""
 "στα logs του."
 
 #. translators: %d: requests per minute
-#: includes/class-pncp-bunny.php:4330
+#: includes/class-pncp-bunny.php:4326
 #, php-format
 msgid ""
 "IPs that ask for more than %d pages per minute at the CDN get a violation "
@@ -8503,15 +8505,15 @@ msgstr ""
 "Οι IP που ζητούν περισσότερες από %d σελίδες ανά λεπτό στο CDN καταγράφουν "
 "παράβαση προς προσωρινό αποκλεισμό (όχι σε Μόνο παρακολούθηση)."
 
-#: includes/class-pncp-bunny.php:4334
+#: includes/class-pncp-bunny.php:4330
 msgid "Check logging at Bunny"
 msgstr "Έλεγχος του logging στο Bunny"
 
-#: includes/class-pncp-bunny.php:4336
+#: includes/class-pncp-bunny.php:4332
 msgid "Turn on logging at Bunny"
 msgstr "Ενεργοποίηση του logging στο Bunny"
 
-#: includes/class-pncp-bunny.php:4336
+#: includes/class-pncp-bunny.php:4332
 msgid ""
 "Turn on logging for this pull zone at Bunny? Bunny then keeps a log of every"
 " request (IP, address, User-Agent) for 3 days."
@@ -8519,17 +8521,17 @@ msgstr ""
 "Ενεργοποίηση του logging για αυτό το pull zone στο Bunny; Το Bunny θα κρατά "
 "τότε log κάθε αιτήματος (IP, διεύθυνση, User-Agent) για 3 ημέρες."
 
-#: includes/class-pncp-bunny.php:4339
+#: includes/class-pncp-bunny.php:4335
 msgid "Import now"
 msgstr "Εισαγωγή τώρα"
 
-#: includes/class-pncp-bunny.php:4350
+#: includes/class-pncp-bunny.php:4346
 msgid "Attacks seen at the CDN"
 msgstr "Επιθέσεις που εντοπίστηκαν στο CDN"
 
 #. translators: 1: requests in 24 hours, 2: blocked of them, 3: requests in 7
 #. days, 4: blocked of them
-#: includes/class-pncp-bunny.php:4354
+#: includes/class-pncp-bunny.php:4350
 #, php-format
 msgid ""
 "Last 24 hours: %1$s attack requests (%2$s blocked). Last 7 days: %3$s (%4$s "
@@ -8538,45 +8540,45 @@ msgstr ""
 "Τελευταίες 24 ώρες: %1$s αιτήματα επιθέσεων (%2$s μπλοκαρίστηκαν). "
 "Τελευταίες 7 ημέρες: %3$s (%4$s μπλοκαρίστηκαν)."
 
-#: includes/class-pncp-bunny.php:4368
+#: includes/class-pncp-bunny.php:4364
 msgid "What (last 7 days)"
 msgstr "Τι (τελευταίες 7 ημέρες)"
 
-#: includes/class-pncp-bunny.php:4382
+#: includes/class-pncp-bunny.php:4378
 msgid "Edge Rules ScrapeLock manages"
 msgstr "Edge Rules που διαχειρίζεται το ScrapeLock"
 
-#: includes/class-pncp-bunny.php:4384
+#: includes/class-pncp-bunny.php:4380
 msgid "None yet."
 msgstr "Κανένας ακόμη."
 
-#: includes/class-pncp-bunny.php:4388
+#: includes/class-pncp-bunny.php:4384
 msgid "Rule"
 msgstr "Κανόνας"
 
-#: includes/class-pncp-bunny.php:4388
+#: includes/class-pncp-bunny.php:4384
 msgid "Blocks"
 msgstr "Μπλοκάρει"
 
-#: includes/class-pncp-bunny.php:4388
+#: includes/class-pncp-bunny.php:4384
 msgid "State"
 msgstr "Κατάσταση"
 
 #. translators: %s: list of IPs
-#: includes/class-pncp-bunny.php:4394
+#: includes/class-pncp-bunny.php:4390
 #, php-format
 msgid "Except from: %s"
 msgstr "Εκτός από: %s"
 
-#: includes/class-pncp-bunny.php:4399
+#: includes/class-pncp-bunny.php:4395
 msgid "Blocking"
 msgstr "Μπλοκάρει"
 
-#: includes/class-pncp-bunny.php:4401
+#: includes/class-pncp-bunny.php:4397
 msgid "Switched off, switched on with the next run"
 msgstr "Απενεργοποιημένος, ενεργοποιείται με την επόμενη εκτέλεση"
 
-#: includes/class-pncp-bunny.php:4401
+#: includes/class-pncp-bunny.php:4397
 msgid ""
 "Switched off while ScrapeLock does not block (Monitor only or protection "
 "off)"
@@ -8585,23 +8587,23 @@ msgstr ""
 "προστασία ανενεργή)"
 
 #. translators: %s: date
-#: includes/class-pncp-bunny.php:4404
+#: includes/class-pncp-bunny.php:4400
 #, php-format
 msgid "Since %s"
 msgstr "Από %s"
 
 #. translators: %s: rule
-#: includes/class-pncp-bunny.php:4407 includes/class-pncp-bunny.php:4448
+#: includes/class-pncp-bunny.php:4403 includes/class-pncp-bunny.php:4444
 msgid "Remove"
 msgstr "Αφαίρεση"
 
 #. translators: %s: rule
-#: includes/class-pncp-bunny.php:4407
+#: includes/class-pncp-bunny.php:4403
 #, php-format
 msgid "Remove the rule “%s” at Bunny CDN?"
 msgstr "Αφαίρεση του κανόνα «%s» από το Bunny CDN;"
 
-#: includes/class-pncp-bunny.php:4421
+#: includes/class-pncp-bunny.php:4417
 msgid ""
 "Made by an older version with more entries in one condition than Bunny "
 "accepts: it is sent again, split, with the next run. If it stays like this, "
@@ -8612,7 +8614,7 @@ msgstr ""
 "επόμενη εκτέλεση. Αν μείνει έτσι, αφαιρέστε τον και κλειδώστε ξανά."
 
 #. translators: 1: number of rules, 2: most entries in one condition
-#: includes/class-pncp-bunny.php:4424
+#: includes/class-pncp-bunny.php:4420
 #, php-format
 msgid ""
 "%1$d Edge Rules at Bunny (at most %2$d entries in one condition), managed as"
@@ -8621,35 +8623,35 @@ msgstr ""
 "%1$d Edge Rules στο Bunny (το πολύ %2$d καταχωρίσεις σε μία συνθήκη), που "
 "διαχειρίζονται ως ένα κλείδωμα."
 
-#: includes/class-pncp-bunny.php:4434
+#: includes/class-pncp-bunny.php:4430
 msgid "Lock at Bunny with one click"
 msgstr "Κλείδωμα στο Bunny με ένα κλικ"
 
-#: includes/class-pncp-bunny.php:4435 includes/class-pncp-hardening.php:2231
+#: includes/class-pncp-bunny.php:4431 includes/class-pncp-hardening.php:2231
 msgid "Point"
 msgstr "Σημείο"
 
-#: includes/class-pncp-bunny.php:4435
+#: includes/class-pncp-bunny.php:4431
 msgid "What it blocks, what may stop working"
 msgstr "Τι μπλοκάρει, τι μπορεί να σταματήσει να λειτουργεί"
 
-#: includes/class-pncp-bunny.php:4435
+#: includes/class-pncp-bunny.php:4431
 msgid "Attacks, 7 days"
 msgstr "Επιθέσεις, 7 ημέρες"
 
-#: includes/class-pncp-bunny.php:4446
+#: includes/class-pncp-bunny.php:4442
 msgid "Locked at Bunny"
 msgstr "Κλειδωμένο στο Bunny"
 
-#: includes/class-pncp-bunny.php:4452 includes/class-pncp-health.php:1430
+#: includes/class-pncp-bunny.php:4448 includes/class-pncp-health.php:1430
 msgid "Lock at Bunny…"
 msgstr "Κλείδωμα στο Bunny…"
 
-#: includes/class-pncp-bunny.php:4470
+#: includes/class-pncp-bunny.php:4466
 msgid "ScrapeLock reads Bunny CDN's logs"
 msgstr "Το ScrapeLock διαβάζει τα logs του Bunny CDN"
 
-#: includes/class-pncp-bunny.php:4476
+#: includes/class-pncp-bunny.php:4472
 msgid ""
 "Attacks on pages Bunny serves from its cache never reach WordPress; "
 "ScrapeLock sees them in the pull zone's logs."
@@ -8657,11 +8659,11 @@ msgstr ""
 "Οι επιθέσεις σε σελίδες που σερβίρει το Bunny από την cache του δεν φτάνουν "
 "ποτέ στο WordPress· το ScrapeLock τις βλέπει στα logs του pull zone."
 
-#: includes/class-pncp-bunny.php:4484
+#: includes/class-pncp-bunny.php:4480
 msgid "ScrapeLock does not read Bunny CDN's logs"
 msgstr "Το ScrapeLock δεν διαβάζει τα logs του Bunny CDN"
 
-#: includes/class-pncp-bunny.php:4486
+#: includes/class-pncp-bunny.php:4482
 msgid ""
 "The site is connected to Bunny CDN, but importing its logs is off: attacks "
 "on cached pages stay unseen. Turn on “Import attacks from Bunny CDN's logs”."
@@ -8670,21 +8672,21 @@ msgstr ""
 " είναι ανενεργή: οι επιθέσεις σε σελίδες της cache μένουν αθέατες. "
 "Ενεργοποιήστε το «Εισαγωγή επιθέσεων από τα logs του Bunny CDN»."
 
-#: includes/class-pncp-bunny.php:4493
+#: includes/class-pncp-bunny.php:4489
 msgid "Logging is off at the Bunny pull zone"
 msgstr "Το logging είναι ανενεργό στο pull zone του Bunny"
 
-#: includes/class-pncp-bunny.php:4497
+#: includes/class-pncp-bunny.php:4493
 msgid "ScrapeLock could not read Bunny CDN's logs"
 msgstr "Το ScrapeLock δεν μπόρεσε να διαβάσει τα logs του Bunny CDN"
 
 #. translators: %s: error
-#: includes/class-pncp-bunny.php:4499
+#: includes/class-pncp-bunny.php:4495
 #, php-format
 msgid "The last import failed: %s"
 msgstr "Η τελευταία εισαγωγή απέτυχε: %s"
 
-#: includes/class-pncp-bunny.php:4510
+#: includes/class-pncp-bunny.php:4506
 msgid ""
 "When “Import attacks from Bunny CDN's logs” is on, this site downloads the "
 "logs of its own Bunny CDN pull zone (logging.bunnycdn.com) every 15 minutes."
@@ -8707,7 +8709,7 @@ msgstr ""
 "ημέρες μπορεί να σταλούν στον λογαριασμό Bunny του ιδιοκτήτη του ιστότοπου, "
 "ώστε να τους επιτρέπεται η πρόσβαση."
 
-#: includes/class-pncp-bunny.php:4512
+#: includes/class-pncp-bunny.php:4508
 msgid ""
 "For the IP addresses whose requests looked like attacks or asked for an "
 "address that can be locked at Bunny CDN (such as wp-login.php or "
@@ -8723,17 +8725,17 @@ msgstr ""
 "προειδοποιεί πριν απορρίψει έναν πραγματικό επισκέπτη."
 
 #. translators: 1: lines, 2: attack requests
-#: includes/class-pncp-bunny.php:4592
+#: includes/class-pncp-bunny.php:4588
 #, php-format
 msgid "%1$d lines read, %2$d attack requests found."
 msgstr "Διαβάστηκαν %1$d γραμμές, βρέθηκαν %2$d αιτήματα επιθέσεων."
 
-#: includes/class-pncp-bunny.php:4633
+#: includes/class-pncp-bunny.php:4629
 msgid "Locked at Bunny CDN."
 msgstr "Κλειδώθηκε στο Bunny CDN."
 
 #. translators: %s: preset
-#: includes/class-pncp-bunny.php:4645
+#: includes/class-pncp-bunny.php:4641
 #, php-format
 msgid ""
 "%s is not locked at Bunny CDN by ScrapeLock. See: wp scrapelock bunny rules"
@@ -8741,22 +8743,22 @@ msgstr ""
 "Το %s δεν είναι κλειδωμένο στο Bunny CDN από το ScrapeLock. Δείτε: wp "
 "scrapelock bunny rules"
 
-#: includes/class-pncp-bunny.php:4647 includes/class-pncp-bunny.php:4656
+#: includes/class-pncp-bunny.php:4643 includes/class-pncp-bunny.php:4652
 msgid "Removed at Bunny CDN."
 msgstr "Αφαιρέθηκε από το Bunny CDN."
 
 #. translators: %s: rule ID
-#: includes/class-pncp-bunny.php:4654
+#: includes/class-pncp-bunny.php:4650
 #, php-format
 msgid "No rule “%s” made by ScrapeLock. See: wp scrapelock bunny rules"
 msgstr ""
 "Δεν υπάρχει κανόνας «%s» του ScrapeLock. Δείτε: wp scrapelock bunny rules"
 
-#: includes/class-pncp-bunny.php:4672
+#: includes/class-pncp-bunny.php:4668
 msgid "Give the path of a Bunny log file."
 msgstr "Δώστε τη διαδρομή ενός αρχείου log του Bunny."
 
-#: includes/class-pncp-bunny.php:4696
+#: includes/class-pncp-bunny.php:4692
 msgid ""
 "Use: status, import, rules, presets, lock <preset>, unlock <preset|rule>, "
 "logging [--enable] or parse <file>."
@@ -8882,7 +8884,7 @@ msgstr "Δεν έχει ρυθμιστεί"
 
 #: includes/class-pncp-cli.php:291 includes/class-pncp-hardening.php:513
 #: includes/class-pncp-hardening.php:2416 includes/class-pncp-health.php:1827
-#: includes/class-pncp-lockdown.php:1898 includes/class-pncp-lockdown.php:5053
+#: includes/class-pncp-lockdown.php:1898 includes/class-pncp-lockdown.php:5056
 #: includes/class-pncp-status.php:586
 msgid "Locked"
 msgstr "Κλειδωμένο"
@@ -8891,7 +8893,7 @@ msgstr "Κλειδωμένο"
 #. translators: %s: date and time.
 #. translators: %s: time
 #: includes/class-pncp-cli.php:294 includes/class-pncp-health.php:1830
-#: includes/class-pncp-lockdown.php:4843
+#: includes/class-pncp-lockdown.php:4846
 #, php-format
 msgid "Unlocked until %s"
 msgstr "Ξεκλείδωτο έως %s"
@@ -10789,7 +10791,7 @@ msgstr "Μέτριος"
 msgid "High"
 msgstr "Υψηλός"
 
-#: includes/class-pncp-hardening.php:500 includes/class-pncp-lockdown.php:4673
+#: includes/class-pncp-hardening.php:500 includes/class-pncp-lockdown.php:4676
 msgid "WordPress"
 msgstr "WordPress"
 
@@ -10895,7 +10897,7 @@ msgstr "Η προστασία σύνδεσης δεν είναι διαθέσι�
 msgid "This setting does not exist in this version."
 msgstr "Αυτή η ρύθμιση δεν υπάρχει σε αυτή την έκδοση."
 
-#: includes/class-pncp-hardening.php:869 includes/class-pncp-login.php:1455
+#: includes/class-pncp-hardening.php:869 includes/class-pncp-login.php:1456
 #: includes/class-pncp-stealth.php:1051
 msgid "The setting could not be changed."
 msgstr "Η ρύθμιση δεν μπόρεσε να αλλάξει."
@@ -11325,7 +11327,7 @@ msgid "Last changes"
 msgstr "Τελευταίες αλλαγές"
 
 #: includes/class-pncp-hardening.php:2441
-#: includes/class-pncp-lockdown.php:5081
+#: includes/class-pncp-lockdown.php:5084
 msgid "When"
 msgstr "Πότε"
 
@@ -12985,17 +12987,13 @@ msgstr "Όριο για data centers"
 msgid "WooCommerce limits per minute (cart / checkout, coupons)"
 msgstr "Όρια WooCommerce ανά λεπτό (καλάθι / ταμείο, κουπόνια)"
 
-#: includes/class-pncp-health.php:1856 includes/class-pncp-options.php:2254
+#: includes/class-pncp-health.php:1856 includes/class-pncp-options.php:2258
 msgid "Blocked countries"
 msgstr "Αποκλεισμένες χώρες"
 
 #: includes/class-pncp-health.php:1857
 msgid "Countries with a stricter limit"
 msgstr "Χώρες με αυστηρότερο όριο"
-
-#: includes/class-pncp-health.php:1859
-msgid "Who is exempt"
-msgstr "Ποιοι εξαιρούνται"
 
 #: includes/class-pncp-health.php:1860
 msgid "Feeds"
@@ -13115,7 +13113,7 @@ msgstr "%1$d διευθύνσεις, %2$d εύρη"
 #. translators: %d: number of updates
 #: includes/class-pncp-integrity.php:847
 #: includes/class-pncp-integrity.php:1315
-#: includes/class-pncp-lockdown.php:4318
+#: includes/class-pncp-lockdown.php:4321
 #, php-format
 msgid "… and %d more."
 msgstr "… και %d ακόμη."
@@ -13144,7 +13142,7 @@ msgstr ""
 "παρασκήνιο και λαμβάνετε email αν κάποιο αρχείο διαφέρει."
 
 #: includes/class-pncp-integrity.php:1322
-#: includes/class-pncp-lockdown.php:5063
+#: includes/class-pncp-lockdown.php:5066
 msgid "Changed files found"
 msgstr "Βρέθηκαν αλλαγμένα αρχεία"
 
@@ -13212,7 +13210,7 @@ msgid "Renamed %1$s to %2$s"
 msgstr "Το %1$s μετονομάστηκε σε %2$s"
 
 #: includes/class-pncp-integrity.php:1906
-#: includes/class-pncp-lockdown.php:4373 includes/class-pncp-lockdown.php:5136
+#: includes/class-pncp-lockdown.php:4376 includes/class-pncp-lockdown.php:5139
 msgid "Only administrators can lock and unlock the site."
 msgstr ""
 "Μόνο οι διαχειριστές μπορούν να κλειδώνουν και να ξεκλειδώνουν τον ιστότοπο."
@@ -13799,7 +13797,7 @@ msgid "Unlock for a while, update, then lock again."
 msgstr "Ξεκλειδώστε για λίγο, ενημερώστε και κλειδώστε ξανά."
 
 #: includes/class-pncp-lockdown.php:4036 includes/class-pncp-lockdown.php:4043
-#: includes/class-pncp-lockdown.php:4882 includes/class-pncp-login.php:1604
+#: includes/class-pncp-lockdown.php:4885 includes/class-pncp-login.php:1605
 msgid "Unlock"
 msgstr "Ξεκλείδωμα"
 
@@ -13870,12 +13868,12 @@ msgstr "Διατηρούνται μέχρι στιγμής: %s."
 msgid "Nothing changed so far."
 msgstr "Δεν έχει αλλάξει τίποτα μέχρι στιγμής."
 
-#: includes/class-pncp-lockdown.php:4123 includes/class-pncp-lockdown.php:4156
-#: includes/class-pncp-lockdown.php:4837
+#: includes/class-pncp-lockdown.php:4126 includes/class-pncp-lockdown.php:4159
+#: includes/class-pncp-lockdown.php:4840
 msgid "The site is locked"
 msgstr "Ο ιστότοπος είναι κλειδωμένος"
 
-#: includes/class-pncp-lockdown.php:4158
+#: includes/class-pncp-lockdown.php:4161
 msgid ""
 "ScrapeLock Lockdown is on: you can keep working on orders, products, "
 "coupons, reports and content, but plugins, themes, menus and widgets, users,"
@@ -13888,7 +13886,7 @@ msgstr ""
 "εισαγωγή και η εξαγωγή είναι παγωμένα. Έτσι ο ιστότοπος μένει ασφαλής ακόμη "
 "κι αν κάποιος έχει κλέψει έναν κωδικό."
 
-#: includes/class-pncp-lockdown.php:4159
+#: includes/class-pncp-lockdown.php:4162
 msgid ""
 "ScrapeLock Lockdown is on, so nothing can be changed right now: plugins, "
 "themes, users, settings and content are frozen. This keeps the site safe "
@@ -13899,7 +13897,7 @@ msgstr ""
 "περιεχόμενο είναι παγωμένα. Έτσι ο ιστότοπος μένει ασφαλής ακόμη κι αν "
 "κάποιος έχει κλέψει έναν κωδικό."
 
-#: includes/class-pncp-lockdown.php:4161
+#: includes/class-pncp-lockdown.php:4164
 msgid ""
 "To make this change, unlock the site with the code from your authenticator "
 "app, then lock it again when you are done."
@@ -13907,42 +13905,42 @@ msgstr ""
 "Για να κάνετε αυτή την αλλαγή, ξεκλειδώστε τον ιστότοπο με τον κωδικό από "
 "την εφαρμογή επαλήθευσης και κλειδώστε τον ξανά όταν τελειώσετε."
 
-#: includes/class-pncp-lockdown.php:4162
+#: includes/class-pncp-lockdown.php:4165
 msgid "To make this change, ask an administrator to unlock the site."
 msgstr ""
 "Για να κάνετε αυτή την αλλαγή, ζητήστε από έναν διαχειριστή να ξεκλειδώσει "
 "τον ιστότοπο."
 
-#: includes/class-pncp-lockdown.php:4164
+#: includes/class-pncp-lockdown.php:4167
 msgid "Unlock the site"
 msgstr "Ξεκλείδωμα του ιστότοπου"
 
-#: includes/class-pncp-lockdown.php:4165
+#: includes/class-pncp-lockdown.php:4168
 msgid "Back to the Dashboard"
 msgstr "Επιστροφή στον Πίνακα ελέγχου"
 
-#: includes/class-pncp-lockdown.php:4168
+#: includes/class-pncp-lockdown.php:4171
 msgid "Technical detail"
 msgstr "Τεχνική λεπτομέρεια"
 
-#: includes/class-pncp-lockdown.php:4300
+#: includes/class-pncp-lockdown.php:4303
 msgid "WordPress security and maintenance release (install it soon):"
 msgstr ""
 "Έκδοση ασφαλείας και συντήρησης του WordPress (εγκαταστήστε την σύντομα):"
 
-#: includes/class-pncp-lockdown.php:4301
+#: includes/class-pncp-lockdown.php:4304
 msgid "WordPress:"
 msgstr "WordPress:"
 
-#: includes/class-pncp-lockdown.php:4302
+#: includes/class-pncp-lockdown.php:4305
 msgid "Plugins:"
 msgstr "Πρόσθετα:"
 
-#: includes/class-pncp-lockdown.php:4303
+#: includes/class-pncp-lockdown.php:4306
 msgid "Themes:"
 msgstr "Θέματα:"
 
-#: includes/class-pncp-lockdown.php:4321
+#: includes/class-pncp-lockdown.php:4324
 msgid ""
 "These updates are waiting, and WordPress cannot install them while the site "
 "is locked: not even its own security releases. To install them, unlock the "
@@ -13956,7 +13954,7 @@ msgstr ""
 "ενημερώσεις και κλειδώστε τον ξανά (ή αφήστε τον να κλειδώσει ξανά μόνος "
 "του)."
 
-#: includes/class-pncp-lockdown.php:4324
+#: includes/class-pncp-lockdown.php:4327
 msgid ""
 "The filter pncp_lockdown_allow_core_minor is on: WordPress may install its "
 "security and maintenance release by itself, if its automatic updates are on."
@@ -13967,19 +13965,19 @@ msgstr ""
 "αυτόματες ενημερώσεις του είναι ενεργές. Τα πρόσθετα και τα θέματα "
 "εξακολουθούν να περιμένουν ξεκλείδωμα."
 
-#: includes/class-pncp-lockdown.php:4326
+#: includes/class-pncp-lockdown.php:4329
 msgid "Updates are waiting while the site is locked"
 msgstr "Ενημερώσεις περιμένουν όσο ο ιστότοπος είναι κλειδωμένος"
 
-#: includes/class-pncp-lockdown.php:4363
+#: includes/class-pncp-lockdown.php:4366
 msgid "Code from the authenticator app (or a recovery code)"
 msgstr "Κωδικός από την εφαρμογή επαλήθευσης (ή κωδικός ανάκτησης)"
 
-#: includes/class-pncp-lockdown.php:4363
+#: includes/class-pncp-lockdown.php:4366
 msgid "Code from the authenticator app"
 msgstr "Κωδικός από την εφαρμογή επαλήθευσης"
 
-#: includes/class-pncp-lockdown.php:4380
+#: includes/class-pncp-lockdown.php:4383
 msgid ""
 "While the site is locked, nobody can change it from wp-admin, the REST API "
 "or XML-RPC, not even an administrator or someone who stole a password: no "
@@ -13994,11 +13992,11 @@ msgstr ""
 "περιεχομένου. Οι επισκέπτες και οι πελάτες δεν επηρεάζονται. Το κλείδωμα και"
 " το ξεκλείδωμα χρειάζονται κωδικό από την εφαρμογή επαλήθευσης."
 
-#: includes/class-pncp-lockdown.php:4384
+#: includes/class-pncp-lockdown.php:4387
 msgid "Unlocked from the server."
 msgstr "Ξεκλειδώθηκε από τον διακομιστή."
 
-#: includes/class-pncp-lockdown.php:4384
+#: includes/class-pncp-lockdown.php:4387
 msgid ""
 "SCRAPELOCK_UNLOCK is set in wp-config.php, so the lock is not applied. You "
 "can remove the authenticator below and connect a new one; then remove that "
@@ -14009,7 +14007,7 @@ msgstr ""
 "να συνδέσετε μια νέα· στη συνέχεια αφαιρέστε εκείνη τη γραμμή από το wp-"
 "config.php."
 
-#: includes/class-pncp-lockdown.php:4387
+#: includes/class-pncp-lockdown.php:4390
 msgid ""
 "The app secret cannot be read: the security keys in wp-config.php have "
 "changed. Unlock with a recovery code, or from the server, then connect the "
@@ -14019,7 +14017,7 @@ msgstr ""
 "wp-config.php έχουν αλλάξει. Ξεκλειδώστε με κωδικό ανάκτησης ή από τον "
 "διακομιστή και μετά συνδέστε ξανά την εφαρμογή."
 
-#: includes/class-pncp-lockdown.php:4407 includes/class-pncp-lockdown.php:4449
+#: includes/class-pncp-lockdown.php:4410 includes/class-pncp-lockdown.php:4452
 msgid ""
 "The Lockdown data in the database was changed outside WordPress, so its code"
 " cannot be trusted and the site stays locked. To unlock, add define( "
@@ -14032,38 +14030,38 @@ msgstr ""
 "true ); στο wp-config.php, αφαιρέστε την εφαρμογή σε αυτή τη σελίδα, "
 "ρυθμίστε την ξανά και κλειδώστε. Μετά αφαιρέστε τη γραμμή."
 
-#: includes/class-pncp-lockdown.php:4433
+#: includes/class-pncp-lockdown.php:4436
 msgid "The authenticator app is connected. You can lock the site now."
 msgstr ""
 "Η εφαρμογή επαλήθευσης συνδέθηκε. Μπορείτε τώρα να κλειδώσετε τον ιστότοπο."
 
-#: includes/class-pncp-lockdown.php:4434
+#: includes/class-pncp-lockdown.php:4437
 msgid "The site is locked."
 msgstr "Ο ιστότοπος κλειδώθηκε."
 
-#: includes/class-pncp-lockdown.php:4435
+#: includes/class-pncp-lockdown.php:4438
 msgid "The site is unlocked."
 msgstr "Ο ιστότοπος ξεκλειδώθηκε."
 
-#: includes/class-pncp-lockdown.php:4436
+#: includes/class-pncp-lockdown.php:4439
 msgid "New recovery codes created. The old ones no longer work."
 msgstr "Δημιουργήθηκαν νέοι κωδικοί ανάκτησης. Οι παλιοί δεν λειτουργούν πια."
 
-#: includes/class-pncp-lockdown.php:4437
+#: includes/class-pncp-lockdown.php:4440
 msgid "The authenticator app was removed and the lock is off."
 msgstr "Η εφαρμογή επαλήθευσης αφαιρέθηκε και το κλείδωμα είναι ανενεργό."
 
-#: includes/class-pncp-lockdown.php:4438
+#: includes/class-pncp-lockdown.php:4441
 msgid "Setup cancelled."
 msgstr "Η ρύθμιση ακυρώθηκε."
 
-#: includes/class-pncp-lockdown.php:4439
+#: includes/class-pncp-lockdown.php:4442
 msgid "Wrong or expired code. Wait for a new code in the app and try again."
 msgstr ""
 "Λάθος ή ληγμένος κωδικός. Περιμένετε νέο κωδικό στην εφαρμογή και δοκιμάστε "
 "ξανά."
 
-#: includes/class-pncp-lockdown.php:4441
+#: includes/class-pncp-lockdown.php:4444
 msgid ""
 "Another code was being checked at the same moment. Try again. If this keeps "
 "coming back, something is holding the lock for code checks (see the events "
@@ -14075,7 +14073,7 @@ msgstr ""
 "συμβάντα παρακάτω)· για να μπείτε παρ' όλα αυτά, προσθέστε define( "
 "'SCRAPELOCK_UNLOCK', true ); στο wp-config.php."
 
-#: includes/class-pncp-lockdown.php:4442
+#: includes/class-pncp-lockdown.php:4445
 msgid ""
 "All other sessions of your account were signed out. You are still signed in "
 "here."
@@ -14083,7 +14081,7 @@ msgstr ""
 "Όλες οι άλλες συνεδρίες του λογαριασμού σας αποσυνδέθηκαν. Παραμένετε "
 "συνδεδεμένοι εδώ."
 
-#: includes/class-pncp-lockdown.php:4443
+#: includes/class-pncp-lockdown.php:4446
 msgid ""
 "The site is unlocked, and all other sessions of your account were signed "
 "out."
@@ -14091,23 +14089,23 @@ msgstr ""
 "Ο ιστότοπος ξεκλειδώθηκε και όλες οι άλλες συνεδρίες του λογαριασμού σας "
 "αποσυνδέθηκαν."
 
-#: includes/class-pncp-lockdown.php:4444
+#: includes/class-pncp-lockdown.php:4447
 msgid "That action is not possible right now."
 msgstr "Αυτή η ενέργεια δεν είναι δυνατή αυτή τη στιγμή."
 
-#: includes/class-pncp-lockdown.php:4445
+#: includes/class-pncp-lockdown.php:4448
 msgid "The frozen roles were saved."
 msgstr "Οι παγωμένοι ρόλοι αποθηκεύτηκαν."
 
-#: includes/class-pncp-lockdown.php:4446
+#: includes/class-pncp-lockdown.php:4449
 msgid "The file integrity check is done."
 msgstr "Ο έλεγχος ακεραιότητας αρχείων ολοκληρώθηκε."
 
-#: includes/class-pncp-lockdown.php:4447
+#: includes/class-pncp-lockdown.php:4450
 msgid "The quarantine setting was saved."
 msgstr "Η ρύθμιση καραντίνας αποθηκεύτηκε."
 
-#: includes/class-pncp-lockdown.php:4448
+#: includes/class-pncp-lockdown.php:4451
 msgid ""
 "Tick the box to confirm that you have saved your recovery codes and "
 "understand how to unlock the site."
@@ -14115,7 +14113,7 @@ msgstr ""
 "Επιλέξτε το πλαίσιο για να επιβεβαιώσετε ότι έχετε αποθηκεύσει τους κωδικούς"
 " ανάκτησης και ότι καταλαβαίνετε πώς ξεκλειδώνεται ο ιστότοπος."
 
-#: includes/class-pncp-lockdown.php:4450
+#: includes/class-pncp-lockdown.php:4453
 msgid ""
 "The site was not locked: the guard file wp-content/mu-plugins/scrapelock-"
 "lockdown-guard.php could not be written, because WordPress cannot write "
@@ -14134,7 +14132,7 @@ msgstr ""
 " αν λείπει) και μετά κλειδώστε ξανά. Ή επιλέξτε \"Κλείδωμα χωρίς το αρχείο "
 "φύλαξης (ασθενέστερο)\"."
 
-#: includes/class-pncp-lockdown.php:4451
+#: includes/class-pncp-lockdown.php:4454
 msgid ""
 "The change could not be saved: the database refused the write. Nothing was "
 "changed; your code was not used up and the site is as it was. Try again in a"
@@ -14147,7 +14145,7 @@ msgstr ""
 "δεδομένων (χώρος στον δίσκο, λειτουργία μόνο ανάγνωσης) ή το αρχείο "
 "σφαλμάτων της PHP."
 
-#: includes/class-pncp-lockdown.php:4452
+#: includes/class-pncp-lockdown.php:4455
 msgid ""
 "The site was not unlocked: the guard file wp-content/mu-plugins/scrapelock-"
 "lockdown-guard.php could not be changed. Check that the web server may write"
@@ -14159,7 +14157,7 @@ msgstr ""
 "διακομιστή με το SCRAPELOCK_UNLOCK."
 
 #. translators: %s: list of accounts, e.g. "bob (#5), eve (#7)"
-#: includes/class-pncp-lockdown.php:4474
+#: includes/class-pncp-lockdown.php:4477
 #, php-format
 msgid ""
 "Check these accounts: they got administrator rights directly in the database"
@@ -14173,14 +14171,14 @@ msgstr ""
 "δικαιώματά τους ή διαγράψτε τους αν δεν τους τα δώσατε εσείς: %s"
 
 #. translators: %s: date and time
-#: includes/class-pncp-lockdown.php:4487
+#: includes/class-pncp-lockdown.php:4490
 #, php-format
 msgid "Too many wrong codes from this IP. Try again after %s."
 msgstr ""
 "Πάρα πολλοί λάθος κωδικοί από αυτή την IP. Δοκιμάστε ξανά μετά τις %s."
 
 #. translators: %s: date and time
-#: includes/class-pncp-lockdown.php:4491
+#: includes/class-pncp-lockdown.php:4494
 #, php-format
 msgid ""
 "Too many wrong codes. App codes are refused until %s. You can still unlock "
@@ -14189,11 +14187,11 @@ msgstr ""
 "Πάρα πολλοί λάθος κωδικοί. Οι κωδικοί εφαρμογής απορρίπτονται έως %s. "
 "Μπορείτε ακόμη να ξεκλειδώσετε με κωδικό ανάκτησης."
 
-#: includes/class-pncp-lockdown.php:4493
+#: includes/class-pncp-lockdown.php:4496
 msgid "Too many wrong codes. Try again later."
 msgstr "Πάρα πολλοί λάθος κωδικοί. Δοκιμάστε ξανά αργότερα."
 
-#: includes/class-pncp-lockdown.php:4502
+#: includes/class-pncp-lockdown.php:4505
 msgid ""
 "wp-config.php still has the lock line define( 'SCRAPELOCK_LOCKED', ... ); of"
 " a lock that has ended. Remove that line now: while it is there, if the "
@@ -14206,7 +14204,7 @@ msgstr ""
 " δεδομένων, ο ιστότοπος κλειδώνει ξανά και μόνο το SCRAPELOCK_UNLOCK ή η "
 "αφαίρεση της γραμμής τον ανοίγει."
 
-#: includes/class-pncp-lockdown.php:4522
+#: includes/class-pncp-lockdown.php:4525
 msgid ""
 "wp-config.php has the lock line of this lock: if the Lockdown data in the "
 "database is deleted, changed or put back from an older copy, the site stays "
@@ -14216,7 +14214,7 @@ msgstr ""
 "δεδομένα του Lockdown στη βάση δεδομένων διαγραφούν, αλλάξουν ή επαναφερθούν"
 " από παλαιότερο αντίγραφο, ο ιστότοπος μένει κλειδωμένος."
 
-#: includes/class-pncp-lockdown.php:4524
+#: includes/class-pncp-lockdown.php:4527
 msgid ""
 "It is the only copy of the lock outside the database: keep it until you "
 "unlock \"until I lock it again\", then remove it. An unlock for a while does"
@@ -14226,7 +14224,7 @@ msgstr ""
 "μέχρι να ξεκλειδώσετε «μέχρι να το κλειδώσω ξανά» και μετά αφαιρέστε το. Ένα"
 " ξεκλείδωμα για λίγο δεν χρειάζεται καμία αλλαγή σε αυτό."
 
-#: includes/class-pncp-lockdown.php:4535
+#: includes/class-pncp-lockdown.php:4538
 msgid ""
 "The SCRAPELOCK_LOCKED line in wp-config.php is from an earlier lock: replace"
 " it with this one."
@@ -14234,7 +14232,7 @@ msgstr ""
 "Η γραμμή SCRAPELOCK_LOCKED στο wp-config.php είναι από προηγούμενο κλείδωμα:"
 " αντικαταστήστε την με αυτήν."
 
-#: includes/class-pncp-lockdown.php:4537
+#: includes/class-pncp-lockdown.php:4540
 msgid ""
 "The SCRAPELOCK_LOCKED line in wp-config.php does not belong to this site "
 "(the line of another site, changed by hand, or the keys in wp-config.php "
@@ -14245,13 +14243,13 @@ msgstr ""
 "στο wp-config.php άλλαξαν από τότε), οπότε δεν χρησιμοποιείται: "
 "αντικαταστήστε την με αυτήν."
 
-#: includes/class-pncp-lockdown.php:4540
+#: includes/class-pncp-lockdown.php:4543
 msgid "The lock is not protected yet: add this line to wp-config.php"
 msgstr ""
 "Το κλείδωμα δεν προστατεύεται ακόμη: προσθέστε αυτή τη γραμμή στο wp-"
 "config.php"
 
-#: includes/class-pncp-lockdown.php:4541
+#: includes/class-pncp-lockdown.php:4544
 msgid ""
 "WordPress cannot write to any folder of wp-content on this server, so "
 "neither the guard file nor the lock file could be written: for now "
@@ -14275,11 +14273,11 @@ msgstr ""
 " κλειδωμένος ό,τι κι αν λέει η βάση δεδομένων, μέχρι να τον ξεκλειδώσετε με "
 "την εφαρμογή."
 
-#: includes/class-pncp-lockdown.php:4543
+#: includes/class-pncp-lockdown.php:4546
 msgid "Optional: a second copy of the lock in wp-config.php"
 msgstr "Προαιρετικά: δεύτερο αντίγραφο του κλειδώματος στο wp-config.php"
 
-#: includes/class-pncp-lockdown.php:4544
+#: includes/class-pncp-lockdown.php:4547
 msgid ""
 "The guard file or the lock file already keeps the lock outside the database."
 " For one more copy that the web server cannot change, add this line to wp-"
@@ -14292,11 +14290,11 @@ msgstr ""
 "αρχεία και τα δεδομένα του Lockdown στη βάση δεδομένων, ο ιστότοπος "
 "εξακολουθεί να μένει κλειδωμένος."
 
-#: includes/class-pncp-lockdown.php:4549
+#: includes/class-pncp-lockdown.php:4552
 msgid "Line for wp-config.php"
 msgstr "Γραμμή για το wp-config.php"
 
-#: includes/class-pncp-lockdown.php:4551
+#: includes/class-pncp-lockdown.php:4554
 msgid ""
 "An unlock for a while needs no change to the line. When you unlock \"until I"
 " lock it again\", remove it; the next lock gets a new one. Lost the phone "
@@ -14307,18 +14305,18 @@ msgstr ""
 " παίρνει νέα. Χάσατε το τηλέφωνο και τους κωδικούς ανάκτησης; Το "
 "SCRAPELOCK_UNLOCK λειτουργεί όπως περιγράφεται παρακάτω."
 
-#: includes/class-pncp-lockdown.php:4553
+#: includes/class-pncp-lockdown.php:4556
 msgid ""
 "Multisite: one line for the whole network, as the lock covers every site."
 msgstr ""
 "Multisite: μία γραμμή για όλο το δίκτυο, αφού το κλείδωμα καλύπτει κάθε "
 "ιστότοπο."
 
-#: includes/class-pncp-lockdown.php:4565
+#: includes/class-pncp-lockdown.php:4568
 msgid "Important: there is only one way to unlock"
 msgstr "Σημαντικό: υπάρχει μόνο ένας τρόπος ξεκλειδώματος"
 
-#: includes/class-pncp-lockdown.php:4567
+#: includes/class-pncp-lockdown.php:4570
 msgid ""
 "Only the 6-digit code from the authenticator app on your phone unlocks the "
 "site. There is no reset by email or SMS, no \"forgot code\" link, and no "
@@ -14331,7 +14329,7 @@ msgstr ""
 "φιλοξενίας σας ή η υποστήριξη του ScrapeLock δεν μπορεί να τον ξεκλειδώσει "
 "από το WordPress."
 
-#: includes/class-pncp-lockdown.php:4568
+#: includes/class-pncp-lockdown.php:4571
 msgid ""
 "Backup: the 10 recovery codes shown once when you connect the app. Print "
 "them and keep them away from the phone; each one unlocks the site once."
@@ -14340,7 +14338,7 @@ msgstr ""
 "την εφαρμογή. Εκτυπώστε τους και κρατήστε τους μακριά από το τηλέφωνο· ο "
 "καθένας ξεκλειδώνει τον ιστότοπο μία φορά."
 
-#: includes/class-pncp-lockdown.php:4569
+#: includes/class-pncp-lockdown.php:4572
 msgid ""
 "Lost both the phone and the recovery codes? Only someone with access to the "
 "server files (FTP or your hosting panel) can unlock the site, by adding a "
@@ -14350,7 +14348,7 @@ msgstr ""
 " στα αρχεία του διακομιστή (FTP ή πίνακας ελέγχου φιλοξενίας) μπορεί να "
 "ξεκλειδώσει τον ιστότοπο, προσθέτοντας μια γραμμή στο wp-config.php."
 
-#: includes/class-pncp-lockdown.php:4570
+#: includes/class-pncp-lockdown.php:4573
 msgid ""
 "While locked, password resets for staff are frozen too: if you forget your "
 "WordPress password, the same line in wp-config.php is the way back."
@@ -14359,7 +14357,7 @@ msgstr ""
 "αν ξεχάσετε τον κωδικό σας στο WordPress, η ίδια γραμμή στο wp-config.php "
 "είναι ο τρόπος επιστροφής."
 
-#: includes/class-pncp-lockdown.php:4572
+#: includes/class-pncp-lockdown.php:4575
 msgid ""
 "The app is tied to the security keys in wp-config.php (AUTH_KEY, AUTH_SALT)."
 " Some security plugins and hosting companies change them automatically, for "
@@ -14375,7 +14373,7 @@ msgstr ""
 "προσθέστε στο wp-config.php ένα δικό κλειδί του ScrapeLock ΠΡΙΝ συνδέσετε "
 "την εφαρμογή:"
 
-#: includes/class-pncp-lockdown.php:4574
+#: includes/class-pncp-lockdown.php:4577
 msgid ""
 "The app is tied to the security keys in wp-config.php (AUTH_KEY, AUTH_SALT),"
 " which some security plugins and hosting companies change automatically. To "
@@ -14391,11 +14389,11 @@ msgstr ""
 "προσθέσετε το κλειδί ενώ η εφαρμογή είναι συνδεδεμένη, οι κωδικοί της "
 "σταματούν να λειτουργούν."
 
-#: includes/class-pncp-lockdown.php:4588
+#: includes/class-pncp-lockdown.php:4591
 msgid "Multisite network"
 msgstr "Δίκτυο multisite"
 
-#: includes/class-pncp-lockdown.php:4590
+#: includes/class-pncp-lockdown.php:4593
 msgid ""
 "The lock covers the whole network: locking or unlocking here does it for "
 "every site."
@@ -14404,7 +14402,7 @@ msgstr ""
 "για κάθε ιστότοπο."
 
 #. translators: %d: number of sites
-#: includes/class-pncp-lockdown.php:4596
+#: includes/class-pncp-lockdown.php:4599
 #, php-format
 msgid ""
 "When you lock, ScrapeLock saves a signed copy of the plugins active on the "
@@ -14425,7 +14423,7 @@ msgstr ""
 "πλάτη του WordPress δεν μπορεί να συνδεθεί."
 
 #. translators: %d: number of sites
-#: includes/class-pncp-lockdown.php:4607
+#: includes/class-pncp-lockdown.php:4610
 #, php-format
 msgid ""
 "The guard file keeps the plugins active on the whole network (with "
@@ -14437,7 +14435,7 @@ msgstr ""
 "θέμα τους όπως ήταν όταν κλειδώσατε, από την αρχή κάθε αιτήματος."
 
 #. translators: %d: number of sites
-#: includes/class-pncp-lockdown.php:4618
+#: includes/class-pncp-lockdown.php:4621
 #, php-format
 msgid ""
 "Limits: sites added after you locked are not covered until you unlock and "
@@ -14456,7 +14454,7 @@ msgstr ""
 " αναφέρεται, αλλά πέρα από τα ενεργά πρόσθετα και το θέμα δεν μπορεί να "
 "επαναφερθεί."
 
-#: includes/class-pncp-lockdown.php:4628
+#: includes/class-pncp-lockdown.php:4631
 msgid ""
 "This network was locked with an earlier version of ScrapeLock: only the site"
 " where it was locked has a saved copy of its settings, and the super admins "
@@ -14469,7 +14467,7 @@ msgstr ""
 " και κλειδώστε ξανά για να προστατεύσετε κάθε ιστότοπο."
 
 #. translators: 1: number of sites, 2: number of sites
-#: includes/class-pncp-lockdown.php:4631
+#: includes/class-pncp-lockdown.php:4634
 #, php-format
 msgid ""
 "Sites covered by this lock: %1$d of %2$d (sites where ScrapeLock is not "
@@ -14478,11 +14476,11 @@ msgstr ""
 "Ιστότοποι που καλύπτονται από αυτό το κλείδωμα: %1$d από %2$d (οι ιστότοποι "
 "όπου το ScrapeLock δεν είναι ενεργό δεν μετρούν ως καλυμμένοι)."
 
-#: includes/class-pncp-lockdown.php:4665
+#: includes/class-pncp-lockdown.php:4668
 msgid "Plugins"
 msgstr "Πρόσθετα"
 
-#: includes/class-pncp-lockdown.php:4666
+#: includes/class-pncp-lockdown.php:4669
 msgid ""
 "Installing, uploading a zip, updating, deleting, activating and deactivating"
 " plugins, including ScrapeLock itself."
@@ -14490,15 +14488,15 @@ msgstr ""
 "Εγκατάσταση, ανέβασμα zip, ενημέρωση, διαγραφή, ενεργοποίηση και "
 "απενεργοποίηση πρόσθετων, μαζί και του ίδιου του ScrapeLock."
 
-#: includes/class-pncp-lockdown.php:4667
+#: includes/class-pncp-lockdown.php:4670
 msgid "Automatic plugin updates."
 msgstr "Αυτόματες ενημερώσεις πρόσθετων."
 
-#: includes/class-pncp-lockdown.php:4669
+#: includes/class-pncp-lockdown.php:4672
 msgid "Themes"
 msgstr "Θέματα"
 
-#: includes/class-pncp-lockdown.php:4670
+#: includes/class-pncp-lockdown.php:4673
 msgid ""
 "Installing, updating, deleting and switching themes; automatic theme "
 "updates."
@@ -14506,7 +14504,7 @@ msgstr ""
 "Εγκατάσταση, ενημέρωση, διαγραφή και αλλαγή θεμάτων· αυτόματες ενημερώσεις "
 "θεμάτων."
 
-#: includes/class-pncp-lockdown.php:4671
+#: includes/class-pncp-lockdown.php:4674
 msgid ""
 "The Customizer, the Site Editor, menus, widgets and the option pages of "
 "themes, for every role."
@@ -14514,24 +14512,24 @@ msgstr ""
 "Ο Προσαρμογέας, ο Επεξεργαστής ιστότοπου, τα μενού, τα widgets και οι "
 "σελίδες επιλογών των θεμάτων, για κάθε ρόλο."
 
-#: includes/class-pncp-lockdown.php:4674
+#: includes/class-pncp-lockdown.php:4677
 msgid "WordPress core updates, automatic updates and translation updates."
 msgstr ""
 "Ενημερώσεις του πυρήνα του WordPress, αυτόματες ενημερώσεις και ενημερώσεις "
 "μεταφράσεων."
 
-#: includes/class-pncp-lockdown.php:4675
+#: includes/class-pncp-lockdown.php:4678
 msgid ""
 "The plugin and theme file editor: no file can be changed through WordPress."
 msgstr ""
 "Ο επεξεργαστής αρχείων πρόσθετων και θεμάτων: κανένα αρχείο δεν μπορεί να "
 "αλλάξει μέσω του WordPress."
 
-#: includes/class-pncp-lockdown.php:4677
+#: includes/class-pncp-lockdown.php:4680
 msgid "Users"
 msgstr "Χρήστες"
 
-#: includes/class-pncp-lockdown.php:4678
+#: includes/class-pncp-lockdown.php:4681
 msgid ""
 "Creating and deleting users; changing roles; creating administrators, also "
 "by code. Shop managers can still edit the details of customers (not of "
@@ -14541,7 +14539,7 @@ msgstr ""
 "μέσω κώδικα. Οι διαχειριστές καταστήματος μπορούν ακόμη να επεξεργάζονται τα"
 " στοιχεία πελατών (όχι του προσωπικού), όπως επιτρέπει το WooCommerce."
 
-#: includes/class-pncp-lockdown.php:4679
+#: includes/class-pncp-lockdown.php:4682
 msgid ""
 "Staff email and password changes (also of shop managers), \"lost password\" "
 "resets for staff, and new application passwords for staff. Existing "
@@ -14552,7 +14550,7 @@ msgstr ""
 "κωδικοί εφαρμογών για το προσωπικό. Οι υπάρχοντες κωδικοί εφαρμογών του "
 "προσωπικού σταματούν να λειτουργούν."
 
-#: includes/class-pncp-lockdown.php:4682
+#: includes/class-pncp-lockdown.php:4685
 msgid ""
 "Every settings page (General, Reading, Permalinks, WooCommerce with its "
 "payment methods, other plugins) and the ScrapeLock settings; import and "
@@ -14562,7 +14560,7 @@ msgstr ""
 "τους τρόπους πληρωμής του, άλλα πρόσθετα) και οι ρυθμίσεις του ScrapeLock· "
 "εισαγωγή και εξαγωγή."
 
-#: includes/class-pncp-lockdown.php:4683
+#: includes/class-pncp-lockdown.php:4686
 msgid ""
 "Also by code: active plugins, theme, site address, admin email, "
 "registration, default role, role definitions, ScrapeLock settings and the "
@@ -14572,7 +14570,7 @@ msgstr ""
 "διαχείρισης, εγγραφές, προεπιλεγμένος ρόλος, ορισμοί ρόλων, ρυθμίσεις του "
 "ScrapeLock και το ίδιο το κλείδωμα."
 
-#: includes/class-pncp-lockdown.php:4686
+#: includes/class-pncp-lockdown.php:4689
 msgid ""
 "For frozen roles: creating, editing and deleting posts, pages, products, "
 "coupons, categories and media; comment moderation; processing orders in wp-"
@@ -14582,11 +14580,11 @@ msgstr ""
 "σελίδων, προϊόντων, κουπονιών, κατηγοριών και πολυμέσων· διαχείριση σχολίων·"
 " επεξεργασία παραγγελιών στο wp-admin."
 
-#: includes/class-pncp-lockdown.php:4687
+#: includes/class-pncp-lockdown.php:4690
 msgid "For every staff role: HTML that can carry scripts."
 msgstr "Για κάθε ρόλο προσωπικού: HTML που μπορεί να περιέχει scripts."
 
-#: includes/class-pncp-lockdown.php:4690
+#: includes/class-pncp-lockdown.php:4693
 msgid ""
 "wp-admin, admin-ajax, the REST API (also WooCommerce REST API keys of staff,"
 " e.g. an ERP that writes stock), XML-RPC, application passwords, and the "
@@ -14597,7 +14595,7 @@ msgstr ""
 "εφαρμογών και ο κώδικας άλλων πρόσθετων για τα παραπάνω προστατευμένα "
 "στοιχεία."
 
-#: includes/class-pncp-lockdown.php:4694
+#: includes/class-pncp-lockdown.php:4697
 msgid ""
 "Visitors browse the site; search engines and the bots you allow are not "
 "affected."
@@ -14605,7 +14603,7 @@ msgstr ""
 "Οι επισκέπτες περιηγούνται στον ιστότοπο· οι μηχανές αναζήτησης και τα bots "
 "που επιτρέπετε δεν επηρεάζονται."
 
-#: includes/class-pncp-lockdown.php:4695
+#: includes/class-pncp-lockdown.php:4698
 msgid ""
 "Customers order and pay, register, log in, edit their own account and reset "
 "their own password."
@@ -14614,7 +14612,7 @@ msgstr ""
 "επεξεργάζονται τον δικό τους λογαριασμό και επαναφέρουν τον δικό τους "
 "κωδικό."
 
-#: includes/class-pncp-lockdown.php:4696
+#: includes/class-pncp-lockdown.php:4699
 msgid ""
 "Comments from visitors, payment webhooks, cron jobs and the scheduled tasks "
 "of plugins."
@@ -14622,7 +14620,7 @@ msgstr ""
 "Σχόλια από επισκέπτες, webhooks πληρωμών, cron jobs και οι προγραμματισμένες"
 " εργασίες των πρόσθετων."
 
-#: includes/class-pncp-lockdown.php:4697
+#: includes/class-pncp-lockdown.php:4700
 msgid ""
 "Logging in (also for staff: frozen roles then only see the dashboard); the "
 "ScrapeLock bot protection and firewalls such as Wordfence."
@@ -14631,7 +14629,7 @@ msgstr ""
 "πίνακα ελέγχου)· η προστασία από bots του ScrapeLock και firewalls όπως το "
 "Wordfence."
 
-#: includes/class-pncp-lockdown.php:4698
+#: includes/class-pncp-lockdown.php:4701
 msgid ""
 "Shop managers (unless their role is ticked below): orders and refunds, "
 "products and stock, coupons, reports and analytics, customers, posts, pages,"
@@ -14642,25 +14640,25 @@ msgstr ""
 "κουπόνια, αναφορές και analytics, πελάτες, άρθρα, σελίδες, πολυμέσα και "
 "σχόλια."
 
-#: includes/class-pncp-lockdown.php:4699
+#: includes/class-pncp-lockdown.php:4702
 msgid "Read-only XML feeds with a ScrapeLock token."
 msgstr "XML feeds μόνο για ανάγνωση με token του ScrapeLock."
 
-#: includes/class-pncp-lockdown.php:4703
+#: includes/class-pncp-lockdown.php:4706
 msgid "What exactly is locked"
 msgstr "Τι ακριβώς κλειδώνεται"
 
-#: includes/class-pncp-lockdown.php:4718
+#: includes/class-pncp-lockdown.php:4721
 msgid "What keeps working"
 msgstr "Τι συνεχίζει να λειτουργεί"
 
-#: includes/class-pncp-lockdown.php:4724
+#: includes/class-pncp-lockdown.php:4727
 msgid "On this site"
 msgstr "Σε αυτόν τον ιστότοπο"
 
 #. translators: %s: roles and number of users, e.g. "Administrator: 2, Editor:
 #. 1"
-#: includes/class-pncp-lockdown.php:4727
+#: includes/class-pncp-lockdown.php:4730
 #, php-format
 msgid "Staff accounts that keep only \"read\" while locked: %s."
 msgstr ""
@@ -14671,13 +14669,13 @@ msgstr ""
 #. translators: %s: roles and number of users, e.g. "Shop manager: 2"
 #. translators: %s: roles and number of users, e.g. "Subscriber: 120,
 #. Customer: 3000"
-#: includes/class-pncp-lockdown.php:4727 includes/class-pncp-lockdown.php:4729
-#: includes/class-pncp-lockdown.php:4731 includes/class-pncp-tester.php:520
+#: includes/class-pncp-lockdown.php:4730 includes/class-pncp-lockdown.php:4732
+#: includes/class-pncp-lockdown.php:4734 includes/class-pncp-tester.php:520
 msgid "none"
 msgstr "κανένας"
 
 #. translators: %s: roles and number of users, e.g. "Shop manager: 2"
-#: includes/class-pncp-lockdown.php:4729
+#: includes/class-pncp-lockdown.php:4732
 #, php-format
 msgid ""
 "Staff accounts that keep their shop and content work while locked, without "
@@ -14689,14 +14687,14 @@ msgstr ""
 
 #. translators: %s: roles and number of users, e.g. "Subscriber: 120,
 #. Customer: 3000"
-#: includes/class-pncp-lockdown.php:4731
+#: includes/class-pncp-lockdown.php:4734
 #, php-format
 msgid "Accounts that keep working as usual while locked: %s."
 msgstr ""
 "Λογαριασμοί που συνεχίζουν να λειτουργούν κανονικά όσο είναι κλειδωμένο: %s."
 
 #. translators: 1: number of plugins, 2: theme name
-#: includes/class-pncp-lockdown.php:4733
+#: includes/class-pncp-lockdown.php:4736
 #, php-format
 msgid "%1$d active plugin and the theme \"%2$s\" stay exactly as they are."
 msgid_plural ""
@@ -14704,7 +14702,7 @@ msgid_plural ""
 msgstr[0] "%1$d ενεργό πρόσθετο και το θέμα \"%2$s\" μένουν ακριβώς όπως είναι."
 msgstr[1] "%1$d ενεργά πρόσθετα και το θέμα \"%2$s\" μένουν ακριβώς όπως είναι."
 
-#: includes/class-pncp-lockdown.php:4734
+#: includes/class-pncp-lockdown.php:4737
 msgid ""
 "Not covered: whoever can change the files or the database on the server "
 "(FTP, hosting panel, WP-CLI) controls the site with or without the lock."
@@ -14713,11 +14711,11 @@ msgstr ""
 "διακομιστή (FTP, πίνακας ελέγχου φιλοξενίας, WP-CLI) ελέγχει τον ιστότοπο με"
 " ή χωρίς το κλείδωμα."
 
-#: includes/class-pncp-lockdown.php:4765
+#: includes/class-pncp-lockdown.php:4768
 msgid "Connect an authenticator app"
 msgstr "Σύνδεση εφαρμογής επαλήθευσης"
 
-#: includes/class-pncp-lockdown.php:4766
+#: includes/class-pncp-lockdown.php:4769
 msgid ""
 "Install an authenticator app on your phone (Google Authenticator, Microsoft "
 "Authenticator, Authy, 1Password or similar). Then click the button: a QR "
@@ -14728,15 +14726,15 @@ msgstr ""
 "πατήστε το κουμπί: εμφανίζεται ένας κωδικός QR για να τον σαρώσει η "
 "εφαρμογή."
 
-#: includes/class-pncp-lockdown.php:4769
+#: includes/class-pncp-lockdown.php:4772
 msgid "Connect the app"
 msgstr "Σύνδεση της εφαρμογής"
 
-#: includes/class-pncp-lockdown.php:4785
+#: includes/class-pncp-lockdown.php:4788
 msgid "Scan the QR code"
 msgstr "Σαρώστε τον κωδικό QR"
 
-#: includes/class-pncp-lockdown.php:4786
+#: includes/class-pncp-lockdown.php:4789
 msgid ""
 "In the app, add an account and scan this code. The QR code is created in "
 "your browser: the secret is not sent anywhere."
@@ -14744,21 +14742,21 @@ msgstr ""
 "Στην εφαρμογή, προσθέστε έναν λογαριασμό και σαρώστε αυτόν τον κωδικό. Ο "
 "κωδικός QR δημιουργείται στον browser σας: το μυστικό δεν στέλνεται πουθενά."
 
-#: includes/class-pncp-lockdown.php:4788
+#: includes/class-pncp-lockdown.php:4791
 msgid "Cannot scan? Type this key in the app instead:"
 msgstr ""
 "Δεν μπορείτε να σαρώσετε; Πληκτρολογήστε αντί γι' αυτό αυτό το κλειδί στην "
 "εφαρμογή:"
 
-#: includes/class-pncp-lockdown.php:4792
+#: includes/class-pncp-lockdown.php:4795
 msgid "Confirm"
 msgstr "Επιβεβαίωση"
 
-#: includes/class-pncp-lockdown.php:4810
+#: includes/class-pncp-lockdown.php:4813
 msgid "Your recovery codes"
 msgstr "Οι κωδικοί ανάκτησής σας"
 
-#: includes/class-pncp-lockdown.php:4811
+#: includes/class-pncp-lockdown.php:4814
 msgid ""
 "Print them or keep them somewhere safe, away from your phone. They are shown"
 " only now."
@@ -14766,25 +14764,25 @@ msgstr ""
 "Εκτυπώστε τους ή φυλάξτε τους κάπου ασφαλή, μακριά από το τηλέφωνό σας. "
 "Εμφανίζονται μόνο τώρα."
 
-#: includes/class-pncp-lockdown.php:4811
+#: includes/class-pncp-lockdown.php:4814
 msgid "If you lose your phone, each code unlocks the site once."
 msgstr ""
 "Αν χάσετε το τηλέφωνό σας, κάθε κωδικός ξεκλειδώνει τον ιστότοπο μία φορά."
 
-#: includes/class-pncp-lockdown.php:4839
+#: includes/class-pncp-lockdown.php:4842
 msgid "Not protected yet: add the lock line shown above to wp-config.php."
 msgstr ""
 "Δεν προστατεύεται ακόμη: προσθέστε στο wp-config.php τη γραμμή κλειδώματος "
 "που εμφανίζεται παραπάνω."
 
 #. translators: %s: user name
-#: includes/class-pncp-lockdown.php:4847
+#: includes/class-pncp-lockdown.php:4850
 #, php-format
 msgid "Only for %s; the other staff stay as when locked."
 msgstr ""
 "Μόνο για τον/την %s· το υπόλοιπο προσωπικό μένει όπως όταν κλειδώθηκε."
 
-#: includes/class-pncp-lockdown.php:4848
+#: includes/class-pncp-lockdown.php:4851
 msgid ""
 "Only in the browser session that unlocked: other sessions of this account, "
 "application passwords, XML-RPC and API keys stay as when locked until you "
@@ -14795,18 +14793,18 @@ msgstr ""
 "όταν κλειδώθηκε μέχρι να ξεκλειδώσετε «μέχρι να το κλειδώσω ξανά». Αν "
 "αποσυνδεθείτε, κλειδώστε ξανά και ξεκλειδώστε."
 
-#: includes/class-pncp-lockdown.php:4854
+#: includes/class-pncp-lockdown.php:4857
 msgid "The site is not locked"
 msgstr "Ο ιστότοπος δεν είναι κλειδωμένος"
 
 #. translators: %s: date and time
-#: includes/class-pncp-lockdown.php:4860
+#: includes/class-pncp-lockdown.php:4863
 #, php-format
 msgid "Locked since %s."
 msgstr "Κλειδωμένος από %s."
 
 #. translators: %d: number of updates
-#: includes/class-pncp-lockdown.php:4864
+#: includes/class-pncp-lockdown.php:4867
 #, php-format
 msgid ""
 "%d update is waiting. Unlock for a while to install it, then lock again."
@@ -14819,35 +14817,35 @@ msgstr[1] ""
 "%d ενημερώσεις περιμένουν. Ξεκλειδώστε για λίγο για να τις εγκαταστήσετε και"
 " μετά κλειδώστε ξανά."
 
-#: includes/class-pncp-lockdown.php:4870
+#: includes/class-pncp-lockdown.php:4873
 msgid "Unlock for"
 msgstr "Ξεκλείδωμα για"
 
-#: includes/class-pncp-lockdown.php:4872
+#: includes/class-pncp-lockdown.php:4875
 msgid "15 minutes"
 msgstr "15 λεπτά"
 
-#: includes/class-pncp-lockdown.php:4873
+#: includes/class-pncp-lockdown.php:4876
 msgid "30 minutes"
 msgstr "30 λεπτά"
 
-#: includes/class-pncp-lockdown.php:4875
+#: includes/class-pncp-lockdown.php:4878
 msgid "2 hours"
 msgstr "2 ώρες"
 
-#: includes/class-pncp-lockdown.php:4876
+#: includes/class-pncp-lockdown.php:4879
 msgid "Until I lock it again"
 msgstr "Μέχρι να το κλειδώσω ξανά"
 
-#: includes/class-pncp-lockdown.php:4881
+#: includes/class-pncp-lockdown.php:4884
 msgid "Also sign out all other sessions of this account"
 msgstr "Αποσύνδεση και όλων των άλλων συνεδριών αυτού του λογαριασμού"
 
-#: includes/class-pncp-lockdown.php:4886
+#: includes/class-pncp-lockdown.php:4889
 msgid "Lock again now"
 msgstr "Κλείδωμα ξανά τώρα"
 
-#: includes/class-pncp-lockdown.php:4892
+#: includes/class-pncp-lockdown.php:4895
 msgid ""
 "I have printed or saved my recovery codes, and I understand that only the "
 "app, a recovery code or access to the server files can unlock the site."
@@ -14856,7 +14854,7 @@ msgstr ""
 " η εφαρμογή, ένας κωδικός ανάκτησης ή η πρόσβαση στα αρχεία του διακομιστή "
 "μπορούν να ξεκλειδώσουν τον ιστότοπο."
 
-#: includes/class-pncp-lockdown.php:4896
+#: includes/class-pncp-lockdown.php:4899
 msgid ""
 "AUTH_KEY and AUTH_SALT are not defined in wp-config.php, and neither is "
 "SCRAPELOCK_KEY, so WordPress keeps the keys Lockdown encrypts and signs its "
@@ -14875,7 +14873,7 @@ msgstr ""
 "https://api.wordpress.org/secret-key/1.1/salt/) και συνδέστε ξανά την "
 "εφαρμογή επαλήθευσης."
 
-#: includes/class-pncp-lockdown.php:4900
+#: includes/class-pncp-lockdown.php:4903
 msgid ""
 "WordPress cannot write the guard file to wp-content/mu-plugins on this "
 "server. The guard keeps a signed copy of the lock outside the database, "
@@ -14891,7 +14889,7 @@ msgstr ""
 "(δημιουργήστε τον αν λείπει) και μετά ανανεώστε αυτή τη σελίδα."
 
 #. translators: %s: folder
-#: includes/class-pncp-lockdown.php:4903
+#: includes/class-pncp-lockdown.php:4906
 #, php-format
 msgid ""
 "With the weaker lock, ScrapeLock writes a signed lock file to %s instead: if"
@@ -14910,7 +14908,7 @@ msgstr ""
 "τη βάση δεδομένων θα μπορούσε ωστόσο να απενεργοποιήσει το ίδιο το "
 "ScrapeLock."
 
-#: includes/class-pncp-lockdown.php:4905
+#: includes/class-pncp-lockdown.php:4908
 msgid ""
 "No other folder of wp-content can be written either. With the weaker lock, "
 "this page then shows a line to add to wp-config.php by hand, define( "
@@ -14935,39 +14933,39 @@ msgstr ""
 "να μην κλειδώθηκε ποτέ. Αυτό δεν μπορεί να γίνει αντιληπτό ούτε να "
 "αναφερθεί."
 
-#: includes/class-pncp-lockdown.php:4908
+#: includes/class-pncp-lockdown.php:4911
 msgid "Lock without the guard file (weaker)"
 msgstr "Κλείδωμα χωρίς το αρχείο φύλαξης (ασθενέστερο)"
 
-#: includes/class-pncp-lockdown.php:4910
+#: includes/class-pncp-lockdown.php:4913
 msgid "Lock the site"
 msgstr "Κλείδωμα του ιστότοπου"
 
-#: includes/class-pncp-lockdown.php:4919
+#: includes/class-pncp-lockdown.php:4922
 msgid "Recovery codes and app"
 msgstr "Κωδικοί ανάκτησης και εφαρμογή"
 
 #. translators: %d: number of codes
-#: includes/class-pncp-lockdown.php:4921
+#: includes/class-pncp-lockdown.php:4924
 #, php-format
 msgid "%d recovery code left."
 msgid_plural "%d recovery codes left."
 msgstr[0] "Απομένει %d κωδικός ανάκτησης."
 msgstr[1] "Απομένουν %d κωδικοί ανάκτησης."
 
-#: includes/class-pncp-lockdown.php:4925
+#: includes/class-pncp-lockdown.php:4928
 msgid "Create new recovery codes"
 msgstr "Δημιουργία νέων κωδικών ανάκτησης"
 
-#: includes/class-pncp-lockdown.php:4933
+#: includes/class-pncp-lockdown.php:4936
 msgid "Remove the authenticator app"
 msgstr "Αφαίρεση της εφαρμογής επαλήθευσης"
 
-#: includes/class-pncp-lockdown.php:4941
+#: includes/class-pncp-lockdown.php:4944
 msgid "Lost your phone?"
 msgstr "Χάσατε το τηλέφωνό σας;"
 
-#: includes/class-pncp-lockdown.php:4942
+#: includes/class-pncp-lockdown.php:4945
 msgid ""
 "Type one of your recovery codes in the unlock field instead of an app code. "
 "No codes left? Add this line to wp-config.php (FTP or your hosting panel), "
@@ -14978,12 +14976,12 @@ msgstr ""
 "wp-config.php (FTP ή πίνακας ελέγχου φιλοξενίας) και μετά αφαιρέστε την "
 "εφαρμογή εδώ και συνδέστε μια νέα:"
 
-#: includes/class-pncp-lockdown.php:4957
+#: includes/class-pncp-lockdown.php:4960
 msgid "Other sessions of your account"
 msgstr "Άλλες συνεδρίες του λογαριασμού σας"
 
 #. translators: %d: number of sessions
-#: includes/class-pncp-lockdown.php:4959
+#: includes/class-pncp-lockdown.php:4962
 #, php-format
 msgid "Your account is signed in %d time, counting this one."
 msgid_plural "Your account is signed in %d times, counting this one."
@@ -14991,7 +14989,7 @@ msgstr[0] "Ο λογαριασμός σας είναι συνδεδεμένος 
 msgstr[1] "Ο λογαριασμός σας είναι συνδεδεμένος %d φορές, μαζί με αυτήν."
 
 #. translators: %d: number of sessions
-#: includes/class-pncp-lockdown.php:4959
+#: includes/class-pncp-lockdown.php:4962
 msgid ""
 "If someone else may be using your account (a stolen password or session), "
 "sign out everywhere else. This works while the site is locked too; you stay "
@@ -15001,23 +14999,23 @@ msgstr ""
 "κωδικός ή συνεδρία), αποσυνδεθείτε από παντού αλλού. Λειτουργεί και όσο ο "
 "ιστότοπος είναι κλειδωμένος· εδώ παραμένετε συνδεδεμένοι."
 
-#: includes/class-pncp-lockdown.php:4963
+#: includes/class-pncp-lockdown.php:4966
 msgid "Sign out all other sessions of this account"
 msgstr "Αποσύνδεση όλων των άλλων συνεδριών αυτού του λογαριασμού"
 
-#: includes/class-pncp-lockdown.php:4979
+#: includes/class-pncp-lockdown.php:4982
 msgid "Who is frozen while locked"
 msgstr "Ποιοι παγώνουν όσο είναι κλειδωμένο"
 
-#: includes/class-pncp-lockdown.php:4980
+#: includes/class-pncp-lockdown.php:4983
 msgid "What a locked site still allows each role:"
 msgstr "Τι επιτρέπει ακόμη ένας κλειδωμένος ιστότοπος σε κάθε ρόλο:"
 
-#: includes/class-pncp-lockdown.php:4982
+#: includes/class-pncp-lockdown.php:4985
 msgid "Administrators"
 msgstr "Διαχειριστές"
 
-#: includes/class-pncp-lockdown.php:4982
+#: includes/class-pncp-lockdown.php:4985
 msgid ""
 "(and every role that can change plugins, themes, users or settings): always "
 "frozen. They keep only \"read\", and the owner unlocks the site here with "
@@ -15027,11 +15025,11 @@ msgstr ""
 "ρυθμίσεις): πάντα παγωμένοι. Κρατούν μόνο το «read» και ο ιδιοκτήτης "
 "ξεκλειδώνει τον ιστότοπο εδώ με την εφαρμογή επαλήθευσης."
 
-#: includes/class-pncp-lockdown.php:4983
+#: includes/class-pncp-lockdown.php:4986
 msgid "Ticked roles"
 msgstr "Επιλεγμένοι ρόλοι"
 
-#: includes/class-pncp-lockdown.php:4983
+#: includes/class-pncp-lockdown.php:4986
 msgid ""
 "keep only \"read\": they can log in and look, but not change anything. They "
 "cannot change their own email or password, and their application passwords "
@@ -15041,11 +15039,11 @@ msgstr ""
 "αλλάξουν τίποτα. Δεν μπορούν να αλλάξουν το δικό τους email ή κωδικό και οι "
 "κωδικοί εφαρμογών τους δεν μπορούν να χρησιμοποιηθούν ή να προστεθούν."
 
-#: includes/class-pncp-lockdown.php:4984
+#: includes/class-pncp-lockdown.php:4987
 msgid "Unticked staff roles"
 msgstr "Μη επιλεγμένοι ρόλοι προσωπικού"
 
-#: includes/class-pncp-lockdown.php:4984
+#: includes/class-pncp-lockdown.php:4987
 msgid ""
 "(shop managers by default) keep their work: orders and refunds, products and"
 " stock, coupons, reports and analytics, customers, posts, pages, media and "
@@ -15065,11 +15063,11 @@ msgstr ""
 "δικό τους email ή κωδικό και οι κωδικοί εφαρμογών τους δεν μπορούν να "
 "χρησιμοποιηθούν ή να προστεθούν."
 
-#: includes/class-pncp-lockdown.php:4985
+#: includes/class-pncp-lockdown.php:4988
 msgid "Other unticked roles"
 msgstr "Άλλοι μη επιλεγμένοι ρόλοι"
 
-#: includes/class-pncp-lockdown.php:4985
+#: includes/class-pncp-lockdown.php:4988
 msgid ""
 "(customers, subscribers, members who post listings or community posts) keep "
 "working as usual, including their own email and password."
@@ -15079,32 +15077,32 @@ msgstr ""
 "και κωδικό."
 
 #. translators: 1: role name, 2: number of users
-#: includes/class-pncp-lockdown.php:5000
+#: includes/class-pncp-lockdown.php:5003
 #, php-format
 msgid "%1$s (%2$d user)"
 msgid_plural "%1$s (%2$d users)"
 msgstr[0] "%1$s (%2$d χρήστης)"
 msgstr[1] "%1$s (%2$d χρήστες)"
 
-#: includes/class-pncp-lockdown.php:5002
+#: includes/class-pncp-lockdown.php:5005
 msgid "always frozen"
 msgstr "πάντα παγωμένος"
 
-#: includes/class-pncp-lockdown.php:5004
+#: includes/class-pncp-lockdown.php:5007
 msgid "unticked: keeps its work, without the rights frozen for staff"
 msgstr ""
 "μη επιλεγμένος: κρατά τη δουλειά του, χωρίς τα δικαιώματα που παγώνουν για "
 "το προσωπικό"
 
-#: includes/class-pncp-lockdown.php:5013
+#: includes/class-pncp-lockdown.php:5016
 msgid "Save frozen roles"
 msgstr "Αποθήκευση παγωμένων ρόλων"
 
-#: includes/class-pncp-lockdown.php:5028 includes/class-pncp-lockdown.php:5064
+#: includes/class-pncp-lockdown.php:5031 includes/class-pncp-lockdown.php:5067
 msgid "Quarantine"
 msgstr "Καραντίνα"
 
-#: includes/class-pncp-lockdown.php:5030
+#: includes/class-pncp-lockdown.php:5033
 msgid ""
 "When files change while the site is locked: deactivate the plugin they "
 "belong to, and rename new PHP files in the uploads folder so they no longer "
@@ -15114,7 +15112,7 @@ msgstr ""
 "πρόσθετου στο οποίο ανήκουν και μετονομασία των νέων αρχείων PHP στον φάκελο"
 " uploads ώστε να μην εκτελούνται πια"
 
-#: includes/class-pncp-lockdown.php:5031
+#: includes/class-pncp-lockdown.php:5034
 msgid ""
 "Nothing is deleted. A deactivated plugin may be one your site needs (for "
 "example the shop or the forms), so it stays off until you check it, unlock "
@@ -15127,121 +15125,121 @@ msgstr ""
 "το ενεργοποιήσετε ξανά. Το ίδιο το ScrapeLock δεν απενεργοποιείται ποτέ. "
 "Ανενεργό εξ ορισμού: λαμβάνετε email σε κάθε περίπτωση."
 
-#: includes/class-pncp-lockdown.php:5034
+#: includes/class-pncp-lockdown.php:5037
 msgid "Save quarantine"
 msgstr "Αποθήκευση καραντίνας"
 
-#: includes/class-pncp-lockdown.php:5052
+#: includes/class-pncp-lockdown.php:5055
 msgid "App connected"
 msgstr "Η εφαρμογή συνδέθηκε"
 
-#: includes/class-pncp-lockdown.php:5054
+#: includes/class-pncp-lockdown.php:5057
 msgid "Unlocked"
 msgstr "Ξεκλειδώθηκε"
 
-#: includes/class-pncp-lockdown.php:5055
+#: includes/class-pncp-lockdown.php:5058
 msgid "Locked again"
 msgstr "Κλειδώθηκε ξανά"
 
-#: includes/class-pncp-lockdown.php:5056
+#: includes/class-pncp-lockdown.php:5059
 msgid "Locked again by itself; your changes were kept"
 msgstr "Κλειδώθηκε ξανά μόνο του· οι αλλαγές σας διατηρήθηκαν"
 
-#: includes/class-pncp-lockdown.php:5057
+#: includes/class-pncp-lockdown.php:5060
 msgid "Wrong code"
 msgstr "Λάθος κωδικός"
 
-#: includes/class-pncp-lockdown.php:5058
+#: includes/class-pncp-lockdown.php:5061
 msgid "Recovery code used"
 msgstr "Χρησιμοποιήθηκε κωδικός ανάκτησης"
 
-#: includes/class-pncp-lockdown.php:5059
+#: includes/class-pncp-lockdown.php:5062
 msgid "New recovery codes"
 msgstr "Νέοι κωδικοί ανάκτησης"
 
-#: includes/class-pncp-lockdown.php:5060
+#: includes/class-pncp-lockdown.php:5063
 msgid "App removed"
 msgstr "Η εφαρμογή αφαιρέθηκε"
 
-#: includes/class-pncp-lockdown.php:5061
+#: includes/class-pncp-lockdown.php:5064
 msgid "Change refused"
 msgstr "Η αλλαγή απορρίφθηκε"
 
-#: includes/class-pncp-lockdown.php:5062
+#: includes/class-pncp-lockdown.php:5065
 msgid "Frozen roles changed"
 msgstr "Οι παγωμένοι ρόλοι άλλαξαν"
 
-#: includes/class-pncp-lockdown.php:5065
+#: includes/class-pncp-lockdown.php:5068
 msgid "Quarantine setting"
 msgstr "Ρύθμιση καραντίνας"
 
-#: includes/class-pncp-lockdown.php:5066
+#: includes/class-pncp-lockdown.php:5069
 msgid "Changed outside WordPress"
 msgstr "Άλλαξε εκτός WordPress"
 
-#: includes/class-pncp-lockdown.php:5067
+#: includes/class-pncp-lockdown.php:5070
 msgid "Lockdown data signed"
 msgstr "Τα δεδομένα του Lockdown υπογράφηκαν"
 
-#: includes/class-pncp-lockdown.php:5068
+#: includes/class-pncp-lockdown.php:5071
 msgid "Codes refused after too many wrong ones"
 msgstr "Απόρριψη κωδικών μετά από πάρα πολλούς λάθος"
 
-#: includes/class-pncp-lockdown.php:5069
+#: includes/class-pncp-lockdown.php:5072
 msgid "Other sessions signed out"
 msgstr "Οι άλλες συνεδρίες αποσυνδέθηκαν"
 
-#: includes/class-pncp-lockdown.php:5070
+#: includes/class-pncp-lockdown.php:5073
 msgid "Old lock file from before the last unlock removed"
 msgstr ""
 "Αφαιρέθηκε παλιό αρχείο κλειδώματος από πριν από το τελευταίο ξεκλείδωμα"
 
-#: includes/class-pncp-lockdown.php:5071
+#: includes/class-pncp-lockdown.php:5074
 msgid "Signed copy of the lock written outside the database"
 msgstr ""
 "Γράφτηκε υπογεγραμμένο αντίγραφο του κλειδώματος εκτός βάσης δεδομένων"
 
-#: includes/class-pncp-lockdown.php:5072
+#: includes/class-pncp-lockdown.php:5075
 msgid "Code-check lock held from outside; ScrapeLock's own lock used"
 msgstr ""
 "Το κλείδωμα ελέγχου κωδικών κρατήθηκε από έξω· χρησιμοποιήθηκε το δικό "
 "κλείδωμα του ScrapeLock"
 
-#: includes/class-pncp-lockdown.php:5073
+#: includes/class-pncp-lockdown.php:5076
 msgid "WordPress installed a minor release while locked"
 msgstr "Το WordPress εγκατέστησε μια δευτερεύουσα έκδοση ενώ ήταν κλειδωμένο"
 
-#: includes/class-pncp-lockdown.php:5074
+#: includes/class-pncp-lockdown.php:5077
 msgid "WordPress could not install a minor release while locked"
 msgstr ""
 "Το WordPress δεν μπόρεσε να εγκαταστήσει μια δευτερεύουσα έκδοση ενώ ήταν "
 "κλειδωμένο"
 
-#: includes/class-pncp-lockdown.php:5075
+#: includes/class-pncp-lockdown.php:5078
 msgid "Files changed while unlocked (emailed)"
 msgstr "Αρχεία που άλλαξαν ενώ ήταν ξεκλείδωτο (στάλθηκε email)"
 
-#: includes/class-pncp-lockdown.php:5076
+#: includes/class-pncp-lockdown.php:5079
 msgid "Code stored in the database changed"
 msgstr "Άλλαξε κώδικας αποθηκευμένος στη βάση δεδομένων"
 
-#: includes/class-pncp-lockdown.php:5079
+#: includes/class-pncp-lockdown.php:5082
 msgid "Recent lockdown events"
 msgstr "Πρόσφατα συμβάντα Lockdown"
 
-#: includes/class-pncp-lockdown.php:5081
+#: includes/class-pncp-lockdown.php:5084
 msgid "Event"
 msgstr "Συμβάν"
 
-#: includes/class-pncp-lockdown.php:5081
+#: includes/class-pncp-lockdown.php:5084
 msgid "User"
 msgstr "Χρήστης"
 
-#: includes/class-pncp-lockdown.php:5162
+#: includes/class-pncp-lockdown.php:5165
 msgid "The site was locked again"
 msgstr "Ο ιστότοπος κλειδώθηκε ξανά"
 
-#: includes/class-pncp-lockdown.php:5162
+#: includes/class-pncp-lockdown.php:5165
 msgid ""
 "The site was locked again on the Lockdown page after being unlocked for a "
 "while."
@@ -15250,13 +15248,13 @@ msgstr ""
 "λίγο."
 
 #. translators: %s: folder of the lock file
-#: includes/class-pncp-lockdown.php:5339
+#: includes/class-pncp-lockdown.php:5342
 #, php-format
 msgid "without the guard file, with the signed lock file in %s"
 msgstr ""
 "χωρίς το αρχείο φύλαξης, με το υπογεγραμμένο αρχείο κλειδώματος στο %s"
 
-#: includes/class-pncp-lockdown.php:5341
+#: includes/class-pncp-lockdown.php:5344
 msgid ""
 "without the guard file, without any signed copy outside the database until "
 "the lock line SCRAPELOCK_LOCKED is added to wp-config.php"
@@ -15265,11 +15263,11 @@ msgstr ""
 "δεδομένων μέχρι να προστεθεί η γραμμή κλειδώματος SCRAPELOCK_LOCKED στο wp-"
 "config.php"
 
-#: includes/class-pncp-lockdown.php:5345
+#: includes/class-pncp-lockdown.php:5348
 msgid "The site was locked"
 msgstr "Ο ιστότοπος κλειδώθηκε"
 
-#: includes/class-pncp-lockdown.php:5345
+#: includes/class-pncp-lockdown.php:5348
 msgid ""
 "The site was locked on the Lockdown page. Plugins, themes, users, roles and "
 "settings cannot be changed until it is unlocked with the authenticator app "
@@ -15280,21 +15278,21 @@ msgstr ""
 "ξεκλειδωθεί με την εφαρμογή επαλήθευσης ή με κωδικό ανάκτησης."
 
 #. translators: %d: minutes
-#: includes/class-pncp-lockdown.php:5391
+#: includes/class-pncp-lockdown.php:5394
 #, php-format
 msgid "%d min"
 msgstr "%d λεπτά"
 
 #. translators: %d: minutes
-#: includes/class-pncp-lockdown.php:5391
+#: includes/class-pncp-lockdown.php:5394
 msgid "until locked again"
 msgstr "μέχρι να κλειδώσει ξανά"
 
-#: includes/class-pncp-lockdown.php:5393
+#: includes/class-pncp-lockdown.php:5396
 msgid "The site was unlocked"
 msgstr "Ο ιστότοπος ξεκλειδώθηκε"
 
-#: includes/class-pncp-lockdown.php:5393
+#: includes/class-pncp-lockdown.php:5396
 msgid ""
 "The site was unlocked on the Lockdown page. If it was not you, lock it again"
 " and change the administrators' passwords."
@@ -15302,21 +15300,21 @@ msgstr ""
 "Ο ιστότοπος ξεκλειδώθηκε στη σελίδα Lockdown. Αν δεν ήσασταν εσείς, "
 "κλειδώστε τον ξανά και αλλάξτε τους κωδικούς των διαχειριστών."
 
-#: includes/class-pncp-lockdown.php:5421
+#: includes/class-pncp-lockdown.php:5424
 #: includes/class-pncp-status-state.php:258
 msgid "on"
 msgstr "ενεργό"
 
-#: includes/class-pncp-lockdown.php:5421
+#: includes/class-pncp-lockdown.php:5424
 #: includes/class-pncp-status-state.php:264
 msgid "off"
 msgstr "ανενεργό"
 
-#: includes/class-pncp-lockdown.php:5466
+#: includes/class-pncp-lockdown.php:5469
 msgid "The authenticator app was removed"
 msgstr "Η εφαρμογή επαλήθευσης αφαιρέθηκε"
 
-#: includes/class-pncp-lockdown.php:5466
+#: includes/class-pncp-lockdown.php:5469
 msgid ""
 "The authenticator app was removed from the Lockdown page and the lock is "
 "off. If it was not you, change the administrators' passwords."
@@ -15619,7 +15617,7 @@ msgstr ""
 "ζητούν μόνο τις δημόσιες σελίδες αυτού του ιστότοπου, από τον ίδιο τον "
 "ιστότοπο."
 
-#: includes/class-pncp-login.php:330
+#: includes/class-pncp-login.php:331
 msgid ""
 "Use 3 to 50 letters, digits, “-” or “_”, and not an address WordPress "
 "already uses (login, admin, wp-admin, dashboard…)."
@@ -15627,14 +15625,14 @@ msgstr ""
 "Χρησιμοποιήστε 3 έως 50 γράμματα, ψηφία, «-» ή «_» και όχι διεύθυνση που "
 "χρησιμοποιεί ήδη το WordPress (login, admin, wp-admin, dashboard…)."
 
-#: includes/class-pncp-login.php:339
+#: includes/class-pncp-login.php:340
 msgid "A page, post or category already has this address: choose another one."
 msgstr ""
 "Μια σελίδα, ένα άρθρο ή μια κατηγορία έχει ήδη αυτή τη διεύθυνση: επιλέξτε "
 "άλλη."
 
 #. translators: %s: URL of the "lost password" page
-#: includes/class-pncp-login.php:840
+#: includes/class-pncp-login.php:841
 #, php-format
 msgid ""
 "<strong>Error:</strong> The username, email address or password is not "
@@ -15644,18 +15642,18 @@ msgstr ""
 "είναι σωστά. <a href=\"%s\">Ξεχάσατε τον κωδικό σας;</a>"
 
 #. translators: %s: number of minutes
-#: includes/class-pncp-login.php:858
+#: includes/class-pncp-login.php:859
 #, php-format
 msgid "Too many failed sign-ins. Please try again in %s minute."
 msgid_plural "Too many failed sign-ins. Please try again in %s minutes."
 msgstr[0] "Πάρα πολλές αποτυχημένες συνδέσεις. Δοκιμάστε ξανά σε %s λεπτό."
 msgstr[1] "Πάρα πολλές αποτυχημένες συνδέσεις. Δοκιμάστε ξανά σε %s λεπτά."
 
-#: includes/class-pncp-login.php:861
+#: includes/class-pncp-login.php:862
 msgid "Too many failed sign-ins. Please try again later."
 msgstr "Πάρα πολλές αποτυχημένες συνδέσεις. Δοκιμάστε ξανά αργότερα."
 
-#: includes/class-pncp-login.php:863
+#: includes/class-pncp-login.php:864
 msgid ""
 "If this is your account, its email address has been sent a link that lets "
 "you sign in now."
@@ -15663,12 +15661,12 @@ msgstr ""
 "Αν αυτός είναι ο λογαριασμός σας, στάλθηκε στη διεύθυνση email του ένας "
 "σύνδεσμος που σας επιτρέπει να συνδεθείτε τώρα."
 
-#: includes/class-pncp-login.php:865
+#: includes/class-pncp-login.php:866
 msgid "Error:"
 msgstr "Σφάλμα:"
 
 #. translators: 1: username, 2: site name, 3: time, 4: unlock URL
-#: includes/class-pncp-login.php:1215
+#: includes/class-pncp-login.php:1216
 #, php-format
 msgid ""
 "Hello,\n"
@@ -15690,18 +15688,18 @@ msgstr ""
 "Αν δεν ήσασταν εσείς, ο κωδικός σας δεν μαντεύτηκε και δεν χρειάζεται να κάνετε τίποτα. Αν ο κωδικός σας είναι μικρός ή τον χρησιμοποιείτε και σε άλλους ιστότοπους, αλλάξτε τον.\n"
 
 #. translators: %s: site name
-#: includes/class-pncp-login.php:1222
+#: includes/class-pncp-login.php:1223
 #, php-format
 msgid "[%s] Sign-ins to your account are paused"
 msgstr "[%s] Οι συνδέσεις στον λογαριασμό σας είναι σε παύση"
 
-#: includes/class-pncp-login.php:1318
+#: includes/class-pncp-login.php:1319
 msgid "Your account is unlocked for this browser: you can sign in now."
 msgstr ""
 "Ο λογαριασμός σας ξεκλειδώθηκε για αυτόν τον browser: μπορείτε να συνδεθείτε"
 " τώρα."
 
-#: includes/class-pncp-login.php:1318
+#: includes/class-pncp-login.php:1319
 msgid ""
 "This link has expired or was already used. Wait until the pause ends, or "
 "reset your password."
@@ -15709,7 +15707,7 @@ msgstr ""
 "Αυτός ο σύνδεσμος έχει λήξει ή έχει ήδη χρησιμοποιηθεί. Περιμένετε να λήξει "
 "η παύση ή επαναφέρετε τον κωδικό σας."
 
-#: includes/class-pncp-login.php:1436
+#: includes/class-pncp-login.php:1437
 msgid ""
 "The site is locked with Lockdown: unlock it to change the sign-in "
 "protection."
@@ -15718,7 +15716,7 @@ msgstr ""
 "την προστασία σύνδεσης."
 
 #. translators: 1: site name, 2: new sign-in URL
-#: includes/class-pncp-login.php:1474
+#: includes/class-pncp-login.php:1475
 #, php-format
 msgid ""
 "The sign-in page of %1$s has moved. Sign in here from now on, and keep this address:\n"
@@ -15738,20 +15736,20 @@ msgstr ""
 "define( 'SCRAPELOCK_LOGIN_SLUG_OFF', true );\n"
 
 #. translators: %s: site name
-#: includes/class-pncp-login.php:1479
+#: includes/class-pncp-login.php:1480
 #, php-format
 msgid "[%s] New sign-in address"
 msgstr "[%s] Νέα διεύθυνση σύνδεσης"
 
-#: includes/class-pncp-login.php:1536
+#: includes/class-pncp-login.php:1537
 msgid "The IP can sign in again."
 msgstr "Η IP μπορεί να συνδεθεί ξανά."
 
-#: includes/class-pncp-login.php:1536
+#: includes/class-pncp-login.php:1537
 msgid "The username can sign in again."
 msgstr "Το όνομα χρήστη μπορεί να συνδεθεί ξανά."
 
-#: includes/class-pncp-login.php:1539
+#: includes/class-pncp-login.php:1540
 msgid ""
 "ScrapeLock's protection is turned off: failed sign-ins are not limited and "
 "the sign-in address is not moved."
@@ -15759,14 +15757,14 @@ msgstr ""
 "Η προστασία του ScrapeLock είναι απενεργοποιημένη: οι αποτυχημένες συνδέσεις"
 " δεν περιορίζονται και η διεύθυνση σύνδεσης δεν έχει μετακινηθεί."
 
-#: includes/class-pncp-login.php:1541
+#: includes/class-pncp-login.php:1542
 msgid ""
 "The limit of failed sign-ins is off: anyone can try passwords without limit."
 msgstr ""
 "Το όριο αποτυχημένων συνδέσεων είναι ανενεργό: οποιοσδήποτε μπορεί να "
 "δοκιμάζει κωδικούς χωρίς όριο."
 
-#: includes/class-pncp-login.php:1543
+#: includes/class-pncp-login.php:1544
 msgid ""
 "Monitor only is on: failed sign-ins are counted and logged as “Would block”,"
 " but no IP is blocked, no username is paused and wp-login.php stays open."
@@ -15776,36 +15774,36 @@ msgstr ""
 "όνομα χρήστη δεν τίθεται σε παύση και το wp-login.php μένει ανοιχτό."
 
 #. translators: %s: number
-#: includes/class-pncp-login.php:1547
+#: includes/class-pncp-login.php:1548
 #, php-format
 msgid "Failed sign-ins today: %s"
 msgstr "Αποτυχημένες συνδέσεις σήμερα: %s"
 
 #. translators: %s: number
-#: includes/class-pncp-login.php:1548
+#: includes/class-pncp-login.php:1549
 #, php-format
 msgid "Failed sign-ins in the last 7 days: %s"
 msgstr "Αποτυχημένες συνδέσεις τις τελευταίες 7 ημέρες: %s"
 
 #. translators: %s: number
-#: includes/class-pncp-login.php:1550
+#: includes/class-pncp-login.php:1551
 #, php-format
 msgid "XML-RPC calls in the last 7 days: %s"
 msgstr "Κλήσεις XML-RPC τις τελευταίες 7 ημέρες: %s"
 
 #. translators: %s: number
-#: includes/class-pncp-login.php:1552
+#: includes/class-pncp-login.php:1553
 #, php-format
 msgid "IPs blocked for failed sign-ins now: %s"
 msgstr "IP μπλοκαρισμένες τώρα για αποτυχημένες συνδέσεις: %s"
 
 #. translators: %s: number
-#: includes/class-pncp-login.php:1553
+#: includes/class-pncp-login.php:1554
 #, php-format
 msgid "Usernames paused now: %s"
 msgstr "Ονόματα χρηστών σε παύση τώρα: %s"
 
-#: includes/class-pncp-login.php:1558
+#: includes/class-pncp-login.php:1559
 msgid ""
 "SCRAPELOCK_LOGIN_SLUG_OFF is set in wp-config.php: the custom address is "
 "turned off and wp-login.php is open. Remove the line to move it again."
@@ -15814,7 +15812,7 @@ msgstr ""
 "προσαρμοσμένη διεύθυνση είναι απενεργοποιημένη και το wp-login.php είναι "
 "ανοιχτό. Αφαιρέστε τη γραμμή για να τη μετακινήσετε ξανά."
 
-#: includes/class-pncp-login.php:1565
+#: includes/class-pncp-login.php:1566
 msgid ""
 "wp-login.php and /wp-admin/ answer “page not found” to visitors who are not "
 "signed in. Bookmark this address. If you lose it, add define( "
@@ -15825,7 +15823,7 @@ msgstr ""
 "σελιδοδείκτες. Αν τη χάσετε, προσθέστε define( 'SCRAPELOCK_LOGIN_SLUG_OFF', "
 "true ); στο wp-config.php."
 
-#: includes/class-pncp-login.php:1566
+#: includes/class-pncp-login.php:1567
 msgid ""
 "The new address works; in Monitor only wp-login.php stays open too, so "
 "nobody is locked out while you check."
@@ -15833,7 +15831,7 @@ msgstr ""
 "Η νέα διεύθυνση λειτουργεί· σε Μόνο παρακολούθηση το wp-login.php μένει "
 "επίσης ανοιχτό, ώστε κανείς να μην κλειδωθεί έξω όσο ελέγχετε."
 
-#: includes/class-pncp-login.php:1571
+#: includes/class-pncp-login.php:1572
 msgid ""
 "Not moved: the sign-in page is wp-login.php, where every password-guessing "
 "bot looks first."
@@ -15841,36 +15839,36 @@ msgstr ""
 "Δεν μετακινήθηκε: η σελίδα σύνδεσης είναι το wp-login.php, εκεί που ψάχνει "
 "πρώτα κάθε bot που μαντεύει κωδικούς."
 
-#: includes/class-pncp-login.php:1575
+#: includes/class-pncp-login.php:1576
 msgid "IPs blocked for failed sign-ins"
 msgstr "IP μπλοκαρισμένες για αποτυχημένες συνδέσεις"
 
-#: includes/class-pncp-login.php:1578
+#: includes/class-pncp-login.php:1579
 msgid "Blocked until"
 msgstr "Μπλοκαρισμένη έως"
 
-#: includes/class-pncp-login.php:1592
+#: includes/class-pncp-login.php:1593
 msgid "Paused usernames"
 msgstr "Ονόματα χρηστών σε παύση"
 
-#: includes/class-pncp-login.php:1595 includes/class-pncp-login.php:1617
+#: includes/class-pncp-login.php:1596 includes/class-pncp-login.php:1618
 #: includes/class-pncp-trace.php:196
 msgid "Account"
 msgstr "Λογαριασμός"
 
-#: includes/class-pncp-login.php:1596
+#: includes/class-pncp-login.php:1597
 msgid "Paused until"
 msgstr "Σε παύση έως"
 
-#: includes/class-pncp-login.php:1602
+#: includes/class-pncp-login.php:1603
 msgid "Exists"
 msgstr "Υπάρχει"
 
-#: includes/class-pncp-login.php:1602 includes/class-pncp-login.php:1624
+#: includes/class-pncp-login.php:1603 includes/class-pncp-login.php:1625
 msgid "No such account"
 msgstr "Δεν υπάρχει τέτοιος λογαριασμός"
 
-#: includes/class-pncp-login.php:1608
+#: includes/class-pncp-login.php:1609
 msgid ""
 "A paused username can still sign in from an IP it signed in from before, and"
 " with the link emailed to the account."
@@ -15878,19 +15876,19 @@ msgstr ""
 "Ένα όνομα χρήστη σε παύση μπορεί ακόμη να συνδεθεί από IP από την οποία είχε"
 " συνδεθεί πριν και με τον σύνδεσμο που στάλθηκε με email στον λογαριασμό."
 
-#: includes/class-pncp-login.php:1612
+#: includes/class-pncp-login.php:1613
 msgid "Usernames tried in the last 7 days"
 msgstr "Ονόματα χρηστών που δοκιμάστηκαν τις τελευταίες 7 ημέρες"
 
-#: includes/class-pncp-login.php:1624
+#: includes/class-pncp-login.php:1625
 msgid "Exists: make sure its password is strong"
 msgstr "Υπάρχει: βεβαιωθείτε ότι ο κωδικός του είναι ισχυρός"
 
-#: includes/class-pncp-login.php:1689
+#: includes/class-pncp-login.php:1690
 msgid "Failed sign-ins are limited"
 msgstr "Οι αποτυχημένες συνδέσεις περιορίζονται"
 
-#: includes/class-pncp-login.php:1695
+#: includes/class-pncp-login.php:1696
 msgid ""
 "ScrapeLock blocks an IP after repeated wrong passwords on wp-login.php, XML-"
 "RPC (each call of a system.multicall) and application passwords, and pauses "
@@ -15901,11 +15899,11 @@ msgstr ""
 "κωδικούς εφαρμογών και θέτει σε παύση τα ονόματα χρηστών που δέχονται "
 "επίθεση."
 
-#: includes/class-pncp-login.php:1701
+#: includes/class-pncp-login.php:1702
 msgid "Failed sign-ins are not limited"
 msgstr "Οι αποτυχημένες συνδέσεις δεν περιορίζονται"
 
-#: includes/class-pncp-login.php:1702
+#: includes/class-pncp-login.php:1703
 msgid ""
 "Bots can try passwords on wp-login.php and XML-RPC without limit. Turn on "
 "“Limit failed sign-ins” in ScrapeLock."
@@ -15914,12 +15912,12 @@ msgstr ""
 "χωρίς όριο. Ενεργοποιήστε το «Περιορισμός αποτυχημένων συνδέσεων» στο "
 "ScrapeLock."
 
-#: includes/class-pncp-login.php:1705
+#: includes/class-pncp-login.php:1706
 msgid "The custom sign-in address is turned off in wp-config.php"
 msgstr ""
 "Η προσαρμοσμένη διεύθυνση σύνδεσης είναι απενεργοποιημένη στο wp-config.php"
 
-#: includes/class-pncp-login.php:1706
+#: includes/class-pncp-login.php:1707
 msgid ""
 "SCRAPELOCK_LOGIN_SLUG_OFF is set, so wp-login.php is open again. Remove the "
 "line from wp-config.php once you can sign in."
@@ -15928,7 +15926,7 @@ msgstr ""
 "ξανά ανοιχτό. Αφαιρέστε τη γραμμή από το wp-config.php μόλις μπορέσετε να "
 "συνδεθείτε."
 
-#: includes/class-pncp-login.php:1785
+#: includes/class-pncp-login.php:1786
 msgid ""
 "When a sign-in to this site fails, the IP address and the username or email "
 "address that was tried are counted for a few minutes, to block password "
@@ -16129,15 +16127,23 @@ msgid_plural "An IP is blocked temporarily after %d violations"
 msgstr[0] "Μια IP μπλοκάρεται προσωρινά μετά από %d παράβαση"
 msgstr[1] "Μια IP μπλοκάρεται προσωρινά μετά από %d παραβάσεις"
 
-#. translators: %d: number of minutes
+#. translators: %d: number of hours
 #: includes/class-pncp-options.php:1540
+#, php-format
+msgid "A temporary block lasts %d hour"
+msgid_plural "A temporary block lasts %d hours"
+msgstr[0] "Ένας προσωρινός αποκλεισμός διαρκεί %d ώρα"
+msgstr[1] "Ένας προσωρινός αποκλεισμός διαρκεί %d ώρες"
+
+#. translators: %d: number of minutes
+#: includes/class-pncp-options.php:1543
 #, php-format
 msgid "A temporary block lasts %d minute"
 msgid_plural "A temporary block lasts %d minutes"
 msgstr[0] "Ένας προσωρινός αποκλεισμός διαρκεί %d λεπτό"
 msgstr[1] "Ένας προσωρινός αποκλεισμός διαρκεί %d λεπτά"
 
-#: includes/class-pncp-options.php:1542
+#: includes/class-pncp-options.php:1545
 msgid ""
 "Lists of articles (home page, categories, archives, search) show an excerpt "
 "and a link instead of the full text"
@@ -16145,12 +16151,12 @@ msgstr ""
 "Οι λίστες άρθρων (αρχική σελίδα, κατηγορίες, αρχεία, αναζήτηση) δείχνουν "
 "απόσπασμα και σύνδεσμο αντί για το πλήρες κείμενο"
 
-#: includes/class-pncp-options.php:1544
+#: includes/class-pncp-options.php:1547
 msgid "IPv6: the whole /56 network is limited too"
 msgstr "IPv6: περιορίζεται επίσης ολόκληρο το δίκτυο /56"
 
 #. translators: %d: number of requests
-#: includes/class-pncp-options.php:1547
+#: includes/class-pncp-options.php:1550
 #, php-format
 msgid "WooCommerce: at most %d cart or checkout action per minute per IP"
 msgid_plural ""
@@ -16161,7 +16167,7 @@ msgstr[1] ""
 "WooCommerce: το πολύ %d ενέργειες καλαθιού ή ταμείου ανά λεπτό ανά IP"
 
 #. translators: %d: number of attempts
-#: includes/class-pncp-options.php:1550
+#: includes/class-pncp-options.php:1553
 #, php-format
 msgid "WooCommerce: at most %d coupon attempt per minute per IP"
 msgid_plural "WooCommerce: at most %d coupon attempts per minute per IP"
@@ -16169,7 +16175,7 @@ msgstr[0] "WooCommerce: το πολύ %d δοκιμή κουπονιού ανά 
 msgstr[1] "WooCommerce: το πολύ %d δοκιμές κουπονιών ανά λεπτό ανά IP"
 
 #. translators: %d: number of pages
-#: includes/class-pncp-options.php:1553
+#: includes/class-pncp-options.php:1556
 #, php-format
 msgid ""
 "At most %d page per minute from data centers (also services in “Always "
@@ -16184,7 +16190,7 @@ msgstr[1] ""
 "Το πολύ %d σελίδες ανά λεπτό από data centers (και για υπηρεσίες των «Πάντα "
 "επιτρεπόμενων» που δεν είναι δεμένες με τις IP τους)"
 
-#: includes/class-pncp-options.php:1555
+#: includes/class-pncp-options.php:1558
 msgid ""
 "Requests that open the site by its IP address instead of its name are "
 "refused"
@@ -16194,17 +16200,17 @@ msgstr ""
 
 #. translators: 1: name of a setting, 2: its value in Emergency Mode (e.g. On,
 #. or a number)
-#: includes/class-pncp-options.php:1561
+#: includes/class-pncp-options.php:1564
 #, php-format
 msgid "%1$s: %2$s"
 msgstr "%1$s: %2$s"
 
-#: includes/class-pncp-options.php:1720 includes/class-pncp-options.php:1729
+#: includes/class-pncp-options.php:1723 includes/class-pncp-options.php:1732
 msgid "The content of this page is protected."
 msgstr "Το περιεχόμενο αυτής της σελίδας προστατεύεται."
 
 #. translators: %s: the refused lines
-#: includes/class-pncp-options.php:1862
+#: includes/class-pncp-options.php:1865
 #, php-format
 msgid ""
 "These private URLs were not saved, because they would block the homepage or "
@@ -16215,7 +16221,7 @@ msgstr ""
 "σελίδα ή κάθε σελίδα για όλους τους επισκέπτες: %s. Χρησιμοποιήστε τη "
 "διαδρομή του feed (π.χ. /skroutz.xml) ή το query του (π.χ. /?feed=skroutz)."
 
-#: includes/class-pncp-options.php:1909
+#: includes/class-pncp-options.php:1912
 msgid ""
 "CrowdSec was not turned on: enter the address of your CrowdSec agent (LAPI) "
 "or of the blocklist first."
@@ -16224,23 +16230,23 @@ msgstr ""
 "agent σας (LAPI) ή της blocklist."
 
 #. translators: 1: what was typed, 2: why it cannot be used
-#: includes/class-pncp-options.php:1926
+#: includes/class-pncp-options.php:1929
 #, php-format
 msgid "Stealth: “%1$s” was not saved. %2$s"
 msgstr "Stealth: το «%1$s» δεν αποθηκεύτηκε. %2$s"
 
-#: includes/class-pncp-options.php:1940
+#: includes/class-pncp-options.php:1943
 msgid ""
 "Stealth uses this address for its files or the REST API: choose another one."
 msgstr ""
 "Το Stealth χρησιμοποιεί αυτή τη διεύθυνση για τα αρχεία του ή για το REST "
 "API: επιλέξτε άλλη."
 
-#: includes/class-pncp-options.php:1945
+#: includes/class-pncp-options.php:1948
 msgid "The sign-in address was not saved:"
 msgstr "Η διεύθυνση σύνδεσης δεν αποθηκεύτηκε:"
 
-#: includes/class-pncp-options.php:1948
+#: includes/class-pncp-options.php:1951
 msgid ""
 "A page, post or category now has the same address as the sign-in page, so "
 "visitors cannot open it there. The sign-in address was kept; choose another "
@@ -16250,13 +16256,13 @@ msgstr ""
 "σελίδα σύνδεσης, οπότε οι επισκέπτες δεν μπορούν να την ανοίξουν εκεί. Η "
 "διεύθυνση σύνδεσης διατηρήθηκε· επιλέξτε άλλη όταν μπορείτε."
 
-#: includes/class-pncp-options.php:1957
+#: includes/class-pncp-options.php:1960
 msgid ""
 "“Only through the CDN” was not turned on: set a CDN shared secret first."
 msgstr ""
 "Το «Μόνο μέσω του CDN» δεν ενεργοποιήθηκε: ορίστε πρώτα κοινό μυστικό CDN."
 
-#: includes/class-pncp-options.php:1957
+#: includes/class-pncp-options.php:1960
 msgid ""
 "“Only through the CDN” was not turned on: this request did not bring the "
 "secret in the X-ScrapeLock-CDN header, so the CDN does not send it yet (or "
@@ -16269,7 +16275,7 @@ msgstr ""
 "CDN, ανανεώστε αυτή τη σελίδα και δοκιμάστε ξανά."
 
 #. translators: %s: the refused lines
-#: includes/class-pncp-options.php:2016
+#: includes/class-pncp-options.php:2019
 #, php-format
 msgid ""
 "These trusted proxy ranges were not saved, because they are too wide (wider "
@@ -16284,7 +16290,7 @@ msgstr ""
 "δικού σας proxy ή load balancer."
 
 #. translators: %s: the refused lines
-#: includes/class-pncp-options.php:2018
+#: includes/class-pncp-options.php:2021
 #, php-format
 msgid ""
 "These always-allowed IP ranges were not saved, because they are too wide "
@@ -16296,7 +16302,7 @@ msgstr ""
 "του internet να παρακάμψει την προστασία: %s."
 
 #. translators: %s: the refused lines
-#: includes/class-pncp-options.php:2020
+#: includes/class-pncp-options.php:2023
 #, php-format
 msgid ""
 "These IP ranges for the private URLs were not saved, because they are too "
@@ -16308,7 +16314,7 @@ msgstr ""
 "URL σε μεγάλο μέρος του internet: %s."
 
 #. translators: %s: the refused lines
-#: includes/class-pncp-options.php:2059
+#: includes/class-pncp-options.php:2062
 #, php-format
 msgid ""
 "These always-blocked IP ranges were not saved, because they are too wide "
@@ -16322,7 +16328,7 @@ msgstr ""
 "ή στενότερα εύρη, π.χ. 203.0.113.0/24."
 
 #. translators: 1: the IP of the administrator, 2: the ranges
-#: includes/class-pncp-options.php:2075
+#: includes/class-pncp-options.php:2078
 #, php-format
 msgid ""
 "Warning: your own IP (%1$s) is in these always-blocked IPs: %2$s. They were "
@@ -16339,7 +16345,7 @@ msgstr ""
 "επιτρεπόμενες IP»."
 
 #. translators: %s: country code
-#: includes/class-pncp-options.php:2091
+#: includes/class-pncp-options.php:2094
 #, php-format
 msgid ""
 "Warning: the blocked countries include %s, the country of your shop "
@@ -16351,7 +16357,7 @@ msgstr ""
 "Αποθηκεύτηκε, αλλά οι πελάτες από τη δική σας χώρα θα απορρίπτονται."
 
 #. translators: %s: country code
-#: includes/class-pncp-options.php:2101
+#: includes/class-pncp-options.php:2104
 #, php-format
 msgid ""
 "Warning: the blocked countries include %s, the country you are visiting from"
@@ -16362,24 +16368,24 @@ msgstr ""
 "οποία συνδέεστε τώρα. Αποθηκεύτηκε, αλλά θα απορρίπτεστε μόλις "
 "αποσυνδεθείτε, όπως και οι επισκέπτες από εκεί."
 
-#: includes/class-pncp-options.php:2250
+#: includes/class-pncp-options.php:2254
 msgid "Always allowed IPs"
 msgstr "Πάντα επιτρεπόμενες IP"
 
-#: includes/class-pncp-options.php:2251
+#: includes/class-pncp-options.php:2255
 msgid "Always blocked IPs"
 msgstr "Πάντα αποκλεισμένες IP"
 
-#: includes/class-pncp-options.php:2252
+#: includes/class-pncp-options.php:2256
 msgid "Other trusted proxies"
 msgstr "Άλλα έμπιστα proxies"
 
-#: includes/class-pncp-options.php:2253
+#: includes/class-pncp-options.php:2257
 msgid "Allowed IPs of the private URLs"
 msgstr "Επιτρεπόμενες IP των ιδιωτικών URL"
 
 #. translators: 1: name of the setting, 2: the lines that were not saved
-#: includes/class-pncp-options.php:2276
+#: includes/class-pncp-options.php:2280
 #, php-format
 msgid ""
 "These lines of “%1$s” were not saved, because they are not an IP address or "
@@ -16389,7 +16395,7 @@ msgstr ""
 " ή εύρος CIDR (π.χ. 203.0.113.7 ή 203.0.113.0/24): %2$s."
 
 #. translators: %s: name of the setting
-#: includes/class-pncp-options.php:2283
+#: includes/class-pncp-options.php:2287
 #, php-format
 msgid ""
 "Only the first 200 lines of “%s” were saved: a list holds at most 200 "
@@ -16399,7 +16405,7 @@ msgstr ""
 "200 καταχωρίσεις."
 
 #. translators: 1: name of the setting, 2: the entries that were not saved
-#: includes/class-pncp-options.php:2310
+#: includes/class-pncp-options.php:2314
 #, php-format
 msgid ""
 "These entries of “%1$s” were not saved, because they are not two-letter "
@@ -16409,7 +16415,7 @@ msgstr ""
 " χωρών δύο γραμμάτων (π.χ. CN, RU): %2$s."
 
 #. translators: %s: the addresses that are ignored
-#: includes/class-pncp-options.php:2337
+#: includes/class-pncp-options.php:2341
 #, php-format
 msgid ""
 "In “Always allowed User-Agents”, these addresses after “@” are not valid IPs"
@@ -16421,13 +16427,13 @@ msgstr ""
 "διευθύνσεις είναι άκυρες δεν γίνεται ποτέ δεκτή."
 
 #. translators: %s: a line the administrator entered
-#: includes/class-pncp-options.php:2389
+#: includes/class-pncp-options.php:2393
 #, php-format
 msgid "“%s”"
 msgstr "«%s»"
 
 #. translators: 1: a list of lines, 2: how many more there are
-#: includes/class-pncp-options.php:2395
+#: includes/class-pncp-options.php:2399
 #, php-format
 msgid "%1$s and %2$d more"
 msgstr "%1$s και %2$d ακόμη"
@@ -18616,12 +18622,12 @@ msgstr "Εξαιρείστε ως προσωπικό: δοκιμάστε σε ι
 
 #. translators: 1: list name, e.g. claude.com/crawling/bots.json, 2: e.g. "14
 #. entries, updated 18 November 2026"
-#: includes/class-pncp-tester.php:598
+#: includes/class-pncp-tester.php:595
 #, php-format
 msgid "Compared with %1$s: %2$s."
 msgstr "Σύγκριση με το %1$s: %2$s."
 
-#: includes/class-pncp-tester.php:642
+#: includes/class-pncp-tester.php:637
 msgid ""
 "Its User-Agent matches an entry of the blocked bots (your bot list, the AI "
 "crawlers built into ScrapeLock, or the generic HTTP libraries when that "
@@ -18633,13 +18639,13 @@ msgstr ""
 "γενικές βιβλιοθήκες HTTP όταν αυτή η επιλογή είναι ενεργή). Για να περάσει "
 "μια υπηρεσία στην οποία βασίζεστε, προσθέστε τη στα «Πάντα επιτρεπόμενα»."
 
-#: includes/class-pncp-tester.php:646
+#: includes/class-pncp-tester.php:641
 msgid "The request sends no User-Agent, and requests without one are blocked."
 msgstr ""
 "Το αίτημα δεν στέλνει User-Agent και τα αιτήματα χωρίς User-Agent "
 "μπλοκάρονται."
 
-#: includes/class-pncp-tester.php:650
+#: includes/class-pncp-tester.php:645
 msgid ""
 "It says it is a search engine, but its IP is not on that search engine's "
 "official list and its DNS name does not belong to it."
@@ -18647,7 +18653,7 @@ msgstr ""
 "Λέει ότι είναι μηχανή αναζήτησης, αλλά η IP του δεν είναι στην επίσημη λίστα"
 " εκείνης της μηχανής αναζήτησης και το όνομα DNS του δεν της ανήκει."
 
-#: includes/class-pncp-tester.php:654
+#: includes/class-pncp-tester.php:649
 msgid ""
 "It says it is an AI search bot that you allow, but its IP is not on that "
 "bot's official IP list."
@@ -18655,7 +18661,7 @@ msgstr ""
 "Λέει ότι είναι AI bot αναζήτησης που επιτρέπετε, αλλά η IP του δεν είναι "
 "στην επίσημη λίστα IP εκείνου του bot."
 
-#: includes/class-pncp-tester.php:659
+#: includes/class-pncp-tester.php:654
 msgid ""
 "“Browsers only” is on: a page needs an Accept-Language header and a User-"
 "Agent that starts with “Mozilla/”. Scripts usually send neither."
@@ -18664,14 +18670,14 @@ msgstr ""
 "Language και User-Agent που ξεκινά με «Mozilla/». Τα scripts συνήθως δεν "
 "στέλνουν κανένα από τα δύο."
 
-#: includes/class-pncp-tester.php:663
+#: includes/class-pncp-tester.php:658
 msgid ""
 "The browser says it is headless (HeadlessChrome in its Sec-CH-UA header)."
 msgstr ""
 "Ο browser δηλώνει ότι είναι headless (HeadlessChrome στην κεφαλίδα Sec-CH-UA"
 " του)."
 
-#: includes/class-pncp-tester.php:667
+#: includes/class-pncp-tester.php:662
 msgid ""
 "Over HTTPS the User-Agent claims Chrome, Edge or Firefox, but the request "
 "lacks the Sec-Fetch-Mode and Sec-CH-UA headers those browsers always send."
@@ -18680,15 +18686,15 @@ msgstr ""
 "λείπουν οι κεφαλίδες Sec-Fetch-Mode και Sec-CH-UA που στέλνουν πάντα αυτοί "
 "οι browsers."
 
-#: includes/class-pncp-tester.php:671
+#: includes/class-pncp-tester.php:666
 msgid "The IP is in “Always blocked” IPs."
 msgstr "Η IP βρίσκεται στις «Πάντα αποκλεισμένες» IP."
 
-#: includes/class-pncp-tester.php:675
+#: includes/class-pncp-tester.php:670
 msgid "The Referer is in the always-blocked referrers."
 msgstr "Ο Referer βρίσκεται στους πάντα αποκλεισμένους referrers."
 
-#: includes/class-pncp-tester.php:679
+#: includes/class-pncp-tester.php:674
 msgid ""
 "This IP is blocked temporarily right now. You can unblock it under “IPs "
 "blocked now” on this tab."
@@ -18696,11 +18702,11 @@ msgstr ""
 "Αυτή η IP είναι μπλοκαρισμένη προσωρινά αυτή τη στιγμή. Μπορείτε να την "
 "ξεμπλοκάρετε στις «IP μπλοκαρισμένες τώρα» σε αυτή την καρτέλα."
 
-#: includes/class-pncp-tester.php:682
+#: includes/class-pncp-tester.php:677
 msgid "The IP's country is in “Blocked countries”."
 msgstr "Η χώρα της IP βρίσκεται στις «Αποκλεισμένες χώρες»."
 
-#: includes/class-pncp-tester.php:686
+#: includes/class-pncp-tester.php:681
 msgid ""
 "This IP is over the stricter page limit for visitors without the human check"
 " this minute (a script never has it)."
@@ -18708,13 +18714,13 @@ msgstr ""
 "Αυτή η IP έχει ξεπεράσει αυτό το λεπτό το αυστηρότερο όριο σελίδων για "
 "επισκέπτες χωρίς τον έλεγχο ανθρώπου (ένα script δεν τον έχει ποτέ)."
 
-#: includes/class-pncp-tester.php:690
+#: includes/class-pncp-tester.php:685
 msgid "This IP is over the page limit for the stricter countries this minute."
 msgstr ""
 "Αυτή η IP έχει ξεπεράσει αυτό το λεπτό το όριο σελίδων για τις χώρες με "
 "αυστηρότερο όριο."
 
-#: includes/class-pncp-tester.php:695
+#: includes/class-pncp-tester.php:690
 msgid ""
 "The User-Agent carries an attack instead of a name (HTML or PHP tags, "
 "Shellshock, Log4Shell, SQL injection or control characters). No browser or "
@@ -18725,7 +18731,7 @@ msgstr ""
 "δεν στέλνει κάτι τέτοιο· απορρίπτεται ακόμη και για όνομα που επιτρέπεται "
 "πάντα."
 
-#: includes/class-pncp-tester.php:699
+#: includes/class-pncp-tester.php:694
 msgid ""
 "The request opens the site by a public IP address instead of its name, as "
 "scanners that sweep address ranges do."
@@ -18733,12 +18739,12 @@ msgstr ""
 "Το αίτημα ανοίγει τον ιστότοπο με δημόσια διεύθυνση IP αντί για το όνομά "
 "του, όπως κάνουν οι scanners που σαρώνουν εύρη διευθύνσεων."
 
-#: includes/class-pncp-tester.php:703
+#: includes/class-pncp-tester.php:698
 msgid "The IP is in the CrowdSec blocklist, and listed IPs get a 403."
 msgstr ""
 "Η IP βρίσκεται στη blocklist του CrowdSec και οι IP της λίστας παίρνουν 403."
 
-#: includes/class-pncp-tester.php:707
+#: includes/class-pncp-tester.php:702
 msgid ""
 "The IP is in the CrowdSec blocklist and is over the stricter page limit for "
 "listed IPs this minute."
@@ -18746,7 +18752,7 @@ msgstr ""
 "Η IP βρίσκεται στη blocklist του CrowdSec και έχει ξεπεράσει αυτό το λεπτό "
 "το αυστηρότερο όριο σελίδων για τις IP της λίστας."
 
-#: includes/class-pncp-tester.php:711
+#: includes/class-pncp-tester.php:706
 msgid ""
 "The IP has a bad reputation (it was blocked, trapped or refused as a bot in "
 "the last days) and is over the stricter page limit for such IPs this minute."
@@ -18755,7 +18761,7 @@ msgstr ""
 "τελευταίες ημέρες) και έχει ξεπεράσει αυτό το λεπτό το αυστηρότερο όριο "
 "σελίδων για τέτοιες IP."
 
-#: includes/class-pncp-tester.php:715
+#: includes/class-pncp-tester.php:710
 msgid ""
 "The IP has not opened a page of the site in the last 24 hours and is over "
 "the limit for the REST API, GraphQL, feeds and sitemaps of such IPs this "
@@ -18766,7 +18772,7 @@ msgstr ""
 "τέτοιων IP."
 
 #. translators: %s: name of the limit, e.g. "Pages per minute"
-#: includes/class-pncp-tester.php:722
+#: includes/class-pncp-tester.php:717
 #, php-format
 msgid ""
 "This IP is over the “%s” limit this minute: the counters of this minute were"
@@ -18777,11 +18783,11 @@ msgstr ""
 " αυτού του λεπτού και ο έλεγχος πρόσθεσε αυτό το αίτημα (μια μεγάλη λίστα "
 "REST μετράει για περισσότερα από ένα), αλλά δεν μετρήθηκε τίποτα."
 
-#: includes/class-pncp-tester.php:735
+#: includes/class-pncp-tester.php:730
 msgid "Protection is off: nothing is checked."
 msgstr "Η προστασία είναι ανενεργή: τίποτα δεν ελέγχεται."
 
-#: includes/class-pncp-tester.php:742
+#: includes/class-pncp-tester.php:737
 msgid ""
 "Should not happen here (the check runs as a logged-out visitor); kept for "
 "completeness."
@@ -18789,27 +18795,27 @@ msgstr ""
 "Δεν θα έπρεπε να συμβαίνει εδώ (ο έλεγχος εκτελείται ως αποσυνδεδεμένος "
 "επισκέπτης)· διατηρείται για πληρότητα."
 
-#: includes/class-pncp-tester.php:745
+#: includes/class-pncp-tester.php:740
 msgid ""
 "A blocked bot must still be able to read the rules it is asked to follow."
 msgstr ""
 "Ένα μπλοκαρισμένο bot πρέπει να μπορεί ακόμη να διαβάσει τους κανόνες που "
 "του ζητείται να ακολουθεί."
 
-#: includes/class-pncp-tester.php:748
+#: includes/class-pncp-tester.php:743
 msgid ""
 "This address is the server itself, which is never blocked. Try another IP."
 msgstr ""
 "Αυτή η διεύθυνση είναι ο ίδιος ο διακομιστής, που δεν μπλοκάρεται ποτέ. "
 "Δοκιμάστε άλλη IP."
 
-#: includes/class-pncp-tester.php:751
+#: includes/class-pncp-tester.php:746
 msgid "The IP is in “Always allowed IPs”: no check applies to it."
 msgstr ""
 "Η IP βρίσκεται στις «Πάντα επιτρεπόμενες IP»: δεν ισχύει κανένας έλεγχος για"
 " αυτήν."
 
-#: includes/class-pncp-tester.php:755
+#: includes/class-pncp-tester.php:750
 msgid ""
 "Code on this site (a theme or plugin using the pncp_skip_guard filter) lets "
 "this request through."
@@ -18817,7 +18823,7 @@ msgstr ""
 "Κώδικας σε αυτόν τον ιστότοπο (ένα θέμα ή πρόσθετο που χρησιμοποιεί το "
 "φίλτρο pncp_skip_guard) αφήνει αυτό το αίτημα να περάσει."
 
-#: includes/class-pncp-tester.php:758
+#: includes/class-pncp-tester.php:753
 msgid ""
 "Its IP is on the search engine's official list, or its DNS name belongs to "
 "the search engine."
@@ -18825,24 +18831,24 @@ msgstr ""
 "Η IP του βρίσκεται στην επίσημη λίστα της μηχανής αναζήτησης ή το όνομα DNS "
 "του ανήκει στη μηχανή αναζήτησης."
 
-#: includes/class-pncp-tester.php:761
+#: includes/class-pncp-tester.php:756
 msgid "You allow this AI search bot and its IP is on its official list."
 msgstr ""
 "Επιτρέπετε αυτό το AI bot αναζήτησης και η IP του βρίσκεται στην επίσημη "
 "λίστα του."
 
-#: includes/class-pncp-tester.php:765
+#: includes/class-pncp-tester.php:760
 msgid "Prefetches have their own limit, three times the page limit."
 msgstr "Τα prefetches έχουν δικό τους όριο, τριπλάσιο του ορίου σελίδων."
 
-#: includes/class-pncp-tester.php:769
+#: includes/class-pncp-tester.php:764
 msgid ""
 "It passes every check that is on, and this IP is within the limits this "
 "minute."
 msgstr ""
 "Περνά κάθε ενεργό έλεγχο και αυτή η IP είναι εντός των ορίων αυτό το λεπτό."
 
-#: includes/class-pncp-tester.php:803
+#: includes/class-pncp-tester.php:798
 msgid ""
 "Monitor only is on: this request would be let through and logged as “Would "
 "block”."
@@ -18850,7 +18856,7 @@ msgstr ""
 "Το Μόνο παρακολούθηση είναι ενεργό: αυτό το αίτημα θα περνούσε και θα "
 "καταγραφόταν ως «Θα μπλοκαριζόταν»."
 
-#: includes/class-pncp-tester.php:806
+#: includes/class-pncp-tester.php:801
 msgid ""
 "It says it is a search engine, but its IP could not be verified now (DNS did"
 " not answer, or too many lookups this minute). It is not blocked as a fake; "
@@ -18860,7 +18866,7 @@ msgstr ""
 "τώρα (το DNS δεν απάντησε ή έγιναν πάρα πολλές αναζητήσεις αυτό το λεπτό). "
 "Δεν μπλοκάρεται ως ψεύτικο· ισχύουν τα κανονικά όρια."
 
-#: includes/class-pncp-tester.php:809
+#: includes/class-pncp-tester.php:804
 msgid ""
 "Generic HTTP libraries such as curl and python-requests are not blocked: "
 "“Also block generic HTTP libraries” is off. Apps, headless front ends and "
@@ -18871,7 +18877,7 @@ msgstr ""
 "ανενεργό. Τις χρησιμοποιούν εφαρμογές, headless front ends και εργαλεία "
 "συγχρονισμού."
 
-#: includes/class-pncp-tester.php:812
+#: includes/class-pncp-tester.php:807
 msgid ""
 "“Browsers only” is off, so a script that is not on the bot list gets pages "
 "within the limits."
@@ -18879,7 +18885,7 @@ msgstr ""
 "Το «Μόνο browsers» είναι ανενεργό, οπότε ένα script που δεν είναι στη λίστα "
 "bots παίρνει σελίδες εντός των ορίων."
 
-#: includes/class-pncp-tester.php:815
+#: includes/class-pncp-tester.php:810
 msgid ""
 "This address is a CDN edge shared by many visitors: per-IP checks (lists, "
 "temporary blocks, limits) are skipped for it."
@@ -18888,42 +18894,42 @@ msgstr ""
 "επισκέπτες: οι έλεγχοι ανά IP (λίστες, προσωρινοί αποκλεισμοί, όρια) "
 "παραλείπονται για αυτήν."
 
-#: includes/class-pncp-tester.php:821
+#: includes/class-pncp-tester.php:816
 msgid "good: never blocked temporarily for a limit"
 msgstr "καλή: δεν μπλοκάρεται ποτέ προσωρινά για ένα όριο"
 
-#: includes/class-pncp-tester.php:822
+#: includes/class-pncp-tester.php:817
 msgid "bad: the stricter page limit applies"
 msgstr "κακή: ισχύει το αυστηρότερο όριο σελίδων"
 
-#: includes/class-pncp-tester.php:823
+#: includes/class-pncp-tester.php:818
 msgid "neutral"
 msgstr "ουδέτερη"
 
 #. translators: 1: score, 2: level, 3: list of events
-#: includes/class-pncp-tester.php:831
+#: includes/class-pncp-tester.php:826
 #, php-format
 msgid "Reputation of this IP: %1$d, %2$s. %3$s"
 msgstr "Φήμη αυτής της IP: %1$d, %2$s. %3$s"
 
 #. translators: 1: score, 2: level, 3: list of events
-#: includes/class-pncp-tester.php:831
+#: includes/class-pncp-tester.php:826
 msgid "Nothing recorded in the last 7 days."
 msgstr "Δεν καταγράφηκε τίποτα τις τελευταίες 7 ημέρες."
 
-#: includes/class-pncp-tester.php:834
+#: includes/class-pncp-tester.php:829
 msgid "This IP is in the CrowdSec blocklist."
 msgstr "Αυτή η IP βρίσκεται στη blocklist του CrowdSec."
 
 #. translators: %s: date and time
-#: includes/class-pncp-tester.php:839
+#: includes/class-pncp-tester.php:834
 #, php-format
 msgid "Emergency Mode is on until %s: its stricter settings were used."
 msgstr ""
 "Η Λειτουργία έκτακτης ανάγκης είναι ενεργή έως %s: χρησιμοποιήθηκαν οι "
 "αυστηρότερες ρυθμίσεις της."
 
-#: includes/class-pncp-tester.php:846
+#: includes/class-pncp-tester.php:841
 msgid ""
 "This address is a private URL: without a valid token or an allowed IP it "
 "gets a 403 before these checks."
@@ -19299,12 +19305,3 @@ msgstr ""
 msgid "The changes were not applied: reload this page and try again."
 msgstr ""
 "Οι αλλαγές δεν εφαρμόστηκαν: ανανεώστε αυτή τη σελίδα και δοκιμάστε ξανά."
-
-#. translators: %d: number of hours
-#. Not extracted by wp i18n make-pot (first _n() of a ternary); added by hand.
-#: includes/class-pncp-options.php:1538
-#, php-format
-msgid "A temporary block lasts %d hour"
-msgid_plural "A temporary block lasts %d hours"
-msgstr[0] "Ένας προσωρινός αποκλεισμός διαρκεί %d ώρα"
-msgstr[1] "Ένας προσωρινός αποκλεισμός διαρκεί %d ώρες"
