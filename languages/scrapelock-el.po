@@ -7307,30 +7307,30 @@ msgstr ""
 "βιβλιοθήκη HTTP, είναι πολύ γενικό ή ο ιστότοπος είναι κλειδωμένος "
 "(ξεκλειδώστε τον στην καρτέλα Lockdown και δοκιμάστε ξανά)."
 
-#: includes/class-pncp-bots.php:330
+#: includes/class-pncp-bots.php:335
 msgid "Sorry, you are not allowed to list users."
 msgstr "Λυπούμαστε, δεν έχετε δικαίωμα να βλέπετε τη λίστα χρηστών."
 
-#: includes/class-pncp-bots.php:389 includes/class-pncp-bots.php:595
-#: includes/class-pncp-bots.php:2396 includes/class-pncp-graphql.php:68
+#: includes/class-pncp-bots.php:394 includes/class-pncp-bots.php:600
+#: includes/class-pncp-bots.php:2453 includes/class-pncp-graphql.php:68
 msgid "Too many requests. Please try again in a minute."
 msgstr "Πάρα πολλά αιτήματα. Δοκιμάστε ξανά σε ένα λεπτό."
 
-#: includes/class-pncp-bots.php:396 includes/class-pncp-bots.php:595
-#: includes/class-pncp-bots.php:2398 includes/class-pncp-graphql.php:76
+#: includes/class-pncp-bots.php:401 includes/class-pncp-bots.php:600
+#: includes/class-pncp-bots.php:2455 includes/class-pncp-graphql.php:76
 #: includes/class-pncp-login.php:978 includes/class-pncp-login.php:1245
 msgid "Access denied."
 msgstr "Δεν επιτρέπεται η πρόσβαση."
 
-#: includes/class-pncp-bots.php:628
+#: includes/class-pncp-bots.php:633
 msgid "Too many coupon attempts. Please try again in a minute."
 msgstr "Πάρα πολλές δοκιμές κουπονιών. Δοκιμάστε ξανά σε ένα λεπτό."
 
-#: includes/class-pncp-bots.php:629
+#: includes/class-pncp-bots.php:634
 msgid "Too many cart requests. Please try again in a minute."
 msgstr "Πάρα πολλά αιτήματα καλαθιού. Δοκιμάστε ξανά σε ένα λεπτό."
 
-#: includes/class-pncp-bots.php:2451
+#: includes/class-pncp-bots.php:2508
 msgid "Archive"
 msgstr "Αρχείο"
 
