@@ -159,6 +159,10 @@
 		var body = el( 'tbody' );
 		table.appendChild( body );
 		row( body, text( 'checkedAs', 'Checked as' ), data.checked_as_label || '' );
+		// 3.12.1: the per-minute counter that decides the request and its limit ("N of M this minute").
+		if ( data.counter && 'object' === typeof data.counter && data.counter.label && data.counter.text ) {
+			row( body, data.counter.label, data.counter.text );
+		}
 		var ip = request.ip || '';
 		if ( 'self' === request.mode && i18n.selfIp ) {
 			ip += ' (' + i18n.selfIp + ')';

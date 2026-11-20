@@ -358,6 +358,21 @@ final class PNCP_Log {
 	}
 
 	/**
+	 * 3.12.1: the label of a reason for people (reasons()); never the internal key, also for a reason stored by
+	 * another version (a generic label then).
+	 *
+	 * @param string $reason Reason key.
+	 * @return string
+	 */
+	public static function reason_label( $reason ) {
+		static $labels = null;
+		if ( null === $labels ) {
+			$labels = self::reasons();
+		}
+		return isset( $labels[ (string) $reason ] ) ? $labels[ (string) $reason ] : __( 'Another check of ScrapeLock', 'scrapelock' );
+	}
+
+	/**
 	 * The request URI as the browser sent it, percent-encoded, as the pre-cache check also logs it.
 	 * sanitize_text_field() is not used: it removes "%ce%ac" and the like, so a Greek address such as
 	 * /άρθρο-8/ was logged as /-8/ (2.8.2 and earlier). Any byte outside printable ASCII is encoded.

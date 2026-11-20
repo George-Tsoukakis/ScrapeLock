@@ -1106,7 +1106,7 @@ final class PNCP_Bots {
 	 * @param string                $ua      User-Agent ('' = none).
 	 * @param string                $url     Address on this site ('' = the home page).
 	 * @param array<string, string> $headers More request headers, name => value (e.g. "Accept-Language" => "en").
-	 * @return array{context:string, feed:bool, code:int, reason:string, pass:string, monitor:bool, inconclusive:bool}
+	 * @return array{context:string, feed:bool, media:bool, code:int, reason:string, pass:string, monitor:bool, inconclusive:bool}
 	 */
 	public static function explain( $ip, $ua, $url = '', $headers = array() ) {
 		$url    = '' === trim( (string) $url ) ? home_url( '/' ) : (string) $url;
@@ -1198,6 +1198,9 @@ final class PNCP_Bots {
 		return array(
 			'context'      => $context,
 			'feed'         => $feed,
+			// 3.12.1: a static file (image, video, audio, font, CSS, JavaScript): a page address that counts toward the
+			// media limit (MEDIA_FACTOR times the page limit), never toward the page limits.
+			'media'        => 'page' === $context && self::is_static_request( $relative ),
 			'code'         => $verdict ? (int) $verdict['code'] : 0,
 			'reason'       => $verdict ? (string) $verdict['reason'] : '',
 			'pass'         => $verdict ? '' : ( isset( $dry['pass'] ) ? (string) $dry['pass'] : 'passed' ),
@@ -2172,6 +2175,21 @@ final class PNCP_Bots {
 		$count = (int) get_transient( $key ) + $step;
 		set_transient( $key, $count, 2 * MINUTE_IN_SECONDS );
 		return $count;
+	}
+
+	/**
+	 * 3.12.1: what a per-minute counter of an IP holds now, without adding to it (for "Check a request" and
+	 * "wp scrapelock check": "N of M this minute").
+	 *
+	 * @param string $ip     IP.
+	 * @param string $bucket Type (rate_page, rate_media, rate_search, rate_rest, rate_sitemap…).
+	 * @return int
+	 */
+	public static function counter_now( $ip, $bucket ) {
+		if ( '' === (string) $ip ) {
+			return 0;
+		}
+		return self::peek( (string) $bucket, PNCP_Ip::limit_key( (string) $ip ), (int) floor( time() / MINUTE_IN_SECONDS ) );
 	}
 
 	/**

@@ -2884,7 +2884,7 @@ final class PNCP_Admin {
 		<div class="pncp-cards">
 			<section class="pncp-card">
 				<h3><?php esc_html_e( 'By reason', 'scrapelock' ); ?></h3>
-				<?php self::count_list( $summary['reasons'], $reasons ); ?>
+				<?php self::count_list( $summary['reasons'], array_combine( array_keys( $summary['reasons'] ), array_map( array( 'PNCP_Log', 'reason_label' ), array_keys( $summary['reasons'] ) ) ) ); // 3.12.1: never a raw reason key. ?>
 			</section>
 			<section class="pncp-card">
 				<h3><?php esc_html_e( 'Top IPs', 'scrapelock' ); ?></h3>
@@ -2949,7 +2949,7 @@ final class PNCP_Admin {
 					<?php foreach ( array_slice( $bans, 0, 200, true ) as $ip => $ban ) : ?>
 						<tr>
 							<td><code><?php echo esc_html( $ip ); ?></code></td>
-							<td><?php echo esc_html( isset( $reasons[ $ban['reason'] ] ) ? $reasons[ $ban['reason'] ] : $ban['reason'] ); ?></td>
+							<td><?php echo esc_html( PNCP_Log::reason_label( $ban['reason'] ) ); ?></td>
 							<td><?php echo esc_html( wp_date( $format, (int) $ban['until'] ) ); ?></td>
 							<td>
 								<?php self::action_form_open( 'pncp_log', 'pncp_log', 'pncp-inline-form' ); ?>
@@ -3017,7 +3017,7 @@ final class PNCP_Admin {
 							</td>
 							<td>
 								<?php
-								$label = isset( $reasons[ $row['reason'] ] ) ? $reasons[ $row['reason'] ] : $row['reason'];
+								$label = PNCP_Log::reason_label( $row['reason'] );
 								// A "would block" entry of "Monitor only" was let through: it has no status code.
 								if ( PNCP_Log::is_monitor_row( $row ) ) {
 									echo esc_html( $label ) . ' <span class="pncp-badge pncp-badge--monitor">' . esc_html__( 'Would block', 'scrapelock' ) . '</span>';
@@ -3427,7 +3427,7 @@ final class PNCP_Admin {
 						<td><code><?php echo esc_html( $row['ip'] ); ?></code></td>
 						<td><?php echo esc_html( number_format_i18n( $row['bans'] ) ); ?></td>
 						<td><?php echo esc_html( number_format_i18n( $row['total'] ) ); ?></td>
-						<td><?php echo esc_html( isset( $reasons[ $row['reason'] ] ) ? $reasons[ $row['reason'] ] : $row['reason'] ); ?></td>
+						<td><?php echo esc_html( PNCP_Log::reason_label( $row['reason'] ) ); ?></td>
 						<td><?php echo esc_html( wp_date( $format, (int) strtotime( $row['last'] . ' UTC' ) ) ); ?></td>
 						<td><?php self::block_permanently_button( $row['ip'] ); ?></td>
 					</tr>
@@ -3486,7 +3486,7 @@ final class PNCP_Admin {
 				'<li><span>%1$s%2$s%3$s</span> <strong>%4$s</strong></li>',
 				esc_html( $ua ),
 				$badge, // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Built above from escaped text.
-				'' !== $main ? '<br><small class="pncp-ua-reason">' . esc_html( isset( $reasons[ $main ] ) ? $reasons[ $main ] : $main ) . '</small>' : '',
+				'' !== $main ? '<br><small class="pncp-ua-reason">' . esc_html( PNCP_Log::reason_label( $main ) ) . '</small>' : '',
 				esc_html( number_format_i18n( $count ) )
 			);
 		}

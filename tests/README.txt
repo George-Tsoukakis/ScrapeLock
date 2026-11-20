@@ -122,6 +122,12 @@ ScrapeLock — δοκιμές σε πραγματικό WordPress (όχι stubs)
                     (24-hour transient) and SCRAPELOCK_SERVER_IPS (a test mu-plugin for the web server), in
                     WordPress, the early check and the pre-cache check; ScrapeLock's rules at the CDN never block
                     the server (temporary blocks, Bunny log lines, the wp-login.php lock with a stand-in Bunny API)
+  t_3121_tester.php 3.12.1: "Check a request": an image, video, font, CSS or JS is "Checked as: Media", allowed as "image
+                    or file; counted in the media limit, not as a page", with the media counter "N of M this minute"
+                    (MEDIA_FACTOR × the page limit, pncp_static_extensions) and its 429; a page, a feed, a REST call and
+                    every pass / refuse reason drawn as tester.js draws them, the AJAX answer, every wp-admin tab with
+                    log rows and bans of every reason (and an unknown one): never a raw snake_case reason key;
+                    wp scrapelock check (needs WP_CLI, else that part SKIPs)
   t_cli.php         wp scrapelock … μέσα από το πραγματικό wp (χρειάζεται WP_CLI, αλλιώς SKIP)
   t_bunny_rules.php Edge Rules στο Bunny μέσα στα όριά του (το πολύ 5 μοτίβα ανά συνθήκη) με ψεύτικο API που δίνει
                     HTTP 400 όπως το πραγματικό: χωρισμός, κλείδωμα/Remove, rollback, Monitor only, sync, προεπισκόπηση,
