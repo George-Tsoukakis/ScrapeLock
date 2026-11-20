@@ -98,6 +98,12 @@ ScrapeLock — δοκιμές σε πραγματικό WordPress (όχι stubs)
                     the sample of "Test this path" masked too
   t_traffic_ms.php  3.12: Traffic on a multisite network (SKIP on a single site; SITE=/two/ with a "subadmin"): only a
                     network administrator may test the access log or have "Start collecting" pick it
+  t_3121_loopback.php 3.12.1: the site's own requests behind Bunny without the CDN secret ("Real visitor IP" =
+                    REMOTE_ADDR, the request from a Bunny edge, X-Test-Remote-Addr / X-Test-HTTPS): the signature
+                    X-ScrapeLock-Sig (valid, expired, replayed, another path / method / host, forged, after redirects
+                    with a stand-in server on 8953) passes every check in WordPress, the early check and "Only through
+                    the CDN"; the WordPress User-Agent alone and X-Forwarded-For with the server's address do not;
+                    Vulnerable points "Check again", the Stealth test, Site Health loopback and REST get real answers
   t_cli.php         wp scrapelock … μέσα από το πραγματικό wp (χρειάζεται WP_CLI, αλλιώς SKIP)
   t_bunny_rules.php Edge Rules στο Bunny μέσα στα όριά του (το πολύ 5 μοτίβα ανά συνθήκη) με ψεύτικο API που δίνει
                     HTTP 400 όπως το πραγματικό: χωρισμός, κλείδωμα/Remove, rollback, Monitor only, sync, προεπισκόπηση,

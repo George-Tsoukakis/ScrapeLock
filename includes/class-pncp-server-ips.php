@@ -21,6 +21,12 @@
  * Everything is stored in one option (not a setting of pncp_settings), which the early check reads as it is
  * and the pre-cache check gets in its configuration (PNCP_Precheck::config(), "self_ips").
  *
+ * 3.12.1: behind Bunny without the CDN secret the visitor IP of the site's request to itself is the edge (or an
+ * address that cannot be trusted), so no address told it apart from a visitor, and "Check again" in Vulnerable
+ * points got a 403 from the headless check ("fake_browser" on HTTPS). WordPress now also signs every request to
+ * its own address with SIG_HEADER: an HMAC-SHA256 of the method, host, path, time and a random nonce, valid for
+ * 60 seconds and once (sig_ok()). A request that carries a valid signature passes every check, from any address.
+ *
  * @package ScrapeLock
  */
 
@@ -68,6 +74,26 @@ final class PNCP_Server_Ips {
 	const CHANGED = 'pncp_server_ips_changed';
 
 	/**
+	 * 3.12.1: the request header ScrapeLock adds to the site's requests to itself: a signature of the method, the
+	 * host, the path, the time and a random nonce ("time.nonce.hmac"). A request that carries a valid one passes
+	 * every check (sig_ok()).
+	 */
+	const SIG_HEADER = 'X-ScrapeLock-Sig';
+
+	/**
+	 * 3.12.1: how long a signature of SIG_HEADER is valid, in seconds (either way, for clocks a little apart).
+	 */
+	const SIG_WINDOW = 60;
+
+	/**
+	 * 3.12.1: the signatures checked in this request: "header|method|host|path" => valid. The early check and the
+	 * normal check of one request see the same signature, whose nonce can be used only once.
+	 *
+	 * @var array<string, bool>
+	 */
+	private static $sig_seen = array();
+
+	/**
 	 * Registers the hooks.
 	 */
 	public static function init() {
@@ -75,7 +101,7 @@ final class PNCP_Server_Ips {
 		add_action( 'admin_init', array( __CLASS__, 'maybe_refresh' ) );
 		add_action( self::CHANGED, array( __CLASS__, 'changed' ) );
 		add_filter( 'http_request_args', array( __CLASS__, 'sign' ), 10, 2 );
-		add_action( 'requests-requests.before_redirect', array( __CLASS__, 'unsign_redirect' ), 10, 2 );
+		add_action( 'requests-requests.before_redirect', array( __CLASS__, 'unsign_redirect' ), 10, 4 );
 	}
 
 	/**
@@ -166,11 +192,18 @@ final class PNCP_Server_Ips {
 	 * (client_ip(): only from a trusted proxy's header) is a public address of the server and can be trusted.
 	 * Loopback and private addresses are left to PNCP_Ip::is_local_request() (every hop must be local): a
 	 * "127.0.0.1" that came from far away is a forged one. A CDN edge standing in for its visitors is never the
-	 * server. A request signed by the site (sign()) teaches its address (learn()).
+	 * server. A request signed by the site (sign()) teaches its address (learn()). 3.12.1: a request with a
+	 * valid signature of SIG_HEADER (sig_ok()) is the server's own, from any address.
 	 *
 	 * @return bool
 	 */
 	public static function is_request() {
+		// 3.12.1: the site's own request, signed (SIG_HEADER): whatever address it came back from. Behind Bunny
+		// without the CDN secret the visitor IP is the edge, or an address that cannot be trusted, so the address
+		// alone never told it apart from a visitor (the "Security headers" check got a 403 from its own site).
+		if ( self::sig_ok() ) {
+			return true;
+		}
 		$ip = PNCP_Ip::client_ip();
 		if ( '' === $ip || PNCP_Ip::is_private( $ip ) || ! PNCP_Ip::reliable() || PNCP_Ip::is_cdn_edge( $ip ) || PNCP_Ip::is_cdn( $ip ) ) {
 			return false;
@@ -200,6 +233,14 @@ final class PNCP_Server_Ips {
 		if ( strlen( $key ) < 32 && $create && function_exists( 'wp_generate_password' ) ) {
 			$key = wp_generate_password( 48, false, false );
 			update_option( self::KEY_OPTION, $key, true );
+			// 3.12.1: the pre-cache check gets the new key with its line in wp-config.php (PNCP_Precheck::block()),
+			// rewritten by WP cron or the next wp-admin page (never during a visitor's request).
+			if ( class_exists( 'PNCP_Precheck' ) && PNCP_Precheck::wanted() ) {
+				update_option( PNCP_Precheck::STATUS, 'deferred', false );
+				if ( ! wp_next_scheduled( self::CHANGED ) ) {
+					wp_schedule_single_event( time(), self::CHANGED );
+				}
+			}
 		}
 		return strlen( $key ) < 32 ? '' : $key;
 	}
@@ -230,6 +271,23 @@ final class PNCP_Server_Ips {
 		if ( ! self::signed() ) {
 			return false;
 		}
+		// 3.12.1: each signature teaches once. Seen by someone else (a log, a proxy on the way), it could otherwise
+		// be sent again from their own address within the 10 minutes and make that address one of the server's.
+		$name = 'HTTP_' . strtoupper( str_replace( '-', '_', self::HEADER ) );
+		$sent = isset( $_SERVER[ $name ] ) ? sanitize_text_field( wp_unslash( $_SERVER[ $name ] ) ) : '';
+		if ( ! PNCP_Log::cache_add( 'pncp_sl_' . md5( $sent . '|' . $ip ), 1, 2 * self::WINDOW + 60 ) && ! isset( self::stored()['learned'][ $ip ] ) ) {
+			return false;
+		}
+		return self::remember( $ip );
+	}
+
+	/**
+	 * Remembers an address of the server (once a day per address) among the learned ones.
+	 *
+	 * @param string $ip The address.
+	 * @return bool True.
+	 */
+	private static function remember( $ip ) {
 		$state = self::stored();
 		$known = isset( $state['learned'][ $ip ] );
 		if ( ! $known || $state['learned'][ $ip ] < time() - DAY_IN_SECONDS ) {
@@ -271,10 +329,119 @@ final class PNCP_Server_Ips {
 		}
 		$key = self::key( true );
 		if ( '' !== $key ) {
-			$args['headers']                 = isset( $args['headers'] ) ? $args['headers'] : array();
-			$args['headers'][ self::HEADER ] = self::token( time(), $key );
+			$method                              = isset( $args['method'] ) && is_string( $args['method'] ) ? $args['method'] : 'GET';
+			$args['headers']                     = isset( $args['headers'] ) ? $args['headers'] : array();
+			$args['headers'][ self::HEADER ]     = self::token( time(), $key );
+			$args['headers'][ self::SIG_HEADER ] = self::sig_token( $method, (string) $url );
 		}
 		return $args;
+	}
+
+	/**
+	 * 3.12.1: the key of SIG_HEADER, made from the server key (the option the early check can read: it runs before
+	 * wp_salt() exists). '' when there is no server key yet.
+	 *
+	 * @param bool $create Create the server key when missing.
+	 * @return string
+	 */
+	public static function sig_key( $create = false ) {
+		$key = self::key( $create );
+		return '' === $key ? '' : hash_hmac( 'sha256', 'pncp-sig-key|v1', $key );
+	}
+
+	/**
+	 * 3.12.1: the signature of one request. The pre-cache check computes the same (PNCP_Precheck_Runtime::self_signed()).
+	 *
+	 * @param string $method Method (uppercase).
+	 * @param string $host   Host (lowercase, without the port).
+	 * @param string $path   Path (decoded).
+	 * @param int    $time   Time.
+	 * @param string $nonce  Nonce.
+	 * @param string $key    Key (sig_key()).
+	 * @return string
+	 */
+	public static function sig_mac( $method, $host, $path, $time, $nonce, $key ) {
+		return hash_hmac( 'sha256', 'pncp-sig|v1|' . $method . '|' . $host . '|' . $path . '|' . (int) $time . '|' . $nonce, $key );
+	}
+
+	/**
+	 * 3.12.1: the value of SIG_HEADER for a request: "time.nonce.hmac" ('' without a key).
+	 *
+	 * @param string   $method Method.
+	 * @param string   $url    Address.
+	 * @param int|null $time   Time (null = now; tests).
+	 * @return string
+	 */
+	public static function sig_token( $method, $url, $time = null ) {
+		$key = self::sig_key( true );
+		if ( '' === $key ) {
+			return '';
+		}
+		$time  = null === $time ? time() : (int) $time;
+		$nonce = bin2hex( random_bytes( 12 ) );
+		$host  = strtolower( (string) wp_parse_url( $url, PHP_URL_HOST ) );
+		$path  = self::sig_path( (string) wp_parse_url( $url, PHP_URL_PATH ) );
+		return $time . '.' . $nonce . '.' . self::sig_mac( strtoupper( trim( (string) $method ) ), $host, $path, $time, $nonce, $key );
+	}
+
+	/**
+	 * 3.12.1: a path as it is signed: decoded, '/' when empty.
+	 *
+	 * @param string $path Path.
+	 * @return string
+	 */
+	public static function sig_path( $path ) {
+		$path = rawurldecode( (string) $path );
+		return '' === $path ? '/' : $path;
+	}
+
+	/**
+	 * 3.12.1: the host this request was sent to: lowercase, without the port ('' when there is none).
+	 *
+	 * @return string
+	 */
+	public static function request_host() {
+		$host = isset( $_SERVER['HTTP_HOST'] ) ? strtolower( trim( sanitize_text_field( wp_unslash( $_SERVER['HTTP_HOST'] ) ) ) ) : '';
+		return (string) preg_replace( '/:\d+$/', '', $host );
+	}
+
+	/**
+	 * 3.12.1: does this request carry a valid signature of the site (SIG_HEADER)? Its host must be one of the
+	 * site's own, its method and path those that were signed, its time within SIG_WINDOW, and its nonce never seen
+	 * before (kept for twice the window, atomically: PNCP_Log::cache_add()). The answer is kept for the rest of the
+	 * request, so the early check and the normal check use the nonce once. A valid signature also tells the
+	 * address the server's requests leave from (note_outbound()).
+	 *
+	 * @return bool
+	 */
+	public static function sig_ok() {
+		$name = 'HTTP_' . strtoupper( str_replace( '-', '_', self::SIG_HEADER ) );
+		$sent = isset( $_SERVER[ $name ] ) ? trim( sanitize_text_field( wp_unslash( $_SERVER[ $name ] ) ) ) : '';
+		if ( '' === $sent || ! preg_match( '/^(\d{9,11})\.([0-9a-f]{24})\.([0-9a-f]{64})$/', $sent, $m ) ) {
+			return false;
+		}
+		$method = isset( $_SERVER['REQUEST_METHOD'] ) ? strtoupper( sanitize_key( wp_unslash( $_SERVER['REQUEST_METHOD'] ) ) ) : 'GET';
+		$host   = self::request_host();
+		$uri    = isset( $_SERVER['REQUEST_URI'] ) ? (string) wp_unslash( $_SERVER['REQUEST_URI'] ) : '/'; // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- Only its path is hashed and compared.
+		$path   = self::sig_path( (string) wp_parse_url( $uri, PHP_URL_PATH ) );
+		$memo   = $sent . '|' . $method . '|' . $host . '|' . $path;
+		if ( isset( self::$sig_seen[ $memo ] ) ) {
+			return self::$sig_seen[ $memo ];
+		}
+		$time = (int) $m[1];
+		$key  = self::sig_key();
+		$ok   = '' !== $key && '' !== $host && in_array( $host, self::own_hosts(), true ) && abs( time() - $time ) <= self::SIG_WINDOW
+			&& hash_equals( self::sig_mac( $method, $host, $path, $time, $m[2], $key ), $m[3] )
+			&& PNCP_Log::cache_add( 'pncp_sn_' . $m[2], 1, 2 * self::SIG_WINDOW + 10 );
+		self::$sig_seen[ $memo ] = $ok;
+		return $ok;
+	}
+
+	/**
+	 * 3.12.1: forgets the signatures checked in this request (tests).
+	 */
+	public static function forget() {
+		self::$sig_seen = array();
 	}
 
 	/**
@@ -283,20 +450,34 @@ final class PNCP_Server_Ips {
 	 * a plugin, a moved page) would hand them a signature that makes their address one of the server's for 30
 	 * days (learn()). Action requests-requests.before_redirect.
 	 *
+	 * 3.12.1: also SIG_HEADER. A redirect on the site's own host (http to https, a trailing slash) gets a new one
+	 * for its address and method, since a signature holds only for the path it was made for.
+	 *
 	 * @param string               $location The new address.
 	 * @param array<string, mixed> $headers  The request headers.
+	 * @param mixed                $data     The request body.
+	 * @param array<string, mixed> $options  The request options (type: the method of the redirected request).
 	 */
-	public static function unsign_redirect( &$location, &$headers ) {
+	public static function unsign_redirect( &$location, &$headers, &$data = null, &$options = null ) {
 		if ( ! is_array( $headers ) ) {
 			return;
 		}
 		$host = strtolower( (string) wp_parse_url( (string) $location, PHP_URL_HOST ) );
-		if ( '' !== $host && in_array( $host, self::own_hosts(), true ) ) {
-			return;
-		}
+		$own  = '' !== $host && in_array( $host, self::own_hosts(), true );
+		$sig  = false;
 		foreach ( array_keys( $headers ) as $name ) {
-			if ( 0 === strcasecmp( (string) $name, self::HEADER ) ) {
+			if ( 0 === strcasecmp( (string) $name, self::SIG_HEADER ) ) {
+				$sig = true;
 				unset( $headers[ $name ] );
+			} elseif ( ! $own && 0 === strcasecmp( (string) $name, self::HEADER ) ) {
+				unset( $headers[ $name ] );
+			}
+		}
+		if ( $own && $sig ) {
+			$method = is_array( $options ) && isset( $options['type'] ) && is_string( $options['type'] ) ? $options['type'] : 'GET';
+			$token  = self::sig_token( $method, (string) $location );
+			if ( '' !== $token ) {
+				$headers[ self::SIG_HEADER ] = $token;
 			}
 		}
 	}
