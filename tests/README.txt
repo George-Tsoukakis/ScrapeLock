@@ -128,13 +128,17 @@ ScrapeLock — δοκιμές σε πραγματικό WordPress (όχι stubs)
                     bad_format, no_key, nonce_reused), "//" / encoded paths, HEAD as GET, the 3.12.1 format, the
                     pre-cache check the same; one nonce per request across the pre-cache check, the early check and
                     WordPress (also with a persistent object cache); the diagnostics ring buffer (contents, privacy,
-                    not autoloaded, allowance); "X-ScrapeLock: refused …" / "ok" (unit and over HTTP); who answered
+                    not autoloaded, allowance, a hash of the nonce and no address); "X-ScrapeLock: refused …" (just
+                    "refused" for a stranger's forged signature) / "ok id=…" (unit and over HTTP); who answered
                     (ScrapeLock, Bunny's edge, Cloudflare, Wordfence, WordPress, the web server); the way straight to
                     the server (mocked with pre_http_request, and over real HTTP with CURLOPT_RESOLVE and a host name
-                    that does not resolve) and the route for the site's other requests; Vulnerable points' note and
+                    that does not resolve) and the route for the site's other requests (only after this WordPress
+                    answered with the request's id, only the site's own host:port and addresses, the TLS check kept,
+                    clears itself; a forged CURLOPT_RESOLVE entry not applied); Vulnerable points' note and
                     details; a block of the server at the CDN removed at once; "Only through the CDN" without a
-                    secret; "Check a request" loopback preset and "Run a real self-check now" (nonce, capability);
-                    Site Health "ScrapeLock self-request test"; wp scrapelock selfcheck (with WP_CLI). Self-requests
+                    secret; "Check a request" loopback preset and "Run a real self-check now" (POST, its own nonce,
+                    capability); Site Health "ScrapeLock self-request test"; wp scrapelock selfcheck (with WP_CLI);
+                    uninstall and deactivation remove the self-check's options and route. Self-requests
                     are made from the test process only (the single-process server would wait for itself).
   t_3121_tester.php 3.12.1: "Check a request": an image, video, font, CSS or JS is "Checked as: Media", allowed as "image
                     or file; counted in the media limit, not as a page", with the media counter "N of M this minute"

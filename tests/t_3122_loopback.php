@@ -25,6 +25,7 @@
  * O. "Only through the CDN" without a secret never refuses anything; with one, a signed request passes.
  * T. "Check a request": the preset "The site itself (loopback)", "Run a real self-check now" (nonce, capability).
  * K. Site Health "ScrapeLock self-request test"; "wp scrapelock selfcheck" (with WP_CLI).
+ * U. Uninstall and deactivation remove the self-check's options and the route.
  *
  * Self-requests are made from this test process to the test server, never from a page the single-process
  * server is serving (it would wait for itself). Only on a test WordPress.
