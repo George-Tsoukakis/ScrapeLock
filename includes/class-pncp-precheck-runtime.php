@@ -84,17 +84,27 @@ final class PNCP_Precheck_Runtime {
 	public static $shared_hit = false;
 
 	/**
+	 * 3.12.1: the signatures of the site's own requests checked in this request ("header|method|host|path" =>
+	 * valid), see self_signed().
+	 *
+	 * @var array<string, bool>
+	 */
+	public static $self_seen = array();
+
+	/**
 	 * Called by the line in wp-config.php: reads the configuration from the data folder and runs the check.
 	 *
 	 * @param string $dir The data folder.
+	 * @param string $key 3.12.1: the key of the site's signed requests to itself (see self_signed()).
 	 */
-	public static function boot( $dir ) {
+	public static function boot( $dir, $key = '' ) {
 		try {
 			$c = self::load( (string) $dir );
 		} catch ( Throwable $e ) {
 			return;
 		}
 		if ( null !== $c ) {
+			$c['self_key'] = (string) $key; // Never in config.json, nor in APCu.
 			self::run( $c );
 		}
 	}
@@ -211,6 +221,11 @@ final class PNCP_Precheck_Runtime {
 				$own                 = (int) $c['human']['limit'];
 				$c['human']['limit'] = $own > 0 ? min( $own, (int) $e['human'] ) : (int) $e['human'];
 			}
+		}
+		// 3.12.1: the site's own request, signed by WordPress (PNCP_Server_Ips::sig_ok()): from any address, before
+		// "Only through the CDN" and every other check (Vulnerable points, Site Health, the Stealth test).
+		if ( self::self_signed( $c, $now ) ) {
+			return null;
 		}
 		$direct = self::not_via_cdn( $c );
 		if ( '' !== $direct ) {
@@ -972,6 +987,62 @@ final class PNCP_Precheck_Runtime {
 	}
 
 	/**
+	 * 3.12.1: does the request carry a valid signature of the site (header X-ScrapeLock-Sig, as
+	 * PNCP_Server_Ips::sig_ok() checks it in WordPress)? The HMAC-SHA256 of method, host, path, time and nonce, with
+	 * the key the line in wp-config.php passes to boot() ("self_key"; never in the data folder, which is in uploads).
+	 * The host must be one of the site's ("self_sig" in the configuration), the time within its window, and the
+	 * nonce new: it is kept as a file in the folder "self" (created with "x", so two requests with the same nonce
+	 * cannot both pass). Anything missing or unreadable: not signed.
+	 *
+	 * @param array<string, mixed> $c   Configuration.
+	 * @param int                  $now Time.
+	 * @return bool
+	 */
+	public static function self_signed( $c, $now ) {
+		$sent = isset( $_SERVER['HTTP_X_SCRAPELOCK_SIG'] ) ? trim( (string) $_SERVER['HTTP_X_SCRAPELOCK_SIG'] ) : '';
+		if ( '' === $sent || empty( $c['self_sig'] ) || ! is_array( $c['self_sig'] ) || ! preg_match( '/^(\d{9,11})\.([0-9a-f]{24})\.([0-9a-f]{64})$/', $sent, $m ) ) {
+			return false;
+		}
+		$method = self::method();
+		$host   = isset( $_SERVER['HTTP_HOST'] ) ? (string) preg_replace( '/:\d+$/', '', strtolower( trim( (string) $_SERVER['HTTP_HOST'] ) ) ) : '';
+		$uri    = isset( $_SERVER['REQUEST_URI'] ) ? (string) $_SERVER['REQUEST_URI'] : '/';
+		$path   = rawurldecode( (string) parse_url( $uri, PHP_URL_PATH ) );
+		$path   = '' === $path ? '/' : $path;
+		$memo   = $sent . '|' . $method . '|' . $host . '|' . $path;
+		if ( isset( self::$self_seen[ $memo ] ) ) {
+			return self::$self_seen[ $memo ];
+		}
+		self::$self_seen[ $memo ] = false;
+		$hosts                    = isset( $c['self_sig']['hosts'] ) ? array_map( 'strval', (array) $c['self_sig']['hosts'] ) : array();
+		$window                   = isset( $c['self_sig']['window'] ) ? max( 1, (int) $c['self_sig']['window'] ) : 60;
+		$time                     = (int) $m[1];
+		if ( '' === $host || ! in_array( $host, $hosts, true ) || abs( $now - $time ) > $window ) {
+			return false;
+		}
+		$key = isset( $c['self_key'] ) ? (string) $c['self_key'] : '';
+		if ( ! preg_match( '/^[0-9a-f]{64}$/', $key ) ) {
+			return false;
+		}
+		$mac = hash_hmac( 'sha256', 'pncp-sig|v1|' . $method . '|' . $host . '|' . $path . '|' . $time . '|' . $m[2], $key );
+		if ( ! hash_equals( $mac, $m[3] ) ) {
+			return false;
+		}
+		// Used once: the nonce's file is created only if it is not there yet.
+		$folder = (string) $c['dir'] . '/self';
+		if ( ! is_dir( $folder ) ) {
+			@mkdir( $folder, 0755, true );
+		}
+		$handle = @fopen( $folder . '/' . $m[2], 'x' );
+		if ( false === $handle ) {
+			return false;
+		}
+		fwrite( $handle, (string) $now );
+		fclose( $handle );
+		self::$self_seen[ $memo ] = true;
+		return true;
+	}
+
+	/**
 	 * 3.11: the server's public address (SERVER_ADDR, or one of the configuration's "self_ips", PNCP_Server_Ips),
 	 * as the visitor IP the trusted proxy or CDN gave: the site's request to itself came back through the CDN.
 	 * Loopback and private addresses only through is_local_request(); never a CDN edge; never when the IP may be
@@ -1334,6 +1405,13 @@ final class PNCP_Precheck_Runtime {
 			foreach ( (array) @scandir( $data . '/strikes' ) as $file ) {
 				$path = $data . '/strikes/' . $file;
 				if ( '.' !== $file && '..' !== $file && is_file( $path ) && (int) @filemtime( $path ) < $now - 600 ) {
+					@unlink( $path );
+				}
+			}
+			// 3.12.1: the nonces of the site's signed requests (self_signed()), kept twice the signature's window.
+			foreach ( (array) @scandir( $data . '/self' ) as $file ) {
+				$path = $data . '/self/' . $file;
+				if ( '.' !== $file && '..' !== $file && is_file( $path ) && (int) @filemtime( $path ) < $now - 300 ) {
 					@unlink( $path );
 				}
 			}

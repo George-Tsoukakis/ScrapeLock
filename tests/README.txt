@@ -103,7 +103,9 @@ ScrapeLock — δοκιμές σε πραγματικό WordPress (όχι stubs)
                     X-ScrapeLock-Sig (valid, expired, replayed, another path / method / host, forged, after redirects
                     with a stand-in server on 8953) passes every check in WordPress, the early check and "Only through
                     the CDN"; the WordPress User-Agent alone and X-Forwarded-For with the server's address do not;
-                    Vulnerable points "Check again", the Stealth test, Site Health loopback and REST get real answers
+                    Vulnerable points "Check again", the Stealth test, Site Health loopback and REST get real answers;
+                    the pre-cache check (stand-in page cache): the same signature, its key only in the wp-config.php
+                    line, nonces used once
   t_cli.php         wp scrapelock … μέσα από το πραγματικό wp (χρειάζεται WP_CLI, αλλιώς SKIP)
   t_bunny_rules.php Edge Rules στο Bunny μέσα στα όριά του (το πολύ 5 μοτίβα ανά συνθήκη) με ψεύτικο API που δίνει
                     HTTP 400 όπως το πραγματικό: χωρισμός, κλείδωμα/Remove, rollback, Monitor only, sync, προεπισκόπηση,

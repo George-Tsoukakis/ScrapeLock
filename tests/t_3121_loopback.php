@@ -14,10 +14,14 @@
  *    or host, forged; it passes every check in WordPress and the early check, also "Only through the CDN"; the
  *    WordPress User-Agent alone and X-Forwarded-For with the server's address do not.
  * R. Redirects: re-signed on the site's own host, never sent on to another host (stand-in server on 8953).
+ * P. The pre-cache check: the same signature, its key passed by the line in wp-config.php (never in the data
+ *    folder in uploads), nonces used once (a file each).
  * H. Vulnerable points "Check again" and the Stealth test's fetch through the "edge" get the real answers.
  *
  * The HTTP requests "come from the Bunny edge" with the harness's X-Test-Remote-Addr (REMOTE_ADDR in WordPress
- * and the early check) and X-Test-HTTPS. Only on a test WordPress.
+ * and the early check) and X-Test-HTTPS. The pre-cache check is tested over HTTP with a stand-in page cache
+ * (WP_CACHE + advanced-cache.php serving /cached-page/), as t_311_pipeline.php does; wp-config.php and
+ * advanced-cache.php are put back at the end. Only on a test WordPress.
  */
 
 $wp_dir = getenv( 'WP_DIR' );
@@ -82,6 +86,7 @@ function as_request( $remote, $ua, $headers = array(), $path = '/', $method = 'G
 	}
 	PNCP_Ip::reset();
 	PNCP_Server_Ips::forget();
+	PNCP_Precheck_Runtime::$self_seen = array();
 }
 
 /** check() for a page, without counting. */
@@ -380,6 +385,87 @@ proc_terminate( $echo_srv );
 proc_close( $echo_srv );
 wp_delete_file( $echo_dir . '/router.php' );
 rmdir( $echo_dir );
+
+/* ---------- P. The pre-cache check ---------- */
+file_put_contents( $config_file, "<?php\ndefine( 'WP_CACHE', true ); // test cache\n" . substr( $original, 6 ) );
+file_put_contents( $cache_file, "<?php\nif ( isset( \$_SERVER['REQUEST_URI'] ) && 0 === strpos( \$_SERVER['REQUEST_URI'], '/cached-page/' ) ) {\n\theader( 'X-Test-Cache: HIT' );\n\techo 'CACHED PAGE';\n\texit;\n}\n" );
+// The visitor through a proxy on the server (X-Real-IP from 127.0.0.1): the pre-cache check runs before the
+// harness can change REMOTE_ADDR.
+settings( array( 'precheck' => 1, 'ip_header' => 'x_real_ip' ) );
+require_once ABSPATH . 'wp-admin/includes/class-wp-screen.php';
+WP_Screen::get( 'settings_page_scrapelock' )->set_current_screen(); // wp-config.php is edited in wp-admin only.
+$status = PNCP_Precheck::sync();
+t( 'P: the pre-cache check is on', 'ok' === $status, (string) $status );
+sleep( 2 ); // OPcache of the server: wp-config.php.
+$pc_dir = PNCP_Precheck::dir();
+$json   = (string) file_get_contents( $pc_dir . '/config.json' );
+$key    = PNCP_Server_Ips::sig_key();
+t( 'P: config.json has the site\'s host names and the window of the signature, never its key', false !== strpos( $json, '"self_sig"' ) && false !== strpos( $json, '"' . $own_host . '"' ) && '' !== $key && false === strpos( $json, $key ) );
+$in_data = array();
+foreach ( new RecursiveIteratorIterator( new RecursiveDirectoryIterator( $pc_dir, FilesystemIterator::SKIP_DOTS ) ) as $pncp_f ) {
+	if ( false !== strpos( (string) file_get_contents( $pncp_f->getPathname() ), $key ) ) {
+		$in_data[] = $pncp_f->getPathname();
+	}
+}
+t( 'P: the key is in no file of the data folder (uploads: Nginx serves any file whose name is known)', ! $in_data, implode( ', ', $in_data ) );
+t( 'P: the line in wp-config.php passes it to the check', false !== strpos( (string) file_get_contents( $config_file ), "PNCP_Precheck_Runtime::boot( '" . $pc_dir . "', '" . $key . "' );" ) );
+
+$c             = PNCP_Precheck_Runtime::load( $pc_dir );
+$c['self_key'] = $key; // As boot() adds it.
+$tok           = sig( '/cached-page/' );
+as_request( '127.0.0.1', '', array( 'HTTP_X_REAL_IP' => VISITOR, 'HTTP_X_SCRAPELOCK_SIG' => $tok ), '/cached-page/' );
+t( 'P unit: a valid signature', is_array( $c ) && PNCP_Precheck_Runtime::self_signed( $c, time() ) );
+t( 'P unit: ... checked again in the same request: still valid', PNCP_Precheck_Runtime::self_signed( $c, time() ) );
+as_request( '127.0.0.1', '', array( 'HTTP_X_REAL_IP' => VISITOR, 'HTTP_X_SCRAPELOCK_SIG' => $tok ), '/cached-page/' );
+t( 'P unit: the same signature in another request (replayed): refused', ! PNCP_Precheck_Runtime::self_signed( $c, time() ) );
+t( 'P unit: its nonce is kept as a file of the folder "self"', is_file( $pc_dir . '/self/' . explode( '.', $tok )[1] ) );
+$now = time();
+foreach (
+	array(
+		'expired'               => array( sig( '/cached-page/', 'GET', $now - 120 ), '/cached-page/', $http_host ),
+		'for another path'      => array( sig( '/other/' ), '/cached-page/', $http_host ),
+		'sent to another host'  => array( sig( '/cached-page/' ), '/cached-page/', 'evil.example' ),
+		'forged'                => array( $now . '.' . str_repeat( 'b', 24 ) . '.' . str_repeat( 'c', 64 ), '/cached-page/', $http_host ),
+	) as $label => $case
+) {
+	as_request( '127.0.0.1', '', array( 'HTTP_X_REAL_IP' => VISITOR, 'HTTP_X_SCRAPELOCK_SIG' => $case[0], 'HTTP_HOST' => $case[2] ), $case[1] );
+	t( "P unit: a signature $label: refused", ! PNCP_Precheck_Runtime::self_signed( $c, $now ) );
+}
+$bad_c             = $c;
+$bad_c['self_key'] = ''; // A line in wp-config.php of 3.12.0, without the key.
+as_request( '127.0.0.1', '', array( 'HTTP_X_SCRAPELOCK_SIG' => sig( '/cached-page/' ) ), '/cached-page/' );
+t( 'P unit: without the key (the line of 3.12.0) nothing is signed', ! PNCP_Precheck_Runtime::self_signed( $bad_c, time() ) );
+
+// Over HTTP: a cached page, no User-Agent (refused by the pre-cache check before the page cache serves it).
+$cached = static function ( $headers ) {
+	list( $code, , $body ) = req( '/cached-page/', array_merge( array( 'X-Real-IP' => VISITOR ), $headers ) );
+	return $code . ( false !== strpos( $body, 'CACHED PAGE' ) ? ' cached' : '' );
+};
+// OPcache of the server keeps the previous wp-config.php for a few seconds: wait for the stand-in page cache.
+for ( $i = 0; $i < 20 && '200 cached' !== $cached( array( 'User-Agent' => SELF_UA, 'Accept-Language' => 'en', 'X-Real-IP' => '198.51.100.9' . ( $i % 10 ) ) ); $i++ ) {
+	usleep( 500000 );
+}
+t( 'P HTTP: no User-Agent, unsigned: 403 before the page cache', '403' === $cached( array() ), $cached( array() ) );
+$tok = sig( '/cached-page/' );
+$got = $cached( array( 'X-ScrapeLock-Sig' => $tok ) );
+t( 'P HTTP: signed: the cached page', '200 cached' === $got, $got );
+t( 'P HTTP: the same signature again (replayed): 403', '403' === $cached( array( 'X-ScrapeLock-Sig' => $tok ) ) );
+t( 'P HTTP: expired: 403', '403' === $cached( array( 'X-ScrapeLock-Sig' => sig( '/cached-page/', 'GET', time() - 120 ) ) ) );
+t( 'P HTTP: made for another path: 403', '403' === $cached( array( 'X-ScrapeLock-Sig' => sig( '/' ) ) ) );
+$old = PNCP_Server_Ips::sign( array( 'headers' => array() ), home_url( '/cached-page/' ) );
+$got = $cached( array( 'X-ScrapeLock-Self' => $old['headers'][ PNCP_Server_Ips::HEADER ] ) );
+t( 'P HTTP: only the 3.11 header (X-ScrapeLock-Self), no User-Agent: 403', '403' === $got, $got );
+// "Only through the CDN" (with a secret): the server's request straight to the origin.
+settings( array( 'cdn_secret' => 'stage-secret-1234567890' ) );
+PNCP_Precheck::sync();
+$got = $cached( array( 'User-Agent' => SELF_UA ) );
+t( 'P HTTP cdn_only: a request around the CDN, unsigned: 403', '403' === $got, $got );
+t( 'P HTTP cdn_only: signed: the cached page', '200 cached' === $cached( array( 'User-Agent' => SELF_UA, 'X-ScrapeLock-Sig' => sig( '/cached-page/' ) ) ) );
+t( 'P HTTP cdn_only: with the CDN secret (through the CDN): the cached page', '200 cached' === $cached( array( 'User-Agent' => SELF_UA, 'X-ScrapeLock-CDN' => 'stage-secret-1234567890', 'Accept-Language' => 'en' ) ) );
+settings( array( 'cdn_secret' => '', 'precheck' => 0, 'ip_header' => 'remote_addr' ) );
+PNCP_Precheck::sync();
+file_put_contents( $config_file, $original );
+sleep( 2 ); // OPcache of the server: wp-config.php.
 
 /* ---------- H. Vulnerable points "Check again", the Stealth test, Site Health: through the "edge" ---------- */
 unset( $_SERVER['HTTPS'] ); // This process: home_url() as stored (the "edge" requests say HTTPS with X-Test-HTTPS).

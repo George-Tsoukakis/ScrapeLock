@@ -171,8 +171,12 @@ final class PNCP_Precheck {
 	public static function block() {
 		$runtime = var_export( self::runtime_file(), true ); // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_var_export -- Writes the path as PHP code.
 		$data    = var_export( self::dir(), true ); // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_var_export -- Writes the path as PHP code.
+		// 3.12.1: and the key of the site's signed requests to itself (PNCP_Precheck_Runtime::self_signed()). Only
+		// here, in wp-config.php, which the web server never shows: the data folder is in uploads, where a server
+		// without .htaccess (Nginx) serves any file whose name is known.
+		$key = var_export( PNCP_Server_Ips::sig_key( true ), true ); // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_var_export -- Writes the key as PHP code.
 		return self::BEGIN . " (added and removed by the plugin's \"Pre-cache check\" setting)\n"
-			. 'if ( is_file( ' . $runtime . ' ) ) { include_once ' . $runtime . '; PNCP_Precheck_Runtime::boot( ' . $data . " ); }\n"
+			. 'if ( is_file( ' . $runtime . ' ) ) { include_once ' . $runtime . '; PNCP_Precheck_Runtime::boot( ' . $data . ', ' . $key . " ); }\n"
 			. self::END . "\n";
 	}
 
@@ -218,10 +222,16 @@ final class PNCP_Precheck {
 
 	/**
 	 * Rewrites the configuration when the lists change (daily), so that it has the current Google / Bing / CDN lists.
+	 * Also when the server's addresses change (PNCP_Server_Ips::changed()).
 	 */
 	public static function refresh() {
 		if ( self::wanted() && is_readable( self::config_file() ) ) {
 			self::write_files();
+			// 3.12.1: the line in wp-config.php waits for a new key (PNCP_Server_Ips::key()): written here when this
+			// runs in WP cron, otherwise on the next wp-admin page (maybe_sync()).
+			if ( 'deferred' === get_option( self::STATUS ) ) {
+				update_option( self::STATUS, self::add_to_config(), false );
+			}
 		}
 	}
 
@@ -334,6 +344,12 @@ final class PNCP_Precheck {
 			'allow'           => self::set( PNCP_Options::parse_list( $s['allow_ips'] ) ),
 			// 3.11: the server's own addresses (PNCP_Server_Ips): the site's requests to itself through the CDN.
 			'self_ips'        => self::set( PNCP_Server_Ips::ips() ),
+			// 3.12.1: the site's signed requests to itself (PNCP_Server_Ips::sig_ok()): its host names and the window.
+			// The key is never in this folder: the line in wp-config.php passes it (block()).
+			'self_sig'        => array(
+				'hosts'  => PNCP_Server_Ips::own_hosts(),
+				'window' => PNCP_Server_Ips::SIG_WINDOW,
+			),
 			'block'           => self::set( PNCP_Options::parse_list( $s['block_ips'] ) ),
 			'crawlers'        => $crawlers,
 			'apcu'            => (bool) apply_filters( 'pncp_precheck_apcu', true ),
