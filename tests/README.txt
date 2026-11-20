@@ -122,6 +122,20 @@ ScrapeLock — δοκιμές σε πραγματικό WordPress (όχι stubs)
                     (24-hour transient) and SCRAPELOCK_SERVER_IPS (a test mu-plugin for the web server), in
                     WordPress, the early check and the pre-cache check; ScrapeLock's rules at the CDN never block
                     the server (temporary blocks, Bunny log lines, the wp-login.php lock with a stand-in Bunny API)
+  t_3122_loopback.php 3.12.2: the site's own requests when the CDN does not forward the Host header (Bunny's
+                    default) or something on the way refuses them: the signature verified for the host it was signed
+                    for whatever Host arrives, each failure reason (expired, host_mismatch, path_mismatch, bad_mac,
+                    bad_format, no_key, nonce_reused), "//" / encoded paths, HEAD as GET, the 3.12.1 format, the
+                    pre-cache check the same; one nonce per request across the pre-cache check, the early check and
+                    WordPress (also with a persistent object cache); the diagnostics ring buffer (contents, privacy,
+                    not autoloaded, allowance); "X-ScrapeLock: refused …" / "ok" (unit and over HTTP); who answered
+                    (ScrapeLock, Bunny's edge, Cloudflare, Wordfence, WordPress, the web server); the way straight to
+                    the server (mocked with pre_http_request, and over real HTTP with CURLOPT_RESOLVE and a host name
+                    that does not resolve) and the route for the site's other requests; Vulnerable points' note and
+                    details; a block of the server at the CDN removed at once; "Only through the CDN" without a
+                    secret; "Check a request" loopback preset and "Run a real self-check now" (nonce, capability);
+                    Site Health "ScrapeLock self-request test"; wp scrapelock selfcheck (with WP_CLI). Self-requests
+                    are made from the test process only (the single-process server would wait for itself).
   t_3121_tester.php 3.12.1: "Check a request": an image, video, font, CSS or JS is "Checked as: Media", allowed as "image
                     or file; counted in the media limit, not as a page", with the media counter "N of M this minute"
                     (MEDIA_FACTOR × the page limit, pncp_static_extensions) and its 429; a page, a feed, a REST call and
