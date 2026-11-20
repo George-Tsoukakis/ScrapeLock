@@ -2241,7 +2241,7 @@ final class PNCP_Stealth {
 	 * The pages and files the scan asks for, each with what it checks.
 	 *
 	 * @param string $url Home page.
-	 * @return array<string, array{url:string, kind:string}>
+	 * @return array<int|string, array{url:string, kind:string}> Keys are names; "404" becomes an integer key.
 	 */
 	private static function scan_targets( $url ) {
 		$home  = trailingslashit( $url );
@@ -2365,7 +2365,7 @@ final class PNCP_Stealth {
 			'time'   => time(),
 			'active' => self::active(),
 			'pages'  => $pages,
-			'found'  => array_values( $merged ),
+			'found'  => $merged,
 		);
 		if ( home_url( '/' ) === $url ) {
 			set_transient( self::SCAN, $result, DAY_IN_SECONDS );
