@@ -2564,20 +2564,18 @@ final class PNCP_Admin {
 				<?php
 				self::checkbox( $s, 'traffic', __( 'Collect traffic (every request the site answers)', 'scrapelock' ), PNCP_Admin_Fields::help( __( 'Off: nothing is read, stored or scheduled.', 'scrapelock' ), __( 'The requests come from the Bunny CDN logs while their import is on, from the access log below, or from WordPress itself. Only one source is counted at a time, so a request seen by two of them is never counted twice.', 'scrapelock' ) ) );
 				self::checkbox( $s, 'traffic_wp', __( 'Also record the pages WordPress serves itself', 'scrapelock' ), PNCP_Admin_Fields::help( __( 'Fallback without a CDN or access log; misses cached pages.', 'scrapelock' ), __( 'One row per page that PHP answers, at the end of the request, with its response time. Pages served from a page cache (WP Rocket, the CDN) never reach PHP, so they are missing here; wp-admin, AJAX, cron, signed-in administrators and the site\'s requests to itself are left out.', 'scrapelock' ) ) );
-				// Traffic alerts (3.12, PNCP_Traffic_Alerts), when that part is installed.
-				if ( array_key_exists( 'traffic_alerts', PNCP_Options::defaults() ) ) {
-					self::checkbox( $s, 'traffic_alerts', PNCP_Setting_Labels::label( 'traffic_alerts' ), __( 'An email when errors or a source stop look wrong.', 'scrapelock' ) );
-					$mail_id = 'pncp-traffic_alert_email';
-					printf(
-						'<div class="pncp-field"><p><label for="%1$s">%2$s</label></p><input type="text" class="regular-text" id="%1$s" name="%3$s[traffic_alert_email]" value="%4$s" maxlength="500" placeholder="%5$s" aria-describedby="%1$s-help">%6$s</div>',
-						esc_attr( $mail_id ),
-						esc_html__( 'Send the alerts to:', 'scrapelock' ),
-						esc_attr( PNCP_OPTION ),
-						esc_attr( isset( $s['traffic_alert_email'] ) ? (string) $s['traffic_alert_email'] : '' ),
-						esc_attr( (string) get_option( 'admin_email' ) ),
-						PNCP_Admin_Fields::description( $mail_id . '-help', __( 'Empty = the site\'s admin email; separate several with commas.', 'scrapelock' ) ) // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Escaped in description().
-					);
-				}
+				// Traffic alerts (PNCP_Traffic_Alerts).
+				self::checkbox( $s, 'traffic_alerts', PNCP_Setting_Labels::label( 'traffic_alerts' ), __( 'An email when errors or a source stop look wrong.', 'scrapelock' ) );
+				$mail_id = 'pncp-traffic_alert_email';
+				printf(
+					'<div class="pncp-field"><p><label for="%1$s">%2$s</label></p><input type="text" class="regular-text" id="%1$s" name="%3$s[traffic_alert_email]" value="%4$s" maxlength="500" placeholder="%5$s" aria-describedby="%1$s-help">%6$s</div>',
+					esc_attr( $mail_id ),
+					esc_html__( 'Send the alerts to:', 'scrapelock' ),
+					esc_attr( PNCP_OPTION ),
+					esc_attr( isset( $s['traffic_alert_email'] ) ? (string) $s['traffic_alert_email'] : '' ),
+					esc_attr( (string) get_option( 'admin_email' ) ),
+					PNCP_Admin_Fields::description( $mail_id . '-help', __( 'Empty = the site\'s admin email; separate several with commas.', 'scrapelock' ) ) // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Escaped in description().
+				);
 				?>
 			</td>
 		</tr>
