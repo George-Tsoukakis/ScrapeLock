@@ -332,8 +332,10 @@ final class PNCP_Attacks {
 			return;
 		}
 		$ip = PNCP_Ip::normalize( $ip );
-		if ( '' === $ip || PNCP_Ip::is_local( $ip ) ) {
-			return; // The server itself (cron, loopback requests, Site Health).
+		// The server itself (cron, loopback requests, Site Health). 3.12.1: also its public addresses (PNCP_Server_Ips),
+		// as a CDN log line shows its requests to itself (the Vulnerable points checks of XML-RPC and the like).
+		if ( '' === $ip || PNCP_Ip::is_local( $ip ) || PNCP_Server_Ips::is_server_ip( $ip ) ) {
+			return;
 		}
 		$path   = self::clean( self::path_for( $category, $path ), 191 );
 		$detail = self::clean( $detail, 100 );
@@ -744,8 +746,8 @@ final class PNCP_Attacks {
 		$skip = false;
 		if ( function_exists( 'is_user_logged_in' ) && class_exists( 'PNCP_Lockdown' ) && PNCP_Options::user_is_exempt( PNCP_Options::get() ) ) {
 			$skip = true;
-		} elseif ( PNCP_Ip::is_local_request() ) {
-			$skip = true;
+		} elseif ( PNCP_Ip::is_local_request() || PNCP_Server_Ips::is_request() ) {
+			$skip = true; // 3.12.1: and the site's own request, signed or from the server's address (PNCP_Server_Ips).
 		} elseif ( class_exists( 'PNCP_Bots' ) ) {
 			$ip     = PNCP_Ip::client_ip();
 			$ua     = PNCP_Bots::user_agent();
