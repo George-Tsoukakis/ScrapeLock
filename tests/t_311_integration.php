@@ -6,6 +6,9 @@
  *
  * - The pre-cache check is compiled from the settings it is written for: the allowed AI search bots and the bot
  *   list without them always agree (also when the request's settings cache is older).
+ * - "For my site" (PNCP_Wizard) uses the FluentCommunity integration (its portal is counted already, so it is
+ *   not proposed), every service bot of an active plugin, the status of the pre-cache check and the setting
+ *   labels (never a bare key).
  *
  * Same requirements as t_http.php (mu-test-harness.php, router.php). Changes the database: test sites only.
  */
@@ -197,6 +200,90 @@ settings(
 		'bot_list'        => $saved['bot_list'],
 	)
 );
+
+/* ---------- "For my site" and the other 3.11 parts ---------- */
+
+$env_fc = static function ( $env ) {
+	$env['fluentcommunity'] = true;
+	return $env;
+};
+add_filter( 'pncp_fluent_community_active', '__return_true' );
+add_filter( 'pncp_fluent_community_slug', $fc_slug = static function () {
+	return 'hub';
+} );
+settings( array( 'content_paths' => '/shop-feed/' ) );
+$env = PNCP_Wizard::detect();
+t( 'wizard: FluentCommunity found through PNCP_Fluent_Community::active()', ! empty( $env['fluentcommunity'] ) );
+t( 'wizard: its portal is the one the integration counts', 'hub' === PNCP_Wizard::fluent_slug() && array( '/hub' ) === PNCP_Fluent_Community::added_paths(), PNCP_Wizard::fluent_slug() );
+$p = PNCP_Wizard::proposals( null, $env );
+t( 'wizard: the portal is not proposed for "Content addresses" (already counted)', ! isset( $p['content_paths'] ), isset( $p['content_paths'] ) ? $p['content_paths']['proposed'] : '' );
+$notes = PNCP_Wizard::notes( null, $env );
+$fc    = array_values(
+	array_filter(
+		$notes,
+		static function ( $n ) {
+			return 'FluentCommunity' === $n['for'];
+		}
+	)
+);
+t( 'wizard: a note says the portal is counted automatically', $fc && false !== strpos( $fc[0]['text'], '/hub/' ), wp_json_encode( $fc ) );
+remove_filter( 'pncp_fluent_community_active', '__return_true' );
+add_filter( 'pncp_fluent_community_active', '__return_false' );
+add_filter( 'pncp_wizard_environment', $env_fc );
+$p = PNCP_Wizard::proposals();
+t( 'wizard: proposed only when the integration does not count it', isset( $p['content_paths'] ) && "/shop-feed/\n/hub/" === $p['content_paths']['proposed'], isset( $p['content_paths'] ) ? $p['content_paths']['proposed'] : '' );
+remove_filter( 'pncp_wizard_environment', $env_fc );
+remove_filter( 'pncp_fluent_community_active', '__return_false' );
+remove_filter( 'pncp_fluent_community_slug', $fc_slug );
+settings( array( 'content_paths' => $saved['content_paths'] ) );
+
+// A service bot added by another plugin (pncp_plugin_bots), of an active plugin, switched off.
+$saved_bots = get_option( PNCP_Plugin_Bots::OPTION, null );
+$acme       = static function ( $bots ) {
+	$bots['acme-service'] = array(
+		'name'    => 'Acme Service',
+		'plugins' => array( 'scrapelock/scrapelock.php' ),
+		'agents'  => array( 'AcmeServiceBot/' ),
+	);
+	return $bots;
+};
+add_filter( 'pncp_plugin_bots', $acme );
+PNCP_Plugin_Bots::reset();
+PNCP_Plugin_Bots::set_allowed( 'acme-service', false );
+$for = wp_list_pluck( PNCP_Wizard::notes(), 'for' );
+t( 'wizard: a note for any switched-off service bot of an active plugin, not only WP Rocket and Jetpack', in_array( 'Acme Service', $for, true ), implode( ',', $for ) );
+PNCP_Plugin_Bots::set_allowed( 'acme-service', true );
+$for = wp_list_pluck( PNCP_Wizard::notes(), 'for' );
+t( 'wizard: no note while it is allowed', ! in_array( 'Acme Service', $for, true ), implode( ',', $for ) );
+remove_filter( 'pncp_plugin_bots', $acme );
+PNCP_Plugin_Bots::reset();
+if ( null === $saved_bots ) {
+	delete_option( PNCP_Plugin_Bots::OPTION );
+} else {
+	update_option( PNCP_Plugin_Bots::OPTION, $saved_bots, false );
+}
+
+// The pre-cache check on but not running: the same reason as the status badges, whatever the cache plugin.
+$s_on  = array_merge(
+	PNCP_Options::stored(),
+	array(
+		'enabled'  => 1,
+		'precheck' => 1,
+	)
+);
+$state = PNCP_Status_State::precheck( $s_on );
+$pre   = array_values(
+	array_filter(
+		PNCP_Wizard::notes( $s_on, array_merge( PNCP_Wizard::detect(), array( 'wp_rocket' => false ) ) ),
+		static function ( $n ) {
+			return __( 'Pre-cache check', 'scrapelock' ) === $n['for'];
+		}
+	)
+);
+t( 'wizard: "on but not running" with the status reason', PNCP_Status_State::SET === $state['state'] && $pre && false !== strpos( $pre[0]['text'], $state['reason'] ), wp_json_encode( array( $state, $pre ) ) );
+
+// Labels: a setting the assistant has no name for (e.g. proposed through its filter) is named in words.
+t( 'wizard: a setting without a name of its own gets the settings page label, never the bare key', 'block_headless' !== PNCP_Wizard::label( 'block_headless' ) && PNCP_Setting_Labels::label( 'block_headless' ) === PNCP_Wizard::label( 'block_headless' ) && 'Trust Bunny CDN addresses' === PNCP_Wizard::label( 'trust_bunny' ), PNCP_Wizard::label( 'block_headless' ) );
 
 // @@NEXT@@
 

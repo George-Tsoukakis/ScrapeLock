@@ -188,7 +188,7 @@ t( 'fluent_slug(): FLUENT_COMMUNITY_PORTAL_SLUG', 'hub' === PNCP_Wizard::fluent_
 
 /* ---------- 2. Proposals ---------- */
 $p = PNCP_Wizard::proposals();
-t( 'proposals: skip_woo_pages, rate_limit_cart, rate_limit_coupon, content_paths, precheck, trust_bunny', array( 'content_paths', 'precheck', 'rate_limit_cart', 'rate_limit_coupon', 'skip_woo_pages', 'trust_bunny' ) === ( static function ( $k ) {
+t( 'proposals: skip_woo_pages, rate_limit_cart, rate_limit_coupon, precheck, trust_bunny', array( 'precheck', 'rate_limit_cart', 'rate_limit_coupon', 'skip_woo_pages', 'trust_bunny' ) === ( static function ( $k ) {
 	sort( $k );
 	return $k;
 } )( array_keys( $p ) ), implode( ',', array_keys( $p ) ) );
@@ -198,9 +198,21 @@ foreach ( $p as $key => $row ) {
 	$ok = $ok && array_key_exists( $key, $defaults ) && $key === $row['key'] && '' !== trim( $row['reason'] ) && (string) $row['current'] !== (string) $row['proposed'] && in_array( $row['risk'], array( 'none', 'more' ), true );
 }
 t( 'every proposal: an existing setting, a reason, a real change, a risk', $ok );
-t( 'content_paths: /hub/ added after the existing line', isset( $p['content_paths'] ) && "/hub/space\n/hub/" === $p['content_paths']['proposed'], isset( $p['content_paths'] ) ? $p['content_paths']['proposed'] : '' );
+t( 'content_paths: not proposed, FluentCommunity\'s portal is already counted (PNCP_Fluent_Community)', ! isset( $p['content_paths'] ) && array( '/hub' ) === PNCP_Fluent_Community::added_paths(), isset( $p['content_paths'] ) ? $p['content_paths']['proposed'] : '' );
+// FluentCommunity reported by the environment filter while the integration does not count it (switched off with
+// its own filter): then the portal is proposed, after the existing line.
+$env_on  = static function ( $env ) {
+	$env['fluentcommunity'] = true;
+	return $env;
+};
+add_filter( 'pncp_wizard_environment', $env_on );
+add_filter( 'pncp_fluent_community_active', '__return_false' );
+$pc = PNCP_Wizard::proposals();
+remove_filter( 'pncp_fluent_community_active', '__return_false' );
+remove_filter( 'pncp_wizard_environment', $env_on );
+t( 'content_paths: /hub/ proposed after the existing line when the integration does not count it', isset( $pc['content_paths'] ) && "/hub/space\n/hub/" === $pc['content_paths']['proposed'] && 'none' === $pc['content_paths']['risk'], isset( $pc['content_paths'] ) ? $pc['content_paths']['proposed'] : '' );
 t( 'blocks more (not ticked): rate_limit_cart, rate_limit_coupon, precheck', 'more' === $p['rate_limit_cart']['risk'] && 'more' === $p['rate_limit_coupon']['risk'] && 'more' === $p['precheck']['risk'] );
-t( 'blocks nothing more (ticked): skip_woo_pages, content_paths, trust_bunny', 'none' === $p['skip_woo_pages']['risk'] && 'none' === $p['content_paths']['risk'] && 'none' === $p['trust_bunny']['risk'] );
+t( 'blocks nothing more (ticked): skip_woo_pages, trust_bunny', 'none' === $p['skip_woo_pages']['risk'] && 'none' === $p['trust_bunny']['risk'] );
 t( 'content_path_covered(): /hub/ covers /hub/space, not the other way round', PNCP_Wizard::content_path_covered( "/hub/\n", '/hub/space' ) && ! PNCP_Wizard::content_path_covered( '/hub/space', '/hub' ) && PNCP_Wizard::content_path_covered( 'https://example.com/hub', '/hub' ) );
 
 $filter = static function ( $out, $s ) {
@@ -216,6 +228,7 @@ t( 'filter: unknown and secret settings are dropped; another one without a risk 
 
 $notes = wp_list_pluck( PNCP_Wizard::notes(), 'for' );
 t( 'notes: WooCommerce, OneSignal and Wordfence (Site Health)', in_array( 'WooCommerce', $notes, true ) && in_array( 'OneSignal', $notes, true ) && in_array( 'Wordfence', $notes, true ), implode( ',', $notes ) );
+t( 'notes: FluentCommunity\'s portal is counted automatically', in_array( 'FluentCommunity', $notes, true ), implode( ',', $notes ) );
 PNCP_Plugin_Bots::set_allowed( 'wp-rocket', false );
 $notes = PNCP_Wizard::notes();
 t( 'notes: WP Rocket\'s service bot switched off → a note with a link to "Bots and limits"', (bool) array_filter( $notes, static function ( $n ) {
@@ -232,7 +245,7 @@ $bunny   = array( 'Via: 1.1 BunnyCDN' );
 list( $code, $body ) = http( '/wp-admin/options-general.php?page=scrapelock&tab=general', null, $cookies, $bunny );
 t( 'first tab: 200 without PHP warnings, with the "For my site" panel open', 200 === $code && ! php_errors( $body ) && false !== strpos( $body, 'id="pncp-wizard" open' ) && false !== strpos( $body, 'For my site' ), (string) $code );
 t( 'panel: "Found on this site" names the stand-ins and Bunny CDN', 1 === preg_match( '/Found on this site:.*WooCommerce.*FluentCommunity.*WP Rocket.*Bunny CDN/s', $body ) );
-t( 'panel: skip_woo_pages, content_paths and trust_bunny ticked', 1 === preg_match( '/value="skip_woo_pages" id="pncp-wizard-skip_woo_pages" checked/', $body ) && 1 === preg_match( '/value="content_paths" id="pncp-wizard-content_paths" checked/', $body ) && 1 === preg_match( '/value="trust_bunny" id="pncp-wizard-trust_bunny" checked/', $body ) );
+t( 'panel: skip_woo_pages and trust_bunny ticked', 1 === preg_match( '/value="skip_woo_pages" id="pncp-wizard-skip_woo_pages" checked/', $body ) && 1 === preg_match( '/value="trust_bunny" id="pncp-wizard-trust_bunny" checked/', $body ) );
 t( 'panel: precheck and rate_limit_cart not ticked, marked "Blocks more"', 1 === preg_match( '/value="precheck" id="pncp-wizard-precheck">/', $body ) && 1 === preg_match( '/value="rate_limit_cart" id="pncp-wizard-rate_limit_cart">/', $body ) && substr_count( $body, 'Blocks more: not ticked' ) >= 3 );
 t( 'panel: "Apply selected" posts to admin-post with the pncp_wizard action and a nonce', false !== strpos( $body, 'name="action" value="pncp_wizard"' ) && false !== strpos( $body, 'Apply selected' ) && 1 === preg_match( '/class="pncp-wizard-form">.*?name="_wpnonce" value="[0-9a-f]{10}"/s', $body ) );
 t( 'panel: the advice links to Site Health', false !== strpos( $body, 'pncp-wizard-notes' ) && false !== strpos( $body, 'site-health.php' ) );
@@ -266,7 +279,7 @@ t( 'nothing ticked: back with "none", nothing changes, no saved version', 302 ==
 list( $code, , $loc ) = http( '/wp-admin/admin-post.php', array( 'action' => 'pncp_wizard', '_wpnonce' => $nonce, 'pncp_wizard_keys' => array( 'skip_woo_pages', 'content_paths', 'enabled', 'block_bots' ) ), $cookies, $bunny );
 $s = fresh();
 t( 'Apply selected: back to the first tab, at the panel, with "applied" and the saved version', 302 === $code && false !== strpos( $loc, 'pncp_wizard=applied' ) && false !== strpos( $loc, 'pncp_wizard_undo=' ) && false !== strpos( $loc, '#pncp-wizard' ), $code . ' ' . $loc );
-t( 'Apply selected: the ticked settings changed', 1 === (int) $s['skip_woo_pages'] && "/hub/space\n/hub/" === $s['content_paths'], wp_json_encode( array( $s['skip_woo_pages'], $s['content_paths'] ) ) );
+t( 'Apply selected: the ticked settings changed (content_paths was not proposed: unchanged)', 1 === (int) $s['skip_woo_pages'] && '/hub/space' === $s['content_paths'], wp_json_encode( array( $s['skip_woo_pages'], $s['content_paths'] ) ) );
 t( 'Apply selected: the unticked proposals did not change (trust_bunny, rate_limit_cart, rate_limit_coupon, precheck)', 0 === (int) $s['trust_bunny'] && 0 === (int) $s['rate_limit_cart'] && 0 === (int) $s['rate_limit_coupon'] && 0 === (int) $s['precheck'] );
 t( 'Apply selected: keys that were not proposed (enabled, block_bots) are ignored', (int) $saved['enabled'] === (int) $s['enabled'] && (int) $saved['block_bots'] === (int) $s['block_bots'] );
 $backups = PNCP_Settings_Io::backups();
@@ -291,7 +304,7 @@ $_SERVER['HTTP_VIA'] = '1.1 BunnyCDN';
 $all                 = array_keys( PNCP_Wizard::proposals() );
 $r1                  = PNCP_Wizard::apply( $all );
 $s                   = fresh();
-t( 'apply all: every proposal applied', is_array( $r1 ) && '' !== $r1['id'] && 1 === (int) $s['skip_woo_pages'] && 1 === (int) $s['trust_bunny'] && 60 === (int) $s['rate_limit_cart'] && 10 === (int) $s['rate_limit_coupon'] && "/hub/space\n/hub/" === $s['content_paths'], is_wp_error( $r1 ) ? $r1->get_error_message() : wp_json_encode( $r1 ) );
+t( 'apply all: every proposal applied', is_array( $r1 ) && '' !== $r1['id'] && 1 === (int) $s['skip_woo_pages'] && 1 === (int) $s['trust_bunny'] && 60 === (int) $s['rate_limit_cart'] && 10 === (int) $s['rate_limit_coupon'] && '/hub/space' === $s['content_paths'], is_wp_error( $r1 ) ? $r1->get_error_message() : wp_json_encode( $r1 ) );
 $count = count( PNCP_Settings_Io::backups() );
 t( 'second run: nothing is proposed', array() === PNCP_Wizard::proposals(), implode( ',', array_keys( PNCP_Wizard::proposals() ) ) );
 $r2 = PNCP_Wizard::apply( $all );
@@ -308,13 +321,13 @@ if ( '' !== $wp_cli ) {
 	$rows             = json_decode( $out, true );
 	$keys             = is_array( $rows ) ? array_column( $rows, 'setting' ) : array();
 	sort( $keys );
-	t( 'cli wizard --format=json: the same proposals (no Bunny header in the CLI)', 0 === $rc && array( 'content_paths', 'precheck', 'rate_limit_cart', 'rate_limit_coupon', 'skip_woo_pages' ) === $keys, $out );
+	t( 'cli wizard --format=json: the same proposals (no Bunny header in the CLI)', 0 === $rc && array( 'precheck', 'rate_limit_cart', 'rate_limit_coupon', 'skip_woo_pages' ) === $keys, $out );
 	list( $rc, $out ) = cli( 'wizard' );
 	t( 'cli wizard: table with the reasons and the notes, nothing saved', 0 === $rc && false !== strpos( $out, 'Found on this site:' ) && false !== strpos( $out, 'skip_woo_pages' ) && false !== strpos( $out, '- OneSignal:' ) && 0 === (int) fresh()['skip_woo_pages'], $out );
 	$count = count( PNCP_Settings_Io::backups() );
 	list( $rc, $out ) = cli( 'wizard --apply --yes' );
 	$s                = fresh();
-	t( 'cli wizard --apply --yes: only those that block nothing more', 0 === $rc && 1 === (int) $s['skip_woo_pages'] && "/hub/space\n/hub/" === $s['content_paths'] && 0 === (int) $s['precheck'] && 0 === (int) $s['rate_limit_cart'], $out );
+	t( 'cli wizard --apply --yes: only those that block nothing more', 0 === $rc && 1 === (int) $s['skip_woo_pages'] && '/hub/space' === $s['content_paths'] && 0 === (int) $s['precheck'] && 0 === (int) $s['rate_limit_cart'], $out );
 	t( 'cli: a saved version first', count( PNCP_Settings_Io::backups() ) === min( PNCP_Settings_Io::KEEP, $count + 1 ) && 'wizard' === PNCP_Settings_Io::backups()[0]['reason'] );
 	list( $rc, $out ) = cli( 'wizard --apply --yes' );
 	t( 'cli: again → nothing to change', 0 === $rc && false !== strpos( $out, 'Nothing to change' ), $out );

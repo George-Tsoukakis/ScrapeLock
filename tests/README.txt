@@ -55,8 +55,8 @@ ScrapeLock — δοκιμές σε πραγματικό WordPress (όχι stubs)
   t_311_ui.php      3.11: καρτέλες σε τέσσερις ομάδες (κάθε παλιά διεύθυνση, τα aliases της 3.10, άγνωστη καρτέλα), η
                     καρτέλα Bots ως accordion (ανοιχτά μόνο Bots, Limits, Sign-in· «Advanced»), οι μακριές λίστες με
                     «N entries» + «Edit» (όλη η τιμή στο textarea, Save μέσα από τη φόρμα κρατά τη λίστα)
-  t_311_integration.php 3.11: πώς δένουν τα κομμάτια της 3.11: pre-cache/early check με τα ίδια «AI search» ρυθμίσεις
-                    με τη λίστα bots, ο οδηγός «For my site» με FluentCommunity / plugin bots / ετικέτες ρυθμίσεων,
+  t_311_integration.php 3.11: πώς δένουν τα κομμάτια της 3.11: pre-cache/early check με τις ίδιες ρυθμίσεις «AI search»
+                    όπως η λίστα bots, ο οδηγός «For my site» με FluentCommunity / plugin bots / ετικέτες ρυθμίσεων,
                     οι ειδοποιήσεις των 3.11 στις νέες καρτέλες, τα σύντομα κείμενα στις νέες περιγραφές
   t_cli.php         wp scrapelock … μέσα από το πραγματικό wp (χρειάζεται WP_CLI, αλλιώς SKIP)
   t_bunny_rules.php Edge Rules στο Bunny μέσα στα όριά του (το πολύ 5 μοτίβα ανά συνθήκη) με ψεύτικο API που δίνει

@@ -93,7 +93,7 @@ final class PNCP_Wizard {
 		$edge = PNCP_Edge::config()['provider'];
 		$env  = array(
 			'woocommerce'     => $active( 'woocommerce/woocommerce.php' ) || class_exists( 'WooCommerce', false ),
-			'fluentcommunity' => $active( 'fluent-community/fluent-community.php' ) || defined( 'FLUENT_COMMUNITY_PLUGIN_VERSION' ),
+			'fluentcommunity' => PNCP_Fluent_Community::active(), // Its file, constant or classes (PNCP_Fluent_Community).
 			'wp_rocket'       => $active( 'wp-rocket/wp-rocket.php' ) || defined( 'WP_ROCKET_VERSION' ),
 			'onesignal'       => $active( 'onesignal-free-web-push-notifications/onesignal.php' ) || class_exists( 'OneSignal', false ),
 			'jetpack'         => $active( 'jetpack/jetpack.php' ) || class_exists( 'Jetpack', false ),
@@ -200,9 +200,12 @@ final class PNCP_Wizard {
 			$add( 'rate_limit_coupon', 10, __( 'WooCommerce: a limit on coupon attempts per minute stops coupon guessing.', 'scrapelock' ), self::RISK_MORE, 'WooCommerce' );
 		}
 
+		// FluentCommunity's portal: while the plugin is active, PNCP_Fluent_Community already counts it as a content
+		// address (merged at runtime, a note says so): proposed only when that does not cover it.
 		if ( ! empty( $env['fluentcommunity'] ) ) {
 			$slug = self::fluent_slug();
-			if ( '' !== $slug && ! self::content_path_covered( (string) $s['content_paths'], '/' . $slug ) ) {
+			$seen = trim( (string) $s['content_paths'] . "\n" . implode( "\n", PNCP_Fluent_Community::added_paths() ) );
+			if ( '' !== $slug && ! self::content_path_covered( $seen, '/' . $slug ) ) {
 				$value = trim( (string) $s['content_paths'] );
 				$add(
 					'content_paths',
@@ -270,18 +273,23 @@ final class PNCP_Wizard {
 			);
 		};
 		$bots = PNCP_Status::settings_url( array( 'tab' => 'bots' ) );
-		foreach ( array(
-			'wp_rocket' => 'wp-rocket',
-			'jetpack'   => 'jetpack',
-		) as $flag => $id ) {
-			if ( ! empty( $env[ $flag ] ) && isset( PNCP_Plugin_Bots::registry()[ $id ] ) && in_array( $id, PNCP_Plugin_Bots::switched_off(), true ) ) {
-				$name = PNCP_Plugin_Bots::registry()[ $id ]['name'];
+		// Every known service bot of an active plugin (PNCP_Plugin_Bots: WP Rocket, Jetpack and those added with
+		// the pncp_plugin_bots filter) that the administrator stopped allowing.
+		foreach ( PNCP_Plugin_Bots::active() as $bot ) {
+			if ( empty( $bot['allowed'] ) ) {
+				$name = (string) $bot['name'];
 				/* translators: %s: plugin name */
 				$note( $name, sprintf( __( 'You stopped allowing the service bot of %s: its requests are checked like any other bot. Allow it again under “Bots and limits” if the plugin needs it.', 'scrapelock' ), $name ), $bots, __( 'Bots and limits', 'scrapelock' ) );
 			}
 		}
-		if ( ! empty( $env['wp_rocket'] ) && ! empty( $s['precheck'] ) && ! PNCP_Precheck::active() ) {
-			$note( 'WP Rocket', __( 'The pre-cache check is on but not running yet: see the lines to add to wp-config.php under “Bots and limits”.', 'scrapelock' ), $bots, __( 'Bots and limits', 'scrapelock' ) );
+		// The pre-cache check is on but not running: the reason the status badges give (PNCP_Status_State).
+		$precheck = PNCP_Status_State::precheck( $s );
+		if ( PNCP_Status_State::SET === $precheck['state'] ) {
+			/* translators: %s: why it is not running, e.g. "the loader is not in wp-config.php" */
+			$note( __( 'Pre-cache check', 'scrapelock' ), sprintf( __( 'The pre-cache check is on but not running: %s.', 'scrapelock' ), $precheck['reason'] ), $bots, __( 'Bots and limits', 'scrapelock' ) );
+		}
+		if ( ! empty( $env['fluentcommunity'] ) && PNCP_Fluent_Community::added_paths() ) {
+			$note( 'FluentCommunity', PNCP_Fluent_Community::note() );
 		}
 		if ( ! empty( $env['woocommerce'] ) ) {
 			$note( 'WooCommerce', __( 'The cart, checkout, “Thank you” and My account pages never count toward the page limit; bots and blocks are still checked there.', 'scrapelock' ) );
@@ -312,18 +320,13 @@ final class PNCP_Wizard {
 	}
 
 	/**
-	 * FluentCommunity's portal address (FLUENT_COMMUNITY_PORTAL_SLUG, its helper, or its default "portal").
+	 * FluentCommunity's portal address, as PNCP_Fluent_Community::portal_path() finds it (FLUENT_COMMUNITY_PORTAL_SLUG,
+	 * its helper, or "hub").
 	 *
 	 * @return string E.g. hub.
 	 */
 	public static function fluent_slug() {
-		if ( defined( 'FLUENT_COMMUNITY_PORTAL_SLUG' ) ) {
-			$slug = (string) FLUENT_COMMUNITY_PORTAL_SLUG;
-		} elseif ( is_callable( array( '\\FluentCommunity\\App\\Services\\Helper', 'getPortalSlug' ) ) ) {
-			$slug = (string) call_user_func( array( '\\FluentCommunity\\App\\Services\\Helper', 'getPortalSlug' ) );
-		} else {
-			$slug = 'portal';
-		}
+		$slug = trim( PNCP_Fluent_Community::portal_path(), '/' ); // The same address the integration counts.
 		/**
 		 * FluentCommunity's portal address, as the "For my site" assistant proposes it.
 		 *
@@ -462,7 +465,7 @@ final class PNCP_Wizard {
 			'precheck'          => __( 'Check before the page cache', 'scrapelock' ),
 			'edge_send_blocks'  => __( 'Send temporary blocks to the CDN', 'scrapelock' ),
 		);
-		return isset( $labels[ $key ] ) ? $labels[ $key ] : $key;
+		return isset( $labels[ $key ] ) ? $labels[ $key ] : PNCP_Setting_Labels::label( $key ); // Never the bare key.
 	}
 
 	/**
