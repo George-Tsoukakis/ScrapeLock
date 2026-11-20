@@ -1077,7 +1077,7 @@ final class PNCP_Precheck_Runtime {
 			if ( ! is_array( $entry ) || ! isset( $entry[0] ) || '' === (string) $entry[0] || false === strpos( $ua, (string) $entry[0] ) ) {
 				continue;
 			}
-			if ( ! isset( $entry[1] ) || null === $entry[1] || ( $reliable && is_array( $entry[1] ) && self::in_any( $ip, $entry[1] ) ) ) {
+			if ( ! isset( $entry[1] ) || ( $reliable && is_array( $entry[1] ) && self::in_any( $ip, $entry[1] ) ) ) {
 				return true;
 			}
 		}
