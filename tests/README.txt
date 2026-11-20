@@ -62,6 +62,10 @@ ScrapeLock — δοκιμές σε πραγματικό WordPress (όχι stubs)
                     ακόμη· ένα export της 3.10.1 (tests/fixtures/settings-export-3.10.1.json, κάθε ρύθμιση αλλαγμένη)
                     γίνεται import χωρίς απώλεια και ξαναβγαίνει ίδιο (tests/fixtures/keys-3.10.1.json: τα κλειδιά και
                     τα πεδία της 3.10.1)
+  t_311_i18n.php    3.11: η ελληνική μετάφραση του languages/: ίδια strings με το .pot, όλα μεταφρασμένα με τα ίδια
+                    placeholders / tags, .mo ίδιο με το .po, χωρίς μισές προτάσεις· φορτώνεται από το languages/ του
+                    plugin (και όπως στις WordPress 6.2–6.6, με pncp_load_textdomain() στο init), ενώ ένα language pack
+                    στο wp-content/languages/plugins/ προηγείται
   t_cli.php         wp scrapelock … μέσα από το πραγματικό wp (χρειάζεται WP_CLI, αλλιώς SKIP)
   t_bunny_rules.php Edge Rules στο Bunny μέσα στα όριά του (το πολύ 5 μοτίβα ανά συνθήκη) με ψεύτικο API που δίνει
                     HTTP 400 όπως το πραγματικό: χωρισμός, κλείδωμα/Remove, rollback, Monitor only, sync, προεπισκόπηση,
