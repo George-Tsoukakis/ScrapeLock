@@ -104,10 +104,10 @@ final class PNCP_Server_Ips {
 	const SIG_WINDOW = 60;
 
 	/**
-	 * 3.12.1: the signatures checked in this request: "header|method|host|path" => valid. The early check and the
-	 * normal check of one request see the same signature, whose nonce can be used only once.
+	 * 3.12.1: the signatures checked in this request: "header|method|host|path" => the result of sig_check(). The
+	 * early check and the normal check of one request see the same signature, whose nonce can be used only once.
 	 *
-	 * @var array<string, bool>
+	 * @var array<string, array{result:string, host:string, received:string, authentic:bool}>
 	 */
 	private static $sig_seen = array();
 
@@ -296,7 +296,7 @@ final class PNCP_Server_Ips {
 	 */
 	public static function seen( $response, $args, $url ) {
 		$sent = is_array( $args ) && isset( $args['headers'] ) && is_array( $args['headers'] ) && isset( $args['headers'][ self::SIG_HEADER ] ) ? (string) $args['headers'][ self::SIG_HEADER ] : '';
-		if ( '' === $sent || is_wp_error( $response ) || ! preg_match( '/^\d{9,11}\.([0-9a-f]{24})\.[0-9a-f]{64}$/', $sent, $m ) ) {
+		if ( '' === $sent || is_wp_error( $response ) || ! preg_match( '/^\d{9,11}\.([0-9a-f]{24})\.[0-9a-f]{64}(?:\.[0-9a-f]{16})?$/', $sent, $m ) ) {
 			return $response;
 		}
 		$host = strtolower( (string) wp_parse_url( (string) $url, PHP_URL_HOST ) );
@@ -533,7 +533,10 @@ final class PNCP_Server_Ips {
 	}
 
 	/**
-	 * 3.12.1: the value of SIG_HEADER for a request: "time.nonce.hmac" ('' without a key).
+	 * 3.12.1: the value of SIG_HEADER for a request. 3.12.2: "time.nonce.hmac.hint": the hint names the host and the
+	 * path it was signed for (hint()), so the check knows which of the site's hosts to verify it with whatever
+	 * Host header reached the server (a CDN that does not forward it), and can say why a signature failed.
+	 * '' without a key.
 	 *
 	 * @param string   $method Method.
 	 * @param string   $url    Address.
@@ -549,17 +552,30 @@ final class PNCP_Server_Ips {
 		$nonce = bin2hex( random_bytes( 12 ) );
 		$host  = strtolower( (string) wp_parse_url( $url, PHP_URL_HOST ) );
 		$path  = self::sig_path( (string) wp_parse_url( $url, PHP_URL_PATH ) );
-		return $time . '.' . $nonce . '.' . self::sig_mac( strtoupper( trim( (string) $method ) ), $host, $path, $time, $nonce, $key );
+		return $time . '.' . $nonce . '.' . self::sig_mac( strtoupper( trim( (string) $method ) ), $host, $path, $time, $nonce, $key ) . '.' . self::hint( $host, $path );
 	}
 
 	/**
-	 * 3.12.1: a path as it is signed: decoded, '/' when empty.
+	 * 3.12.2: the hint of a signature: 8 hex digits of the host it was signed for and 8 of its path (MD5, not
+	 * secret: both are in the request anyway). The pre-cache check computes the same.
+	 *
+	 * @param string $host Host (lowercase, without the port).
+	 * @param string $path Path (sig_path()).
+	 * @return string
+	 */
+	public static function hint( $host, $path ) {
+		return substr( md5( 'h|' . $host ), 0, 8 ) . substr( md5( 'p|' . $path ), 0, 8 );
+	}
+
+	/**
+	 * 3.12.1: a path as it is signed: decoded, '/' when empty. 3.12.2: repeated slashes as one (a CDN or proxy that
+	 * joins its origin path and the request's path may send "//").
 	 *
 	 * @param string $path Path.
 	 * @return string
 	 */
 	public static function sig_path( $path ) {
-		$path = rawurldecode( (string) $path );
+		$path = (string) preg_replace( '#/{2,}#', '/', rawurldecode( (string) $path ) );
 		return '' === $path ? '/' : $path;
 	}
 
@@ -574,43 +590,132 @@ final class PNCP_Server_Ips {
 	}
 
 	/**
-	 * 3.12.1: does this request carry a valid signature of the site (SIG_HEADER)? Its host must be one of the
-	 * site's own, its method and path those that were signed, its time within SIG_WINDOW, and its nonce never seen
-	 * before (kept for twice the window, atomically: PNCP_Log::cache_add()). The answer is kept for the rest of the
-	 * request, so the early check and the normal check use the nonce once. The address a valid signature arrived
-	 * from is noted for the site's request that sent it (seen()): the address the server's requests leave from.
+	 * 3.12.1: does this request carry a valid signature of the site (SIG_HEADER)? See sig_check().
 	 *
 	 * @return bool
 	 */
 	public static function sig_ok() {
+		return 'ok' === self::sig_check()['result'];
+	}
+
+	/**
+	 * 3.12.2: the check of SIG_HEADER, with the reason when it fails. The signature must be made with the site's
+	 * key for one of the site's own hosts (3.12.1 required the Host header to be one: behind a CDN that does not
+	 * forward it, e.g. Bunny's default, the server gets the pull zone's origin name, and the site's own request
+	 * was refused), for this method and path, within SIG_WINDOW, and its nonce never seen before (kept for twice
+	 * the window, atomically: PNCP_Log::cache_add()). The answer is kept for the rest of the request, so the early
+	 * check and the normal check use the nonce once. The address a valid signature arrived from is noted for the
+	 * site's request that sent it (seen()): the address the server's requests leave from.
+	 *
+	 * Results: ok, none (no header), bad_format, no_key (the site has no key yet), expired (outside the window),
+	 * host_mismatch (signed for a host that is not the site's), path_mismatch (signed for another path), bad_mac
+	 * (another key or method, or changed), nonce_reused. "host" is the site host it was signed for (when known),
+	 * "received" the Host header that reached the server.
+	 *
+	 * @return array{result:string, host:string, received:string, authentic:bool}
+	 */
+	public static function sig_check() {
 		$name = 'HTTP_' . strtoupper( str_replace( '-', '_', self::SIG_HEADER ) );
 		$sent = isset( $_SERVER[ $name ] ) ? trim( sanitize_text_field( wp_unslash( $_SERVER[ $name ] ) ) ) : '';
-		if ( '' === $sent || ! preg_match( '/^(\d{9,11})\.([0-9a-f]{24})\.([0-9a-f]{64})$/', $sent, $m ) ) {
-			return false;
+		$out  = array(
+			'result'    => 'none',
+			'host'      => '',
+			'received'  => self::request_host(),
+			'authentic' => false,
+		);
+		if ( '' === $sent ) {
+			return $out;
 		}
 		$method = isset( $_SERVER['REQUEST_METHOD'] ) ? strtoupper( sanitize_key( wp_unslash( $_SERVER['REQUEST_METHOD'] ) ) ) : 'GET';
-		$host   = self::request_host();
 		$uri    = isset( $_SERVER['REQUEST_URI'] ) ? (string) wp_unslash( $_SERVER['REQUEST_URI'] ) : '/'; // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- Only its path is hashed and compared.
 		$path   = self::sig_path( (string) wp_parse_url( $uri, PHP_URL_PATH ) );
-		$memo   = $sent . '|' . $method . '|' . $host . '|' . $path;
+		$memo   = $sent . '|' . $method . '|' . $out['received'] . '|' . $path;
 		if ( isset( self::$sig_seen[ $memo ] ) ) {
 			return self::$sig_seen[ $memo ];
 		}
-		$time  = (int) $m[1];
-		$key   = self::sig_key();
-		$valid = '' !== $key && '' !== $host && in_array( $host, self::own_hosts(), true ) && abs( time() - $time ) <= self::SIG_WINDOW
-			&& hash_equals( self::sig_mac( $method, $host, $path, $time, $m[2], $key ), $m[3] );
-		$ok    = $valid && PNCP_Log::cache_add( 'pncp_sn_' . $m[2], 1, 2 * self::SIG_WINDOW + 10 );
-		self::$sig_seen[ $memo ] = $ok;
-		if ( $valid ) {
+		$check = self::verify( $sent, $method, $path, self::own_hosts(), self::sig_key(), time() );
+		$out   = array_merge( $out, $check );
+		if ( 'ok' === $out['result'] && ! PNCP_Log::cache_add( 'pncp_sn_' . $check['nonce'], 1, 2 * self::SIG_WINDOW + 10 ) ) {
+			$out['result'] = 'nonce_reused';
+		}
+		unset( $out['nonce'] );
+		self::$sig_seen[ $memo ] = $out;
+		if ( $out['authentic'] && in_array( $out['result'], array( 'ok', 'nonce_reused' ), true ) ) {
 			// For the site's request that sent it (seen()): the address it arrived from, or "x" when the nonce was
 			// used twice (someone else had the signature too, and either address may be theirs).
-			$from = $ok ? self::arrived_from() : 'x';
+			$from = 'ok' === $out['result'] ? self::arrived_from() : 'x';
 			if ( '' !== $from ) {
-				set_transient( self::SEEN . $m[2], $from, 2 * self::SIG_WINDOW + 10 );
+				set_transient( self::SEEN . $check['nonce'], $from, 2 * self::SIG_WINDOW + 10 );
 			}
 		}
-		return $ok;
+		return $out;
+	}
+
+	/**
+	 * 3.12.2: verifies a value of SIG_HEADER (without using its nonce). The same steps as the pre-cache check
+	 * (PNCP_Precheck_Runtime::self_signed()). A signature without the hint of 3.12.2 is tried with each host.
+	 * A HEAD request that a CDN passed on as GET still matches.
+	 *
+	 * @param string   $sent   The header.
+	 * @param string   $method Method of the request.
+	 * @param string   $path   Path of the request (sig_path()).
+	 * @param string[] $hosts  The site's hosts.
+	 * @param string   $key    Key (sig_key()).
+	 * @param int      $now    Time.
+	 * @return array{result:string, host:string, authentic:bool, nonce:string}
+	 */
+	public static function verify( $sent, $method, $path, $hosts, $key, $now ) {
+		$out = array(
+			'result'    => 'bad_format',
+			'host'      => '',
+			'authentic' => false,
+			'nonce'     => '',
+		);
+		if ( ! preg_match( '/^(\d{9,11})\.([0-9a-f]{24})\.([0-9a-f]{64})(?:\.([0-9a-f]{8})([0-9a-f]{8}))?$/', (string) $sent, $m ) ) {
+			return $out;
+		}
+		$out['nonce'] = $m[2];
+		if ( '' === (string) $key ) {
+			$out['result'] = 'no_key';
+			return $out;
+		}
+		$time = (int) $m[1];
+		if ( abs( (int) $now - $time ) > self::SIG_WINDOW ) {
+			$out['result'] = 'expired';
+			return $out;
+		}
+		$try = array_values( array_filter( array_map( 'strval', (array) $hosts ) ) );
+		if ( isset( $m[4] ) && '' !== $m[4] ) {
+			$found = array();
+			foreach ( $try as $host ) {
+				if ( substr( md5( 'h|' . $host ), 0, 8 ) === $m[4] ) {
+					$found[] = $host;
+				}
+			}
+			if ( ! $found ) {
+				$out['result'] = 'host_mismatch';
+				return $out;
+			}
+			$try         = $found;
+			$out['host'] = $found[0];
+			if ( substr( md5( 'p|' . $path ), 0, 8 ) !== $m[5] ) {
+				$out['result'] = 'path_mismatch';
+				return $out;
+			}
+		}
+		$methods = 'GET' === $method ? array( 'GET', 'HEAD' ) : array( $method );
+		foreach ( $try as $host ) {
+			foreach ( $methods as $verb ) {
+				if ( hash_equals( self::sig_mac( $verb, $host, $path, $time, $m[2], $key ), $m[3] ) ) {
+					$out['result']    = 'ok';
+					$out['host']      = $host;
+					$out['authentic'] = true;
+					return $out;
+				}
+			}
+		}
+		$out['result'] = 'bad_mac';
+		return $out;
 	}
 
 	/**
