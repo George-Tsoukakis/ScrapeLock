@@ -9,4 +9,5 @@
 /README.md export-ignore
 /CHANGELOG.md export-ignore
 /phpcs.xml.dist export-ignore
+/phpstan.neon.dist export-ignore
 /CLAUDE.md export-ignore
