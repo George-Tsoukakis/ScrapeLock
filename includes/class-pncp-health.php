@@ -1856,7 +1856,7 @@ final class PNCP_Health {
 			'countries'      => array( __( 'Blocked countries', 'scrapelock' ), '' !== trim( (string) $s['countries_block'] ) ? implode( ', ', PNCP_Options::parse_countries( (string) $s['countries_block'] ) ) : '-' ),
 			'countries_lim'  => array( __( 'Countries with a stricter limit', 'scrapelock' ), '' !== trim( (string) $s['countries_strict'] ) ? implode( ', ', PNCP_Options::parse_countries( (string) $s['countries_strict'] ) ) . ' (' . $per_min( 'rate_limit_country' ) . ')' : '-' ),
 			// 3.11: the choices in words, as on the settings page (the stored value in "debug", see below).
-			'exempt_cap'     => array( __( 'Who is exempt', 'scrapelock' ), $choice( 'exempt_cap' ) ),
+			'exempt_cap'     => array( __( 'Who is excluded', 'scrapelock' ), $choice( 'exempt_cap' ) ),
 			'feed_mode'      => array( __( 'Feeds', 'scrapelock' ), $choice( 'feed_mode' ) ),
 			'rest_content'   => array( __( 'Content hidden in the REST API', 'scrapelock' ), $flag( 'rest_hide_content' ) ),
 			'ip_header'      => array( __( 'Real visitor IP', 'scrapelock' ), $choice( 'ip_header' ) ),
