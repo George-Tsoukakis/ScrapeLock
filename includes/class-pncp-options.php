@@ -81,6 +81,8 @@ final class PNCP_Options {
 			'crowdsec_action'     => array( 'limit', 'block' ),
 			// 3.8: how long the attack record (PNCP_Attacks) is kept, in days.
 			'attack_retention'    => array( '7', '30', '90' ),
+			// 3.12: the IPs of the Traffic record (PNCP_Traffic): as they are, or IPv4 /24 and IPv6 /48 only.
+			'traffic_ip_mode'     => array( 'full', 'masked' ),
 		);
 	}
 
@@ -171,6 +173,9 @@ final class PNCP_Options {
 			'stealth_endpoints',
 			// 3.9.
 			'edge_send_blocks',
+			// 3.12: Traffic (PNCP_Traffic).
+			'traffic',
+			'traffic_wp',
 		);
 	}
 
@@ -215,6 +220,9 @@ final class PNCP_Options {
 			'login_user_minutes'    => array( 1, 1440 ),
 			'bunny_flood_4xx'       => array( 0, 10000 ),
 			'bunny_rate'            => array( 0, 10000 ),
+			// 3.12: days of raw requests and of the daily figures kept by Traffic (PNCP_Traffic).
+			'traffic_raw_days'      => array( 1, 14 ),
+			'traffic_days'          => array( 7, 365 ),
 		);
 	}
 
@@ -257,6 +265,8 @@ final class PNCP_Options {
 			// 3.9: the switch of "Blocking at the CDN" has a form of its own (PNCP_Edge::handle_switch()); saving a tab
 			// keeps it.
 			'edge'    => array( 'edge_send_blocks' ),
+			// 3.12: Traffic (PNCP_Traffic), saved from the Traffic tab only.
+			'traffic' => array( 'traffic', 'traffic_wp', 'traffic_log_path', 'traffic_raw_days', 'traffic_days', 'traffic_ip_mode' ),
 		);
 	}
 
@@ -814,6 +824,15 @@ final class PNCP_Options {
 			// 3.9: send the temporary blocks to the CDN of "Blocking at the CDN" (PNCP_Edge). Off: connecting a CDN
 			// only connects and tests it. Existing sites that already sent them keep doing so (new_in_390()).
 			'edge_send_blocks'        => 0,
+			// 3.12: Traffic (PNCP_Traffic): every request the site answers, from the Bunny CDN logs, the web server's
+			// access log ('' = not read) and WordPress itself. Off on new and existing sites: nothing new is stored
+			// until the owner turns it on.
+			'traffic'                 => 0,
+			'traffic_wp'              => 0,
+			'traffic_log_path'        => '',
+			'traffic_raw_days'        => 3,
+			'traffic_days'            => 90,
+			'traffic_ip_mode'         => 'full',
 		);
 	}
 
@@ -980,6 +999,16 @@ final class PNCP_Options {
 			}
 		}
 		return $out;
+	}
+
+	/**
+	 * The settings added in 3.12 (Traffic), with the values existing sites get on upgrade: the defaults, off.
+	 * Stored on upgrade, so an export or a settings list shows them.
+	 *
+	 * @return array<string, int|string>
+	 */
+	public static function new_in_3120() {
+		return array_intersect_key( self::defaults(), array_flip( array( 'traffic', 'traffic_wp', 'traffic_log_path', 'traffic_raw_days', 'traffic_days', 'traffic_ip_mode' ) ) );
 	}
 
 	/**
@@ -1950,6 +1979,26 @@ final class PNCP_Options {
 		} elseif ( '' !== $clean['login_slug'] && $clean['login_slug'] === $slug_now && function_exists( 'add_settings_error' ) && self::saved_here( 'login_slug', $input ) && PNCP_Login::slug_taken( $slug_now ) ) {
 			add_settings_error( PNCP_OPTION, 'pncp_login_slug', __( 'A page, post or category now has the same address as the sign-in page, so visitors cannot open it there. The sign-in address was kept; choose another one when you can.', 'scrapelock' ), 'warning' );
 		}
+
+		// 3.12: the web server's access log for Traffic. A path that may not be read (not absolute, "..", a stream
+		// wrapper, not named like an access log, outside open_basedir) is not saved: the stored one stays, and the
+		// administrator is told why. On a multisite only a network administrator may change it (the log is the
+		// whole server's). One that cannot be read yet is saved, with a warning.
+		$log_path  = isset( $input['traffic_log_path'] ) ? trim( sanitize_text_field( (string) $input['traffic_log_path'] ) ) : '';
+		$log_was   = isset( $stored['traffic_log_path'] ) ? (string) $stored['traffic_log_path'] : '';
+		$log_why   = '' === $log_path ? '' : PNCP_Traffic_Log::path_refusal( $log_path );
+		$log_owner = ! is_multisite() || ! function_exists( 'is_user_logged_in' ) || ! is_user_logged_in() || current_user_can( 'manage_network_options' );
+		if ( $log_path !== $log_was && ! $log_owner ) {
+			$log_path = $log_was;
+		} elseif ( '' !== $log_why ) {
+			$log_path = $log_was;
+			if ( function_exists( 'add_settings_error' ) && self::saved_here( 'traffic_log_path', $input ) ) {
+				add_settings_error( PNCP_OPTION, 'pncp_traffic_log_path', __( 'The access log path was not saved:', 'scrapelock' ) . ' ' . PNCP_Traffic_Log::refusal_text( $log_why ) );
+			}
+		} elseif ( '' !== $log_path && $log_path !== $log_was && ! @is_readable( $log_path ) && function_exists( 'add_settings_error' ) && self::saved_here( 'traffic_log_path', $input ) ) { // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged -- open_basedir warnings.
+			add_settings_error( PNCP_OPTION, 'pncp_traffic_log_path', PNCP_Traffic_Log::refusal_text( 'unreadable' ), 'warning' );
+		}
+		$clean['traffic_log_path'] = substr( $log_path, 0, 500 );
 
 		// "Only through the CDN" is turned on (or its secret changed) only from a request that brought the secret:
 		// that proves the CDN sends it. Otherwise the next request, and the administrator, would get a 403.

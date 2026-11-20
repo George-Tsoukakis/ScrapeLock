@@ -118,6 +118,7 @@ PNCP_Bot_Match::init(); // 3.11: the Log names the bot list entry that matched, 
 PNCP_Ai_Search_List::init(); // 3.11: "Remove from the list" for allowed AI search bots still in the bot list.
 PNCP_Site_Files::init(); // 3.10.1: apple-touch-icon.png and OneSignalSDKWorker.js in Site Health, Wordfence's address check.
 PNCP_Fluent_Community::init(); // 3.11: FluentCommunity's portal in the content addresses, its members' REST reads off the REST limit.
+PNCP_Traffic::init(); // 3.12: every request from the CDN logs, the access log and WordPress (off until turned on).
 // 3.11: the translations shipped in languages/ (Greek). WordPress 6.7+ finds them through "Domain Path" on its own;
 // 6.2 to 6.6 need this. A language pack in wp-content/languages/plugins/ is still read first.
 add_action( 'init', 'pncp_load_textdomain', 0 );
@@ -211,7 +212,7 @@ function pncp_deactivate_site() {
 	// wp_unschedule_hook() removes every event of a hook, whatever its arguments: some carry some (the missing
 	// IP lists, the image to clean up, the numbers in the surge email), which wp_clear_scheduled_hook() would
 	// only remove when given the same ones.
-	foreach ( array( PNCP_Ip::CRON, PNCP_Log::CRON, PNCP_Log::CRON . '_more', PNCP_Integrity::OFFICIAL, PNCP_Integrity::RESUME, PNCP_Surge::MAIL, PNCP_Surge::MAIL_ALERT, PNCP_Watermark::CRON_UNMARK, 'pncp_background_purge', 'pncp_upgrade_files', PNCP_Crowdsec::CRON, PNCP_Bunny::CRON, 'pncp_attack_report_weekly' ) as $pncp_hook ) {
+	foreach ( array( PNCP_Ip::CRON, PNCP_Log::CRON, PNCP_Log::CRON . '_more', PNCP_Integrity::OFFICIAL, PNCP_Integrity::RESUME, PNCP_Surge::MAIL, PNCP_Surge::MAIL_ALERT, PNCP_Watermark::CRON_UNMARK, 'pncp_background_purge', 'pncp_upgrade_files', PNCP_Crowdsec::CRON, PNCP_Bunny::CRON, 'pncp_attack_report_weekly', PNCP_Traffic::CRON ) as $pncp_hook ) {
 		wp_unschedule_hook( $pncp_hook );
 	}
 	// The blocks ScrapeLock made at the CDN go away with it (the bans themselves end with the plugin).
@@ -271,6 +272,10 @@ function pncp_upgrade() {
 		}
 		// 3.9: "Send temporary blocks to the CDN" is a switch of its own. A site with a saved CDN connection kept
 		// sending them, as up to 3.8, and is told about the new switch once (PNCP_Edge::render_upgrade_notice()).
+		// 3.12: Traffic, off (PNCP_Traffic). Stored now, so an export or a settings list shows it.
+		if ( version_compare( $from_settings, '3.12.0', '<' ) ) {
+			$added += PNCP_Options::new_in_3120();
+		}
 		if ( version_compare( $from_settings, '3.9.0', '<' ) && ! isset( $stored['edge_send_blocks'] ) ) {
 			$added += PNCP_Options::new_in_390();
 			if ( ! empty( $added['edge_send_blocks'] ) ) {
@@ -326,6 +331,7 @@ function pncp_upgrade() {
 	}
 
 	PNCP_Log::install();
+	PNCP_Traffic::maybe_install(); // 3.12: the Traffic tables, only where collection is on (or an older schema is stored).
 	// 3.10: rows that counted /llms.txt, /.well-known/* and other site-metadata files as scanner probes (once).
 	PNCP_Attacks::purge_site_metadata();
 	// 3.10: the Vulnerable points live results cached by 3.9 read the first answer of the home page (often a
