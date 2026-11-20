@@ -11,8 +11,8 @@
  *    member on the same address still reads; guests keep the per-IP limit (429 on the 4th), also on the members'
  *    address; the member's cookie without the session nonce counts per IP; no violation is counted.
  * 3. The 429 leaves a log row "rate_member" with the member's username.
- * 4. "Pages per minute per signed-in account" counts these reads together with the member's pages, with the
- *    username in its log row.
+ * 4. "Pages per minute per signed-in account" counts these reads together with the member's pages, four reads as
+ *    one page (a portal screen is several reads), with the username in its log row.
  * 5. The early check and the pre-cache check leave these requests to WordPress (no limit before the session is
  *    known); FluentCommunity deactivated: the reads count per IP again.
  * 6. The texts: the note under the REST limit (Bots tab), the "Content addresses" note, the "For my site" note.
@@ -225,12 +225,15 @@ settings(
 list( $c_cookies, $c_nonce ) = session_of( $users['c'] );
 list( $d_cookies, $d_nonce ) = session_of( $users['d'] );
 fresh_minute();
-$codes = codes( 7, $feeds, $c_cookies, array( 'X-WP-Nonce: ' . $c_nonce ), $net . '94' );
-t( 'member C, 5 pages per minute per account: the 6th portal read gets 429', array( 200, 200, 200, 200, 200, 429, 429 ) === $codes, implode( ',', $codes ) );
+$codes = codes( 22, $feeds, $c_cookies, array( 'X-WP-Nonce: ' . $c_nonce ), $net . '94' );
+t( 'member C, 5 pages per minute per account: 20 portal reads (four as one page), the 21st gets 429', array_merge( array_fill( 0, 20, 200 ), array( 429, 429 ) ) === $codes, implode( ',', $codes ) );
 $rows = log_rows( 'rate_account', $net . '94' );
 t( 'log: a "rate_account" row with member C\'s username', $rows && get_userdata( $users['c'] )->user_login === $rows[0]['account'], wp_json_encode( $rows ) );
-$codes = array_merge( codes( 3, '/', $d_cookies, array(), $net . '95' ), codes( 4, $feeds, $d_cookies, array( 'X-WP-Nonce: ' . $d_nonce ), $net . '96' ) );
-t( 'member D: 3 pages and then portal reads from another address share one count (429 on the 6th)', array( 200, 200, 200, 200, 200, 429, 429 ) === $codes, implode( ',', $codes ) );
+fresh_minute();
+$codes = array_merge( codes( 3, '/', $d_cookies, array(), $net . '95' ), codes( 10, $feeds, $d_cookies, array( 'X-WP-Nonce: ' . $d_nonce ), $net . '96' ) );
+t( 'member D: 3 pages and then portal reads from another address share one count (8 reads left, 429 on the 9th)', array_merge( array_fill( 0, 11, 200 ), array( 429, 429 ) ) === $codes, implode( ',', $codes ) );
+$codes = codes( 2, '/', $d_cookies, array(), $net . '95' );
+t( 'member D: then a page is over the limit too (one count)', array( 429, 429 ) === $codes, implode( ',', $codes ) );
 settings( array( 'rate_limit_account' => 0 ) );
 
 /* ---------- 5. Early check, pre-cache check, deactivated ---------- */

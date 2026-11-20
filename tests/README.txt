@@ -79,7 +79,7 @@ ScrapeLock — δοκιμές σε πραγματικό WordPress (όχι stubs)
                     per account at 4 × the REST limit (13th of 12 → 429 for that account only, another member on the
                     same address unaffected, guests and a cookie without the nonce per IP, no violation), the log row
                     "rate_member" with the username (also "rate_account"), the per-account page limit counts them with
-                    the member's pages, the early / pre-cache checks leave them to WordPress, the notes (Bots tab,
+                    the member's pages (four reads as one page), the early / pre-cache checks leave them to WordPress, the notes (Bots tab,
                     Content addresses, "For my site"), deactivated → per IP again
   t_traffic.php     3.12: Traffic (PNCP_Traffic), the data layer: settings (path checks, upgrade, export/import),
                     nothing hooked or stored while off, ~40 User-Agents classified (verified / fake with stored official

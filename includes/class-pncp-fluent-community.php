@@ -10,7 +10,8 @@
  *   active member reached the limit while reading (live logs: 429 on /wp-json/fluent-community/v2/feeds).
  *   3.12.1: they are not exempt either: they count per account (the user ID, whatever the address), up to
  *   PNCP_Bots::MEMBER_REST_FACTOR (4) times the REST limit in the same one-minute window, and toward the
- *   per-account page limit ("Pages per minute per signed-in account"). Over it, that account alone gets a 429
+ *   per-account page limit ("Pages per minute per signed-in account"), MEMBER_REST_FACTOR reads as one page (a
+ *   portal screen is several reads). Over it, that account alone gets a 429
  *   and the log row keeps its username (reason rate_member); other members on the same address are not
  *   affected, and no violation is counted toward a ban of the IP. Only with a valid session: a REST request is
  *   signed in only with the X-WP-Nonce of the member's own session (WordPress drops the cookie session without
@@ -161,7 +162,7 @@ final class PNCP_Fluent_Community {
 		}
 		return array(
 			__( 'FluentCommunity: members\' portal reads count per account, at 4× this limit.', 'scrapelock' ),
-			__( 'Signed-in members\' reads of /wp-json/fluent-community/ count per account, not per IP address, up to four times this limit per minute, and toward “Pages per minute per signed-in account”. Over it, only that account gets “Too many requests” and the log shows its username. Guests count toward this limit as usual.', 'scrapelock' ),
+			__( 'Signed-in members\' reads of /wp-json/fluent-community/ count per account, not per IP address, up to four times this limit per minute, and toward “Pages per minute per signed-in account”, four reads as one page. Over it, only that account gets “Too many requests” and the log shows its username. Guests count toward this limit as usual.', 'scrapelock' ),
 		);
 	}
 

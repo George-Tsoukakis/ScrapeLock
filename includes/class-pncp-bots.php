@@ -1013,9 +1013,12 @@ final class PNCP_Bots {
 		if ( $member && (int) $s['rate_limit_rest'] > 0 && self::hit( $ip, 'rate_member', 'u' . $account ) > self::MEMBER_REST_FACTOR * (int) $s['rate_limit_rest'] ) {
 			return self::verdict( 429, 'rate_member', $ip, self::account_name() );
 		}
-		// 3.12.1: those reads count toward the per-account page limit too: the portal's screens are its pages.
+		// 3.12.1: those reads count toward the per-account page limit too (the portal's screens are its pages), each
+		// as 1 / MEMBER_REST_FACTOR of a page: a portal screen is several reads, and with a whole page each a limit of
+		// 30 (the example of the field) stopped active members again, as the REST limit did before 3.11. The counter
+		// is in those units: a page adds MEMBER_REST_FACTOR, a read 1.
 		if ( $account > 0 && ( ( $count && in_array( $context, array( 'page', 'search' ), true ) ) || $member ) && (int) $s['rate_limit_account'] > 0 ) {
-			if ( self::hit( $ip, 'rate_account', 'u' . $account ) > (int) $s['rate_limit_account'] ) {
+			if ( self::hit( $ip, 'rate_account', 'u' . $account, $member ? 1 : self::MEMBER_REST_FACTOR ) > self::MEMBER_REST_FACTOR * (int) $s['rate_limit_account'] ) {
 				return self::verdict( 429, 'rate_account', $ip, self::account_name() );
 			}
 		}
