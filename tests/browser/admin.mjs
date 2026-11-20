@@ -128,7 +128,8 @@ try {
 	/* ---------- (b) Vulnerable points: κάρτα hardening ---------- */
 	await page.goto( PAGE + '&tab=hardening' );
 	const hdKeys = await page.evaluate( () => {
-		const ds = [ ...document.querySelectorAll( '.pncp-admin details' ) ];
+		// 3.11: the "More" folds of the help texts are not carried across a reload (admin-sections.js).
+		const ds = [ ...document.querySelectorAll( '.pncp-admin details:not(.pncp-more)' ) ];
 		ds.forEach( ( d, i ) => d.setAttribute( 'data-test-d', String( i ) ) );
 		return ds.map( ( d ) => d.open );
 	} );
@@ -145,7 +146,7 @@ try {
 			await btn.scrollIntoViewIfNeeded();
 			await Promise.all( [ page.waitForNavigation(), btn.click() ] );
 			await settled( page );
-			const open = await page.evaluate( () => [ ...document.querySelectorAll( '.pncp-admin details' ) ].map( ( d ) => d.open ) );
+			const open = await page.evaluate( () => [ ...document.querySelectorAll( '.pncp-admin details:not(.pncp-more)' ) ].map( ( d ) => d.open ) );
 			t( 'hardening «Check again»: τα ανοιχτά <details> ξανά ανοιχτά', closed < 0 || open[ closed ], JSON.stringify( open ) );
 			t( 'hardening «Check again»: η σελίδα στο κουμπί', await page.locator( 'form button, form input[type=submit]', { hasText: 'Check again' } ).first().evaluate( ( el ) => {
 				const r = el.getBoundingClientRect();
