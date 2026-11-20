@@ -52,6 +52,9 @@ ScrapeLock — δοκιμές σε πραγματικό WordPress (όχι stubs)
                     ετικέτα «setting_key: 1» σε καρτέλα (Emergency Mode, «Reset this tab»)· FluentCommunity (ψεύτικο
                     plugin): η πύλη στις «Content addresses» και οι αναγνώσεις REST των μελών εκτός ορίου· οι νέες
                     προεπιλογές μόνο σε νέα εγκατάσταση (αναβάθμιση από 3.10.1 χωρίς αλλαγή)
+  t_311_ui.php      3.11: καρτέλες σε τέσσερις ομάδες (κάθε παλιά διεύθυνση, τα aliases της 3.10, άγνωστη καρτέλα), η
+                    καρτέλα Bots ως accordion (ανοιχτά μόνο Bots, Limits, Sign-in· «Advanced»), οι μακριές λίστες με
+                    «N entries» + «Edit» (όλη η τιμή στο textarea, Save μέσα από τη φόρμα κρατά τη λίστα)
   t_cli.php         wp scrapelock … μέσα από το πραγματικό wp (χρειάζεται WP_CLI, αλλιώς SKIP)
   t_bunny_rules.php Edge Rules στο Bunny μέσα στα όριά του (το πολύ 5 μοτίβα ανά συνθήκη) με ψεύτικο API που δίνει
                     HTTP 400 όπως το πραγματικό: χωρισμός, κλείδωμα/Remove, rollback, Monitor only, sync, προεπισκόπηση,

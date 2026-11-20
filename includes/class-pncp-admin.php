@@ -732,16 +732,7 @@ final class PNCP_Admin {
 				self::render_status_bar( $stored );
 			}
 			?>
-			<nav class="nav-tab-wrapper pncp-tabs" aria-label="<?php esc_attr_e( 'Settings sections', 'scrapelock' ); ?>">
-				<?php foreach ( self::tabs() as $key => $label ) : ?>
-					<?php $icon = '<span class="dashicons dashicons-' . esc_attr( $icons[ $key ] ) . '" aria-hidden="true"></span> '; ?>
-					<?php if ( $locked && 'lockdown' !== $key ) : ?>
-						<span class="nav-tab pncp-tab-locked" title="<?php esc_attr_e( 'Locked: unlock the site to change the settings', 'scrapelock' ); ?>"><?php echo $icon; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Escaped above. ?><?php echo esc_html( $label ); ?></span>
-					<?php else : ?>
-						<a href="<?php echo esc_url( PNCP_Status::settings_url( array( 'tab' => $key ) ) ); ?>" class="nav-tab<?php echo $tab === $key ? ' nav-tab-active' : ''; ?><?php echo 'lockdown' === $key ? ' pncp-tab-lockdown' : ''; ?>"<?php echo $tab === $key ? ' aria-current="page"' : ''; ?>><?php echo $icon; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Escaped above. ?><?php echo esc_html( $label ); ?></a>
-					<?php endif; ?>
-				<?php endforeach; ?>
-			</nav>
+			<?php self::render_tab_nav( $tab, $locked, $icons ); // 3.11: the tabs in four groups. ?>
 			<div class="pncp-panel">
 			<?php
 			if ( 'lockdown' === $tab ) {
@@ -762,6 +753,50 @@ final class PNCP_Admin {
 			</div>
 		</div>
 		<?php
+	}
+
+	/**
+	 * 3.11: the tab bar in two levels: the groups (Content, Bots & limits, Security, Records), each with its
+	 * tabs. Every tab keeps its address (?tab=…) and its markup (nav-tab, nav-tab-active, aria-current).
+	 *
+	 * @param string                $tab    Current tab.
+	 * @param bool                  $locked Whether the site is locked (only Lockdown can be opened).
+	 * @param array<string, string> $icons  Tab key => dashicon name.
+	 */
+	private static function render_tab_nav( $tab, $locked, $icons ) {
+		echo '<nav class="nav-tab-wrapper pncp-tabs pncp-tabs--grouped" aria-label="' . esc_attr__( 'Settings sections', 'scrapelock' ) . '">';
+		foreach ( PNCP_Admin_Tabs::grouped( self::tabs() ) as $group => $data ) {
+			$current = isset( $data['tabs'][ $tab ] );
+			printf(
+				'<div class="pncp-tab-group pncp-tab-group--%1$s%2$s" role="group" aria-labelledby="pncp-tab-group-%1$s"><span class="pncp-tab-group__title" id="pncp-tab-group-%1$s">%3$s</span><span class="pncp-tab-group__tabs">',
+				esc_attr( $group ),
+				$current ? ' is-current' : '',
+				esc_html( $data['label'] )
+			);
+			foreach ( $data['tabs'] as $key => $label ) {
+				$icon = '<span class="dashicons dashicons-' . esc_attr( isset( $icons[ $key ] ) ? $icons[ $key ] : 'admin-generic' ) . '" aria-hidden="true"></span> ';
+				if ( $locked && 'lockdown' !== $key ) {
+					printf(
+						'<span class="nav-tab pncp-tab-locked" title="%1$s">%2$s%3$s</span>',
+						esc_attr__( 'Locked: unlock the site to change the settings', 'scrapelock' ),
+						$icon, // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Escaped above.
+						esc_html( $label )
+					);
+					continue;
+				}
+				printf(
+					'<a href="%1$s" class="nav-tab%2$s%3$s"%4$s>%5$s%6$s</a>',
+					esc_url( PNCP_Status::settings_url( array( 'tab' => $key ) ) ),
+					$tab === $key ? ' nav-tab-active' : '',
+					'lockdown' === $key ? ' pncp-tab-lockdown' : '',
+					$tab === $key ? ' aria-current="page"' : '',
+					$icon, // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Escaped above.
+					esc_html( $label )
+				);
+			}
+			echo '</span></div>';
+		}
+		echo '</nav>';
 	}
 
 	/**

@@ -65,7 +65,7 @@
 	--pncp-shadow-raised: 0 4px 12px rgba(16, 24, 40, 0.08), 0 1px 3px rgba(16, 24, 40, 0.06);
 	--pncp-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
 	--pncp-sticky-top: 32px; /* Height of the admin bar. */
-	--pncp-tabs-height: 50px;
+	--pncp-tabs-height: 74px; /* 3.11: two levels (group, tabs). */
 	--pncp-ring: 0 0 0 2px var(--pncp-surface), 0 0 0 4px var(--pncp-accent);
 }
 
@@ -542,6 +542,55 @@ body.pncp-admin-page #wpbody-content {
 
 .pncp-admin .pncp-tabs .pncp-tab-lockdown {
 	margin-left: auto;
+}
+
+/* 3.11: the tabs in groups (Content, Bots & limits, Security, Records): the group name above its tabs, a thin
+   line between groups. Logical properties keep it right in RTL. */
+.pncp-admin .nav-tab-wrapper.pncp-tabs--grouped {
+	align-items: stretch;
+	gap: 0;
+}
+
+.pncp-admin .pncp-tab-group {
+	display: flex;
+	flex: 0 0 auto;
+	flex-direction: column;
+	padding-block-start: var(--pncp-s2);
+	padding-inline: var(--pncp-s2);
+}
+
+.pncp-admin .pncp-tab-group + .pncp-tab-group {
+	border-inline-start: 1px solid var(--pncp-divider);
+}
+
+.pncp-admin .pncp-tab-group__title {
+	padding-inline: 14px;
+	color: var(--pncp-muted);
+	font-size: 11px;
+	font-weight: 600;
+	letter-spacing: 0.04em;
+	line-height: 1.4;
+	text-transform: uppercase;
+	white-space: nowrap;
+}
+
+.pncp-admin .pncp-tab-group.is-current .pncp-tab-group__title {
+	color: var(--pncp-accent-strong);
+}
+
+.pncp-admin .pncp-tab-group__tabs {
+	display: flex;
+	flex-wrap: nowrap;
+	gap: var(--pncp-s1);
+}
+
+.pncp-admin .pncp-tabs--grouped .nav-tab {
+	padding-block: 8px 10px;
+}
+
+.pncp-admin .pncp-tabs--grouped .pncp-tab-lockdown {
+	margin-left: 0;
+	margin-inline-start: 0;
 }
 
 /* Anchors (quick links, #pncp-sec-…) land below the sticky tabs. */

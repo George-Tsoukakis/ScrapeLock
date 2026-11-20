@@ -74,6 +74,94 @@ final class PNCP_Admin_Tabs {
 	}
 
 	/**
+	 * 3.11: the groups of the tab bar (group key => label and tab keys, in the order shown). The tab keys and
+	 * their addresses stay the same; only the bar shows them in four groups.
+	 *
+	 * @return array<string, array{label: string, tabs: string[]}>
+	 */
+	public static function groups() {
+		$groups = array(
+			'content'  => array(
+				'label' => __( 'Content', 'scrapelock' ),
+				'tabs'  => array( 'general', 'images', 'content' ),
+			),
+			'bots'     => array(
+				'label' => __( 'Bots & limits', 'scrapelock' ),
+				'tabs'  => array( 'bots' ),
+			),
+			'security' => array(
+				'label' => __( 'Security', 'scrapelock' ),
+				'tabs'  => array( 'hardening', 'rules', 'lockdown' ),
+			),
+			'records'  => array(
+				'label' => __( 'Records', 'scrapelock' ),
+				'tabs'  => array( 'log', 'attacks' ),
+			),
+		);
+		/**
+		 * Filters the groups of the settings tab bar.
+		 *
+		 * @param array<string, array{label: string, tabs: string[]}> $groups Group key => label and tab keys.
+		 */
+		return (array) apply_filters( 'pncp_admin_tab_groups', $groups );
+	}
+
+	/**
+	 * The tabs of the bar in their groups: every tab exactly once, a tab no group names (e.g. added by a filter)
+	 * in a last group "More", and no empty group.
+	 *
+	 * @param array<string, string> $tabs Tab key => label.
+	 * @return array<string, array{label: string, tabs: array<string, string>}> Group key => label and tab key => label.
+	 */
+	public static function grouped( $tabs ) {
+		$out  = array();
+		$seen = array();
+		foreach ( self::groups() as $key => $group ) {
+			if ( ! is_array( $group ) || empty( $group['tabs'] ) || ! is_array( $group['tabs'] ) ) {
+				continue;
+			}
+			$items = array();
+			foreach ( $group['tabs'] as $tab ) {
+				$tab = (string) $tab;
+				if ( isset( $tabs[ $tab ] ) && ! isset( $seen[ $tab ] ) ) {
+					$items[ $tab ] = $tabs[ $tab ];
+					$seen[ $tab ]  = true;
+				}
+			}
+			if ( $items ) {
+				$out[ sanitize_key( (string) $key ) ] = array(
+					'label' => isset( $group['label'] ) ? (string) $group['label'] : (string) $key,
+					'tabs'  => $items,
+				);
+			}
+		}
+		$rest = array_diff_key( $tabs, $seen );
+		if ( $rest ) {
+			$out['more'] = array(
+				'label' => __( 'More', 'scrapelock' ),
+				'tabs'  => $rest,
+			);
+		}
+		return $out;
+	}
+
+	/**
+	 * The group a tab is shown in ('' when none).
+	 *
+	 * @param string                $tab  Tab key.
+	 * @param array<string, string> $tabs Tab key => label.
+	 * @return string
+	 */
+	public static function group_of( $tab, $tabs ) {
+		foreach ( self::grouped( $tabs ) as $key => $group ) {
+			if ( isset( $group['tabs'][ $tab ] ) ) {
+				return (string) $key;
+			}
+		}
+		return '';
+	}
+
+	/**
 	 * The tab to show for a requested name.
 	 *
 	 * @param string                $requested Requested name (as in ?tab=, unsanitized is fine).
