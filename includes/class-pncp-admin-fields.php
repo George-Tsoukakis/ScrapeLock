@@ -187,7 +187,8 @@ final class PNCP_Admin_Fields {
 	}
 
 	/**
-	 * The "May affect visitors/SEO" tag of a risky option, or ''.
+	 * The "May affect visitors/SEO" mark of a risky option, or ''. 3.11: a warning icon with the text as its
+	 * tooltip and as screen-reader text, instead of a tag with the sentence (the class stays for the CSS).
 	 *
 	 * @param string $key   Field.
 	 * @param string $value A choice of a radio group (its own tag id), or '' for the field.
@@ -197,11 +198,107 @@ final class PNCP_Admin_Fields {
 		if ( '' === $value ? ! isset( self::risky()[ $key ] ) : ! self::is_risky_choice( $key, $value ) ) {
 			return '';
 		}
+		return self::risk_icon( self::risk_id( $key, $value ) );
+	}
+
+	/**
+	 * 3.11: the warning icon for an option that can affect visitors or SEO: a tooltip (title) for the mouse and
+	 * the same words as screen-reader text, so it is announced where the tag text used to be.
+	 *
+	 * @param string $id Element id ('' for none, e.g. a copy on a folded summary).
+	 * @return string HTML.
+	 */
+	public static function risk_icon( $id = '' ) {
+		$text = __( 'May affect visitors/SEO', 'scrapelock' );
 		return sprintf(
-			'<span class="pncp-tag pncp-tag--risk" id="%1$s">%2$s</span>',
-			esc_attr( self::risk_id( $key, $value ) ),
-			esc_html__( 'May affect visitors/SEO', 'scrapelock' )
+			'<span class="pncp-tag pncp-tag--risk pncp-risk"%1$s title="%2$s"><span class="dashicons dashicons-warning" aria-hidden="true"></span><span class="screen-reader-text">%3$s</span></span>',
+			'' === $id ? '' : ' id="' . esc_attr( $id ) . '"',
+			esc_attr( $text ),
+			esc_html( $text )
 		);
+	}
+
+	/* ---------- 3.11: help texts ---------- */
+
+	/**
+	 * A help text in two parts: one short line that is always shown, and the longer explanation folded under
+	 * "More". Field renderers of PNCP_Admin take this or a plain string.
+	 *
+	 * @param string $short One line (about 12 words at most).
+	 * @param string $more  The longer explanation ('' for none).
+	 * @return array{0: string, 1: string}
+	 */
+	public static function help( $short, $more = '' ) {
+		return array( (string) $short, (string) $more );
+	}
+
+	/**
+	 * The two parts of a help text given as a string (short only) or as help().
+	 *
+	 * @param string|array<int, string> $help Help text.
+	 * @return array{0: string, 1: string}
+	 */
+	public static function help_parts( $help ) {
+		if ( is_array( $help ) ) {
+			return array( isset( $help[0] ) ? (string) $help[0] : '', isset( $help[1] ) ? (string) $help[1] : '' );
+		}
+		return array( (string) $help, '' );
+	}
+
+	/**
+	 * The help of a field: the short line as <p class="description" id="…"> (the id aria-describedby points
+	 * to) and the longer part folded under "More". '' for an empty help.
+	 *
+	 * @param string                    $id   Element id of the short line ('' for none).
+	 * @param string|array<int, string> $help Help text (string or help()).
+	 * @return string HTML.
+	 */
+	public static function description( $id, $help ) {
+		list( $short, $more ) = self::help_parts( $help );
+		if ( '' === $short && '' === $more ) {
+			return '';
+		}
+		$html = '' === $short ? '' : sprintf(
+			'<p class="description"%1$s>%2$s</p>',
+			'' === $id ? '' : ' id="' . esc_attr( $id ) . '"',
+			esc_html( $short )
+		);
+		return $html . self::more( $more );
+	}
+
+	/**
+	 * The longer explanation folded under "More", or '' for an empty text.
+	 *
+	 * @param string $text Plain text (escaped here).
+	 * @return string HTML.
+	 */
+	public static function more( $text ) {
+		return '' === (string) $text ? '' : self::more_html( '<p>' . esc_html( $text ) . '</p>' );
+	}
+
+	/**
+	 * The fold "More" around HTML that is already escaped (several paragraphs, links, code).
+	 *
+	 * @param string $html Escaped HTML.
+	 * @return string HTML.
+	 */
+	public static function more_html( $html ) {
+		if ( '' === (string) $html ) {
+			return '';
+		}
+		return '<details class="pncp-more"><summary>' . esc_html__( 'More', 'scrapelock' ) . '</summary><div class="pncp-more__body">' . $html . '</div></details>';
+	}
+
+	/**
+	 * A free-standing description (an intro of a card or a part): the short line, then the rest under "More".
+	 *
+	 * @param string $short   One line.
+	 * @param string $more    The longer explanation ('' for none).
+	 * @param string $classes Extra classes of the short line.
+	 * @return string HTML.
+	 */
+	public static function para( $short, $more = '', $classes = '' ) {
+		return sprintf( '<p class="%1$s">%2$s</p>', esc_attr( trim( 'description ' . $classes ) ), esc_html( $short ) ) . self::more( $more );
 	}
 
 	/**
@@ -228,7 +325,8 @@ final class PNCP_Admin_Fields {
 	}
 
 	/**
-	 * "Default: on/off/60" after a checkbox or a number whose value is not the default, or ''.
+	 * "Default: on/off" after a checkbox whose value is not the default, "Default: 60" after every number
+	 * (3.11: also when it has the default value), or ''.
 	 *
 	 * @param string               $key Field.
 	 * @param array<string, mixed> $s   Settings.
@@ -240,7 +338,9 @@ final class PNCP_Admin_Fields {
 		if ( in_array( $key, array( 'monitor_mode', 'trust_any_proxy', 'watermark_image_id' ), true ) ) {
 			return '';
 		}
-		$defaults = PNCP_Options::defaults();
+		// 3.11: the defaults of a new install (PNCP_Options::install_defaults()), e.g. "Ban scanners on their first
+		// probe" is on there; a site installed before 3.11 that still has the old value is told so (upgrade_note()).
+		$defaults = PNCP_Options::install_defaults();
 		if ( ! isset( $defaults[ $key ], $s[ $key ] ) ) {
 			return '';
 		}
@@ -250,9 +350,7 @@ final class PNCP_Admin_Fields {
 			}
 			$text = empty( $defaults[ $key ] ) ? __( 'Default: off', 'scrapelock' ) : __( 'Default: on', 'scrapelock' );
 		} elseif ( isset( PNCP_Options::int_ranges()[ $key ] ) ) {
-			if ( (int) $s[ $key ] === (int) $defaults[ $key ] ) {
-				return '';
-			}
+			// 3.11: always shown for a number, also at its default: the help texts no longer repeat "Starting value".
 			/* translators: %s: the default number */
 			$text = sprintf( __( 'Default: %s', 'scrapelock' ), number_format_i18n( (int) $defaults[ $key ] ) );
 		} else {
@@ -277,7 +375,7 @@ final class PNCP_Admin_Fields {
 		if ( ! isset( $upgrade[ $key ] ) || (string) $s[ $key ] !== (string) $upgrade[ $key ]['value'] ) {
 			return $text;
 		}
-		$defaults = PNCP_Options::defaults();
+		$defaults = PNCP_Options::install_defaults();
 		if ( in_array( $key, PNCP_Options::bool_keys(), true ) ) {
 			$text = empty( $defaults[ $key ] )
 				/* translators: %s: version number, e.g. 2.6 */
@@ -299,7 +397,7 @@ final class PNCP_Admin_Fields {
 	 * @return bool
 	 */
 	public static function is_default( $key, $value ) {
-		$defaults = PNCP_Options::defaults();
+		$defaults = PNCP_Options::install_defaults();
 		return isset( $defaults[ $key ] ) && (string) $defaults[ $key ] === (string) $value;
 	}
 

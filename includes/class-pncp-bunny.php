@@ -1418,11 +1418,7 @@ final class PNCP_Bunny {
 		if ( class_exists( 'PNCP_Login' ) ) {
 			// PNCP_Login serves the sign-in form at its own address and rewrites every link and form to it, so
 			// requests for wp-login.php itself then come from bots only.
-			if ( method_exists( 'PNCP_Login', 'custom_login_active' ) ) {
-				$on = (bool) PNCP_Login::custom_login_active();
-			} elseif ( method_exists( 'PNCP_Login', 'slug' ) ) {
-				$on = '' !== (string) PNCP_Login::slug();
-			}
+			$on = '' !== (string) PNCP_Login::slug();
 		}
 		/**
 		 * Filters whether the login page is moved away from wp-login.php (by PNCP_Login or another plugin that
@@ -3018,8 +3014,8 @@ final class PNCP_Bunny {
 	/**
 	 * Adds one raw line to a sample.
 	 *
-	 * @param array<string, int> $sample Sample.
-	 * @param string             $line   Raw line.
+	 * @param int[]  $sample Sample.
+	 * @param string $line   Raw line.
 	 */
 	public static function sample_ip( &$sample, $line ) {
 		$kind = self::ip_kind( $line );
@@ -4217,11 +4213,11 @@ final class PNCP_Bunny {
 		?>
 		<section class="pncp-card pncp-card--wide pncp-bunny" id="pncp-bunny" aria-labelledby="pncp-bunny-title">
 			<h2 id="pncp-bunny-title"><?php esc_html_e( 'Bunny CDN: attacks and locks at the edge', 'scrapelock' ); ?></h2>
-			<p class="description"><?php esc_html_e( 'Every visitor passes through Bunny CDN, also for pages Bunny serves from its cache, which never reach WordPress. ScrapeLock reads the pull zone\'s logs every 15 minutes to see those attacks too, and can lock vulnerable addresses at Bunny with one click (Edge Rules in your own account, marked “ScrapeLock:”). Rules ScrapeLock did not make are never touched.', 'scrapelock' ); ?></p>
+			<?php echo PNCP_Admin_Fields::para( __( 'Sees attacks on pages Bunny serves from cache, and locks addresses there.', 'scrapelock' ), __( 'Every visitor passes through Bunny CDN, also for pages Bunny serves from its cache, which never reach WordPress. ScrapeLock reads the pull zone\'s logs every 15 minutes to see those attacks too, and can lock vulnerable addresses at Bunny with one click (Edge Rules in your own account, marked “ScrapeLock:”). Rules ScrapeLock did not make are never touched.', 'scrapelock' ) ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Escaped in PNCP_Admin_Fields. ?>
 			<?php
 			self::render_notice();
 			if ( $locked ) {
-				echo '<p class="description">' . esc_html__( 'The site is locked: the rules at Bunny cannot be changed until it is unlocked.', 'scrapelock' ) . '</p>';
+				echo '<p class="description">' . esc_html__( 'The site is locked: unlock it on the Lockdown tab to change the rules at Bunny.', 'scrapelock' ) . '</p>';
 			}
 			self::render_connection( $c, $locked );
 			if ( null === $c ) {
@@ -4250,7 +4246,7 @@ final class PNCP_Bunny {
 			return;
 		}
 		$own = self::own_config();
-		echo '<p class="description">' . esc_html__( '“Blocking at the CDN” is not set to Bunny CDN. If this site is served by Bunny all the same, connect its pull zone here (only for the logs and the Edge Rules below; the bans then stay with the CDN chosen there).', 'scrapelock' ) . '</p>';
+		echo PNCP_Admin_Fields::para( __( 'Behind Bunny anyway? Connect its pull zone here for logs and Edge Rules.', 'scrapelock' ), __( '“Blocking at the CDN” is not set to Bunny CDN. If this site is served by Bunny all the same, connect its pull zone here (only for the logs and the Edge Rules below; the bans then stay with the CDN chosen there).', 'scrapelock' ) ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Escaped in PNCP_Admin_Fields.
 		if ( $locked ) {
 			return;
 		}
@@ -4262,7 +4258,7 @@ final class PNCP_Bunny {
 			<tr>
 				<th scope="row"><label for="pncp-bunny-zone"><?php esc_html_e( 'Pull zone ID', 'scrapelock' ); ?></label></th>
 				<td><input type="text" class="regular-text code" id="pncp-bunny-zone" name="zone" value="<?php echo esc_attr( $own['zone'] ); ?>" autocomplete="off" spellcheck="false" inputmode="numeric">
-				<p class="description"><?php esc_html_e( 'The number in the address of the pull zone\'s page in the bunny.net dashboard.', 'scrapelock' ); ?></p></td>
+				<p class="description"><?php esc_html_e( 'The number in the pull zone\'s address in the bunny.net dashboard.', 'scrapelock' ); ?></p></td>
 			</tr>
 			<tr>
 				<th scope="row"><label for="pncp-bunny-token"><?php esc_html_e( 'API key', 'scrapelock' ); ?></label></th>
@@ -4272,7 +4268,7 @@ final class PNCP_Bunny {
 					<?php else : ?>
 						<input type="password" class="regular-text" id="pncp-bunny-token" name="token" value="" autocomplete="new-password" spellcheck="false" placeholder="<?php echo esc_attr( '' !== $own['token'] ? __( 'Saved. Leave empty to keep it.', 'scrapelock' ) : '' ); ?>">
 					<?php endif; ?>
-					<p class="description"><?php esc_html_e( 'Account settings → API in the bunny.net dashboard. It gives access to the whole account; it is stored in the database and never shown again. To keep it out of the database, add define( \'SCRAPELOCK_BUNNY_KEY\', \'…\' ); to wp-config.php instead.', 'scrapelock' ); ?></p>
+					<?php echo PNCP_Admin_Fields::description( '', PNCP_Admin_Fields::help( __( 'bunny.net dashboard → Account settings → API. Never shown again after saving.', 'scrapelock' ), __( 'Account settings → API in the bunny.net dashboard. It gives access to the whole account; it is stored in the database and never shown again. To keep it out of the database, add define( \'SCRAPELOCK_BUNNY_KEY\', \'…\' ); to wp-config.php instead.', 'scrapelock' ) ) ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Escaped in PNCP_Admin_Fields. ?>
 				</td>
 			</tr>
 		</table>

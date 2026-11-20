@@ -40,18 +40,48 @@ ScrapeLock — δοκιμές σε πραγματικό WordPress (όχι stubs)
   t_site_files.php  3.10.1: Site Health «ScrapeLock site files» (apple-touch-icon.png από το Site Icon, OneSignalSDKWorker.js
                     όσο το OneSignal είναι ενεργό): Create/Remove μόνο με nonce και manage_options, ποτέ πάνω σε αρχείο του
                     site, και ο έλεγχος «Wordfence and the visitor address» πίσω από CDN (ψεύτικο wfUtils / wfConfig)
+  t_311_wizard.php  3.11: «For my site» (PNCP_Wizard) με stand-in plugins (WooCommerce, FluentCommunity /hub/, WP Rocket,
+                    OneSignal, Wordfence) και Via: BunnyCDN: εντοπισμός, προτάσεις μόνο υπαρκτών ρυθμίσεων με αιτία, όσες
+                    μπλοκάρουν περισσότερα χωρίς τσεκ, «Apply selected» (nonce, manage_options) μόνο των επιλεγμένων,
+                    αντίγραφο στα «Earlier versions» και Undo, δεύτερο τρέξιμο χωρίς προτάσεις, wp scrapelock wizard
   t_private_folders.php  3.10: Site Health «private folders»: γραμμές Nginx/Apache για κάθε ιδιωτικό φάκελο (ορατές),
                     preset «private_folders» του «Lock at Bunny» με ψεύτικο API (και 400 για > 5 patterns), κουμπί μόνο
                     για διαχειριστή με Bunny, αναγνώριση του κλειδώματος στο Site Health
+  t_311_status.php  3.11: ενδείξεις σε τρεις καταστάσεις («On», «Set but not active: <λόγος>», «Off») στη μπάρα, στη
+                    σύνοψη «Network and CDN», στο widget, στο Site Health, στο Stealth και στο εβδομαδιαίο email· καμία
+                    ετικέτα «setting_key: 1» σε καρτέλα (Emergency Mode, «Reset this tab»)· FluentCommunity (ψεύτικο
+                    plugin): η πύλη στις «Content addresses» και οι αναγνώσεις REST των μελών εκτός ορίου· οι νέες
+                    προεπιλογές μόνο σε νέα εγκατάσταση (αναβάθμιση από 3.10.1 χωρίς αλλαγή)
+  t_311_ui.php      3.11: καρτέλες σε τέσσερις ομάδες (κάθε παλιά διεύθυνση, τα aliases της 3.10, άγνωστη καρτέλα), η
+                    καρτέλα Bots ως accordion (ανοιχτά μόνο Bots, Limits, Sign-in· «Advanced»), οι μακριές λίστες με
+                    «N entries» + «Edit» (όλη η τιμή στο textarea, Save μέσα από τη φόρμα κρατά τη λίστα)
+  t_311_integration.php 3.11: πώς δένουν τα κομμάτια της 3.11: pre-cache/early check με τις ίδιες ρυθμίσεις «AI search»
+                    όπως η λίστα bots, ο οδηγός «For my site» με FluentCommunity / plugin bots / ετικέτες ρυθμίσεων,
+                    οι ειδοποιήσεις των 3.11 στις νέες καρτέλες, τα σύντομα κείμενα στις νέες περιγραφές, η υπογραφή
+                    των αιτημάτων του site δεν ακολουθεί redirect σε άλλο host (ψεύτικος server στη 8952), ban στο πρώτο
+                    probe και όταν το User-Agent απορρίπτεται πρώτο («Browsers only», κενό User-Agent)
+  t_311_compat.php  3.11: τίποτα δεν αφαιρέθηκε: κάθε κλειδί ρυθμίσεων, καρτέλα και πεδίο φόρμας της 3.10.1 υπάρχει
+                    ακόμη· ένα export της 3.10.1 (tests/fixtures/settings-export-3.10.1.json, κάθε ρύθμιση αλλαγμένη)
+                    γίνεται import χωρίς απώλεια και ξαναβγαίνει ίδιο (tests/fixtures/keys-3.10.1.json: τα κλειδιά και
+                    τα πεδία της 3.10.1)
+  t_311_i18n.php    3.11: η ελληνική μετάφραση του languages/: ίδια strings με το .pot, όλα μεταφρασμένα με τα ίδια
+                    placeholders / tags, .mo ίδιο με το .po, χωρίς μισές προτάσεις· φορτώνεται από το languages/ του
+                    plugin (και όπως στις WordPress 6.2–6.6, με pncp_load_textdomain() στο init), ενώ ένα language pack
+                    στο wp-content/languages/plugins/ προηγείται
   t_cli.php         wp scrapelock … μέσα από το πραγματικό wp (χρειάζεται WP_CLI, αλλιώς SKIP)
   t_bunny_rules.php Edge Rules στο Bunny μέσα στα όριά του (το πολύ 5 μοτίβα ανά συνθήκη) με ψεύτικο API που δίνει
                     HTTP 400 όπως το πραγματικό: χωρισμός, κλείδωμα/Remove, rollback, Monitor only, sync, προεπισκόπηση,
                     κάρτα, wp-login allowed IPs, WP-CLI (με WP_CLI)
   t_metadata.php    3.10: /llms.txt, /ai.txt, /.well-known/*, εικονίδια, service workers ποτέ «Scanner probe» (καταγραφή
                     επιθέσεων, ομάδες του log, ban σαρωτών, εισαγωγή logs του Bunny με mock), σβήσιμο των παλιών γραμμών
+  t_311_texts.php   3.11: κείμενα βοήθειας σε κάθε καρτέλα ως διαχειριστής: καμία περιγραφή πάνω από 20 λέξεις (γραμμή
+                    βοήθειας πεδίου 14) έξω από το «More», κανένα «Directive (EU)» έξω από το «More», κανένα
+                    «Starting value:», «May affect visitors/SEO» ως εικονίδιο (title + κείμενο για αναγνώστες οθόνης)
   browser/          protect.js σε Chromium: δεξί κλικ/αντιγραφή/επιλογή/σύρσιμο ακόμη και με «εχθρικό» script,
                     αντιγραφή με πηγή, .pncp-allow, πεδία φόρμας, ελληνική διάταξη, θόλωμα (npm install && npm test)
                     admin.mjs (3.10): καρτέλες με άλλο όνομα / άγνωστη καρτέλα, ανοιχτά <details> και κύλιση μετά από Save
+                    ui311.mjs (3.11): ομάδες καρτελών, accordion της καρτέλας Bots (και με πληκτρολόγιο), «Edit» στις
+                    λίστες (και χωρίς JavaScript), ανοιχτά μέρη/λίστες μετά από Save· SHOTS=<φάκελος> για screenshots
                     (σύνδεση admin / admin, ή WP_USER / WP_PASS)
 
 Οι δοκιμές της αναβάθμισης 1.4 → 2.1: εγκατάσταση του zip της 1.4.0 (git show 5c70396), ρυθμίσεις, μετά

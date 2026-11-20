@@ -43,6 +43,13 @@ final class PNCP_Probe {
 	private static $paths = array();
 
 	/**
+	 * 3.11: listed_body() of this request, memoized per home URL (as $paths).
+	 *
+	 * @var array<string, string>
+	 */
+	private static $listed = array();
+
+	/**
 	 * 3.5: the probe list, key => body, after the filter pncp_probe_trap_paths and validate().
 	 *
 	 * @return array<string, string>
@@ -75,6 +82,12 @@ final class PNCP_Probe {
 			// Adminer. WordPress only: a real one is executed by the server and never a WordPress 404.
 			'adminer'          => '(?:.*/)?adminer[a-z0-9._-]*\.php',
 		);
+		// 3.11: the probes of other software (Spring Boot, Docker, Railway, Symfony, payment and cloud credentials,
+		// a wp-config.php typo-squat), from listed_paths() and the filter pncp_probe_paths. WordPress only.
+		$listed = self::listed_body();
+		if ( '' !== $listed ) {
+			$paths['service_files'] = $listed;
+		}
 		if ( '' !== $uploads ) {
 			// A PHP file in the uploads folder (web-shell scanners). WordPress only: "No PHP in the uploads folder"
 			// is the server's part.
@@ -98,6 +111,123 @@ final class PNCP_Probe {
 		}
 		self::$paths[ $home ] = $valid;
 		return $valid;
+	}
+
+	/**
+	 * 3.11: the probe paths of other software that only scanners ask for on a WordPress site, as plain paths
+	 * relative to the home path: "*" is any part of one path segment, and a final "/*" is the folder and anything
+	 * under it. Seen on real sites, cut only by the rate limits before: Spring Boot's /actuator/*, /admin/auth.json,
+	 * Docker and Railway files, Symfony's parameters.yml, payment gateway and cloud credentials, /secrets, a
+	 * Git folder copied under another name, and /wp-conflg.php (a typo-squat of wp-config.php). The same safety as
+	 * the other entries (probe_guard()): only when WordPress answers 404 and no such file exists, never for
+	 * staff, verified search engines, always-allowed IPs and User-Agents or a human click, and never for a
+	 * site-metadata file (PNCP_Paths::is_site_metadata()).
+	 *
+	 * @return string[]
+	 */
+	public static function listed_paths() {
+		$paths = array(
+			'/actuator',
+			'/actuator/*',
+			'/admin/auth.json',
+			'/Dockerfile',
+			'/docker-compose.yml',
+			'/docker-compose.yaml',
+			'/railway.toml',
+			'/railway.json',
+			'/payment_gateways/*.yaml',
+			'/payment_gateways/*.yml',
+			'/payment_gateways/*.json',
+			'/config/parameters.yml',
+			'/config/parameters.yaml',
+			'/app/config/parameters.yml',
+			'/credentials',
+			'/credentials.yml',
+			'/credentials.yaml',
+			'/credentials.json',
+			'/secrets',
+			'/secrets/*',
+			'/secrets.yml',
+			'/secrets.yaml',
+			'/secrets.json',
+			'/.aws/*',
+			'/.vscode/sftp.json',
+			'/*.git/config',
+			'/wp-conflg.php',
+		);
+		/**
+		 * 3.11: the plain probe paths of "Ban scanners on their first probe" (relative to the home path, "*" = any
+		 * part of one segment, a final "/*" = the folder and anything under it). Checked by WordPress only, with
+		 * the same safety as the built-in list (404 only, never a real file, staff, verified bots or a site file).
+		 * For full regular expressions use pncp_probe_trap_paths.
+		 *
+		 * @param string[] $paths Paths, e.g. /actuator/*.
+		 */
+		$filtered = apply_filters( 'pncp_probe_paths', $paths );
+		$out      = array();
+		foreach ( is_array( $filtered ) ? $filtered : array() as $path ) {
+			$path = '/' . ltrim( trim( (string) $path ), '/' );
+			if ( '/' !== $path && strlen( $path ) <= 200 && false === strpos( $path, "\0" ) ) {
+				$out[ strtolower( $path ) ] = $path;
+			}
+		}
+		return array_values( $out );
+	}
+
+	/**
+	 * 3.11: listed_paths() as one PCRE body (each path checked alone first, so a too broad one, e.g. "/*", is
+	 * dropped instead of the whole entry).
+	 *
+	 * @return string '(?:p1|p2|...)', or ''.
+	 */
+	private static function listed_body() {
+		$home = (string) home_url( '/' );
+		if ( isset( self::$listed[ $home ] ) ) {
+			return self::$listed[ $home ];
+		}
+		$bodies = array();
+		foreach ( self::listed_paths() as $path ) {
+			$body = self::glob_body( $path );
+			if ( '' !== $body && self::validate( $body ) ) {
+				$bodies[] = $body;
+			}
+		}
+		self::$listed[ $home ] = $bodies ? '(?:' . implode( '|', $bodies ) . ')' : '';
+		return self::$listed[ $home ];
+	}
+
+	/**
+	 * 3.11: a plain path of listed_paths() as a body of the list (without the leading slash).
+	 *
+	 * @param string $path Path, e.g. /payment_gateways/*.yaml.
+	 * @return string
+	 */
+	private static function glob_body( $path ) {
+		$path = ltrim( (string) $path, '/' );
+		$tail = '';
+		if ( '/*' === substr( $path, -2 ) ) {
+			$path = substr( $path, 0, -2 );
+			$tail = '(?:/.*)?';
+		}
+		if ( '' === $path ) {
+			return '';
+		}
+		return str_replace( '\\*', '[^/]*', preg_quote( $path, '#' ) ) . $tail;
+	}
+
+	/**
+	 * 3.11: whether a path (relative to home, decoded) is one of listed_paths() (for the Log and the attack record,
+	 * PNCP_Log::is_probe_path()). Never a site-metadata file.
+	 *
+	 * @param string $path Path, e.g. /actuator/env.
+	 * @return bool
+	 */
+	public static function matches_listed( $path ) {
+		if ( PNCP_Paths::is_site_metadata( (string) $path ) ) {
+			return false;
+		}
+		$body = self::listed_body();
+		return '' !== $body && 1 === preg_match( '#^/' . $body . '$#i', '/' . ltrim( (string) $path, '/' ) );
 	}
 
 	/**

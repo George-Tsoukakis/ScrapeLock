@@ -317,6 +317,7 @@ final class PNCP_Login {
 	 *
 	 * @param mixed       $raw     Value sent.
 	 * @param string|null $reason  Set to why it was refused ('' = it was not).
+	 * @param-out string  $reason
 	 * @param string      $current The address stored now: sent again unchanged, it is not checked against the content.
 	 * @return string
 	 */

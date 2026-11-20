@@ -1,4 +1,4 @@
-# ScrapeLock: phpcs, the basic tests on a real WordPress (SQLite) and the plugin zip.
+# ScrapeLock: phpcs, PHPStan, the basic tests on a real WordPress (SQLite) and the plugin zip.
 # Full-stack tests (FULL=1: MariaDB, Nginx, Apache, WooCommerce) run locally (tests/README.txt).
 name: CI
 
@@ -36,6 +36,23 @@ jobs:
       - name: phpcs (phpcs.xml.dist)
         # Only errors fail the build; the known warning (unused $request, filter signature) stays.
         run: phpcs -q --warning-severity=0
+
+  phpstan:
+    name: PHPStan
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: PHPStan and the WordPress stubs
+        # Outside the repository, as for phpcs: the plugin has no composer.json.
+        run: |
+          mkdir -p "$RUNNER_TEMP/phpstan" && cd "$RUNNER_TEMP/phpstan"
+          echo '{}' > composer.json
+          composer --no-interaction --quiet config allow-plugins.phpstan/extension-installer true
+          composer --no-interaction --quiet require --dev "phpstan/phpstan:2.1.56" "szepeviktor/phpstan-wordpress:2.0.4" "php-stubs/wordpress-stubs:6.9.4" "php-stubs/wp-cli-stubs:2.12.0" "phpstan/extension-installer:1.4.3"
+          echo "$RUNNER_TEMP/phpstan/vendor/bin" >> "$GITHUB_PATH"
+      - name: phpstan (phpstan.neon.dist)
+        run: phpstan analyse -c phpstan.neon.dist --no-progress --memory-limit=4G
 
   tests:
     name: Tests on WordPress (SQLite)
@@ -80,14 +97,16 @@ jobs:
     name: Plugin zip
     runs-on: ubuntu-24.04
     timeout-minutes: 5
-    needs: [lint, tests]
+    needs: [lint, phpstan, tests]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Build scrapelock.zip (only the plugin, as submitted to WordPress.org; see .gitattributes)
         run: |
           version=$(sed -n 's/^ \* Version: *//p' scrapelock.php)
           git archive --format=zip --prefix=scrapelock/ -o "scrapelock-$version.zip" HEAD
-          if unzip -l "scrapelock-$version.zip" | grep -qE 'tests/|\.po$|\.mo$'; then echo "::error::tests or translations in the zip"; exit 1; fi
+          if unzip -l "scrapelock-$version.zip" | grep -qE 'tests/|\.po$'; then echo "::error::tests or translation sources in the zip"; exit 1; fi
+          # 3.11: the compiled translations in languages/ ship with the plugin (WordPress 6.2+ loads them).
+          if ! unzip -l "scrapelock-$version.zip" | grep -q 'scrapelock/languages/scrapelock-el\.mo$'; then echo "::error::languages/scrapelock-el.mo missing from the zip"; exit 1; fi
           echo "ZIP=scrapelock-$version.zip" >> "$GITHUB_ENV"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:

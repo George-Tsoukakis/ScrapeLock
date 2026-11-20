@@ -1,0 +1,786 @@
+{
+ "version": "3.10.1",
+ "note": "Generated from ScrapeLock 3.10.1 (keys-fields lister, admin, every tab rendered with the settings of settings-export-3.10.1.json).",
+ "tabs": [
+  "general",
+  "bots",
+  "content",
+  "images",
+  "rules",
+  "log",
+  "attacks",
+  "hardening",
+  "lockdown"
+ ],
+ "defaults": [
+  "ai_referrals",
+  "allow_ai_search",
+  "allow_ips",
+  "allow_list",
+  "attack_record",
+  "attack_retention",
+  "attribution_min_chars",
+  "auto_emergency",
+  "auto_emergency_min",
+  "auto_emergency_mode",
+  "ban_minutes",
+  "ban_strikes",
+  "block_archivers",
+  "block_bots",
+  "block_context_menu",
+  "block_devtools",
+  "block_empty_ua",
+  "block_fake_crawlers",
+  "block_framing",
+  "block_headless",
+  "block_http_libs",
+  "block_image_drag",
+  "block_ip_host",
+  "block_ips",
+  "block_referrers",
+  "block_selection",
+  "block_seo_crawlers",
+  "block_shortcuts",
+  "block_text_drag",
+  "block_upload_php",
+  "block_user_enum",
+  "blur_on_capture",
+  "bot_list",
+  "bunny_all_lines",
+  "bunny_flood_4xx",
+  "bunny_import",
+  "bunny_login_allow",
+  "bunny_rate",
+  "bunny_strikes",
+  "cdn_only",
+  "cdn_secret",
+  "content_paths",
+  "content_signal",
+  "copy_mode",
+  "countries_block",
+  "countries_strict",
+  "crowdsec_action",
+  "crowdsec_key",
+  "crowdsec_mode",
+  "crowdsec_url",
+  "disable_pingback",
+  "early_mode",
+  "edge_send_blocks",
+  "enabled",
+  "excluded_ids",
+  "exempt_cap",
+  "feed_mode",
+  "feed_source_link",
+  "geo_db",
+  "graphql_hide_content",
+  "hide_fingerprint",
+  "hide_rest_discovery",
+  "hide_versions",
+  "human_check",
+  "ip_header",
+  "ipv6_wide",
+  "list_excerpts",
+  "log_retention",
+  "login_ban_minutes",
+  "login_generic_errors",
+  "login_limit",
+  "login_max",
+  "login_slug",
+  "login_user_email",
+  "login_user_max",
+  "login_user_minutes",
+  "login_window",
+  "message",
+  "monitor_mode",
+  "monitor_until",
+  "precheck",
+  "print_mode",
+  "private_ips",
+  "private_paths",
+  "probe_ban",
+  "rate_limit",
+  "rate_limit_404",
+  "rate_limit_account",
+  "rate_limit_apionly",
+  "rate_limit_cart",
+  "rate_limit_country",
+  "rate_limit_coupon",
+  "rate_limit_crowdsec",
+  "rate_limit_datacenter",
+  "rate_limit_lowrep",
+  "rate_limit_rest",
+  "rate_limit_search",
+  "rate_limit_sitemap",
+  "rate_limit_unverified",
+  "report_weekly",
+  "reputation",
+  "require_browser_headers",
+  "rest_hide_content",
+  "robots_ai_block",
+  "scope_home",
+  "scope_pages",
+  "scope_posts",
+  "scope_products",
+  "shared_alert",
+  "shared_ips",
+  "shared_logout",
+  "show_message",
+  "skip_woo_pages",
+  "stealth_base",
+  "stealth_block_files",
+  "stealth_enabled",
+  "stealth_endpoints",
+  "stealth_rest_prefix",
+  "stealth_sitemap",
+  "syslog_bans",
+  "tdm_policy_url",
+  "tdm_reservation",
+  "text_trace",
+  "trap_enabled",
+  "trust_any_proxy",
+  "trust_bunny",
+  "trust_cloudflare",
+  "trusted_proxies",
+  "user_mark",
+  "user_mark_guests",
+  "user_mark_opacity",
+  "verify_ai_bots",
+  "watermark_enabled",
+  "watermark_full",
+  "watermark_image_id",
+  "watermark_min_width",
+  "watermark_opacity",
+  "watermark_position",
+  "watermark_products",
+  "watermark_size"
+ ],
+ "setting_fields": [
+  "_sections",
+  "ai_referrals",
+  "allow_ai_search",
+  "allow_ips",
+  "allow_list",
+  "attack_record",
+  "attack_retention",
+  "attribution_min_chars",
+  "auto_emergency",
+  "auto_emergency_min",
+  "auto_emergency_mode",
+  "ban_minutes",
+  "ban_strikes",
+  "block_archivers",
+  "block_bots",
+  "block_context_menu",
+  "block_devtools",
+  "block_empty_ua",
+  "block_fake_crawlers",
+  "block_framing",
+  "block_headless",
+  "block_http_libs",
+  "block_image_drag",
+  "block_ip_host",
+  "block_ips",
+  "block_referrers",
+  "block_selection",
+  "block_seo_crawlers",
+  "block_shortcuts",
+  "block_text_drag",
+  "block_upload_php",
+  "block_user_enum",
+  "blur_on_capture",
+  "bot_list",
+  "bunny_all_lines",
+  "bunny_flood_4xx",
+  "bunny_import",
+  "bunny_login_allow",
+  "bunny_rate",
+  "bunny_strikes",
+  "cdn_only",
+  "cdn_secret",
+  "content_paths",
+  "content_signal",
+  "copy_mode",
+  "countries_block",
+  "countries_strict",
+  "crowdsec_action",
+  "crowdsec_key",
+  "crowdsec_mode",
+  "crowdsec_url",
+  "disable_pingback",
+  "early_mode",
+  "enabled",
+  "excluded_ids",
+  "exempt_cap",
+  "feed_mode",
+  "feed_source_link",
+  "geo_db",
+  "graphql_hide_content",
+  "hide_fingerprint",
+  "hide_rest_discovery",
+  "hide_versions",
+  "human_check",
+  "ip_header",
+  "ipv6_wide",
+  "list_excerpts",
+  "log_retention",
+  "login_ban_minutes",
+  "login_generic_errors",
+  "login_limit",
+  "login_max",
+  "login_slug",
+  "login_user_email",
+  "login_user_max",
+  "login_user_minutes",
+  "login_window",
+  "message",
+  "monitor_mode",
+  "precheck",
+  "print_mode",
+  "private_ips",
+  "private_paths",
+  "probe_ban",
+  "rate_limit",
+  "rate_limit_404",
+  "rate_limit_account",
+  "rate_limit_apionly",
+  "rate_limit_cart",
+  "rate_limit_country",
+  "rate_limit_coupon",
+  "rate_limit_crowdsec",
+  "rate_limit_datacenter",
+  "rate_limit_lowrep",
+  "rate_limit_rest",
+  "rate_limit_search",
+  "rate_limit_sitemap",
+  "rate_limit_unverified",
+  "report_weekly",
+  "reputation",
+  "require_browser_headers",
+  "rest_hide_content",
+  "robots_ai_block",
+  "scope_home",
+  "scope_pages",
+  "scope_posts",
+  "scope_products",
+  "shared_alert",
+  "shared_ips",
+  "shared_logout",
+  "show_message",
+  "skip_woo_pages",
+  "syslog_bans",
+  "tdm_policy_url",
+  "tdm_reservation",
+  "text_trace",
+  "trap_enabled",
+  "trust_bunny",
+  "trust_cloudflare",
+  "trusted_proxies",
+  "user_mark",
+  "user_mark_guests",
+  "user_mark_opacity",
+  "verify_ai_bots",
+  "watermark_enabled",
+  "watermark_full",
+  "watermark_image_id",
+  "watermark_min_width",
+  "watermark_opacity",
+  "watermark_position",
+  "watermark_products",
+  "watermark_size"
+ ],
+ "fields": {
+  "_pncp_trace": [
+   "log"
+  ],
+  "action": [
+   "general",
+   "bots",
+   "content",
+   "images",
+   "log",
+   "attacks",
+   "hardening",
+   "lockdown"
+  ],
+  "address": [
+   "log"
+  ],
+  "browser": [
+   "log"
+  ],
+  "days": [
+   "attacks"
+  ],
+  "hours": [
+   "general"
+  ],
+  "id": [
+   "general",
+   "hardening"
+  ],
+  "ip": [
+   "log"
+  ],
+  "kind": [
+   "attacks"
+  ],
+  "op": [
+   "general",
+   "bots",
+   "content",
+   "log",
+   "hardening",
+   "lockdown"
+  ],
+  "pncp_import_file": [
+   "general"
+  ],
+  "pncp_settings[_sections][]": [
+   "general",
+   "bots",
+   "content",
+   "images",
+   "log"
+  ],
+  "pncp_settings[ai_referrals]": [
+   "log"
+  ],
+  "pncp_settings[allow_ai_search]": [
+   "bots"
+  ],
+  "pncp_settings[allow_ips]": [
+   "bots"
+  ],
+  "pncp_settings[allow_list]": [
+   "bots"
+  ],
+  "pncp_settings[attack_record]": [
+   "log"
+  ],
+  "pncp_settings[attack_retention]": [
+   "log"
+  ],
+  "pncp_settings[attribution_min_chars]": [
+   "general"
+  ],
+  "pncp_settings[auto_emergency]": [
+   "bots"
+  ],
+  "pncp_settings[auto_emergency_min]": [
+   "bots"
+  ],
+  "pncp_settings[auto_emergency_mode]": [
+   "bots"
+  ],
+  "pncp_settings[ban_minutes]": [
+   "bots"
+  ],
+  "pncp_settings[ban_strikes]": [
+   "bots"
+  ],
+  "pncp_settings[block_archivers]": [
+   "bots"
+  ],
+  "pncp_settings[block_bots]": [
+   "bots"
+  ],
+  "pncp_settings[block_context_menu]": [
+   "general"
+  ],
+  "pncp_settings[block_devtools]": [
+   "general"
+  ],
+  "pncp_settings[block_empty_ua]": [
+   "bots"
+  ],
+  "pncp_settings[block_fake_crawlers]": [
+   "bots"
+  ],
+  "pncp_settings[block_framing]": [
+   "general"
+  ],
+  "pncp_settings[block_headless]": [
+   "bots"
+  ],
+  "pncp_settings[block_http_libs]": [
+   "bots"
+  ],
+  "pncp_settings[block_image_drag]": [
+   "general"
+  ],
+  "pncp_settings[block_ip_host]": [
+   "bots"
+  ],
+  "pncp_settings[block_ips]": [
+   "bots"
+  ],
+  "pncp_settings[block_referrers]": [
+   "bots"
+  ],
+  "pncp_settings[block_selection]": [
+   "general"
+  ],
+  "pncp_settings[block_seo_crawlers]": [
+   "bots"
+  ],
+  "pncp_settings[block_shortcuts]": [
+   "general"
+  ],
+  "pncp_settings[block_text_drag]": [
+   "general"
+  ],
+  "pncp_settings[block_upload_php]": [
+   "content"
+  ],
+  "pncp_settings[block_user_enum]": [
+   "bots"
+  ],
+  "pncp_settings[blur_on_capture]": [
+   "general"
+  ],
+  "pncp_settings[bot_list]": [
+   "bots"
+  ],
+  "pncp_settings[bunny_all_lines]": [
+   "bots"
+  ],
+  "pncp_settings[bunny_flood_4xx]": [
+   "bots"
+  ],
+  "pncp_settings[bunny_import]": [
+   "bots"
+  ],
+  "pncp_settings[bunny_login_allow]": [
+   "bots"
+  ],
+  "pncp_settings[bunny_rate]": [
+   "bots"
+  ],
+  "pncp_settings[bunny_strikes]": [
+   "bots"
+  ],
+  "pncp_settings[cdn_only]": [
+   "bots"
+  ],
+  "pncp_settings[cdn_secret]": [
+   "bots"
+  ],
+  "pncp_settings[content_paths]": [
+   "log"
+  ],
+  "pncp_settings[content_signal]": [
+   "bots"
+  ],
+  "pncp_settings[copy_mode]": [
+   "general"
+  ],
+  "pncp_settings[countries_block]": [
+   "bots"
+  ],
+  "pncp_settings[countries_strict]": [
+   "bots"
+  ],
+  "pncp_settings[crowdsec_action]": [
+   "bots"
+  ],
+  "pncp_settings[crowdsec_key]": [
+   "bots"
+  ],
+  "pncp_settings[crowdsec_mode]": [
+   "bots"
+  ],
+  "pncp_settings[crowdsec_url]": [
+   "bots"
+  ],
+  "pncp_settings[disable_pingback]": [
+   "content"
+  ],
+  "pncp_settings[early_mode]": [
+   "bots"
+  ],
+  "pncp_settings[enabled]": [
+   "general"
+  ],
+  "pncp_settings[excluded_ids]": [
+   "general"
+  ],
+  "pncp_settings[exempt_cap]": [
+   "general"
+  ],
+  "pncp_settings[feed_mode]": [
+   "content"
+  ],
+  "pncp_settings[feed_source_link]": [
+   "content"
+  ],
+  "pncp_settings[geo_db]": [
+   "bots"
+  ],
+  "pncp_settings[graphql_hide_content]": [
+   "content"
+  ],
+  "pncp_settings[hide_fingerprint]": [
+   "content"
+  ],
+  "pncp_settings[hide_rest_discovery]": [
+   "content"
+  ],
+  "pncp_settings[hide_versions]": [
+   "content"
+  ],
+  "pncp_settings[human_check]": [
+   "bots"
+  ],
+  "pncp_settings[ip_header]": [
+   "bots"
+  ],
+  "pncp_settings[ipv6_wide]": [
+   "bots"
+  ],
+  "pncp_settings[list_excerpts]": [
+   "content"
+  ],
+  "pncp_settings[log_retention]": [
+   "log"
+  ],
+  "pncp_settings[login_ban_minutes]": [
+   "bots"
+  ],
+  "pncp_settings[login_generic_errors]": [
+   "bots"
+  ],
+  "pncp_settings[login_limit]": [
+   "bots"
+  ],
+  "pncp_settings[login_max]": [
+   "bots"
+  ],
+  "pncp_settings[login_slug]": [
+   "bots"
+  ],
+  "pncp_settings[login_user_email]": [
+   "bots"
+  ],
+  "pncp_settings[login_user_max]": [
+   "bots"
+  ],
+  "pncp_settings[login_user_minutes]": [
+   "bots"
+  ],
+  "pncp_settings[login_window]": [
+   "bots"
+  ],
+  "pncp_settings[message]": [
+   "general"
+  ],
+  "pncp_settings[monitor_mode]": [
+   "bots"
+  ],
+  "pncp_settings[precheck]": [
+   "bots"
+  ],
+  "pncp_settings[print_mode]": [
+   "general"
+  ],
+  "pncp_settings[private_ips]": [
+   "content"
+  ],
+  "pncp_settings[private_paths]": [
+   "content"
+  ],
+  "pncp_settings[probe_ban]": [
+   "bots"
+  ],
+  "pncp_settings[rate_limit]": [
+   "bots"
+  ],
+  "pncp_settings[rate_limit_404]": [
+   "bots"
+  ],
+  "pncp_settings[rate_limit_account]": [
+   "general"
+  ],
+  "pncp_settings[rate_limit_apionly]": [
+   "bots"
+  ],
+  "pncp_settings[rate_limit_cart]": [
+   "bots"
+  ],
+  "pncp_settings[rate_limit_country]": [
+   "bots"
+  ],
+  "pncp_settings[rate_limit_coupon]": [
+   "bots"
+  ],
+  "pncp_settings[rate_limit_crowdsec]": [
+   "bots"
+  ],
+  "pncp_settings[rate_limit_datacenter]": [
+   "bots"
+  ],
+  "pncp_settings[rate_limit_lowrep]": [
+   "bots"
+  ],
+  "pncp_settings[rate_limit_rest]": [
+   "bots"
+  ],
+  "pncp_settings[rate_limit_search]": [
+   "bots"
+  ],
+  "pncp_settings[rate_limit_sitemap]": [
+   "bots"
+  ],
+  "pncp_settings[rate_limit_unverified]": [
+   "bots"
+  ],
+  "pncp_settings[report_weekly]": [
+   "log"
+  ],
+  "pncp_settings[reputation]": [
+   "bots"
+  ],
+  "pncp_settings[require_browser_headers]": [
+   "bots"
+  ],
+  "pncp_settings[rest_hide_content]": [
+   "content"
+  ],
+  "pncp_settings[robots_ai_block]": [
+   "bots"
+  ],
+  "pncp_settings[scope_home]": [
+   "general"
+  ],
+  "pncp_settings[scope_pages]": [
+   "general"
+  ],
+  "pncp_settings[scope_posts]": [
+   "general"
+  ],
+  "pncp_settings[scope_products]": [
+   "general"
+  ],
+  "pncp_settings[shared_alert]": [
+   "general"
+  ],
+  "pncp_settings[shared_ips]": [
+   "general"
+  ],
+  "pncp_settings[shared_logout]": [
+   "general"
+  ],
+  "pncp_settings[show_message]": [
+   "general"
+  ],
+  "pncp_settings[skip_woo_pages]": [
+   "general"
+  ],
+  "pncp_settings[syslog_bans]": [
+   "bots"
+  ],
+  "pncp_settings[tdm_policy_url]": [
+   "general"
+  ],
+  "pncp_settings[tdm_reservation]": [
+   "general"
+  ],
+  "pncp_settings[text_trace]": [
+   "general"
+  ],
+  "pncp_settings[trap_enabled]": [
+   "bots"
+  ],
+  "pncp_settings[trust_bunny]": [
+   "bots"
+  ],
+  "pncp_settings[trust_cloudflare]": [
+   "bots"
+  ],
+  "pncp_settings[trusted_proxies]": [
+   "bots"
+  ],
+  "pncp_settings[user_mark]": [
+   "general"
+  ],
+  "pncp_settings[user_mark_guests]": [
+   "general"
+  ],
+  "pncp_settings[user_mark_opacity]": [
+   "general"
+  ],
+  "pncp_settings[verify_ai_bots]": [
+   "bots"
+  ],
+  "pncp_settings[watermark_enabled]": [
+   "images"
+  ],
+  "pncp_settings[watermark_full]": [
+   "images"
+  ],
+  "pncp_settings[watermark_image_id]": [
+   "images"
+  ],
+  "pncp_settings[watermark_min_width]": [
+   "images"
+  ],
+  "pncp_settings[watermark_opacity]": [
+   "images"
+  ],
+  "pncp_settings[watermark_position]": [
+   "images"
+  ],
+  "pncp_settings[watermark_products]": [
+   "images"
+  ],
+  "pncp_settings[watermark_size]": [
+   "images"
+  ],
+  "pncp_trace_text": [
+   "log"
+  ],
+  "profile": [
+   "general"
+  ],
+  "provider": [
+   "bots"
+  ],
+  "referer": [
+   "log"
+  ],
+  "stealth_base": [
+   "hardening"
+  ],
+  "stealth_block_files": [
+   "hardening"
+  ],
+  "stealth_enabled": [
+   "hardening"
+  ],
+  "stealth_endpoints": [
+   "hardening"
+  ],
+  "stealth_rest_prefix": [
+   "hardening"
+  ],
+  "stealth_sitemap": [
+   "hardening"
+  ],
+  "submit": [
+   "general",
+   "bots",
+   "content",
+   "images",
+   "log",
+   "lockdown"
+  ],
+  "token": [
+   "bots"
+  ],
+  "ua": [
+   "log"
+  ],
+  "zone": [
+   "bots"
+  ]
+ }
+}

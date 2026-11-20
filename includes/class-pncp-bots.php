@@ -25,6 +25,15 @@ final class PNCP_Bots {
 	const SURGE_SAMPLE = 10;
 
 	/**
+	 * 3.11: static files (is_static_request()) have a per-minute counter of their own, this many times the page
+	 * limit ("Pages per minute"), never a violation. No setting of its own: it follows the page limit (and
+	 * Emergency Mode's stricter one).
+	 *
+	 * @var int
+	 */
+	const MEDIA_FACTOR = 10;
+
+	/**
 	 * 3.4.3: without an object cache or APCu, how many new per-IP counter rows wp_options may get per minute,
 	 * site-wide (see db_incr_capped()).
 	 *
@@ -146,6 +155,11 @@ final class PNCP_Bots {
 	 * @var bool
 	 */
 	private static $rest_seen = false;
+
+	/**
+	 * 3.11: the User-Agent refusals after which a scanner probe is still banned (ban_refused_probe()).
+	 */
+	const PROBE_UA_REASONS = array( 'no_browser', 'empty_ua', 'bot_ua', 'bad_ua', 'headless', 'fake_browser' );
 
 	/**
 	 * Registers the hooks.
@@ -343,6 +357,11 @@ final class PNCP_Bots {
 			// _embed, or another plugin inside the same request, are still checked for blocks and bans but count
 			// nothing. Batch requests hold only writes, so this opens no way around the limit.
 			if ( ! $first ) {
+				$count = false;
+			}
+			// 3.11: FluentCommunity's portal loads every screen through its own REST routes: a signed-in member's
+			// reads of them do not count toward the REST limit (guests still count; every other check applies).
+			if ( $count && PNCP_Fluent_Community::uncounted_rest( $request ) ) {
 				$count = false;
 			}
 		}
@@ -670,7 +689,9 @@ final class PNCP_Bots {
 		$ip = null !== self::$dry ? (string) self::$dry['ip'] : PNCP_Ip::client_ip();
 
 		// 3.6: the server itself only when the address did not come from far away (PNCP_Ip::is_local_request()).
-		if ( '' === $ip || ( null !== self::$dry ? PNCP_Ip::is_local( $ip ) : PNCP_Ip::is_local_request() ) ) {
+		// 3.11: also its public address, verified, when the site's request to itself came back through the CDN
+		// (PNCP_Server_Ips): Site Health and the "Security headers" check got a 403 from their own site.
+		if ( '' === $ip || ( null !== self::$dry ? PNCP_Ip::is_local( $ip ) || PNCP_Server_Ips::is_server_ip( $ip ) : PNCP_Ip::is_local_request() || PNCP_Server_Ips::is_request() ) ) {
 			return self::pass( 'local' );
 		}
 		// Always-allowed IPs: only if the IP cannot be spoofed (not "trust every proxy").
@@ -724,7 +745,10 @@ final class PNCP_Bots {
 		// With the automatic Emergency Mode on, every page that reaches this point counts toward the site's pages
 		// per minute (verified search engines and exempt staff do not), blocked or not: what matters is how hard
 		// the site is being hit. One counter write per page, so only when the option is on.
-		if ( $count && in_array( $context, array( 'page', 'search' ), true ) && ! empty( $s['auto_emergency'] ) && null === self::$dry ) {
+		// 3.11: a static file (image, video, audio, font, CSS, JavaScript) that reached PHP (a WebP rewrite, an image
+		// proxy, a 404 handler) is not a page: it never counts toward the page limits (media_limit() below).
+		$media = 'page' === $context && self::is_static_request();
+		if ( $count && ! $media && in_array( $context, array( 'page', 'search' ), true ) && ! empty( $s['auto_emergency'] ) && null === self::$dry ) {
 			self::surge( $s );
 		}
 
@@ -769,8 +793,25 @@ final class PNCP_Bots {
 		$plugin_bot = PNCP_Plugin_Bots::match( $ua, $ip );
 		$allowed_ua = '' !== $ua && ( self::allow_list_match( $ua, $ip, $s ) || self::ua_in_list( $ua, PNCP_Options::allowed_ai_search() ) || null !== $plugin_bot );
 
+		// 3.10: the files a site publishes about itself (/.well-known/…, favicon, apple-touch-icon, the web app
+		// manifest, ads.txt), read with GET / HEAD at their exact addresses. They are fetched by services and by
+		// the operating system, never by a browser tab (Android's app links check, Chrome's prefetch proxy, iOS
+		// passkeys and home-screen icons): the "looks like a bot" checks below skip them. The bot list, the
+		// limits and the attack checks still apply.
+		$metadata = 'page' === $context && self::is_metadata_request();
+		// 3.11: /.well-known/* also without a User-Agent, and the services that read it (well_known_agents(): Google's
+		// app links check, Chrome's prefetch proxy, Apple's passkeys, OneSignal) count as always allowed there, also
+		// on sites whose "Always allowed" list was saved before they were in it.
+		$well_known = $metadata && self::is_well_known_request();
+		if ( $well_known && ! $allowed_ua && '' !== $ua && self::ua_in_list( $ua, self::well_known_agents() ) ) {
+			$allowed_ua = true;
+		}
+		// 3.11: an address on Google's or Apple's official lists is never refused by the header checks (no
+		// User-Agent, "Browsers only", headless): their fetchers never send browser headers. Looked up last, only
+		// for a request that would be refused (the lists are large and not autoloaded).
+
 		if ( ! empty( $s['block_bots'] ) && ! $allowed_ua ) {
-			if ( '' === trim( $ua ) && ! empty( $s['block_empty_ua'] ) ) {
+			if ( '' === trim( $ua ) && ! empty( $s['block_empty_ua'] ) && ! $well_known && ! ( $per_ip && self::is_google_or_apple_ip( $ip ) ) ) {
 				return self::verdict( 403, 'empty_ua', $ip );
 			}
 			if ( '' !== $ua && self::ua_in_list( $ua, PNCP_Options::blocked_agents( $s ) ) ) {
@@ -811,18 +852,11 @@ final class PNCP_Bots {
 		// Mode turns that check on during the very attack that uses up the budget. The limits still apply to it.
 		$unverified_crawler = '' !== $family && $per_ip && self::$verify_inconclusive;
 
-		// 3.10: the files a site publishes about itself (/.well-known/…, favicon, apple-touch-icon, the web app
-		// manifest, ads.txt), read with GET / HEAD at their exact addresses. They are fetched by services and by
-		// the operating system, never by a browser tab (Android's app links check, Chrome's prefetch proxy, iOS
-		// passkeys and home-screen icons): the "looks like a bot" checks below skip them. The bot list, the
-		// limits and the attack checks still apply.
-		$metadata = 'page' === $context && self::is_metadata_request();
-
 		// Every browser sends Accept-Language and "Mozilla/" in the User-Agent; most scripts do not.
 		// Not on wc-ajax: some payment gateways / extensions call them server-side, without Accept-Language.
 		// 3.10: never for an address on Google's official lists (its crawlers, special crawlers and user-triggered
 		// fetchers): those never send browser headers, whatever their User-Agent.
-		if ( ! empty( $s['require_browser_headers'] ) && ! $allowed_ua && ! $feed && ! $unverified_crawler && ! $metadata && in_array( $context, array( 'page', 'search' ), true ) && ! self::is_wc_ajax() && '' === self::wc_admin_ajax_action() && ! self::looks_like_browser( $ua ) && ! ( $per_ip && PNCP_Ip::in_any( $ip, PNCP_Ip::list_of( 'google' ) ) ) ) {
+		if ( ! empty( $s['require_browser_headers'] ) && ! $allowed_ua && ! $feed && ! $unverified_crawler && ! $metadata && in_array( $context, array( 'page', 'search' ), true ) && ! self::is_wc_ajax() && '' === self::wc_admin_ajax_action() && ! self::looks_like_browser( $ua ) && ! ( $per_ip && self::is_google_or_apple_ip( $ip ) ) ) {
 			return self::verdict( 403, 'no_browser', $ip );
 		}
 
@@ -830,7 +864,7 @@ final class PNCP_Bots {
 		// Not for anyone claiming to be a search engine: those are verified (or blocked as fake) above.
 		if ( ! empty( $s['block_headless'] ) && ! $allowed_ua && ! $feed && ! $metadata && '' === $family && in_array( $context, array( 'page', 'search' ), true ) && ! self::is_wc_ajax() && '' === self::wc_admin_ajax_action() ) {
 			$fake = self::fake_browser( $ua );
-			if ( '' !== $fake ) {
+			if ( '' !== $fake && ! ( $per_ip && self::is_google_or_apple_ip( $ip ) ) ) {
 				return self::verdict( 403, $fake, $ip );
 			}
 		}
@@ -864,6 +898,21 @@ final class PNCP_Bots {
 			'graphql' => array( 'rate_limit_rest', 'rate_rest' ),
 			'sitemap' => array( 'rate_limit_sitemap', 'rate_sitemap' ),
 		);
+		// 3.11: static files: a counter of their own, MEDIA_FACTOR times the page limit, never a violation, and none
+		// of the page limits below (stricter, 404, account, /56). One image opened again and again in a chat app's
+		// browser (a Viber user got "Pages per minute" for 18 requests to one .webp) is not scraping pages. The
+		// link previews of the "Always allowed" list (link_preview_agents()) are not counted at all on media.
+		if ( $count && $media ) {
+			if ( $allowed_ua && self::ua_in_list( $ua, self::link_preview_agents() ) && self::allow_list_match( $ua, $ip, $s ) ) {
+				return self::pass( 'media' );
+			}
+			$limit = self::MEDIA_FACTOR * (int) $s['rate_limit'];
+			if ( $limit > 0 && self::hit( $ip, 'rate_media' ) > $limit ) {
+				return self::verdict( 429, 'rate_media', $ip );
+			}
+			return self::pass( 'media' );
+		}
+
 		// Prefetch / prerender: a limit of its own, three times the page limit, never a violation. Speed plugins
 		// (Flying Pages, instant.page, speculative loading) prefetch many links of each page a visitor reads, so
 		// with the page limit a real visitor could be stopped and even banned. Its headers are sent by any script
@@ -1189,29 +1238,39 @@ final class PNCP_Bots {
 		if ( empty( $s['verify_ai_bots'] ) || '' === $ua || '' === $ip ) {
 			return '';
 		}
+		$list = self::claimed_ai_list( $ua );
+		if ( '' === $list || ! self::ua_in_list( $ua, PNCP_Options::allowed_ai_search() ) ) {
+			return '';
+		}
+		// 3.10: the ranges the official list lacks (PNCP_Ip::extra_ranges(), e.g. Anthropic's outbound range,
+		// which Claude-User fetches from) verify too, even before the list is downloaded.
+		if ( PNCP_Ip::in_any( $ip, PNCP_Ip::extra_ranges( $list ) ) ) {
+			return 'verified';
+		}
+		$ranges = PNCP_Ip::list_of( $list );
+		if ( ! $ranges ) {
+			return '';
+		}
+		if ( PNCP_Ip::in_any( $ip, $ranges ) ) {
+			return 'verified';
+		}
+		// 3.10: fail open with a list that has not been refreshed for a week (its download keeps failing):
+		// the service may have new addresses since, so a real bot must not be called fake. The bot list
+		// decides, as before the list was downloaded.
+		return PNCP_Ip::list_stale( $list ) ? '' : 'fake';
+	}
+
+	/**
+	 * The official list (ai_bot_lists()) of the first AI bot the User-Agent names, case-insensitive, or ''.
+	 *
+	 * @param string $ua User-Agent.
+	 * @return string
+	 */
+	public static function claimed_ai_list( $ua ) {
 		foreach ( self::ai_bot_lists() as $agent => $list ) {
-			if ( false === stripos( $ua, $agent ) ) {
-				continue;
+			if ( false !== stripos( (string) $ua, $agent ) ) {
+				return $list;
 			}
-			if ( ! self::ua_in_list( $ua, PNCP_Options::allowed_ai_search() ) ) {
-				return '';
-			}
-			// 3.10: the ranges the official list lacks (PNCP_Ip::extra_ranges(), e.g. Anthropic's outbound range,
-			// which Claude-User fetches from) verify too, even before the list is downloaded.
-			if ( PNCP_Ip::in_any( $ip, PNCP_Ip::extra_ranges( $list ) ) ) {
-				return 'verified';
-			}
-			$ranges = PNCP_Ip::list_of( $list );
-			if ( ! $ranges ) {
-				return '';
-			}
-			if ( PNCP_Ip::in_any( $ip, $ranges ) ) {
-				return 'verified';
-			}
-			// 3.10: fail open with a list that has not been refreshed for a week (its download keeps failing):
-			// the service may have new addresses since, so a real bot must not be called fake. The bot list
-			// decides, as before the list was downloaded.
-			return PNCP_Ip::list_stale( $list ) ? '' : 'fake';
 		}
 		return '';
 	}
@@ -1359,6 +1418,54 @@ final class PNCP_Bots {
 	}
 
 	/**
+	 * 3.11: "Ban scanners on their first probe" also for a probe that a User-Agent check refuses first. With
+	 * "Browsers only", the headless check, "No User-Agent" or the bot list on, most scanners (python-requests,
+	 * Go, zgrab…) were refused for their User-Agent before probe_guard() ran: never banned, they went on probing
+	 * (live logs: /actuator/env from a new address every few minutes). The request is refused as before; the IP is
+	 * also banned as by probe_guard(), with its safety: only a path on the probe list that is not a real file,
+	 * not a Private URL, and only when WordPress answered a 404 (the main query ran: page_guard()) or, before
+	 * the query (the early check), for the paths that can never be a WordPress page (PNCP_Probe::RUNTIME_KEYS);
+	 * the exemptions of should_ban_on_sight() and the filter pncp_probe_ban; never in "Monitor only".
+	 *
+	 * @param string $ip Visitor IP.
+	 * @return bool Whether the IP was banned (the request is logged as a probe then).
+	 */
+	private static function ban_refused_probe( $ip ) {
+		$s = PNCP_Options::get();
+		if ( empty( $s['enabled'] ) || empty( $s['probe_ban'] ) || (int) $s['ban_strikes'] <= 0 || PNCP_Options::monitoring( $s ) || '' === $ip ) {
+			return false;
+		}
+		$path = PNCP_Probe::request_path();
+		if ( did_action( 'parse_query' ) ) {
+			if ( ! ( is_404() || '' === (string) get_option( 'permalink_structure' ) ) || ! PNCP_Probe::matches( $path ) ) {
+				return false;
+			}
+		} else {
+			$body = PNCP_Probe::body( 'runtime' );
+			if ( '' === $body || 1 !== preg_match( '#^/' . $body . '$#i', '/' . ltrim( $path, '/' ) ) || PNCP_Paths::is_site_metadata( $path ) ) {
+				return false;
+			}
+		}
+		if ( '' !== trim( (string) $s['private_paths'] ) && '' !== PNCP_Private_Urls::matching_pattern( $path, PNCP_Options::parse_list( $s['private_paths'] ) ) ) {
+			return false;
+		}
+		if ( PNCP_Probe::file_exists( $path ) || PNCP_Ip::is_cdn_edge( $ip ) || PNCP_Log::is_banned( $ip ) ) {
+			return false;
+		}
+		$ua = self::user_agent();
+		if ( ( '' !== $ua && self::allow_list_match( $ua, $ip, $s ) ) || ! self::should_ban_on_sight( $ip, 'pncp_pr_' ) ) {
+			return false;
+		}
+		/** This filter is documented in includes/class-pncp-bots.php (probe_guard()). */
+		if ( ! apply_filters( 'pncp_probe_ban', true, $path, $ip ) ) {
+			return false;
+		}
+		self::no_cache();
+		PNCP_Log::ban( $ip, self::probe_ban_minutes( $ip, (int) $s['ban_minutes'] ), 'probe' );
+		return true;
+	}
+
+	/**
 	 * Logs and returns the decision.
 	 *
 	 * In "Monitor only" (PNCP_Options::monitoring()) the verdict is logged as "would block" and the request
@@ -1377,6 +1484,10 @@ final class PNCP_Bots {
 				'code'   => $code,
 				'reason' => $reason,
 			);
+		}
+		// 3.11: a scanner probe refused first by a User-Agent check is still banned on its first probe.
+		if ( 403 === $code && in_array( $reason, self::PROBE_UA_REASONS, true ) && self::ban_refused_probe( $ip ) ) {
+			$reason = 'probe';
 		}
 		PNCP_Reputation::record_reason( $ip, $reason ); // 3.7: what the IP did counts toward its reputation.
 		if ( PNCP_Options::monitoring() ) {
@@ -1699,7 +1810,7 @@ final class PNCP_Bots {
 			}
 			return false;
 		}
-		if ( null === $host || '' === $host || $host === $ip ) {
+		if ( '' === $host || $host === $ip ) {
 			// No PTR record or DNS failure: perhaps temporary, so it is retried in 5 minutes.
 			self::$verify_inconclusive = true;
 			if ( $store ) {
@@ -1769,12 +1880,7 @@ final class PNCP_Bots {
 	 * @return bool
 	 */
 	public static function is_official_crawler_ip( $ip ) {
-		foreach ( array( 'google', 'bing', 'apple', 'duckduckgo' ) as $list ) { // 3.10: also Applebot and DuckDuckBot.
-			if ( PNCP_Ip::in_any( $ip, PNCP_Ip::list_of( $list ) ) ) {
-				return true;
-			}
-		}
-		return false;
+		return PNCP_Ip::in_lists( $ip, array( 'google', 'bing', 'apple', 'duckduckgo' ) ); // 3.10: also Applebot and DuckDuckBot.
 	}
 
 	/**
@@ -1853,6 +1959,94 @@ final class PNCP_Bots {
 			return false;
 		}
 		return PNCP_Paths::is_site_metadata( $path );
+	}
+
+	/**
+	 * 3.11: the extensions of static files (images, video, audio, fonts, CSS, JavaScript) that never count as
+	 * pages. Filter `pncp_static_extensions` (lowercase, without the dot).
+	 *
+	 * @return string[]
+	 */
+	public static function static_extensions() {
+		$ext = apply_filters( 'pncp_static_extensions', array( 'jpg', 'jpeg', 'jpe', 'png', 'gif', 'webp', 'avif', 'svg', 'ico', 'bmp', 'tif', 'tiff', 'heic', 'heif', 'jxl', 'mp4', 'm4v', 'webm', 'ogv', 'mov', 'mp3', 'm4a', 'aac', 'oga', 'ogg', 'opus', 'wav', 'flac', 'woff', 'woff2', 'ttf', 'otf', 'eot', 'css', 'js', 'mjs', 'map' ) );
+		$out = array();
+		foreach ( is_array( $ext ) ? $ext : array() as $e ) {
+			$e = strtolower( trim( (string) $e, ". \t\n\r\0\x0B" ) );
+			if ( preg_match( '/^[a-z0-9]{1,10}$/', $e ) ) {
+				$out[] = $e;
+			}
+		}
+		return array_values( array_unique( $out ) );
+	}
+
+	/**
+	 * 3.11: is this a GET / HEAD of a static file, by the extension of the last part of its path (a query string
+	 * does not count)? Such a request may still reach PHP: a WebP rewrite, an image proxy, a 404 handler.
+	 *
+	 * @param string|null $path Path (null = this request).
+	 * @return bool
+	 */
+	public static function is_static_request( $path = null ) {
+		if ( null === $path ) {
+			$method = null !== self::$dry || ! isset( $_SERVER['REQUEST_METHOD'] ) ? 'GET' : strtoupper( sanitize_key( wp_unslash( $_SERVER['REQUEST_METHOD'] ) ) );
+			if ( ! in_array( $method, array( 'GET', 'HEAD' ), true ) ) {
+				return false;
+			}
+			$path = self::request_path();
+		}
+		$path = strtolower( (string) $path );
+		$dot  = strrpos( $path, '.' );
+		if ( false === $dot || false !== strpos( substr( $path, $dot ), '/' ) ) {
+			return false;
+		}
+		return in_array( substr( $path, $dot + 1 ), self::static_extensions(), true );
+	}
+
+	/**
+	 * 3.11: the link previews of chat and social apps: on static files they are not counted at all when they are in
+	 * the "Always allowed" list. Filter `pncp_link_preview_agents`.
+	 *
+	 * @return string[]
+	 */
+	public static function link_preview_agents() {
+		$agents = apply_filters( 'pncp_link_preview_agents', array( 'Viber', 'WhatsApp', 'facebookexternalhit', 'Facebot', 'Twitterbot', 'TelegramBot', 'Slackbot', 'LinkedInBot', 'Discordbot', 'Skype' ) );
+		return array_values( array_filter( array_map( 'strval', is_array( $agents ) ? $agents : array() ) ) );
+	}
+
+	/**
+	 * 3.11: is this a metadata request (is_metadata_request()) under /.well-known/?
+	 *
+	 * @param string|null $path Path relative to the site (null = this request).
+	 * @return bool
+	 */
+	public static function is_well_known_request( $path = null ) {
+		if ( null === $path ) {
+			$path = PNCP_Private_Urls::relative_path( '/' . ltrim( self::request_path(), '/' ) );
+		}
+		return 0 === strpos( strtolower( (string) $path ), '/.well-known/' ) && self::is_metadata_request( $path );
+	}
+
+	/**
+	 * 3.11: the services that read /.well-known/* (Digital Asset Links, Chrome's private prefetch proxy, Apple's
+	 * passkeys / associated domains, OneSignal): always allowed there, whatever the "Always allowed" list holds.
+	 * Filter `pncp_well_known_agents`.
+	 *
+	 * @return string[]
+	 */
+	public static function well_known_agents() {
+		$agents = apply_filters( 'pncp_well_known_agents', array( 'GoogleAssociationService', 'Chrome Privacy Preserving Prefetch Proxy', 'AuthenticationServices', 'OneSignal' ) );
+		return array_values( array_filter( array_map( 'strval', is_array( $agents ) ? $agents : array() ) ) );
+	}
+
+	/**
+	 * 3.11: is the address on Google's (crawlers, special crawlers, user-triggered fetchers) or Apple's official
+	 * list?
+	 *
+	 * @param string $ip IP.
+	 * @return bool
+	 */
+	public static function is_google_or_apple_ip( $ip ) {
+		return '' !== (string) $ip && PNCP_Ip::in_lists( $ip, array( 'google', 'apple' ) );
 	}
 
 	/**
@@ -2423,6 +2617,7 @@ final class PNCP_Bots {
 		header( 'X-Robots-Tag: noindex, nofollow' );
 		$monitor = PNCP_Options::monitoring( $s );
 		$ban     = false;
+		$ip      = '';
 		// A real file is never logged or banned.
 		if ( ! PNCP_Probe::file_exists( $path ) ) {
 			$ip  = PNCP_Ip::client_ip();
@@ -2634,7 +2829,7 @@ final class PNCP_Bots {
 	 */
 	private static function should_ban_on_sight( $ip, $seen ) {
 		$s = PNCP_Options::get();
-		if ( '' === $ip || PNCP_Options::user_is_exempt( $s ) || PNCP_Ip::is_local( $ip ) || ! PNCP_Ip::reliable() || self::is_official_crawler_ip( $ip ) ) {
+		if ( '' === $ip || PNCP_Options::user_is_exempt( $s ) || PNCP_Ip::is_local( $ip ) || ! PNCP_Ip::reliable() || self::is_official_crawler_ip( $ip ) || PNCP_Server_Ips::is_request() ) {
 			return false;
 		}
 		if ( PNCP_Ip::in_any( $ip, PNCP_Options::parse_list( $s['allow_ips'] ) ) ) {

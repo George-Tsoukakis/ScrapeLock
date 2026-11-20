@@ -4,7 +4,7 @@ Tags: ai crawlers, anti-scraping, bot protection, rate limit, content protection
 Requires at least: 6.2
 Tested up to: 7.2
 Requires PHP: 7.4
-Stable tag: 3.10.1
+Stable tag: 3.11.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -362,6 +362,25 @@ No, on purpose: only an app code, a recovery code or the SCRAPELOCK_UNLOCK line 
 
 == Changelog ==
 
+= 3.11.0 =
+* Fix: the site's own requests through the CDN (Site Health, the Security headers check, cron, cache preloads) got "No browser headers" (403), because behind Bunny the server's public address was not known. The server's addresses (SERVER_ADDR, what the site's names resolve to without CDN addresses, and addresses learned from the site's own signed requests) pass every check, also the early and pre-cache checks and the Vulnerable points log. Never by User-Agent, and only with a visitor IP that can be trusted. The signature is never sent on when such a request is redirected to another host, and a newly learned address reaches the pre-cache check in the same request (Site Health no longer calls it "on but not running" until WP cron runs). Filter `pncp_server_ips`.
+* Fix: the service bots of active plugins (WP-Rocket-SaaS) are also allowed in the pre-cache check, and the early check knows the bots that other plugins add with `pncp_plugin_bots`.
+* Fix: GET and HEAD requests for /.well-known/ are never refused for an empty User-Agent, and GoogleAssociationService, Chrome's Privacy Preserving Prefetch Proxy, Apple's AuthenticationServices and OneSignal count as allowed there. Addresses on Google's or Apple's official lists are never refused by the empty User-Agent, "Browsers only" or headless checks. New installs also have these four in "Always allowed". Filter `pncp_well_known_agents`.
+* Fix: images, video, fonts, CSS and JavaScript no longer count as pages toward the page limits or automatic Emergency Mode. They have a counter of their own (10 times "Pages per minute", never a violation), and link previews in "Always allowed" are not counted on them. Filter `pncp_static_extensions`.
+* Fix: with "Allow AI search" on, its bots (OAI-SearchBot, ChatGPT-User, PerplexityBot…) are left out of the bot list everywhere it is used: WordPress, the early and pre-cache checks, the server rules and the Bunny log import. The Bots tab warns when the stored bot list still names them, with "Remove from the list". Training crawlers stay blocked.
+* Fix: "Ban scanners on their first probe" also bans on the first probe for files of other software: Spring Boot /actuator, Dockerfile and docker-compose, Railway, payment gateway and parameters files, credentials and secrets, .aws, .vscode/sftp.json, *.git/config, wp-conflg.php. Filter `pncp_probe_paths`.
+* Fix: "Ban scanners on their first probe" also bans a scanner that a User-Agent check refuses first ("Browsers only", the headless check, an empty User-Agent, the bot list): python-requests and similar asking for /actuator/env or /.env got a 403 but were never banned. The same exemptions apply (staff, verified search engines, always-allowed IPs and User-Agents, real files, Private URLs, Monitor only, filter `pncp_probe_ban`). In the early check, before WordPress knows whether the address is a page, only .env, .git, wp-config.php backups, dumps and backup archives.
+* Fix: status badges show "Set but not active" with the reason (the loader is not in wp-config.php, the CDN secret is missing, protection is off…) instead of "Off" for a setting that is on but not in effect: the status bar, Network and CDN, the dashboard widget, Site Health, Stealth and the weekly email.
+* Fix: settings are named in words instead of raw keys (such as "block_ip_host: 1") in the Emergency Mode line, the "Reset this tab" and import tables, and Site Health info. Filter `pncp_setting_labels`.
+* New: FluentCommunity. While it is active, its portal (/hub/ or its own slug) counts as a content address in the Log, and the portal's REST reads by signed-in members do not count toward "REST API requests per minute". Every other check still applies to them. Filters `pncp_fluent_community_active`, `pncp_fluent_community_slug`.
+* New: the Log names the bot list entry behind each "User-Agent in the bot list" block. A service blocked as a generic HTTP library gets "Allow this service", which allows only its whole User-Agent.
+* New: "For my site" on the first tab (and `wp scrapelock wizard`). It finds the plugins, the CDN and the server in use, proposes settings for them with the reason for each, and gives advice that is not a setting. Changes that block more are not ticked. Nothing changes until "Apply selected", and the settings before are saved under "Earlier versions" with an Undo. Not while the site is locked.
+* Change: the settings tabs are grouped (Content, Bots & limits, Security, Records). The Bots and limits tab is an accordion: only Bots, Limits and Failed sign-ins are open on a plain visit, and the network, CDN and IP list parts are under "Advanced". Long lists (the bot list, the allow list and lists of 6 or more entries) show an entry count with Edit. Every field keeps its name and place in the form.
+* Change: every setting has a one-line help text, and the longer explanation is under "More". "May affect visitors/SEO" is a warning icon, and number fields show "Default: N". Error and warning notices say in one sentence what to do. The EU directive citation of the TDM opt-out is under More.
+* Change: new installs only: "Ban scanners on their first probe", "Refuse requests that open the site by its IP address", IP reputation on, and temporary blocks of 120 minutes. Existing sites keep their values. "Reset this tab" uses the new-install values, after its confirmation table.
+* New: Greek translation of the whole plugin, shipped in languages/ (scrapelock-el.mo) and loaded on WordPress 6.2 and later; a language pack from translate.wordpress.org still comes first. Sentences that were split into pieces are now whole sentences for translators.
+* Upgrade: with "Allow AI search" on, the AI search bots are removed once from the stored bot list, after a saved version under "Earlier versions". Sites with the option off keep their list.
+
 = 3.10.1 =
 * New: Site Health "ScrapeLock site files" checks the files that phones, browsers and active plugins ask for at the root of the site. When a Site Icon is set and /apple-touch-icon.png answers "not found", "Create it" writes a 180 × 180 PNG made from the Site Icon (and apple-touch-icon-precomposed.png). While OneSignal is active and /OneSignalSDKWorker.js answers "not found" (browsers that subscribed when the worker was at the root ask for it there), "Create it" writes OneSignal's one-line worker. Without a Site Icon it links to where you choose one. Nothing is written without the click, a file of the site is never replaced, and Remove (or uninstall) deletes only files ScrapeLock wrote and nobody changed.
 * New: Site Health "Wordfence and the visitor address", while Wordfence is active: on your own visit through the CDN it compares the address Wordfence reads with the visitor address ScrapeLock reads. If Wordfence reads the CDN's server (it would then block or rate-limit the CDN, and every visitor with it), the test is critical and gives the steps (X-Forwarded-For, Trusted Proxies) with Bunny's addresses to copy. Nothing in Wordfence is changed.
@@ -469,6 +488,9 @@ No, on purpose: only an app code, a recovery code or the SCRAPELOCK_UNLOCK line 
 The changes of 3.5.0 and earlier versions are in changelog.txt in the plugin folder.
 
 == Upgrade Notice ==
+
+= 3.11.0 =
+Fewer false blocks: the site's own requests through the CDN, /.well-known/, static files, plugin service bots and allowed AI search bots. A "For my site" assistant, grouped tabs and shorter help texts. Settings and exports from 3.10 are kept; with "Allow AI search" on, its bots are removed from the bot list once (a saved version is kept).
 
 = 3.10.1 =
 Site Health can create a missing apple-touch-icon.png and OneSignalSDKWorker.js with one click, and checks that Wordfence reads the visitor's address behind the CDN.

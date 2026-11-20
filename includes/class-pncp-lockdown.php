@@ -342,7 +342,7 @@ final class PNCP_Lockdown {
 	/**
 	 * The stored state.
 	 *
-	 * @return array{secret:string, locked:bool, until:int, last_step:int, codes:string[], since:int}
+	 * @return array<string, mixed> secret, locked, until, last_step, codes, since and the other keys set below.
 	 */
 	public static function state() {
 		if ( null === self::$state ) {
@@ -4107,11 +4107,14 @@ final class PNCP_Lockdown {
 		if ( $user && ! $own && self::is_locked() && self::is_staff( $user ) ) {
 			// 3.4.3: a page that stops before themes are set up (the Customizer, on setup_theme) would load the
 			// translations "just in time", which WordPress reports as too early. The site language's file is
-			// loaded here directly; without one, the page is in English for this request, with no notice.
+			// loaded here directly (a language pack, else the plugin's languages/ folder); without one, the page is
+			// in English for this request, with no notice.
 			$early = ! did_action( 'after_setup_theme' ) && ! is_textdomain_loaded( 'scrapelock' );
 			if ( $early ) {
 				$locale = determine_locale();
-				load_textdomain( 'scrapelock', WP_LANG_DIR . '/plugins/scrapelock-' . $locale . '.mo', $locale );
+				if ( ! load_textdomain( 'scrapelock', WP_LANG_DIR . '/plugins/scrapelock-' . $locale . '.mo', $locale ) ) {
+					load_textdomain( 'scrapelock', PNCP_DIR . 'languages/scrapelock-' . $locale . '.mo', $locale ); // 3.11: the file shipped with the plugin.
+				}
 				$early = ! is_textdomain_loaded( 'scrapelock' );
 				if ( $early ) {
 					$GLOBALS['l10n_unloaded']               = isset( $GLOBALS['l10n_unloaded'] ) ? (array) $GLOBALS['l10n_unloaded'] : array(); // phpcs:ignore WordPress.WP.GlobalVariablesOverride.Prohibited, WordPress.NamingConventions.PrefixAllGlobals.NonPrefixedVariableFound -- WordPress's own global. Only for this page, put back below.

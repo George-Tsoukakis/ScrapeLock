@@ -65,7 +65,7 @@
 	--pncp-shadow-raised: 0 4px 12px rgba(16, 24, 40, 0.08), 0 1px 3px rgba(16, 24, 40, 0.06);
 	--pncp-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
 	--pncp-sticky-top: 32px; /* Height of the admin bar. */
-	--pncp-tabs-height: 50px;
+	--pncp-tabs-height: 74px; /* 3.11: two levels (group, tabs). */
 	--pncp-ring: 0 0 0 2px var(--pncp-surface), 0 0 0 4px var(--pncp-accent);
 }
 
@@ -424,6 +424,18 @@ body.pncp-admin-page #wpbody-content {
 	border-color: var(--pncp-border-strong);
 }
 
+/* 3.11: on in the settings, not in effect (the reason is on the pill). */
+.pncp-pill--set {
+	border-color: var(--pncp-warn-line);
+	background: var(--pncp-warn-soft);
+	color: var(--pncp-warn-text);
+	white-space: normal;
+}
+
+.pncp-pill--set::before {
+	background: var(--pncp-warn);
+}
+
 .pncp-pill--alert {
 	border-color: var(--pncp-warn-line);
 	background: var(--pncp-warn-soft);
@@ -530,6 +542,55 @@ body.pncp-admin-page #wpbody-content {
 
 .pncp-admin .pncp-tabs .pncp-tab-lockdown {
 	margin-left: auto;
+}
+
+/* 3.11: the tabs in groups (Content, Bots & limits, Security, Records): the group name above its tabs, a thin
+   line between groups. Logical properties keep it right in RTL. */
+.pncp-admin .nav-tab-wrapper.pncp-tabs--grouped {
+	align-items: stretch;
+	gap: 0;
+}
+
+.pncp-admin .pncp-tab-group {
+	display: flex;
+	flex: 0 0 auto;
+	flex-direction: column;
+	padding-block-start: var(--pncp-s2);
+	padding-inline: var(--pncp-s2);
+}
+
+.pncp-admin .pncp-tab-group + .pncp-tab-group {
+	border-inline-start: 1px solid var(--pncp-divider);
+}
+
+.pncp-admin .pncp-tab-group__title {
+	padding-inline: 14px;
+	color: var(--pncp-muted);
+	font-size: 11px;
+	font-weight: 600;
+	letter-spacing: 0.04em;
+	line-height: 1.4;
+	text-transform: uppercase;
+	white-space: nowrap;
+}
+
+.pncp-admin .pncp-tab-group.is-current .pncp-tab-group__title {
+	color: var(--pncp-accent-strong);
+}
+
+.pncp-admin .pncp-tab-group__tabs {
+	display: flex;
+	flex-wrap: nowrap;
+	gap: var(--pncp-s1);
+}
+
+.pncp-admin .pncp-tabs--grouped .nav-tab {
+	padding-block: 8px 10px;
+}
+
+.pncp-admin .pncp-tabs--grouped .pncp-tab-lockdown {
+	margin-left: 0;
+	margin-inline-start: 0;
 }
 
 /* Anchors (quick links, #pncp-sec-…) land below the sticky tabs. */
@@ -1252,6 +1313,85 @@ fieldset + .pncp-field {
 /* Inside a folded part the cards sit on white: a grey card surface keeps them apart. */
 .pncp-advanced .form-table > tbody > tr {
 	box-shadow: none;
+}
+
+/* 3.11: the parts of the Bots and limits tab as an accordion: one folded card per part, the title in the
+   summary, the fields inside without a second card around them. */
+.pncp-admin .pncp-acc {
+	margin-block-end: var(--pncp-s3);
+}
+
+.pncp-admin .pncp-acc > summary {
+	padding-block: var(--pncp-s3);
+}
+
+.pncp-admin .pncp-acc > .form-table {
+	margin-block-start: 0;
+}
+
+.pncp-admin .pncp-acc .form-table > tbody > tr.pncp-acc__card {
+	margin: 0;
+	border: 0;
+	border-radius: 0;
+	background: transparent;
+	box-shadow: none;
+}
+
+.pncp-admin .pncp-acc .form-table > tbody > tr.pncp-acc__card > td {
+	padding-inline: 0;
+}
+
+.pncp-admin .pncp-acc > summary:focus-visible {
+	outline: 2px solid var(--pncp-accent);
+	outline-offset: -2px;
+}
+
+.pncp-admin .pncp-acc--lists > .pncp-ip-lists {
+	padding-block: var(--pncp-s4) var(--pncp-s5);
+}
+
+/* 3.11: long lists: "85 entries", the first entries and "Edit". Without JavaScript the textarea is shown
+   (WordPress turns the body class "no-js" into "js" before the page is drawn). */
+.pncp-admin .pncp-list {
+	padding: 10px 12px;
+	border: 1px solid var(--pncp-border);
+	border-radius: var(--pncp-radius-sm);
+	background: var(--pncp-surface-3);
+}
+
+.pncp-admin .pncp-list__bar {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: var(--pncp-s2);
+}
+
+.pncp-admin .pncp-list__label {
+	font-weight: 500;
+}
+
+.pncp-admin .pncp-list .pncp-list__edit,
+.pncp-admin .pncp-list .pncp-list__preview {
+	display: none;
+}
+
+.js .pncp-admin .pncp-list .pncp-list__edit {
+	display: inline-block;
+	margin-inline-start: auto;
+}
+
+.js .pncp-admin .pncp-list:not(.is-open) .pncp-list__preview {
+	display: block;
+	margin: var(--pncp-s2) 0 0;
+	overflow-wrap: anywhere;
+}
+
+.js .pncp-admin .pncp-list:not(.is-open) .pncp-list__editor {
+	display: none;
+}
+
+.pncp-admin .pncp-list__editor textarea {
+	background: var(--pncp-surface);
 }
 
 /* Save bar: stays at the bottom while a long tab scrolls; it lights up while there are unsaved changes. */
@@ -2721,4 +2861,74 @@ fieldset + .pncp-field {
 .pncp-admin .pncp-code textarea[id^="pncp-cf-"] {
 	white-space: pre-wrap;
 	overflow-wrap: anywhere;
+}
+
+/* 3.11: "For my site" (PNCP_Wizard). */
+.pncp-wizard-table .check-column {
+	width: 2.2em;
+	padding-left: 8px;
+}
+
+.pncp-wizard-table tr.is-risky > * {
+	background: var(--pncp-warn-soft);
+}
+
+/* 3.11: the longer explanation of a setting, folded under "More". */
+.pncp-admin details.pncp-more {
+	margin: 2px 0 6px;
+	font-size: 12px;
+	color: var(--pncp-muted);
+}
+
+.pncp-admin details.pncp-more > summary {
+	display: inline-block;
+	cursor: pointer;
+	color: var(--wp-admin-theme-color, #2271b1);
+	font-size: 12px;
+	list-style: none;
+}
+
+.pncp-admin details.pncp-more > summary::-webkit-details-marker {
+	display: none;
+}
+
+.pncp-admin details.pncp-more > summary::after {
+	content: " \25B8";
+}
+
+.pncp-admin details.pncp-more[open] > summary::after {
+	content: " \25BE";
+}
+
+.pncp-admin details.pncp-more > summary:focus-visible {
+	outline: 2px solid var(--wp-admin-theme-color, #2271b1);
+	outline-offset: 1px;
+}
+
+.pncp-admin .pncp-more__body {
+	max-width: 70ch;
+	padding: 4px 0 0 10px;
+	border-left: 2px solid var(--pncp-border);
+}
+
+.pncp-admin .pncp-more__body p {
+	margin: 0 0 6px;
+	font-size: 12px;
+	color: var(--pncp-muted);
+}
+
+/* 3.11: "May affect visitors/SEO" as a warning icon (title and screen-reader text carry the words). */
+.pncp-tag.pncp-risk {
+	padding: 0;
+	border: 0;
+	background: none;
+	color: var(--pncp-warn-text);
+	cursor: help;
+}
+
+.pncp-tag.pncp-risk .dashicons {
+	width: 16px;
+	height: 16px;
+	font-size: 16px;
+	vertical-align: text-bottom;
 }

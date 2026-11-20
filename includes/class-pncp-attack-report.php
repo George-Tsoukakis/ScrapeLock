@@ -1073,7 +1073,7 @@ final class PNCP_Attack_Report {
 					<span class="pncp-badge pncp-badge--monitor"><?php esc_html_e( 'Monitor only', 'scrapelock' ); ?></span>
 				<?php endif; ?>
 			</h2>
-			<p class="description"><?php esc_html_e( 'Where bots and attackers hit this site, how many try wp-admin and the sign-in, and from where. Recorded on this server, also when nothing was refused. Use “Lock this” next to an address to close that point, and “Block” next to an IP.', 'scrapelock' ); ?></p>
+			<?php echo PNCP_Admin_Fields::para( __( 'Where bots hit this site. “Lock this” closes a point, “Block” stops an IP.', 'scrapelock' ), __( 'Where bots and attackers hit this site, how many try wp-admin and the sign-in, and from where. Recorded on this server, also when nothing was refused. Use “Lock this” next to an address to close that point, and “Block” next to an IP.', 'scrapelock' ) ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Escaped in PNCP_Admin_Fields. ?>
 			<?php self::render_availability(); ?>
 			<nav class="pncp-ar__periods" aria-label="<?php esc_attr_e( 'Period', 'scrapelock' ); ?>">
 				<?php foreach ( self::periods() as $value => $label ) : ?>
@@ -1445,12 +1445,17 @@ final class PNCP_Attack_Report {
 				<p class="description">
 					<?php
 					if ( class_exists( 'PNCP_Hardening' ) ) {
-						esc_html_e( '“Lock this” closes the point on the Vulnerable points tab (what may stop working is asked first). A dash: no point covers that address, or it is already locked.', 'scrapelock' );
+						esc_html_e( '“Lock this” closes the point on the Vulnerable points tab, after asking.', 'scrapelock' );
 					} else {
 						esc_html_e( 'The Vulnerable points are not available in this installation, so there is no “Lock this”.', 'scrapelock' );
 					}
 					?>
 				</p>
+				<?php
+				if ( class_exists( 'PNCP_Hardening' ) ) {
+					echo PNCP_Admin_Fields::more( __( '“Lock this” closes the point on the Vulnerable points tab (what may stop working is asked first). A dash: no point covers that address, or it is already locked.', 'scrapelock' ) ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Escaped in PNCP_Admin_Fields.
+				}
+				?>
 			<?php endif; ?>
 		</section>
 		<?php
@@ -1636,7 +1641,7 @@ final class PNCP_Attack_Report {
 						</tbody>
 					</table></div>
 				<?php endif; ?>
-				<p class="description"><?php esc_html_e( 'A real account among the usernames tried is a target: give it a long, unique password and two-factor sign-in, and turn on “Hide usernames from visitors”. If only a few people sign in, lock wp-login.php and XML-RPC on the Vulnerable points tab.', 'scrapelock' ); ?></p>
+				<?php echo PNCP_Admin_Fields::para( __( 'A real account tried here needs a long password and two-factor sign-in.', 'scrapelock' ), __( 'A real account among the usernames tried is a target: give it a long, unique password and two-factor sign-in, and turn on “Hide usernames from visitors”. If only a few people sign in, lock wp-login.php and XML-RPC on the Vulnerable points tab.', 'scrapelock' ) ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Escaped in PNCP_Admin_Fields. ?>
 			<?php endif; ?>
 		</section>
 		<?php
@@ -1740,11 +1745,12 @@ final class PNCP_Attack_Report {
 					</tbody>
 				</table></div>
 				<p class="description">
-					<?php esc_html_e( '“Block 24 h” blocks the IP (IPv6: its /64) for a day; “Always block” adds it to “Always-blocked IPs” (Bots and limits tab). Home connections change hands: prefer “Always block” for data centers and addresses that keep coming back. Search engines, CDN edges, your own and always-allowed addresses cannot be blocked here.', 'scrapelock' ); ?>
+					<?php esc_html_e( '“Block 24 h” blocks the IP for a day; “Always block” blocks it permanently.', 'scrapelock' ); ?>
 					<?php if ( PNCP_Options::monitoring() ) : ?>
 						<strong><?php esc_html_e( 'Monitor only is on: a blocked IP is logged as “Would block” and still let through.', 'scrapelock' ); ?></strong>
 					<?php endif; ?>
 				</p>
+				<?php echo PNCP_Admin_Fields::more( __( '“Block 24 h” blocks the IP (IPv6: its /64) for a day; “Always block” adds it to “Always-blocked IPs” (Bots and limits tab). Home connections change hands: prefer “Always block” for data centers and addresses that keep coming back. Search engines, CDN edges, your own and always-allowed addresses cannot be blocked here.', 'scrapelock' ) ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Escaped in PNCP_Admin_Fields. ?>
 			<?php endif; ?>
 		</section>
 		<?php
@@ -1778,12 +1784,13 @@ final class PNCP_Attack_Report {
 				echo esc_html(
 					sprintf(
 						/* translators: %s: number of days */
-						_n( 'From the Log, which keeps the User-Agent of every refused request for %s day (the attack record does not keep User-Agents). A User-Agent is easy to fake: block by it only on the Bots and limits tab, as a bot-list line.', 'From the Log, which keeps the User-Agent of every refused request for %s days (the attack record does not keep User-Agents). A User-Agent is easy to fake: block by it only on the Bots and limits tab, as a bot-list line.', max( 1, $keep ), 'scrapelock' ),
+						_n( 'From the Log, kept %s day. Block by User-Agent only as a bot-list line.', 'From the Log, kept %s days. Block by User-Agent only as a bot-list line.', max( 1, $keep ), 'scrapelock' ),
 						number_format_i18n( max( 1, $keep ) )
 					)
 				);
 				?>
 			</p>
+			<?php echo PNCP_Admin_Fields::more( __( 'The Log keeps the User-Agent of every refused request; the attack record does not keep User-Agents. A User-Agent is easy to fake: block by it only on the Bots and limits tab, as a bot-list line.', 'scrapelock' ) ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Escaped in PNCP_Admin_Fields. ?>
 		</section>
 		<?php
 	}
@@ -1866,7 +1873,7 @@ final class PNCP_Attack_Report {
 		<div class="pncp-ar__tools">
 			<section class="pncp-card" id="pncp-ar-export" aria-labelledby="pncp-ar-export-title">
 				<h2 id="pncp-ar-export-title"><?php esc_html_e( 'Export', 'scrapelock' ); ?></h2>
-				<p class="description"><?php esc_html_e( 'The report of the period shown, as a spreadsheet (CSV): key figures, kinds of attack, addresses with the point that locks them, IPs with country, usernames tried, User-Agents and the CDN edge. Or every row of the record: one line per hour, kind, address and IP.', 'scrapelock' ); ?></p>
+				<?php echo PNCP_Admin_Fields::para( __( 'The report of this period as CSV, or every row of the record.', 'scrapelock' ), __( 'The report of the period shown, as a spreadsheet (CSV): key figures, kinds of attack, addresses with the point that locks them, IPs with country, usernames tried, User-Agents and the CDN edge. Or every row of the record: one line per hour, kind, address and IP.', 'scrapelock' ) ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Escaped in PNCP_Admin_Fields. ?>
 				<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>" class="pncp-ar__form">
 					<input type="hidden" name="action" value="pncp_attack_export">
 					<input type="hidden" name="days" value="<?php echo esc_attr( (string) $days ); ?>">
@@ -1885,7 +1892,8 @@ final class PNCP_Attack_Report {
 			</section>
 			<section class="pncp-card" id="pncp-ar-email" aria-labelledby="pncp-ar-email-title">
 				<h2 id="pncp-ar-email-title"><?php esc_html_e( 'Weekly email', 'scrapelock' ); ?>
-					<span class="pncp-badge<?php echo $on ? ' pncp-badge--monitor' : ''; ?>"><?php echo $on ? esc_html__( 'On', 'scrapelock' ) : esc_html__( 'Off', 'scrapelock' ); ?></span>
+					<?php $pncp_badge = PNCP_Status_State::weekly_report( $s ); // 3.11: three states, with the reason. ?>
+					<span class="pncp-badge<?php echo $on ? ' pncp-badge--monitor' : ''; ?>" data-pncp-state="<?php echo esc_attr( $pncp_badge['state'] ); ?>"><?php echo esc_html( PNCP_Status_State::text( $pncp_badge ) ); ?></span>
 				</h2>
 				<p class="description">
 					<?php
@@ -1893,13 +1901,13 @@ final class PNCP_Attack_Report {
 						echo esc_html(
 							sprintf(
 								/* translators: 1: email addresses, 2: date and time */
-								__( 'Every Monday a plain-text summary of the last 7 days goes to %1$s, with a link to this report. Next: %2$s.', 'scrapelock' ),
+								__( 'Every Monday a 7-day summary goes to %1$s. Next: %2$s.', 'scrapelock' ),
 								$to ? implode( ', ', $to ) : '–',
 								$next ? wp_date( get_option( 'date_format' ) . ' ' . get_option( 'time_format' ), (int) $next ) : '–'
 							)
 						);
 					} else {
-						esc_html_e( 'Off. Turn on “Weekly attack report by email” on the Log tab to get a plain-text summary of the last 7 days every Monday, with a link to this report.', 'scrapelock' );
+						esc_html_e( 'Off: turn on “Weekly attack report by email” on the Log tab.', 'scrapelock' );
 					}
 					if ( $last ) {
 						echo ' ' . esc_html(

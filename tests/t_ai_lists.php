@@ -247,6 +247,16 @@ $health = PNCP_Health::test_ip_lists();
 t( 'Site Health: all lists fresh = good', 'good' === $health['status'], wp_strip_all_tags( $health['description'] ) );
 update_option( PNCP_Ip::LISTS_OPTION . '_updated', $upd_before, false );
 
+// 3.11: one helper finds the list a User-Agent claims (PNCP_Bots::claimed_ai_list()), one checks several lists
+// (PNCP_Ip::in_lists()); ai_verdict(), the request tester and the official-crawler checks use them.
+t( 'claimed_ai_list: Claude-User → anthropic', 'anthropic' === PNCP_Bots::claimed_ai_list( 'Mozilla/5.0 (compatible; Claude-User/1.0; +Claude-User@anthropic.com)' ) );
+t( 'claimed_ai_list: case-insensitive (oai-searchbot)', 'openai_search' === PNCP_Bots::claimed_ai_list( 'Mozilla/5.0 oai-searchbot/1.0' ) );
+t( 'claimed_ai_list: a browser claims none', '' === PNCP_Bots::claimed_ai_list( 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Firefox/140.0' ) );
+PNCP_Ip::store_list( 'perplexity_user', array( '198.51.100.0/24' ) );
+t( 'in_lists: an address on the second list', PNCP_Ip::in_lists( '198.51.100.7', array( 'openai_search', 'perplexity_user' ) ) );
+t( 'in_lists: not on any list', ! PNCP_Ip::in_lists( '203.0.113.7', array( 'openai_search', 'perplexity_user' ) ) );
+t( 'in_lists: no lists', ! PNCP_Ip::in_lists( '198.51.100.7', array() ) );
+
 update_option( PNCP_OPTION, $keep );
 foreach ( array( 'anthropic' => $keep_ant, 'updated' => $keep_upd, 'openai_user' => $keep_oai, 'perplexity_user' => $keep_ppl ) as $name => $value ) {
 	if ( null === $value ) {

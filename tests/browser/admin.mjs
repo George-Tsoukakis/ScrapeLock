@@ -78,11 +78,10 @@ try {
 	await page.goto( PAGE + '&tab=bots' );
 	await page.evaluate( () => {
 		document.querySelector( '#pncp-sec-network' ).open = true;
-		const fold = document.querySelector( 'details.pncp-fold' );
-		fold.open = true;
-		fold.setAttribute( 'data-test-fold', '1' );
 	} );
-	const foldKey = await page.evaluate( () => document.querySelector( '[data-test-fold] [id]' ).id );
+	// 3.11: the bot list is a list editor ("N entries" + "Edit") instead of a fold.
+	await page.click( '#pncp-bot_list-list .pncp-list__edit' );
+	const foldKey = 'pncp-bot_list';
 	const saveTop = await docTop( page, 'form[action="options.php"] #submit' );
 	await page.locator( 'form[action="options.php"] #submit' ).scrollIntoViewIfNeeded();
 	await Promise.all( [ page.waitForNavigation(), page.click( 'form[action="options.php"] #submit' ) ] );
@@ -91,7 +90,7 @@ try {
 	t( 'Save (bots): το «Network and CDN» ξανά ανοιχτό (από την PHP)', await page.evaluate( () => document.querySelector( '#pncp-sec-network' ).hasAttribute( 'open' ) ) );
 	t( 'Save (bots): η ανοιχτή λίστα (fold) ξανά ανοιχτή', await page.evaluate( ( id ) => {
 		const el = document.getElementById( id );
-		return !! ( el && el.closest( 'details' ) && el.closest( 'details' ).open );
+		return !! ( el && el.closest( '[data-pncp-list]' ) && el.closest( '[data-pncp-list]' ).classList.contains( 'is-open' ) && el.offsetParent );
 	}, foldKey ), foldKey );
 	t( 'Save (bots): το «Blocking at the CDN» μένει κλειστό', ! await isOpen( page, '#pncp-sec-edge' ) );
 	t( 'Save (bots): η σελίδα κυλά στο κουμπί Save', await scrolledTo( page, 'form[action="options.php"] #submit', saveTop ), String( saveTop ) );
@@ -129,7 +128,8 @@ try {
 	/* ---------- (b) Vulnerable points: κάρτα hardening ---------- */
 	await page.goto( PAGE + '&tab=hardening' );
 	const hdKeys = await page.evaluate( () => {
-		const ds = [ ...document.querySelectorAll( '.pncp-admin details' ) ];
+		// 3.11: the "More" folds of the help texts are not carried across a reload (admin-sections.js).
+		const ds = [ ...document.querySelectorAll( '.pncp-admin details:not(.pncp-more)' ) ];
 		ds.forEach( ( d, i ) => d.setAttribute( 'data-test-d', String( i ) ) );
 		return ds.map( ( d ) => d.open );
 	} );
@@ -146,7 +146,7 @@ try {
 			await btn.scrollIntoViewIfNeeded();
 			await Promise.all( [ page.waitForNavigation(), btn.click() ] );
 			await settled( page );
-			const open = await page.evaluate( () => [ ...document.querySelectorAll( '.pncp-admin details' ) ].map( ( d ) => d.open ) );
+			const open = await page.evaluate( () => [ ...document.querySelectorAll( '.pncp-admin details:not(.pncp-more)' ) ].map( ( d ) => d.open ) );
 			t( 'hardening «Check again»: τα ανοιχτά <details> ξανά ανοιχτά', closed < 0 || open[ closed ], JSON.stringify( open ) );
 			t( 'hardening «Check again»: η σελίδα στο κουμπί', await page.locator( 'form button, form input[type=submit]', { hasText: 'Check again' } ).first().evaluate( ( el ) => {
 				const r = el.getBoundingClientRect();

@@ -1931,7 +1931,7 @@ final class PNCP_Edge {
 		if ( 'denied' === $status && 'cloudflare' === $c['provider'] && preg_match( '/^[0-9a-f]{37}$/i', (string) $c['token'] ) ) {
 			$message .= ' ' . __( 'This looks like a Global API Key: ScrapeLock needs an API token (My Profile > API Tokens), not the Global API Key.', 'scrapelock' );
 		}
-		if ( '' !== self::$last['ray'] && 'ok' !== $status ) {
+		if ( '' !== self::$last['ray'] ) {
 			$detail .= ( '' !== $detail ? '; ' : '' ) . 'Ray ID ' . self::$last['ray'];
 		}
 		self::$last['kind'] = $kind;
@@ -2390,7 +2390,7 @@ final class PNCP_Edge {
 			'edge_send_off' => array( 'success', __( '“Send temporary blocks to the CDN” is off: no new block is sent. The blocks sent before stay at the CDN until their temporary block ends.', 'scrapelock' ) ),
 			'edge_send_nc'  => array( 'error', __( 'Connect the CDN first (“Save and test the connection”), then turn on sending.', 'scrapelock' ) ),
 			'edge_trust_on' => array( 'success', __( '“Trust Bunny CDN addresses” is on: the real-IP header is now read from requests that come from Bunny CDN edge servers.', 'scrapelock' ) ),
-			'edge_trust_nl' => array( 'warning', __( '“Trust Bunny CDN addresses” is on, but the list of Bunny edge servers could not be downloaded. Until it is, no Bunny address is trusted. It will try again tomorrow, or use “Refresh now” under “Official IP lists”.', 'scrapelock' ) ),
+			'edge_trust_nl' => array( 'warning', __( 'No Bunny address is trusted until its edge server list downloads: use “Refresh now” under “Official IP lists”.', 'scrapelock' ) ),
 		);
 	}
 

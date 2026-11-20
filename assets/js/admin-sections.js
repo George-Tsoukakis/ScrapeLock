@@ -30,11 +30,14 @@
 	}
 
 	// A key for every folded part: its id, else the id of the first element inside it ("in.<id>"), else the id
-	// of the nearest element around it ("<id>.d"); a repeated key gets ".2", ".3"… in page order.
+	// of the nearest element around it ("<id>.d"); a repeated key gets ".2", ".3"… in page order. 3.11: the
+	// "More" folds of the help texts (details.pncp-more) are not carried: dozens of them would crowd out the parts.
 	function parts() {
 		var seen = {};
 		var out = [];
-		Array.prototype.forEach.call( wrap.querySelectorAll( 'details' ), function ( el ) {
+		// 3.11: the long lists ("Edit", admin.js) count as folded parts too, by their id; the "More" folds of help
+		// texts do not (there are dozens of them and they would use up the limit).
+		Array.prototype.forEach.call( wrap.querySelectorAll( 'details:not(.pncp-more), [data-pncp-list]' ), function ( el ) {
 			var base = el.id;
 			if ( ! base ) {
 				var inner = el.querySelector( '[id]' );
@@ -173,7 +176,7 @@
 
 	function reveal( el ) {
 		for ( var node = el; node; node = node.parentElement ) {
-			if ( 'DETAILS' === node.tagName && ! node.open && node !== el ) {
+			if ( ( 'DETAILS' === node.tagName || node.pncpList ) && ! node.open && node !== el ) {
 				node.open = true;
 			}
 		}
@@ -197,8 +200,9 @@
 	var list = parts();
 	state.open.forEach( function ( key ) {
 		var el = SAFE.test( key ) ? find( key, list ) : null;
-		if ( el && 'DETAILS' === el.tagName ) {
-			reveal( el );
+		// 3.11: only the part itself; a part around it opens only when it was open too (its key is in the list),
+		// so a part closed before the Save stays closed.
+		if ( el && ( 'DETAILS' === el.tagName || el.pncpList ) ) {
 			el.open = true;
 		}
 	} );

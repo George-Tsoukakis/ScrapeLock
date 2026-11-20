@@ -118,7 +118,7 @@ final class PNCP_Human {
 	 * @return string
 	 */
 	private static function sign( $data, $ip ) {
-		$ua = isset( $_SERVER['HTTP_USER_AGENT'] ) ? sanitize_text_field( wp_unslash( $_SERVER['HTTP_USER_AGENT'] ) ) : '';
+		$ua = PNCP_Bots::user_agent();
 		return hash_hmac( 'sha256', $data . '|' . PNCP_Ip::limit_key( $ip ) . '|' . md5( $ua ), wp_salt( 'auth' ) . 'pncp-human' );
 	}
 

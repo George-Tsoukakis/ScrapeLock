@@ -1,5 +1,25 @@
 # Αλλαγές
 
+## 3.11.0 — 2026-11-20
+
+Διορθώσεις από τα logs 7 ημερών του pharmacyneeds.gr (Bunny CDN, WP Rocket, FluentCommunity, OneSignal, Nginx), ένας οδηγός ρυθμίσεων και πιο απλό περιβάλλον.
+
+- **Τα αιτήματα του ίδιου του site μέσω CDN** (Site Health, έλεγχος security headers, cron, preload) δεν παίρνουν πια 403 «No browser headers»: οι διευθύνσεις του server (SERVER_ADDR, ό,τι δίνουν τα ονόματα του site χωρίς τις διευθύνσεις του CDN, και όσες μαθαίνει από τα υπογεγραμμένα αιτήματά του προς τον εαυτό του) περνούν από κάθε έλεγχο, και στο early και στο pre-cache check και στο log των Vulnerable points. Ποτέ με βάση το User-Agent, μόνο με IP επισκέπτη που εμπιστευόμαστε. Η υπογραφή δεν ακολουθεί ποτέ ανακατεύθυνση σε άλλο host, και μια διεύθυνση που μόλις έμαθε φτάνει στο pre-cache check στο ίδιο αίτημα (το Site Health δεν το λέει πια «on but not running» μέχρι να τρέξει το WP cron). Φίλτρο `pncp_server_ips`.
+- **Bots ενεργών plugins** (WP-Rocket-SaaS) επιτρέπονται και στο pre-cache check· το early check ξέρει και τα bots που προσθέτουν άλλα plugins με `pncp_plugin_bots`.
+- **/.well-known/**: GET/HEAD χωρίς User-Agent δεν απορρίπτονται· GoogleAssociationService, Chrome Privacy Preserving Prefetch Proxy, AuthenticationServices της Apple και OneSignal επιτρέπονται εκεί. Διευθύνσεις των επίσημων λιστών Google/Apple δεν απορρίπτονται από τους ελέγχους κενού User-Agent, «Browsers only» και headless. Οι νέες εγκαταστάσεις τα έχουν και στο «Always allowed». Φίλτρο `pncp_well_known_agents`.
+- **Στατικά αρχεία** (εικόνες, βίντεο, γραμματοσειρές, CSS, JS) δεν μετρούν ως σελίδες στα όρια ούτε στο αυτόματο Emergency Mode· έχουν δικό τους μετρητή (10 × «Pages per minute», χωρίς παράβαση). Φίλτρο `pncp_static_extensions`.
+- **«Allow AI search» πάνω από τη λίστα bots**: τα OAI-SearchBot, ChatGPT-User, PerplexityBot κ.λπ. βγαίνουν από τη λίστα παντού (WordPress, early/pre-cache, κανόνες server, import των logs του Bunny)· προειδοποίηση με κουμπί «Remove from the list» και μία αφαίρεση στην αναβάθμιση (με αποθηκευμένη έκδοση). Οι crawlers εκπαίδευσης μένουν μπλοκαρισμένοι.
+- **Probes άλλου λογισμικού** στο «Ban scanners on their first probe»: /actuator, Dockerfile, docker-compose, Railway, credentials/secrets, .aws, .vscode/sftp.json, *.git/config, wp-conflg.php. Φίλτρο `pncp_probe_paths`.
+- **Ban και όταν ο scanner απορρίπτεται πρώτα για το User-Agent** («Browsers only», headless, κενό User-Agent, λίστα bots): python-requests και παρόμοια για /actuator/env ή /.env έπαιρναν 403 αλλά δεν αποκλείονταν ποτέ. Οι ίδιες εξαιρέσεις (προσωπικό, επαληθευμένες μηχανές αναζήτησης, always-allowed IP και User-Agents, πραγματικά αρχεία, Private URLs, Monitor only, φίλτρο `pncp_probe_ban`). Στο early check, πριν το WordPress ξέρει αν η διεύθυνση είναι σελίδα, μόνο για .env, .git, αντίγραφα του wp-config.php, dumps και αρχεία backup.
+- **Ενδείξεις σε τρεις καταστάσεις**: «Set but not active» με τον λόγο (loader όχι στο wp-config.php, λείπει το CDN secret, προστασία κλειστή…) αντί για «Off», στη μπάρα, στο Network and CDN, στο widget, στο Site Health, στο Stealth και στο εβδομαδιαίο email.
+- **Ρυθμίσεις με λέξεις** αντί για κλειδιά («block_ip_host: 1») στο Emergency Mode, στους πίνακες «Reset this tab» και import και στο Site Health. Φίλτρο `pncp_setting_labels`.
+- **FluentCommunity**: όσο είναι ενεργό, η πύλη (/hub/) μετρά ως content address στο Log και οι αναγνώσεις REST των συνδεδεμένων μελών δεν μετρούν στο όριο REST· όλοι οι άλλοι έλεγχοι μένουν.
+- **Log**: ποια γραμμή της λίστας bots μπλόκαρε κάθε αίτημα· για υπηρεσία που μπλοκαρίστηκε ως γενική βιβλιοθήκη HTTP, κουμπί «Allow this service» (μόνο το ακριβές User-Agent της).
+- **«For my site»** στην πρώτη καρτέλα και `wp scrapelock wizard`: βρίσκει plugins, CDN και server, προτείνει ρυθμίσεις με τον λόγο τους και δίνει συμβουλές· όσες μπλοκάρουν περισσότερα δεν είναι τσεκαρισμένες. Τίποτα δεν αλλάζει χωρίς «Apply selected», με αποθηκευμένη έκδοση και Undo.
+- **Περιβάλλον**: καρτέλες σε ομάδες (Content, Bots & limits, Security, Records)· η καρτέλα Bots ως accordion με «Advanced»· οι μακριές λίστες ως «N entries» με Edit· κάθε ρύθμιση με βοήθεια μίας γραμμής και τα υπόλοιπα στο «More»· το «May affect visitors/SEO» ως εικονίδιο· «Default: N» σε κάθε αριθμό· ειδοποιήσεις σφάλματος σε μία πρόταση που λέει τι να κάνεις. Κανένα πεδίο δεν άλλαξε όνομα ή φόρμα.
+- **Ελληνική μετάφραση** όλου του plugin, μέσα στο zip (languages/scrapelock-el.mo), που φορτώνεται από WordPress 6.2 και μετά· ένα language pack του translate.wordpress.org έχει προτεραιότητα. Οι προτάσεις που ήταν κομμένες σε κομμάτια έγιναν ολόκληρες για τους μεταφραστές. (Αντικαθιστά την απόφαση της 2.x για μόνο αγγλικά στο zip.)
+- **Νέες προεπιλογές μόνο σε νέες εγκαταστάσεις**: «Ban scanners on their first probe», άρνηση αιτημάτων με την IP αντί για το όνομα, reputation, προσωρινός αποκλεισμός 120 λεπτά. Τα υπάρχοντα sites κρατούν τις τιμές τους· τα exports της 3.10.1 γίνονται import χωρίς απώλεια.
+
 ## 3.10.1 — 2026-11-19
 
 Δύο θέματα του site που φάνηκαν όταν η 3.10.0 σταμάτησε να μπλοκάρει αυτά τα αιτήματα.

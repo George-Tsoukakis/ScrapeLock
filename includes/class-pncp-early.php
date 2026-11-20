@@ -38,7 +38,7 @@ final class PNCP_Early {
 		// All the files first: a plugin folder that is only partly there (an update copying its files, an
 		// incomplete upload) must not stop the whole site with a fatal error. The normal check decides then.
 		$files = array();
-		foreach ( array( 'options', 'ip', 'log', 'private-urls', 'bots', 'plugin-bots' ) as $name ) {
+		foreach ( array( 'options', 'ip', 'log', 'private-urls', 'paths', 'bots', 'plugin-bots', 'server-ips' ) as $name ) {
 			$file = $dir . 'includes/class-pncp-' . $name . '.php';
 			if ( ! is_readable( $file ) ) {
 				return;
@@ -111,7 +111,8 @@ final class PNCP_Early {
 		}
 
 		$ip = PNCP_Ip::client_ip();
-		if ( '' === $ip || PNCP_Ip::is_local_request() ) {
+		// 3.11: and the server's public address, when the site's request to itself came back through the CDN.
+		if ( '' === $ip || PNCP_Ip::is_local_request() || PNCP_Server_Ips::is_request() ) {
 			return null;
 		}
 		if ( PNCP_Ip::reliable() && PNCP_Ip::in_any( $ip, PNCP_Options::parse_list( $s['allow_ips'] ) ) ) {
@@ -148,9 +149,17 @@ final class PNCP_Early {
 			return array( 403, 'banned', $ip );
 		}
 
-		$allowed_ua = '' !== $ua && ( PNCP_Bots::allow_list_match( $ua, $ip, $s ) || PNCP_Bots::ua_in_list( $ua, PNCP_Options::allowed_ai_search() ) || null !== PNCP_Plugin_Bots::match( $ua, $ip ) );
+		// 3.11: and the stored list of the plugin bots (PNCP_Plugin_Bots::stored_match()): the other plugins'
+		// pncp_plugin_bots filters are not added yet here.
+		$allowed_ua = '' !== $ua && ( PNCP_Bots::allow_list_match( $ua, $ip, $s ) || PNCP_Bots::ua_in_list( $ua, PNCP_Options::allowed_ai_search( $s ) ) || null !== PNCP_Plugin_Bots::match( $ua, $ip ) || PNCP_Plugin_Bots::stored_match( $ua, $ip ) );
+		// 3.11: /.well-known/* (PNCP_Bots::is_well_known_request()): its services count as allowed, and no
+		// User-Agent is no reason to refuse it there; nor from an address on Google's or Apple's official lists.
+		$well_known = PNCP_Bots::is_well_known_request();
+		if ( $well_known && ! $allowed_ua && '' !== $ua && PNCP_Bots::ua_in_list( $ua, PNCP_Bots::well_known_agents() ) ) {
+			$allowed_ua = true;
+		}
 		if ( ! empty( $s['block_bots'] ) && ! $allowed_ua ) {
-			if ( '' === trim( $ua ) && ! empty( $s['block_empty_ua'] ) ) {
+			if ( '' === trim( $ua ) && ! empty( $s['block_empty_ua'] ) && ! $well_known && ! ( $per_ip && PNCP_Bots::is_google_or_apple_ip( $ip ) ) ) {
 				return array( 403, 'empty_ua', $ip );
 			}
 			if ( '' !== $ua && PNCP_Bots::ua_in_list( $ua, PNCP_Options::blocked_agents( $s ) ) ) {

@@ -1113,7 +1113,7 @@ final class PNCP_Seal {
 		if ( $filesystem->exists( $path ) && ! self::ours( $path ) ) {
 			return false; // Someone else's file with the same name: never overwritten.
 		}
-		$copy = $locked && ! is_multisite() ? self::snapshot_source( (int) $snap ) : null;
+		$copy = ! is_multisite() ? self::snapshot_source( (int) $snap ) : null;
 		// Written to a temporary file next to it first and then renamed, so a request that loads the must-use
 		// plugins meanwhile never includes half a file (a fatal error for that request). The temporary name does
 		// not end in .php, so WordPress never loads it. Where that cannot be done (a folder PHP cannot create

@@ -13,6 +13,12 @@
  * the configuration is read from config.json there, written by PNCP_Precheck (includes/class-pncp-precheck.php).
  * This file only defines the class: opened directly, it does nothing.
  *
+ * It is the only file wp-config.php includes, before WordPress, so it loads no other file of the plugin: the
+ * address and User-Agent helpers (client_ip(), normalize_ip(), in_any(), is_local(), ua_listed(), limit_key())
+ * repeat PNCP_Ip and PNCP_Bots on purpose. Those need WordPress, and a second file missing during a plugin update
+ * would be a fatal error in wp-config.php for every page. A change to one side must be made on the other too
+ * (tests/t_fixes351.php and t_311_integration.php send the same requests to both).
+ *
  * @package ScrapeLock
  */
 
@@ -211,7 +217,7 @@ final class PNCP_Precheck_Runtime {
 			return array( 403, 'not_via_cdn', $direct );
 		}
 		$ip = self::client_ip( $c, $reliable );
-		if ( '' === $ip || self::is_local_request( $ip, $reliable ) ) {
+		if ( '' === $ip || self::is_local_request( $ip, $reliable ) || self::is_server_request( $c, $ip, $reliable ) ) {
 			return null;
 		}
 		if ( $reliable && self::in_any( $ip, $c['allow'] ) ) {
@@ -260,8 +266,14 @@ final class PNCP_Precheck_Runtime {
 		}
 		// 3.4.3: the bot list (and an empty User-Agent), as the normal check, unless "always allowed".
 		$allowed = self::ua_allowed( $c, $ua, $ip, $reliable );
+		// 3.11: /.well-known/*, as the normal check: its services count as allowed there, and no User-Agent is no
+		// reason to refuse it; nor from an address on Google's or Apple's official lists.
+		$well_known = self::is_well_known( $c );
+		if ( ! $allowed && $well_known && '' !== $ua && ! empty( $c['wk_agents'] ) && self::ua_in( $ua, array_filter( array_map( 'strval', (array) $c['wk_agents'] ) ) ) ) {
+			$allowed = true;
+		}
 		if ( ! $allowed ) {
-			if ( '' === trim( $ua ) && ! empty( $c['empty_ua'] ) ) {
+			if ( '' === trim( $ua ) && ! empty( $c['empty_ua'] ) && ! $well_known && ! ( $per_ip && self::official_ip( $c, $ip ) ) ) {
 				return array( 403, 'empty_ua', $ip );
 			}
 			if ( '' !== $ua && ! empty( $c['bots'] ) && self::ua_listed( $ua, (array) $c['bots'] ) ) {
@@ -298,6 +310,15 @@ final class PNCP_Precheck_Runtime {
 		$limit = (int) $c['limit'];
 		if ( $limit < 1 ) {
 			return null;
+		}
+		// 3.11: a static file is not a page: its own counter, never a violation (as the normal check).
+		if ( isset( $c['media'] ) && is_array( $c['media'] ) && self::is_media( $c ) ) {
+			$preview = isset( $c['media']['preview'] ) ? array_filter( array_map( 'strval', (array) $c['media']['preview'] ) ) : array();
+			if ( $allowed && '' !== $ua && $preview && self::ua_in( $ua, $preview ) ) {
+				return null;
+			}
+			$factor = isset( $c['media']['factor'] ) ? max( 1, (int) $c['media']['factor'] ) : 10;
+			return self::hit( $c, $bankey . '|media', $now, $ip ) > $factor * $limit ? array( 429, 'rate_media', $ip ) : null;
 		}
 		// 3.4.3: a crawler that cannot be verified here (Applebot, YandexBot: DNS, which the normal check does)
 		// was not counted at all, so "Applebot" in the User-Agent read every cached page without limit. It now has
@@ -893,6 +914,85 @@ final class PNCP_Precheck_Runtime {
 	}
 
 	/**
+	 * 3.11: a static file, by the extension of the last part of the path (PNCP_Bots::is_static_request())?
+	 *
+	 * @param array<string, mixed> $c Configuration.
+	 * @return bool
+	 */
+	public static function is_media( $c ) {
+		$ext = isset( $c['media']['ext'] ) ? (array) $c['media']['ext'] : array();
+		if ( ! $ext ) {
+			return false;
+		}
+		$uri  = isset( $_SERVER['REQUEST_URI'] ) ? (string) $_SERVER['REQUEST_URI'] : '/';
+		$path = strtolower( rawurldecode( (string) parse_url( $uri, PHP_URL_PATH ) ) );
+		$dot  = strrpos( $path, '.' );
+		if ( false === $dot || false !== strpos( substr( $path, $dot ), '/' ) ) {
+			return false;
+		}
+		return in_array( substr( $path, $dot + 1 ), array_map( 'strval', $ext ), true );
+	}
+
+	/**
+	 * 3.11: a GET / HEAD of a file under /.well-known/ (relative to the home path), as PNCP_Bots::is_well_known_request()
+	 * sees it: letters, digits, dots, hyphens, underscores and slashes only, no "..", no empty part.
+	 *
+	 * @param array<string, mixed> $c Configuration.
+	 * @return bool
+	 */
+	public static function is_well_known( $c ) {
+		if ( ! in_array( self::method(), array( 'GET', 'HEAD' ), true ) ) {
+			return false;
+		}
+		$uri  = isset( $_SERVER['REQUEST_URI'] ) ? (string) $_SERVER['REQUEST_URI'] : '/';
+		$path = '/' . ltrim( rawurldecode( (string) parse_url( $uri, PHP_URL_PATH ) ), '/' );
+		$home = isset( $c['home'] ) ? (string) $c['home'] : '';
+		if ( '' !== $home && 0 === stripos( $path, $home . '/' ) ) {
+			$path = substr( $path, strlen( $home ) );
+		}
+		$path = strtolower( $path );
+		return 0 === strpos( $path, '/.well-known/' ) && false === strpos( $path, '..' ) && false === strpos( $path, '//' ) && ! preg_match( '#[^a-z0-9._/-]|/$|\.(?:php[0-9]?|phtml|phar)$#', $path );
+	}
+
+	/**
+	 * 3.11: is the address on Google's or Apple's official list (crawlers.json, the positions in "official")?
+	 *
+	 * @param array<string, mixed> $c  Configuration.
+	 * @param string               $ip IP.
+	 * @return bool
+	 */
+	public static function official_ip( $c, $ip ) {
+		foreach ( isset( $c['official'] ) ? (array) $c['official'] : array() as $i ) {
+			$set = self::crawler_set( $c, (int) $i );
+			if ( is_array( $set ) && isset( $set[1] ) && self::in_any( $ip, $set ) ) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	/**
+	 * 3.11: the server's public address (SERVER_ADDR, or one of the configuration's "self_ips", PNCP_Server_Ips),
+	 * as the visitor IP the trusted proxy or CDN gave: the site's request to itself came back through the CDN.
+	 * Loopback and private addresses only through is_local_request(); never a CDN edge; never when the IP may be
+	 * spoofed.
+	 *
+	 * @param array<string, mixed> $c        Configuration.
+	 * @param string               $ip       The visitor IP from client_ip().
+	 * @param bool                 $reliable The reliability client_ip() gave.
+	 * @return bool
+	 */
+	public static function is_server_request( $c, $ip, $reliable ) {
+		if ( ! $reliable || '' === $ip || false === filter_var( $ip, FILTER_VALIDATE_IP, FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE ) || self::is_cdn( $ip, $c ) ) {
+			return false;
+		}
+		if ( isset( $_SERVER['SERVER_ADDR'] ) && self::normalize_ip( (string) $_SERVER['SERVER_ADDR'] ) === $ip ) {
+			return true;
+		}
+		return isset( $c['self_ips'] ) && is_array( $c['self_ips'] ) && isset( $c['self_ips'][1] ) && self::in_any( $ip, $c['self_ips'] );
+	}
+
+	/**
 	 * Does the IP belong to a set? A set is [ exact addresses (address => true), CIDRs ].
 	 *
 	 * @param string                                  $ip  IP.
@@ -983,7 +1083,7 @@ final class PNCP_Precheck_Runtime {
 			if ( ! is_array( $entry ) || ! isset( $entry[0] ) || '' === (string) $entry[0] || false === strpos( $ua, (string) $entry[0] ) ) {
 				continue;
 			}
-			if ( ! isset( $entry[1] ) || null === $entry[1] || ( $reliable && is_array( $entry[1] ) && self::in_any( $ip, $entry[1] ) ) ) {
+			if ( ! isset( $entry[1] ) || ( $reliable && is_array( $entry[1] ) && self::in_any( $ip, $entry[1] ) ) ) {
 				return true;
 			}
 		}

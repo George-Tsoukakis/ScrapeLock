@@ -88,6 +88,8 @@ settings(
 		'block_headless'          => 0,
 		'block_bots'              => 1,
 		'bot_list'                => PNCP_Options::defaults()['bot_list'], // An earlier test may have changed it.
+		// 3.11: an existing site's list (new installs also allow the /.well-known/ services everywhere).
+		'allow_list'              => implode( "\n", array_diff( PNCP_Options::parse_list( PNCP_Options::default_allow_list() ), array( 'GoogleAssociationService', 'Chrome Privacy Preserving Prefetch Proxy', 'AuthenticationServices', 'OneSignal' ) ) ),
 		'block_empty_ua'          => 1,
 		'block_fake_crawlers'     => 1,
 		'ban_strikes'             => 0,
@@ -212,8 +214,12 @@ $code = req( '/.well-known/%2e%2e/x', array( 'X-Test-IP' => '203.0.113.25', 'Use
 t( '/.well-known/%2e%2e/: checked as before (403)', 403 === $code, (string) $code );
 $code = req( '/.well-known/assetlinks.json', array( 'X-Test-IP' => '203.0.113.26', 'User-Agent' => 'GPTBot/1.0' ) );
 t( 'bot list still applies on site files (GPTBot): 403', 403 === $code, (string) $code );
+// 3.11: /.well-known/* is read by services that may send no User-Agent at all (t_311_pipeline.php, A3); the
+// other site files keep the empty User-Agent check.
 $code = req( '/.well-known/assetlinks.json', array( 'X-Test-IP' => '203.0.113.27', 'User-Agent' => '' ) );
-t( 'empty User-Agent still applies on site files: 403', 403 === $code, (string) $code );
+t( 'empty User-Agent on /.well-known/: not refused (3.11)', 403 !== $code, (string) $code );
+$code = req( '/favicon-32x32.png', array( 'X-Test-IP' => '203.0.113.27', 'User-Agent' => '' ) );
+t( 'empty User-Agent still applies on the other site files: 403', 403 === $code, (string) $code );
 $code = req( $page, array( 'X-Test-IP' => '203.0.113.28', 'User-Agent' => $plain ) );
 t( 'a page without Accept-Language: 403 as before', 403 === $code, (string) $code );
 $code = req( $page, array( 'X-Test-IP' => '203.0.113.28', 'User-Agent' => $plain, 'Accept-Language' => 'el' ) );

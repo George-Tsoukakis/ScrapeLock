@@ -388,12 +388,83 @@ final class PNCP_Options {
 	}
 
 	/**
-	 * The AI search engines allowed with the current settings (empty if the option is off).
+	 * 3.11: the AI search bots that "Allow AI search" takes out of the bot list, lowercase => true (empty when the
+	 * option is off). The one place that decides the precedence of the setting over the list: blocked_agents()
+	 * uses it, and so can any code that compiles the list for a check of its own (the early and pre-cache checks
+	 * read blocked_agents(), so they get it too).
 	 *
+	 * @param array<string, mixed> $s Settings.
+	 * @return array<string, bool>
+	 */
+	public static function ai_search_skipped( $s ) {
+		if ( empty( $s['allow_ai_search'] ) ) {
+			return array();
+		}
+		$out = array();
+		foreach ( self::ai_search_agents() as $agent ) {
+			$agent = strtolower( trim( (string) $agent ) );
+			if ( '' !== $agent ) {
+				$out[ $agent ] = true;
+			}
+		}
+		return $out;
+	}
+
+	/**
+	 * 3.11: the lines of the stored bot list that are AI search bots let through by "Allow AI search" (as they are
+	 * written in the list). Empty when the option is off: then the list blocks them, as intended.
+	 *
+	 * @param array<string, mixed> $s Settings.
 	 * @return string[]
 	 */
-	public static function allowed_ai_search() {
-		return empty( self::get()['allow_ai_search'] ) ? array() : self::ai_search_agents();
+	public static function ai_search_in_bot_list( $s ) {
+		$skip = self::ai_search_skipped( $s );
+		$out  = array();
+		if ( ! $skip ) {
+			return $out;
+		}
+		foreach ( self::parse_list( isset( $s['bot_list'] ) ? (string) $s['bot_list'] : '' ) as $line ) {
+			if ( isset( $skip[ strtolower( trim( $line ) ) ] ) ) {
+				$out[] = trim( $line );
+			}
+		}
+		return $out;
+	}
+
+	/**
+	 * 3.11: the settings with the allowed AI search bots removed from the bot list (ai_search_in_bot_list()); the
+	 * other lines (training crawlers such as GPTBot, ClaudeBot, CCBot, Google-Extended) stay as they are, in the
+	 * same order. Unchanged settings when there is nothing to remove.
+	 *
+	 * @param array<string, mixed> $s Stored settings.
+	 * @return array<string, mixed>
+	 */
+	public static function without_ai_search_in_bot_list( $s ) {
+		$skip = self::ai_search_skipped( $s );
+		if ( ! $skip || ! isset( $s['bot_list'] ) || ! self::ai_search_in_bot_list( $s ) ) {
+			return $s;
+		}
+		$keep = array();
+		foreach ( preg_split( '/\r\n|\r|\n/', (string) $s['bot_list'] ) as $line ) {
+			if ( ! isset( $skip[ strtolower( trim( $line ) ) ] ) ) {
+				$keep[] = $line;
+			}
+		}
+		$s['bot_list'] = trim( implode( "\n", $keep ) );
+		return $s;
+	}
+
+	/**
+	 * The AI search engines allowed with the current settings (empty if the option is off).
+	 *
+	 * @param array<string, mixed>|null $s 3.11: the settings to read (null = the current ones). The early and
+	 *                                     pre-cache checks pass the settings they are compiled from, so that the
+	 *                                     allowed bots and the bot list (blocked_agents()) always agree.
+	 * @return string[]
+	 */
+	public static function allowed_ai_search( $s = null ) {
+		$s = is_array( $s ) ? $s : self::get();
+		return empty( $s['allow_ai_search'] ) ? array() : self::ai_search_agents();
 	}
 
 	/**
@@ -440,15 +511,21 @@ final class PNCP_Options {
 	 */
 	public static function blocked_agents( $s ) {
 		// 3.6.1: built once per request for the same settings (about 200 names, each lowercased).
-		$memo = is_string( $s['bot_list'] ) ? $s['bot_list'] . "\0" . ( empty( $s['block_archivers'] ) ? '0' : '1' ) . ( empty( $s['block_http_libs'] ) ? '0' : '1' ) . ( empty( $s['block_seo_crawlers'] ) ? '0' : '1' ) : null;
+		// 3.11: "Allow AI search" is part of the key too: its bots are left out of the list (below).
+		$memo = is_string( $s['bot_list'] ) ? $s['bot_list'] . "\0" . ( empty( $s['block_archivers'] ) ? '0' : '1' ) . ( empty( $s['block_http_libs'] ) ? '0' : '1' ) . ( empty( $s['block_seo_crawlers'] ) ? '0' : '1' ) . ( empty( $s['allow_ai_search'] ) ? '0' : '1' ) : null;
 		if ( null !== $memo && null !== self::$agents && $memo === self::$agents[0] ) {
 			return self::$agents[1];
 		}
 		$out = array();
+		// 3.11: with "Allow AI search" on, its bots (ai_search_agents()) are never in the list, also when the stored
+		// bot list still names them (lists saved before 3.11, or typed in again): the setting wins over the list
+		// everywhere the list is used (WordPress, the early and pre-cache checks, the server rules, the Bunny log
+		// import), not only where the allowed ones were already let through first.
+		$skip = self::ai_search_skipped( $s );
 		// 3.7: the site rippers always (with the bot list), the SEO data crawlers with their option.
 		foreach ( array_merge( self::parse_list( $s['bot_list'] ), PNCP_Bots::known_ai_agents(), PNCP_Bots::ripper_agents(), empty( $s['block_archivers'] ) ? array() : PNCP_Bots::archive_agents(), empty( $s['block_seo_crawlers'] ) ? array() : PNCP_Bots::seo_agents(), empty( $s['block_http_libs'] ) ? array() : self::http_library_agents() ) as $agent ) {
 			$agent = trim( (string) $agent );
-			if ( '' !== $agent && '=' !== $agent ) {
+			if ( '' !== $agent && '=' !== $agent && ! isset( $skip[ strtolower( $agent ) ] ) ) {
 				$out[ strtolower( $agent ) ] = $agent;
 			}
 		}
@@ -510,6 +587,13 @@ final class PNCP_Options {
 				'WP Umbrella',
 				'Freshping',
 				'Uptime-Kuma',
+				// The services that read /.well-known/* (since 3.11, new installs only; existing sites get them
+				// there through PNCP_Bots::well_known_agents()): Android app links, Chrome's private prefetch proxy,
+				// Apple's passkeys / associated domains, OneSignal.
+				'GoogleAssociationService',
+				'Chrome Privacy Preserving Prefetch Proxy',
+				'AuthenticationServices',
+				'OneSignal',
 			)
 		);
 	}
@@ -741,10 +825,47 @@ final class PNCP_Options {
 	 * @return array<string, int>
 	 */
 	public static function new_install() {
-		return array(
-			'monitor_mode'  => 1,
-			'monitor_until' => time() + self::MONITOR_DAYS * DAY_IN_SECONDS,
+		return array_merge(
+			array(
+				'monitor_mode'  => 1,
+				'monitor_until' => time() + self::MONITOR_DAYS * DAY_IN_SECONDS,
+			),
+			self::install_values()
 		);
+	}
+
+	/**
+	 * 3.11: the settings whose default on a brand-new install differs from defaults(). defaults() also fills in a
+	 * setting an existing site has not stored (PNCP_Options::stored()), so it keeps the values those sites always
+	 * had; the new values are only stored by the first install (new_install()), never by an upgrade.
+	 *
+	 * - Ban scanners on their first probe, refuse requests that open the site by its IP address, remember the
+	 *   reputation of each IP: they only act on requests no visitor makes (a probe of /.env, a bare IP as the
+	 *   host) or on IPs that misbehaved, and the first week of a new install is "Monitor only" anyway.
+	 * - A temporary block lasts 2 hours instead of 1.
+	 *
+	 * Already the default before 3.11, listed here for the record: blur_on_capture 0, block_devtools 0,
+	 * user_mark_guests 0, ban_strikes 3.
+	 *
+	 * @return array<string, int>
+	 */
+	public static function install_values() {
+		return array(
+			'probe_ban'     => 1,
+			'block_ip_host' => 1,
+			'reputation'    => 1,
+			'ban_minutes'   => 120,
+		);
+	}
+
+	/**
+	 * 3.11: the defaults of a brand-new install, without the first-week "Monitor only" (shown as "Default: …" next
+	 * to the fields and used by "Reset this tab to defaults").
+	 *
+	 * @return array<string, mixed>
+	 */
+	public static function install_defaults() {
+		return array_merge( self::defaults(), self::install_values() );
 	}
 
 	/**
@@ -814,7 +935,7 @@ final class PNCP_Options {
 	 * stays blocked, as it was by default before 3.4.
 	 *
 	 * @param array<string, mixed> $stored Stored settings.
-	 * @return array<string, string>
+	 * @return array<string, int|string>
 	 */
 	public static function new_in_340( $stored ) {
 		return array(
@@ -834,17 +955,22 @@ final class PNCP_Options {
 	 * @return array<string, array{value:int|string, since:string}>
 	 */
 	public static function upgrade_values() {
-		$defaults = self::defaults();
+		$defaults = self::install_defaults();
 		$out      = array();
 		$sets     = array(
-			'3.0' => self::new_in_300(),
-			'2.9' => self::new_in_290(),
-			'2.6' => self::new_in_260(),
-			'2.5' => self::new_in_250(),
-			'2.4' => self::new_in_240(),
+			// 3.11: the values sites installed before 3.11 have (defaults()), where new installs get others.
+			'3.11' => array_intersect_key( self::defaults(), self::install_values() ),
+			'3.0'  => self::new_in_300(),
+			'2.9'  => self::new_in_290(),
+			'2.6'  => self::new_in_260(),
+			'2.5'  => self::new_in_250(),
+			'2.4'  => self::new_in_240(),
 		);
 		foreach ( $sets as $since => $values ) {
 			foreach ( $values as $key => $value ) {
+				if ( isset( $out[ $key ] ) && '3.11' === $out[ $key ]['since'] ) {
+					continue; // 3.11 is the version that changed it last.
+				}
 				if ( isset( $defaults[ $key ] ) && (string) $defaults[ $key ] !== (string) $value ) {
 					$out[ $key ] = array(
 						'value' => $value,
@@ -1325,8 +1451,8 @@ final class PNCP_Options {
 	/**
 	 * What Emergency Mode changes on this site, in words: one line per setting of emergency_overlay() whose value
 	 * differs from the current one. Built from the overlay itself, so the description on the settings page is
-	 * always the list of what really changes (a setting the overlay gets later without a label here is still
-	 * listed, by its name).
+	 * always the list of what really changes (a setting the overlay gets later without a sentence here is still
+	 * listed, by the label of its field, PNCP_Setting_Labels).
 	 *
 	 * @param array<string, mixed> $s Stored settings.
 	 * @return string[]
@@ -1407,11 +1533,14 @@ final class PNCP_Options {
 				/* translators: %d: number of violations */
 				return sprintf( _n( 'An IP is blocked temporarily after %d violation', 'An IP is blocked temporarily after %d violations', $n, 'scrapelock' ), $n );
 			case 'ban_minutes':
-				return 0 === $n % 60
+				// Two statements, not a ternary: wp i18n make-pot does not extract the first _n() of a ternary.
+				if ( 0 === $n % 60 ) {
+					$hours = (int) ( $n / 60 );
 					/* translators: %d: number of hours */
-					? sprintf( _n( 'A temporary block lasts %d hour', 'A temporary block lasts %d hours', (int) ( $n / 60 ), 'scrapelock' ), (int) ( $n / 60 ) )
-					/* translators: %d: number of minutes */
-					: sprintf( _n( 'A temporary block lasts %d minute', 'A temporary block lasts %d minutes', $n, 'scrapelock' ), $n );
+					return sprintf( _n( 'A temporary block lasts %d hour', 'A temporary block lasts %d hours', $hours, 'scrapelock' ), $hours );
+				}
+				/* translators: %d: number of minutes */
+				return sprintf( _n( 'A temporary block lasts %d minute', 'A temporary block lasts %d minutes', $n, 'scrapelock' ), $n );
 			case 'list_excerpts':
 				return __( 'Lists of articles (home page, categories, archives, search) show an excerpt and a link instead of the full text', 'scrapelock' );
 			case 'ipv6_wide':
@@ -1425,8 +1554,17 @@ final class PNCP_Options {
 			case 'rate_limit_datacenter':
 				/* translators: %d: number of pages */
 				return sprintf( _n( 'At most %d page per minute from data centers (also services in “Always allowed” that are not pinned to their IPs)', 'At most %d pages per minute from data centers (also services in “Always allowed” that are not pinned to their IPs)', $n, 'scrapelock' ), $n );
+			case 'block_ip_host':
+				return __( 'Requests that open the site by its IP address instead of its name are refused', 'scrapelock' );
 		}
-		return $key . ': ' . (string) $value;
+		// 3.11: a setting the overlay gets later without a sentence here: its label and value in words, never the
+		// bare key and number ("block_ip_host: 1" before).
+		return sprintf(
+			/* translators: 1: name of a setting, 2: its value in Emergency Mode (e.g. On, or a number) */
+			__( '%1$s: %2$s', 'scrapelock' ),
+			PNCP_Setting_Labels::label( $key ),
+			PNCP_Setting_Labels::value( $key, (string) $value )
+		);
 	}
 
 	/**
@@ -2088,6 +2226,7 @@ final class PNCP_Options {
 	 *
 	 * @param string        $raw      Text with one value per line.
 	 * @param string[]|null $rejected 3.5: optional, receives the lines that are not an IP or a CIDR range.
+	 * @param-out string[] $rejected
 	 * @return string[]
 	 */
 	public static function parse_ip_list( $raw, &$rejected = null ) {

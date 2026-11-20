@@ -1336,7 +1336,7 @@ final class PNCP_Attacks {
 	public static function notices() {
 		return array(
 			'attacks_cleared' => array( 'success', __( 'The attack record was deleted.', 'scrapelock' ) ),
-			'attacks_locked'  => array( 'error', __( 'The site is locked: the attack record cannot be deleted until you unlock it.', 'scrapelock' ) ),
+			'attacks_locked'  => array( 'error', __( 'The site is locked: unlock it on the Lockdown tab to delete the attack record.', 'scrapelock' ) ),
 		);
 	}
 

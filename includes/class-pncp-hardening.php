@@ -224,6 +224,33 @@ final class PNCP_Hardening {
 	 *
 	 * @return array<string, array<string, mixed>>
 	 */
+	/**
+	 * 3.11: the one-line versions of "protects" and "breaks" of each point, shown in the table; the full texts
+	 * of points() are folded under "More". A point missing here shows its full texts as before.
+	 *
+	 * @return array<string, array{0: string, 1: string}> Point id => [ protects, breaks ].
+	 */
+	public static function short_texts() {
+		return array(
+			'xmlrpc'          => array( __( 'Refuses xmlrpc.php, used for mass password guessing and pingback attacks.', 'scrapelock' ), __( 'Jetpack (unless allowed), the mobile app and old publishing tools stop working.', 'scrapelock' ) ),
+			'hide_admin'      => array( __( 'Signed-out visitors get “page not found” at /wp-admin/.', 'scrapelock' ), __( 'wp-admin links show “page not found” until you sign in.', 'scrapelock' ) ),
+			'login'           => array( __( 'Limits failed logins and moves the login page to your own address.', 'scrapelock' ), __( 'Write down the new login address; the old one stops working.', 'scrapelock' ) ),
+			'core_files'      => array( __( 'readme.html, license.txt, install.php and similar answer “page not found”.', 'scrapelock' ), __( 'Nothing for visitors. On Nginx, run “wp core update-db” after updates.', 'scrapelock' ) ),
+			'file_editor'     => array( __( 'Turns off the theme and plugin code editors in wp-admin.', 'scrapelock' ), __( 'Edit files over SFTP or with your host\'s file manager instead.', 'scrapelock' ) ),
+			'app_passwords'   => array( __( 'Only administrators can create and use application passwords.', 'scrapelock' ), __( 'Apps that sign in with a non-administrator application password stop working.', 'scrapelock' ) ),
+			'user_enum'       => array( __( 'Hides usernames from ?author=N and /wp-json/wp/v2/users.', 'scrapelock' ), __( 'Nothing for visitors; the users sitemap is removed.', 'scrapelock' ) ),
+			'author_archives' => array( __( 'Author pages answer “page not found” for visitors.', 'scrapelock' ), __( 'Author pages leave search results; multi-author sites should leave it off.', 'scrapelock' ) ),
+			'rest_map'        => array( __( 'Visitors get an empty /wp-json/ route list; every route still works.', 'scrapelock' ), __( 'Rare: an outside tool that discovers the API while signed out.', 'scrapelock' ) ),
+			'upload_php'      => array( __( 'No PHP file in the uploads folder ever runs.', 'scrapelock' ), __( 'Only a plugin that runs its own PHP from uploads (very rare).', 'scrapelock' ) ),
+			'includes_php'    => array( __( 'The server refuses PHP files in wp-includes opened directly.', 'scrapelock' ), __( 'Nothing on a normal site; ms-files.php stays open on multisite.', 'scrapelock' ) ),
+			'content_php'     => array( __( 'The server refuses PHP files under wp-content opened by address.', 'scrapelock' ), __( 'Plugins with their own PHP address break: test payments and forms after.', 'scrapelock' ) ),
+			'dir_listing'     => array( __( 'Folders without an index file answer 403 instead of a file list.', 'scrapelock' ), __( 'Nothing for visitors; the self-test reverts it if the host refuses.', 'scrapelock' ) ),
+			'pingback'        => array( __( 'Closes pingback.ping, used for DDoS and for probing pages.', 'scrapelock' ), __( 'You no longer receive pingbacks; trackbacks and comments still work.', 'scrapelock' ) ),
+			'headers'         => array( __( 'Adds nosniff, a strict Referrer-Policy and a Permissions-Policy header.', 'scrapelock' ), __( 'Pages that use the camera, microphone or location stop asking for them.', 'scrapelock' ) ),
+			'framing'         => array( __( 'Other sites cannot show your pages inside their iframe.', 'scrapelock' ), __( 'Only if you frame your own pages on another site of yours.', 'scrapelock' ) ),
+		);
+	}
+
 	public static function points() {
 		if ( null !== self::$points ) {
 			return self::$points;
@@ -945,8 +972,9 @@ final class PNCP_Hardening {
 	private static function refuse( $reason, $code ) {
 		$ip = PNCP_Ip::client_ip();
 		// The server itself (the live checks of this card, Site Health) gets the real answer, unlogged and never
-		// counted toward a ban.
-		$local = '' === $ip || PNCP_Ip::is_local( $ip );
+		// counted toward a ban. 3.11: also when its request came back through the CDN with the server's public
+		// address (PNCP_Server_Ips), as in the other checks.
+		$local = '' === $ip || PNCP_Ip::is_local( $ip ) || PNCP_Server_Ips::is_request();
 		if ( PNCP_Options::monitoring() ) {
 			if ( ! $local ) {
 				PNCP_Log::add( $reason, PNCP_Log::MONITOR_CODE, $ip );
@@ -1616,7 +1644,7 @@ final class PNCP_Hardening {
 		$ran = false !== strpos( $r['body'], 'pncp-ran' );
 		return array(
 			'state' => $ran ? 'off' : 'on',
-			'note'  => $ran ? __( 'A PHP file in the uploads folder still runs: the web server does not refuse it (on Nginx add the rule from the “Server rules” tab).', 'scrapelock' ) : '',
+			'note'  => $ran ? __( 'A PHP file in uploads still runs: on Nginx, add the rule from the “Server rules” tab.', 'scrapelock' ) : '',
 		);
 	}
 
@@ -2179,12 +2207,12 @@ final class PNCP_Hardening {
 		</style>
 		<section class="pncp-card pncp-card--wide" id="pncp-hardening" aria-labelledby="pncp-hardening-title">
 		<h2 id="pncp-hardening-title"><?php esc_html_e( 'Vulnerable points', 'scrapelock' ); ?></h2>
-		<p class="description"><?php esc_html_e( 'The places bots attack on every WordPress site, whether each one is locked on this site (checked by asking the site itself, as a visitor), how many attacks reached it, and what locking it may break. Lock a point with one click and open it again the same way.', 'scrapelock' ); ?></p>
+		<?php echo PNCP_Admin_Fields::para( __( 'Where bots attack WordPress sites, checked here as a visitor. Lock or reopen with one click.', 'scrapelock' ), __( 'The places bots attack on every WordPress site, whether each one is locked on this site (checked by asking the site itself, as a visitor), how many attacks reached it, and what locking it may break. Lock a point with one click and open it again the same way.', 'scrapelock' ) ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Escaped in PNCP_Admin_Fields. ?>
 		<?php if ( is_array( $notice ) && 2 === count( $notice ) ) : ?>
 			<div class="notice notice-<?php echo 'error' === $notice[0] ? 'error' : 'success'; ?> inline"><p><?php echo esc_html( (string) $notice[1] ); ?></p></div>
 		<?php endif; ?>
 		<?php if ( $locked ) : ?>
-			<div class="notice notice-warning inline"><p><?php esc_html_e( 'The site is locked with Lockdown: points can be seen but not changed until you unlock it.', 'scrapelock' ); ?></p></div>
+			<div class="notice notice-warning inline"><p><?php esc_html_e( 'The site is locked: unlock it on the Lockdown tab to change these points.', 'scrapelock' ); ?></p></div>
 		<?php endif; ?>
 		<?php if ( PNCP_Options::monitoring() ) : ?>
 			<p class="pncp-inline-warning"><?php esc_html_e( '“Monitor only” is on: points that refuse requests only log them as “Would block” for now.', 'scrapelock' ); ?></p>
@@ -2218,7 +2246,7 @@ final class PNCP_Hardening {
 			<tr id="pncp-harden-<?php echo esc_attr( $row['id'] ); ?>">
 			<td>
 				<strong><?php echo esc_html( $row['label'] ); ?></strong>
-				<p class="description"><?php echo esc_html( $row['protects'] ); ?></p>
+				<?php echo self::folded_text( $row, 0, 'protects' ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Escaped in PNCP_Admin_Fields. ?>
 				<p class="description pncp-muted">
 				<?php
 				/* translators: %s: places, e.g. "WordPress, Server rules" */
@@ -2244,7 +2272,7 @@ final class PNCP_Hardening {
 			<td class="num"><?php echo $have_attacks && $row['evidence'] ? esc_html( number_format_i18n( $row['hits30'] ) ) : '–'; ?></td>
 			<td>
 				<span class="pncp-harden-risk--<?php echo esc_attr( $row['risk'] ); ?>"><?php echo esc_html( $risks[ $row['risk'] ] ); ?></span>
-				<p class="description"><?php echo esc_html( $row['breaks'] ); ?></p>
+				<?php echo self::folded_text( $row, 1, 'breaks' ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Escaped in PNCP_Admin_Fields. ?>
 			</td>
 			<td>
 				<?php
@@ -2298,6 +2326,23 @@ final class PNCP_Hardening {
 	}
 
 	/**
+	 * 3.11: a "protects" or "breaks" text of a point in the table: the short line, the full text under "More".
+	 *
+	 * @param array<string, mixed> $row  Row of the table (has "id" and the full texts).
+	 * @param int                  $part 0 for "protects", 1 for "breaks" (index in short_texts()).
+	 * @param string               $key  "protects" or "breaks".
+	 * @return string HTML.
+	 */
+	private static function folded_text( $row, $part, $key ) {
+		$short = self::short_texts();
+		$full  = isset( $row[ $key ] ) ? (string) $row[ $key ] : '';
+		if ( ! isset( $short[ $row['id'] ][ $part ] ) ) {
+			return '<p class="description">' . esc_html( $full ) . '</p>';
+		}
+		return PNCP_Admin_Fields::description( '', PNCP_Admin_Fields::help( $short[ $row['id'] ][ $part ], $full ) );
+	}
+
+	/**
 	 * Server rules of the applied server points: write into .htaccess (Apache) or copy (Apache, Nginx).
 	 *
 	 * @param bool $locked Whether the site is locked.
@@ -2308,7 +2353,7 @@ final class PNCP_Hardening {
 		?>
 		<h3><?php esc_html_e( 'Server rules for these points', 'scrapelock' ); ?></h3>
 		<?php if ( '' === $apache ) : ?>
-			<p class="description"><?php esc_html_e( 'No point that needs the web server is locked here yet (WordPress\'s own files, PHP in wp-includes or wp-content, directory listing, XML-RPC before PHP).', 'scrapelock' ); ?></p>
+			<?php echo PNCP_Admin_Fields::para( __( 'No point that needs the web server is locked here yet.', 'scrapelock' ), __( 'No point that needs the web server is locked here yet (WordPress\'s own files, PHP in wp-includes or wp-content, directory listing, XML-RPC before PHP).', 'scrapelock' ) ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Escaped in PNCP_Admin_Fields. ?>
 			<?php if ( ! $locked && self::htaccess_has_block() ) : ?>
 				<p><?php self::button( 'htaccess_remove', '', __( 'Remove the rules from .htaccess', 'scrapelock' ), 'button' ); ?></p>
 			<?php endif; ?>
@@ -2316,7 +2361,7 @@ final class PNCP_Hardening {
 			return;
 		endif;
 		?>
-		<p class="description"><?php esc_html_e( 'These points are enforced by the web server, before WordPress, so they also cover static files. ScrapeLock can write them into the site\'s .htaccess on Apache: it asks the site before and after, and puts the file back on its own if the site stops answering.', 'scrapelock' ); ?></p>
+		<?php echo PNCP_Admin_Fields::para( __( 'Enforced by the web server, so static files are covered too.', 'scrapelock' ), __( 'These points are enforced by the web server, before WordPress, so they also cover static files. ScrapeLock can write them into the site\'s .htaccess on Apache: it asks the site before and after, and puts the file back on its own if the site stops answering.', 'scrapelock' ) ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Escaped in PNCP_Admin_Fields. ?>
 		<?php if ( self::is_apache() ) : ?>
 			<?php if ( self::htaccess_has_block() ) : ?>
 				<div class="notice notice-success inline"><p><?php esc_html_e( 'Written into .htaccess (block “ScrapeLock Hardening”). It follows your changes here on its own.', 'scrapelock' ); ?></p></div>

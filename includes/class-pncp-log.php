@@ -307,6 +307,7 @@ final class PNCP_Log {
 			// The limits are named after their settings ("Pages per minute", "Searches per minute"…).
 			'rate_page'       => __( 'Pages per minute', 'scrapelock' ),
 			'rate_prefetch'   => __( 'Prefetches per minute', 'scrapelock' ),
+			'rate_media'      => __( 'Media files per minute (images, video, fonts, CSS, JS)', 'scrapelock' ), // 3.11.
 			'rate_page56'     => __( 'Pages per minute for the IPv6 network (/56)', 'scrapelock' ),
 			'rate_datacenter' => __( 'Pages per minute from data centers', 'scrapelock' ),
 			'rate_search'     => __( 'Searches per minute', 'scrapelock' ),
@@ -416,7 +417,7 @@ final class PNCP_Log {
 		$key    = 'pncp_lg_' . md5( $ip . '|' . $reason . '|' . (int) $code . '|' . $minute );
 		$orig   = $key;
 		$id     = self::row_id( $key );
-		$ua     = isset( $_SERVER['HTTP_USER_AGENT'] ) ? sanitize_text_field( wp_unslash( $_SERVER['HTTP_USER_AGENT'] ) ) : '';
+		$ua     = PNCP_Bots::user_agent();
 		if ( $id > 0 ) {
 			// The row keeps the first User-Agent and counts how many different ones there were (bots that rotate it).
 			$seen = self::uas_column() ? self::cache_get( $key . '_u' ) : false;
@@ -829,7 +830,7 @@ final class PNCP_Log {
 	public static function aggregate( $what, $hours, $count ) {
 		$generation = (string) self::cache_get( 'pncp_agg_gen' );
 		// The content addresses setting changes how top_paths() groups the paths: a new setting counts again.
-		$key    = 'pncp_agg_' . md5( $what . '|' . (int) $hours . '|' . $generation . '|' . PNCP_Options::stored()['content_paths'] );
+		$key    = 'pncp_agg_' . md5( $what . '|' . (int) $hours . '|' . $generation . '|' . PNCP_Options::stored()['content_paths'] . '|' . implode( ',', PNCP_Fluent_Community::added_paths() ) );
 		$cached = self::cache_get( $key );
 		if ( is_array( $cached ) && isset( $cached['time'] ) && array_key_exists( 'value', $cached ) && (int) $cached['time'] > time() - self::AGGREGATE_TTL ) {
 			return $cached;
@@ -1004,6 +1005,11 @@ final class PNCP_Log {
 		if ( PNCP_Paths::is_site_metadata( $path ) ) {
 			return false;
 		}
+		// 3.11: the probes of other software that "Ban scanners on their first probe" knows (PNCP_Probe::listed_paths(),
+		// filter pncp_probe_paths): /Dockerfile, /railway.toml, /www.git/config…, unless the site has a page there.
+		if ( PNCP_Probe::matches_listed( PNCP_Private_Urls::relative_path( $path ) ) ) {
+			return ! self::is_site_page( $path );
+		}
 		// 3.8: Stealth can move the REST API (another prefix) and the sitemaps (/sitemap-posts-post-1.xml).
 		if ( preg_match( '#(?:^|/)(?:wp-sitemap[a-z0-9_-]*|sitemap(?:_index)?|sitemap-[a-z0-9_-]+|[a-z0-9_-]+-sitemap[0-9]*)\.xml$#', $path ) || 0 === strpos( $path, '/wp-json/' ) || 0 === strpos( $path, '/' . rest_get_url_prefix() . '/' ) ) {
 			return false; // Sitemaps and the REST API lead to content.
@@ -1031,7 +1037,8 @@ final class PNCP_Log {
 	public static function is_site_content( $path ) {
 		static $seen = array();
 		$path        = '/' . ltrim( (string) $path, '/' );
-		$key         = 'pncp_pc_' . md5( $path . '|' . PNCP_Options::stored()['content_paths'] ); // A new prefix asks again.
+		// A new prefix asks again (3.11: also one added at runtime, e.g. the FluentCommunity portal).
+		$key         = 'pncp_pc_' . md5( $path . '|' . PNCP_Options::stored()['content_paths'] . '|' . implode( ',', PNCP_Fluent_Community::added_paths() ) );
 		if ( isset( $seen[ $key ] ) ) {
 			return $seen[ $key ];
 		}

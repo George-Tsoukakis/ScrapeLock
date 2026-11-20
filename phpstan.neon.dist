@@ -1,0 +1,106 @@
+# PHPStan (level 5) for the plugin code. Run from the repository root with the tools installed in a separate
+# folder (they are never part of the plugin):
+#   mkdir -p /tmp/phpstan-tools && cd /tmp/phpstan-tools && echo '{}' > composer.json
+#   composer config allow-plugins.phpstan/extension-installer true
+#   composer require --dev phpstan/phpstan:2.1.56 szepeviktor/phpstan-wordpress:2.0.4 \
+#     php-stubs/wordpress-stubs:6.9.4 php-stubs/wp-cli-stubs:2.12.0 phpstan/extension-installer:1.4.3
+#   cd - && /tmp/phpstan-tools/vendor/bin/phpstan analyse -c phpstan.neon.dist --memory-limit=4G
+# szepeviktor/phpstan-wordpress (loaded by the extension installer) brings the WordPress stubs; the WP-CLI
+# stubs are found next to PHPStan's own folder (%rootDir% is vendor/phpstan/phpstan).
+parameters:
+	level: 5
+	phpVersion:
+		min: 70400
+		max: 80499
+	paths:
+		- scrapelock.php
+		- uninstall.php
+		- includes/
+	bootstrapFiles:
+		- tests/phpstan/bootstrap.php
+	scanFiles:
+		- %rootDir%/../../php-stubs/wp-cli-stubs/wp-cli-stubs.php
+	# The PHPDoc types describe what the code expects, but values come from options, filters and other plugins:
+	# the is_array() / is_string() checks on them stay.
+	treatPhpDocTypesAsCertain: false
+	# Static methods read options, static state and the file system: two calls can answer differently.
+	rememberPossiblyImpureFunctionValues: false
+	dynamicConstantNames:
+		- WPINC
+		- COOKIEPATH
+		- COOKIEHASH
+		- WPMU_PLUGIN_URL
+		- PNCP_URL
+		- SCRAPELOCK_BUNNY_KEY
+		- SCRAPELOCK_EDGE_TOKEN
+	ignoreErrors:
+		# WordPress ignores what an action callback returns; these methods are also called directly for the value.
+		-
+			identifier: return.void
+			message: '#^Action callback returns .+ but should not return anything\.$#'
+		# wpdb gives read access to its protected properties through __get() (WordPress core reads $wpdb->dbh too).
+		-
+			identifier: property.protected
+			message: '#^Access to protected property wpdb::\$dbh\.$#'
+		# WooCommerce functions, called only after function_exists( 'is_cart' / 'is_woocommerce' / 'is_shop' ).
+		-
+			identifier: function.notFound
+			message: '#^Function (is_account_page|is_cart|is_checkout|wc_get_page_id) not found\.$#'
+			paths:
+				- includes/class-pncp-bots.php
+				- includes/class-pncp-frontend.php
+		# GdImage exists from PHP 8.0; on PHP 7.4 the same values are GD resources (both are in the PHPDoc).
+		-
+			identifier: class.notFound
+			message: '#GdImage#'
+			path: includes/class-pncp-watermark.php
+		-
+			identifier: return.unusedType
+			message: '#never returns GdImage#'
+			path: includes/class-pncp-watermark.php
+		# Guards for a plugin folder that is only partly updated (files of two versions): not always true then.
+		-
+			identifier: function.alreadyNarrowedType
+			message: '#^Call to function method_exists\(\) with .PNCP_[A-Za-z_]+. and .[a-z_]+. will always evaluate to true\.$#'
+		# array_filter() keeps every value the callback answers truthy for: strlen() on strings drops the empty ones.
+		-
+			identifier: argument.type
+			message: '#^Parameter \#2 \$callback of function array_filter expects \(callable\(string\): bool\)\|null, .strlen. given\.$#'
+		# The URL constant of the must-use plugins folder is what is wanted there: plugins_url() is the plugins folder.
+		-
+			identifier: phpstanWP.wpConstant.fetch
+			message: '#^Found usage of constant WPMU_PLUGIN_URL\.#'
+			paths:
+				- includes/class-pncp-health.php
+				- includes/class-pncp-stealth.php
+		# WordPress core passes 'href' => false too (a node without a link); the stub only lists string.
+		-
+			identifier: argument.type
+			message: '#^Parameter \#1 \$args of method WP_Admin_Bar::add_node\(\) expects#'
+			path: includes/class-pncp-tester.php
+		# substr() of a 16-byte inet_pton() value at offset 12 is never false (PHP 7.4 would only give false past the end).
+		-
+			identifier: binaryOp.invalid
+			message: '#^Binary operation "&" between \(?string\|false\)? and string results in an error\.$#'
+			path: includes/class-pncp-ip.php
+		# Written by the code that runs in between, which PHPStan does not follow: self::$dry by check() (explain()),
+		# $wp_settings_errors by add_settings_error() in PNCP_Options::sanitize(), $why by reference through a
+		# variable method name, self::$errors by process_sizes().
+		-
+			identifier: isset.offset
+			message: '#^Offset .pass. on array\{ip: string, ua: string, feed: bool\} in isset\(\) does not exist\.$#'
+			path: includes/class-pncp-bots.php
+		-
+			identifier: foreach.emptyArray
+			path: includes/class-pncp-settings-io.php
+		-
+			identifier: isset.offset
+			message: '#^Offset .(message|setting|type). on \*NEVER\* in isset\(\)#'
+			path: includes/class-pncp-settings-io.php
+		-
+			identifier: notIdentical.alwaysFalse
+			message: '#^Strict comparison using !== between .. and .. will always evaluate to false\.$#'
+			path: includes/class-pncp-options.php
+		-
+			identifier: ternary.alwaysFalse
+			path: includes/class-pncp-watermark.php

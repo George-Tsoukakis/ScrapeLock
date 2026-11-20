@@ -2,7 +2,7 @@
 /**
  * Plugin Name:       ScrapeLock – Content & AI Bot Protection
  * Description:       Protects your content: makes copying text and images harder, hides the text in the REST API, GraphQL and RSS, blocks scrapers, AI bots and fake Googlebots, temporarily blocks persistent IPs, protects XML feeds with a token and adds an optional watermark. Lockdown freezes every change to the site until it is unlocked with an authenticator app. Forms, cart, checkout and search engines are not affected.
- * Version:           3.10.1
+ * Version:           3.11.0
  * Requires at least: 6.2
  * Requires PHP:      7.4
  * Author:            CodeBunny
@@ -19,7 +19,7 @@ if ( defined( 'PNCP_VERSION' ) ) {
 	return;
 }
 
-define( 'PNCP_VERSION', '3.10.1' );
+define( 'PNCP_VERSION', '3.11.0' );
 define( 'PNCP_FILE', __FILE__ );
 define( 'PNCP_DIR', plugin_dir_path( __FILE__ ) );
 define( 'PNCP_URL', plugin_dir_url( __FILE__ ) );
@@ -113,11 +113,25 @@ PNCP_Attacks::init(); // Where bots and attackers hit the site.
 PNCP_Attack_Report::init(); // The Attacks tab, the weekly email and the dashboard widget.
 PNCP_Hardening::init(); // Vulnerable points.
 PNCP_Plugin_Bots::init(); // 3.10: the service bots of active plugins (WP Rocket and others) are allowed.
+PNCP_Server_Ips::init(); // 3.11: the server's own addresses (the site's requests to itself through the CDN).
+PNCP_Bot_Match::init(); // 3.11: the Log names the bot list entry that matched, "Allow this service".
+PNCP_Ai_Search_List::init(); // 3.11: "Remove from the list" for allowed AI search bots still in the bot list.
 PNCP_Site_Files::init(); // 3.10.1: apple-touch-icon.png and OneSignalSDKWorker.js in Site Health, Wordfence's address check.
+PNCP_Fluent_Community::init(); // 3.11: FluentCommunity's portal in the content addresses, its members' REST reads off the REST limit.
+// 3.11: the translations shipped in languages/ (Greek). WordPress 6.7+ finds them through "Domain Path" on its own;
+// 6.2 to 6.6 need this. A language pack in wp-content/languages/plugins/ is still read first.
+add_action( 'init', 'pncp_load_textdomain', 0 );
 
 if ( defined( 'WP_CLI' ) && WP_CLI ) {
 	require_once PNCP_DIR . 'includes/class-pncp-cli.php';
 	PNCP_Cli::init();
+}
+
+/**
+ * Loads the plugin's own translations (languages/), after a language pack in wp-content/languages/plugins/.
+ */
+function pncp_load_textdomain() {
+	load_plugin_textdomain( 'scrapelock', false, dirname( plugin_basename( PNCP_FILE ) ) . '/languages' );
 }
 
 /**
@@ -318,6 +332,11 @@ function pncp_upgrade() {
 	// redirect): checked again with the public home page at the next visit of the tab.
 	if ( '' !== $from && version_compare( $from, '3.10.0', '<' ) ) {
 		delete_transient( PNCP_Hardening::LIVE );
+	}
+	// 3.11: with "Allow AI search" on, its bots are removed from the stored bot list (once; a saved version is kept
+	// under "Earlier versions"). The training crawlers stay; sites with the option off keep their list.
+	if ( '' !== $from && version_compare( $from, '3.11.0', '<' ) ) {
+		PNCP_Ai_Search_List::migrate_311();
 	}
 	// Autoload: read on every request, without a separate query.
 	add_option( PNCP_Options::EMERGENCY_OPTION, 0, '', true );

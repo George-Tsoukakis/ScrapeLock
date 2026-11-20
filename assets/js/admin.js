@@ -40,7 +40,7 @@
 			return;
 		}
 		for ( var node = target; node; node = node.parentElement ) {
-			if ( 'DETAILS' === node.tagName && ! node.open ) {
+			if ( ( 'DETAILS' === node.tagName || node.pncpList ) && ! node.open ) {
 				node.open = true;
 			}
 		}
@@ -48,9 +48,68 @@
 			target.scrollIntoView();
 		}
 	}
+	/* ---------- Tab bar (3.11) ---------- */
+	// On a narrow screen the grouped tab bar scrolls sideways: the open tab is brought into view.
+	var tabBar = document.querySelector( '.pncp-admin .pncp-tabs' );
+	var activeTab = tabBar ? tabBar.querySelector( '.nav-tab-active' ) : null;
+	if ( activeTab && tabBar.scrollWidth > tabBar.clientWidth ) {
+		var barRect = tabBar.getBoundingClientRect();
+		var tabRect = activeTab.getBoundingClientRect();
+		if ( tabRect.left < barRect.left || tabRect.right > barRect.right ) {
+			tabBar.scrollLeft += tabRect.left - barRect.left - 16;
+		}
+	}
+
+	/* ---------- Long lists (3.11) ---------- */
+	// "85 entries" + "Edit": the button shows or hides the textarea (always in the form, so saving is the same).
+	// Each list gets an "open" property like a <details>, so the open lists stay open after a Save too.
+	Array.prototype.forEach.call( document.querySelectorAll( '.pncp-admin [data-pncp-list]' ), function ( list ) {
+		var button = list.querySelector( '.pncp-list__edit' );
+		var editor = list.querySelector( '.pncp-list__editor' );
+		if ( ! button || ! editor ) {
+			return;
+		}
+		var set = function ( open ) {
+			list.classList.toggle( 'is-open', open );
+			button.setAttribute( 'aria-expanded', open ? 'true' : 'false' );
+			button.textContent = button.getAttribute( open ? 'data-label-done' : 'data-label-edit' );
+		};
+		list.pncpList = true;
+		try {
+			Object.defineProperty( list, 'open', {
+				configurable: true,
+				get: function () {
+					return list.classList.contains( 'is-open' );
+				},
+				set: function ( value ) {
+					set( !! value );
+				}
+			} );
+		} catch ( err ) {
+			// Very old browser: the button still works.
+		}
+		button.addEventListener( 'click', function () {
+			var open = ! list.classList.contains( 'is-open' );
+			set( open );
+			if ( open ) {
+				var field = editor.querySelector( 'textarea' );
+				if ( field ) {
+					field.focus();
+				}
+			}
+		} );
+	} );
+
 	openFor( window.location.hash );
 	window.addEventListener( 'hashchange', function () {
 		openFor( window.location.hash );
+	} );
+	// 3.11: a quick link to the part already in the address (no "hashchange") still opens it.
+	document.addEventListener( 'click', function ( e ) {
+		var link = e.target.closest ? e.target.closest( '.pncp-admin a[href^="#"]' ) : null;
+		if ( link && link.getAttribute( 'href' ) === window.location.hash ) {
+			openFor( link.getAttribute( 'href' ) );
+		}
 	} );
 
 	/* ---------- Copy ---------- */

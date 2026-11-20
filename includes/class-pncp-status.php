@@ -63,7 +63,7 @@ final class PNCP_Status {
 	/**
 	 * The settings page.
 	 *
-	 * @param array<string, string> $args Query args.
+	 * @param array<string, int|string> $args Query args.
 	 * @return string
 	 */
 	public static function settings_url( $args = array() ) {
@@ -436,7 +436,7 @@ final class PNCP_Status {
 	}
 
 	/**
-	 * The active protection layers, for the widget.
+	 * The protection layers, for the widget.
 	 *
 	 * @param array<string, mixed> $s Settings.
 	 * @return array<string, bool>
@@ -455,6 +455,31 @@ final class PNCP_Status {
 			__( 'AI opt-out declaration (TDM)', 'scrapelock' ) => ! empty( $s['tdm_reservation'] ),
 			__( 'Image watermark', 'scrapelock' )          => ! empty( $s['watermark_enabled'] ),
 		);
+	}
+
+	/**
+	 * 3.11: the layers in three states (PNCP_Status_State): on, set but not active with the reason, off. The
+	 * checks that run outside WordPress' normal load (early check, pre-cache check, "Only through the CDN") are
+	 * listed once they are set, with their real state.
+	 *
+	 * @param array<string, mixed> $s Settings.
+	 * @return array<string, array{state:string, reason:string}>
+	 */
+	public static function layer_states( $s ) {
+		$out = array();
+		foreach ( self::layers( $s ) as $label => $on ) {
+			$out[ $label ] = PNCP_Status_State::setting( $s, $on );
+		}
+		if ( ! empty( $s['early_mode'] ) ) {
+			$out[ __( 'Early check', 'scrapelock' ) ] = PNCP_Status_State::early( $s );
+		}
+		if ( ! empty( $s['precheck'] ) ) {
+			$out[ __( 'Pre-cache check', 'scrapelock' ) ] = PNCP_Status_State::precheck( $s );
+		}
+		if ( ! empty( $s['cdn_only'] ) ) {
+			$out[ __( 'Only through the CDN', 'scrapelock' ) ] = PNCP_Status_State::cdn_only( $s );
+		}
+		return $out;
 	}
 
 	/**
@@ -508,16 +533,21 @@ final class PNCP_Status {
 					}
 					?>
 				</p>
-				<ul class="pncp-layers">
-					<?php foreach ( self::layers( $s ) as $label => $active ) : ?>
-						<li>
-							<span class="dashicons <?php echo $active ? 'dashicons-yes' : 'dashicons-minus'; ?>" aria-hidden="true"></span>
-							<?php echo esc_html( $label ); ?>
-							<span class="screen-reader-text"><?php echo esc_html( $active ? __( '(on)', 'scrapelock' ) : __( '(off)', 'scrapelock' ) ); ?></span>
-						</li>
-					<?php endforeach; ?>
-				</ul>
 			<?php endif; ?>
+			<?php // 3.11: also while protection is off: the layers that are set then read "Set but not active: protection is off". ?>
+			<ul class="pncp-layers">
+				<?php foreach ( self::layer_states( $s ) as $label => $state ) : ?>
+					<li class="pncp-layer pncp-layer--<?php echo esc_attr( $state['state'] ); ?>">
+						<span class="dashicons <?php echo esc_attr( PNCP_Status_State::ON === $state['state'] ? 'dashicons-yes' : ( PNCP_Status_State::SET === $state['state'] ? 'dashicons-warning' : 'dashicons-minus' ) ); ?>" aria-hidden="true"></span>
+						<?php echo esc_html( $label ); ?>
+						<?php if ( PNCP_Status_State::SET === $state['state'] ) : ?>
+							<span class="pncp-layer__reason"><?php echo esc_html( '(' . PNCP_Status_State::text( $state ) . ')' ); ?></span>
+						<?php else : ?>
+							<span class="screen-reader-text"><?php echo esc_html( PNCP_Status_State::ON === $state['state'] ? __( '(on)', 'scrapelock' ) : __( '(off)', 'scrapelock' ) ); ?></span>
+						<?php endif; ?>
+					</li>
+				<?php endforeach; ?>
+			</ul>
 			<p class="pncp-actions">
 				<?php if ( $on ) : ?>
 					<a class="button" href="<?php echo esc_url( self::disable_url() ); ?>"><?php esc_html_e( 'Disable…', 'scrapelock' ); ?></a>
@@ -632,6 +662,8 @@ final class PNCP_Status {
 			. '.pncp-widget .pncp-layers li{display:flex;align-items:center;gap:4px;margin:2px 0}'
 			. '.pncp-widget .pncp-layers .dashicons-yes{color:#1a7f37}'
 			. '.pncp-widget .pncp-layers .dashicons-minus{color:#8c8f94}'
+			. '.pncp-widget .pncp-layers .dashicons-warning{color:#9a4a00}'
+			. '.pncp-widget .pncp-layer__reason{color:#6b3500}'
 			. '.pncp-widget .pncp-actions{display:flex;align-items:center;gap:12px;margin:0;flex-wrap:wrap}'
 			. '@media screen and (max-width:782px){#wpadminbar #wp-toolbar>ul>li#wp-admin-bar-pncp-status{display:block}'
 			. '#wpadminbar #wp-admin-bar-pncp-status>.ab-item{width:52px;text-align:center;padding:0}'

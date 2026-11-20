@@ -130,7 +130,7 @@ final class PNCP_Reputation {
 		}
 		// Every other limit, except the ones that do not say anything about this one IP: shared counters of a
 		// network or an account, prefetches, and the reputation's own limit (it would feed itself).
-		if ( 0 === strpos( $reason, 'rate_' ) && ! in_array( $reason, array( 'rate_page56', 'rate_account', 'rate_prefetch', 'rate_lowrep' ), true ) ) {
+		if ( 0 === strpos( $reason, 'rate_' ) && ! in_array( $reason, array( 'rate_page56', 'rate_account', 'rate_prefetch', 'rate_lowrep', 'rate_media' ), true ) ) {
 			return 'limit';
 		}
 		return '';

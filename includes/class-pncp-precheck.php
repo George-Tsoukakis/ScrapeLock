@@ -332,6 +332,8 @@ final class PNCP_Precheck {
 			'cdn_cf'          => self::set( PNCP_Ip::list_of( 'cloudflare' ) ),
 			'cdn_bunny'       => self::set( PNCP_Ip::list_of( 'bunny' ) ),
 			'allow'           => self::set( PNCP_Options::parse_list( $s['allow_ips'] ) ),
+			// 3.11: the server's own addresses (PNCP_Server_Ips): the site's requests to itself through the CDN.
+			'self_ips'        => self::set( PNCP_Server_Ips::ips() ),
 			'block'           => self::set( PNCP_Options::parse_list( $s['block_ips'] ) ),
 			'crawlers'        => $crawlers,
 			'apcu'            => (bool) apply_filters( 'pncp_precheck_apcu', true ),
@@ -358,6 +360,18 @@ final class PNCP_Precheck {
 			'bots'            => self::bot_needles( $s ),
 			'empty_ua'        => ! empty( $s['block_bots'] ) && ! empty( $s['block_empty_ua'] ),
 			'allow_ua'        => self::allow_entries( $s ),
+			// 3.11: /.well-known/*: the services that read it count as allowed there (PNCP_Bots::well_known_agents()),
+			// and an empty User-Agent is not refused there, nor from Google's or Apple's official addresses (their
+			// sets in crawlers.json, at these positions).
+			'wk_agents'       => array_values( array_filter( array_map( 'strtolower', PNCP_Bots::well_known_agents() ) ) ),
+			'official'        => self::official_sets(),
+			// 3.11: static files (PNCP_Bots::is_static_request()): their own counter, "factor" times the page limit,
+			// never a violation; the link previews of the always-allowed list are not counted on them.
+			'media'           => array(
+				'ext'     => PNCP_Bots::static_extensions(),
+				'factor'  => PNCP_Bots::MEDIA_FACTOR,
+				'preview' => array_values( array_filter( array_map( 'strtolower', PNCP_Bots::link_preview_agents() ) ) ),
+			),
 			// 3.4.3: the stricter limit of visitors who have not passed the human check (see human()).
 			'human'           => self::human( $s ),
 		);
@@ -394,7 +408,7 @@ final class PNCP_Precheck {
 		if ( empty( $s['block_bots'] ) ) {
 			return array();
 		}
-		$search = array_map( 'strtolower', PNCP_Options::allowed_ai_search() );
+		$search = array_map( 'strtolower', PNCP_Options::allowed_ai_search( $s ) );
 		$out    = array();
 		foreach ( PNCP_Options::blocked_agents( $s ) as $needle ) {
 			$needle = strtolower( (string) $needle );
@@ -420,10 +434,15 @@ final class PNCP_Precheck {
 				$out[] = array( strtolower( $entry['ua'] ), $entry['pinned'] ? self::set( $entry['ips'] ) : null );
 			}
 		}
-		foreach ( PNCP_Options::allowed_ai_search() as $ua ) {
+		foreach ( PNCP_Options::allowed_ai_search( $s ) as $ua ) {
 			if ( '' !== (string) $ua ) {
 				$out[] = array( strtolower( (string) $ua ), null );
 			}
+		}
+		// 3.11: the service bots of active plugins (WP Rocket's "WP-Rocket-SaaS"), as in the normal check; rewritten
+		// when a plugin is activated or deactivated (PNCP_Plugin_Bots::plugins_changed()).
+		foreach ( PNCP_Plugin_Bots::allowed_agents() as $bot ) {
+			$out[] = array( $bot['ua'], $bot['ips'] ? self::set( $bot['ips'] ) : null );
 		}
 		return $out;
 	}
@@ -556,7 +575,28 @@ final class PNCP_Precheck {
 			$ips    = '' !== $def['list'] ? PNCP_Ip::list_of( $def['list'] ) : array();
 			$sets[] = $ips ? self::set( $ips ) : null;
 		}
+		// 3.11: Apple's list after the families (its crawler is verified by DNS, so it has no family list).
+		$apple  = PNCP_Ip::list_of( 'apple' );
+		$sets[] = $apple ? self::set( $apple ) : null;
 		return (string) wp_json_encode( $sets, JSON_UNESCAPED_SLASHES ) . "\n";
+	}
+
+	/**
+	 * 3.11: the positions in crawlers.json of Google's list and of Apple's (written last by crawlers_json()).
+	 *
+	 * @return int[]
+	 */
+	private static function official_sets() {
+		$out = array();
+		$i   = 0;
+		foreach ( PNCP_Bots::crawler_families() as $def ) {
+			if ( 'google' === $def['list'] ) {
+				$out[] = $i;
+			}
+			++$i;
+		}
+		$out[] = $i; // Apple.
+		return $out;
 	}
 
 	/**

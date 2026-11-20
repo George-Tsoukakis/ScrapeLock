@@ -450,7 +450,8 @@ PNCP_Options::flush();
 list( , $body ) = http( $page . '&tab=bots' );
 t( 'bots: γρήγοροι σύνδεσμοι στις ενότητες', false !== strpos( $body, 'pncp-section-nav' ) && false !== strpos( $body, 'href="#pncp-sec-human"' ) && false !== strpos( $body, 'id="pncp-sec-human"' ) && false !== strpos( $body, 'id="pncp-sec-countries"' ) && false !== strpos( $body, 'id="pncp-sec-lists"' ) );
 t( 'bots: διακόπτες (toggle) αντί για απλά κουτάκια', false !== strpos( $body, 'class="pncp-toggle" id="pncp-block_bots"' ) );
-t( 'bots: η λίστα bots διπλωμένη, με αριθμό γραμμών', 1 === preg_match( '#<details class="pncp-fold"><summary>[^<]*<span class="pncp-badge">\d+ (entry|entries)#', $body ) );
+// 3.11: the fold became the list editor ("N entries" + "Edit", PNCP_Admin_Lists).
+t( 'bots: η λίστα bots διπλωμένη, με αριθμό γραμμών', 1 === preg_match( '#<div class="pncp-list" id="pncp-bot_list-list" data-pncp-list="1"><div class="pncp-list__bar"><span class="pncp-list__label">[^<]*</span> <span class="pncp-badge">\d+ (entry|entries)#', $body ) );
 t( 'bots: κατάσταση χωρών και αναφορά στη DB-IP', false !== strpos( $body, 'Country of this request' ) && false !== strpos( $body, 'https://db-ip.com' ) );
 t( 'κάθε καρτέλα: κατάσταση προστασίας πάνω', false !== strpos( $body, 'pncp-status-bar' ) && false !== strpos( $body, 'pncp-pill' ) );
 t( 'bots: το κουμπί αποθήκευσης μέσα στη φόρμα ρυθμίσεων', false !== strpos( $body, 'class="pncp-settings-form"' ) );
@@ -730,7 +731,7 @@ t( 'Site Health Info: ενότητα ScrapeLock χωρίς PHP warnings από �
 $pncp_cdn = PNCP_Options::stored()['cdn_secret'];
 settings( array( 'cdn_secret' => 'pncp-secret-4f9a2c' ) );
 $pncp_info = PNCP_Health::info( array() );
-t( 'Site Health Info: έκδοση και ρύθμιση IP, χωρίς το μυστικό του CDN', PNCP_VERSION === $pncp_info['scrapelock']['fields']['version']['value'] && 'remote_addr' === $pncp_info['scrapelock']['fields']['ip_header']['value'] && false === strpos( wp_json_encode( $pncp_info ), 'pncp-secret-4f9a2c' ) );
+t( 'Site Health Info: έκδοση και ρύθμιση IP, χωρίς το μυστικό του CDN', PNCP_VERSION === $pncp_info['scrapelock']['fields']['version']['value'] && 'REMOTE_ADDR' === $pncp_info['scrapelock']['fields']['ip_header']['value'] && 'remote_addr' === $pncp_info['scrapelock']['fields']['ip_header']['debug'] && false === strpos( wp_json_encode( $pncp_info ), 'pncp-secret-4f9a2c' ) );
 settings( array( 'cdn_secret' => $pncp_cdn ) );
 
 /* ---------- Φάκελοι με τις συναρτήσεις του WordPress (3.3.1) ---------- */

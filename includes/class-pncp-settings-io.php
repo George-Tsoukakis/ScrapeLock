@@ -70,7 +70,7 @@ final class PNCP_Settings_Io {
 	/**
 	 * Saves the current settings as a version that can be restored. The oldest goes beyond KEEP versions.
 	 *
-	 * @param string $reason What is about to change: profile:<name>, import, reset:<tab>, restore, cli:set, cli:import.
+	 * @param string $reason What is about to change: profile:<name>, import, reset:<tab>, restore, cli:set, cli:import, wizard.
 	 * @return string The version's ID.
 	 */
 	public static function backup( $reason ) {
@@ -211,6 +211,12 @@ final class PNCP_Settings_Io {
 				return sprintf( __( 'Before resetting the “%s” tab', 'scrapelock' ), isset( $tabs[ $what ] ) ? $tabs[ $what ] : $what );
 			case 'restore':
 				return __( 'Before restoring an earlier version', 'scrapelock' );
+			case 'ai_search_list': // 3.11.
+				return __( 'Before removing the allowed AI search bots from the bot list', 'scrapelock' );
+			case 'allow_service': // 3.11.
+				return __( 'Before allowing a service from the Log', 'scrapelock' );
+			case 'wizard':
+				return __( 'Before the “For my site” assistant', 'scrapelock' ); // 3.11: PNCP_Wizard.
 			case 'cli':
 				/* translators: %s: WP-CLI command */
 				return sprintf( __( 'Before “wp scrapelock settings %s”', 'scrapelock' ), $what );
@@ -428,7 +434,8 @@ final class PNCP_Settings_Io {
 		if ( ! isset( $sections[ $section ] ) ) {
 			return array();
 		}
-		$defaults = PNCP_Options::defaults();
+		// 3.11: the defaults of a new install, the same values the "Default: …" notes next to the fields show.
+		$defaults = PNCP_Options::install_defaults();
 		$values   = array();
 		foreach ( $sections[ $section ] as $key ) {
 			if ( isset( $defaults[ $key ] ) && in_array( $key, self::public_keys(), true ) ) {

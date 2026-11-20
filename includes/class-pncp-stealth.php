@@ -2241,7 +2241,7 @@ final class PNCP_Stealth {
 	 * The pages and files the scan asks for, each with what it checks.
 	 *
 	 * @param string $url Home page.
-	 * @return array<string, array{url:string, kind:string}>
+	 * @return array<int|string, array{url:string, kind:string}> Keys are names; "404" becomes an integer key.
 	 */
 	private static function scan_targets( $url ) {
 		$home  = trailingslashit( $url );
@@ -2365,7 +2365,7 @@ final class PNCP_Stealth {
 			'time'   => time(),
 			'active' => self::active(),
 			'pages'  => $pages,
-			'found'  => array_values( $merged ),
+			'found'  => $merged,
 		);
 		if ( home_url( '/' ) === $url ) {
 			set_transient( self::SCAN, $result, DAY_IN_SECONDS );
@@ -2589,16 +2589,17 @@ final class PNCP_Stealth {
 		?>
 		<section class="pncp-card pncp-card--wide pncp-stealth" id="pncp-stealth" aria-labelledby="pncp-stealth-title">
 			<h2 id="pncp-stealth-title"><?php esc_html_e( 'Stealth: do not show that the site runs on WordPress', 'scrapelock' ); ?>
+				<?php $pncp_badge = PNCP_Status_State::stealth( $s ); // 3.11: three states, with the reason. ?>
 				<?php if ( $active ) : ?>
-					<span class="pncp-badge"><?php esc_html_e( 'On', 'scrapelock' ); ?></span>
-				<?php elseif ( ! empty( $s['stealth_enabled'] ) ) : ?>
-					<span class="pncp-badge pncp-badge--bad"><?php esc_html_e( 'Not working', 'scrapelock' ); ?></span>
+					<span class="pncp-badge" data-pncp-state="on"><?php esc_html_e( 'On', 'scrapelock' ); ?></span>
+				<?php elseif ( PNCP_Status_State::SET === $pncp_badge['state'] ) : ?>
+					<span class="pncp-badge pncp-badge--bad" data-pncp-state="set"><?php echo esc_html( PNCP_Status_State::text( $pncp_badge ) ); ?></span>
 				<?php else : ?>
-					<span class="pncp-badge"><?php esc_html_e( 'Off', 'scrapelock' ); ?></span>
+					<span class="pncp-badge" data-pncp-state="off"><?php esc_html_e( 'Off', 'scrapelock' ); ?></span>
 				<?php endif; ?>
 			</h2>
-			<p class="description"><?php esc_html_e( 'Tools like BuiltWith and Wappalyzer, and the scanners that look for known holes, first find out what a site is built with: from the addresses of the theme and plugin files (/wp-content/, /wp-includes/), the REST API (/wp-json/), the sitemap (/wp-sitemap.xml), markup only WordPress prints and files only WordPress has. With Stealth, visitors get neutral addresses instead (for example /assets/3fa9c1/style.css), served by rules of your web server. Nothing stored changes: turning it off puts everything back at once.', 'scrapelock' ); ?></p>
-			<p class="description"><?php esc_html_e( 'Before it turns on, the site asks itself for files through the new addresses and compares them byte for byte with the real ones; if one does not come back, nothing changes, so the site never loses its styles or scripts. A check twice a day turns it off again on its own (and emails you) if the rules stop working. Signed-in users see the real addresses: check the result in a private window. Clear the page cache (and the CDN cache) after turning it on or off.', 'scrapelock' ); ?></p>
+			<?php echo PNCP_Admin_Fields::para( __( 'Visitors get neutral addresses instead of /wp-content/ and other WordPress traces.', 'scrapelock' ), __( 'Tools like BuiltWith and Wappalyzer, and the scanners that look for known holes, first find out what a site is built with: from the addresses of the theme and plugin files (/wp-content/, /wp-includes/), the REST API (/wp-json/), the sitemap (/wp-sitemap.xml), markup only WordPress prints and files only WordPress has. With Stealth, visitors get neutral addresses instead (for example /assets/3fa9c1/style.css), served by rules of your web server. Nothing stored changes: turning it off puts everything back at once.', 'scrapelock' ) ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Escaped in PNCP_Admin_Fields. ?>
+			<?php echo PNCP_Admin_Fields::para( __( 'Tested before it turns on and twice a day. Clear the caches after switching.', 'scrapelock' ), __( 'Before it turns on, the site asks itself for files through the new addresses and compares them byte for byte with the real ones; if one does not come back, nothing changes, so the site never loses its styles or scripts. A check twice a day turns it off again on its own (and emails you) if the rules stop working. Signed-in users see the real addresses: check the result in a private window. Clear the page cache (and the CDN cache) after turning it on or off.', 'scrapelock' ) ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Escaped in PNCP_Admin_Fields. ?>
 
 			<?php if ( 'ok' === $msg ) : ?>
 				<div class="notice notice-success inline"><p><?php echo esc_html( $active ? __( 'Tested and on.', 'scrapelock' ) : __( 'Saved. Stealth is off.', 'scrapelock' ) ); ?></p></div>
@@ -2624,25 +2625,30 @@ final class PNCP_Stealth {
 				<p>
 					<label for="pncp-stealth-base"><?php esc_html_e( 'Folder of the new addresses:', 'scrapelock' ); ?></label>
 					<code><?php echo esc_html( self::home_path() ); ?></code><input type="text" id="pncp-stealth-base" name="stealth_base" class="regular-text" style="width:12em" value="<?php echo esc_attr( (string) $s['stealth_base'] ); ?>" <?php disabled( $locked ); ?>><code>/…</code>
-					<br><span class="description"><?php esc_html_e( 'Any neutral word, e.g. assets or static. The real addresses keep working too (scanners that guess them still find the files; nothing on your pages points to them any more).', 'scrapelock' ); ?></span>
+					<br><span class="description"><?php esc_html_e( 'Any neutral word, e.g. assets or static.', 'scrapelock' ); ?></span>
 				</p>
+				<?php echo PNCP_Admin_Fields::more( __( 'The real addresses keep working too (scanners that guess them still find the files; nothing on your pages points to them any more).', 'scrapelock' ) ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Escaped in PNCP_Admin_Fields. ?>
 				<p>
 					<label for="pncp-stealth-rest"><?php esc_html_e( 'REST API prefix instead of wp-json (empty = keep wp-json):', 'scrapelock' ); ?></label>
 					<input type="text" id="pncp-stealth-rest" name="stealth_rest_prefix" class="regular-text" style="width:12em" value="<?php echo esc_attr( (string) $s['stealth_rest_prefix'] ); ?>" placeholder="api" <?php disabled( $locked ); ?>>
-					<br><span class="description"><?php esc_html_e( 'The block editor and everything on the site use the new prefix by themselves. /wp-json/ keeps working for requests that sign in (application passwords, WooCommerce API keys, Jetpack); for anyone else it answers "page not found". Leave it empty if an app or service calls /wp-json/ without signing in.', 'scrapelock' ); ?></span>
+					<br><span class="description"><?php esc_html_e( 'Signed-in API clients keep /wp-json/; others get “page not found”.', 'scrapelock' ); ?></span>
 				</p>
+				<?php echo PNCP_Admin_Fields::more( __( 'The block editor and everything on the site use the new prefix by themselves. /wp-json/ keeps working for requests that sign in (application passwords, WooCommerce API keys, Jetpack); for anyone else it answers "page not found". Leave it empty if an app or service calls /wp-json/ without signing in.', 'scrapelock' ) ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Escaped in PNCP_Admin_Fields. ?>
 				<p><label><input type="checkbox" name="stealth_sitemap" value="1" <?php checked( ! empty( $s['stealth_sitemap'] ) ); ?> <?php disabled( $locked ); ?>> <?php esc_html_e( 'Sitemap at /sitemap.xml instead of /wp-sitemap.xml', 'scrapelock' ); ?></label>
-					<br><span class="description"><?php esc_html_e( 'robots.txt points to the new address. Verified search engines that ask for the old one are redirected; others get "page not found". Only WordPress\'s own sitemaps (not those of an SEO plugin), with pretty permalinks. If you submitted the old address in Google Search Console, submit /sitemap.xml.', 'scrapelock' ); ?></span></p>
+					<br><span class="description"><?php esc_html_e( 'robots.txt points to it. Resubmit /sitemap.xml in Search Console.', 'scrapelock' ); ?></span></p>
+				<?php echo PNCP_Admin_Fields::more( __( 'robots.txt points to the new address. Verified search engines that ask for the old one are redirected; others get "page not found". Only WordPress\'s own sitemaps (not those of an SEO plugin), with pretty permalinks. If you submitted the old address in Google Search Console, submit /sitemap.xml.', 'scrapelock' ) ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Escaped in PNCP_Admin_Fields. ?>
 				<p><label><input type="checkbox" name="stealth_endpoints" value="1" <?php checked( ! empty( $s['stealth_endpoints'] ) ); ?> <?php disabled( $locked ); ?>> <?php esc_html_e( 'Neutral addresses for forms and Ajax', 'scrapelock' ); ?></label>
-					<br><span class="description"><?php esc_html_e( 'admin-ajax.php, admin-post.php and wp-comments-post.php get addresses in the same folder (…/ajax, …/post, …/comment) in the pages visitors get. The real files keep working.', 'scrapelock' ); ?></span></p>
+					<br><span class="description"><?php esc_html_e( 'admin-ajax.php, admin-post.php and wp-comments-post.php get neutral addresses.', 'scrapelock' ); ?></span></p>
+				<?php echo PNCP_Admin_Fields::more( __( 'admin-ajax.php, admin-post.php and wp-comments-post.php get addresses in the same folder (…/ajax, …/post, …/comment) in the pages visitors get. The real files keep working.', 'scrapelock' ) ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Escaped in PNCP_Admin_Fields. ?>
 				<p><label><input type="checkbox" name="stealth_block_files" value="1" <?php checked( ! empty( $s['stealth_block_files'] ) ); ?> <?php disabled( $locked ); ?>> <?php esc_html_e( 'Refuse readme.html and other files only WordPress has', 'scrapelock' ); ?></label>
-					<br><span class="description"><?php esc_html_e( 'readme.html, license.txt, wp-config-sample.php, wp-links-opml.php and wp-trackback.php answer "page not found" (trackbacks stop; they are nearly all spam). Not while Monitor only is on.', 'scrapelock' ); ?></span></p>
+					<br><span class="description"><?php esc_html_e( 'readme.html, license.txt and similar answer “page not found”; trackbacks stop.', 'scrapelock' ); ?></span></p>
+				<?php echo PNCP_Admin_Fields::more( __( 'readme.html, license.txt, wp-config-sample.php, wp-links-opml.php and wp-trackback.php answer "page not found" (trackbacks stop; they are nearly all spam). Not while Monitor only is on.', 'scrapelock' ) ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Escaped in PNCP_Admin_Fields. ?>
 				<p class="description">
 					<?php if ( '' === $login ) : ?>
-						<?php esc_html_e( 'The sign-in page is still at wp-login.php, and /wp-admin/ sends visitors there: that alone shows WordPress. Move the sign-in address under Sign-in protection (Bots and limits tab).', 'scrapelock' ); ?>
+						<?php esc_html_e( 'wp-login.php still shows WordPress: move the sign-in address on the Bots and limits tab.', 'scrapelock' ); ?>
 					<?php else : ?>
 						<?php /* translators: %s: sign-in address */ ?>
-						<?php echo esc_html( sprintf( __( 'The sign-in page is at %s (changed under Sign-in protection), so wp-login.php and /wp-admin/ answer "page not found" to visitors.', 'scrapelock' ), home_url( '/' . $login . '/' ) ) ); ?>
+						<?php echo esc_html( sprintf( __( 'The sign-in page is at %s; wp-login.php and /wp-admin/ answer "page not found".', 'scrapelock' ), home_url( '/' . $login . '/' ) ) ); ?>
 					<?php endif; ?>
 				</p>
 				<?php if ( ! $locked ) : ?>
@@ -2663,7 +2669,7 @@ final class PNCP_Stealth {
 			<details <?php echo 'apache' !== $server && ! $active ? 'open' : ''; ?>>
 				<summary><?php echo esc_html( 'apache' === $server ? __( 'Server rules (written into .htaccess for you)', 'scrapelock' ) : __( 'Server rules (add them, then press Save and test)', 'scrapelock' ) ); ?></summary>
 				<?php if ( 'apache' !== $server ) : ?>
-					<p class="description"><?php esc_html_e( 'Nginx: inside the site\'s server { } block, above the location blocks; then nginx -t and reload. Other servers (IIS, Caddy): the same rewrites in their own syntax. After adding or removing a plugin, copy them again.', 'scrapelock' ); ?></p>
+					<?php echo PNCP_Admin_Fields::para( __( 'Nginx: in the server { } block above the locations, then nginx -t and reload.', 'scrapelock' ), __( 'Nginx: inside the site\'s server { } block, above the location blocks; then nginx -t and reload. Other servers (IIS, Caddy): the same rewrites in their own syntax. After adding or removing a plugin, copy them again.', 'scrapelock' ) ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Escaped in PNCP_Admin_Fields. ?>
 				<?php elseif ( ! self::htaccess_writable() ) : ?>
 					<p class="description"><?php esc_html_e( 'The .htaccess file cannot be written: copy the Apache rules into it yourself, above # BEGIN WordPress.', 'scrapelock' ); ?></p>
 				<?php endif; ?>
@@ -2671,11 +2677,11 @@ final class PNCP_Stealth {
 				<textarea class="large-text code" rows="8" readonly><?php echo esc_textarea( self::rules_text( 'nginx' ) ); ?></textarea>
 				<h3><?php esc_html_e( 'Apache (.htaccess, above # BEGIN WordPress)', 'scrapelock' ); ?></h3>
 				<textarea class="large-text code" rows="8" readonly><?php echo esc_textarea( self::rules_text( 'apache' ) ); ?></textarea>
-				<p class="description"><?php esc_html_e( 'If the site ever loses its styles after a server change, add define( \'SCRAPELOCK_STEALTH_OFF\', true ); to wp-config.php: the real addresses are used again at once.', 'scrapelock' ); ?></p>
+				<?php echo PNCP_Admin_Fields::para( __( 'Styles lost after a server change? Define SCRAPELOCK_STEALTH_OFF as true in wp-config.php.', 'scrapelock' ), __( 'If the site ever loses its styles after a server change, add define( \'SCRAPELOCK_STEALTH_OFF\', true ); to wp-config.php: the real addresses are used again at once.', 'scrapelock' ) ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Escaped in PNCP_Admin_Fields. ?>
 			</details>
 
 			<h3><?php esc_html_e( 'What still shows this is WordPress', 'scrapelock' ); ?></h3>
-			<p class="description"><?php esc_html_e( 'The scan asks the home page, a post, a "page not found" page, robots.txt and the files only WordPress has, as a visitor who is not signed in, and looks for the signs that BuiltWith, Wappalyzer and the scanners use.', 'scrapelock' ); ?></p>
+			<?php echo PNCP_Admin_Fields::para( __( 'Looks for WordPress traces in pages and files, as a signed-out visitor.', 'scrapelock' ), __( 'The scan asks the home page, a post, a "page not found" page, robots.txt and the files only WordPress has, as a visitor who is not signed in, and looks for the signs that BuiltWith, Wappalyzer and the scanners use.', 'scrapelock' ) ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Escaped in PNCP_Admin_Fields. ?>
 			<?php self::button( self::ACTION_SCAN, __( 'Scan now', 'scrapelock' ) ); ?>
 			<?php if ( is_array( $scan ) && isset( $scan['found'] ) ) : ?>
 				<?php /* translators: %s: date and time */ ?>
