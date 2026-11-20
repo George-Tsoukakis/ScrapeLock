@@ -403,7 +403,7 @@ PNCP_Log::unban_all();
 settings(
 	array(
 		'block_http_libs' => 1,
-		'bot_list'        => $saved['bot_list'],
+		'bot_list'        => PNCP_Options::default_bot_list(), // Not the site's list: an earlier test may have emptied it.
 		'allow_list'      => '',
 	)
 );
