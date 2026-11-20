@@ -37,7 +37,7 @@ final class PNCP_Site_Files {
 	 * Registers the hooks.
 	 */
 	public static function init() {
-		if ( ! is_admin() && ! ( defined( 'DOING_AJAX' ) && DOING_AJAX ) ) {
+		if ( ! is_admin() && ! wp_doing_ajax() ) {
 			return;
 		}
 		add_filter( 'site_status_tests', array( __CLASS__, 'tests' ) );
