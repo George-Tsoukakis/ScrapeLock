@@ -872,6 +872,10 @@ final class PNCP_Attack_Report {
 				$l[] = sprintf( __( 'Seen at the Bunny CDN edge: %s attacks.', 'scrapelock' ), $num( $edge ) );
 			}
 		}
+		// 3.12: a short Traffic part, only while Traffic collects (nothing changes otherwise).
+		if ( class_exists( 'PNCP_Traffic_Alerts' ) ) {
+			$l = array_merge( $l, PNCP_Traffic_Alerts::report_lines( $days ) );
+		}
 		$l[] = '';
 		$l[] = __( 'Full report, with “Lock this” and “Block IP” buttons:', 'scrapelock' );
 		$l[] = self::tab_url( $days );
@@ -972,6 +976,10 @@ final class PNCP_Attack_Report {
 				}
 				echo '</ul>';
 			}
+		}
+		// 3.12: one line of Traffic figures, only while Traffic collects (one cached query).
+		if ( class_exists( 'PNCP_Traffic_Alerts' ) ) {
+			PNCP_Traffic_Alerts::widget_line();
 		}
 		printf( '<p><a class="button button-small" href="%1$s">%2$s</a></p>', esc_url( self::tab_url( 7 ) ), esc_html__( 'Full attack report', 'scrapelock' ) );
 		echo '</div>';
