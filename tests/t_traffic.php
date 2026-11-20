@@ -139,7 +139,7 @@ update_option( 'timezone_string', 'Europe/Athens' );
 $d = PNCP_Options::defaults();
 t( 'defaults: traffic 0, traffic_wp 0, path "", raw days 3, days 90, ip mode full', 0 === $d['traffic'] && 0 === $d['traffic_wp'] && '' === $d['traffic_log_path'] && 3 === $d['traffic_raw_days'] && 90 === $d['traffic_days'] && 'full' === $d['traffic_ip_mode'] );
 t( 'a new install also starts with traffic off', ! isset( PNCP_Options::new_install()['traffic'] ) );
-t( 'every new key belongs to the "traffic" section and has a label', array( 'traffic', 'traffic_wp', 'traffic_log_path', 'traffic_raw_days', 'traffic_days', 'traffic_ip_mode' ) === PNCP_Options::sections()['traffic'] && ! array_diff( PNCP_Options::sections()['traffic'], array_keys( PNCP_Setting_Labels::all() ) ) );
+t( 'every new key belongs to the "traffic" section and has a label', array( 'traffic', 'traffic_wp', 'traffic_log_path', 'traffic_raw_days', 'traffic_days', 'traffic_ip_mode', 'traffic_alerts', 'traffic_alert_email' ) === PNCP_Options::sections()['traffic'] && ! array_diff( PNCP_Options::sections()['traffic'], array_keys( PNCP_Setting_Labels::all() ) ) );
 $clean = PNCP_Options::sanitize( array_merge( PNCP_Options::stored(), array( 'traffic' => '1', 'traffic_raw_days' => '99', 'traffic_days' => '2', 'traffic_ip_mode' => 'weird' ) ) );
 t( 'sanitize: ranges 1–14 and 7–365, an unknown IP mode is "full"', 1 === $clean['traffic'] && 14 === $clean['traffic_raw_days'] && 7 === $clean['traffic_days'] && 'full' === $clean['traffic_ip_mode'], wp_json_encode( array_intersect_key( $clean, $d ) ) );
 $log = $tmp . '/access.log';
