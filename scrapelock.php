@@ -224,6 +224,8 @@ function pncp_deactivate_site() {
 	PNCP_Hardening::deactivate();
 	PNCP_Stealth::plugin_deactivated();
 	PNCP_Attack_Report::deactivate();
+	// 3.12.2: the way straight to the server for the site's requests to itself (asked again after a reactivation).
+	delete_transient( PNCP_Self_Check::ROUTE );
 	pncp_purge_page_cache();
 }
 

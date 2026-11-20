@@ -92,6 +92,12 @@ function pncp_uninstall_site() {
 	delete_option( 'pncp_server_ips' ); // 3.11: the server's own addresses (PNCP_Server_Ips).
 	delete_option( 'pncp_server_key' ); // 3.11: the key of the site's signed requests to itself.
 	delete_option( 'pncp_plugin_bot_agents' ); // 3.11: the allowed plugin bots, for the early check.
+	// 3.12.2: the notes of the site's requests to itself and the last self-check (PNCP_Self_Check). Its transients
+	// (pncp_selfcheck_route, pncp_edge_spare) go with every _transient_pncp_ row below.
+	delete_option( 'pncp_selfcheck_log' );
+	delete_option( 'pncp_selfcheck_last' );
+	delete_transient( 'pncp_selfcheck_route' );
+	delete_transient( 'pncp_edge_spare' );
 	// 3.12: Traffic (also dropped by PNCP_Traffic::uninstall() above; here too, should that have failed).
 	foreach ( array( 'pncp_traffic', 'pncp_traffic_hour', 'pncp_traffic_day', 'pncp_traffic_err' ) as $pncp_table ) {
 		// phpcs:ignore WordPress.DB.DirectDatabaseQuery, WordPress.DB.DirectDatabaseQuery.SchemaChange -- Uninstall.

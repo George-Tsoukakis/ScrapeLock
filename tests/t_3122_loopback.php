@@ -866,6 +866,18 @@ if ( $cli ) {
 	echo "SKIP K: wp scrapelock selfcheck (no WP_CLI)\n";
 }
 
+/* ---------- U. Uninstall and deactivation ---------- */
+$un = (string) file_get_contents( dirname( __DIR__ ) . '/uninstall.php' );
+t( 'U: uninstall.php deletes the notes and the last self-check (pncp_selfcheck_log, pncp_selfcheck_last)', false !== strpos( $un, "delete_option( 'pncp_selfcheck_log' )" ) && false !== strpos( $un, "delete_option( 'pncp_selfcheck_last' )" ) );
+t( 'U: ... and the transients of 3.12.2 (the route, the CDN block check), also by the _transient_pncp_ rows', false !== strpos( $un, "delete_transient( 'pncp_selfcheck_route' )" ) && false !== strpos( $un, "delete_transient( 'pncp_edge_spare' )" ) && false !== strpos( $un, "esc_like( '_transient_pncp_' )" ) );
+t( 'U: the names are the ones the code uses', 'pncp_selfcheck_log' === PNCP_Self_Check::LOG && 'pncp_selfcheck_last' === PNCP_Self_Check::LAST && 'pncp_selfcheck_route' === PNCP_Self_Check::ROUTE );
+$main = (string) file_get_contents( dirname( __DIR__ ) . '/scrapelock.php' );
+t( 'U: deactivation forgets the way straight to the server', (bool) preg_match( '/function pncp_deactivate_site\(\) \{.*?delete_transient\( PNCP_Self_Check::ROUTE \);.*?\n\}/s', $main ) );
+foreach ( array( PNCP_Self_Check::LOG, PNCP_Self_Check::LAST ) as $pncp_o ) {
+	$pncp_auto = (string) $wpdb->get_var( $wpdb->prepare( "SELECT autoload FROM {$wpdb->options} WHERE option_name = %s", $pncp_o ) );
+	t( 'U: ' . $pncp_o . ' is not autoloaded', '' === $pncp_auto || in_array( $pncp_auto, array( 'no', 'off' ), true ), $pncp_auto );
+}
+
 // Clean up the temporary data folder.
 foreach ( glob( $pc_dir . '/self/*' ) ?: array() as $pncp_f ) {
 	@unlink( $pncp_f );
