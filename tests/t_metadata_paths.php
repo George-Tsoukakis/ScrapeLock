@@ -88,6 +88,8 @@ settings(
 		'block_headless'          => 0,
 		'block_bots'              => 1,
 		'bot_list'                => PNCP_Options::defaults()['bot_list'], // An earlier test may have changed it.
+		// 3.11: an existing site's list (new installs also allow the /.well-known/ services everywhere).
+		'allow_list'              => implode( "\n", array_diff( PNCP_Options::parse_list( PNCP_Options::default_allow_list() ), array( 'GoogleAssociationService', 'Chrome Privacy Preserving Prefetch Proxy', 'AuthenticationServices', 'OneSignal' ) ) ),
 		'block_empty_ua'          => 1,
 		'block_fake_crawlers'     => 1,
 		'ban_strikes'             => 0,

@@ -200,6 +200,21 @@ settings(
 	)
 );
 
+// The lists this test depends on (an earlier test may have changed them), put back at the end.
+$cf_saved = get_option( 'pncp_ip_lists_cloudflare', null );
+register_shutdown_function(
+	static function () use ( $cf_saved ) {
+		if ( null === $cf_saved ) {
+			delete_option( 'pncp_ip_lists_cloudflare' );
+		} else {
+			update_option( 'pncp_ip_lists_cloudflare', $cf_saved );
+		}
+	}
+);
+PNCP_Ip::store_list( 'cloudflare', array( '104.16.0.0/13', '173.245.48.0/20' ) );
+settings( array( 'allow_list' => PNCP_Options::default_allow_list(), 'bot_list' => PNCP_Options::default_bot_list() ) );
+$saved['bot_list'] = PNCP_Options::default_bot_list(); // The base for the bot list lines added below.
+
 $server_ip = '203.0.113.10'; // The server's public address (what Bunny sends back as the visitor IP).
 $other_ip  = '198.51.100.71';
 $wp_ua     = 'WordPress/6.8.1; ' . home_url( '/' );
@@ -306,6 +321,7 @@ t( 'A1 early check: no User-Agent from another address: 403 empty_ua', is_array(
 
 // Over HTTP: WordPress and the early check (X-Test-IP is the visitor; the harness gives the address).
 PNCP_Early::sync();
+sleep( 3 ); // OPcache of the server: the early check file.
 update_option( PNCP_Server_Ips::OPTION, array( 'ips' => array( $server_ip ), 'host' => '', 'time' => time(), 'learned' => array() ) );
 list( $code, $h ) = req( '/', via_cdn( $server_ip, $wp_ua ) );
 t( 'A1 HTTP: WordPress/6.x from the server\'s address, no browser headers: 200', 200 === $code, (string) $code );
@@ -317,6 +333,7 @@ list( $code, $h ) = req( '/', via_cdn( $other_ip, '' ) );
 t( 'A1 HTTP: no User-Agent from another address: 403 in the early check (before plugins)', 403 === $code && false === strpos( $h, 'x-test-muplugins-loaded' ), $code . ' ' . $h );
 settings( array( 'early_mode' => 0 ) );
 PNCP_Early::sync();
+sleep( 3 ); // OPcache of the server: the early check file.
 
 /* ---------- A2. WP Rocket's SaaS while WP Rocket is active ---------- */
 $saas = 'Mozilla/5.0 (compatible; WP-Rocket-SaaS/1.0; +https://wp-rocket.me/bot/)';
@@ -368,14 +385,19 @@ activate_plugin( 'wp-rocket/wp-rocket.php', '', false, false ); // Not silent: t
 PNCP_Plugin_Bots::reset();
 settings( array( 'bot_list' => $saved['bot_list'] . "\nwp-rocket.me/bot" ) );
 PNCP_Early::sync();
+sleep( 3 ); // OPcache of the server: the early check file.
 list( $code, $h ) = req( '/', via_cdn( $other_ip, $saas ) );
 t( 'A2 HTTP: the SaaS, no Accept-Language, bot list line, WP Rocket active: 200 (early check and WordPress)', 200 === $code, (string) $code );
 list( $code, $h ) = req( '/', via_cdn( $other_ip, 'Mozilla/5.0 (compatible; SomeBot/1.0; +https://wp-rocket.me/bot/)' ) );
 t( 'A2 HTTP: another User-Agent with the same bot list line: 403 in the early check', 403 === $code && false === strpos( $h, 'x-test-muplugins-loaded' ), $code . ' ' . $h );
 settings( array( 'early_mode' => 0 ) );
 PNCP_Early::sync();
+sleep( 3 ); // OPcache of the server: the early check file.
 
 /* ---------- A3. /.well-known/ and Google's / Apple's fetchers ---------- */
+// An existing site's "Always allowed" list (new installs also allow the /.well-known/ services everywhere).
+$old_allow = implode( "\n", array_diff( PNCP_Options::parse_list( PNCP_Options::default_allow_list() ), PNCP_Bots::well_known_agents() ) );
+settings( array( 'allow_list' => $old_allow ) );
 $lists_saved = array(
 	'google' => get_option( 'pncp_ip_lists_google', null ),
 	'apple'  => get_option( 'pncp_ip_lists_apple', null ),
@@ -430,12 +452,14 @@ as_request( '127.0.0.1', $passkey_ua, array( 'HTTP_X_REAL_IP' => $other_ip ), '/
 $e = PNCP_Early::check();
 t( 'A3 early check: ... but not on a page (403 bot_ua)', is_array( $e ) && 'bot_ua' === $e[1], wp_json_encode( $e ) );
 PNCP_Early::sync();
+sleep( 3 ); // OPcache of the server: the early check file.
 list( $code, $h ) = req( '/.well-known/assetlinks.json', via_cdn( $other_ip, '' ) );
 t( 'A3 HTTP: /.well-known/assetlinks.json without a User-Agent: not refused (early check and WordPress)', 403 !== $code && false !== strpos( $h, 'x-test-muplugins-loaded' ), $code . ' ' . $h );
 list( $code, $h ) = req( '/.well-known/passkey-endpoints', via_cdn( $other_ip, $passkey_ua ) );
 t( 'A3 HTTP: the passkeys agent, bot list line, no browser headers: not refused', 403 !== $code, (string) $code );
-settings( array( 'early_mode' => 0, 'bot_list' => $saved['bot_list'] ) );
+settings( array( 'early_mode' => 0, 'bot_list' => $saved['bot_list'], 'allow_list' => PNCP_Options::default_allow_list() ) );
 PNCP_Early::sync();
+sleep( 3 ); // OPcache of the server: the early check file.
 
 /* ---------- A4. Static files are not pages ---------- */
 $mobile = 'Mozilla/5.0 (Linux; Android 14; SM-A546B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Mobile Safari/537.36';
@@ -488,7 +512,7 @@ for ( $i = 0; $i < 31; $i++ ) {
 	$v[] = verdict( true );
 }
 t( 'A4: a link preview NOT in the always-allowed list is counted (and refused by Browsers only)', '403 no_browser' === $v[0], $v[0] );
-settings( array( 'allow_list' => $saved['allow_list'] ) );
+settings( array( 'allow_list' => PNCP_Options::default_allow_list() ) );
 // Over HTTP: a missing .webp reaches WordPress (404 handler).
 same_minute();
 $c = codes( '/wp-content/uploads/2025/10/missing-' . wp_rand() . '.webp', via_cdn( '94.65.13.' . wp_rand( 2, 250 ), $mobile, array( 'Accept-Language' => 'el-GR' ) ), 18 );
@@ -534,7 +558,7 @@ PNCP_Precheck::sync();
 sleep( 3 );
 
 // A3 on the pre-cache check.
-settings( array( 'bot_list' => $saved['bot_list'] . "\nCFNetwork" ) );
+settings( array( 'bot_list' => $saved['bot_list'] . "\nCFNetwork", 'allow_list' => $old_allow ) );
 PNCP_Precheck::sync(); // Also crawlers.json with Google's and Apple's lists.
 sleep( 3 );
 list( $code ) = req( '/.well-known/assetlinks.json', via_cdn( '198.51.100.77', '' ) );
@@ -549,7 +573,7 @@ list( $code ) = req( '/cached-page/', via_cdn( '74.125.2.2', '' ) );
 t( 'A3 pre-cache: Google address without a User-Agent: 200', 200 === $code, (string) $code );
 list( $code ) = req( '/cached-page/', via_cdn( '17.59.2.2', '' ) );
 t( 'A3 pre-cache: another address without a User-Agent: 403', 403 === $code, (string) $code );
-settings( array( 'bot_list' => $saved['bot_list'] ) );
+settings( array( 'bot_list' => $saved['bot_list'], 'allow_list' => PNCP_Options::default_allow_list() ) );
 foreach ( $lists_saved as $name => $list ) {
 	if ( null === $list ) {
 		delete_option( 'pncp_ip_lists_' . $name );
