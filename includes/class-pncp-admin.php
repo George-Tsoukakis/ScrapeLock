@@ -58,6 +58,7 @@ final class PNCP_Admin {
 		add_action( 'wp_ajax_pncp_wm_batch', array( __CLASS__, 'ajax_wm_batch' ) );
 		add_action( 'admin_notices', array( __CLASS__, 'upgrade_notices' ) );
 		PNCP_Admin_Sections::init(); // 3.10: folded parts stay open after a Save.
+		PNCP_Wizard::init(); // 3.11: "For my site" (admin-post pncp_wizard).
 	}
 
 	/**
@@ -889,6 +890,7 @@ final class PNCP_Admin {
 	 * @param array<string, mixed> $s Settings.
 	 */
 	private static function tab_general( $s ) {
+		PNCP_Wizard::render_panel(); // 3.11: "For my site".
 		self::render_profiles( $s );
 		self::form_open( 'general' );
 		?>

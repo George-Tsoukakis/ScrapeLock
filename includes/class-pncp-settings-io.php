@@ -70,7 +70,7 @@ final class PNCP_Settings_Io {
 	/**
 	 * Saves the current settings as a version that can be restored. The oldest goes beyond KEEP versions.
 	 *
-	 * @param string $reason What is about to change: profile:<name>, import, reset:<tab>, restore, cli:set, cli:import.
+	 * @param string $reason What is about to change: profile:<name>, import, reset:<tab>, restore, cli:set, cli:import, wizard.
 	 * @return string The version's ID.
 	 */
 	public static function backup( $reason ) {
@@ -215,6 +215,8 @@ final class PNCP_Settings_Io {
 				return __( 'Before removing the allowed AI search bots from the bot list', 'scrapelock' );
 			case 'allow_service': // 3.11.
 				return __( 'Before allowing a service from the Log', 'scrapelock' );
+			case 'wizard':
+				return __( 'Before the “For my site” assistant', 'scrapelock' ); // 3.11: PNCP_Wizard.
 			case 'cli':
 				/* translators: %s: WP-CLI command */
 				return sprintf( __( 'Before “wp scrapelock settings %s”', 'scrapelock' ), $what );
