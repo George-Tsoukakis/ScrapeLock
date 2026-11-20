@@ -845,7 +845,6 @@ final class PNCP_Admin_Traffic {
 				);
 				?>
 				</li>
-				<li><?php echo esc_html( 'masked' === $tr['ip_mode'] ? __( 'IP addresses are stored masked (the last part removed).', 'scrapelock' ) : __( 'IP addresses are stored in full.', 'scrapelock' ) ); ?></li>
 			</ul>
 			<h3><?php esc_html_e( 'Sources found', 'scrapelock' ); ?></h3>
 			<ul class="pncp-tr__found">
@@ -882,10 +881,51 @@ final class PNCP_Admin_Traffic {
 				<input type="hidden" name="action" value="<?php echo esc_attr( PNCP_Traffic_Actions::ACTION ); ?>">
 				<input type="hidden" name="op" value="start">
 				<?php echo preg_replace( '/ id="_wpnonce"/', '', wp_nonce_field( PNCP_Traffic_Actions::ACTION, '_wpnonce', true, false ), 1 ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Core markup. ?>
+				<?php self::render_ip_choice( $tr, $has_data ); ?>
 				<p><button type="submit" class="button button-primary" id="pncp-tr-start"><?php esc_html_e( 'Start collecting', 'scrapelock' ); ?></button></p>
 			</form>
 		</section>
 		<?php
+	}
+
+	/**
+	 * 3.12.1: the IP addresses choice of "Start collecting": what each mode stores, and how long single requests
+	 * (the rows that hold an address) are kept. "Masked" is chosen in advance on every site that has not collected
+	 * yet, whatever it stored before (an upgrade stored "full"); a site that collected before keeps its own choice.
+	 *
+	 * @param array<string, mixed> $tr       PNCP_Traffic::settings().
+	 * @param bool                 $has_data Something was collected before.
+	 */
+	private static function render_ip_choice( $tr, $has_data ) {
+		$mode  = $has_data ? (string) $tr['ip_mode'] : 'masked';
+		$modes = array(
+			'masked' => array(
+				__( 'Masked (recommended)', 'scrapelock' ),
+				__( 'Removes the last part of each address before storing it (IPv4 /24, IPv6 /48), so no visitor stands out.', 'scrapelock' ),
+			),
+			'full'   => array(
+				__( 'Full', 'scrapelock' ),
+				__( 'Stores every address as it is, so you can look up or block one visitor (personal data under the GDPR).', 'scrapelock' ),
+			),
+		);
+		echo '<fieldset class="pncp-tr__ipmode"><legend>' . esc_html__( 'IP addresses in the traffic record', 'scrapelock' ) . '</legend>';
+		foreach ( $modes as $value => $text ) {
+			printf(
+				'<p><label><input type="radio" name="ip_mode" value="%1$s" id="pncp-tr-ipmode-%1$s"%2$s> <strong>%3$s</strong></label><br><span class="description">%4$s</span></p>',
+				esc_attr( $value ),
+				checked( $mode, $value, false ),
+				esc_html( $text[0] ),
+				esc_html( $text[1] )
+			);
+		}
+		echo '<p class="description" id="pncp-tr-retention">' . esc_html(
+			sprintf(
+				/* translators: 1: days single requests are kept, 2: days the daily figures are kept */
+				__( 'Single requests, with their address, are deleted after %1$s days; daily figures after %2$s days.', 'scrapelock' ),
+				self::n( $tr['raw_days'] ),
+				self::n( $tr['days'] )
+			)
+		) . '</p></fieldset>';
 	}
 
 	/* ---------- Sources and settings ---------- */

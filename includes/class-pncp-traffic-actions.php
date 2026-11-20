@@ -447,6 +447,11 @@ final class PNCP_Traffic_Actions {
 			case 'start':
 				$rec     = self::recommended();
 				$changes = array_merge( $rec['changes'], array( 'traffic' => 1 ) );
+				// 3.12.1: the IP addresses choice of the start screen (Masked chosen in advance); none sent = as stored.
+				$mode = isset( $_POST['ip_mode'] ) ? sanitize_key( wp_unslash( $_POST['ip_mode'] ) ) : '';
+				if ( in_array( $mode, array( 'masked', 'full' ), true ) ) {
+					$changes['traffic_ip_mode'] = $mode;
+				}
 				PNCP_Settings_Io::backup( self::REASON_START );
 				update_option( PNCP_OPTION, array_merge( PNCP_Options::stored(), $changes ) );
 				PNCP_Options::flush();

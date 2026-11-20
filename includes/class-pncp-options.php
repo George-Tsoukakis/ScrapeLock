@@ -887,14 +887,33 @@ final class PNCP_Options {
 	 * Already the default before 3.11, listed here for the record: blur_on_capture 0, block_devtools 0,
 	 * user_mark_guests 0, ban_strikes 3.
 	 *
-	 * @return array<string, int>
+	 * 3.12.1: and install_values_3121().
+	 *
+	 * @return array<string, int|string>
 	 */
 	public static function install_values() {
+		return array_merge(
+			array(
+				'probe_ban'     => 1,
+				'block_ip_host' => 1,
+				'reputation'    => 1,
+				'ban_minutes'   => 120,
+			),
+			self::install_values_3121()
+		);
+	}
+
+	/**
+	 * 3.12.1: the new-install defaults added in 3.12.1. Traffic stores the IP addresses masked (IPv4 /24, IPv6 /48):
+	 * a brand-new install that starts collecting keeps no full address unless it chooses to. Sites installed before
+	 * keep what they stored (an upgrade to 3.12 stored "full"); their "Start collecting" screen chooses "Masked" in
+	 * advance until they collect (PNCP_Admin_Traffic).
+	 *
+	 * @return array<string, string>
+	 */
+	public static function install_values_3121() {
 		return array(
-			'probe_ban'     => 1,
-			'block_ip_host' => 1,
-			'reputation'    => 1,
-			'ban_minutes'   => 120,
+			'traffic_ip_mode' => 'masked',
 		);
 	}
 
@@ -998,18 +1017,20 @@ final class PNCP_Options {
 		$defaults = self::install_defaults();
 		$out      = array();
 		$sets     = array(
+			// 3.12.1: the values sites installed before 3.12.1 have (defaults()), where new installs get others.
+			'3.12.1' => array_intersect_key( self::defaults(), self::install_values_3121() ),
 			// 3.11: the values sites installed before 3.11 have (defaults()), where new installs get others.
-			'3.11' => array_intersect_key( self::defaults(), self::install_values() ),
-			'3.0'  => self::new_in_300(),
-			'2.9'  => self::new_in_290(),
-			'2.6'  => self::new_in_260(),
-			'2.5'  => self::new_in_250(),
-			'2.4'  => self::new_in_240(),
+			'3.11'   => array_diff_key( array_intersect_key( self::defaults(), self::install_values() ), self::install_values_3121() ),
+			'3.0'    => self::new_in_300(),
+			'2.9'    => self::new_in_290(),
+			'2.6'    => self::new_in_260(),
+			'2.5'    => self::new_in_250(),
+			'2.4'    => self::new_in_240(),
 		);
 		foreach ( $sets as $since => $values ) {
 			foreach ( $values as $key => $value ) {
-				if ( isset( $out[ $key ] ) && '3.11' === $out[ $key ]['since'] ) {
-					continue; // 3.11 is the version that changed it last.
+				if ( isset( $out[ $key ] ) && in_array( $out[ $key ]['since'], array( '3.11', '3.12.1' ), true ) ) {
+					continue; // 3.11 or 3.12.1 is the version that changed it last.
 				}
 				if ( isset( $defaults[ $key ] ) && (string) $defaults[ $key ] !== (string) $value ) {
 					$out[ $key ] = array(

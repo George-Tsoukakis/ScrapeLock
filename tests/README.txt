@@ -134,6 +134,12 @@ ScrapeLock — δοκιμές σε πραγματικό WordPress (όχι stubs)
                     bot"; turned off, 403 everywhere from the built-in list (also in the pre-cache configuration),
                     "Always allowed" still first; on again, it passes; the bot list untouched in both transitions;
                     the 3.11 migration never runs again; the Bots tab warning and "Remove from the list"
+  t_3121_traffic.php 3.12.1: Traffic, safer defaults (GDPR): a brand-new install stores traffic_ip_mode "masked", an
+                    upgrade from 3.11 / 3.12.0 keeps "full" (no migration); "Start collecting" asks how IPs are stored
+                    (Masked chosen in advance until the site has collected, what each mode stores, the retention of
+                    single requests) and saves the choice; with Masked, the WordPress source over HTTP, Bunny and the
+                    access log store no full address in any table, option, view, CSV, alert email, report line or
+                    "wp scrapelock traffic" output (needs WP_CLI, else that part SKIPs); the privacy policy text
   t_cli.php         wp scrapelock … μέσα από το πραγματικό wp (χρειάζεται WP_CLI, αλλιώς SKIP)
   t_bunny_rules.php Edge Rules στο Bunny μέσα στα όριά του (το πολύ 5 μοτίβα ανά συνθήκη) με ψεύτικο API που δίνει
                     HTTP 400 όπως το πραγματικό: χωρισμός, κλείδωμα/Remove, rollback, Monitor only, sync, προεπισκόπηση,

@@ -2056,6 +2056,8 @@ final class PNCP_Log {
 			// 3.12.1.
 			. '<p>' . esc_html__( 'When a signed-in member goes over a per-account limit, the block log also keeps the member\'s username with that entry, deleted with the rest of the log.', 'scrapelock' ) . '</p>'
 			. '<p>' . esc_html( PNCP_Bunny::privacy_policy() ) . '</p>'
+			// 3.12.1: Traffic, with this site's retention and IP addresses setting.
+			. '<p>' . esc_html( PNCP_Traffic::privacy_text() ) . '</p>'
 			. '<p>' . esc_html__( 'ScrapeLock Stealth changes the addresses of the theme, plugin and media files in the pages sent to visitors. It stores no data about visitors. Its self-test and scan only request this site\'s own public pages, from the site itself.', 'scrapelock' ) . '</p>'
 		);
 	}
