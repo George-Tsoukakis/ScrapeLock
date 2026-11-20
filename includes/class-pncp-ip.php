@@ -69,7 +69,7 @@ final class PNCP_Ip {
 	/**
 	 * The Bunny list as a lookup table (address => true) plus its CIDRs, built once per request.
 	 *
-	 * @var array{0:array<string, bool>, 1:string[]}|null
+	 * @var array{0:array<string, bool|int>, 1:string[]}|null
 	 */
 	private static $bunny = null;
 
