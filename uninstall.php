@@ -98,7 +98,7 @@ function pncp_uninstall_site() {
 		$wpdb->query( $wpdb->prepare( 'DROP TABLE IF EXISTS %i', $wpdb->prefix . $pncp_table ) );
 	}
 	unset( $pncp_table );
-	foreach ( array( 'pncp_traffic_db', 'pncp_traffic_state', 'pncp_traffic_gen' ) as $pncp_option ) {
+	foreach ( array( 'pncp_traffic_db', 'pncp_traffic_state', 'pncp_traffic_gen', 'pncp_traffic_alerts' ) as $pncp_option ) {
 		delete_option( $pncp_option );
 	}
 	// Every event of each hook, whatever its arguments (wp_clear_scheduled_hook() only removes the ones without).

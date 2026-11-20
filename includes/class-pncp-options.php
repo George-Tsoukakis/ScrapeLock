@@ -176,6 +176,7 @@ final class PNCP_Options {
 			// 3.12: Traffic (PNCP_Traffic).
 			'traffic',
 			'traffic_wp',
+			'traffic_alerts',
 		);
 	}
 
@@ -266,7 +267,7 @@ final class PNCP_Options {
 			// keeps it.
 			'edge'    => array( 'edge_send_blocks' ),
 			// 3.12: Traffic (PNCP_Traffic), saved from the Traffic tab only.
-			'traffic' => array( 'traffic', 'traffic_wp', 'traffic_log_path', 'traffic_raw_days', 'traffic_days', 'traffic_ip_mode' ),
+			'traffic' => array( 'traffic', 'traffic_wp', 'traffic_log_path', 'traffic_raw_days', 'traffic_days', 'traffic_ip_mode', 'traffic_alerts', 'traffic_alert_email' ),
 		);
 	}
 
@@ -833,6 +834,10 @@ final class PNCP_Options {
 			'traffic_raw_days'        => 3,
 			'traffic_days'            => 90,
 			'traffic_ip_mode'         => 'full',
+			// Emails about unusual traffic (PNCP_Traffic_Alerts): server errors or missing pages far above the usual,
+			// a new heavy User-Agent, a source that stopped. Off: it sends mail. '' = the administration email.
+			'traffic_alerts'          => 0,
+			'traffic_alert_email'     => '',
 		);
 	}
 
@@ -1008,7 +1013,7 @@ final class PNCP_Options {
 	 * @return array<string, int|string>
 	 */
 	public static function new_in_3120() {
-		return array_intersect_key( self::defaults(), array_flip( array( 'traffic', 'traffic_wp', 'traffic_log_path', 'traffic_raw_days', 'traffic_days', 'traffic_ip_mode' ) ) );
+		return array_intersect_key( self::defaults(), array_flip( array( 'traffic', 'traffic_wp', 'traffic_log_path', 'traffic_raw_days', 'traffic_days', 'traffic_ip_mode', 'traffic_alerts', 'traffic_alert_email' ) ) );
 	}
 
 	/**
@@ -1999,6 +2004,27 @@ final class PNCP_Options {
 			add_settings_error( PNCP_OPTION, 'pncp_traffic_log_path', PNCP_Traffic_Log::refusal_text( 'unreadable' ), 'warning' );
 		}
 		$clean['traffic_log_path'] = substr( $log_path, 0, 500 );
+		// 3.12: who gets the traffic alerts ('' = the administration email). Addresses separated by commas; when one
+		// of them is not an email address nothing is changed, and the administrator is told.
+		$mail_raw = isset( $input['traffic_alert_email'] ) ? trim( (string) $input['traffic_alert_email'] ) : '';
+		$mails    = array();
+		$bad      = array();
+		foreach ( array_filter( array_map( 'trim', explode( ',', $mail_raw ) ), 'strlen' ) as $one ) {
+			$ok = sanitize_email( $one );
+			if ( '' !== $ok && is_email( $ok ) ) {
+				$mails[] = $ok;
+			} else {
+				$bad[] = sanitize_text_field( $one );
+			}
+		}
+		if ( $bad ) {
+			$mails = isset( $stored['traffic_alert_email'] ) ? array( (string) $stored['traffic_alert_email'] ) : array();
+			if ( function_exists( 'add_settings_error' ) && self::saved_here( 'traffic_alert_email', $input ) ) {
+				/* translators: %s: what was typed that is not an email address */
+				add_settings_error( PNCP_OPTION, 'pncp_traffic_alert_email', sprintf( __( 'The address for traffic alerts was not saved: “%s” is not an email address.', 'scrapelock' ), implode( ', ', $bad ) ) );
+			}
+		}
+		$clean['traffic_alert_email'] = substr( implode( ', ', array_unique( array_filter( $mails, 'strlen' ) ) ), 0, 500 );
 
 		// "Only through the CDN" is turned on (or its secret changed) only from a request that brought the secret:
 		// that proves the CDN sends it. Otherwise the next request, and the administrator, would get a 403.

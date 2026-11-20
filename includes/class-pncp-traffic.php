@@ -942,6 +942,8 @@ final class PNCP_Traffic {
 			if ( (int) $state['cleaned_at'] < time() - 50 * MINUTE_IN_SECONDS ) {
 				self::cleanup();
 			}
+			// The alerts (unusual errors, a new heavy User-Agent, a stopped source), on the counted figures.
+			PNCP_Traffic_Alerts::check();
 		} finally {
 			PNCP_Log::cache_delete( 'pncp_traffic_lock' );
 		}
@@ -1404,6 +1406,7 @@ final class PNCP_Traffic {
 		delete_option( self::DB_OPTION );
 		delete_option( self::STATE );
 		delete_option( self::GEN_OPTION );
+		PNCP_Traffic_Alerts::uninstall();
 		wp_unschedule_hook( self::CRON );
 	}
 

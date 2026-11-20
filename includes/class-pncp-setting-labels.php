@@ -154,6 +154,8 @@ final class PNCP_Setting_Labels {
 			'tdm_reservation'         => __( 'Opt-out declaration from AI training and text and data mining (TDM)', 'scrapelock' ),
 			'text_trace'              => __( 'Hide an invisible trace of the account in the text', 'scrapelock' ),
 			'traffic'                 => __( 'Collect traffic (every request, from the CDN logs, the access log or WordPress)', 'scrapelock' ),
+			'traffic_alert_email'     => __( 'Send the traffic alerts to (empty = the administration email):', 'scrapelock' ),
+			'traffic_alerts'          => __( 'Email me about unusual traffic (server errors, missing pages, a new heavy bot, a source that stopped)', 'scrapelock' ),
 			'traffic_days'            => __( 'Keep the daily traffic figures for (days):', 'scrapelock' ),
 			'traffic_ip_mode'         => __( 'IP addresses in the traffic record:', 'scrapelock' ),
 			'traffic_log_path'        => __( 'Web server access log (full path, empty = not read):', 'scrapelock' ),
