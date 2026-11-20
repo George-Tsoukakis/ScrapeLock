@@ -83,14 +83,14 @@ $groups = array(
 	'content'  => array( 'general', 'images', 'content' ),
 	'bots'     => array( 'bots' ),
 	'security' => array( 'hardening', 'rules', 'lockdown' ),
-	'records'  => array( 'log', 'attacks' ),
+	'records'  => array( 'log', 'traffic', 'attacks' ),
 );
-$tabs   = array( 'general', 'bots', 'content', 'images', 'rules', 'log', 'attacks', 'hardening', 'lockdown' );
+$tabs   = array( 'general', 'bots', 'content', 'images', 'rules', 'log', 'traffic', 'attacks', 'hardening', 'lockdown' );
 $all    = array();
 foreach ( PNCP_Admin_Tabs::grouped( array_fill_keys( $tabs, 'x' ) ) as $key => $group ) {
 	$all[ $key ] = array_keys( $group['tabs'] );
 }
-t( 'grouped(): οι 4 ομάδες με τις 9 καρτέλες, καθεμία μία φορά', $groups === $all, wp_json_encode( $all ) );
+t( 'grouped(): οι 4 ομάδες με τις 10 καρτέλες, καθεμία μία φορά', $groups === $all, wp_json_encode( $all ) );
 $extra = PNCP_Admin_Tabs::grouped( array( 'general' => 'A', 'newtab' => 'B' ) );
 t( 'grouped(): καρτέλα χωρίς ομάδα στο «More», χωρίς άδειες ομάδες', array( 'content', 'more' ) === array_keys( $extra ) && isset( $extra['more']['tabs']['newtab'] ), wp_json_encode( $extra ) );
 t( 'group_of(): Lockdown στο Security, Attacks στο Records', 'security' === PNCP_Admin_Tabs::group_of( 'lockdown', array_fill_keys( $tabs, 'x' ) ) && 'records' === PNCP_Admin_Tabs::group_of( 'attacks', array_fill_keys( $tabs, 'x' ) ) );
@@ -105,7 +105,7 @@ foreach ( $tabs as $tab ) {
 	// The active tab is inside its own group, and that group is the current one.
 	$group = PNCP_Admin_Tabs::group_of( $tab, array_fill_keys( $tabs, 'x' ) );
 	$ok    = $ok && (bool) preg_match( '#pncp-tab-group--' . $group . ' is-current".*?tab=' . $tab . '" class="nav-tab nav-tab-active#s', $nav );
-	$ok    = $ok && 9 === preg_match_all( '/class="nav-tab[ "]/', $nav ) && 1 === substr_count( $nav, 'nav-tab-active' );
+	$ok    = $ok && 10 === preg_match_all( '/class="nav-tab[ "]/', $nav ) && 1 === substr_count( $nav, 'nav-tab-active' );
 	t( "tab=$tab: η σωστή καρτέλα, ενεργή μέσα στην ομάδα της, όλες οι ομάδες", $ok, $code . ' ' . shown_tab( $body ) );
 }
 foreach ( array( 'vulnerable' => 'hardening', 'server' => 'rules', 'attack' => 'attacks', 'logs' => 'log', 'cdn' => 'bots', 'feeds' => 'content', 'watermark' => 'images', 'page' => 'general', 'lock' => 'lockdown' ) as $alias => $want ) {

@@ -775,7 +775,7 @@ t( '3.10 άγνωστη καρτέλα → η πρώτη, με το όνομα �
 $pncp_r = PNCP_Admin_Tabs::resolve( 'server', array( 'general' => 'x' ) );
 t( '3.10 alias προς καρτέλα που δεν υπάρχει → άγνωστη', 'general' === $pncp_r['tab'] && 'server' === $pncp_r['unknown'], wp_json_encode( $pncp_r ) );
 foreach ( PNCP_Admin_Tabs::aliases() as $pncp_alias => $pncp_target ) {
-	if ( ! in_array( $pncp_target, array( 'general', 'bots', 'content', 'images', 'rules', 'log', 'attacks', 'hardening', 'lockdown' ), true ) || sanitize_key( $pncp_alias ) !== $pncp_alias ) {
+	if ( ! in_array( $pncp_target, array( 'general', 'bots', 'content', 'images', 'rules', 'log', 'traffic', 'attacks', 'hardening', 'lockdown' ), true ) || sanitize_key( $pncp_alias ) !== $pncp_alias ) {
 		t( "3.10 alias «{$pncp_alias}» δείχνει σε πραγματική καρτέλα", false, $pncp_target );
 	}
 }

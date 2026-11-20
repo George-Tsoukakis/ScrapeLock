@@ -83,6 +83,12 @@ ScrapeLock — δοκιμές σε πραγματικό WordPress (όχι stubs)
                     the Traffic tab, the weekly email's and the dashboard widget's Traffic part, the Site Health test
                     (good / recommended) and info lines, every "wp scrapelock traffic" subcommand and format (needs
                     WP_CLI, else those checks SKIP), export refusing to overwrite, purge needing --yes, uninstall
+  t_traffic_ui.php  3.12: the Traffic tab (PNCP_Admin_Traffic, PNCP_Traffic_Actions) over HTTP with seeded requests:
+                    every view 200 without notices, the numbers are the API's, filters / sort / pages in the address and
+                    the alert-email parameters, <script> in a User-Agent and a path escaped everywhere, CSV (headers,
+                    filters, formulas), nonce and manage_options on every action (editor 403, wrong nonce), Block /
+                    Always allow write one line after the confirmation and save an earlier version (Undo), search
+                    engine and own-browser guards, Test this path, the settings form, Delete, off state, Start collecting
   t_cli.php         wp scrapelock … μέσα από το πραγματικό wp (χρειάζεται WP_CLI, αλλιώς SKIP)
   t_bunny_rules.php Edge Rules στο Bunny μέσα στα όριά του (το πολύ 5 μοτίβα ανά συνθήκη) με ψεύτικο API που δίνει
                     HTTP 400 όπως το πραγματικό: χωρισμός, κλείδωμα/Remove, rollback, Monitor only, sync, προεπισκόπηση,
