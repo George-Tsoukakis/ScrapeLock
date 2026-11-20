@@ -452,7 +452,7 @@ PNCP_Precheck_Runtime::$self_result = '';
 // Over HTTP, against the test server, as the site's request coming back through the edge.
 $ht = sig( '/' );
 list( $code, $h ) = req( $home_path, from_edge( array( 'X-ScrapeLock-Sig' => $ht, 'Host' => $origin_host ) ) );
-t( 'M HTTP: a valid signature with the CDN\'s Host header: 200 with "X-ScrapeLock: ok"', 200 === $code && 'ok' === hdr( $h, 'x-scrapelock' ), $code . ' ' . hdr( $h, 'x-scrapelock' ) );
+t( 'M HTTP: a valid signature with the CDN\'s Host header: 200 with "X-ScrapeLock: ok id=…" (its id)', 200 === $code && 'ok id=' . PNCP_Self_Check::request_id( $ht ) === hdr( $h, 'x-scrapelock' ), $code . ' ' . hdr( $h, 'x-scrapelock' ) );
 list( $code, $h ) = req( $home_path, from_edge( array( 'X-ScrapeLock-Sig' => $ht, 'Host' => $origin_host ) ) );
 t( 'M HTTP: the same signature again: 403 "refused fake_browser layer=wp sig=nonce_reused"', 403 === $code && 'refused fake_browser layer=wp sig=nonce_reused' === hdr( $h, 'x-scrapelock' ), $code . ' ' . hdr( $h, 'x-scrapelock' ) );
 list( $code, $h ) = req( $home_path, array( 'X-Test-Remote-Addr' => VISITOR, 'User-Agent' => 'python-requests/2.32.3' ) );
@@ -499,13 +499,17 @@ t( 'C: never retried: a locked point\'s own answer (harden_*), a 404, the CDN re
 $calls   = array();
 $edge403 = true;
 $origin  = 'ok';
-$mock    = static function ( $pre, $args, $url ) use ( &$calls, &$edge403, &$origin ) {
+$verify  = array();
+$mock    = static function ( $pre, $args, $url ) use ( &$calls, &$edge403, &$origin, &$verify ) {
 	if ( ! in_array( strtolower( (string) wp_parse_url( $url, PHP_URL_HOST ) ), PNCP_Server_Ips::own_hosts(), true ) ) {
 		return $pre;
 	}
-	$calls[] = empty( $args['pncp_resolve'] ) ? 'public' : 'origin ' . $args['pncp_resolve'];
-	$page    = array(
-		'x-scrapelock'              => 'ok',
+	$calls[]  = empty( $args['pncp_resolve'] ) ? 'public' : 'origin ' . $args['pncp_resolve'];
+	$verify[] = isset( $args['sslverify'] ) ? (bool) $args['sslverify'] : null;
+	// This WordPress answers the site's signed request with "ok id=…" (the id of the signature it carried).
+	$sent = isset( $args['headers']['X-ScrapeLock-Sig'] ) ? (string) $args['headers']['X-ScrapeLock-Sig'] : '';
+	$page = array(
+		'x-scrapelock'              => PNCP_Self_Check::ok_marker( PNCP_Self_Check::request_id( $sent ) ),
 		'server'                    => 'nginx',
 		'x-frame-options'           => 'SAMEORIGIN',
 		'x-content-type-options'    => 'nosniff',
@@ -518,6 +522,14 @@ $mock    = static function ( $pre, $args, $url ) use ( &$calls, &$edge403, &$ori
 	}
 	if ( 'error' === $origin ) {
 		return new WP_Error( 'http_request_failed', 'Failed to connect to 127.0.0.1 port 443' );
+	}
+	if ( 'other' === $origin ) {
+		// Another server or a cache there: a page, but not this WordPress's answer to this request.
+		unset( $page['x-scrapelock'] );
+	} elseif ( 'stale' === $origin ) {
+		$page['x-scrapelock'] = 'ok id=0badc0de'; // A cached copy of an earlier answer.
+	} elseif ( 'plain-ok' === $origin ) {
+		$page['x-scrapelock'] = 'ok';
 	}
 	return answer( 200, $page, '<html></html>' );
 };
@@ -544,8 +556,50 @@ $calls   = array();
 PNCP_Self_Check::request( home_url( '/' ), array(), 'self' );
 t( 'F: mode "self" (files that may be refused on purpose): a refusal at the edge is the answer', array( 'public' ) === $calls, wp_json_encode( $calls ) );
 t( 'F: the candidates: 127.0.0.1, then SERVER_ADDR (at most 3)', array( '127.0.0.1', '10.66.0.5' ) === array_slice( PNCP_Self_Check::origin_candidates(), 0, 2 ), wp_json_encode( PNCP_Self_Check::origin_candidates() ) );
+$v6 = static function ( $ips ) {
+	$ips[] = '2001:db8::5';
+	return $ips;
+};
+add_filter( 'pncp_selfcheck_origin_ips', $v6 );
 t( 'F: the resolve entry of an IPv6 address is bracketed', $own_host . ':' . $port . ':[2001:db8::5]' === PNCP_Self_Check::resolve_entry( home_url( '/' ), '2001:db8::5' ) );
+remove_filter( 'pncp_selfcheck_origin_ips', $v6 );
 t( 'F: no resolve entry for another host', '' === PNCP_Self_Check::resolve_entry( 'https://example.com/', '127.0.0.1' ) );
+// Review of 3.12.2: the route only after this WordPress itself answered, only the site's own host:port, and it
+// clears itself.
+t( 'F: no resolve entry for another port of the site\'s host (a control panel)', '' === PNCP_Self_Check::resolve_entry( 'http://' . $own_host . ':2083/', '127.0.0.1' ) && '' === PNCP_Self_Check::resolve_entry( 'https://' . $own_host . ':8443/', '127.0.0.1' ) );
+t( 'F: no resolve entry for an address that is not the server\'s (not one of the candidates)', '' === PNCP_Self_Check::resolve_entry( home_url( '/' ), '192.0.2.200' ) );
+$home_filter = static function () {
+	return 'https://www.pncp-site.example';
+};
+add_filter( 'pre_option_home', $home_filter );
+add_filter( 'pre_option_siteurl', $home_filter );
+t( 'F: a site on a default port: its host on 443 and 80 (https and http), no other port', array( 'www.pncp-site.example:80', 'www.pncp-site.example:443' ) === array_values( array_intersect( array( 'www.pncp-site.example:80', 'www.pncp-site.example:443' ), PNCP_Self_Check::own_origins() ) ) && 2 === count( PNCP_Self_Check::own_origins() ) && '' === PNCP_Self_Check::resolve_entry( 'https://www.pncp-site.example:2087/', '127.0.0.1' ) && 'www.pncp-site.example:80:127.0.0.1' === PNCP_Self_Check::resolve_entry( 'http://www.pncp-site.example/x', '127.0.0.1' ), wp_json_encode( PNCP_Self_Check::own_origins() ) );
+remove_filter( 'pre_option_home', $home_filter );
+remove_filter( 'pre_option_siteurl', $home_filter );
+foreach ( array( 'other' => 'a page without this WordPress\'s answer (another server, a cache)', 'stale' => '"ok" with the id of another request (a cached copy)', 'plain-ok' => 'a bare "ok" without the id' ) as $pncp_mode => $pncp_label ) {
+	delete_transient( PNCP_Self_Check::ROUTE );
+	$origin = $pncp_mode;
+	$calls  = array();
+	$r      = PNCP_Self_Check::request( home_url( '/' ), array( 'timeout' => 5 ), 'page' );
+	t( 'F: route: never engaged after ' . $pncp_label . ' (the answer itself is still used)', 'origin' === $r['via'] && false === get_transient( PNCP_Self_Check::ROUTE ), wp_json_encode( array( $r['via'], get_transient( PNCP_Self_Check::ROUTE ) ) ) );
+}
+$origin = 'ok';
+$r      = PNCP_Self_Check::request( home_url( '/' ), array( 'timeout' => 5 ), 'page' );
+t( 'F: route: engaged after "ok id=…" with this request\'s id, for ROUTE_TTL (6 hours)', '127.0.0.1' === get_transient( PNCP_Self_Check::ROUTE ) && 6 * HOUR_IN_SECONDS === PNCP_Self_Check::ROUTE_TTL );
+$own_answer = $r['response'];
+t( 'F: is_own_answer(): only with the id of the request it answers', PNCP_Self_Check::is_own_answer( $own_answer, (string) $r['steps'][1]['id'] ) && ! PNCP_Self_Check::is_own_answer( $own_answer, '0badc0de' ) && ! PNCP_Self_Check::is_own_answer( $own_answer, '' ) );
+$verify = array();
+$rr     = PNCP_Self_Check::route_request( false, array( 'method' => 'GET', 'headers' => array(), 'sslverify' => true ), home_url( '/wp-cron.php' ) );
+t( 'F: route: the TLS check of the request is kept as it was (never turned off)', array( true ) === $verify, wp_json_encode( $verify ) );
+t( 'F: route: never another port of the site\'s host', false === PNCP_Self_Check::route_request( false, array(), 'http://' . $own_host . ':2083/' ) );
+set_transient( PNCP_Self_Check::ROUTE, '192.0.2.200', 600 );
+t( 'F: route: a stored address that is not one of the server\'s is never used', false === PNCP_Self_Check::route_request( false, array(), home_url( '/wp-cron.php' ) ) );
+set_transient( PNCP_Self_Check::ROUTE, '127.0.0.1', 600 );
+$origin = 'error';
+$calls  = array();
+$rr     = PNCP_Self_Check::route_request( false, array( 'method' => 'GET', 'headers' => array() ), home_url( '/wp-cron.php' ) );
+t( 'F: route: the server stopped answering there: the request takes the public way and the route clears itself', false === $rr && false === get_transient( PNCP_Self_Check::ROUTE ), wp_json_encode( array( $rr, $calls ) ) );
+$origin = 'ok';
 delete_transient( PNCP_Self_Check::ROUTE );
 
 /* ---------- H. Vulnerable points ---------- */
@@ -598,6 +652,16 @@ if ( ! function_exists( 'curl_init' ) || ! defined( 'CURLOPT_RESOLVE' ) ) {
 	t( 'F HTTP: the public address cannot be reached, straight to 127.0.0.1: 200 from the test server', 'origin' === $r['via'] && ! is_wp_error( $r['response'] ) && 200 === (int) wp_remote_retrieve_response_code( $r['response'] ), is_wp_error( $r['response'] ) ? $r['response']->get_error_message() : wp_json_encode( array( $r['via'], wp_remote_retrieve_response_code( $r['response'] ) ) ) );
 	t( 'F HTTP: http_api_curl got the CURLOPT_RESOLVE entry for the site\'s host and port', in_array( $fake . ':' . $port . ':127.0.0.1', $seen_resolve, true ), wp_json_encode( $seen_resolve ) );
 	t( 'F HTTP: ... the answer is the site\'s robots.txt (Host header kept)', false !== stripos( (string) wp_remote_retrieve_body( $r['response'] ), 'user-agent' ) );
+	// http_api_curl pins only the entry resolve_entry() makes for the address itself, whoever passes the argument.
+	$reached = static function ( $response ) {
+		return ! is_wp_error( $response ) && 200 === (int) wp_remote_retrieve_response_code( $response ) && false !== stripos( (string) wp_remote_retrieve_body( $response ), 'user-agent' );
+	};
+	$forged  = wp_remote_get( home_url( '/robots.txt' ), array( 'timeout' => 5, 'pncp_public' => true, 'pncp_resolve' => $fake . ':' . ( $port + 1 ) . ':127.0.0.1' ) );
+	t( 'F HTTP: a CURLOPT_RESOLVE entry for another port is not applied', ! $reached( $forged ) );
+	$forged = wp_remote_get( home_url( '/robots.txt' ), array( 'timeout' => 5, 'pncp_public' => true, 'pncp_resolve' => 'example.com:' . $port . ':127.0.0.1' ) );
+	t( 'F HTTP: ... nor one for another host', ! $reached( $forged ) );
+	$forged = wp_remote_get( home_url( '/robots.txt' ), array( 'timeout' => 5, 'pncp_public' => true, 'pncp_resolve' => $fake . ':' . $port . ':127.0.0.1' ) );
+	t( 'F HTTP: ... while the site\'s own entry is (the same request reaches the server)', $reached( $forged ) );
 	set_transient( PNCP_Self_Check::ROUTE, '127.0.0.1', 600 );
 	$plain = wp_remote_get( home_url( '/robots.txt' ), array( 'timeout' => 10 ) );
 	t( 'F HTTP: with the route, a plain wp_remote_get() of the site reaches it too', ! is_wp_error( $plain ) && 200 === (int) wp_remote_retrieve_response_code( $plain ), is_wp_error( $plain ) ? $plain->get_error_message() : '' );
@@ -610,7 +674,7 @@ if ( ! function_exists( 'curl_init' ) || ! defined( 'CURLOPT_RESOLVE' ) ) {
 	$trace = PNCP_Self_Check::run();
 	t( 'F HTTP: run(): the site reaches itself (public address, HTTP 200)', ! empty( $trace['ok'] ) && 'public' === $trace['via'], PNCP_Self_Check::summary( $trace ) );
 	t( 'F HTTP: run(): the receiving side\'s note is matched to the request (signature valid, passed)', isset( $trace['steps'][0]['in']['sig'] ) && 'ok' === $trace['steps'][0]['in']['sig'] && 'passed' === $trace['steps'][0]['in']['verdict'], wp_json_encode( $trace['steps'] ) );
-	t( 'F HTTP: run(): the answer carried "X-ScrapeLock: ok"', 'ok' === $trace['steps'][0]['marker'], wp_json_encode( $trace['steps'][0] ) );
+	t( 'F HTTP: run(): the answer carried "X-ScrapeLock: ok id=…" with the request\'s id', 'ok id=' . $trace['steps'][0]['id'] === $trace['steps'][0]['marker'], wp_json_encode( $trace['steps'][0] ) );
 	t( 'F HTTP: run() is kept for Site Health and WP-CLI', is_array( PNCP_Self_Check::last() ) );
 }
 
@@ -671,7 +735,10 @@ $cfg2['dir']         = $pc_dir;
 $cfg2['self_key']    = PNCP_Server_Ips::sig_key();
 as_request( '192.0.2.44', SELF_UA, array( 'HTTP_X_SCRAPELOCK_SIG' => sig( '/' ), 'HTTP_HOST' => ORIGIN_HOST ), $home_path );
 // (verdict() itself never runs on the command line: its first step, the site's signature, is what lets it pass.)
+$pncp_os = sig( '/' );
+as_request( '192.0.2.44', SELF_UA, array( 'HTTP_X_SCRAPELOCK_SIG' => $pncp_os, 'HTTP_HOST' => ORIGIN_HOST ), $home_path );
 t( 'O: ... and the pre-cache check knows it as the site\'s, the step before "not via the CDN"', PNCP_Precheck_Runtime::self_signed( $cfg2, time() ) );
+t( 'O: ... its "X-ScrapeLock: ok id=…" carries the same id as WordPress\'s (the nonce it accepted)', substr( md5( 'id|' . PNCP_Precheck_Runtime::$self_nonce ), 0, 8 ) === PNCP_Self_Check::request_id( $pncp_os ) );
 as_request( '192.0.2.44', SELF_UA, array(), '/' );
 t( 'O: ... an unsigned one is refused there (not via the CDN)', '192.0.2.44' === PNCP_Precheck_Runtime::not_via_cdn( $cfg2 ), PNCP_Precheck_Runtime::not_via_cdn( $cfg2 ) );
 settings( array( 'cdn_secret' => '' ) );

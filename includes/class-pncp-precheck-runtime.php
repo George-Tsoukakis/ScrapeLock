@@ -101,6 +101,14 @@ final class PNCP_Precheck_Runtime {
 	public static $self_result = '';
 
 	/**
+	 * 3.12.2: the nonce of the site's signature that self_signed() accepted in this request ('' = none): its id
+	 * (as PNCP_Self_Check::request_id()) goes into the answer's "X-ScrapeLock: ok id=…".
+	 *
+	 * @var string
+	 */
+	public static $self_nonce = '';
+
+	/**
 	 * Called by the line in wp-config.php: reads the configuration from the data folder and runs the check.
 	 *
 	 * @param string $dir The data folder.
@@ -261,7 +269,9 @@ final class PNCP_Precheck_Runtime {
 		// "Only through the CDN" and every other check (Vulnerable points, Site Health, the Stealth test).
 		if ( self::self_signed( $c, $now ) ) {
 			if ( ! headers_sent() ) {
-				header( 'X-ScrapeLock: ok' ); // 3.12.2: this server answered the site's own request (PNCP_Self_Check).
+				// 3.12.2: this server answered the site's own request, with the id of its signature
+				// (PNCP_Self_Check::ok_marker(), is_own_answer()).
+				header( 'X-ScrapeLock: ok id=' . substr( md5( 'id|' . self::$self_nonce ), 0, 8 ) );
 			}
 			return null;
 		}
@@ -1114,6 +1124,7 @@ final class PNCP_Precheck_Runtime {
 		fwrite( $handle, (string) $now );
 		fclose( $handle );
 		self::$self_result        = 'ok';
+		self::$self_nonce         = $m[2];
 		self::$self_seen[ $memo ] = true;
 		return true;
 	}

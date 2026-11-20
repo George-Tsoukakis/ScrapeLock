@@ -14,18 +14,19 @@
  *   result of the signature check with its reason (PNCP_Server_Ips::sig_check()). Never an IP address, a
  *   User-Agent, a cookie or a query string: the host, the path, the method and whether it came from the server,
  *   a CDN edge or elsewhere.
- * - ScrapeLock's own refusals carry the header "X-ScrapeLock: refused" (marker()); for a request that carries the
- *   signature also the layer and the signature's result, and for the site's own request (its MAC matched) the
- *   reason. A request with a valid signature that passes gets "X-ScrapeLock: ok", so the sending side knows the
- *   answer came from this WordPress.
+ * - ScrapeLock's own refusals carry the header "X-ScrapeLock: refused" (marker()); for the site's own request or
+ *   one from the server's addresses that carries a signature also the layer and the signature's result, and for
+ *   the site's own request (its MAC matched) the reason. A request with a valid signature that passes gets
+ *   "X-ScrapeLock: ok id=…" (the id of its signature), so the sending side knows this WordPress answered it.
  * - Sending side: request() makes a self-check request, classifies the answer (classify(): a normal page,
  *   ScrapeLock and its reason, Bunny CDN's edge, Cloudflare, Wordfence, WordPress or another plugin, the web
  *   server, unknown) and notes it in the same buffer. When the public way refuses the site (a 403 / 429 / 5xx
  *   that is not the page, or no connection at all), the request is made once more straight to the server: the
  *   site's own host name and port pinned to 127.0.0.1, SERVER_ADDR or SCRAPELOCK_SERVER_IPS with CURLOPT_RESOLVE
- *   (action http_api_curl), so the Host header and TLS name stay the site's. While the public way refuses it and
- *   the server answers, the site's other requests to itself (Site Health's loopback, WP cron) go that way too
- *   (route(), for ROUTE_TTL).
+ *   (action http_api_curl), so the Host header and TLS name stay the site's (only the site's own host and port,
+ *   only to those addresses). While the public way refuses it and this WordPress itself answered straight at the
+ *   server ("ok" with the request's id), the site's other requests to itself (Site Health's loopback, WP cron) go
+ *   that way too (route_request(), for ROUTE_TTL, until the public way answers or the server stops answering).
  * - run() is a real self-check now (the "Run a real self-check now" button of "Check a request", the Site Health
  *   test, "wp scrapelock selfcheck"): the home page through the public address, then the server if needed, with
  *   what each side saw.
@@ -128,7 +129,7 @@ final class PNCP_Self_Check {
 
 	/**
 	 * The signature of this request was checked (PNCP_Server_Ips::sig_check()): starts this request's entry, and
-	 * marks the answer to a valid one ("X-ScrapeLock: ok").
+	 * marks the answer to a valid one ("X-ScrapeLock: ok id=…", ok_marker()).
 	 *
 	 * @param array{result:string, host:string, received:string, authentic:bool} $check The check.
 	 */
@@ -145,8 +146,20 @@ final class PNCP_Self_Check {
 		}
 		self::$entry = $entry;
 		if ( 'ok' === $check['result'] && ! self::$marked && ! headers_sent() ) {
-			header( self::HEADER . ': ok' );
+			header( self::HEADER . ': ' . self::ok_marker( self::request_id() ) );
 		}
+	}
+
+	/**
+	 * The header value of the answer to the site's valid signature: "ok id=<request_id()>". Only a server that
+	 * verified the signature with the site's key says it, and the id ties it to the one request that carried the
+	 * signature (a cached copy of an earlier answer carries another one): is_own_answer().
+	 *
+	 * @param string $id request_id() of the signature.
+	 * @return string
+	 */
+	public static function ok_marker( $id ) {
+		return 'ok' . ( preg_match( '/^[0-9a-f]{8}$/', (string) $id ) ? ' id=' . $id : '' );
 	}
 
 	/**
@@ -408,7 +421,7 @@ final class PNCP_Self_Check {
 			return $out;
 		}
 		// This WordPress answered the site's signed request (its 401 / 404 is the answer, not a refusal of the site).
-		if ( $code < 400 || 'ok' === $mark ) {
+		if ( $code < 400 || preg_match( '/^ok(?:\s|$)/', $mark ) ) {
 			$out['who'] = 'page';
 			return $out;
 		}
@@ -589,8 +602,8 @@ final class PNCP_Self_Check {
 			$out['response']       = $response;
 			$out['public']         = $class;
 			if ( ! self::should_retry( $response, $class, $mode ) ) {
-				if ( 'page' === $class['who'] && self::is_own_answer( $response ) && false !== get_transient( self::ROUTE ) ) {
-					delete_transient( self::ROUTE ); // The public way works again.
+				if ( 'page' === $class['who'] && false !== get_transient( self::ROUTE ) ) {
+					delete_transient( self::ROUTE ); // The public way works again: the site's requests go that way.
 				}
 				$out['steps'] = $steps;
 				self::note_steps( $steps );
@@ -615,7 +628,10 @@ final class PNCP_Self_Check {
 			if ( isset( $steps[0] ) && 'public' === $steps[0]['via'] ) {
 				$steps[0]['who'] = $out['public']['who'];
 			}
-			if ( 'origin' !== $mode && self::is_own_answer( $response ) ) {
+			// The route for the site's other requests only when this WordPress itself answered this very request
+			// (it verified the signature: "ok" with this request's id), never for any server that answers there.
+			$last = end( $steps );
+			if ( 'origin' !== $mode && is_array( $last ) && self::is_own_answer( $response, (string) $last['id'] ) ) {
 				set_transient( self::ROUTE, $ip, self::ROUTE_TTL );
 			}
 			break;
@@ -666,17 +682,19 @@ final class PNCP_Self_Check {
 	}
 
 	/**
-	 * Did this WordPress answer (the header of a valid signature, or ScrapeLock's refusal)?
+	 * Did this WordPress answer this request: "X-ScrapeLock: ok id=…" (ok_marker()) with the id of the signature
+	 * it was sent with? Only a server holding the site's key verifies it, and the id ties it to this request.
 	 *
 	 * @param array<string, mixed>|WP_Error $response The answer.
+	 * @param string                        $id       request_id() of the signature the request was sent with.
 	 * @return bool
 	 */
-	public static function is_own_answer( $response ) {
-		if ( is_wp_error( $response ) ) {
+	public static function is_own_answer( $response, $id ) {
+		if ( is_wp_error( $response ) || ! preg_match( '/^[0-9a-f]{8}$/', (string) $id ) ) {
 			return false;
 		}
 		$h = self::headers_of( $response );
-		return isset( $h['x-scrapelock'] ) && ( 'ok' === trim( $h['x-scrapelock'] ) || 0 === strpos( $h['x-scrapelock'], 'refused' ) );
+		return isset( $h['x-scrapelock'] ) && self::ok_marker( $id ) === trim( $h['x-scrapelock'] );
 	}
 
 	/**
@@ -804,7 +822,8 @@ final class PNCP_Self_Check {
 	}
 
 	/**
-	 * The CURLOPT_RESOLVE entry "host:port:address" for an address on the site ('' for another host).
+	 * The CURLOPT_RESOLVE entry "host:port:address" for an address on the site ('' for another host or port, or an
+	 * address that is not one of origin_candidates()).
 	 *
 	 * @param string $url Address.
 	 * @param string $ip  Server address.
@@ -814,12 +833,40 @@ final class PNCP_Self_Check {
 		$parts = wp_parse_url( (string) $url );
 		$host  = is_array( $parts ) && isset( $parts['host'] ) ? strtolower( (string) $parts['host'] ) : '';
 		$ip    = PNCP_Ip::normalize( (string) $ip );
-		if ( '' === $host || '' === $ip || ! in_array( $host, PNCP_Server_Ips::own_hosts(), true ) ) {
+		if ( '' === $host || '' === $ip || ! in_array( $ip, self::origin_candidates(), true ) ) {
 			return '';
 		}
 		$scheme = isset( $parts['scheme'] ) ? strtolower( (string) $parts['scheme'] ) : 'http';
 		$port   = isset( $parts['port'] ) ? (int) $parts['port'] : ( 'https' === $scheme ? 443 : 80 );
+		if ( ! in_array( $host . ':' . $port, self::own_origins(), true ) ) {
+			return '';
+		}
 		return $host . ':' . $port . ':' . ( false !== strpos( $ip, ':' ) ? '[' . $ip . ']' : $ip );
+	}
+
+	/**
+	 * The site's own "host:port" pairs (home and site address): their port, and both 80 and 443 for an address on
+	 * a default port (the site's http and https). Never another port of the same host (a control panel, a mail
+	 * server's web interface).
+	 *
+	 * @return string[]
+	 */
+	public static function own_origins() {
+		$out = array();
+		foreach ( array( home_url( '/' ), site_url( '/' ) ) as $address ) {
+			$parts = wp_parse_url( $address );
+			$host  = is_array( $parts ) && isset( $parts['host'] ) ? strtolower( (string) $parts['host'] ) : '';
+			if ( '' === $host ) {
+				continue;
+			}
+			$scheme = isset( $parts['scheme'] ) ? strtolower( (string) $parts['scheme'] ) : 'http';
+			$port   = isset( $parts['port'] ) ? (int) $parts['port'] : ( 'https' === $scheme ? 443 : 80 );
+			$ports  = in_array( $port, array( 80, 443 ), true ) ? array( 80, 443 ) : array( $port );
+			foreach ( $ports as $one ) {
+				$out[] = $host . ':' . $one;
+			}
+		}
+		return array_values( array_unique( $out ) );
 	}
 
 	/**
@@ -831,13 +878,20 @@ final class PNCP_Self_Check {
 	 * @param string               $url    Address.
 	 */
 	public static function curl_resolve( $handle, $args, $url ) {
-		unset( $url );
-		if ( is_array( $args ) && ! empty( $args['pncp_resolve'] ) && is_string( $args['pncp_resolve'] ) && defined( 'CURLOPT_RESOLVE' ) ) {
-			curl_setopt( $handle, CURLOPT_RESOLVE, array( $args['pncp_resolve'] ) ); // phpcs:ignore WordPress.WP.AlternativeFunctions.curl_curl_setopt -- The handle of WordPress's own request (http_api_curl).
-			// Straight to this server: never through a proxy (WP_PROXY_HOST or the environment's), which could not
-			// reach the server's own address.
-			curl_setopt( $handle, CURLOPT_PROXY, '' ); // phpcs:ignore WordPress.WP.AlternativeFunctions.curl_curl_setopt -- As above.
+		if ( ! is_array( $args ) || empty( $args['pncp_resolve'] ) || ! is_string( $args['pncp_resolve'] ) || ! defined( 'CURLOPT_RESOLVE' ) ) {
+			return;
 		}
+		// Only the entry resolve_entry() makes for this very address: the site's own host and port, pinned to one of
+		// the server's addresses (whoever passed the argument).
+		$parts = explode( ':', $args['pncp_resolve'], 3 );
+		$ip    = isset( $parts[2] ) ? trim( $parts[2], '[]' ) : '';
+		if ( '' === $ip || self::resolve_entry( (string) $url, $ip ) !== $args['pncp_resolve'] ) {
+			return;
+		}
+		curl_setopt( $handle, CURLOPT_RESOLVE, array( $args['pncp_resolve'] ) ); // phpcs:ignore WordPress.WP.AlternativeFunctions.curl_curl_setopt -- The handle of WordPress's own request (http_api_curl).
+		// Straight to this server: never through a proxy (WP_PROXY_HOST or the environment's), which could not
+		// reach the server's own address.
+		curl_setopt( $handle, CURLOPT_PROXY, '' ); // phpcs:ignore WordPress.WP.AlternativeFunctions.curl_curl_setopt -- As above.
 	}
 
 	/**
@@ -859,6 +913,10 @@ final class PNCP_Self_Check {
 			return $pre;
 		}
 		$response = self::origin_request( $url, $args, $ip );
+		if ( is_wp_error( $response ) ) {
+			// The server does not answer there any more: the route goes, and this request takes the public way.
+			delete_transient( self::ROUTE );
+		}
 		return null === $response || is_wp_error( $response ) ? $pre : $response;
 	}
 
