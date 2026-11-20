@@ -480,14 +480,7 @@ final class PNCP_Wizard {
 			return empty( $value ) ? __( 'Off', 'scrapelock' ) : __( 'On', 'scrapelock' );
 		}
 		if ( 'ip_header' === $key ) {
-			$names = array(
-				'remote_addr'      => 'REMOTE_ADDR',
-				'x_forwarded_for'  => 'X-Forwarded-For',
-				'x_real_ip'        => 'X-Real-IP',
-				'cf_connecting_ip' => 'CF-Connecting-IP',
-				'true_client_ip'   => 'True-Client-IP',
-			);
-			return isset( $names[ $value ] ) ? $names[ $value ] : (string) $value;
+			return PNCP_Setting_Labels::header_name( (string) $value );
 		}
 		if ( 0 === strpos( $key, 'rate_limit' ) ) {
 			return (int) $value > 0 ? (string) (int) $value : __( 'Off', 'scrapelock' );

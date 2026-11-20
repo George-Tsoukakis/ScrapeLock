@@ -466,20 +466,13 @@ final class PNCP_Admin {
 	 * @return string
 	 */
 	private static function network_summary( $s ) {
-		$headers = array(
-			'remote_addr'      => 'REMOTE_ADDR',
-			'cf_connecting_ip' => 'CF-Connecting-IP',
-			'x_forwarded_for'  => 'X-Forwarded-For',
-			'x_real_ip'        => 'X-Real-IP',
-			'true_client_ip'   => 'True-Client-IP',
-		);
 		// 3.11: three states (PNCP_Status_State): "set but not active: <reason>" instead of "off" for a setting that is
 		// on but not in effect (before: "Pre-cache check: off" with the setting on, "Only through the CDN: off" without
 		// the secret), and "on" only when it runs (the early check is on only with its file in place).
 		return sprintf(
 			/* translators: 1: name of an HTTP header (e.g. REMOTE_ADDR), 2: "on", "off" or "set but not active: <reason>" (early check), 3: the same for the pre-cache check, 4: the same for "only through the CDN" */
 			__( 'Real visitor IP: %1$s · Early check: %2$s · Pre-cache check: %3$s · Only through the CDN: %4$s', 'scrapelock' ),
-			isset( $headers[ $s['ip_header'] ] ) ? $headers[ $s['ip_header'] ] : (string) $s['ip_header'],
+			PNCP_Setting_Labels::header_name( (string) $s['ip_header'] ),
 			PNCP_Status_State::inline_text( PNCP_Status_State::early( $s ) ),
 			PNCP_Status_State::inline_text( PNCP_Status_State::precheck( $s ) ),
 			PNCP_Status_State::inline_text( PNCP_Status_State::cdn_only( $s ) )

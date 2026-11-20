@@ -40,11 +40,7 @@ final class PNCP_Fluent_Community {
 	public static function active() {
 		$active = defined( 'FLUENT_COMMUNITY_PLUGIN_VERSION' ) || class_exists( 'FluentCommunity\App\App', false ) || class_exists( 'FluentCommunity\App\Services\Helper', false );
 		if ( ! $active ) {
-			$plugins = (array) get_option( 'active_plugins', array() );
-			$active  = in_array( self::BASENAME, $plugins, true );
-			if ( ! $active && is_multisite() ) {
-				$active = isset( ( (array) get_site_option( 'active_sitewide_plugins', array() ) )[ self::BASENAME ] );
-			}
+			$active = PNCP_Plugin_Bots::plugin_active( array( self::BASENAME ) ); // This site's or network-wide.
 		}
 		/**
 		 * Filter: whether FluentCommunity counts as active for ScrapeLock.

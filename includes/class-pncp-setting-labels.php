@@ -207,6 +207,35 @@ final class PNCP_Setting_Labels {
 		if ( in_array( $key, PNCP_Options::bool_keys(), true ) && in_array( (string) $value, array( '0', '1', '' ), true ) ) {
 			return '1' === (string) $value ? __( 'On', 'scrapelock' ) : __( 'Off', 'scrapelock' );
 		}
+		if ( 'ip_header' === $key ) {
+			return self::header_name( (string) $value );
+		}
 		return (string) $value;
+	}
+
+	/**
+	 * The HTTP header names of the "Real visitor IP" choices (remote_addr => REMOTE_ADDR…).
+	 *
+	 * @return array<string, string>
+	 */
+	public static function header_names() {
+		return array(
+			'remote_addr'      => 'REMOTE_ADDR',
+			'cf_connecting_ip' => 'CF-Connecting-IP',
+			'x_forwarded_for'  => 'X-Forwarded-For',
+			'x_real_ip'        => 'X-Real-IP',
+			'true_client_ip'   => 'True-Client-IP',
+		);
+	}
+
+	/**
+	 * The header name of one "Real visitor IP" choice (the stored value for an unknown one).
+	 *
+	 * @param string $value Stored value, e.g. x_real_ip.
+	 * @return string E.g. X-Real-IP.
+	 */
+	public static function header_name( $value ) {
+		$names = self::header_names();
+		return isset( $names[ $value ] ) ? $names[ $value ] : (string) $value;
 	}
 }

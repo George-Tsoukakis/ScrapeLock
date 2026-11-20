@@ -1795,13 +1795,7 @@ final class PNCP_Health {
 				'full'     => __( 'Full text', 'scrapelock' ),
 				'disabled' => __( 'Disabled', 'scrapelock' ),
 			),
-			'ip_header'  => array(
-				'remote_addr'      => 'REMOTE_ADDR',
-				'cf_connecting_ip' => 'CF-Connecting-IP',
-				'x_forwarded_for'  => 'X-Forwarded-For',
-				'x_real_ip'        => 'X-Real-IP',
-				'true_client_ip'   => 'True-Client-IP',
-			),
+			'ip_header'  => PNCP_Setting_Labels::header_names(),
 		);
 		$choice  = static function ( $key ) use ( $s, $choices ) {
 			$value = (string) $s[ $key ];
