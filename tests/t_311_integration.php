@@ -15,6 +15,8 @@
  *   through the CDN", the "For my site" panel, the FluentCommunity note and "Allow this service" in the Log.
  * - The short help texts (one line, the rest under "More") also on what 3.11 added: those warnings, the
  *   assistant's intro, the FluentCommunity note, the "Advanced" intro, the probe list of "Ban scanners…".
+ * - Vulnerable points: the server's own request through the CDN (PNCP_Server_Ips) still gets the real answer,
+ *   but is not logged or counted, as a loopback request.
  *
  * Same requirements as t_http.php (mu-test-harness.php, router.php). Changes the database: test sites only.
  */
@@ -392,6 +394,74 @@ settings(
 		'bot_list'        => $saved['bot_list'],
 		'cdn_only'        => $saved['cdn_only'],
 		'cdn_secret'      => $saved['cdn_secret'],
+	)
+);
+PNCP_Log::clear();
+
+/* ---------- Vulnerable points and the server's own address ---------- */
+
+$saved_hs   = get_option( PNCP_Hardening::OPTION, null );
+$saved_self = get_option( PNCP_Server_Ips::OPTION, null );
+$applied    = PNCP_Hardening::is_applied( 'author_archives' );
+if ( ! $applied ) {
+	wp_set_current_user( 1 ); // Applying a point needs manage_options.
+	PNCP_Hardening::apply( 'author_archives' );
+	wp_set_current_user( 0 );
+}
+t( 'hardening: "author archives" applied for the test', PNCP_Hardening::is_applied( 'author_archives' ) );
+settings(
+	array(
+		'enabled'       => 1,
+		'monitor_mode'  => 0,
+		'monitor_until' => 0,
+	)
+);
+update_option(
+	PNCP_Server_Ips::OPTION,
+	array(
+		'ips'     => array(),
+		'host'    => implode( ',', PNCP_Server_Ips::own_hosts() ),
+		'time'    => time(),
+		'learned' => array( '203.0.113.77' => time() ), // A learned address: kept when the lookup runs again.
+	)
+);
+PNCP_Log::clear();
+$browser = 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0 Safari/537.36';
+list( $code ) = http( '/author/admin/', '203.0.113.77', $browser );
+wp_cache_flush();
+PNCP_Log::reset_cache();
+$rows = PNCP_Log::recent( 20 );
+t( 'hardening: the server\'s own address through the CDN gets the real answer (404), unlogged', 404 === $code && ! array_filter(
+	(array) $rows,
+	static function ( $r ) {
+		return '203.0.113.77' === ( is_array( $r ) ? ( isset( $r['ip'] ) ? $r['ip'] : '' ) : ( isset( $r->ip ) ? $r->ip : '' ) );
+	}
+), $code . ' ' . wp_json_encode( $rows ) );
+list( $code ) = http( '/author/admin/', '198.51.100.191', $browser );
+wp_cache_flush();
+PNCP_Log::reset_cache();
+$rows = PNCP_Log::recent( 20 );
+t( 'hardening: a visitor still gets 404 and a log row', 404 === $code && array_filter(
+	(array) $rows,
+	static function ( $r ) {
+		return '198.51.100.191' === ( is_array( $r ) ? ( isset( $r['ip'] ) ? $r['ip'] : '' ) : ( isset( $r->ip ) ? $r->ip : '' ) );
+	}
+), $code . ' ' . wp_json_encode( $rows ) );
+if ( null === $saved_hs ) {
+	delete_option( PNCP_Hardening::OPTION );
+} else {
+	update_option( PNCP_Hardening::OPTION, $saved_hs, true );
+}
+if ( null === $saved_self ) {
+	delete_option( PNCP_Server_Ips::OPTION );
+} else {
+	update_option( PNCP_Server_Ips::OPTION, $saved_self );
+}
+settings(
+	array(
+		'enabled'       => $saved['enabled'],
+		'monitor_mode'  => $saved['monitor_mode'],
+		'monitor_until' => $saved['monitor_until'],
 	)
 );
 PNCP_Log::clear();

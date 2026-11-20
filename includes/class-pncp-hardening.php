@@ -972,8 +972,9 @@ final class PNCP_Hardening {
 	private static function refuse( $reason, $code ) {
 		$ip = PNCP_Ip::client_ip();
 		// The server itself (the live checks of this card, Site Health) gets the real answer, unlogged and never
-		// counted toward a ban.
-		$local = '' === $ip || PNCP_Ip::is_local( $ip );
+		// counted toward a ban. 3.11: also when its request came back through the CDN with the server's public
+		// address (PNCP_Server_Ips), as in the other checks.
+		$local = '' === $ip || PNCP_Ip::is_local( $ip ) || PNCP_Server_Ips::is_request();
 		if ( PNCP_Options::monitoring() ) {
 			if ( ! $local ) {
 				PNCP_Log::add( $reason, PNCP_Log::MONITOR_CODE, $ip );
