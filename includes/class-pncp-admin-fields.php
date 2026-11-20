@@ -218,6 +218,29 @@ final class PNCP_Admin_Fields {
 		);
 	}
 
+	/**
+	 * 3.12.2: the internal name of one or more settings, never as visible text: a small "?" button next to the
+	 * setting's label, with the name in its tooltip (title) and in its accessible name (aria-label). A button, so a
+	 * keyboard reaches it; on focus the stylesheet shows the tooltip (keyboards get no title tooltip). For support
+	 * and for those who script "wp scrapelock settings", which takes these names.
+	 *
+	 * @param string[] $keys Setting keys.
+	 * @return string HTML ('' for no key).
+	 */
+	public static function key_hint( array $keys ) {
+		$keys = array_values( array_filter( array_map( 'strval', $keys ), 'strlen' ) );
+		if ( ! $keys ) {
+			return '';
+		}
+		$names = implode( ', ', $keys );
+		return sprintf(
+			'<button type="button" class="pncp-key-hint" title="%1$s" aria-label="%2$s" data-key="%1$s"><span aria-hidden="true">?</span></button>',
+			esc_attr( $names ),
+			/* translators: %s: internal name(s) of the setting, e.g. probe_ban */
+			esc_attr( sprintf( _n( 'Internal name of this setting: %s', 'Internal names of these settings: %s', count( $keys ), 'scrapelock' ), $names ) )
+		);
+	}
+
 	/* ---------- 3.11: help texts ---------- */
 
 	/**

@@ -162,6 +162,11 @@ ScrapeLock — δοκιμές σε πραγματικό WordPress (όχι stubs)
                     in WordPress, the early check or the pre-cache check; a browser, a preview not in the list and
                     Pinterest still count; the entry forms (part, "=" whole User-Agent, "@" pinned); "Check a request"
                     and wp scrapelock check say "Not counted: link preview in the “Always allowed” list", not "N of M"
+  t_3122_wizard.php 3.12.2: «For my site» shows each setting by its label only: no setting key in the text of the panel
+                    (3.11 plugin rows and 3.12.1 sensible values, the two-setting row too), each key in the title and
+                    aria-label of a "?" button of its row (keyboard-reachable); the notice of "Apply selected" lists
+                    the changes by label, before → after in words; no key in the text of any tab; wp scrapelock wizard
+                    still prints the keys
   t_cli.php         wp scrapelock … μέσα από το πραγματικό wp (χρειάζεται WP_CLI, αλλιώς SKIP)
   t_bunny_rules.php Edge Rules στο Bunny μέσα στα όριά του (το πολύ 5 μοτίβα ανά συνθήκη) με ψεύτικο API που δίνει
                     HTTP 400 όπως το πραγματικό: χωρισμός, κλείδωμα/Remove, rollback, Monitor only, sync, προεπισκόπηση,

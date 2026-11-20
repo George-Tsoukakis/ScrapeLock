@@ -33,6 +33,11 @@ final class PNCP_Wizard {
 	const REASON = 'wizard';
 
 	/**
+	 * 3.12.2: transient (+ user id) with the changes of the last "Apply selected", for its notice.
+	 */
+	const DONE_PREFIX = 'pncp_wizard_done_';
+
+	/**
 	 * Risk of a proposal: it blocks nothing more (ticked by default).
 	 */
 	const RISK_NONE = 'none';
@@ -648,6 +653,8 @@ final class PNCP_Wizard {
 		if ( $result['messages'] ) {
 			set_transient( 'pncp_wizard_msgs_' . get_current_user_id(), $result['messages'], 15 * MINUTE_IN_SECONDS );
 		}
+		// 3.12.2: what changed, for the notice (by label, before → after).
+		set_transient( self::DONE_PREFIX . get_current_user_id(), $result['changes'], 15 * MINUTE_IN_SECONDS );
 		self::back( 'applied', array( 'pncp_wizard_undo' => $result['id'] ) );
 	}
 
@@ -786,7 +793,10 @@ final class PNCP_Wizard {
 										<?php if ( $more ) : ?>
 											<span class="pncp-tag pncp-tag--risk"><?php esc_html_e( 'Blocks more: not ticked', 'scrapelock' ); ?></span>
 										<?php endif; ?>
-										<br><code><?php echo esc_html( implode( ', ', array_merge( array( $key ), array_keys( isset( $row['also'] ) ? $row['also'] : array() ) ) ) ); ?></code>
+										<?php
+										// 3.12.2: the label only; the internal names in a tooltip (wp scrapelock wizard still prints them).
+										echo PNCP_Admin_Fields::key_hint( array_merge( array( $key ), array_keys( isset( $row['also'] ) ? $row['also'] : array() ) ) ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Escaped in PNCP_Admin_Fields.
+										?>
 									</td>
 									<?php list( $now_text, $proposed_text ) = self::row_texts( $row ); ?>
 									<td><?php echo esc_html( $now_text ); ?></td>
@@ -820,6 +830,40 @@ final class PNCP_Wizard {
 	}
 
 	/**
+	 * 3.12.2: the settings "Apply selected" changed, in the notice: each by its label (the internal name in a
+	 * tooltip, PNCP_Admin_Fields::key_hint()), before → after in words.
+	 *
+	 * @param array<int, mixed> $changes What PNCP_Settings_Io::prepare() returned: key, old, new.
+	 */
+	private static function render_done( array $changes ) {
+		$items = array();
+		foreach ( $changes as $change ) {
+			if ( ! is_array( $change ) || empty( $change['key'] ) ) {
+				continue;
+			}
+			$key     = (string) $change['key'];
+			$old     = isset( $change['old'] ) ? (string) $change['old'] : '';
+			$new     = isset( $change['new'] ) ? (string) $change['new'] : '';
+			$items[] = sprintf(
+				'<li>%1$s %2$s: %3$s</li>',
+				esc_html( self::label( $key ) ),
+				PNCP_Admin_Fields::key_hint( array( $key ) ),
+				esc_html(
+					sprintf(
+						/* translators: 1: the value before, 2: the value now */
+						__( '%1$s → %2$s', 'scrapelock' ),
+						'' === $old ? __( '(empty)', 'scrapelock' ) : PNCP_Setting_Labels::value( $key, $old ),
+						'' === $new ? __( '(empty)', 'scrapelock' ) : PNCP_Setting_Labels::value( $key, $new )
+					)
+				)
+			);
+		}
+		if ( $items ) {
+			echo '<ul class="pncp-wizard-done">' . implode( '', $items ) . '</ul>'; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Escaped above.
+		}
+	}
+
+	/**
 	 * The result of "Apply selected", with "Undo" (restores the version saved just before).
 	 *
 	 * @param string $result applied, none, locked, error or ''.
@@ -835,6 +879,11 @@ final class PNCP_Wizard {
 			return;
 		}
 		printf( '<div class="notice notice-%1$s inline pncp-wizard-result"><p>%2$s</p>', esc_attr( $texts[ $result ][0] ), esc_html( $texts[ $result ][1] ) );
+		$done = get_transient( self::DONE_PREFIX . get_current_user_id() );
+		if ( 'applied' === $result && is_array( $done ) ) {
+			delete_transient( self::DONE_PREFIX . get_current_user_id() );
+			self::render_done( $done );
+		}
 		$messages = get_transient( 'pncp_wizard_msgs_' . get_current_user_id() );
 		if ( 'applied' === $result && is_array( $messages ) ) {
 			delete_transient( 'pncp_wizard_msgs_' . get_current_user_id() );

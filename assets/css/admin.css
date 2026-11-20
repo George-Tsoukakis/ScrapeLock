@@ -2932,3 +2932,49 @@ fieldset + .pncp-field {
 	font-size: 16px;
 	vertical-align: text-bottom;
 }
+
+/* 3.12.2: the internal name of a setting ("For my site"): a small "?" with the name in its tooltip, shown on
+   keyboard focus too (a title tooltip appears only for the mouse). */
+.pncp-key-hint {
+	position: relative;
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	width: 16px;
+	height: 16px;
+	margin: 0 0 0 4px;
+	padding: 0;
+	border: 1px solid var(--pncp-muted, #646970);
+	border-radius: 50%;
+	background: transparent;
+	color: var(--pncp-muted, #646970);
+	font-size: 11px;
+	line-height: 1;
+	vertical-align: middle;
+	cursor: help;
+}
+
+.pncp-key-hint:focus-visible {
+	outline: 2px solid var(--wp-admin-theme-color, #2271b1);
+	outline-offset: 1px;
+}
+
+.pncp-key-hint:focus-visible::after {
+	content: attr(data-key);
+	position: absolute;
+	top: calc(100% + 4px);
+	left: 0;
+	z-index: 10;
+	padding: 2px 6px;
+	border-radius: 3px;
+	background: #1d2327;
+	color: #fff;
+	font-family: Consolas, Monaco, monospace;
+	font-size: 12px;
+	white-space: nowrap;
+}
+
+.pncp-wizard-done {
+	margin: 0 0 8px 1.5em;
+	list-style: disc;
+}

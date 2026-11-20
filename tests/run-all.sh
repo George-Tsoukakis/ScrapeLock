@@ -6,7 +6,7 @@ PHP=${PHP:-php}
 fail=0
 # Βασικές δοκιμές (και σε SQLite). Οι δοκιμές πραγματικής στοίβας (WooCommerce, WPGraphQL, κανόνες server,
 # cache, ασφάλεια, φορτίο) τρέχουν με FULL=1 σε WordPress με MariaDB/MySQL, Nginx + PHP-FPM και Apache.
-TESTS="t_http t_metadata_paths t_fixes351 t_360 t_watermark t_admin t_precheck t_lockdown t_edge t_private_folders t_cli t_harden_headers t_metadata t_ai_lists t_plugin_bots t_bunny_rules t_site_files t_311_pipeline t_311_lists t_311_status t_311_wizard t_311_texts t_311_ui t_311_integration t_311_compat t_311_i18n t_traffic t_traffic_ops t_traffic_ui t_traffic_sec t_traffic_ms t_3121_loopback t_3122_loopback t_3121_fluent t_3121_wizard t_3121_tester t_3121_ai_search t_3121_traffic t_3121_integration t_3122_previews"
+TESTS="t_http t_metadata_paths t_fixes351 t_360 t_watermark t_admin t_precheck t_lockdown t_edge t_private_folders t_cli t_harden_headers t_metadata t_ai_lists t_plugin_bots t_bunny_rules t_site_files t_311_pipeline t_311_lists t_311_status t_311_wizard t_311_texts t_311_ui t_311_integration t_311_compat t_311_i18n t_traffic t_traffic_ops t_traffic_ui t_traffic_sec t_traffic_ms t_3121_loopback t_3122_loopback t_3121_fluent t_3121_wizard t_3121_tester t_3121_ai_search t_3121_traffic t_3121_integration t_3122_previews t_3122_wizard"
 [ "${FULL:-0}" = "1" ] && TESTS="$TESTS t_woocommerce t_graphql_rest t_security t_cache t_server_rules"
 [ "${LOAD:-0}" = "1" ] && TESTS="$TESTS t_load"
 for t in $TESTS; do
