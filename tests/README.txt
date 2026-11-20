@@ -68,6 +68,12 @@ ScrapeLock — δοκιμές σε πραγματικό WordPress (όχι stubs)
                     placeholders / tags, .mo ίδιο με το .po, χωρίς μισές προτάσεις· φορτώνεται από το languages/ του
                     plugin (και όπως στις WordPress 6.2–6.6, με pncp_load_textdomain() στο init), ενώ ένα language pack
                     στο wp-content/languages/plugins/ προηγείται
+  t_3121_fluent.php 3.12.1: FluentCommunity (stand-in with one REST route): a signed-in member's portal reads count
+                    per account at 4 × the REST limit (13th of 12 → 429 for that account only, another member on the
+                    same address unaffected, guests and a cookie without the nonce per IP, no violation), the log row
+                    "rate_member" with the username (also "rate_account"), the per-account page limit counts them with
+                    the member's pages, the early / pre-cache checks leave them to WordPress, the notes (Bots tab,
+                    Content addresses, "For my site"), deactivated → per IP again
   t_traffic.php     3.12: Traffic (PNCP_Traffic), the data layer: settings (path checks, upgrade, export/import),
                     nothing hooked or stored while off, ~40 User-Agents classified (verified / fake with stored official
                     lists), Bunny lines through parse_line() and the real import (mocked log API), the server access log

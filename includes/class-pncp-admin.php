@@ -1514,6 +1514,11 @@ final class PNCP_Admin {
 				self::number( $s, 'rate_limit', __( 'Pages per minute (0 = off):', 'scrapelock' ), PNCP_Admin_Fields::help( __( '429 above it. Behind a CDN, set “Real visitor IP” first.', 'scrapelock' ), __( 'Above the limit it returns 429. Be careful with networks that share an IP (companies, mobile carriers) and with CDNs: set the “Real visitor IP” correctly first.', 'scrapelock' ) ) );
 				self::number( $s, 'rate_limit_search', __( 'Searches (?s=) per minute (0 = off):', 'scrapelock' ), __( 'Search is heavy for the server and a favourite of scrapers.', 'scrapelock' ) );
 				self::number( $s, 'rate_limit_rest', __( 'REST API (/wp-json/) and GraphQL requests per minute (0 = off):', 'scrapelock' ), PNCP_Admin_Fields::help( __( 'Visitor read requests only; long per_page lists count as 2 or 3.', 'scrapelock' ), __( 'Only read requests from visitors. Cart, checkout and forms (POST) do not count. A list of more than 20 items (per_page) counts as 2 requests, more than 50 as 3.', 'scrapelock' ) ) );
+				// 3.12.1: FluentCommunity's members count per account (PNCP_Fluent_Community::rest_note_help()).
+				$pncp_fc_rest = PNCP_Fluent_Community::rest_note_help();
+				if ( '' !== $pncp_fc_rest[0] ) {
+					echo PNCP_Admin_Fields::para( $pncp_fc_rest[0], $pncp_fc_rest[1], 'pncp-fluent-rest-note' ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Escaped in PNCP_Admin_Fields.
+				}
 				self::number( $s, 'rate_limit_404', __( '“Page not found” (404) per minute (0 = off):', 'scrapelock' ), PNCP_Admin_Fields::help( __( 'Catches address guessing; missing images, CSS and scripts do not count.', 'scrapelock' ), __( 'Scrapers guess addresses (?p=1, 2, 3…, old product URLs) to find content. Missing images, CSS, scripts and the favicon do not count.', 'scrapelock' ) ) );
 				self::number( $s, 'rate_limit_sitemap', __( 'Sitemaps per minute (0 = off):', 'scrapelock' ), PNCP_Admin_Fields::help( __( 'Scrapers read sitemaps first; verified search engines are never limited.', 'scrapelock' ), __( 'Scrapers read the sitemap first to find every page. Covers the sitemaps of WordPress, Rank Math, Yoast and similar plugins. Google, Bing and the other verified search engines are never limited.', 'scrapelock' ) ) );
 				// 3.7.
@@ -3027,6 +3032,11 @@ final class PNCP_Admin {
 									);
 								}
 								PNCP_Bot_Match::render_reason( $row, $s ); // 3.11: the bot list entry that matched.
+								if ( isset( $row['account'] ) && '' !== (string) $row['account'] ) {
+									// 3.12.1: the account of a per-account limit (rate_account, rate_member).
+									/* translators: %s: username */
+									echo '<br><span class="pncp-badge pncp-log-account">' . esc_html( sprintf( __( 'Account: %s', 'scrapelock' ), (string) $row['account'] ) ) . '</span>';
+								}
 								?>
 							</td>
 							<td><?php echo esc_html( number_format_i18n( (int) $row['hits'] ) ); ?></td>

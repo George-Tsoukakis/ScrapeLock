@@ -520,15 +520,16 @@ final class PNCP_Cli {
 			$items = array();
 			foreach ( PNCP_Log::recent( $limit ) as $row ) {
 				$items[] = array(
-					'time'   => (string) $row['created'],
-					'ip'     => (string) $row['ip'],
-					'reason' => (string) $row['reason'],
-					'hits'   => (int) $row['hits'],
-					'path'   => isset( $row['path'] ) ? PNCP_Log::display_path( (string) $row['path'] ) : '',
-					'ua'     => isset( $row['ua'] ) ? (string) $row['ua'] : '',
+					'time'    => (string) $row['created'],
+					'ip'      => (string) $row['ip'],
+					'reason'  => (string) $row['reason'],
+					'hits'    => (int) $row['hits'],
+					'path'    => isset( $row['path'] ) ? PNCP_Log::display_path( (string) $row['path'] ) : '',
+					'ua'      => isset( $row['ua'] ) ? (string) $row['ua'] : '',
+					'account' => isset( $row['account'] ) ? (string) $row['account'] : '', // 3.12.1: per-account limits.
 				);
 			}
-			WP_CLI\Utils\format_items( $format, $items, array( 'time', 'ip', 'reason', 'hits', 'path', 'ua' ) );
+			WP_CLI\Utils\format_items( $format, $items, array( 'time', 'ip', 'reason', 'hits', 'path', 'ua', 'account' ) );
 			return;
 		}
 		$hours   = max( 1, min( 720, isset( $assoc_args['hours'] ) ? (int) $assoc_args['hours'] : 24 ) );

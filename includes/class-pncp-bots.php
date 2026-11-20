@@ -34,6 +34,15 @@ final class PNCP_Bots {
 	const MEDIA_FACTOR = 10;
 
 	/**
+	 * 3.12.1: FluentCommunity's own REST reads by a signed-in member (PNCP_Fluent_Community::member_rest()) count
+	 * per account, not per IP, up to this many times "REST API requests per minute" (the same one-minute window).
+	 * The portal loads every screen through them, so the normal REST limit stopped active members.
+	 *
+	 * @var int
+	 */
+	const MEMBER_REST_FACTOR = 4;
+
+	/**
 	 * 3.4.3: without an object cache or APCu, how many new per-IP counter rows wp_options may get per minute,
 	 * site-wide (see db_incr_capped()).
 	 *
@@ -339,7 +348,8 @@ final class PNCP_Bots {
 		// that send no browser headers. The WooCommerce Store API is the exception: only the shop's own pages
 		// call it, and its cart answers carry the product data, so an always-blocked IP, a banned IP or a
 		// blocked bot must not add items and read them back with POST. Its writes never count toward a limit.
-		$cart = '';
+		$cart   = '';
+		$member = false; // 3.12.1: a member's FluentCommunity read, counted per account (check()).
 		if ( ! in_array( strtoupper( (string) $request->get_method() ), array( 'GET', 'HEAD' ), true ) ) {
 			if ( ! preg_match( '#^/wc/store(?:/v\d+)?/#i', $route ) ) {
 				return $result;
@@ -360,13 +370,16 @@ final class PNCP_Bots {
 				$count = false;
 			}
 			// 3.11: FluentCommunity's portal loads every screen through its own REST routes: a signed-in member's
-			// reads of them do not count toward the REST limit (guests still count; every other check applies).
-			if ( $count && PNCP_Fluent_Community::uncounted_rest( $request ) ) {
-				$count = false;
+			// reads of them do not count toward the per-IP REST limit (guests still count; every other check applies).
+			// 3.12.1: they count per account instead, at MEMBER_REST_FACTOR times the REST limit, and toward the
+			// per-account page limit (check()).
+			if ( $count && PNCP_Fluent_Community::member_rest( $request ) ) {
+				$count  = false;
+				$member = true;
 			}
 		}
 		$cost    = $count ? self::rest_cost( $request ) : 1; // 3.5: weighted by list size (see rest_cost()).
-		$verdict = self::check( 'rest', $count, $cart, $cost );
+		$verdict = self::check( 'rest', $count, $cart, $cost, $member );
 		if ( ! $verdict ) {
 			return $result;
 		}
@@ -645,9 +658,11 @@ final class PNCP_Bots {
 	 * @param bool   $count   Whether to count toward the limit.
 	 * @param string $cart    WooCommerce cart write: 'cart' or 'coupon' counts toward the cart limits ('' = not one).
 	 * @param int    $cost    3.5: units this request counts toward the REST / GraphQL limit (1 = one request).
+	 * @param bool   $member  3.12.1: a FluentCommunity REST read by a signed-in member: counted per account (rate_member
+	 *                        and the per-account page limit) instead of per IP.
 	 * @return array{code:int, reason:string}|null Null if the request passes (always in "Monitor only", see verdict()).
 	 */
-	public static function check( $context, $count = true, $cart = '', $cost = 1 ) {
+	public static function check( $context, $count = true, $cart = '', $cost = 1, $member = false ) {
 		$s = PNCP_Options::get();
 		// No exemption for wp_doing_ajax(): WooCommerce defines DOING_AJAX on wc-ajax, so every bot would
 		// get through (confirmed with real WooCommerce). On admin-ajax.php only WooCommerce's cart actions get
@@ -991,9 +1006,17 @@ final class PNCP_Bots {
 		// member could run a script from many addresses with one account. Exempt staff never get here. No violation:
 		// a ban is per IP, and the account is not an IP.
 		$account = null === self::$dry ? get_current_user_id() : 0;
-		if ( $count && $account > 0 && in_array( $context, array( 'page', 'search' ), true ) && (int) $s['rate_limit_account'] > 0 ) {
+		// 3.12.1: a member's FluentCommunity REST reads (rest_guard()): a counter per account (user ID, whatever the
+		// address), MEMBER_REST_FACTOR times the REST limit. Over it, a 429 for that account only: no violation (a
+		// ban is per IP, and other members may share the address). The log row keeps the username.
+		$member = $member && $account > 0 && 'rest' === $context;
+		if ( $member && (int) $s['rate_limit_rest'] > 0 && self::hit( $ip, 'rate_member', 'u' . $account ) > self::MEMBER_REST_FACTOR * (int) $s['rate_limit_rest'] ) {
+			return self::verdict( 429, 'rate_member', $ip, self::account_name() );
+		}
+		// 3.12.1: those reads count toward the per-account page limit too: the portal's screens are its pages.
+		if ( $account > 0 && ( ( $count && in_array( $context, array( 'page', 'search' ), true ) ) || $member ) && (int) $s['rate_limit_account'] > 0 ) {
 			if ( self::hit( $ip, 'rate_account', 'u' . $account ) > (int) $s['rate_limit_account'] ) {
-				return self::verdict( 429, 'rate_account', $ip );
+				return self::verdict( 429, 'rate_account', $ip, self::account_name() );
 			}
 		}
 		// 3.7: the REST API, GraphQL, feeds and sitemaps read by an IP that has not opened a single page of the site
@@ -1466,18 +1489,29 @@ final class PNCP_Bots {
 	}
 
 	/**
+	 * 3.12.1: the signed-in user's username, for the log row of a per-account limit.
+	 *
+	 * @return string
+	 */
+	private static function account_name() {
+		$user = wp_get_current_user();
+		return $user->exists() ? (string) $user->user_login : '';
+	}
+
+	/**
 	 * Logs and returns the decision.
 	 *
 	 * In "Monitor only" (PNCP_Options::monitoring()) the verdict is logged as "would block" and the request
 	 * passes: every caller of check() then simply carries on, as for a request that passed. The violations
 	 * that lead to a ban are not counted either (PNCP_Log::strike()).
 	 *
-	 * @param int    $code   HTTP status code.
-	 * @param string $reason Reason.
-	 * @param string $ip     IP.
+	 * @param int    $code    HTTP status code.
+	 * @param string $reason  Reason.
+	 * @param string $ip      IP.
+	 * @param string $account 3.12.1: username of a per-account limit, kept in the log row ('' = none).
 	 * @return array{code:int, reason:string}|null Null in "Monitor only".
 	 */
-	private static function verdict( $code, $reason, $ip ) {
+	private static function verdict( $code, $reason, $ip, $account = '' ) {
 		if ( null !== self::$dry ) {
 			// Explained, not acted on: the verdict as it is (explain() adds what "Monitor only" would do), no log.
 			return array(
@@ -1491,10 +1525,10 @@ final class PNCP_Bots {
 		}
 		PNCP_Reputation::record_reason( $ip, $reason ); // 3.7: what the IP did counts toward its reputation.
 		if ( PNCP_Options::monitoring() ) {
-			PNCP_Log::add( $reason, PNCP_Log::MONITOR_CODE, $ip );
+			PNCP_Log::add( $reason, PNCP_Log::MONITOR_CODE, $ip, $account );
 			return null;
 		}
-		PNCP_Log::add( $reason, $code, $ip );
+		PNCP_Log::add( $reason, $code, $ip, $account );
 		return array(
 			'code'   => $code,
 			'reason' => $reason,
