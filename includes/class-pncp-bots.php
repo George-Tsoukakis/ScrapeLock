@@ -797,11 +797,11 @@ final class PNCP_Bots {
 			$allowed_ua = true;
 		}
 		// 3.11: an address on Google's or Apple's official lists is never refused by the header checks (no
-		// User-Agent, "Browsers only", headless): their fetchers never send browser headers.
-		$official_ip = $per_ip && self::is_google_or_apple_ip( $ip );
+		// User-Agent, "Browsers only", headless): their fetchers never send browser headers. Looked up last, only
+		// for a request that would be refused (the lists are large and not autoloaded).
 
 		if ( ! empty( $s['block_bots'] ) && ! $allowed_ua ) {
-			if ( '' === trim( $ua ) && ! empty( $s['block_empty_ua'] ) && ! $well_known && ! $official_ip ) {
+			if ( '' === trim( $ua ) && ! empty( $s['block_empty_ua'] ) && ! $well_known && ! ( $per_ip && self::is_google_or_apple_ip( $ip ) ) ) {
 				return self::verdict( 403, 'empty_ua', $ip );
 			}
 			if ( '' !== $ua && self::ua_in_list( $ua, PNCP_Options::blocked_agents( $s ) ) ) {
@@ -846,15 +846,15 @@ final class PNCP_Bots {
 		// Not on wc-ajax: some payment gateways / extensions call them server-side, without Accept-Language.
 		// 3.10: never for an address on Google's official lists (its crawlers, special crawlers and user-triggered
 		// fetchers): those never send browser headers, whatever their User-Agent.
-		if ( ! empty( $s['require_browser_headers'] ) && ! $allowed_ua && ! $feed && ! $unverified_crawler && ! $metadata && in_array( $context, array( 'page', 'search' ), true ) && ! self::is_wc_ajax() && '' === self::wc_admin_ajax_action() && ! self::looks_like_browser( $ua ) && ! $official_ip ) {
+		if ( ! empty( $s['require_browser_headers'] ) && ! $allowed_ua && ! $feed && ! $unverified_crawler && ! $metadata && in_array( $context, array( 'page', 'search' ), true ) && ! self::is_wc_ajax() && '' === self::wc_admin_ajax_action() && ! self::looks_like_browser( $ua ) && ! ( $per_ip && self::is_google_or_apple_ip( $ip ) ) ) {
 			return self::verdict( 403, 'no_browser', $ip );
 		}
 
 		// Headless and fake browsers: what the browser itself sends does not match the User-Agent.
 		// Not for anyone claiming to be a search engine: those are verified (or blocked as fake) above.
-		if ( ! empty( $s['block_headless'] ) && ! $allowed_ua && ! $feed && ! $metadata && ! $official_ip && '' === $family && in_array( $context, array( 'page', 'search' ), true ) && ! self::is_wc_ajax() && '' === self::wc_admin_ajax_action() ) {
+		if ( ! empty( $s['block_headless'] ) && ! $allowed_ua && ! $feed && ! $metadata && '' === $family && in_array( $context, array( 'page', 'search' ), true ) && ! self::is_wc_ajax() && '' === self::wc_admin_ajax_action() ) {
 			$fake = self::fake_browser( $ua );
-			if ( '' !== $fake ) {
+			if ( '' !== $fake && ! ( $per_ip && self::is_google_or_apple_ip( $ip ) ) ) {
 				return self::verdict( 403, $fake, $ip );
 			}
 		}
