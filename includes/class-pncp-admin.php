@@ -240,10 +240,10 @@ final class PNCP_Admin {
 	/**
 	 * Select.
 	 *
-	 * @param array<string, mixed>  $s       Settings.
-	 * @param string                $key     Key.
-	 * @param array<string, string> $options value => label.
-	 * @param string|array<int, string> $help Help text: a string, or PNCP_Admin_Fields::help( short, more ).
+	 * @param array<string, mixed>      $s       Settings.
+	 * @param string                    $key     Key.
+	 * @param array<int|string, string> $options value => label.
+	 * @param string|array<int, string> $help    Help text: a string, or PNCP_Admin_Fields::help( short, more ).
 	 */
 	private static function select( $s, $key, $options, $help = '' ) {
 		$id = 'pncp-' . $key;

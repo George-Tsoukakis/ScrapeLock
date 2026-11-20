@@ -63,7 +63,7 @@ final class PNCP_Status {
 	/**
 	 * The settings page.
 	 *
-	 * @param array<string, string> $args Query args.
+	 * @param array<string, int|string> $args Query args.
 	 * @return string
 	 */
 	public static function settings_url( $args = array() ) {
