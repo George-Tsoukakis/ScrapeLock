@@ -151,7 +151,7 @@ final class PNCP_Early {
 
 		// 3.11: and the stored list of the plugin bots (PNCP_Plugin_Bots::stored_match()): the other plugins'
 		// pncp_plugin_bots filters are not added yet here.
-		$allowed_ua = '' !== $ua && ( PNCP_Bots::allow_list_match( $ua, $ip, $s ) || PNCP_Bots::ua_in_list( $ua, PNCP_Options::allowed_ai_search() ) || null !== PNCP_Plugin_Bots::match( $ua, $ip ) || PNCP_Plugin_Bots::stored_match( $ua, $ip ) );
+		$allowed_ua = '' !== $ua && ( PNCP_Bots::allow_list_match( $ua, $ip, $s ) || PNCP_Bots::ua_in_list( $ua, PNCP_Options::allowed_ai_search( $s ) ) || null !== PNCP_Plugin_Bots::match( $ua, $ip ) || PNCP_Plugin_Bots::stored_match( $ua, $ip ) );
 		// 3.11: /.well-known/* (PNCP_Bots::is_well_known_request()): its services count as allowed, and no
 		// User-Agent is no reason to refuse it there; nor from an address on Google's or Apple's official lists.
 		$well_known = PNCP_Bots::is_well_known_request();

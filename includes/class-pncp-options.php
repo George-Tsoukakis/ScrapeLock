@@ -457,10 +457,14 @@ final class PNCP_Options {
 	/**
 	 * The AI search engines allowed with the current settings (empty if the option is off).
 	 *
+	 * @param array<string, mixed>|null $s 3.11: the settings to read (null = the current ones). The early and
+	 *                                     pre-cache checks pass the settings they are compiled from, so that the
+	 *                                     allowed bots and the bot list (blocked_agents()) always agree.
 	 * @return string[]
 	 */
-	public static function allowed_ai_search() {
-		return empty( self::get()['allow_ai_search'] ) ? array() : self::ai_search_agents();
+	public static function allowed_ai_search( $s = null ) {
+		$s = is_array( $s ) ? $s : self::get();
+		return empty( $s['allow_ai_search'] ) ? array() : self::ai_search_agents();
 	}
 
 	/**

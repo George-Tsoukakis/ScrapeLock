@@ -408,7 +408,7 @@ final class PNCP_Precheck {
 		if ( empty( $s['block_bots'] ) ) {
 			return array();
 		}
-		$search = array_map( 'strtolower', PNCP_Options::allowed_ai_search() );
+		$search = array_map( 'strtolower', PNCP_Options::allowed_ai_search( $s ) );
 		$out    = array();
 		foreach ( PNCP_Options::blocked_agents( $s ) as $needle ) {
 			$needle = strtolower( (string) $needle );
@@ -434,7 +434,7 @@ final class PNCP_Precheck {
 				$out[] = array( strtolower( $entry['ua'] ), $entry['pinned'] ? self::set( $entry['ips'] ) : null );
 			}
 		}
-		foreach ( PNCP_Options::allowed_ai_search() as $ua ) {
+		foreach ( PNCP_Options::allowed_ai_search( $s ) as $ua ) {
 			if ( '' !== (string) $ua ) {
 				$out[] = array( strtolower( (string) $ua ), null );
 			}
