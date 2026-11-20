@@ -76,7 +76,7 @@ final class PNCP_Server_Ips {
 
 	/**
 	 * 3.12.1: transient: the addresses the server's own requests were seen leaving from (address => time), found
-	 * from the site's signed requests (note_outbound()), each kept 24 hours after it was last seen.
+	 * from the answers to the site's signed requests (seen()), each kept 24 hours after it was last seen.
 	 */
 	const OUTBOUND = 'pncp_server_outbound';
 
@@ -84,6 +84,12 @@ final class PNCP_Server_Ips {
 	 * 3.12.1: how long a detected outbound address is kept after it was last seen, in seconds (24 hours).
 	 */
 	const OUTBOUND_KEEP = 86400;
+
+	/**
+	 * 3.12.1: transient prefix (+ nonce): the address a signed request arrived from ("x": its nonce was used twice),
+	 * for the request of the site that sent it (seen()).
+	 */
+	const SEEN = 'pncp_seen_';
 
 	/**
 	 * 3.12.1: the request header ScrapeLock adds to the site's requests to itself: a signature of the method, the
@@ -113,6 +119,7 @@ final class PNCP_Server_Ips {
 		add_action( 'admin_init', array( __CLASS__, 'maybe_refresh' ) );
 		add_action( self::CHANGED, array( __CLASS__, 'changed' ) );
 		add_filter( 'http_request_args', array( __CLASS__, 'sign' ), 10, 2 );
+		add_filter( 'http_response', array( __CLASS__, 'seen' ), 10, 3 );
 		add_action( 'requests-requests.before_redirect', array( __CLASS__, 'unsign_redirect' ), 10, 4 );
 	}
 
@@ -254,7 +261,7 @@ final class PNCP_Server_Ips {
 	 * 3.12.1: the address a request arrived from, as the first proxy in front of the site saw it: behind a CDN edge
 	 * (REMOTE_ADDR on its list) the last address of X-Forwarded-For, which the edge appends itself (Cloudflare:
 	 * CF-Connecting-IP); otherwise the visitor IP, when it can be trusted. Only for a request the site signed
-	 * (note_outbound()): for anyone else these headers say whatever they like. '' for a private or CDN address.
+	 * (sig_ok(), seen()): for anyone else these headers say whatever they like. '' for a private or CDN address.
 	 *
 	 * @return string
 	 */
@@ -277,12 +284,46 @@ final class PNCP_Server_Ips {
 	}
 
 	/**
-	 * 3.12.1: a request the site signed arrived: the address it left the server from is one of the server's, kept
-	 * 24 hours after it was last seen (OUTBOUND; at most 4, written at most once an hour per address) and among the
-	 * learned addresses of 3.11 (30 days). A new one goes into the pre-cache check's configuration.
+	 * 3.12.1: the answer to one of the site's own signed requests (filter http_response): the address that request
+	 * arrived from (sig_ok() noted it under its nonce) is the server's outbound address. Only here, in the request
+	 * that sent it: someone who got hold of a signature and used it first would otherwise make their own address
+	 * the server's; then the nonce was used twice ("x") and nothing is learned.
+	 *
+	 * @param array<string, mixed>|WP_Error $response The answer.
+	 * @param array<string, mixed>          $args     The request arguments.
+	 * @param string                        $url      Address.
+	 * @return array<string, mixed>|WP_Error The answer, unchanged.
 	 */
-	private static function note_outbound() {
-		$ip = self::arrived_from();
+	public static function seen( $response, $args, $url ) {
+		$sent = is_array( $args ) && isset( $args['headers'] ) && is_array( $args['headers'] ) && isset( $args['headers'][ self::SIG_HEADER ] ) ? (string) $args['headers'][ self::SIG_HEADER ] : '';
+		if ( '' === $sent || is_wp_error( $response ) || ! preg_match( '/^\d{9,11}\.([0-9a-f]{24})\.[0-9a-f]{64}$/', $sent, $m ) ) {
+			return $response;
+		}
+		$host = strtolower( (string) wp_parse_url( (string) $url, PHP_URL_HOST ) );
+		if ( '' === $host || ! in_array( $host, self::own_hosts(), true ) ) {
+			return $response;
+		}
+		$from = get_transient( self::SEEN . $m[1] );
+		if ( false === $from ) {
+			return $response;
+		}
+		delete_transient( self::SEEN . $m[1] );
+		$ip = PNCP_Ip::normalize( is_string( $from ) ? $from : '' );
+		if ( '' !== $ip && ! PNCP_Ip::is_private( $ip ) && ! PNCP_Ip::is_cdn( $ip ) ) {
+			self::note_outbound( $ip );
+		}
+		return $response;
+	}
+
+	/**
+	 * 3.12.1: the server's own request left it from this address (seen()): one of the server's, kept 24 hours after
+	 * it was last seen (OUTBOUND; at most 4, written at most once an hour per address) and among the learned
+	 * addresses of 3.11 (30 days). A new one goes into the pre-cache check's configuration.
+	 *
+	 * @param string $ip The address.
+	 */
+	public static function note_outbound( $ip ) {
+		$ip = PNCP_Ip::normalize( (string) $ip );
 		if ( '' === $ip ) {
 			return;
 		}
@@ -536,8 +577,8 @@ final class PNCP_Server_Ips {
 	 * 3.12.1: does this request carry a valid signature of the site (SIG_HEADER)? Its host must be one of the
 	 * site's own, its method and path those that were signed, its time within SIG_WINDOW, and its nonce never seen
 	 * before (kept for twice the window, atomically: PNCP_Log::cache_add()). The answer is kept for the rest of the
-	 * request, so the early check and the normal check use the nonce once. A valid signature also tells the
-	 * address the server's requests leave from (note_outbound()).
+	 * request, so the early check and the normal check use the nonce once. The address a valid signature arrived
+	 * from is noted for the site's request that sent it (seen()): the address the server's requests leave from.
 	 *
 	 * @return bool
 	 */
@@ -555,14 +596,19 @@ final class PNCP_Server_Ips {
 		if ( isset( self::$sig_seen[ $memo ] ) ) {
 			return self::$sig_seen[ $memo ];
 		}
-		$time = (int) $m[1];
-		$key  = self::sig_key();
-		$ok   = '' !== $key && '' !== $host && in_array( $host, self::own_hosts(), true ) && abs( time() - $time ) <= self::SIG_WINDOW
-			&& hash_equals( self::sig_mac( $method, $host, $path, $time, $m[2], $key ), $m[3] )
-			&& PNCP_Log::cache_add( 'pncp_sn_' . $m[2], 1, 2 * self::SIG_WINDOW + 10 );
+		$time  = (int) $m[1];
+		$key   = self::sig_key();
+		$valid = '' !== $key && '' !== $host && in_array( $host, self::own_hosts(), true ) && abs( time() - $time ) <= self::SIG_WINDOW
+			&& hash_equals( self::sig_mac( $method, $host, $path, $time, $m[2], $key ), $m[3] );
+		$ok    = $valid && PNCP_Log::cache_add( 'pncp_sn_' . $m[2], 1, 2 * self::SIG_WINDOW + 10 );
 		self::$sig_seen[ $memo ] = $ok;
-		if ( $ok ) {
-			self::note_outbound();
+		if ( $valid ) {
+			// For the site's request that sent it (seen()): the address it arrived from, or "x" when the nonce was
+			// used twice (someone else had the signature too, and either address may be theirs).
+			$from = $ok ? self::arrived_from() : 'x';
+			if ( '' !== $from ) {
+				set_transient( self::SEEN . $m[2], $from, 2 * self::SIG_WINDOW + 10 );
+			}
 		}
 		return $ok;
 	}

@@ -16,7 +16,8 @@
  * R. Redirects: re-signed on the site's own host, never sent on to another host (stand-in server on 8953).
  * P. The pre-cache check: the same signature, its key passed by the line in wp-config.php (never in the data
  *    folder in uploads), nonces used once (a file each).
- * I. The server's addresses: the outbound one, detected from the site's signed requests (24-hour transient),
+ * I. The server's addresses: the outbound one, detected by the site's signed requests (24-hour transient; a
+ *    stolen signature used first teaches nothing),
  *    and SCRAPELOCK_SERVER_IPS (a test mu-plugin defines it for the web server), in WordPress, the early check
  *    and the pre-cache check.
  * E. ScrapeLock's own rules at the CDN never block the server: temporary blocks (PNCP_Edge), Bunny's logs, the
@@ -491,10 +492,17 @@ sleep( 2 ); // OPcache of the server: wp-config.php.
 delete_transient( PNCP_Server_Ips::OUTBOUND );
 delete_option( PNCP_Server_Ips::OPTION );
 $wp_ua = 'WordPress/6.9; ' . home_url( '/' );
+/** The site's own request that sent this signature got its answer (PNCP_Server_Ips::seen(), filter http_response). */
+function answered( $tok ) {
+	PNCP_Server_Ips::seen( array( 'response' => array( 'code' => 200 ) ), array( 'headers' => array( PNCP_Server_Ips::SIG_HEADER => $tok ) ), home_url( '/' ) );
+}
 // Through the edge without real_ip: the address the edge saw is the last of X-Forwarded-For.
-as_request( EDGE, SELF_UA, array( 'HTTP_X_FORWARDED_FOR' => '192.0.2.200, 203.0.113.51', 'HTTP_X_SCRAPELOCK_SIG' => sig( '/' ) ), $home_path );
+$tok = sig( '/' );
+as_request( EDGE, SELF_UA, array( 'HTTP_X_FORWARDED_FOR' => '192.0.2.200, 203.0.113.51', 'HTTP_X_SCRAPELOCK_SIG' => $tok ), $home_path );
 t( 'I: a signed request through the edge passes', 'pass' === verdict(), verdict() );
-t( 'I: ... and the address the edge saw it from (the last of X-Forwarded-For) is the server\'s outbound address', in_array( '203.0.113.51', PNCP_Server_Ips::outbound_ips(), true ) && PNCP_Server_Ips::is_server_ip( '203.0.113.51' ), wp_json_encode( get_transient( PNCP_Server_Ips::OUTBOUND ) ) );
+t( 'I: ... the request that arrives learns nothing by itself', ! PNCP_Server_Ips::is_server_ip( '203.0.113.51' ) );
+answered( $tok );
+t( 'I: the site\'s request that sent it learns where it arrived from (the last of X-Forwarded-For): the outbound address', in_array( '203.0.113.51', PNCP_Server_Ips::outbound_ips(), true ) && PNCP_Server_Ips::is_server_ip( '203.0.113.51' ), wp_json_encode( get_transient( PNCP_Server_Ips::OUTBOUND ) ) );
 t( 'I: ... not the address the client wrote before it', ! PNCP_Server_Ips::is_server_ip( '192.0.2.200' ) );
 if ( ! wp_using_ext_object_cache() ) {
 	$until = (int) get_option( '_transient_timeout_' . PNCP_Server_Ips::OUTBOUND );
@@ -502,8 +510,10 @@ if ( ! wp_using_ext_object_cache() ) {
 }
 t( 'I: ... and in the pre-cache check\'s configuration', isset( PNCP_Precheck::config()['self_ips'][0]['203.0.113.51'] ) );
 // With Nginx real_ip (REMOTE_ADDR is the address the edge saw).
-as_request( '203.0.113.52', SELF_UA, array( 'HTTP_X_SCRAPELOCK_SIG' => sig( '/' ) ), $home_path );
+$tok = sig( '/' );
+as_request( '203.0.113.52', SELF_UA, array( 'HTTP_X_SCRAPELOCK_SIG' => $tok ), $home_path );
 verdict();
+answered( $tok );
 t( 'I: with real_ip: the signed request\'s REMOTE_ADDR is detected', in_array( '203.0.113.52', PNCP_Server_Ips::outbound_ips(), true ) );
 as_request( '203.0.113.52', $wp_ua );
 t( 'I: then the WordPress User-Agent from that address, unsigned, passes (cron, preloads that are not WordPress\'s)', 'pass' === verdict(), verdict() );
@@ -511,13 +521,30 @@ as_request( VISITOR, $wp_ua );
 t( 'I: the same User-Agent from another address: 403', '403 no_browser' === verdict(), verdict() );
 as_request( EDGE, $wp_ua, array( 'HTTP_X_FORWARDED_FOR' => '203.0.113.52' ) );
 t( 'I: X-Forwarded-For = that address through the edge (unsigned): 403', '403 no_browser' === verdict(), verdict() );
-// A forged or replayed signature teaches nothing.
+// A signature someone else got hold of and used first: their request passes once, but teaches nothing.
+$tok = sig( '/' );
+as_request( '203.0.113.56', SELF_UA, array( 'HTTP_X_SCRAPELOCK_SIG' => $tok ), $home_path );
+verdict();
+as_request( EDGE, SELF_UA, array( 'HTTP_X_FORWARDED_FOR' => '203.0.113.51', 'HTTP_X_SCRAPELOCK_SIG' => $tok ), $home_path );
+t( 'I: a stolen signature used first: the site\'s own request is then refused as a replay', '403 fake_browser' === verdict(), verdict() );
+answered( $tok );
+t( 'I: ... and the thief\'s address is never learned (the nonce was used twice)', ! PNCP_Server_Ips::is_server_ip( '203.0.113.56' ) );
+// A forged or expired signature teaches nothing.
 $tok = sig( '/' );
 as_request( '203.0.113.53', SELF_UA, array( 'HTTP_X_SCRAPELOCK_SIG' => 'x' . $tok ), $home_path );
 verdict();
-as_request( EDGE, SELF_UA, array( 'HTTP_X_FORWARDED_FOR' => '203.0.113.54', 'HTTP_X_SCRAPELOCK_SIG' => sig( '/', 'GET', time() - 300 ) ), $home_path );
+answered( 'x' . $tok );
+$old = sig( '/', 'GET', time() - 300 );
+as_request( EDGE, SELF_UA, array( 'HTTP_X_FORWARDED_FOR' => '203.0.113.54', 'HTTP_X_SCRAPELOCK_SIG' => $old ), $home_path );
 verdict();
+answered( $old );
 t( 'I: a forged or expired signature teaches no address', ! PNCP_Server_Ips::is_server_ip( '203.0.113.53' ) && ! PNCP_Server_Ips::is_server_ip( '203.0.113.54' ) );
+// The answer to a request to another host never teaches anything.
+$tok = sig( '/' );
+as_request( '203.0.113.57', SELF_UA, array( 'HTTP_X_SCRAPELOCK_SIG' => $tok ), $home_path );
+verdict();
+PNCP_Server_Ips::seen( array( 'response' => array( 'code' => 200 ) ), array( 'headers' => array( PNCP_Server_Ips::SIG_HEADER => $tok ) ), 'https://example.com/' );
+t( 'I: the answer of another host teaches nothing', ! PNCP_Server_Ips::is_server_ip( '203.0.113.57' ) );
 // An address seen more than 24 hours ago is forgotten.
 set_transient( PNCP_Server_Ips::OUTBOUND, array( '203.0.113.55' => time() - DAY_IN_SECONDS - 60 ), DAY_IN_SECONDS );
 t( 'I: an address last seen more than 24 hours ago no longer counts', ! in_array( '203.0.113.55', PNCP_Server_Ips::outbound_ips(), true ) );
@@ -728,6 +755,7 @@ wp_set_current_user( 0 );
 forget_server_ips();
 
 /* ---------- H. Vulnerable points "Check again", the Stealth test, Site Health: through the "edge" ---------- */
+forget_server_ips();
 unset( $_SERVER['HTTPS'] ); // This process: home_url() as stored (the "edge" requests say HTTPS with X-Test-HTTPS).
 $to_edge = static function ( $args, $url ) {
 	if ( in_array( strtolower( (string) wp_parse_url( (string) $url, PHP_URL_HOST ) ), PNCP_Server_Ips::own_hosts(), true ) && is_array( $args ) ) {
@@ -766,6 +794,7 @@ require_once ABSPATH . 'wp-admin/includes/class-wp-site-health.php';
 $loop = WP_Site_Health::get_instance()->get_test_loopback_requests();
 t( 'H: Site Health "Loopback request" through the edge: good', 'good' === $loop['status'], $loop['status'] . ' ' . wp_strip_all_tags( $loop['label'] ) );
 $rest = wp_remote_get( rest_url( 'wp/v2/types/post' ), array( 'timeout' => 10 ) );
+t( 'H: the site\'s checks taught the server\'s outbound address (X-Forwarded-For the edge wrote)', in_array( SERVER, PNCP_Server_Ips::outbound_ips(), true ), wp_json_encode( get_transient( PNCP_Server_Ips::OUTBOUND ) ) );
 t( 'H: the REST API through the edge: 200', 200 === (int) wp_remote_retrieve_response_code( $rest ), is_wp_error( $rest ) ? $rest->get_error_message() : (string) wp_remote_retrieve_response_code( $rest ) );
 remove_filter( 'http_request_args', $to_edge, 20 );
 
