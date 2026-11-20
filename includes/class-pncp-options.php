@@ -1533,11 +1533,14 @@ final class PNCP_Options {
 				/* translators: %d: number of violations */
 				return sprintf( _n( 'An IP is blocked temporarily after %d violation', 'An IP is blocked temporarily after %d violations', $n, 'scrapelock' ), $n );
 			case 'ban_minutes':
-				return 0 === $n % 60
+				// Two statements, not a ternary: wp i18n make-pot does not extract the first _n() of a ternary.
+				if ( 0 === $n % 60 ) {
+					$hours = (int) ( $n / 60 );
 					/* translators: %d: number of hours */
-					? sprintf( _n( 'A temporary block lasts %d hour', 'A temporary block lasts %d hours', (int) ( $n / 60 ), 'scrapelock' ), (int) ( $n / 60 ) )
-					/* translators: %d: number of minutes */
-					: sprintf( _n( 'A temporary block lasts %d minute', 'A temporary block lasts %d minutes', $n, 'scrapelock' ), $n );
+					return sprintf( _n( 'A temporary block lasts %d hour', 'A temporary block lasts %d hours', $hours, 'scrapelock' ), $hours );
+				}
+				/* translators: %d: number of minutes */
+				return sprintf( _n( 'A temporary block lasts %d minute', 'A temporary block lasts %d minutes', $n, 'scrapelock' ), $n );
 			case 'list_excerpts':
 				return __( 'Lists of articles (home page, categories, archives, search) show an excerpt and a link instead of the full text', 'scrapelock' );
 			case 'ipv6_wide':
