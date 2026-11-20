@@ -43,7 +43,7 @@ final class PNCP_Bot_Match {
 	 *
 	 * @param string               $ua User-Agent.
 	 * @param array<string, mixed> $s  Settings.
-	 * @return array{token:string, source:string, http_lib:bool}|null source: bot_list | ai | ripper | archive | seo | http_libs.
+	 * @return array{token:string, source:string, http_lib:bool}|null source: bot_list | ai | ai_search | ripper | archive | seo | http_libs.
 	 */
 	public static function entry( $ua, $s ) {
 		$ua = (string) $ua;
@@ -55,6 +55,7 @@ final class PNCP_Bot_Match {
 		$sources = array(
 			'bot_list'  => PNCP_Options::parse_list( isset( $s['bot_list'] ) ? (string) $s['bot_list'] : '' ),
 			'ai'        => PNCP_Bots::known_ai_agents(),
+			'ai_search' => PNCP_Options::ai_search_blocked( $s ), // 3.12.1: while "Allow AI search" is off.
 			'ripper'    => PNCP_Bots::ripper_agents(),
 			'archive'   => empty( $s['block_archivers'] ) ? array() : PNCP_Bots::archive_agents(),
 			'seo'       => empty( $s['block_seo_crawlers'] ) ? array() : PNCP_Bots::seo_agents(),
@@ -106,6 +107,7 @@ final class PNCP_Bot_Match {
 		$where = array(
 			'bot_list'  => __( 'your bot list', 'scrapelock' ),
 			'ai'        => __( 'the built-in AI crawlers', 'scrapelock' ),
+			'ai_search' => __( 'the built-in AI search bots, blocked while AI search is not allowed', 'scrapelock' ),
 			'ripper'    => __( 'the built-in site rippers', 'scrapelock' ),
 			'archive'   => __( 'web archives', 'scrapelock' ),
 			'seo'       => __( 'SEO and marketing data crawlers', 'scrapelock' ),

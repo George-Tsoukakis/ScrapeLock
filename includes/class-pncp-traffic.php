@@ -218,6 +218,25 @@ final class PNCP_Traffic {
 	}
 
 	/**
+	 * 3.12.1: the Traffic part of the suggested privacy policy text (PNCP_Log::privacy_policy()), with this site's
+	 * retention and IP addresses setting.
+	 *
+	 * @return string Plain text.
+	 */
+	public static function privacy_text() {
+		$t    = self::settings();
+		$text = sprintf(
+			/* translators: 1: days single requests are kept, 2: days the daily figures are kept */
+			__( 'If traffic statistics (Traffic) are turned on, each request the site answers is stored in our own database with its time, IP address, country, method, status, the address asked for, the referrer, the browser\'s User-Agent, its size and whether it came from the cache, to find errors, broken links and abusive bots. Single requests are deleted automatically after %1$s days and the daily figures after %2$s days. Signed-in administrators and the site\'s own requests are not recorded, and nothing is sent anywhere.', 'scrapelock' ),
+			number_format_i18n( $t['raw_days'] ),
+			number_format_i18n( $t['days'] )
+		);
+		return $text . ' ' . ( 'masked' === $t['ip_mode']
+			? __( 'IP addresses are stored masked: the last part of each address is removed before it is stored (IPv4 /24, IPv6 /48), so a single visitor cannot be told apart by address, also in exports and emails.', 'scrapelock' )
+			: __( 'IP addresses are stored in full while “Masked” is not chosen; then they can be used to block a single visitor.', 'scrapelock' ) );
+	}
+
+	/**
 	 * The settings were saved: collection turned on creates the tables and schedules the run.
 	 *
 	 * @param mixed $old   Settings before.

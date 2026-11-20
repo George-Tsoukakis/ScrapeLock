@@ -399,16 +399,10 @@ final class PNCP_Cli {
 			$url = 'http://' . $url; // WP-CLI accepts --url=example.com/path.
 		}
 		$result  = PNCP_Bots::explain( $ip, $ua, $url, $headers );
-		$reasons = PNCP_Log::reasons();
-		$kinds   = array(
-			'page'    => __( 'Page', 'scrapelock' ),
-			'search'  => __( 'Search', 'scrapelock' ),
-			'rest'    => __( 'REST API', 'scrapelock' ),
-			'graphql' => __( 'GraphQL', 'scrapelock' ),
-			'sitemap' => __( 'Sitemap', 'scrapelock' ),
-		);
+		$kinds   = PNCP_Tester::kinds(); // 3.12.1: with "Media" for a static file.
+		$kind    = ! empty( $result['media'] ) ? 'media' : $result['context'];
 		if ( $result['code'] ) {
-			$label   = isset( $reasons[ $result['reason'] ] ) ? $reasons[ $result['reason'] ] : $result['reason'];
+			$label   = PNCP_Log::reason_label( $result['reason'] );
 			$verdict = sprintf(
 				/* translators: 1: HTTP status code (403 or 429), 2: reason */
 				429 === $result['code'] ? __( 'Limited (%1$d): %2$s', 'scrapelock' ) : __( 'Blocked (%1$d): %2$s', 'scrapelock' ),
@@ -420,16 +414,21 @@ final class PNCP_Cli {
 			$verdict = sprintf(
 				/* translators: %s: why the request passes */
 				__( 'Allowed: %s', 'scrapelock' ),
-				isset( $why[ $result['pass'] ] ) ? $why[ $result['pass'] ] : $result['pass']
+				isset( $why[ $result['pass'] ] ) ? $why[ $result['pass'] ] : __( 'another rule lets it through', 'scrapelock' )
 			);
 		}
 		$items = array(
 			array( __( 'IP', 'scrapelock' ), $ip ),
 			array( __( 'User-Agent', 'scrapelock' ), '' === $ua ? '-' : $ua ),
 			array( __( 'Address', 'scrapelock' ), '' === $url ? home_url( '/' ) : $url ),
-			array( __( 'Checked as', 'scrapelock' ), $kinds[ $result['context'] ] . ( $result['feed'] ? ' (' . __( 'feed', 'scrapelock' ) . ')' : '' ) ),
+			array( __( 'Checked as', 'scrapelock' ), ( isset( $kinds[ $kind ] ) ? $kinds[ $kind ] : __( 'Page', 'scrapelock' ) ) . ( $result['feed'] ? ' (' . __( 'feed', 'scrapelock' ) . ')' : '' ) ),
 			array( __( 'Verdict', 'scrapelock' ), $verdict ),
 		);
+		// 3.12.1: the per-minute counter that decides the request and its limit, as on the "Check a request" card.
+		$counter = PNCP_Tester::counter( $result, $ip, PNCP_Options::get() );
+		if ( $counter ) {
+			$items[] = array( $counter['label'], $counter['text'] );
+		}
 		if ( $result['monitor'] ) {
 			$items[] = array( __( 'Monitor only', 'scrapelock' ), __( 'On: this request would be let through and logged as “Would block”.', 'scrapelock' ) );
 		}
@@ -472,7 +471,7 @@ final class PNCP_Cli {
 			'search_engine' => __( 'a verified search engine (never blocked or limited)', 'scrapelock' ),
 			'ai_search'     => __( 'a verified AI search bot (never blocked or limited)', 'scrapelock' ),
 			'prefetch'      => __( 'a prefetch within its own limit', 'scrapelock' ),
-			'media'         => __( 'a static file (image, video, font, CSS, JS) within its own limit', 'scrapelock' ),
+			'media'         => __( 'image or file; counted in the media limit, not as a page', 'scrapelock' ), // 3.12.1: as on the card.
 			'passed'        => __( 'it passes every check, and is within the limits this minute', 'scrapelock' ),
 		);
 	}
@@ -515,20 +514,21 @@ final class PNCP_Cli {
 	public function log( $args, $assoc_args ) {
 		$limit   = max( 1, min( 1000, isset( $assoc_args['limit'] ) ? (int) $assoc_args['limit'] : 20 ) );
 		$format  = self::format( $assoc_args );
-		$reasons = PNCP_Log::reasons();
 		if ( empty( $assoc_args['top'] ) ) {
 			$items = array();
 			foreach ( PNCP_Log::recent( $limit ) as $row ) {
 				$items[] = array(
-					'time'   => (string) $row['created'],
-					'ip'     => (string) $row['ip'],
-					'reason' => (string) $row['reason'],
-					'hits'   => (int) $row['hits'],
-					'path'   => isset( $row['path'] ) ? PNCP_Log::display_path( (string) $row['path'] ) : '',
-					'ua'     => isset( $row['ua'] ) ? (string) $row['ua'] : '',
+					'time'    => (string) $row['created'],
+					'ip'      => (string) $row['ip'],
+					// 3.12.1: the label in the table for people; the key in json, csv and yaml, for scripts.
+					'reason'  => 'table' === $format ? PNCP_Log::reason_label( (string) $row['reason'] ) : (string) $row['reason'],
+					'hits'    => (int) $row['hits'],
+					'path'    => isset( $row['path'] ) ? PNCP_Log::display_path( (string) $row['path'] ) : '',
+					'ua'      => isset( $row['ua'] ) ? (string) $row['ua'] : '',
+					'account' => isset( $row['account'] ) ? (string) $row['account'] : '', // 3.12.1: per-account limits.
 				);
 			}
-			WP_CLI\Utils\format_items( $format, $items, array( 'time', 'ip', 'reason', 'hits', 'path', 'ua' ) );
+			WP_CLI\Utils\format_items( $format, $items, array( 'time', 'ip', 'reason', 'hits', 'path', 'ua', 'account' ) );
 			return;
 		}
 		$hours   = max( 1, min( 720, isset( $assoc_args['hours'] ) ? (int) $assoc_args['hours'] : 24 ) );
@@ -537,7 +537,7 @@ final class PNCP_Cli {
 		foreach ( $summary['reasons'] as $reason => $hits ) {
 			$items[] = array(
 				'group' => 'reason',
-				'value' => isset( $reasons[ $reason ] ) ? $reasons[ $reason ] : $reason,
+				'value' => PNCP_Log::reason_label( $reason ),
 				'hits'  => $hits,
 			);
 		}
@@ -1359,10 +1359,11 @@ final class PNCP_Cli {
 		$proposals = PNCP_Wizard::proposals( null, $env );
 		$items     = array();
 		foreach ( $proposals as $key => $row ) {
+			$texts         = PNCP_Wizard::row_texts( $row ); // 3.12.1: a row may change two settings (ban_strikes, ban_minutes).
 			$items[ $key ] = array(
 				'setting'  => $key,
-				'now'      => PNCP_Wizard::value_text( $key, $row['current'] ),
-				'proposed' => PNCP_Wizard::value_text( $key, $row['proposed'] ),
+				'now'      => $texts[0],
+				'proposed' => $texts[1],
 				'risk'     => $row['risk'],
 				'reason'   => $row['reason'],
 			);

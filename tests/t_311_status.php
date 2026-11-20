@@ -249,7 +249,10 @@ foreach ( array( 'general', 'bots', 'content', 'images', 'rules', 'log', 'attack
 	$hits = preg_match_all( $raw, $text, $m ) ? array_unique( $m[0] ) : array();
 	t( "A8: tab $tab: no «setting_key: 0/1» in the page", 200 === $code && ! $hits && ! php_errors( $body ), $code . ' ' . implode( ', ', $hits ) );
 	if ( 'general' === $tab ) {
-		t( 'A8: Emergency Mode box on the page: the IP-address line in words', false !== strpos( $text, 'Requests that open the site by its IP address instead of its name are refused' ) && false === strpos( $text, 'block_ip_host' ) );
+		// 3.12.1: "For my site" may propose block_ip_host here; its rows name each setting next to its label on
+		// purpose (<code>key</code>), so its panel is left out of this check (t_3121_wizard.php covers it).
+		$outside = html_entity_decode( wp_strip_all_tags( preg_replace( '#<(script|style|textarea)\b.*?</\1>|<details class="pncp-card pncp-wizard".*?</form>#is', '', $body ) ) );
+		t( 'A8: Emergency Mode box on the page: the IP-address line in words', false !== strpos( $text, 'Requests that open the site by its IP address instead of its name are refused' ) && false === strpos( $outside, 'block_ip_host' ) );
 	}
 }
 list( , $body ) = http( '/wp-admin/index.php', $admin_cookies );

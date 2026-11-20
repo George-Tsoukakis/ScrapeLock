@@ -1286,6 +1286,18 @@ final class PNCP_Ip {
 		if ( '' === $ip || ! self::is_local( $ip ) ) {
 			return false;
 		}
+		return self::came_from_near();
+	}
+
+	/**
+	 * 3.12.1: did the request come only through the server and its private network? The visitor IP is reliable and
+	 * every address on its way (REMOTE_ADDR and each proxy read in the header) is local or private. See
+	 * is_local_request().
+	 *
+	 * @return bool
+	 */
+	public static function came_from_near() {
+		self::client_ip();
 		if ( ! self::$reliable ) {
 			return false;
 		}

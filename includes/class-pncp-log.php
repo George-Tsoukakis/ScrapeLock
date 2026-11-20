@@ -17,9 +17,9 @@ final class PNCP_Log {
 	/**
 	 * Table schema version. 3 (3.4.0): index (created, reason) for the summaries of the Log tab. 4 (3.6.1): the
 	 * table of short-lived values (kv_table()). 5 (3.7.0): the CrowdSec blocklist (PNCP_Crowdsec::table()) and the
-	 * visits from AI assistants (PNCP_Ai_Referrals::table()).
+	 * visits from AI assistants (PNCP_Ai_Referrals::table()). 6 (3.8.0): the attack record (PNCP_Attacks::table()).
 	 */
-	const DB_VERSION = '6'; // 3.8: the attack record (PNCP_Attacks::table()).
+	const DB_VERSION = '7'; // 3.12.1: the log's account column (account_column()).
 
 	/**
 	 * 3.6.1: the lowest schema version that has the table of short-lived values (kv_table()).
@@ -217,6 +217,7 @@ final class PNCP_Log {
 			path varchar(255) NOT NULL DEFAULT '',
 			ua varchar(255) NOT NULL DEFAULT '',
 			uas smallint(5) unsigned NOT NULL DEFAULT 1,
+			account varchar(60) NOT NULL DEFAULT '',
 			PRIMARY KEY  (id),
 			KEY created (created),
 			KEY ip (ip),
@@ -277,6 +278,12 @@ final class PNCP_Log {
 		$has_uas = false !== $wpdb->query( $wpdb->prepare( 'SELECT uas FROM %i LIMIT 1', $table ) );
 		$wpdb->suppress_errors( $suppress );
 		update_option( 'pncp_log_uas', $has_uas ? 1 : 0, true );
+		// 3.12.1: the account name of a per-account limit (account_column()), with the same check.
+		$suppress = $wpdb->suppress_errors( true );
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery -- Schema check on install.
+		$has_account = false !== $wpdb->query( $wpdb->prepare( 'SELECT account FROM %i LIMIT 1', $table ) );
+		$wpdb->suppress_errors( $suppress );
+		update_option( 'pncp_log_account', $has_account ? 1 : 0, true );
 
 		// 2.1 bans (option) → table.
 		$old = get_option( self::BANS_OPTION );
@@ -320,6 +327,7 @@ final class PNCP_Log {
 			'rate_cart'       => __( 'WooCommerce cart / checkout actions per minute', 'scrapelock' ),
 			'rate_coupon'     => __( 'WooCommerce coupon attempts per minute', 'scrapelock' ),
 			'rate_account'    => __( 'Pages per minute per signed-in account', 'scrapelock' ), // 3.6.
+			'rate_member'     => __( 'FluentCommunity REST reads per minute per member', 'scrapelock' ), // 3.12.1.
 			'blocked_ip'      => __( 'IP in the always-blocked list', 'scrapelock' ),
 			'blocked_ref'     => __( 'Referrer in the always-blocked list', 'scrapelock' ),
 			'trap'            => __( 'Bot trap', 'scrapelock' ),
@@ -347,6 +355,21 @@ final class PNCP_Log {
 			// 3.8: Bunny CDN logs (PNCP_Bunny).
 			'edge_rate'       => __( 'Too fast at Bunny CDN (seen in its logs)', 'scrapelock' ),
 		);
+	}
+
+	/**
+	 * 3.12.1: the label of a reason for people (reasons()); never the internal key, also for a reason stored by
+	 * another version (a generic label then).
+	 *
+	 * @param string $reason Reason key.
+	 * @return string
+	 */
+	public static function reason_label( $reason ) {
+		static $labels = null;
+		if ( null === $labels ) {
+			$labels = self::reasons();
+		}
+		return isset( $labels[ (string) $reason ] ) ? $labels[ (string) $reason ] : __( 'Another check of ScrapeLock', 'scrapelock' );
 	}
 
 	/**
@@ -391,11 +414,15 @@ final class PNCP_Log {
 	 * beyond that the events of that minute are added up in one row per reason, with no IP ("Many IPs").
 	 * New temporary blocks are always logged on their own: the list of persistent IPs counts them.
 	 *
-	 * @param string $reason Reason (key of reasons()).
-	 * @param int    $code   HTTP status code (MONITOR_CODE = would have been blocked, let through).
-	 * @param string $ip     IP.
+	 * 3.12.1: a per-account limit (rate_account, rate_member) also keeps the account's username, in a row of its
+	 * own per account; every other row has none.
+	 *
+	 * @param string $reason  Reason (key of reasons()).
+	 * @param int    $code    HTTP status code (MONITOR_CODE = would have been blocked, let through).
+	 * @param string $ip      IP.
+	 * @param string $account Username of a per-account limit ('' = none).
 	 */
-	public static function add( $reason, $code, $ip ) {
+	public static function add( $reason, $code, $ip, $account = '' ) {
 		global $wpdb;
 		if ( ! self::ready() ) {
 			return;
@@ -414,7 +441,8 @@ final class PNCP_Log {
 
 		// The code is part of the key: a "would block" entry and a real block are never counted in the same row.
 		$minute = (int) floor( time() / MINUTE_IN_SECONDS );
-		$key    = 'pncp_lg_' . md5( $ip . '|' . $reason . '|' . (int) $code . '|' . $minute );
+		$account = self::account_column() ? mb_substr( (string) $account, 0, 60 ) : '';
+		$key     = 'pncp_lg_' . md5( $ip . '|' . $reason . '|' . (int) $code . '|' . $minute . ( '' !== $account ? '|' . $account : '' ) );
 		$orig   = $key;
 		$id     = self::row_id( $key );
 		$ua     = PNCP_Bots::user_agent();
@@ -438,9 +466,10 @@ final class PNCP_Log {
 		}
 		if ( 'ban' !== $reason && 'manual' !== $reason && self::rows_this_minute( $minute ) >= self::rows_per_minute() ) {
 			// Over the budget: this minute's row of the reason (and code) for "Many IPs".
-			$ip  = '';
-			$ua  = '';
-			$key = 'pncp_lo_' . md5( $reason . '|' . (int) $code . '|' . $minute );
+			$ip      = '';
+			$ua      = '';
+			$account = '';
+			$key     = 'pncp_lo_' . md5( $reason . '|' . (int) $code . '|' . $minute );
 			$id  = self::row_id( $key );
 			// phpcs:ignore WordPress.DB.DirectDatabaseQuery -- Counter, no cache.
 			if ( $id > 0 && 0 !== $wpdb->query( $wpdb->prepare( 'UPDATE %i SET hits = hits + 1 WHERE id = %d', self::table(), $id ) ) ) {
@@ -456,20 +485,22 @@ final class PNCP_Log {
 
 		$path = '' !== $ip ? (string) wp_parse_url( self::request_uri(), PHP_URL_PATH ) : '';
 
-		// phpcs:ignore WordPress.DB.DirectDatabaseQuery -- Plugin table.
-		$wpdb->insert(
-			self::table(),
-			array(
-				'created' => gmdate( 'Y-m-d H:i:s' ),
-				'ip'      => substr( $ip, 0, 45 ),
-				'reason'  => substr( $reason, 0, 20 ),
-				'code'    => (int) $code,
-				'hits'    => 1,
-				'path'    => mb_substr( $path, 0, 255 ),
-				'ua'      => mb_substr( $ua, 0, 255 ),
-			),
-			array( '%s', '%s', '%s', '%d', '%d', '%s', '%s' )
+		$data    = array(
+			'created' => gmdate( 'Y-m-d H:i:s' ),
+			'ip'      => substr( $ip, 0, 45 ),
+			'reason'  => substr( $reason, 0, 20 ),
+			'code'    => (int) $code,
+			'hits'    => 1,
+			'path'    => mb_substr( $path, 0, 255 ),
+			'ua'      => mb_substr( $ua, 0, 255 ),
 		);
+		$formats = array( '%s', '%s', '%s', '%d', '%d', '%s', '%s' );
+		if ( '' !== $account ) {
+			$data['account'] = $account; // 3.12.1: only when the column exists (account_column(), checked above).
+			$formats[]       = '%s';
+		}
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery -- Plugin table.
+		$wpdb->insert( self::table(), $data, $formats );
 		if ( ! $wpdb->insert_id ) {
 			self::cache_delete( $key . '_c' ); // The next event of the minute tries again.
 			if ( $orig !== $key ) {
@@ -570,6 +601,16 @@ final class PNCP_Log {
 	 */
 	public static function uas_column() {
 		return 1 === (int) get_option( 'pncp_log_uas', 0 );
+	}
+
+	/**
+	 * 3.12.1: does the log table have the account column (the username of a per-account limit)? Only used when
+	 * it does: a database that could not add it keeps logging as before, without the username.
+	 *
+	 * @return bool
+	 */
+	public static function account_column() {
+		return 1 === (int) get_option( 'pncp_log_account', 0 );
 	}
 
 	/**
@@ -2012,7 +2053,11 @@ final class PNCP_Log {
 			. '<p>' . esc_html__( 'If the weekly attack report is turned on, a summary of the attack record (counts, the addresses attacked, the IP addresses that attacked most and the usernames tried) is emailed once a week to the site\'s administration email address.', 'scrapelock' ) . '</p>'
 			. '<p>' . esc_html( PNCP_Login::privacy_text() ) . '</p>'
 			. '<p>' . esc_html__( 'When a vulnerable point is locked (Vulnerable points), refused requests to it (XML-RPC, wp-admin while signed out, author archives) are written to the block log with the visitor\'s IP address and User-Agent, like other blocks. The list of changes keeps the username of the administrator who made each change.', 'scrapelock' ) . '</p>'
+			// 3.12.1.
+			. '<p>' . esc_html__( 'When a signed-in member goes over a per-account limit, the block log also keeps the member\'s username with that entry, deleted with the rest of the log.', 'scrapelock' ) . '</p>'
 			. '<p>' . esc_html( PNCP_Bunny::privacy_policy() ) . '</p>'
+			// 3.12.1: Traffic, with this site's retention and IP addresses setting.
+			. '<p>' . esc_html( PNCP_Traffic::privacy_text() ) . '</p>'
 			. '<p>' . esc_html__( 'ScrapeLock Stealth changes the addresses of the theme, plugin and media files in the pages sent to visitors. It stores no data about visitors. Its self-test and scan only request this site\'s own public pages, from the site itself.', 'scrapelock' ) . '</p>'
 		);
 	}

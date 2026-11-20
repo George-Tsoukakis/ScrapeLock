@@ -21,6 +21,12 @@
  * Everything is stored in one option (not a setting of pncp_settings), which the early check reads as it is
  * and the pre-cache check gets in its configuration (PNCP_Precheck::config(), "self_ips").
  *
+ * 3.12.1: behind Bunny without the CDN secret the visitor IP of the site's request to itself is the edge (or an
+ * address that cannot be trusted), so no address told it apart from a visitor, and "Check again" in Vulnerable
+ * points got a 403 from the headless check ("fake_browser" on HTTPS). WordPress now also signs every request to
+ * its own address with SIG_HEADER: an HMAC-SHA256 of the method, host, path, time and a random nonce, valid for
+ * 60 seconds and once (sig_ok()). A request that carries a valid signature passes every check, from any address.
+ *
  * @package ScrapeLock
  */
 
@@ -32,8 +38,9 @@ defined( 'ABSPATH' ) || exit;
 final class PNCP_Server_Ips {
 
 	/**
-	 * Option: array{ips: string[], host: string, time: int, learned: array<string, int>} (autoloaded: the early
-	 * check reads it on every request).
+	 * Option: array{ips: string[], host: string, time: int, learned: array<string, int>, const: string}
+	 * (autoloaded: the early check reads it on every request). 3.12.1: "const" is a fingerprint of
+	 * SCRAPELOCK_SERVER_IPS, so a change in wp-config.php reaches the pre-cache check.
 	 */
 	const OPTION = 'pncp_server_ips';
 
@@ -68,6 +75,43 @@ final class PNCP_Server_Ips {
 	const CHANGED = 'pncp_server_ips_changed';
 
 	/**
+	 * 3.12.1: transient: the addresses the server's own requests were seen leaving from (address => time), found
+	 * from the answers to the site's signed requests (seen()), each kept 24 hours after it was last seen.
+	 */
+	const OUTBOUND = 'pncp_server_outbound';
+
+	/**
+	 * 3.12.1: how long a detected outbound address is kept after it was last seen, in seconds (24 hours).
+	 */
+	const OUTBOUND_KEEP = 86400;
+
+	/**
+	 * 3.12.1: transient prefix (+ nonce): the address a signed request arrived from ("x": its nonce was used twice),
+	 * for the request of the site that sent it (seen()).
+	 */
+	const SEEN = 'pncp_seen_';
+
+	/**
+	 * 3.12.1: the request header ScrapeLock adds to the site's requests to itself: a signature of the method, the
+	 * host, the path, the time and a random nonce ("time.nonce.hmac"). A request that carries a valid one passes
+	 * every check (sig_ok()).
+	 */
+	const SIG_HEADER = 'X-ScrapeLock-Sig';
+
+	/**
+	 * 3.12.1: how long a signature of SIG_HEADER is valid, in seconds (either way, for clocks a little apart).
+	 */
+	const SIG_WINDOW = 60;
+
+	/**
+	 * 3.12.1: the signatures checked in this request: "header|method|host|path" => valid. The early check and the
+	 * normal check of one request see the same signature, whose nonce can be used only once.
+	 *
+	 * @var array<string, bool>
+	 */
+	private static $sig_seen = array();
+
+	/**
 	 * Registers the hooks.
 	 */
 	public static function init() {
@@ -75,13 +119,14 @@ final class PNCP_Server_Ips {
 		add_action( 'admin_init', array( __CLASS__, 'maybe_refresh' ) );
 		add_action( self::CHANGED, array( __CLASS__, 'changed' ) );
 		add_filter( 'http_request_args', array( __CLASS__, 'sign' ), 10, 2 );
-		add_action( 'requests-requests.before_redirect', array( __CLASS__, 'unsign_redirect' ), 10, 2 );
+		add_filter( 'http_response', array( __CLASS__, 'seen' ), 10, 3 );
+		add_action( 'requests-requests.before_redirect', array( __CLASS__, 'unsign_redirect' ), 10, 4 );
 	}
 
 	/**
 	 * The stored state, cleaned.
 	 *
-	 * @return array{ips: string[], host: string, time: int, learned: array<string, int>}
+	 * @return array{ips: string[], host: string, time: int, learned: array<string, int>, const: string}
 	 */
 	public static function stored() {
 		$raw = get_option( self::OPTION, array() );
@@ -91,6 +136,7 @@ final class PNCP_Server_Ips {
 			'host'    => isset( $raw['host'] ) && is_string( $raw['host'] ) ? $raw['host'] : '',
 			'time'    => isset( $raw['time'] ) ? (int) $raw['time'] : 0,
 			'learned' => array(),
+			'const'   => isset( $raw['const'] ) && is_string( $raw['const'] ) ? $raw['const'] : '',
 		);
 		foreach ( isset( $raw['ips'] ) && is_array( $raw['ips'] ) ? $raw['ips'] : array() as $ip ) {
 			$ip = PNCP_Ip::normalize( is_string( $ip ) ? $ip : '' );
@@ -119,7 +165,8 @@ final class PNCP_Server_Ips {
 	}
 
 	/**
-	 * Every address of the server: loopback, SERVER_ADDR, the stored ones and the filter's.
+	 * Every address of the server: loopback, SERVER_ADDR, 3.12.1: the detected outbound ones (outbound_ips()) and
+	 * SCRAPELOCK_SERVER_IPS (const_ips()), the stored ones and the filter's.
 	 *
 	 * @return string[] Addresses and CIDRs.
 	 */
@@ -129,6 +176,8 @@ final class PNCP_Server_Ips {
 		if ( '' !== $server ) {
 			$ips[] = $server;
 		}
+		// 3.12.1: the addresses the server's requests leave from (detected, 24 hours) and SCRAPELOCK_SERVER_IPS.
+		$ips = array_merge( $ips, self::outbound_ips(), self::const_ips() );
 		/**
 		 * 3.11: the server's own addresses. A request whose verified visitor IP is one of them (loopback and
 		 * private addresses only when they did not come from far away) is never checked: Site Health, cron,
@@ -136,7 +185,8 @@ final class PNCP_Server_Ips {
 		 * Read by the early check (only mu-plugins can add to it there) and written into the pre-cache check's
 		 * configuration. Addresses or CIDRs (no wider than /8, IPv6 /16).
 		 *
-		 * @param string[] $ips Addresses: 127.0.0.1, ::1, SERVER_ADDR, the resolved and learned ones.
+		 * @param string[] $ips Addresses: 127.0.0.1, ::1, SERVER_ADDR, the detected outbound ones, those of
+		 *                      SCRAPELOCK_SERVER_IPS, the resolved and learned ones.
 		 */
 		$filtered = apply_filters( 'pncp_server_ips', array_merge( $ips, self::stored_ips() ) );
 		$out      = array();
@@ -162,17 +212,162 @@ final class PNCP_Server_Ips {
 	}
 
 	/**
+	 * 3.12.1: the addresses and ranges of SCRAPELOCK_SERVER_IPS in wp-config.php (comma- or space-separated, e.g.
+	 * define( 'SCRAPELOCK_SERVER_IPS', '203.0.113.50, 2001:db8:5::/64' );): the addresses the server's own
+	 * requests leave from, when ScrapeLock cannot find them itself. Read by the early check as well; written into
+	 * the pre-cache check's configuration. A range wider than /8 (IPv6 /16) is ignored. List only the server: a
+	 * proxy or load balancer in front of the site is not the server, and every visitor would pass through it.
+	 *
+	 * @return string[]
+	 */
+	public static function const_ips() {
+		if ( ! defined( 'SCRAPELOCK_SERVER_IPS' ) ) {
+			return array();
+		}
+		$raw = constant( 'SCRAPELOCK_SERVER_IPS' );
+		$raw = is_array( $raw ) ? implode( ',', array_map( 'strval', $raw ) ) : ( is_scalar( $raw ) ? (string) $raw : '' );
+		$out = array();
+		foreach ( (array) preg_split( '/[\s,;]+/', $raw, -1, PREG_SPLIT_NO_EMPTY ) as $range ) {
+			$range = trim( (string) $range );
+			if ( ! PNCP_Ip::valid_range( $range ) || PNCP_Options::range_too_wide( $range ) ) {
+				continue;
+			}
+			$range = false === strpos( $range, '/' ) ? PNCP_Ip::normalize( $range ) : $range;
+			if ( '' !== $range ) {
+				$out[] = $range;
+			}
+		}
+		return array_values( array_unique( $out ) );
+	}
+
+	/**
+	 * 3.12.1: the addresses the server's own requests were seen leaving from in the last 24 hours (OUTBOUND).
+	 *
+	 * @return string[]
+	 */
+	public static function outbound_ips() {
+		$list = get_transient( self::OUTBOUND );
+		$out  = array();
+		foreach ( is_array( $list ) ? $list : array() as $ip => $seen ) {
+			$ip = PNCP_Ip::normalize( (string) $ip );
+			if ( '' !== $ip && (int) $seen > time() - self::OUTBOUND_KEEP ) {
+				$out[] = $ip;
+			}
+		}
+		return $out;
+	}
+
+	/**
+	 * 3.12.1: the address a request arrived from, as the first proxy in front of the site saw it: behind a CDN edge
+	 * (REMOTE_ADDR on its list) the last address of X-Forwarded-For, which the edge appends itself (Cloudflare:
+	 * CF-Connecting-IP); otherwise the visitor IP, when it can be trusted. Only for a request the site signed
+	 * (sig_ok(), seen()): for anyone else these headers say whatever they like. '' for a private or CDN address.
+	 *
+	 * @return string
+	 */
+	public static function arrived_from() {
+		$remote = PNCP_Ip::remote_addr();
+		$ip     = '';
+		if ( '' !== $remote && PNCP_Ip::is_cdn( $remote ) ) {
+			$cf = isset( $_SERVER['HTTP_CF_CONNECTING_IP'] ) ? sanitize_text_field( wp_unslash( $_SERVER['HTTP_CF_CONNECTING_IP'] ) ) : '';
+			if ( '' !== $cf && PNCP_Ip::in_any( $remote, PNCP_Ip::list_of( 'cloudflare' ) ) ) {
+				$ip = $cf;
+			} elseif ( ! empty( $_SERVER['HTTP_X_FORWARDED_FOR'] ) ) {
+				$parts = explode( ',', sanitize_text_field( wp_unslash( $_SERVER['HTTP_X_FORWARDED_FOR'] ) ) );
+				$ip    = (string) end( $parts );
+			}
+		} elseif ( PNCP_Ip::reliable() ) {
+			$ip = PNCP_Ip::client_ip();
+		}
+		$ip = PNCP_Ip::normalize( $ip );
+		return '' === $ip || PNCP_Ip::is_private( $ip ) || PNCP_Ip::is_cdn( $ip ) ? '' : $ip;
+	}
+
+	/**
+	 * 3.12.1: the answer to one of the site's own signed requests (filter http_response): the address that request
+	 * arrived from (sig_ok() noted it under its nonce) is the server's outbound address. Only here, in the request
+	 * that sent it: someone who got hold of a signature and used it first would otherwise make their own address
+	 * the server's; then the nonce was used twice ("x") and nothing is learned.
+	 *
+	 * @param array<string, mixed>|WP_Error $response The answer.
+	 * @param array<string, mixed>          $args     The request arguments.
+	 * @param string                        $url      Address.
+	 * @return array<string, mixed>|WP_Error The answer, unchanged.
+	 */
+	public static function seen( $response, $args, $url ) {
+		$sent = is_array( $args ) && isset( $args['headers'] ) && is_array( $args['headers'] ) && isset( $args['headers'][ self::SIG_HEADER ] ) ? (string) $args['headers'][ self::SIG_HEADER ] : '';
+		if ( '' === $sent || is_wp_error( $response ) || ! preg_match( '/^\d{9,11}\.([0-9a-f]{24})\.[0-9a-f]{64}$/', $sent, $m ) ) {
+			return $response;
+		}
+		$host = strtolower( (string) wp_parse_url( (string) $url, PHP_URL_HOST ) );
+		if ( '' === $host || ! in_array( $host, self::own_hosts(), true ) ) {
+			return $response;
+		}
+		$from = get_transient( self::SEEN . $m[1] );
+		if ( false === $from ) {
+			return $response;
+		}
+		delete_transient( self::SEEN . $m[1] );
+		$ip = PNCP_Ip::normalize( is_string( $from ) ? $from : '' );
+		if ( '' !== $ip && ! PNCP_Ip::is_private( $ip ) && ! PNCP_Ip::is_cdn( $ip ) ) {
+			self::note_outbound( $ip );
+		}
+		return $response;
+	}
+
+	/**
+	 * 3.12.1: the server's own request left it from this address (seen()): one of the server's, kept 24 hours after
+	 * it was last seen (OUTBOUND; at most 4, written at most once an hour per address) and among the learned
+	 * addresses of 3.11 (30 days). A new one goes into the pre-cache check's configuration.
+	 *
+	 * @param string $ip The address.
+	 */
+	public static function note_outbound( $ip ) {
+		$ip = PNCP_Ip::normalize( (string) $ip );
+		if ( '' === $ip ) {
+			return;
+		}
+		$list  = get_transient( self::OUTBOUND );
+		$list  = is_array( $list ) ? array_map( 'intval', $list ) : array();
+		$known = isset( $list[ $ip ] ) && $list[ $ip ] > time() - self::OUTBOUND_KEEP;
+		if ( ! $known || $list[ $ip ] < time() - HOUR_IN_SECONDS ) {
+			$list[ $ip ] = time();
+			arsort( $list );
+			set_transient( self::OUTBOUND, array_slice( $list, 0, 4, true ), self::OUTBOUND_KEEP );
+		}
+		if ( ! $known ) {
+			self::changed_later();
+		}
+		self::remember( $ip );
+	}
+
+	/**
 	 * Does this request come from the server itself, through a proxy or CDN in front of the site? Its visitor IP
 	 * (client_ip(): only from a trusted proxy's header) is a public address of the server and can be trusted.
 	 * Loopback and private addresses are left to PNCP_Ip::is_local_request() (every hop must be local): a
 	 * "127.0.0.1" that came from far away is a forged one. A CDN edge standing in for its visitors is never the
-	 * server. A request signed by the site (sign()) teaches its address (learn()).
+	 * server. A request signed by the site (sign()) teaches its address (learn()). 3.12.1: a request with a
+	 * valid signature of SIG_HEADER (sig_ok()) is the server's own, from any address.
 	 *
 	 * @return bool
 	 */
 	public static function is_request() {
+		// 3.12.1: the site's own request, signed (SIG_HEADER): whatever address it came back from. Behind Bunny
+		// without the CDN secret the visitor IP is the edge, or an address that cannot be trusted, so the address
+		// alone never told it apart from a visitor (the "Security headers" check got a 403 from its own site).
+		if ( self::sig_ok() ) {
+			return true;
+		}
 		$ip = PNCP_Ip::client_ip();
-		if ( '' === $ip || PNCP_Ip::is_private( $ip ) || ! PNCP_Ip::reliable() || PNCP_Ip::is_cdn_edge( $ip ) || PNCP_Ip::is_cdn( $ip ) ) {
+		if ( '' === $ip || ! PNCP_Ip::reliable() ) {
+			return false;
+		}
+		// 3.12.1: a private address only from SCRAPELOCK_SERVER_IPS, the administrator's own word, and only when it
+		// came no further than the server's network and is not a proxy passing visitors on.
+		if ( PNCP_Ip::is_private( $ip ) ) {
+			return PNCP_Ip::in_any( $ip, self::const_ips() ) && PNCP_Ip::came_from_near() && ! PNCP_Ip::untrusted_proxy_peer();
+		}
+		if ( PNCP_Ip::is_cdn_edge( $ip ) || PNCP_Ip::is_cdn( $ip ) ) {
 			return false;
 		}
 		return self::is_server_ip( $ip ) || self::learn( $ip );
@@ -200,6 +395,14 @@ final class PNCP_Server_Ips {
 		if ( strlen( $key ) < 32 && $create && function_exists( 'wp_generate_password' ) ) {
 			$key = wp_generate_password( 48, false, false );
 			update_option( self::KEY_OPTION, $key, true );
+			// 3.12.1: the pre-cache check gets the new key with its line in wp-config.php (PNCP_Precheck::block()),
+			// rewritten by WP cron or the next wp-admin page (never during a visitor's request).
+			if ( class_exists( 'PNCP_Precheck' ) && PNCP_Precheck::wanted() ) {
+				update_option( PNCP_Precheck::STATUS, 'deferred', false );
+				if ( ! wp_next_scheduled( self::CHANGED ) ) {
+					wp_schedule_single_event( time(), self::CHANGED );
+				}
+			}
 		}
 		return strlen( $key ) < 32 ? '' : $key;
 	}
@@ -230,6 +433,23 @@ final class PNCP_Server_Ips {
 		if ( ! self::signed() ) {
 			return false;
 		}
+		// 3.12.1: each signature teaches once. Seen by someone else (a log, a proxy on the way), it could otherwise
+		// be sent again from their own address within the 10 minutes and make that address one of the server's.
+		$name = 'HTTP_' . strtoupper( str_replace( '-', '_', self::HEADER ) );
+		$sent = isset( $_SERVER[ $name ] ) ? sanitize_text_field( wp_unslash( $_SERVER[ $name ] ) ) : '';
+		if ( ! PNCP_Log::cache_add( 'pncp_sl_' . md5( $sent . '|' . $ip ), 1, 2 * self::WINDOW + 60 ) && ! isset( self::stored()['learned'][ $ip ] ) ) {
+			return false;
+		}
+		return self::remember( $ip );
+	}
+
+	/**
+	 * Remembers an address of the server (once a day per address) among the learned ones.
+	 *
+	 * @param string $ip The address.
+	 * @return bool True.
+	 */
+	private static function remember( $ip ) {
 		$state = self::stored();
 		$known = isset( $state['learned'][ $ip ] );
 		if ( ! $known || $state['learned'][ $ip ] < time() - DAY_IN_SECONDS ) {
@@ -238,20 +458,26 @@ final class PNCP_Server_Ips {
 			$state['learned'] = array_slice( $state['learned'], 0, self::MAX_LEARNED, true );
 			update_option( self::OPTION, $state, true );
 			if ( ! $known ) {
-				// The pre-cache check gets the new address in this request, once every plugin has loaded (its
-				// configuration also holds what other plugins add with filters): until then its configuration was
-				// out of date, and Site Health called the check "on but not running" until WP cron ran.
-				if ( did_action( 'wp_loaded' ) ) {
-					self::changed();
-				} else {
-					add_action( 'wp_loaded', array( __CLASS__, 'changed' ) );
-				}
-				if ( function_exists( 'wp_schedule_single_event' ) && ! wp_next_scheduled( self::CHANGED ) ) {
-					wp_schedule_single_event( time(), self::CHANGED ); // In case this request ends before wp_loaded.
-				}
+				self::changed_later();
 			}
 		}
 		return true;
+	}
+
+	/**
+	 * The pre-cache check gets a new address in this request, once every plugin has loaded (its configuration also
+	 * holds what other plugins add with filters): until then its configuration was out of date, and Site Health
+	 * called the check "on but not running" until WP cron ran.
+	 */
+	private static function changed_later() {
+		if ( did_action( 'wp_loaded' ) ) {
+			self::changed();
+		} elseif ( ! has_action( 'wp_loaded', array( __CLASS__, 'changed' ) ) ) {
+			add_action( 'wp_loaded', array( __CLASS__, 'changed' ) );
+		}
+		if ( function_exists( 'wp_schedule_single_event' ) && ! wp_next_scheduled( self::CHANGED ) ) {
+			wp_schedule_single_event( time(), self::CHANGED ); // In case this request ends before wp_loaded.
+		}
 	}
 
 	/**
@@ -271,10 +497,127 @@ final class PNCP_Server_Ips {
 		}
 		$key = self::key( true );
 		if ( '' !== $key ) {
-			$args['headers']                 = isset( $args['headers'] ) ? $args['headers'] : array();
-			$args['headers'][ self::HEADER ] = self::token( time(), $key );
+			$method                              = isset( $args['method'] ) && is_string( $args['method'] ) ? $args['method'] : 'GET';
+			$args['headers']                     = isset( $args['headers'] ) ? $args['headers'] : array();
+			$args['headers'][ self::HEADER ]     = self::token( time(), $key );
+			$args['headers'][ self::SIG_HEADER ] = self::sig_token( $method, (string) $url );
 		}
 		return $args;
+	}
+
+	/**
+	 * 3.12.1: the key of SIG_HEADER, made from the server key (the option the early check can read: it runs before
+	 * wp_salt() exists). '' when there is no server key yet.
+	 *
+	 * @param bool $create Create the server key when missing.
+	 * @return string
+	 */
+	public static function sig_key( $create = false ) {
+		$key = self::key( $create );
+		return '' === $key ? '' : hash_hmac( 'sha256', 'pncp-sig-key|v1', $key );
+	}
+
+	/**
+	 * 3.12.1: the signature of one request. The pre-cache check computes the same (PNCP_Precheck_Runtime::self_signed()).
+	 *
+	 * @param string $method Method (uppercase).
+	 * @param string $host   Host (lowercase, without the port).
+	 * @param string $path   Path (decoded).
+	 * @param int    $time   Time.
+	 * @param string $nonce  Nonce.
+	 * @param string $key    Key (sig_key()).
+	 * @return string
+	 */
+	public static function sig_mac( $method, $host, $path, $time, $nonce, $key ) {
+		return hash_hmac( 'sha256', 'pncp-sig|v1|' . $method . '|' . $host . '|' . $path . '|' . (int) $time . '|' . $nonce, $key );
+	}
+
+	/**
+	 * 3.12.1: the value of SIG_HEADER for a request: "time.nonce.hmac" ('' without a key).
+	 *
+	 * @param string   $method Method.
+	 * @param string   $url    Address.
+	 * @param int|null $time   Time (null = now; tests).
+	 * @return string
+	 */
+	public static function sig_token( $method, $url, $time = null ) {
+		$key = self::sig_key( true );
+		if ( '' === $key ) {
+			return '';
+		}
+		$time  = null === $time ? time() : (int) $time;
+		$nonce = bin2hex( random_bytes( 12 ) );
+		$host  = strtolower( (string) wp_parse_url( $url, PHP_URL_HOST ) );
+		$path  = self::sig_path( (string) wp_parse_url( $url, PHP_URL_PATH ) );
+		return $time . '.' . $nonce . '.' . self::sig_mac( strtoupper( trim( (string) $method ) ), $host, $path, $time, $nonce, $key );
+	}
+
+	/**
+	 * 3.12.1: a path as it is signed: decoded, '/' when empty.
+	 *
+	 * @param string $path Path.
+	 * @return string
+	 */
+	public static function sig_path( $path ) {
+		$path = rawurldecode( (string) $path );
+		return '' === $path ? '/' : $path;
+	}
+
+	/**
+	 * 3.12.1: the host this request was sent to: lowercase, without the port ('' when there is none).
+	 *
+	 * @return string
+	 */
+	public static function request_host() {
+		$host = isset( $_SERVER['HTTP_HOST'] ) ? strtolower( trim( sanitize_text_field( wp_unslash( $_SERVER['HTTP_HOST'] ) ) ) ) : '';
+		return (string) preg_replace( '/:\d+$/', '', $host );
+	}
+
+	/**
+	 * 3.12.1: does this request carry a valid signature of the site (SIG_HEADER)? Its host must be one of the
+	 * site's own, its method and path those that were signed, its time within SIG_WINDOW, and its nonce never seen
+	 * before (kept for twice the window, atomically: PNCP_Log::cache_add()). The answer is kept for the rest of the
+	 * request, so the early check and the normal check use the nonce once. The address a valid signature arrived
+	 * from is noted for the site's request that sent it (seen()): the address the server's requests leave from.
+	 *
+	 * @return bool
+	 */
+	public static function sig_ok() {
+		$name = 'HTTP_' . strtoupper( str_replace( '-', '_', self::SIG_HEADER ) );
+		$sent = isset( $_SERVER[ $name ] ) ? trim( sanitize_text_field( wp_unslash( $_SERVER[ $name ] ) ) ) : '';
+		if ( '' === $sent || ! preg_match( '/^(\d{9,11})\.([0-9a-f]{24})\.([0-9a-f]{64})$/', $sent, $m ) ) {
+			return false;
+		}
+		$method = isset( $_SERVER['REQUEST_METHOD'] ) ? strtoupper( sanitize_key( wp_unslash( $_SERVER['REQUEST_METHOD'] ) ) ) : 'GET';
+		$host   = self::request_host();
+		$uri    = isset( $_SERVER['REQUEST_URI'] ) ? (string) wp_unslash( $_SERVER['REQUEST_URI'] ) : '/'; // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- Only its path is hashed and compared.
+		$path   = self::sig_path( (string) wp_parse_url( $uri, PHP_URL_PATH ) );
+		$memo   = $sent . '|' . $method . '|' . $host . '|' . $path;
+		if ( isset( self::$sig_seen[ $memo ] ) ) {
+			return self::$sig_seen[ $memo ];
+		}
+		$time  = (int) $m[1];
+		$key   = self::sig_key();
+		$valid = '' !== $key && '' !== $host && in_array( $host, self::own_hosts(), true ) && abs( time() - $time ) <= self::SIG_WINDOW
+			&& hash_equals( self::sig_mac( $method, $host, $path, $time, $m[2], $key ), $m[3] );
+		$ok    = $valid && PNCP_Log::cache_add( 'pncp_sn_' . $m[2], 1, 2 * self::SIG_WINDOW + 10 );
+		self::$sig_seen[ $memo ] = $ok;
+		if ( $valid ) {
+			// For the site's request that sent it (seen()): the address it arrived from, or "x" when the nonce was
+			// used twice (someone else had the signature too, and either address may be theirs).
+			$from = $ok ? self::arrived_from() : 'x';
+			if ( '' !== $from ) {
+				set_transient( self::SEEN . $m[2], $from, 2 * self::SIG_WINDOW + 10 );
+			}
+		}
+		return $ok;
+	}
+
+	/**
+	 * 3.12.1: forgets the signatures checked in this request (tests).
+	 */
+	public static function forget() {
+		self::$sig_seen = array();
 	}
 
 	/**
@@ -283,20 +626,34 @@ final class PNCP_Server_Ips {
 	 * a plugin, a moved page) would hand them a signature that makes their address one of the server's for 30
 	 * days (learn()). Action requests-requests.before_redirect.
 	 *
+	 * 3.12.1: also SIG_HEADER. A redirect on the site's own host (http to https, a trailing slash) gets a new one
+	 * for its address and method, since a signature holds only for the path it was made for.
+	 *
 	 * @param string               $location The new address.
 	 * @param array<string, mixed> $headers  The request headers.
+	 * @param mixed                $data     The request body.
+	 * @param array<string, mixed> $options  The request options (type: the method of the redirected request).
 	 */
-	public static function unsign_redirect( &$location, &$headers ) {
+	public static function unsign_redirect( &$location, &$headers, &$data = null, &$options = null ) {
 		if ( ! is_array( $headers ) ) {
 			return;
 		}
 		$host = strtolower( (string) wp_parse_url( (string) $location, PHP_URL_HOST ) );
-		if ( '' !== $host && in_array( $host, self::own_hosts(), true ) ) {
-			return;
-		}
+		$own  = '' !== $host && in_array( $host, self::own_hosts(), true );
+		$sig  = false;
 		foreach ( array_keys( $headers ) as $name ) {
-			if ( 0 === strcasecmp( (string) $name, self::HEADER ) ) {
+			if ( 0 === strcasecmp( (string) $name, self::SIG_HEADER ) ) {
+				$sig = true;
 				unset( $headers[ $name ] );
+			} elseif ( ! $own && 0 === strcasecmp( (string) $name, self::HEADER ) ) {
+				unset( $headers[ $name ] );
+			}
+		}
+		if ( $own && $sig ) {
+			$method = is_array( $options ) && isset( $options['type'] ) && is_string( $options['type'] ) ? $options['type'] : 'GET';
+			$token  = self::sig_token( $method, (string) $location );
+			if ( '' !== $token ) {
+				$headers[ self::SIG_HEADER ] = $token;
 			}
 		}
 	}
@@ -325,7 +682,8 @@ final class PNCP_Server_Ips {
 			return;
 		}
 		$state = self::stored();
-		if ( $state['time'] < time() - DAY_IN_SECONDS || $state['time'] > time() + HOUR_IN_SECONDS || implode( ',', self::own_hosts() ) !== $state['host'] ) {
+		// 3.12.1: and when SCRAPELOCK_SERVER_IPS was changed in wp-config.php (the pre-cache check gets it at once).
+		if ( $state['time'] < time() - DAY_IN_SECONDS || $state['time'] > time() + HOUR_IN_SECONDS || implode( ',', self::own_hosts() ) !== $state['host'] || md5( implode( ',', self::const_ips() ) ) !== $state['const'] ) {
 			self::refresh();
 		}
 	}
@@ -352,12 +710,14 @@ final class PNCP_Server_Ips {
 			}
 		}
 		$ips      = array_values( array_unique( $ips ) );
-		$changed  = $ips !== $state['ips'];
+		$const    = md5( implode( ',', self::const_ips() ) );
+		$changed  = $ips !== $state['ips'] || $const !== $state['const'];
 		$new      = array(
 			'ips'     => $ips,
 			'host'    => implode( ',', self::own_hosts() ),
 			'time'    => time(),
 			'learned' => $state['learned'],
+			'const'   => $const,
 		);
 		update_option( self::OPTION, $new, true );
 		if ( $changed ) {

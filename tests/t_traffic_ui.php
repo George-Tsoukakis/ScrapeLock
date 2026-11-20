@@ -597,6 +597,7 @@ update_option( 'timezone_string', $saved_z );
 delete_transient( PNCP_Traffic_Actions::TEST . $admin->ID );
 @unlink( $log );
 @rmdir( $tmp );
+require_once ABSPATH . 'wp-admin/includes/user.php'; // wp_delete_user() is not loaded by wp-load.php.
 wp_delete_user( $editor->ID );
 PNCP_Options::flush();
 

@@ -7,6 +7,9 @@
  * button, and the upgrade to 3.11 removes them once (migrate_311()). Training crawlers (GPTBot, ClaudeBot, CCBot,
  * Google-Extended, Bytespider…) are never touched. Nothing is ever blocked here.
  *
+ * 3.12.1: they are never written back into the list. With "Allow AI search" turned off later, ScrapeLock blocks them
+ * from its own list (PNCP_Options::ai_search_blocked()), in WordPress, the early check and the pre-cache check.
+ *
  * @package ScrapeLock
  */
 
@@ -108,7 +111,7 @@ final class PNCP_Ai_Search_List {
 			return;
 		}
 		if ( 'ai_search_list_removed' === $message ) {
-			$text = __( 'The AI search bots were removed from the bot list. The training crawlers stay in it. The settings before the change are under “Earlier versions”.', 'scrapelock' );
+			$text = __( 'The AI search bots were removed from the bot list. The training crawlers stay in it. If you stop allowing AI search, ScrapeLock blocks the AI search bots again on its own. The settings before the change are under “Earlier versions”.', 'scrapelock' );
 			$type = 'success';
 		} else {
 			$text = __( 'Nothing was removed: the bot list has no allowed AI search bots, or the site is locked (unlock it on the Lockdown tab and try again).', 'scrapelock' );
@@ -136,7 +139,7 @@ final class PNCP_Ai_Search_List {
 			)
 		);
 		echo '</p>';
-		echo PNCP_Admin_Fields::more( __( 'Then the bot list shows only what is blocked. Training crawlers (GPTBot, ClaudeBot, CCBot, Google-Extended…) stay in it and stay blocked.', 'scrapelock' ) ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Escaped in PNCP_Admin_Fields.
+		echo PNCP_Admin_Fields::more( __( 'Then the bot list shows only what is blocked. Training crawlers (GPTBot, ClaudeBot, CCBot, Google-Extended…) stay in it and stay blocked. If you stop allowing AI search later, ScrapeLock blocks these bots again on its own, from its built-in list: they do not need to be in the bot list.', 'scrapelock' ) ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Escaped in PNCP_Admin_Fields.
 		printf( '<form method="post" action="%s">', esc_url( admin_url( 'admin-post.php' ) ) );
 		printf( '<input type="hidden" name="action" value="%s">', esc_attr( self::ACTION ) );
 		echo preg_replace( '/ id="_wpnonce"/', '', wp_nonce_field( self::ACTION, '_wpnonce', true, false ), 1 ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Core markup.

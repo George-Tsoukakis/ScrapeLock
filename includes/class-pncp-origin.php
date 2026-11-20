@@ -109,7 +109,8 @@ final class PNCP_Origin {
 	}
 
 	/**
-	 * Is the request exempt? WP-CLI, WordPress's cron and the server itself (cache preload, loopback).
+	 * Is the request exempt? WP-CLI, WordPress's cron and the server itself (cache preload, loopback, 3.12.1: a
+	 * request the site signed, PNCP_Server_Ips::sig_ok()).
 	 *
 	 * "The server itself" means REMOTE_ADDR is the loopback or the server's own address AND no proxy passed the
 	 * request on. Behind a local reverse proxy (Nginx in front of Apache, Varnish, Plesk) every request comes
@@ -122,6 +123,11 @@ final class PNCP_Origin {
 	 */
 	public static function exempt() {
 		if ( ( defined( 'WP_CLI' ) && WP_CLI ) || wp_doing_cron() ) {
+			return true;
+		}
+		// 3.12.1: the site's own request (signed, or from one of the server's addresses, PNCP_Server_Ips): its checks
+		// (Vulnerable points, Site Health) reach the server around the CDN when the site's name resolves to it.
+		if ( PNCP_Server_Ips::is_request() ) {
 			return true;
 		}
 		if ( ! PNCP_Ip::is_local( PNCP_Ip::remote_addr() ) ) {

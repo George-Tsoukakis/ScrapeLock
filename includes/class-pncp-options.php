@@ -513,9 +513,23 @@ final class PNCP_Options {
 	}
 
 	/**
+	 * 3.12.1: the AI search bots blocked by the plugin itself while "Allow AI search" is off: ai_search_agents(),
+	 * whatever the stored bot list holds. The 3.11 upgrade (and the "Remove from the list" button) took them out of
+	 * the lists of sites that allowed AI search; turning the option off later must block them again without
+	 * writing them back into the list. Empty while the option is on.
+	 *
+	 * @param array<string, mixed> $s Settings.
+	 * @return string[]
+	 */
+	public static function ai_search_blocked( $s ) {
+		return empty( $s['allow_ai_search'] ) ? self::ai_search_agents() : array();
+	}
+
+	/**
 	 * The User-Agents blocked when "Block bots" is on: the editable bot list, the AI crawlers built into the
-	 * plugin (PNCP_Bots::known_ai_agents()), with "Block web archives" the archive crawlers and, with "Also block
-	 * generic HTTP libraries", the libraries of http_library_agents(); no duplicates.
+	 * plugin (PNCP_Bots::known_ai_agents()), 3.12.1: the AI search bots while "Allow AI search" is off
+	 * (ai_search_blocked()), with "Block web archives" the archive crawlers and, with "Also block generic HTTP
+	 * libraries", the libraries of http_library_agents(); no duplicates.
 	 *
 	 * @param array<string, mixed> $s Settings.
 	 * @return string[]
@@ -534,7 +548,9 @@ final class PNCP_Options {
 		// import), not only where the allowed ones were already let through first.
 		$skip = self::ai_search_skipped( $s );
 		// 3.7: the site rippers always (with the bot list), the SEO data crawlers with their option.
-		foreach ( array_merge( self::parse_list( $s['bot_list'] ), PNCP_Bots::known_ai_agents(), PNCP_Bots::ripper_agents(), empty( $s['block_archivers'] ) ? array() : PNCP_Bots::archive_agents(), empty( $s['block_seo_crawlers'] ) ? array() : PNCP_Bots::seo_agents(), empty( $s['block_http_libs'] ) ? array() : self::http_library_agents() ) as $agent ) {
+		// 3.12.1: with the option off, its bots are blocked from the built-in list, also when the stored list no longer
+		// names them (the 3.11 upgrade took them out); nothing is written back into the stored list.
+		foreach ( array_merge( self::parse_list( $s['bot_list'] ), PNCP_Bots::known_ai_agents(), self::ai_search_blocked( $s ), PNCP_Bots::ripper_agents(), empty( $s['block_archivers'] ) ? array() : PNCP_Bots::archive_agents(), empty( $s['block_seo_crawlers'] ) ? array() : PNCP_Bots::seo_agents(), empty( $s['block_http_libs'] ) ? array() : self::http_library_agents() ) as $agent ) {
 			$agent = trim( (string) $agent );
 			if ( '' !== $agent && '=' !== $agent && ! isset( $skip[ strtolower( $agent ) ] ) ) {
 				$out[ strtolower( $agent ) ] = $agent;
@@ -871,14 +887,33 @@ final class PNCP_Options {
 	 * Already the default before 3.11, listed here for the record: blur_on_capture 0, block_devtools 0,
 	 * user_mark_guests 0, ban_strikes 3.
 	 *
-	 * @return array<string, int>
+	 * 3.12.1: and install_values_3121().
+	 *
+	 * @return array<string, int|string>
 	 */
 	public static function install_values() {
+		return array_merge(
+			array(
+				'probe_ban'     => 1,
+				'block_ip_host' => 1,
+				'reputation'    => 1,
+				'ban_minutes'   => 120,
+			),
+			self::install_values_3121()
+		);
+	}
+
+	/**
+	 * 3.12.1: the new-install defaults added in 3.12.1. Traffic stores the IP addresses masked (IPv4 /24, IPv6 /48):
+	 * a brand-new install that starts collecting keeps no full address unless it chooses to. Sites installed before
+	 * keep what they stored (an upgrade to 3.12 stored "full"); their "Start collecting" screen chooses "Masked" in
+	 * advance until they collect (PNCP_Admin_Traffic).
+	 *
+	 * @return array<string, string>
+	 */
+	public static function install_values_3121() {
 		return array(
-			'probe_ban'     => 1,
-			'block_ip_host' => 1,
-			'reputation'    => 1,
-			'ban_minutes'   => 120,
+			'traffic_ip_mode' => 'masked',
 		);
 	}
 
@@ -982,18 +1017,20 @@ final class PNCP_Options {
 		$defaults = self::install_defaults();
 		$out      = array();
 		$sets     = array(
+			// 3.12.1: the values sites installed before 3.12.1 have (defaults()), where new installs get others.
+			'3.12.1' => array_intersect_key( self::defaults(), self::install_values_3121() ),
 			// 3.11: the values sites installed before 3.11 have (defaults()), where new installs get others.
-			'3.11' => array_intersect_key( self::defaults(), self::install_values() ),
-			'3.0'  => self::new_in_300(),
-			'2.9'  => self::new_in_290(),
-			'2.6'  => self::new_in_260(),
-			'2.5'  => self::new_in_250(),
-			'2.4'  => self::new_in_240(),
+			'3.11'   => array_diff_key( array_intersect_key( self::defaults(), self::install_values() ), self::install_values_3121() ),
+			'3.0'    => self::new_in_300(),
+			'2.9'    => self::new_in_290(),
+			'2.6'    => self::new_in_260(),
+			'2.5'    => self::new_in_250(),
+			'2.4'    => self::new_in_240(),
 		);
 		foreach ( $sets as $since => $values ) {
 			foreach ( $values as $key => $value ) {
-				if ( isset( $out[ $key ] ) && '3.11' === $out[ $key ]['since'] ) {
-					continue; // 3.11 is the version that changed it last.
+				if ( isset( $out[ $key ] ) && in_array( $out[ $key ]['since'], array( '3.11', '3.12.1' ), true ) ) {
+					continue; // 3.11 or 3.12.1 is the version that changed it last.
 				}
 				if ( isset( $defaults[ $key ] ) && (string) $defaults[ $key ] !== (string) $value ) {
 					$out[ $key ] = array(

@@ -161,13 +161,13 @@ final class PNCP_Tester {
 
 		$result = self::explain_as_visitor( $ip, $ua, $url, $headers );
 
-		$reasons = PNCP_Log::reasons();
 		$passes  = self::pass_reasons();
 		$code    = (int) $result['code'];
 		$reason  = $code ? (string) $result['reason'] : '';
 		$pass    = $code ? '' : (string) $result['pass'];
-		$r_label = '' === $reason ? '' : ( isset( $reasons[ $reason ] ) ? $reasons[ $reason ] : $reason );
-		$p_label = '' === $pass ? '' : ( isset( $passes[ $pass ] ) ? $passes[ $pass ] : $pass );
+		// 3.12.1: never the internal key itself, also for a reason added later without a label here.
+		$r_label = '' === $reason ? '' : PNCP_Log::reason_label( $reason );
+		$p_label = '' === $pass ? '' : ( isset( $passes[ $pass ] ) ? $passes[ $pass ] : __( 'another rule lets it through', 'scrapelock' ) );
 
 		if ( $code ) {
 			$verdict  = ! empty( $result['monitor'] ) ? 'monitor' : ( 429 === $code ? 'limited' : 'blocked' );
@@ -185,14 +185,9 @@ final class PNCP_Tester {
 			$headline = sprintf( __( 'Allowed: %s', 'scrapelock' ), $p_label );
 		}
 
-		$kinds = array(
-			'page'    => __( 'Page', 'scrapelock' ),
-			'search'  => __( 'Search', 'scrapelock' ),
-			'rest'    => __( 'REST API', 'scrapelock' ),
-			'graphql' => __( 'GraphQL', 'scrapelock' ),
-			'sitemap' => __( 'Sitemap', 'scrapelock' ),
-		);
-		$context = (string) $result['context'];
+		$kinds = self::kinds();
+		// 3.12.1: a static file is checked as "Media", not as "Page" (it counts toward the media limit only).
+		$context = ! empty( $result['media'] ) ? 'media' : (string) $result['context'];
 		$why     = self::why( $result, $ua, $s );
 		$notes   = array_merge( $notes, self::notes( $result, $ip, $ua, $url, $s ) );
 
@@ -210,7 +205,8 @@ final class PNCP_Tester {
 			'link'             => $why['link'],
 			'notes'            => array_values( $notes ),
 			'checked_as'       => $context,
-			'checked_as_label' => ( isset( $kinds[ $context ] ) ? $kinds[ $context ] : $context ) . ( ! empty( $result['feed'] ) ? ' (' . __( 'feed', 'scrapelock' ) . ')' : '' ),
+			'checked_as_label' => ( isset( $kinds[ $context ] ) ? $kinds[ $context ] : __( 'Page', 'scrapelock' ) ) . ( ! empty( $result['feed'] ) ? ' (' . __( 'feed', 'scrapelock' ) . ')' : '' ),
+			'counter'          => self::counter( $result, $ip, $s ),
 			'feed'             => ! empty( $result['feed'] ),
 			'monitor'          => ! empty( $result['monitor'] ),
 			'inconclusive'     => ! empty( $result['inconclusive'] ),
@@ -222,6 +218,64 @@ final class PNCP_Tester {
 				// An empty set must encode as {}, not [].
 				'headers' => (object) $headers,
 			),
+		);
+	}
+
+	/**
+	 * 3.12.1: what a request is checked as (PNCP_Bots::explain() context, or media for a static file), for people.
+	 * Also used by "wp scrapelock check".
+	 *
+	 * @return array<string, string>
+	 */
+	public static function kinds() {
+		return array(
+			'page'    => __( 'Page', 'scrapelock' ),
+			'media'   => __( 'Media', 'scrapelock' ),
+			'search'  => __( 'Search', 'scrapelock' ),
+			'rest'    => __( 'REST API', 'scrapelock' ),
+			'graphql' => __( 'GraphQL', 'scrapelock' ),
+			'sitemap' => __( 'Sitemap', 'scrapelock' ),
+		);
+	}
+
+	/**
+	 * 3.12.1: the per-minute counter that decides this request and its limit, "N of M this minute" (N with this
+	 * request, as the check counts it), for a request that reached the limits: it passed them, or one of them
+	 * refused it. Null when no limit applies (a limit of 0, a refusal before the limits, a verified search engine).
+	 * Also used by "wp scrapelock check".
+	 *
+	 * @param array<string, mixed> $result What PNCP_Bots::explain() returns.
+	 * @param string               $ip     IP.
+	 * @param array<string, mixed> $s      Settings.
+	 * @return array{bucket:string, label:string, count:int, limit:int, text:string}|null
+	 */
+	public static function counter( array $result, $ip, array $s ) {
+		$context = ! empty( $result['media'] ) ? 'media' : (string) $result['context'];
+		$buckets = array(
+			'media'   => array( 'rate_media', PNCP_Bots::MEDIA_FACTOR * (int) $s['rate_limit'] ),
+			'page'    => array( 'rate_page', (int) $s['rate_limit'] ),
+			'search'  => array( 'rate_search', (int) $s['rate_limit_search'] ),
+			'rest'    => array( 'rate_rest', (int) $s['rate_limit_rest'] ),
+			'graphql' => array( 'rate_rest', (int) $s['rate_limit_rest'] ),
+			'sitemap' => array( 'rate_sitemap', (int) $s['rate_limit_sitemap'] ),
+		);
+		if ( ! isset( $buckets[ $context ] ) || $buckets[ $context ][1] <= 0 || '' === (string) $ip ) {
+			return null;
+		}
+		list( $bucket, $limit ) = $buckets[ $context ];
+		$code = (int) $result['code'];
+		if ( $code ? (string) $result['reason'] !== $bucket : ! in_array( (string) $result['pass'], array( 'passed', 'media' ), true ) ) {
+			return null;
+		}
+		$count   = PNCP_Bots::counter_now( $ip, $bucket ) + 1;
+		$reasons = PNCP_Log::reasons();
+		return array(
+			'bucket' => $bucket,
+			'label'  => isset( $reasons[ $bucket ] ) ? $reasons[ $bucket ] : __( 'Limit', 'scrapelock' ),
+			'count'  => $count,
+			'limit'  => $limit,
+			/* translators: 1: requests counted this minute (with this one), 2: the limit per minute */
+			'text'   => sprintf( __( '%1$s of %2$s this minute', 'scrapelock' ), number_format_i18n( $count ), number_format_i18n( $limit ) ),
 		);
 	}
 
@@ -408,6 +462,8 @@ final class PNCP_Tester {
 			'search_engine' => __( 'a verified search engine (never blocked or limited)', 'scrapelock' ),
 			'ai_search'     => __( 'a verified AI search bot (never blocked or limited)', 'scrapelock' ),
 			'prefetch'      => __( 'a prefetch within its own limit', 'scrapelock' ),
+			// 3.12.1: the static-file pass of 3.11 (it showed as "media").
+			'media'         => __( 'image or file; counted in the media limit, not as a page', 'scrapelock' ),
 			'passed'        => __( 'it passes every check, and is within the limits this minute', 'scrapelock' ),
 		);
 	}
@@ -629,9 +685,8 @@ final class PNCP_Tester {
 		$link      = null;
 
 		if ( ! empty( $result['code'] ) ) {
-			$reason  = (string) $result['reason'];
-			$reasons = PNCP_Log::reasons();
-			$label   = isset( $reasons[ $reason ] ) ? $reasons[ $reason ] : $reason;
+			$reason = (string) $result['reason'];
+			$label  = PNCP_Log::reason_label( $reason );
 			switch ( $reason ) {
 				case 'bot_ua':
 					$why  = __( 'Its User-Agent matches an entry of the blocked bots (your bot list, the AI crawlers built into ScrapeLock, or the generic HTTP libraries when that option is on). To let a service you rely on through, add it to “Always allowed”.', 'scrapelock' );
@@ -706,6 +761,15 @@ final class PNCP_Tester {
 					$why  = __( 'The IP has a bad reputation (it was blocked, trapped or refused as a bot in the last days) and is over the stricter page limit for such IPs this minute.', 'scrapelock' );
 					$link = array( 'bots', 'reputation', __( 'Reputation', 'scrapelock' ) );
 					break;
+				case 'rate_media': // 3.12.1.
+					$why = sprintf(
+						/* translators: 1: files per minute, 2: how many times the page limit that is (e.g. 10) */
+						__( 'This IP is over the limit for static files (images, video, audio, fonts, CSS, JavaScript) this minute: %1$d, %2$d times the page limit. They never count as pages.', 'scrapelock' ),
+						PNCP_Bots::MEDIA_FACTOR * (int) $s['rate_limit'],
+						PNCP_Bots::MEDIA_FACTOR
+					);
+					$link = $limits;
+					break;
 				case 'rate_apionly':
 					$why  = __( 'The IP has not opened a page of the site in the last 24 hours and is over the limit for the REST API, GraphQL, feeds and sitemaps of such IPs this minute.', 'scrapelock' );
 					$link = $limits;
@@ -760,12 +824,20 @@ final class PNCP_Tester {
 					$why  = __( 'Prefetches have their own limit, three times the page limit.', 'scrapelock' );
 					$link = $limits;
 					break;
+				case 'media': // 3.12.1.
+					$why  = sprintf(
+						/* translators: %d: how many times the page limit the media limit is (e.g. 10) */
+						__( 'A static file (image, video, audio, font, CSS or JavaScript) that reaches WordPress counts toward its own limit, %d times the page limit, never toward the page limits. A link preview in “Always allowed” is not counted at all.', 'scrapelock' ),
+						PNCP_Bots::MEDIA_FACTOR
+					);
+					$link = $limits;
+					break;
 				case 'passed':
 					$why = __( 'It passes every check that is on, and this IP is within the limits this minute.', 'scrapelock' );
 					break;
 				default:
 					// cron, private_url and anything newer: the label says it all.
-					$why = isset( $passes[ $pass ] ) ? $passes[ $pass ] : $pass;
+					$why = isset( $passes[ $pass ] ) ? $passes[ $pass ] : __( 'another rule lets it through', 'scrapelock' );
 			}
 		}
 
@@ -820,7 +892,9 @@ final class PNCP_Tester {
 			$labels = PNCP_Reputation::event_labels();
 			$events = array();
 			foreach ( $rep['events'] as $event => $when ) {
-				$events[] = ( isset( $labels[ $event ] ) ? $labels[ $event ] : $event ) . ' (' . human_time_diff( (int) $when ) . ')';
+				if ( isset( $labels[ $event ] ) ) { // 3.12.1: never an internal key.
+					$events[] = $labels[ $event ] . ' (' . human_time_diff( (int) $when ) . ')';
+				}
 			}
 			/* translators: 1: score, 2: level, 3: list of events */
 			$notes[] = sprintf( __( 'Reputation of this IP: %1$d, %2$s. %3$s', 'scrapelock' ), $rep['score'], $levels[ $rep['level'] ], $events ? implode( ', ', $events ) . '.' : __( 'Nothing recorded in the last 7 days.', 'scrapelock' ) );

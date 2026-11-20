@@ -162,6 +162,22 @@ $start = array(
 	'monitor_mode'      => 0,
 	'monitor_until'     => 0,
 );
+// 3.12.1: values the check of sensible values accepts, so that only the plugin proposals above show here
+// (that check has its own test, t_3121_wizard.php).
+$start += array(
+	'probe_ban'          => 1,
+	'block_ip_host'      => 1,
+	'reputation'         => 1,
+	'ban_strikes'        => 3,
+	'ban_minutes'        => 120,
+	'human_check'        => 0,
+	'rate_limit_rest'    => 60,
+	'rate_limit_account' => 60,
+	'blur_on_capture'    => 0,
+	'block_devtools'     => 0,
+	'user_mark_guests'   => 0,
+	'allow_list'         => PNCP_Options::default_allow_list(),
+);
 settings( $start );
 unset( $_SERVER['HTTP_VIA'], $_SERVER['HTTP_CDN_SERVERID'], $_SERVER['HTTP_CF_CONNECTING_IP'] );
 

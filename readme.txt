@@ -4,7 +4,7 @@ Tags: ai crawlers, anti-scraping, bot protection, rate limit, content protection
 Requires at least: 6.2
 Tested up to: 7.2
 Requires PHP: 7.4
-Stable tag: 3.12.0
+Stable tag: 3.12.1
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -222,7 +222,7 @@ No. Verified search engines are never limited or blocked. Only fakes that preten
 
 = Can I allow ChatGPT or Perplexity search but block training? =
 
-Yes. Turn on "Allow AI search engines and assistants" (Bots and limits). Training crawlers stay blocked. With "Verify AI search bots" on, only requests from the official addresses count as those bots; copies of the name get a 403.
+Yes. Turn on "Allow AI search engines and assistants" (Bots and limits). Training crawlers stay blocked. With "Verify AI search bots" on, only requests from the official addresses count as those bots; copies of the name get a 403. Turn the option off and ScrapeLock blocks them again from its own list, whether or not they are in your bot list.
 
 = Does ScrapeLock block WP Rocket's or Jetpack's own services? =
 
@@ -260,6 +260,10 @@ Yes. In "Blocking at the CDN", choose Cloudflare (an API token with only Zone �
 
 If they find your server's own address, yes. "Only through the CDN" (Real visitor IP) refuses every request without a secret header, `X-ScrapeLock-CDN`, that your CDN adds (Bunny: Edge Rule; Cloudflare: Transform Rule). It can only be turned on from a request that has the secret. If the CDN stops sending it, add `define( 'SCRAPELOCK_CDN_ONLY', false );` to wp-config.php.
 
+= Does ScrapeLock block the site's own requests (Site Health, Vulnerable points, cron)? =
+
+No. WordPress signs every request to the site's own address with an `X-ScrapeLock-Sig` header (an HMAC of the method, host and path, valid for 60 seconds and once), so it passes every check, also behind a CDN and in the pre-cache check. ScrapeLock also learns the address the server's requests leave from and never blocks it, at the CDN either. If your server's own requests leave from an address ScrapeLock cannot learn (a NAT gateway, an outbound proxy, another server of a cluster), list it in wp-config.php: `define( 'SCRAPELOCK_SERVER_IPS', '203.0.113.50, 2001:db8::/64' );` (addresses or ranges, separated by commas). List only your own servers, never a proxy or load balancer in front of the site: every visitor comes through it.
+
 = What does "Ban scanners on their first probe" do? =
 
 Off by default. When an IP asks for a file only attack scanners look for (.env, .git, wp-config.php backups, database dumps and backup archives at the top of the site) and the file does not exist, it is refused and blocked for 10 minutes (or your block time, if shorter; nothing is blocked when "Block after this many violations" is 0); a second probe within 24 hours gets the full block. Staff, verified search engines and the always-allowed IPs and User-Agents are never banned. On Nginx, add the updated server rules. With the rules, .env, .git, wp-config.php copies and SSH keys are never served even if they exist; a real database dump or archive of the same name is still served.
@@ -294,7 +298,7 @@ Settings → ScrapeLock → Attacks. Choose 24 hours, 7, 30 or 90 days: you get 
 
 = Can I see the access log, which User-Agents hit the site and which pages fail? =
 
-Settings → ScrapeLock → Traffic (off until you press "Start collecting"). It reads the Bunny CDN logs when their import is on (they include the pages served from the CDN cache), else the web server's access log, else the pages WordPress serves itself. You get the requests over time, the User-Agents by family (browsers, verified and fake search engines, AI bots, scripts…), the pages that answer 404 or 5xx with the links that lead there (a link on your own site is marked as the one to fix), redirects, pages not served from the cache, the largest and slowest pages, the IPs and countries, and every single request with "Export CSV". From a User-Agent you can block it or always allow it, after a confirmation that shows the exact line added. Everything stays in your database: each request is kept 3 days by default, the daily figures 90 days, and IPs can be stored masked.
+Settings → ScrapeLock → Traffic (off until you press "Start collecting"). It reads the Bunny CDN logs when their import is on (they include the pages served from the CDN cache), else the web server's access log, else the pages WordPress serves itself. You get the requests over time, the User-Agents by family (browsers, verified and fake search engines, AI bots, scripts…), the pages that answer 404 or 5xx with the links that lead there (a link on your own site is marked as the one to fix), redirects, pages not served from the cache, the largest and slowest pages, the IPs and countries, and every single request with "Export CSV". From a User-Agent you can block it or always allow it, after a confirmation that shows the exact line added. Everything stays in your database: each request is kept 3 days by default, the daily figures 90 days, and IPs can be stored masked (the last part removed: IPv4 /24, IPv6 /48). "Start collecting" asks how IPs are stored, with Masked chosen in advance; new installs store them masked by default. The suggested privacy policy text (Settings → Privacy) describes Traffic, its retention and the IP setting.
 
 = What does the attack report record? =
 
@@ -330,7 +334,7 @@ Yes, with filters such as `pncp_client_ip`, `pncp_skip_guard`, `pncp_should_prot
 
 = What personal data does it store? =
 
-For a blocked request: the IP, User-Agent, page and time, deleted after 1, 7 or 30 days. The attack record (3.8) keeps the IP, the address asked for, the hour and, for a failed sign-in, the username tried, for 7, 30 or 90 days. The sign-in protection keeps, per account, a keyed hash of the IPs it signed in from (180 days). With IP reputation (3.7, off by default): for each IP, stored under a hash, when it last read pages, passed the human check, signed in or was refused, for 7 days. Visits from AI assistants are counted per day and page only. With the human check, visitors who interact get a 7-day cookie, `pncp_hv`, holding only an expiry and a signature tied to their IP network and browser; it is not used for tracking. The country database is a local file.
+For a blocked request: the IP, User-Agent, page and time, deleted after 1, 7 or 30 days; over a per-account limit, also the account's username. The attack record (3.8) keeps the IP, the address asked for, the hour and, for a failed sign-in, the username tried, for 7, 30 or 90 days. The sign-in protection keeps, per account, a keyed hash of the IPs it signed in from (180 days). With IP reputation (3.7, off by default): for each IP, stored under a hash, when it last read pages, passed the human check, signed in or was refused, for 7 days. Visits from AI assistants are counted per day and page only. With the human check, visitors who interact get a 7-day cookie, `pncp_hv`, holding only an expiry and a signature tied to their IP network and browser; it is not used for tracking. The country database is a local file.
 
 = Does it guarantee legal protection of my content? =
 
@@ -366,6 +370,17 @@ No, on purpose: only an app code, a recovery code or the SCRAPELOCK_UNLOCK line 
 6. Dashboard widget with the protection status and the last 24 hours.
 
 == Changelog ==
+
+= 3.12.1 =
+* Fix: the site's own requests (Vulnerable points "Check again", Site Health, the Stealth test, cron) got a 403 behind Bunny CDN without the CDN secret. WordPress now signs each of them (`X-ScrapeLock-Sig`, valid for 60 seconds and once) and a signed request passes every check, also the pre-cache check, whose line in wp-config.php is rewritten with the key on the next wp-admin page.
+* Fix: the address the server's requests leave from is learned from the answers to the site's own signed requests (kept 24 hours), never from a request of someone else. `SCRAPELOCK_SERVER_IPS` in wp-config.php lists the server's addresses when ScrapeLock cannot learn them.
+* Fix: the server's own addresses are never sent to the CDN as temporary blocks, never counted from Bunny's logs, let through by the wp-login.php lock at Bunny, and never recorded as attacks.
+* Fix: FluentCommunity members' portal reads count per account, at four times "REST API requests per minute", and four of them as one page toward "Pages per minute per signed-in account". Over it only that account gets a 429 (log reason "FluentCommunity REST reads per minute per member", with the username); guests keep the per-IP limit, and no IP is banned for it.
+* Fix: with "Allow AI search" off, the AI search bots are blocked from ScrapeLock's built-in list, also when the 3.11 upgrade or "Remove from the list" took them out of the bot list. Nothing is written back into the list.
+* Fix: "Check a request" checks images, video, fonts, CSS and JavaScript as "Media", with the counter that decides ("N of M this minute"), also in `wp scrapelock check`. Every reason is shown by its label, never its internal key (Log tab, Check a request, WP-CLI).
+* Change: on new installs Traffic stores IP addresses masked; "Start collecting" asks how they are stored, with Masked chosen in advance, and says how long they are kept. Existing settings are kept. The suggested privacy policy text describes Traffic and the username kept with a per-account limit.
+* New: "For my site" also proposes sensible values (ban scanners on their first probe, refuse requests by IP address, reputation, shorter temporary blocks, a page limit too low next to the human check, a REST limit too low for FluentCommunity or WooCommerce, a per-account limit for membership sites, OneSignal in "Always allowed", and turning off options that only annoy visitors), each with its reason, all ticked.
+* Greek translation of the new texts.
 
 = 3.12.0 =
 * New: Traffic tab (Records → Traffic), off until "Start collecting". Every request the site answers, from the Bunny CDN logs while their import is on (they include the pages served from the CDN cache), else the web server's access log (Nginx or Apache "combined" format, rotated files included, with "Test this path"), else the pages WordPress serves itself. Only one source is counted at a time, so no request is counted twice.
@@ -503,6 +518,9 @@ No, on purpose: only an app code, a recovery code or the SCRAPELOCK_UNLOCK line 
 The changes of 3.5.0 and earlier versions are in changelog.txt in the plugin folder.
 
 == Upgrade Notice ==
+
+= 3.12.1 =
+Fixes the site's own requests getting a 403 behind a CDN (Vulnerable points, Site Health), FluentCommunity members' limits and AI search blocking. The pre-cache check's line in wp-config.php is rewritten on the next wp-admin page. Settings are kept.
 
 = 3.12.0 =
 New Traffic tab: every request from the Bunny CDN logs, the access log or WordPress, with User-Agents, problem URLs, visitors, CSV and email alerts. Off until you press "Start collecting"; nothing is stored or scheduled before. Settings and exports from 3.11 are kept.

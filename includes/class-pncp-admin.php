@@ -1486,7 +1486,7 @@ final class PNCP_Admin {
 		<?php self::row_close(); ?>
 		<?php self::row_open( 'ai', __( 'AI search and training', 'scrapelock' ) ); ?>
 				<?php
-				self::checkbox( $s, 'allow_ai_search', __( 'Allow AI search engines and assistants (not training crawlers)', 'scrapelock' ), PNCP_Admin_Fields::help( __( 'Appear in AI search answers with a link, without feeding model training.', 'scrapelock' ), sprintf( /* translators: %s: list of User-Agents */ __( 'So the site appears in AI search answers with a link, without being given for model training. Allowed: %s. They are also removed from the robots.txt Disallow and from the server rules. The page limit still applies, because the User-Agent can be spoofed.', 'scrapelock' ), implode( ', ', PNCP_Options::ai_search_agents() ) ) ) );
+				self::checkbox( $s, 'allow_ai_search', __( 'Allow AI search engines and assistants (not training crawlers)', 'scrapelock' ), PNCP_Admin_Fields::help( __( 'Appear in AI search answers with a link, without feeding model training.', 'scrapelock' ), sprintf( /* translators: %s: list of User-Agents */ __( 'So the site appears in AI search answers with a link, without being given for model training. Allowed: %s. They are also removed from the robots.txt Disallow and from the server rules. The page limit still applies, because the User-Agent can be spoofed. While this is off, ScrapeLock blocks them, also when they are not in the bot list.', 'scrapelock' ), implode( ', ', PNCP_Options::ai_search_agents() ) ) ) );
 				self::checkbox( $s, 'verify_ai_bots', __( 'Verify AI search bots with their official IP lists (OpenAI, Perplexity, Anthropic)', 'scrapelock' ), PNCP_Admin_Fields::help( __( 'Real OpenAI, Perplexity and Anthropic search bots pass; impostors get a 403.', 'scrapelock' ), __( 'With AI search allowed: the real OAI-SearchBot, ChatGPT-User, PerplexityBot, Perplexity-User, Claude-SearchBot and Claude-User are never limited or blocked, and requests that only use their name get a 403 (“Fake AI search bot”). The lists are downloaded once a day; until then nothing changes.', 'scrapelock' ) ) );
 				self::checkbox( $s, 'robots_ai_block', __( 'Declare AI crawlers in robots.txt (Disallow)', 'scrapelock' ), __( 'Only the virtual robots.txt; a physical robots.txt file takes precedence.', 'scrapelock' ) );
 				self::checkbox( $s, 'block_archivers', __( 'Block web archives (Wayback Machine)', 'scrapelock' ), PNCP_Admin_Fields::help( __( 'Blocks the Internet Archive crawlers; pages already archived stay there.', 'scrapelock' ), __( 'The Internet Archive keeps a public copy of every page it visits, and that copy can be scraped without ever reaching your site. This blocks its crawlers (ia_archiver, archive.org_bot, heritrix) and asks them in robots.txt. Copies already in the archive stay there. Leave it off if you want your site to be archived.', 'scrapelock' ) ) );
@@ -1514,6 +1514,11 @@ final class PNCP_Admin {
 				self::number( $s, 'rate_limit', __( 'Pages per minute (0 = off):', 'scrapelock' ), PNCP_Admin_Fields::help( __( '429 above it. Behind a CDN, set “Real visitor IP” first.', 'scrapelock' ), __( 'Above the limit it returns 429. Be careful with networks that share an IP (companies, mobile carriers) and with CDNs: set the “Real visitor IP” correctly first.', 'scrapelock' ) ) );
 				self::number( $s, 'rate_limit_search', __( 'Searches (?s=) per minute (0 = off):', 'scrapelock' ), __( 'Search is heavy for the server and a favourite of scrapers.', 'scrapelock' ) );
 				self::number( $s, 'rate_limit_rest', __( 'REST API (/wp-json/) and GraphQL requests per minute (0 = off):', 'scrapelock' ), PNCP_Admin_Fields::help( __( 'Visitor read requests only; long per_page lists count as 2 or 3.', 'scrapelock' ), __( 'Only read requests from visitors. Cart, checkout and forms (POST) do not count. A list of more than 20 items (per_page) counts as 2 requests, more than 50 as 3.', 'scrapelock' ) ) );
+				// 3.12.1: FluentCommunity's members count per account (PNCP_Fluent_Community::rest_note_help()).
+				$pncp_fc_rest = PNCP_Fluent_Community::rest_note_help();
+				if ( '' !== $pncp_fc_rest[0] ) {
+					echo PNCP_Admin_Fields::para( $pncp_fc_rest[0], $pncp_fc_rest[1], 'pncp-fluent-rest-note' ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Escaped in PNCP_Admin_Fields.
+				}
 				self::number( $s, 'rate_limit_404', __( '“Page not found” (404) per minute (0 = off):', 'scrapelock' ), PNCP_Admin_Fields::help( __( 'Catches address guessing; missing images, CSS and scripts do not count.', 'scrapelock' ), __( 'Scrapers guess addresses (?p=1, 2, 3…, old product URLs) to find content. Missing images, CSS, scripts and the favicon do not count.', 'scrapelock' ) ) );
 				self::number( $s, 'rate_limit_sitemap', __( 'Sitemaps per minute (0 = off):', 'scrapelock' ), PNCP_Admin_Fields::help( __( 'Scrapers read sitemaps first; verified search engines are never limited.', 'scrapelock' ), __( 'Scrapers read the sitemap first to find every page. Covers the sitemaps of WordPress, Rank Math, Yoast and similar plugins. Google, Bing and the other verified search engines are never limited.', 'scrapelock' ) ) );
 				// 3.7.
@@ -2879,7 +2884,7 @@ final class PNCP_Admin {
 		<div class="pncp-cards">
 			<section class="pncp-card">
 				<h3><?php esc_html_e( 'By reason', 'scrapelock' ); ?></h3>
-				<?php self::count_list( $summary['reasons'], $reasons ); ?>
+				<?php self::count_list( $summary['reasons'], array_combine( array_keys( $summary['reasons'] ), array_map( array( 'PNCP_Log', 'reason_label' ), array_keys( $summary['reasons'] ) ) ) ); // 3.12.1: never a raw reason key. ?>
 			</section>
 			<section class="pncp-card">
 				<h3><?php esc_html_e( 'Top IPs', 'scrapelock' ); ?></h3>
@@ -2944,7 +2949,7 @@ final class PNCP_Admin {
 					<?php foreach ( array_slice( $bans, 0, 200, true ) as $ip => $ban ) : ?>
 						<tr>
 							<td><code><?php echo esc_html( $ip ); ?></code></td>
-							<td><?php echo esc_html( isset( $reasons[ $ban['reason'] ] ) ? $reasons[ $ban['reason'] ] : $ban['reason'] ); ?></td>
+							<td><?php echo esc_html( PNCP_Log::reason_label( $ban['reason'] ) ); ?></td>
 							<td><?php echo esc_html( wp_date( $format, (int) $ban['until'] ) ); ?></td>
 							<td>
 								<?php self::action_form_open( 'pncp_log', 'pncp_log', 'pncp-inline-form' ); ?>
@@ -3012,7 +3017,7 @@ final class PNCP_Admin {
 							</td>
 							<td>
 								<?php
-								$label = isset( $reasons[ $row['reason'] ] ) ? $reasons[ $row['reason'] ] : $row['reason'];
+								$label = PNCP_Log::reason_label( $row['reason'] );
 								// A "would block" entry of "Monitor only" was let through: it has no status code.
 								if ( PNCP_Log::is_monitor_row( $row ) ) {
 									echo esc_html( $label ) . ' <span class="pncp-badge pncp-badge--monitor">' . esc_html__( 'Would block', 'scrapelock' ) . '</span>';
@@ -3027,6 +3032,11 @@ final class PNCP_Admin {
 									);
 								}
 								PNCP_Bot_Match::render_reason( $row, $s ); // 3.11: the bot list entry that matched.
+								if ( isset( $row['account'] ) && '' !== (string) $row['account'] ) {
+									// 3.12.1: the account of a per-account limit (rate_account, rate_member).
+									/* translators: %s: username */
+									echo '<br><span class="pncp-badge pncp-log-account">' . esc_html( sprintf( __( 'Account: %s', 'scrapelock' ), (string) $row['account'] ) ) . '</span>';
+								}
 								?>
 							</td>
 							<td><?php echo esc_html( number_format_i18n( (int) $row['hits'] ) ); ?></td>
@@ -3417,7 +3427,7 @@ final class PNCP_Admin {
 						<td><code><?php echo esc_html( $row['ip'] ); ?></code></td>
 						<td><?php echo esc_html( number_format_i18n( $row['bans'] ) ); ?></td>
 						<td><?php echo esc_html( number_format_i18n( $row['total'] ) ); ?></td>
-						<td><?php echo esc_html( isset( $reasons[ $row['reason'] ] ) ? $reasons[ $row['reason'] ] : $row['reason'] ); ?></td>
+						<td><?php echo esc_html( PNCP_Log::reason_label( $row['reason'] ) ); ?></td>
 						<td><?php echo esc_html( wp_date( $format, (int) strtotime( $row['last'] . ' UTC' ) ) ); ?></td>
 						<td><?php self::block_permanently_button( $row['ip'] ); ?></td>
 					</tr>
@@ -3476,7 +3486,7 @@ final class PNCP_Admin {
 				'<li><span>%1$s%2$s%3$s</span> <strong>%4$s</strong></li>',
 				esc_html( $ua ),
 				$badge, // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Built above from escaped text.
-				'' !== $main ? '<br><small class="pncp-ua-reason">' . esc_html( isset( $reasons[ $main ] ) ? $reasons[ $main ] : $main ) . '</small>' : '',
+				'' !== $main ? '<br><small class="pncp-ua-reason">' . esc_html( PNCP_Log::reason_label( $main ) ) . '</small>' : '',
 				esc_html( number_format_i18n( $count ) )
 			);
 		}

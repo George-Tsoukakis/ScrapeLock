@@ -68,6 +68,19 @@ ScrapeLock — δοκιμές σε πραγματικό WordPress (όχι stubs)
                     placeholders / tags, .mo ίδιο με το .po, χωρίς μισές προτάσεις· φορτώνεται από το languages/ του
                     plugin (και όπως στις WordPress 6.2–6.6, με pncp_load_textdomain() στο init), ενώ ένα language pack
                     στο wp-content/languages/plugins/ προηγείται
+  t_3121_wizard.php 3.12.1: «For my site» also checks sensible values: each proposal at its boundary values (probe_ban,
+                    block_ip_host, reputation, temporary blocks as one row of two settings, rate_limit with the human
+                    check, rate_limit_rest with WooCommerce / FluentCommunity, rate_limit_account with FluentCommunity
+                    or a membership plugin, blur_on_capture / block_devtools / user_mark_guests, OneSignal in «Always
+                    allowed»), stand-in MemberPress detected, the panel (ticked rows, diff, «Nothing to change»),
+                    «Apply selected» (nonce, subscriber / editor 403, locked, only ticked rows, recomputed on the
+                    server, saved version first), wp scrapelock wizard
+  t_3121_fluent.php 3.12.1: FluentCommunity (stand-in with one REST route): a signed-in member's portal reads count
+                    per account at 4 × the REST limit (13th of 12 → 429 for that account only, another member on the
+                    same address unaffected, guests and a cookie without the nonce per IP, no violation), the log row
+                    "rate_member" with the username (also "rate_account"), the per-account page limit counts them with
+                    the member's pages (four reads as one page), the early / pre-cache checks leave them to WordPress, the notes (Bots tab,
+                    Content addresses, "For my site"), deactivated → per IP again
   t_traffic.php     3.12: Traffic (PNCP_Traffic), the data layer: settings (path checks, upgrade, export/import),
                     nothing hooked or stored while off, ~40 User-Agents classified (verified / fake with stored official
                     lists), Bunny lines through parse_line() and the real import (mocked log API), the server access log
@@ -98,6 +111,38 @@ ScrapeLock — δοκιμές σε πραγματικό WordPress (όχι stubs)
                     the sample of "Test this path" masked too
   t_traffic_ms.php  3.12: Traffic on a multisite network (SKIP on a single site; SITE=/two/ with a "subadmin"): only a
                     network administrator may test the access log or have "Start collecting" pick it
+  t_3121_loopback.php 3.12.1: the site's own requests behind Bunny without the CDN secret ("Real visitor IP" =
+                    REMOTE_ADDR, the request from a Bunny edge, X-Test-Remote-Addr / X-Test-HTTPS): the signature
+                    X-ScrapeLock-Sig (valid, expired, replayed, another path / method / host, forged, after redirects
+                    with a stand-in server on 8953) passes every check in WordPress, the early check and "Only through
+                    the CDN"; the WordPress User-Agent alone and X-Forwarded-For with the server's address do not;
+                    Vulnerable points "Check again", the Stealth test, Site Health loopback and REST get real answers;
+                    the pre-cache check (stand-in page cache): the same signature, its key only in the wp-config.php
+                    line, nonces used once; the server's addresses: the outbound one detected from signed requests
+                    (24-hour transient) and SCRAPELOCK_SERVER_IPS (a test mu-plugin for the web server), in
+                    WordPress, the early check and the pre-cache check; ScrapeLock's rules at the CDN never block
+                    the server (temporary blocks, Bunny log lines, the wp-login.php lock with a stand-in Bunny API)
+  t_3121_tester.php 3.12.1: "Check a request": an image, video, font, CSS or JS is "Checked as: Media", allowed as "image
+                    or file; counted in the media limit, not as a page", with the media counter "N of M this minute"
+                    (MEDIA_FACTOR × the page limit, pncp_static_extensions) and its 429; a page, a feed, a REST call and
+                    every pass / refuse reason drawn as tester.js draws them, the AJAX answer, every wp-admin tab with
+                    log rows and bans of every reason (and an unknown one): never a raw snake_case reason key;
+                    wp scrapelock check (needs WP_CLI, else that part SKIPs)
+  t_3121_ai_search.php 3.12.1: AI search bots with a bot list as the 3.11 upgrade left it: "Allow AI search" on,
+                    OAI-SearchBot from its official address (stored test list openai_search) passes in WordPress, the
+                    early check and the pre-cache check (stand-in page cache), from another address "Fake AI search
+                    bot"; turned off, 403 everywhere from the built-in list (also in the pre-cache configuration),
+                    "Always allowed" still first; on again, it passes; the bot list untouched in both transitions;
+                    the 3.11 migration never runs again; the Bots tab warning and "Remove from the list"
+  t_3121_traffic.php 3.12.1: Traffic, safer defaults (GDPR): a brand-new install stores traffic_ip_mode "masked", an
+                    upgrade from 3.11 / 3.12.0 keeps "full" (no migration); "Start collecting" asks how IPs are stored
+                    (Masked chosen in advance until the site has collected, what each mode stores, the retention of
+                    single requests) and saves the choice; with Masked, the WordPress source over HTTP, Bunny and the
+                    access log store no full address in any table, option, view, CSV, alert email, report line or
+                    "wp scrapelock traffic" output (needs WP_CLI, else that part SKIPs); the privacy policy text
+  t_3121_integration.php 3.12.1: how the parts of 3.12.1 fit together: rate_member (per account) is no reputation
+                    event of the IP and every log reason has a label; the attack record keeps nothing of the site's
+                    own requests (signed, or a CDN log line of SCRAPELOCK_SERVER_IPS)
   t_cli.php         wp scrapelock … μέσα από το πραγματικό wp (χρειάζεται WP_CLI, αλλιώς SKIP)
   t_bunny_rules.php Edge Rules στο Bunny μέσα στα όριά του (το πολύ 5 μοτίβα ανά συνθήκη) με ψεύτικο API που δίνει
                     HTTP 400 όπως το πραγματικό: χωρισμός, κλείδωμα/Remove, rollback, Monitor only, sync, προεπισκόπηση,
