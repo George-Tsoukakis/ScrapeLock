@@ -555,7 +555,7 @@ final class PNCP_Traffic_Alerts {
 				'top_ips' => array_map(
 					static function ( $row ) {
 						return array(
-							'ip'   => (string) $row['ip'],
+							'ip'   => PNCP_Traffic::shown_ip( (string) $row['ip'] ),
 							'hits' => (int) $row['n'],
 						);
 					},

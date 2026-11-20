@@ -222,7 +222,21 @@ final class PNCP_Traffic {
 		if ( is_array( $value ) && ! empty( $value['traffic'] ) ) {
 			self::maybe_schedule();
 		}
-		unset( $old );
+		// Masked IPs from now on: the addresses already stored are masked too (now within a few seconds, the rest
+		// by the scheduled run), and until then every screen, export and email masks them as it shows them.
+		$was = is_array( $old ) && isset( $old['traffic_ip_mode'] ) ? (string) $old['traffic_ip_mode'] : 'full';
+		if ( is_array( $value ) && isset( $value['traffic_ip_mode'] ) && 'masked' === $value['traffic_ip_mode'] && 'masked' !== $was && self::ready() ) {
+			$state         = self::state();
+			$state['mask'] = array(
+				'id'   => 0,
+				'days' => 0,
+			);
+			self::save_state( $state );
+			self::mask_stored( microtime( true ) + 5 );
+			if ( self::state()['mask'] && ! wp_next_scheduled( self::CRON ) ) {
+				wp_schedule_single_event( time() + MINUTE_IN_SECONDS, self::CRON );
+			}
+		}
 	}
 
 	/**
@@ -698,6 +712,145 @@ final class PNCP_Traffic {
 	}
 
 	/**
+	 * An IP as the screens, exports and emails show it: masked while "traffic_ip_mode" is masked (also one stored
+	 * before it was turned on and not masked yet).
+	 *
+	 * @param string $ip IP as stored.
+	 * @return string
+	 */
+	public static function shown_ip( $ip ) {
+		$ip = (string) $ip;
+		if ( '' === $ip || 'masked' !== self::settings()['ip_mode'] ) {
+			return $ip;
+		}
+		$masked = self::mask_ip( $ip );
+		return '' === $masked ? $ip : $masked;
+	}
+
+	/**
+	 * Masks the IPs stored before "traffic_ip_mode" became masked: the raw rows, then the per-IP daily figures
+	 * (merged by masked address). Continues where it stopped (state "mask") until done.
+	 *
+	 * @param float $deadline microtime( true ) to stop at.
+	 * @return bool Whether everything is masked.
+	 */
+	public static function mask_stored( $deadline ) {
+		global $wpdb;
+		$state = self::state();
+		if ( ! $state['mask'] || ! self::ready() ) {
+			return true;
+		}
+		$mask     = $state['mask'];
+		$raw      = self::table( 'raw' );
+		$suppress = $wpdb->suppress_errors( true );
+		while ( 0 === $mask['days'] && microtime( true ) < $deadline ) {
+			$rows = self::rows( $wpdb->prepare( 'SELECT id, ip FROM %i WHERE id > %d ORDER BY id LIMIT %d', $raw, $mask['id'], self::DELETE_BATCH ) );
+			if ( ! $rows ) {
+				$mask['days'] = 1;
+				break;
+			}
+			$cases = array();
+			$ids   = array();
+			foreach ( $rows as $r ) {
+				$ip     = (string) $r['ip'];
+				$masked = '' === $ip ? '' : self::mask_ip( $ip );
+				if ( '' !== $masked && $masked !== $ip ) {
+					$cases[] = $wpdb->prepare( 'WHEN %d THEN %s', (int) $r['id'], $masked );
+					$ids[]   = (int) $r['id'];
+				}
+				$mask['id'] = (int) $r['id'];
+			}
+			if ( $ids ) {
+				// phpcs:ignore WordPress.DB.DirectDatabaseQuery, WordPress.DB.PreparedSQL.NotPrepared -- Plugin table; the cases are prepared above, the ids are integers.
+				$wpdb->query( $wpdb->prepare( 'UPDATE %i SET ip = CASE id ', $raw ) . implode( ' ', $cases ) . ' ELSE ip END WHERE id IN (' . implode( ',', $ids ) . ')' );
+			}
+		}
+		// The per-IP rows of the daily figures, one day at a time (the newest first): merged by masked address.
+		$day_table = self::table( 'day' );
+		while ( $mask['days'] > 0 && microtime( true ) < $deadline ) {
+			$below = $mask['days'] > 1 ? $mask['days'] : PHP_INT_MAX;
+			$next  = self::rows( $wpdb->prepare( 'SELECT MAX(day) AS d FROM %i WHERE dim = %s AND day < %d', $day_table, 'ip', min( $below, 4294967295 ) ) );
+			$day  = isset( $next[0]['d'] ) ? (int) $next[0]['d'] : 0;
+			if ( $day <= 0 ) {
+				$mask = array();
+				break;
+			}
+			self::mask_day( $day );
+			$mask['days'] = $day;
+		}
+		$wpdb->suppress_errors( $suppress );
+		$state         = self::state();
+		$state['mask'] = $mask;
+		self::save_state( $state );
+		update_option( self::GEN_OPTION, (int) get_option( self::GEN_OPTION, 0 ) + 1, false );
+		return ! $mask;
+	}
+
+	/**
+	 * The per-IP rows of one day with masked addresses (rows of the same masked address added up).
+	 *
+	 * @param int $day Start of the day.
+	 */
+	private static function mask_day( $day ) {
+		global $wpdb;
+		$table = self::table( 'day' );
+		$rows  = self::rows( $wpdb->prepare( 'SELECT * FROM %i WHERE dim = %s AND day = %d AND k <> %s', $table, 'ip', $day, self::OTHER ) );
+		$sums  = array( 'hits', 'bytes', 's2xx', 's3xx', 's4xx', 's404', 's5xx', 'chits', 'misses', 'ips', 'rt_sum', 'rt_n' );
+		$merge = array();
+		$dirty = false;
+		foreach ( $rows as $r ) {
+			$label  = (string) $r['label'];
+			$masked = self::mask_ip( $label );
+			$masked = '' === $masked ? $label : $masked;
+			$dirty  = $dirty || $masked !== $label;
+			$key    = (string) $r['src'] . '|' . $masked;
+			if ( ! isset( $merge[ $key ] ) ) {
+				$merge[ $key ]          = $r;
+				$merge[ $key ]['label'] = $masked;
+				continue;
+			}
+			foreach ( $sums as $col ) {
+				$merge[ $key ][ $col ] = (int) $merge[ $key ][ $col ] + (int) $r[ $col ];
+			}
+			$merge[ $key ]['first_ts'] = min( (int) $merge[ $key ]['first_ts'], (int) $r['first_ts'] );
+			$merge[ $key ]['last_ts']  = max( (int) $merge[ $key ]['last_ts'], (int) $r['last_ts'] );
+		}
+		if ( ! $dirty ) {
+			return;
+		}
+		$out = array();
+		foreach ( $merge as $r ) {
+			$out[] = $wpdb->prepare(
+				'(%s, %s, %d, %s, %s, %s, %s, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d)',
+				(string) $r['src'],
+				'ip',
+				$day,
+				self::hash( (string) $r['label'] ),
+				(string) $r['label'],
+				(string) $r['fam'],
+				(string) $r['ptype'],
+				(int) $r['hits'],
+				(int) $r['bytes'],
+				(int) $r['s2xx'],
+				(int) $r['s3xx'],
+				(int) $r['s4xx'],
+				(int) $r['s404'],
+				(int) $r['s5xx'],
+				(int) $r['chits'],
+				(int) $r['misses'],
+				(int) $r['ips'],
+				(int) $r['rt_sum'],
+				(int) $r['rt_n'],
+				(int) $r['first_ts'],
+				(int) $r['last_ts']
+			);
+		}
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery -- Plugin table; the day's per-IP rows are written again.
+		$wpdb->query( $wpdb->prepare( 'DELETE FROM %i WHERE dim = %s AND day = %d AND k <> %s', $table, 'ip', $day, self::OTHER ) );
+		self::insert( 'day', '(src, dim, day, k, label, fam, ptype, hits, bytes, s2xx, s3xx, s4xx, s404, s5xx, chits, misses, ips, rt_sum, rt_n, first_ts, last_ts)', $out );
+	}
+
+	/**
 	 * Writes the buffer: one multi-row INSERT per INSERT_BATCH rows.
 	 *
 	 * @return int Rows written.
@@ -889,10 +1042,12 @@ final class PNCP_Traffic {
 			'rolled_at'  => 0,
 			'cleaned_at' => 0,
 			'server'     => array(),
+			'mask'       => array(),
 		);
 		$s        = array_merge( $defaults, array_intersect_key( $s, $defaults ) );
 		$s['pending'] = is_array( $s['pending'] ) ? array_values( array_map( 'intval', $s['pending'] ) ) : array();
 		$s['server']  = is_array( $s['server'] ) ? $s['server'] : array();
+		$s['mask']    = is_array( $s['mask'] ) && isset( $s['mask']['id'], $s['mask']['days'] ) ? array_map( 'intval', $s['mask'] ) : array();
 		return $s;
 	}
 
@@ -918,6 +1073,9 @@ final class PNCP_Traffic {
 			return;
 		}
 		try {
+			if ( self::ready() && self::state()['mask'] ) {
+				self::mask_stored( PNCP_Time::deadline( 20 ) );
+			}
 			if ( ! self::enabled() ) {
 				if ( self::ready() ) {
 					self::cleanup();

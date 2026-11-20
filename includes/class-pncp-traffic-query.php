@@ -614,7 +614,7 @@ final class PNCP_Traffic_Query {
 	 */
 	private static function top_row( $dim, $r ) {
 		$row = array(
-			'key'    => (string) $r['label_key'],
+			'key'    => 'ip' === $dim ? PNCP_Traffic::shown_ip( (string) $r['label_key'] ) : (string) $r['label_key'],
 			'hits'   => (int) $r['hits'],
 			'ips'    => (int) $r['ips'],
 			'bytes'  => (int) $r['bytes'],
@@ -1095,7 +1095,7 @@ final class PNCP_Traffic_Query {
 			'id'      => (int) $r['id'],
 			'ts'      => (int) $r['ts'],
 			'src'     => (string) $r['src'],
-			'ip'      => (string) $r['ip'],
+			'ip'      => PNCP_Traffic::shown_ip( (string) $r['ip'] ),
 			'country' => (string) $r['country'],
 			'method'  => (string) $r['method'],
 			'status'  => (int) $r['status'],

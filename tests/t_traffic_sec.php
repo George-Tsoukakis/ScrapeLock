@@ -8,6 +8,9 @@
  * 1. While the site is locked (Lockdown) the Traffic actions that only read are refused too (Lockdown takes
  *    manage_options away): the CSV export of the visitors and "Test this path".
  * 2. The WordPress source does not record the pages a signed-in administrator opens on the site (only visitors).
+ * 3. "Masked" IPs turned on with full addresses already stored: the raw rows and the per-IP daily figures are
+ *    masked (merged by masked address, the totals unchanged), also when it takes more than one run, and the
+ *    queries, the CSV and the visitors view never show a full address meanwhile.
  *
  * Same requirements as t_http.php (mu-test-harness.php, router.php). Changes the database: test sites only.
  */
@@ -200,5 +203,77 @@ t( 'wp source: a signed-in administrator\'s front page is not recorded', 200 ===
 list( $code ) = http( '/?pncp_sec=visitor', null, '', '192.0.2.233' );
 t( 'wp source: a visitor\'s front page is recorded', 200 === $code && 1 === raw_count( "src = 'wp' AND ip = '192.0.2.233'" ), $code . ' ' . raw_count() );
 settings( array( 'traffic_wp' => 0 ) );
+
+/* ---------- 3. Masked IPs with full addresses stored ---------- */
+global $wpdb;
+PNCP_Traffic::purge_all();
+settings( array( 'traffic_ip_mode' => 'full' ) );
+$full = array( '203.0.113.7', '203.0.113.8', '203.0.113.9', '2001:db8:1234:5678::9' );
+for ( $i = 0; $i < 40; $i++ ) {
+	PNCP_Traffic::ingest(
+		array(
+			'ts'     => time() - 900 + $i,
+			'ip'     => $full[ $i % 4 ],
+			'status' => $i % 5 ? 200 : 404,
+			'path'   => '/m-' . ( $i % 3 ) . '/',
+			'ua'     => 'MaskBot/1.' . ( $i % 2 ),
+		),
+		'bunny'
+	);
+}
+PNCP_Traffic::flush();
+PNCP_Traffic::rollup();
+$f       = array( 'src' => 'bunny' );
+$before  = PNCP_Traffic::overview( $f );
+$ip_rows = (int) $wpdb->get_var( $wpdb->prepare( 'SELECT SUM(hits) FROM %i WHERE dim = %s', PNCP_Traffic::table( 'day' ), 'ip' ) );
+t( 'masked: seeded with 4 full addresses', 4 === (int) $wpdb->get_var( 'SELECT COUNT(DISTINCT ip) FROM ' . PNCP_Traffic::table( 'raw' ) ) && 40 === $ip_rows ); // phpcs:ignore
+// Unmasked rows meanwhile: what every output shows.
+$s                    = PNCP_Options::stored();
+$s['traffic_ip_mode'] = 'masked';
+remove_all_actions( 'update_option_' . PNCP_OPTION );
+update_option( PNCP_OPTION, $s ); // Without the hook: the stored addresses are still full.
+wp_cache_delete( 'alloptions', 'options' );
+PNCP_Options::flush();
+PNCP_Traffic::reset();
+$shown = wp_json_encode( array( PNCP_Traffic::raw( $f, 100 ), PNCP_Traffic::top( 'ip', $f, 50 ), PNCP_Traffic::detail( 'ua', 'MaskBot/1.0', $f ) ) );
+$csv   = fopen( 'php://memory', 'w+' );
+PNCP_Traffic::export_csv( $f, $csv );
+rewind( $csv );
+$shown .= stream_get_contents( $csv );
+fclose( $csv );
+t( 'masked, not yet masked in the database: raw(), top(ip), detail() and the CSV show no full address', false === strpos( $shown, '203.0.113.7' ) && false === strpos( $shown, '203.0.113.8' ) && false === strpos( $shown, '2001:db8:1234:5678::9' ) && false !== strpos( $shown, '203.0.113.0' ) && false !== strpos( $shown, '2001:db8:1234::' ), substr( $shown, 0, 300 ) );
+// Now through the settings, as a save does: full -> masked.
+$s['traffic_ip_mode'] = 'full';
+update_option( PNCP_OPTION, $s );
+PNCP_Traffic::init();
+settings( array( 'traffic_ip_mode' => 'masked' ) );
+$left = PNCP_Traffic::state()['mask'];
+$ips  = $wpdb->get_col( 'SELECT DISTINCT ip FROM ' . PNCP_Traffic::table( 'raw' ) . ' ORDER BY ip' ); // phpcs:ignore
+t( 'masked on save: the raw rows hold only masked addresses', array( '2001:db8:1234::', '203.0.113.0' ) === $ips && array() === $left, wp_json_encode( array( $ips, $left ) ) );
+$labels = $wpdb->get_col( $wpdb->prepare( 'SELECT label FROM %i WHERE dim = %s AND k <> %s ORDER BY label', PNCP_Traffic::table( 'day' ), 'ip', PNCP_Traffic::OTHER ) );
+$sum    = (int) $wpdb->get_var( $wpdb->prepare( 'SELECT SUM(hits) FROM %i WHERE dim = %s', PNCP_Traffic::table( 'day' ), 'ip' ) );
+t( 'masked on save: the per-IP daily figures are merged by masked address, the requests unchanged', array( '2001:db8:1234::', '203.0.113.0' ) === $labels && 40 === $sum, wp_json_encode( array( $labels, $sum ) ) );
+$after = PNCP_Traffic::overview( $f );
+t( 'masked on save: the totals are the same', $before['total'] === $after['total'] && $before['s4xx'] === $after['s4xx'] );
+t( 'masked on save: top(ip) has the two masked addresses', array( '203.0.113.0', '2001:db8:1234::' ) === array_column( PNCP_Traffic::top( 'ip', $f, 10 )['rows'], 'key' ) || array( '2001:db8:1234::', '203.0.113.0' ) === array_column( PNCP_Traffic::top( 'ip', $f, 10 )['rows'], 'key' ) );
+// More than one run: a deadline in the past does nothing, the scheduled run finishes it.
+settings( array( 'traffic_ip_mode' => 'full' ) );
+for ( $i = 0; $i < 10; $i++ ) {
+	PNCP_Traffic::ingest( array( 'ts' => time() - 100 + $i, 'ip' => '198.51.100.' . ( $i + 1 ), 'status' => 200, 'path' => '/n/', 'ua' => 'MaskBot/2' ), 'bunny' );
+}
+PNCP_Traffic::flush();
+$state         = PNCP_Traffic::state();
+$state['mask'] = array( 'id' => 0, 'days' => 0 );
+PNCP_Traffic::save_state( $state );
+settings( array( 'traffic_ip_mode' => 'masked' ) );
+$state         = PNCP_Traffic::state();
+$state['mask'] = array( 'id' => 0, 'days' => 0 );
+PNCP_Traffic::save_state( $state );
+$done = PNCP_Traffic::mask_stored( microtime( true ) - 1 );
+t( 'masked: a run out of time leaves the rest for the next one', ! $done && array() !== PNCP_Traffic::state()['mask'] );
+PNCP_Log::cache_delete( 'pncp_traffic_lock' );
+PNCP_Traffic::run();
+t( 'masked: the scheduled run finishes it', array() === PNCP_Traffic::state()['mask'] && 0 === (int) $wpdb->get_var( "SELECT COUNT(*) FROM " . PNCP_Traffic::table( 'raw' ) . " WHERE ip LIKE '198.51.100.%' AND ip <> '198.51.100.0'" ) ); // phpcs:ignore
+settings( array( 'traffic_ip_mode' => 'full' ) );
 
 exit( $fails ? 1 : 0 );
