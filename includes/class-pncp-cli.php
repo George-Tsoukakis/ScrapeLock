@@ -1,7 +1,8 @@
 <?php
 /**
  * WP-CLI: wp scrapelock status | block | unblock | blocked | emergency | lockdown status | check | log | settings |
- * reputation | crowdsec | ai-referrals (3.7) | attacks | attack-report | login | harden | bunny | stealth (3.8).
+ * reputation | crowdsec | ai-referrals (3.7) | attacks | attack-report | login | harden | bunny | stealth (3.8) |
+ * wizard (3.11).
  * Lockdown cannot be unlocked from here: it opens only with the authenticator app (or SCRAPELOCK_UNLOCK in
  * wp-config.php).
  *
@@ -1230,6 +1231,115 @@ final class PNCP_Cli {
 			);
 		}
 		WP_CLI\Utils\format_items( self::format( $assoc_args ), $items, array( 'assistant', 'visits' ) );
+	}
+
+	/**
+	 * 3.11: "For my site": what the assistant found (plugins, CDN, server) and the settings it proposes, as on the
+	 * first tab of the settings page. Nothing changes without --apply; the settings as they are now are saved
+	 * first ("wp scrapelock settings undo" puts them back).
+	 *
+	 * ## OPTIONS
+	 *
+	 * [--apply]
+	 * : Apply the proposals that block nothing more (the ones ticked by default on the settings page).
+	 *
+	 * [--all]
+	 * : With --apply: also the proposals that block more (marked "more").
+	 *
+	 * [--only=<settings>]
+	 * : With --apply: only these proposals, comma-separated setting names (e.g. trust_bunny,content_paths).
+	 *
+	 * [--yes]
+	 * : Do not ask for confirmation.
+	 *
+	 * [--format=<format>]
+	 * : table, json, csv or yaml.
+	 * ---
+	 * default: table
+	 * ---
+	 *
+	 * ## EXAMPLES
+	 *
+	 *     wp scrapelock wizard
+	 *     wp scrapelock wizard --apply --yes
+	 *     wp scrapelock wizard --apply --only=precheck
+	 *
+	 * @param string[]              $args       Arguments.
+	 * @param array<string, string> $assoc_args Options.
+	 */
+	public function wizard( $args, $assoc_args ) { // phpcs:ignore Generic.CodeAnalysis.UnusedFunctionParameter.FoundBeforeLastUsed -- WP-CLI signature.
+		$format    = self::format( $assoc_args );
+		$env       = PNCP_Wizard::detect();
+		$proposals = PNCP_Wizard::proposals( null, $env );
+		$items     = array();
+		foreach ( $proposals as $key => $row ) {
+			$items[ $key ] = array(
+				'setting'  => $key,
+				'now'      => PNCP_Wizard::value_text( $key, $row['current'] ),
+				'proposed' => PNCP_Wizard::value_text( $key, $row['proposed'] ),
+				'risk'     => $row['risk'],
+				'reason'   => $row['reason'],
+			);
+		}
+		if ( empty( $assoc_args['apply'] ) ) {
+			if ( 'table' === $format ) {
+				$found = PNCP_Wizard::detected_names( $env );
+				/* translators: %s: list of plugins and services */
+				WP_CLI::line( sprintf( __( 'Found on this site: %s', 'scrapelock' ), $found ? implode( ', ', $found ) : '-' ) );
+				if ( ! $items ) {
+					WP_CLI::success( __( 'Nothing to change: the settings already suit what was found.', 'scrapelock' ) );
+				} else {
+					WP_CLI\Utils\format_items( 'table', array_values( $items ), array( 'setting', 'now', 'proposed', 'risk', 'reason' ) );
+				}
+				foreach ( PNCP_Wizard::notes( null, $env ) as $note ) {
+					WP_CLI::line( '- ' . $note['for'] . ': ' . $note['text'] );
+				}
+				return;
+			}
+			WP_CLI\Utils\format_items( $format, array_values( $items ), array( 'setting', 'now', 'proposed', 'risk', 'reason' ) );
+			return;
+		}
+		if ( PNCP_Lockdown::is_locked() ) {
+			WP_CLI::error( __( 'The site is locked: the settings cannot be changed until it is unlocked (with the authenticator app).', 'scrapelock' ) );
+		}
+		$keys = array();
+		if ( ! empty( $assoc_args['only'] ) ) {
+			foreach ( array_filter( array_map( 'trim', explode( ',', (string) $assoc_args['only'] ) ) ) as $key ) {
+				if ( ! isset( $proposals[ $key ] ) ) {
+					/* translators: %s: setting name */
+					WP_CLI::error( sprintf( __( '"%s" is not one of the proposals.', 'scrapelock' ), $key ) );
+				}
+				$keys[] = $key;
+			}
+		} else {
+			foreach ( $proposals as $key => $row ) {
+				if ( ! empty( $assoc_args['all'] ) || PNCP_Wizard::RISK_NONE === $row['risk'] ) {
+					$keys[] = $key;
+				}
+			}
+		}
+		if ( ! $keys ) {
+			WP_CLI::success( __( 'Nothing to change: the settings already suit what was found.', 'scrapelock' ) );
+			return;
+		}
+		WP_CLI\Utils\format_items( 'table', array_values( array_intersect_key( $items, array_flip( $keys ) ) ), array( 'setting', 'now', 'proposed', 'risk', 'reason' ) );
+		if ( empty( $assoc_args['yes'] ) ) {
+			/* translators: %d: number of settings */
+			WP_CLI::confirm( sprintf( _n( 'Change this %d setting?', 'Change these %d settings?', count( $keys ), 'scrapelock' ), count( $keys ) ) );
+		}
+		$result = PNCP_Wizard::apply( $keys, $env );
+		if ( is_wp_error( $result ) ) {
+			WP_CLI::error( $result->get_error_message() );
+		}
+		foreach ( $result['messages'] as $message ) {
+			WP_CLI::warning( wp_strip_all_tags( $message['message'] ) );
+		}
+		if ( '' === $result['id'] ) {
+			WP_CLI::warning( __( 'Nothing was changed.', 'scrapelock' ) );
+			return;
+		}
+		/* translators: %d: number of settings */
+		WP_CLI::success( sprintf( _n( '%d setting changed. The previous settings were kept: "wp scrapelock settings undo" puts them back.', '%d settings changed. The previous settings were kept: "wp scrapelock settings undo" puts them back.', count( $result['changes'] ), 'scrapelock' ), count( $result['changes'] ) ) );
 	}
 
 	private static function format( $assoc_args, $count = false ) {

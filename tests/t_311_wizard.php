@@ -3,7 +3,7 @@
  * ScrapeLock 3.11 — "For my site" (PNCP_Wizard) in real WordPress, with stand-in plugins (only their header;
  * the FluentCommunity stand-in also defines its portal address, /hub/, as the real site has it).
  *
- *   WP_DIR=/path/to/wordpress BASE=http://127.0.0.1:8099 php t_311_wizard.php
+ *   WP_DIR=/path/to/wordpress BASE=http://127.0.0.1:8099 [WP_CLI="wp --path=…"] php t_311_wizard.php
  *
  * 1. Detection: nothing before, WooCommerce / FluentCommunity / WP Rocket / OneSignal / Wordfence / Bunny after.
  * 2. Proposals: only existing settings, a reason each, "blocks more" ones marked; notes with links.
@@ -12,10 +12,12 @@
  *    unproposed key does nothing; a saved version ("Before the “For my site” assistant") is made first and
  *    "Undo" restores it; nothing ticked = nothing changes, no saved version.
  * 5. Idempotence: after applying everything, nothing is proposed and a second apply saves nothing.
+ * 6. WP-CLI: wp scrapelock wizard (--format=json, --apply --yes, --only).
  */
 
 $wp_dir = getenv( 'WP_DIR' );
 $base   = rtrim( (string) getenv( 'BASE' ), '/' );
+$wp_cli = (string) getenv( 'WP_CLI' );
 if ( ! $wp_dir || ! $base ) {
 	fwrite( STDERR, "WP_DIR and BASE are required\n" );
 	exit( 2 );
@@ -95,6 +97,12 @@ function nonce_for( $user_id, $cookies, $action ) {
 	$_COOKIE[ LOGGED_IN_COOKIE ] = $cookies[ LOGGED_IN_COOKIE ];
 	wp_set_current_user( $user_id );
 	return wp_create_nonce( $action );
+}
+
+function cli( $args ) {
+	global $wp_cli;
+	exec( $wp_cli . ' scrapelock ' . $args . ' 2>&1', $out, $rc );
+	return array( $rc, implode( "\n", $out ) );
 }
 
 /* ---------- Stand-in plugins ---------- */
@@ -291,6 +299,33 @@ t( 'second apply: nothing saved, no new saved version', is_array( $r2 ) && '' ==
 unset( $_SERVER['HTTP_VIA'] );
 list( $code, $body ) = http( '/wp-admin/options-general.php?page=scrapelock&tab=general', null, $cookies, $bunny );
 t( 'panel after: "Nothing to change", closed, no form', 200 === $code && false !== strpos( $body, 'pncp-wizard-none' ) && false === strpos( $body, 'id="pncp-wizard" open' ) && false === strpos( $body, 'class="pncp-wizard-form"' ) );
+
+/* ---------- 6. WP-CLI ---------- */
+if ( '' !== $wp_cli ) {
+	settings( $start );
+	activate_plugin( 'wp-rocket/wp-rocket.php', '', false, true );
+	list( $rc, $out ) = cli( 'wizard --format=json' );
+	$rows             = json_decode( $out, true );
+	$keys             = is_array( $rows ) ? array_column( $rows, 'setting' ) : array();
+	sort( $keys );
+	t( 'cli wizard --format=json: the same proposals (no Bunny header in the CLI)', 0 === $rc && array( 'content_paths', 'precheck', 'rate_limit_cart', 'rate_limit_coupon', 'skip_woo_pages' ) === $keys, $out );
+	list( $rc, $out ) = cli( 'wizard' );
+	t( 'cli wizard: table with the reasons and the notes, nothing saved', 0 === $rc && false !== strpos( $out, 'Found on this site:' ) && false !== strpos( $out, 'skip_woo_pages' ) && false !== strpos( $out, '- OneSignal:' ) && 0 === (int) fresh()['skip_woo_pages'], $out );
+	$count = count( PNCP_Settings_Io::backups() );
+	list( $rc, $out ) = cli( 'wizard --apply --yes' );
+	$s                = fresh();
+	t( 'cli wizard --apply --yes: only those that block nothing more', 0 === $rc && 1 === (int) $s['skip_woo_pages'] && "/hub/space\n/hub/" === $s['content_paths'] && 0 === (int) $s['precheck'] && 0 === (int) $s['rate_limit_cart'], $out );
+	t( 'cli: a saved version first', count( PNCP_Settings_Io::backups() ) === min( PNCP_Settings_Io::KEEP, $count + 1 ) && 'wizard' === PNCP_Settings_Io::backups()[0]['reason'] );
+	list( $rc, $out ) = cli( 'wizard --apply --yes' );
+	t( 'cli: again → nothing to change', 0 === $rc && false !== strpos( $out, 'Nothing to change' ), $out );
+	list( $rc, $out ) = cli( 'wizard --apply --yes --only=rate_limit_coupon' );
+	$s                = fresh();
+	t( 'cli --only=rate_limit_coupon: only that one', 0 === $rc && 10 === (int) $s['rate_limit_coupon'] && 0 === (int) $s['rate_limit_cart'], $out );
+	list( $rc ) = cli( 'wizard --apply --yes --only=enabled' );
+	t( 'cli --only with a setting that is not proposed: error', 0 !== $rc );
+} else {
+	echo "skip WP-CLI part (no WP_CLI)\n";
+}
 
 echo $fails ? "\n$fails FAIL\n" : "\nALL PASS\n";
 exit( $fails ? 1 : 0 );

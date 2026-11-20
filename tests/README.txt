@@ -43,7 +43,7 @@ ScrapeLock — δοκιμές σε πραγματικό WordPress (όχι stubs)
   t_311_wizard.php  3.11: «For my site» (PNCP_Wizard) με stand-in plugins (WooCommerce, FluentCommunity /hub/, WP Rocket,
                     OneSignal, Wordfence) και Via: BunnyCDN: εντοπισμός, προτάσεις μόνο υπαρκτών ρυθμίσεων με αιτία, όσες
                     μπλοκάρουν περισσότερα χωρίς τσεκ, «Apply selected» (nonce, manage_options) μόνο των επιλεγμένων,
-                    αντίγραφο στα «Earlier versions» και Undo, δεύτερο τρέξιμο χωρίς προτάσεις
+                    αντίγραφο στα «Earlier versions» και Undo, δεύτερο τρέξιμο χωρίς προτάσεις, wp scrapelock wizard
   t_private_folders.php  3.10: Site Health «private folders»: γραμμές Nginx/Apache για κάθε ιδιωτικό φάκελο (ορατές),
                     preset «private_folders» του «Lock at Bunny» με ψεύτικο API (και 400 για > 5 patterns), κουμπί μόνο
                     για διαχειριστή με Bunny, αναγνώριση του κλειδώματος στο Site Health
