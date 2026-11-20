@@ -18,6 +18,9 @@
  * of a day are deleted only once the day is older than "traffic_raw_days", so a day is always complete when it is
  * counted. Plain INSERT, DELETE and SELECT only: the same on MySQL / MariaDB and the SQLite drop-in.
  *
+ * Reading: PNCP_Traffic_Query (overview, top, problems, detail, raw rows, CSV). A range within the raw window is
+ * answered from the raw rows (exact, every filter); a longer one from the aggregates.
+ *
  * @package ScrapeLock
  */
 
@@ -1572,5 +1575,77 @@ final class PNCP_Traffic {
 	 */
 	public static function classify_ua( $ua, $ip = '' ) {
 		return PNCP_Traffic_Ua::classify( $ua, $ip );
+	}
+
+	/**
+	 * See PNCP_Traffic_Query::overview().
+	 *
+	 * @param array<string, mixed> $filters Filters.
+	 * @return array<string, mixed>
+	 */
+	public static function overview( $filters = array() ) {
+		return PNCP_Traffic_Query::overview( $filters );
+	}
+
+	/**
+	 * See PNCP_Traffic_Query::top().
+	 *
+	 * @param string               $dimension ua | ua_family | path | referer | ip | country | status.
+	 * @param array<string, mixed> $filters   Filters.
+	 * @param int                  $limit     Rows (at most 500).
+	 * @param int                  $offset    Rows to skip.
+	 * @param string               $order     hits | ips | bytes | s4xx | s5xx | misses | last.
+	 * @return array<string, mixed>
+	 */
+	public static function top( $dimension, $filters = array(), $limit = 50, $offset = 0, $order = 'hits' ) {
+		return PNCP_Traffic_Query::top( $dimension, $filters, $limit, $offset, $order );
+	}
+
+	/**
+	 * See PNCP_Traffic_Query::problems().
+	 *
+	 * @param string               $type    404 | 5xx | 3xx | uncached | large | slow.
+	 * @param array<string, mixed> $filters Filters.
+	 * @param int                  $limit   Rows (at most 500).
+	 * @param int                  $offset  Rows to skip.
+	 * @return array<string, mixed>
+	 */
+	public static function problems( $type, $filters = array(), $limit = 50, $offset = 0 ) {
+		return PNCP_Traffic_Query::problems( $type, $filters, $limit, $offset );
+	}
+
+	/**
+	 * See PNCP_Traffic_Query::detail().
+	 *
+	 * @param string               $kind    ua | path | ip.
+	 * @param string               $key     The User-Agent, path or IP.
+	 * @param array<string, mixed> $filters Filters.
+	 * @return array<string, mixed>
+	 */
+	public static function detail( $kind, $key, $filters = array() ) {
+		return PNCP_Traffic_Query::detail( $kind, $key, $filters );
+	}
+
+	/**
+	 * See PNCP_Traffic_Query::raw().
+	 *
+	 * @param array<string, mixed> $filters Filters.
+	 * @param int                  $limit   Rows (at most 500).
+	 * @param int                  $offset  Rows to skip.
+	 * @return array<string, mixed>
+	 */
+	public static function raw( $filters = array(), $limit = 100, $offset = 0 ) {
+		return PNCP_Traffic_Query::raw( $filters, $limit, $offset );
+	}
+
+	/**
+	 * See PNCP_Traffic_Query::export_csv().
+	 *
+	 * @param array<string, mixed> $filters Filters.
+	 * @param resource             $handle  Stream to write to (php://output, a file).
+	 * @return int Rows written.
+	 */
+	public static function export_csv( $filters, $handle ) {
+		return PNCP_Traffic_Query::export_csv( $filters, $handle );
 	}
 }
