@@ -1992,7 +1992,7 @@ final class PNCP_Options {
 		$log_path  = isset( $input['traffic_log_path'] ) ? trim( sanitize_text_field( (string) $input['traffic_log_path'] ) ) : '';
 		$log_was   = isset( $stored['traffic_log_path'] ) ? (string) $stored['traffic_log_path'] : '';
 		$log_why   = '' === $log_path ? '' : PNCP_Traffic_Log::path_refusal( $log_path );
-		$log_owner = ! is_multisite() || ! function_exists( 'is_user_logged_in' ) || ! is_user_logged_in() || current_user_can( 'manage_network_options' );
+		$log_owner = PNCP_Traffic_Log::user_may_read();
 		if ( $log_path !== $log_was && ! $log_owner ) {
 			$log_path = $log_was;
 		} elseif ( '' !== $log_why ) {

@@ -961,6 +961,9 @@ final class PNCP_Admin_Traffic {
 		</section>
 		<section class="pncp-card pncp-card--wide" id="pncp-tr-test" aria-labelledby="pncp-tr-test-title">
 			<h2 id="pncp-tr-test-title"><?php esc_html_e( 'Test this path', 'scrapelock' ); ?></h2>
+			<?php if ( ! PNCP_Traffic_Log::user_may_read() ) : ?>
+				<p><?php esc_html_e( 'On a network only a network administrator can set and test the access log.', 'scrapelock' ); ?></p>
+			<?php else : ?>
 			<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>">
 				<input type="hidden" name="action" value="<?php echo esc_attr( PNCP_Traffic_Actions::ACTION ); ?>">
 				<input type="hidden" name="op" value="test_path">
@@ -972,31 +975,32 @@ final class PNCP_Admin_Traffic {
 				</p>
 				<p class="description" id="pncp-tr-test-path-help"><?php esc_html_e( 'Reads the end of the file only; nothing is saved.', 'scrapelock' ); ?></p>
 			</form>
-			<?php
-			if ( $tested ) {
-				$r  = (array) $test[1];
-				$ok = isset( $r['code'] ) && 'ok' === $r['code'];
-				printf(
-					'<div class="notice notice-%1$s inline pncp-tr__tested" role="status"><p>%2$s</p>',
-					esc_attr( $ok ? 'success' : 'error' ),
-					esc_html( PNCP_Traffic_Log::refusal_text( isset( $r['code'] ) ? (string) $r['code'] : '' ) )
-				);
-				if ( ! empty( $r['lines'] ) ) {
-					/* translators: 1: lines read as requests, 2: lines read */
-					echo '<p>' . esc_html( sprintf( __( '%1$s of %2$s lines read as requests.', 'scrapelock' ), self::n( (int) $r['parsed'] ), self::n( (int) $r['lines'] ) ) ) . '</p>';
-				}
-				if ( ! empty( $r['sample'] ) && is_array( $r['sample'] ) ) {
-					$sample = $r['sample'];
-					$parts  = array();
-					foreach ( array( 'ip', 'method', 'status', 'path', 'ua' ) as $k ) {
-						if ( isset( $sample[ $k ] ) && is_scalar( $sample[ $k ] ) && '' !== (string) $sample[ $k ] ) {
-							$parts[] = (string) $sample[ $k ];
-						}
+				<?php
+				if ( $tested ) {
+					$r  = (array) $test[1];
+					$ok = isset( $r['code'] ) && 'ok' === $r['code'];
+					printf(
+						'<div class="notice notice-%1$s inline pncp-tr__tested" role="status"><p>%2$s</p>',
+						esc_attr( $ok ? 'success' : 'error' ),
+						esc_html( PNCP_Traffic_Log::refusal_text( isset( $r['code'] ) ? (string) $r['code'] : '' ) )
+					);
+					if ( ! empty( $r['lines'] ) ) {
+						/* translators: 1: lines read as requests, 2: lines read */
+						echo '<p>' . esc_html( sprintf( __( '%1$s of %2$s lines read as requests.', 'scrapelock' ), self::n( (int) $r['parsed'] ), self::n( (int) $r['lines'] ) ) ) . '</p>';
 					}
-					echo '<p>' . esc_html__( 'Last request read:', 'scrapelock' ) . ' <code>' . esc_html( implode( ' ', $parts ) ) . '</code></p>';
+					if ( ! empty( $r['sample'] ) && is_array( $r['sample'] ) ) {
+						$sample = $r['sample'];
+						$parts  = array();
+						foreach ( array( 'ip', 'method', 'status', 'path', 'ua' ) as $k ) {
+							if ( isset( $sample[ $k ] ) && is_scalar( $sample[ $k ] ) && '' !== (string) $sample[ $k ] ) {
+								$parts[] = (string) $sample[ $k ];
+							}
+						}
+						echo '<p>' . esc_html__( 'Last request read:', 'scrapelock' ) . ' <code>' . esc_html( implode( ' ', $parts ) ) . '</code></p>';
+					}
+					echo '</div>';
 				}
-				echo '</div>';
-			}
+			endif;
 			?>
 		</section>
 		<section class="pncp-card pncp-card--wide" id="pncp-tr-delete" aria-labelledby="pncp-tr-delete-title">

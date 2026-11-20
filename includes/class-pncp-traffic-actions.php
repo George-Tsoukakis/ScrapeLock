@@ -395,7 +395,7 @@ final class PNCP_Traffic_Actions {
 				'path'    => $t['log_path'],
 			);
 		}
-		foreach ( self::log_candidates() as $path ) {
+		foreach ( PNCP_Traffic_Log::user_may_read() ? self::log_candidates() : array() as $path ) {
 			$test = PNCP_Traffic::test_log_path( $path );
 			if ( 'ok' === $test['code'] ) {
 				return array(
@@ -422,7 +422,14 @@ final class PNCP_Traffic_Actions {
 		// phpcs:disable WordPress.Security.NonceVerification.Missing -- Checked in verify().
 		$op = isset( $_POST['op'] ) ? sanitize_key( wp_unslash( $_POST['op'] ) ) : '';
 		if ( 'test_path' === $op ) {
-			// Read only: allowed while the site is locked too.
+			if ( ! PNCP_Traffic_Log::user_may_read() ) {
+				self::back(
+					array(
+						'tr_view' => 'settings',
+						'tr_msg'  => 'network_only',
+					)
+				);
+			}
 			$path = isset( $_POST['path'] ) ? trim( sanitize_text_field( wp_unslash( $_POST['path'] ) ) ) : '';
 			$path = substr( $path, 0, 500 );
 			set_transient( self::TEST . get_current_user_id(), array( $path, PNCP_Traffic::test_log_path( $path ) ), 5 * MINUTE_IN_SECONDS );
@@ -525,6 +532,7 @@ final class PNCP_Traffic_Actions {
 			'purge_unconfirmed' => array( 'error', __( 'Nothing was deleted: tick the confirmation box, then press the button again.', 'scrapelock' ) ),
 			'tested'            => array( 'info', '' ),
 			'locked'            => array( 'error', __( 'Nothing changed: the site is locked, so unlock it on the Lockdown tab first.', 'scrapelock' ) ),
+			'network_only'      => array( 'error', __( 'Nothing was read: on a network only a network administrator may read the server\'s access log.', 'scrapelock' ) ),
 			'error'             => array( 'error', __( 'The action was not completed: reload the page and try again.', 'scrapelock' ) ),
 			'block_added'       => array( 'success', __( 'The User-Agent was added to the bot list; remove it under “Bots and limits” → “Bot list” or use Undo.', 'scrapelock' ) ),
 			'allow_added'       => array( 'success', __( 'The User-Agent was added to “Always allowed User-Agents”; remove it under “Bots and limits” or use Undo.', 'scrapelock' ) ),

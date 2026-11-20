@@ -85,6 +85,16 @@ final class PNCP_Traffic_Log {
 	}
 
 	/**
+	 * May the current user set or test the access log path? On a network only a network administrator: the log is
+	 * the whole server's, with the visitors of every site. Requests without a signed-in user (cron, WP-CLI) may.
+	 *
+	 * @return bool
+	 */
+	public static function user_may_read() {
+		return ! is_multisite() || ! function_exists( 'is_user_logged_in' ) || ! is_user_logged_in() || current_user_can( 'manage_network_options' );
+	}
+
+	/**
 	 * A code of path_refusal() / test_path() in words.
 	 *
 	 * @param string $code Code.

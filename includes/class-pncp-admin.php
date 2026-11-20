@@ -2585,7 +2585,7 @@ final class PNCP_Admin {
 			<th scope="row"><label for="<?php echo esc_attr( $path_id ); ?>"><?php esc_html_e( 'Access log', 'scrapelock' ); ?></label></th>
 			<td>
 				<div class="pncp-field">
-					<input type="text" class="regular-text code" id="<?php echo esc_attr( $path_id ); ?>" name="<?php echo esc_attr( PNCP_OPTION ); ?>[traffic_log_path]" value="<?php echo esc_attr( (string) $s['traffic_log_path'] ); ?>" maxlength="500" placeholder="/var/log/nginx/access.log" aria-describedby="<?php echo esc_attr( $path_id ); ?>-help"<?php disabled( is_multisite() && ! current_user_can( 'manage_network_options' ) ); ?>>
+					<input type="text" class="regular-text code" id="<?php echo esc_attr( $path_id ); ?>" name="<?php echo esc_attr( PNCP_OPTION ); ?>[traffic_log_path]" value="<?php echo esc_attr( (string) $s['traffic_log_path'] ); ?>" maxlength="500" placeholder="/var/log/nginx/access.log" aria-describedby="<?php echo esc_attr( $path_id ); ?>-help"<?php disabled( ! PNCP_Traffic_Log::user_may_read() ); ?>>
 					<?php
 					echo PNCP_Admin_Fields::description( $path_id . '-help', PNCP_Admin_Fields::help( __( 'Full path of the Nginx or Apache access log; empty = not read.', 'scrapelock' ), __( 'The "combined" log format and its common variants are read, also rotated files (.1, .1.gz), every 15 minutes, from where the last run stopped. The first run reads the last 4 MB. PHP must be allowed to read the file (permissions, open_basedir). Use “Test this path” below before saving.', 'scrapelock' ) ) ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Escaped in description().
 					?>

@@ -92,6 +92,8 @@ ScrapeLock — δοκιμές σε πραγματικό WordPress (όχι stubs)
   t_traffic_sec.php 3.12: the security review of Traffic: the read-only actions (CSV, Test this path) refused while
                     the site is locked, the WordPress source never records a signed-in administrator, "Masked" IPs
                     turned on with full addresses stored (raw rows and per-IP figures masked, nothing shown unmasked)
+  t_traffic_ms.php  3.12: Traffic on a multisite network (SKIP on a single site; SITE=/two/ with a "subadmin"): only a
+                    network administrator may test the access log or have "Start collecting" pick it
   t_cli.php         wp scrapelock … μέσα από το πραγματικό wp (χρειάζεται WP_CLI, αλλιώς SKIP)
   t_bunny_rules.php Edge Rules στο Bunny μέσα στα όριά του (το πολύ 5 μοτίβα ανά συνθήκη) με ψεύτικο API που δίνει
                     HTTP 400 όπως το πραγματικό: χωρισμός, κλείδωμα/Remove, rollback, Monitor only, sync, προεπισκόπηση,
