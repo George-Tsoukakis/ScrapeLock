@@ -701,6 +701,7 @@ final class PNCP_Hardening {
 				array(
 					'state'   => $status['state'],
 					'note'    => $status['note'],
+					'details' => $live ? self::live_details( $id ) : '',
 					'applied' => self::is_applied( $id ),
 					'edge_on' => isset( self::state()['edge'][ $id ] ),
 					'hits7'   => self::evidence( $id, 7 ),
@@ -709,6 +710,18 @@ final class PNCP_Hardening {
 			);
 		}
 		return $rows;
+	}
+
+	/**
+	 * 3.12.2: the folded details of a point's last live check (who refused the site's own request and what each
+	 * side saw), '' when there are none.
+	 *
+	 * @param string $id Point.
+	 * @return string Plain text, one line each.
+	 */
+	public static function live_details( $id ) {
+		$checks = self::live();
+		return isset( $checks[ $id ]['details'] ) ? (string) $checks[ $id ]['details'] : '';
 	}
 
 	/* ---------- Login (component PNCP_Login) ---------- */
@@ -1246,14 +1259,34 @@ final class PNCP_Hardening {
 	}
 
 	/**
-	 * One request to this site, as a visitor who is not signed in.
+	 * 3.12.2: how this run of the live checks reaches the site: "self" (through the public address; straight to the
+	 * server only when ScrapeLock's checks for bots or Wordfence refuse a request) or "origin" (the public address
+	 * refused the home page: every check asks the server directly, marked in the notes).
 	 *
-	 * @param string $url    Address.
-	 * @param string $method GET, HEAD or POST.
-	 * @param string $body   POST body.
-	 * @return array{code:int, body:string, headers:array<string,string>, location:string}|WP_Error
+	 * @var string
 	 */
-	private static function fetch( $url, $method = 'GET', $body = '' ) {
+	private static $route = 'self';
+
+	/**
+	 * 3.12.2: what refused the home page through the public address in this run (PNCP_Self_Check::classify()), and
+	 * the steps of that request.
+	 *
+	 * @var array{class:array<string, string>, steps:array<int, array<string, mixed>>}|null
+	 */
+	private static $refused_by = null;
+
+	/**
+	 * One request to this site, as a visitor who is not signed in. 3.12.2: through PNCP_Self_Check::request(), so
+	 * a refusal of the site's own request on the way is told apart from the answer, and the server is asked
+	 * directly then.
+	 *
+	 * @param string      $url    Address.
+	 * @param string      $method GET, HEAD or POST.
+	 * @param string      $body   POST body.
+	 * @param string|null $mode   PNCP_Self_Check::request() mode (null = this run's route).
+	 * @return array{code:int, body:string, headers:array<string,string>, location:string, via:string, steps:array<int, array<string, mixed>>, refused:array<string, string>}|WP_Error
+	 */
+	private static function fetch( $url, $method = 'GET', $body = '', $mode = null ) {
 		$args = array(
 			'method'              => $method,
 			'timeout'             => 4,
@@ -1271,21 +1304,21 @@ final class PNCP_Hardening {
 			$args['body']                    = $body;
 			$args['headers']['Content-Type'] = 'text/xml';
 		}
-		$response = wp_remote_request( $url, $args );
+		$mode     = null === $mode ? ( 'origin' === self::$route ? 'origin' : 'self' ) : $mode;
+		$result   = PNCP_Self_Check::request( $url, $args, $mode );
+		$response = $result['response'];
 		if ( is_wp_error( $response ) ) {
 			return $response;
 		}
-		$headers = array();
-		$raw     = wp_remote_retrieve_headers( $response );
-		$raw     = is_object( $raw ) && method_exists( $raw, 'getAll' ) ? $raw->getAll() : (array) $raw;
-		foreach ( $raw as $name => $value ) {
-			$headers[ strtolower( (string) $name ) ] = is_array( $value ) ? implode( ', ', $value ) : (string) $value;
-		}
+		$headers = PNCP_Self_Check::headers_of( $response );
 		return array(
 			'code'     => (int) wp_remote_retrieve_response_code( $response ),
 			'body'     => (string) wp_remote_retrieve_body( $response ),
 			'headers'  => $headers,
 			'location' => isset( $headers['location'] ) ? $headers['location'] : '',
+			'via'      => $result['via'],
+			'steps'    => $result['steps'],
+			'refused'  => $result['public'],
 		);
 	}
 
@@ -1293,15 +1326,24 @@ final class PNCP_Hardening {
 	 * 3.10: the home page as a visitor gets it: GET (not HEAD), following up to five redirects (http to https,
 	 * www, trailing slash) to the final answer, instead of reading the headers of the first redirect.
 	 *
-	 * @return array{response:array<string, mixed>|WP_Error, url:string, chain:array<int, array{url:string, code:int}>}
+	 * @return array{response:array<string, mixed>|WP_Error, url:string, chain:array<int, array{url:string, code:int}>, via:string, refused:array{class:array<string, string>, steps:array<int, array<string, mixed>>}|null}
 	 */
 	private static function fetch_public_home() {
 		$url   = home_url( '/' );
 		$chain = array();
 		for ( $hop = 0; $hop <= 5; $hop++ ) {
-			$r = self::fetch( $url );
+			// 3.12.2: the home page must be a page: any refusal on the public way (the CDN's edge, a firewall,
+			// ScrapeLock) and the server is asked directly, and so is every other check of this run.
+			$r = self::fetch( $url, 'GET', '', 'origin' === self::$route ? 'origin' : 'page' );
 			if ( is_wp_error( $r ) ) {
 				break;
+			}
+			if ( 'origin' === $r['via'] && 'origin' !== self::$route ) {
+				self::$route      = 'origin';
+				self::$refused_by = array(
+					'class' => $r['refused'],
+					'steps' => $r['steps'],
+				);
 			}
 			$chain[] = array(
 				'url'  => $url,
@@ -1324,6 +1366,8 @@ final class PNCP_Hardening {
 			'response' => $r,
 			'url'      => $url,
 			'chain'    => $chain,
+			'via'      => self::$route,
+			'refused'  => self::$refused_by,
 		);
 	}
 
@@ -1375,11 +1419,30 @@ final class PNCP_Hardening {
 			$steps[] = $step['url'] . ' (HTTP ' . (int) $step['code'] . ')';
 		}
 		/* translators: %s: addresses with their HTTP status, joined by arrows */
-		$where   = $steps ? sprintf( __( 'Checked: %s.', 'scrapelock' ), implode( ' → ', $steps ) ) : '';
-		$unknown = static function ( $why ) use ( $where ) {
+		$where = $steps ? sprintf( __( 'Checked: %s.', 'scrapelock' ), implode( ' → ', $steps ) ) : '';
+		// 3.12.2: who refused the site's own request on the public way, and what each side saw (folded).
+		$refused = isset( $public['refused'] ) && is_array( $public['refused'] ) ? $public['refused'] : null;
+		$origin  = isset( $public['via'] ) && 'origin' === $public['via'];
+		if ( ! $refused && ! is_wp_error( $home ) && isset( $home['refused'] ) && ! in_array( $home['refused']['who'], array( 'page', 'none' ), true ) ) {
+			$refused = array(
+				'class' => $home['refused'],
+				'steps' => $home['steps'],
+			);
+		}
+		$details = $refused ? implode(
+			"\n",
+			PNCP_Self_Check::lines(
+				array(
+					'steps'  => $refused['steps'],
+					'public' => $refused['class'],
+				)
+			)
+		) : '';
+		$unknown = static function ( $why ) use ( $where, $details ) {
 			$r = array(
-				'state' => 'unknown',
-				'note'  => trim( $why . ' ' . $where ),
+				'state'   => 'unknown',
+				'note'    => trim( $why . ' ' . $where ),
+				'details' => $details,
 			);
 			return array(
 				'headers' => $r,
@@ -1392,8 +1455,17 @@ final class PNCP_Hardening {
 		}
 		$code = (int) $home['code'];
 		if ( $code < 200 || $code > 299 ) {
+			if ( $refused ) {
+				/* translators: 1: HTTP status code, 2: who refused (e.g. "Bunny CDN edge", "Wordfence", "ScrapeLock (No browser headers)") */
+				return $unknown( sprintf( __( 'Could not be checked: the home page answered HTTP %1$d to the site itself; %2$s refused it, and the server could not be asked directly.', 'scrapelock' ), $code, PNCP_Self_Check::who_label( $refused['class'] ) ) );
+			}
 			/* translators: %d: HTTP status code */
 			return $unknown( sprintf( __( 'Could not be checked: the home page answered HTTP %d to the site itself, not the page visitors get.', 'scrapelock' ), $code ) );
+		}
+		if ( $origin && $refused ) {
+			$first = isset( $refused['steps'][0]['code'] ) ? (int) $refused['steps'][0]['code'] : 0;
+			/* translators: 1: who refused (e.g. "Bunny CDN edge"), 2: HTTP status code */
+			$where = sprintf( __( 'Checked at the server: the site\'s own request through its public address was refused by %1$s (HTTP %2$d).', 'scrapelock' ), PNCP_Self_Check::who_label( $refused['class'] ), $first );
 		}
 		$headers = (array) $home['headers'];
 		$has     = static function ( $name ) use ( $headers ) {
@@ -1415,8 +1487,13 @@ final class PNCP_Hardening {
 			$where = trim( $where . ' ' . sprintf( __( 'The answer came through %s: these are the headers visitors get.', 'scrapelock' ), $seen ) );
 		}
 		// The site reached its own server directly (hosts file, internal DNS), not the CDN in front of it: what the
-		// CDN adds cannot be seen, so a header that is not there is not "missing".
-		$blind = '' === $seen && '' !== $expected;
+		// CDN adds cannot be seen, so a header that is not there is not "missing". 3.12.2: asked at the server on
+		// purpose (the public way refused it): the server's answer is the result, marked so in the note.
+		$blind = '' === $seen && '' !== $expected && ! ( $origin && $refused );
+		if ( $origin && $refused && $missing ) {
+			/* translators: %s: CDN name or "the CDN" */
+			$where = trim( $where . ' ' . sprintf( __( 'Headers that %s adds itself cannot be seen there.', 'scrapelock' ), '' !== $expected ? $expected : __( 'the CDN', 'scrapelock' ) ) );
+		}
 		/* translators: 1: CDN name, 2: header names */
 		$blind_note = __( 'Could not be checked: the answer came straight from your server, not through %1$s, so headers that %1$s adds cannot be seen from here. Not in this answer: %2$s.', 'scrapelock' );
 		if ( ! $missing ) {
@@ -1447,6 +1524,13 @@ final class PNCP_Hardening {
 				'note'  => '',
 			);
 		}
+		if ( '' !== $details ) {
+			$headers_out['details'] = $details;
+			$framing_out['details'] = $details;
+			if ( '' === $framing_out['note'] ) {
+				$framing_out['note'] = $where;
+			}
+		}
 		return array(
 			'headers' => $headers_out,
 			'framing' => $framing_out,
@@ -1476,7 +1560,9 @@ final class PNCP_Hardening {
 				'note'  => $why,
 			);
 		};
-		$public  = self::fetch_public_home();
+		self::$route      = 'self';
+		self::$refused_by = null;
+		$public           = self::fetch_public_home();
 		$home    = $public['response'];
 		if ( is_wp_error( $home ) && ! $public['chain'] ) {
 			/* translators: %s: error message */
@@ -1569,6 +1655,18 @@ final class PNCP_Hardening {
 		);
 
 		$out['upload_php'] = self::check_upload_php();
+		// 3.12.2: asked at the server because the public address refused the site's own request: said so.
+		if ( 'origin' === $public['via'] && is_array( $public['refused'] ) ) {
+			/* translators: %s: who refused (e.g. "Bunny CDN edge") */
+			$mark = sprintf( __( 'Checked at the server (%s refused the site\'s own request on the public way).', 'scrapelock' ), PNCP_Self_Check::who_label( $public['refused']['class'] ) );
+			foreach ( $out as $id => $check ) {
+				if ( ! in_array( $id, array( 'headers', 'framing' ), true ) && is_array( $check ) && 'unknown' !== $check['state'] ) {
+					$out[ $id ]['note'] = trim( $check['note'] . ' ' . $mark );
+				}
+			}
+		}
+		self::$route      = 'self';
+		self::$refused_by = null;
 		return $out;
 	}
 
@@ -2270,6 +2368,15 @@ final class PNCP_Hardening {
 				<?php if ( '' !== $row['note'] ) : ?>
 					<p class="description"><?php echo esc_html( $row['note'] ); ?></p>
 				<?php endif; ?>
+				<?php
+				if ( '' !== $row['details'] ) {
+					$lines = '';
+					foreach ( explode( "\n", $row['details'] ) as $line ) {
+						$lines .= '<p>' . esc_html( $line ) . '</p>';
+					}
+					echo PNCP_Admin_Fields::more_html( $lines ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Escaped above.
+				}
+				?>
 			</td>
 			<td class="num"><?php echo $have_attacks && $row['evidence'] ? esc_html( number_format_i18n( $row['hits7'] ) ) : '–'; ?></td>
 			<td class="num"><?php echo $have_attacks && $row['evidence'] ? esc_html( number_format_i18n( $row['hits30'] ) ) : '–'; ?></td>

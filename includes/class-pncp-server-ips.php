@@ -112,6 +112,23 @@ final class PNCP_Server_Ips {
 	private static $sig_seen = array();
 
 	/**
+	 * 3.12.2: the last SIG_HEADER this request added to one of its requests to the site (sign()), so the
+	 * self-check's diagnostics can match the receiving side's note (PNCP_Self_Check).
+	 *
+	 * @var string
+	 */
+	private static $last_sent = '';
+
+	/**
+	 * 3.12.2: the last SIG_HEADER sign() added ('' = none).
+	 *
+	 * @return string
+	 */
+	public static function last_sent() {
+		return self::$last_sent;
+	}
+
+	/**
 	 * Registers the hooks.
 	 */
 	public static function init() {
@@ -507,6 +524,7 @@ final class PNCP_Server_Ips {
 			$args['headers']                     = isset( $args['headers'] ) ? $args['headers'] : array();
 			$args['headers'][ self::HEADER ]     = self::token( time(), $key );
 			$args['headers'][ self::SIG_HEADER ] = self::sig_token( $method, (string) $url );
+			self::$last_sent                     = $args['headers'][ self::SIG_HEADER ];
 		}
 		return $args;
 	}
@@ -768,6 +786,7 @@ final class PNCP_Server_Ips {
 			$token  = self::sig_token( $method, (string) $location );
 			if ( '' !== $token ) {
 				$headers[ self::SIG_HEADER ] = $token;
+				self::$last_sent             = $token;
 			}
 		}
 	}

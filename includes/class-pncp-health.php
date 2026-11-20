@@ -626,13 +626,18 @@ final class PNCP_Health {
 	 * 3.5: GET an address of the site itself, like PNCP_Rules::nginx_status(): short timeout, small answer, no
 	 * cookies. A redirect is followed by hand, once, and only on the same host.
 	 *
+	 * 3.12.2: through PNCP_Self_Check::request(): straight to the server when the public way refuses the site's own
+	 * request (any refusal for robots.txt, which must be a file; only ScrapeLock's checks for bots or a firewall
+	 * for the private folders, whose refusal at the CDN is the protection itself).
+	 *
 	 * @param string $url   Address on the site.
 	 * @param int    $limit Most bytes read.
+	 * @param string $mode  page or self (PNCP_Self_Check::should_retry()).
 	 * @return array{outcome: string, code: int, body: string, type: string, reason: string} outcome: ok (HTTP 200
 	 *         and not a web page), not_served (404 / 410, or a web page), error (anything else). reason: a code
 	 *         for reason_text(): redirect, http:<code>, or msg:<transport error>.
 	 */
-	private static function fetch( $url, $limit ) {
+	private static function fetch( $url, $limit, $mode = 'self' ) {
 		$out  = array(
 			'outcome' => 'error',
 			'code'    => 0,
@@ -645,15 +650,17 @@ final class PNCP_Health {
 			if ( ! self::on_site( $url ) ) {
 				return $out; // 3.5: never another address (reason "redirect": it can only come from a Location).
 			}
-			$response = wp_remote_get(
+			$response = PNCP_Self_Check::request(
 				$url,
 				array(
+					'method'              => 'GET',
 					'timeout'             => 5,
 					'redirection'         => 0, // 3.5: a redirect is followed by hand, once, and only on the same host.
 					'sslverify'           => apply_filters( 'https_local_ssl_verify', false ), // phpcs:ignore WordPress.NamingConventions.PrefixAllGlobals.NonPrefixedHooknameFound -- Core filter for requests to the site itself.
 					'limit_response_size' => (int) $limit,
-				)
-			);
+				),
+				$mode
+			)['response'];
 			if ( is_wp_error( $response ) ) {
 				$out['reason'] = 'msg:' . $response->get_error_message();
 				return $out;
@@ -863,7 +870,7 @@ final class PNCP_Health {
 			'llms_file'   => false,
 			'llms_served' => false,
 		);
-		$response = self::fetch( $robots_url, 524288 );
+		$response = self::fetch( $robots_url, 524288, 'page' );
 		$served   = null;
 		if ( 'ok' === $response['outcome'] ) {
 			$data['source'] = 'http';
