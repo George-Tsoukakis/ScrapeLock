@@ -43,6 +43,11 @@ ScrapeLock — δοκιμές σε πραγματικό WordPress (όχι stubs)
   t_private_folders.php  3.10: Site Health «private folders»: γραμμές Nginx/Apache για κάθε ιδιωτικό φάκελο (ορατές),
                     preset «private_folders» του «Lock at Bunny» με ψεύτικο API (και 400 για > 5 patterns), κουμπί μόνο
                     για διαχειριστή με Bunny, αναγνώριση του κλειδώματος στο Site Health
+  t_311_status.php  3.11: ενδείξεις σε τρεις καταστάσεις («On», «Set but not active: <λόγος>», «Off») στη μπάρα, στη
+                    σύνοψη «Network and CDN», στο widget, στο Site Health, στο Stealth και στο εβδομαδιαίο email· καμία
+                    ετικέτα «setting_key: 1» σε καρτέλα (Emergency Mode, «Reset this tab»)· FluentCommunity (ψεύτικο
+                    plugin): η πύλη στις «Content addresses» και οι αναγνώσεις REST των μελών εκτός ορίου· οι νέες
+                    προεπιλογές μόνο σε νέα εγκατάσταση (αναβάθμιση από 3.10.1 χωρίς αλλαγή)
   t_cli.php         wp scrapelock … μέσα από το πραγματικό wp (χρειάζεται WP_CLI, αλλιώς SKIP)
   t_bunny_rules.php Edge Rules στο Bunny μέσα στα όριά του (το πολύ 5 μοτίβα ανά συνθήκη) με ψεύτικο API που δίνει
                     HTTP 400 όπως το πραγματικό: χωρισμός, κλείδωμα/Remove, rollback, Monitor only, sync, προεπισκόπηση,

@@ -730,7 +730,7 @@ t( 'Site Health Info: ενότητα ScrapeLock χωρίς PHP warnings από �
 $pncp_cdn = PNCP_Options::stored()['cdn_secret'];
 settings( array( 'cdn_secret' => 'pncp-secret-4f9a2c' ) );
 $pncp_info = PNCP_Health::info( array() );
-t( 'Site Health Info: έκδοση και ρύθμιση IP, χωρίς το μυστικό του CDN', PNCP_VERSION === $pncp_info['scrapelock']['fields']['version']['value'] && 'remote_addr' === $pncp_info['scrapelock']['fields']['ip_header']['value'] && false === strpos( wp_json_encode( $pncp_info ), 'pncp-secret-4f9a2c' ) );
+t( 'Site Health Info: έκδοση και ρύθμιση IP, χωρίς το μυστικό του CDN', PNCP_VERSION === $pncp_info['scrapelock']['fields']['version']['value'] && 'REMOTE_ADDR' === $pncp_info['scrapelock']['fields']['ip_header']['value'] && 'remote_addr' === $pncp_info['scrapelock']['fields']['ip_header']['debug'] && false === strpos( wp_json_encode( $pncp_info ), 'pncp-secret-4f9a2c' ) );
 settings( array( 'cdn_secret' => $pncp_cdn ) );
 
 /* ---------- Φάκελοι με τις συναρτήσεις του WordPress (3.3.1) ---------- */

@@ -1405,8 +1405,8 @@ final class PNCP_Options {
 	/**
 	 * What Emergency Mode changes on this site, in words: one line per setting of emergency_overlay() whose value
 	 * differs from the current one. Built from the overlay itself, so the description on the settings page is
-	 * always the list of what really changes (a setting the overlay gets later without a label here is still
-	 * listed, by its name).
+	 * always the list of what really changes (a setting the overlay gets later without a sentence here is still
+	 * listed, by the label of its field, PNCP_Setting_Labels).
 	 *
 	 * @param array<string, mixed> $s Stored settings.
 	 * @return string[]
@@ -1505,8 +1505,17 @@ final class PNCP_Options {
 			case 'rate_limit_datacenter':
 				/* translators: %d: number of pages */
 				return sprintf( _n( 'At most %d page per minute from data centers (also services in “Always allowed” that are not pinned to their IPs)', 'At most %d pages per minute from data centers (also services in “Always allowed” that are not pinned to their IPs)', $n, 'scrapelock' ), $n );
+			case 'block_ip_host':
+				return __( 'Requests that open the site by its IP address instead of its name are refused', 'scrapelock' );
 		}
-		return $key . ': ' . (string) $value;
+		// 3.11: a setting the overlay gets later without a sentence here: its label and value in words, never the
+		// bare key and number ("block_ip_host: 1" before).
+		return sprintf(
+			/* translators: 1: name of a setting, 2: its value in Emergency Mode (e.g. On, or a number) */
+			__( '%1$s: %2$s', 'scrapelock' ),
+			PNCP_Setting_Labels::label( $key ),
+			PNCP_Setting_Labels::value( $key, (string) $value )
+		);
 	}
 
 	/**

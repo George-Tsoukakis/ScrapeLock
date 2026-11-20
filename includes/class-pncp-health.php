@@ -1782,6 +1782,31 @@ final class PNCP_Health {
 		$flag = static function ( $key ) use ( $s, $yes, $no ) {
 			return ! empty( $s[ $key ] ) ? $yes : $no;
 		};
+		// 3.11: a choice in words (the stored value for one this list does not know).
+		$choices = array(
+			'exempt_cap' => array(
+				'edit_posts'        => __( 'Logged-in contributors, authors, editors, shop managers and administrators (anyone who can write posts)', 'scrapelock' ),
+				'edit_others_posts' => __( 'Logged-in editors and administrators', 'scrapelock' ),
+				'manage_options'    => __( 'Administrators only', 'scrapelock' ),
+				'none'              => __( 'Nobody (for testing the protection)', 'scrapelock' ),
+			),
+			'feed_mode'  => array(
+				'excerpt'  => __( 'Short excerpt only, with a link to the post (recommended)', 'scrapelock' ),
+				'full'     => __( 'Full text', 'scrapelock' ),
+				'disabled' => __( 'Disabled', 'scrapelock' ),
+			),
+			'ip_header'  => array(
+				'remote_addr'      => 'REMOTE_ADDR',
+				'cf_connecting_ip' => 'CF-Connecting-IP',
+				'x_forwarded_for'  => 'X-Forwarded-For',
+				'x_real_ip'        => 'X-Real-IP',
+				'true_client_ip'   => 'True-Client-IP',
+			),
+		);
+		$choice  = static function ( $key ) use ( $s, $choices ) {
+			$value = (string) $s[ $key ];
+			return isset( $choices[ $key ][ $value ] ) ? $choices[ $key ][ $value ] : $value;
+		};
 		// A limit per minute as it is stored, or "off" for 0.
 		$per_min = static function ( $key ) use ( $s ) {
 			/* translators: %d: requests per minute */
@@ -1829,10 +1854,11 @@ final class PNCP_Health {
 			'cart_limits'    => array( __( 'WooCommerce limits per minute (cart / checkout, coupons)', 'scrapelock' ), $per_min( 'rate_limit_cart' ) . ', ' . $per_min( 'rate_limit_coupon' ) ),
 			'countries'      => array( __( 'Blocked countries', 'scrapelock' ), '' !== trim( (string) $s['countries_block'] ) ? implode( ', ', PNCP_Options::parse_countries( (string) $s['countries_block'] ) ) : '-' ),
 			'countries_lim'  => array( __( 'Countries with a stricter limit', 'scrapelock' ), '' !== trim( (string) $s['countries_strict'] ) ? implode( ', ', PNCP_Options::parse_countries( (string) $s['countries_strict'] ) ) . ' (' . $per_min( 'rate_limit_country' ) . ')' : '-' ),
-			'exempt_cap'     => array( __( 'Who is exempt', 'scrapelock' ), (string) $s['exempt_cap'] ),
-			'feed_mode'      => array( __( 'Feeds', 'scrapelock' ), (string) $s['feed_mode'] ),
+			// 3.11: the choices in words, as on the settings page (the stored value in "debug", see below).
+			'exempt_cap'     => array( __( 'Who is exempt', 'scrapelock' ), $choice( 'exempt_cap' ) ),
+			'feed_mode'      => array( __( 'Feeds', 'scrapelock' ), $choice( 'feed_mode' ) ),
 			'rest_content'   => array( __( 'Content hidden in the REST API', 'scrapelock' ), $flag( 'rest_hide_content' ) ),
-			'ip_header'      => array( __( 'Real visitor IP', 'scrapelock' ), (string) $s['ip_header'] ),
+			'ip_header'      => array( __( 'Real visitor IP', 'scrapelock' ), $choice( 'ip_header' ) ),
 			'ip_lists'       => array( __( 'Official IP lists updated', 'scrapelock' ), $lists ? implode( ', ', $lists ) : '-' ),
 			'early'          => array( __( 'Early check', 'scrapelock' ), empty( $s['early_mode'] ) ? $no : ( PNCP_Early::installed() ? __( 'Running', 'scrapelock' ) : __( 'On, not running', 'scrapelock' ) ) ),
 			'precheck'       => array( __( 'Pre-cache check', 'scrapelock' ), empty( $s['precheck'] ) ? $no : ( PNCP_Precheck::active() ? __( 'Running', 'scrapelock' ) : __( 'On, not running', 'scrapelock' ) ) ),
@@ -1879,6 +1905,10 @@ final class PNCP_Health {
 				'label' => $field[0],
 				'value' => $field[1],
 			);
+			// 3.11: the copied report ("Copy site info") keeps the stored value of a choice shown in words.
+			if ( isset( $choices[ $key ] ) ) {
+				$section['fields'][ $key ]['debug'] = (string) $s[ $key ];
+			}
 		}
 		$info['scrapelock'] = $section;
 		return $info;

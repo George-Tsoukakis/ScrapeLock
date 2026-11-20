@@ -1078,9 +1078,10 @@ final class PNCP_Admin {
 			<tbody>
 				<?php foreach ( $changes as $change ) : ?>
 					<tr>
-						<td><code><?php echo esc_html( $change['key'] ); ?></code></td>
-						<td><?php echo '' === $change['old'] ? '<em>' . esc_html__( '(empty)', 'scrapelock' ) . '</em>' : esc_html( $change['old'] ); ?></td>
-						<td><?php echo '' === $change['new'] ? '<em>' . esc_html__( '(empty)', 'scrapelock' ) . '</em>' : esc_html( $change['new'] ); ?></td>
+						<?php // 3.11: the setting in words, and On / Off for a switch (the key stays in the title, for support). ?>
+						<td title="<?php echo esc_attr( $change['key'] ); ?>"><?php echo esc_html( PNCP_Setting_Labels::label( $change['key'] ) ); ?></td>
+						<td><?php echo '' === $change['old'] ? '<em>' . esc_html__( '(empty)', 'scrapelock' ) . '</em>' : esc_html( PNCP_Setting_Labels::value( $change['key'], $change['old'] ) ); ?></td>
+						<td><?php echo '' === $change['new'] ? '<em>' . esc_html__( '(empty)', 'scrapelock' ) . '</em>' : esc_html( PNCP_Setting_Labels::value( $change['key'], $change['new'] ) ); ?></td>
 					</tr>
 				<?php endforeach; ?>
 			</tbody>
