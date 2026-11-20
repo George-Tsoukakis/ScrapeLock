@@ -595,11 +595,11 @@ final class PNCP_Admin {
 				)
 			);
 		} elseif ( ! empty( $s['geo_db'] ) ) {
-			esc_html_e( 'Country database: not downloaded yet. Use “Download now” at the bottom of this tab, or wait for the daily task.', 'scrapelock' );
+			esc_html_e( 'Country database: not downloaded yet. Use “Download now” at the bottom of this tab.', 'scrapelock' );
 		} else {
-			esc_html_e( 'Country database: off. Without Cloudflare, Bunny CDN or the database the country is unknown and the country lists do nothing.', 'scrapelock' );
+			esc_html_e( 'Country database: off. Without it, Cloudflare or Bunny, the country lists do nothing.', 'scrapelock' );
 		}
-		echo '<br>';
+		echo '</p><p class="description pncp-geo-credit">';
 		printf(
 			/* translators: %s: link to DB-IP */
 			esc_html__( 'IP geolocation by %s (CC BY 4.0).', 'scrapelock' ),
@@ -914,36 +914,36 @@ final class PNCP_Admin {
 			<th scope="row"><label for="pncp-excluded_ids"><?php esc_html_e( 'Exceptions', 'scrapelock' ); ?></label></th>
 			<td>
 				<input type="text" class="regular-text" id="pncp-excluded_ids" name="<?php echo esc_attr( PNCP_OPTION ); ?>[excluded_ids]" value="<?php echo esc_attr( $s['excluded_ids'] ); ?>" aria-describedby="pncp-excluded_ids-help" inputmode="numeric">
-				<p class="description" id="pncp-excluded_ids-help"><?php esc_html_e( 'Comma-separated page or post IDs, e.g. 12, 45. For a single piece of text (phone, email, code), give it the CSS class pncp-allow.', 'scrapelock' ); ?></p>
+				<?php echo PNCP_Admin_Fields::description( 'pncp-excluded_ids-help', PNCP_Admin_Fields::help( __( 'Comma-separated page or post IDs, e.g. 12, 45.', 'scrapelock' ), __( 'For a single piece of text (phone, email, code), give it the CSS class pncp-allow.', 'scrapelock' ) ) ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Escaped in PNCP_Admin_Fields. ?>
 			</td>
 		</tr>
 		<tr>
 			<th scope="row"><?php esc_html_e( 'What is blocked', 'scrapelock' ); ?></th>
 			<td>
 				<?php
-				self::checkbox( $s, 'block_selection', __( 'Text selection with the mouse or finger', 'scrapelock' ), __( 'Not recommended: it also stops visitors who select text to have it read aloud (select-to-speak, screen readers), translated or looked up, and copying with the source below cannot work. Off in the Balanced preset.', 'scrapelock' ) );
+				self::checkbox( $s, 'block_selection', __( 'Text selection with the mouse or finger', 'scrapelock' ), PNCP_Admin_Fields::help( __( 'Not recommended: it breaks read-aloud, translation and copying with the source.', 'scrapelock' ), __( 'It also stops visitors who select text to have it read aloud (select-to-speak, screen readers), translated or looked up, and copying with the source below cannot work. Off in the Balanced preset.', 'scrapelock' ) ) );
 				self::checkbox( $s, 'block_context_menu', __( 'Right click', 'scrapelock' ) );
 				self::checkbox( $s, 'block_shortcuts', __( 'Shortcuts Ctrl/Cmd + A, C, X, S, U', 'scrapelock' ), __( 'Keyboard navigation (Tab, arrows, Enter) is never affected.', 'scrapelock' ) );
-				self::checkbox( $s, 'block_devtools', __( 'Developer tools shortcuts (F12, Ctrl+Shift+I/J/C/K, Cmd+Opt+I/J/C/U)', 'scrapelock' ), __( 'Cosmetic: it only blocks the shortcuts. It does not detect DevTools and does not “break” the page.', 'scrapelock' ) );
+				self::checkbox( $s, 'block_devtools', __( 'Developer tools shortcuts (F12, Ctrl+Shift+I/J/C/K, Cmd+Opt+I/J/C/U)', 'scrapelock' ), __( 'Cosmetic: blocks only the shortcuts; DevTools is not detected or broken.', 'scrapelock' ) );
 				self::checkbox( $s, 'block_image_drag', __( 'Dragging images and “Save image” with a long press on mobile', 'scrapelock' ) );
 				self::checkbox( $s, 'block_text_drag', __( 'Dragging selected text to another window', 'scrapelock' ) );
-				self::checkbox( $s, 'blur_on_capture', __( 'Blur the page when Print Screen or a screenshot shortcut is pressed', 'scrapelock' ), __( 'Optional. It only catches the shortcuts the browser sees (Print Screen, Win+Shift+S, Cmd+Shift+3/4/5). It does not stop tools outside the browser or a photo taken with a phone.', 'scrapelock' ) );
+				self::checkbox( $s, 'blur_on_capture', __( 'Blur the page when Print Screen or a screenshot shortcut is pressed', 'scrapelock' ), PNCP_Admin_Fields::help( __( 'Catches only the shortcuts the browser sees.', 'scrapelock' ), __( 'Print Screen, Win+Shift+S and Cmd+Shift+3/4/5. It does not stop tools outside the browser or a photo taken with a phone.', 'scrapelock' ) ) );
 				?>
 			</td>
 		</tr>
 		<tr id="pncp-readers">
 			<th scope="row"><?php esc_html_e( 'Members and readers', 'scrapelock' ); ?></th>
 			<td>
-				<p class="description"><?php esc_html_e( 'No web page can stop a screenshot, a screen recording or a photo of the screen. These options make copies traceable instead, and stop accounts that are shared or used to copy everything. Staff who are exempt (“Who is excluded”) never see or trigger them.', 'scrapelock' ); ?></p>
+				<?php echo PNCP_Admin_Fields::para( __( 'Screenshots cannot be stopped; these options trace copies back to an account.', 'scrapelock' ), __( 'No web page can stop a screenshot, a screen recording or a photo of the screen. These options make copies traceable instead, and stop accounts that are shared or used to copy everything. Staff who are exempt (“Who is excluded”) never see or trigger them.', 'scrapelock' ) ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Escaped in PNCP_Admin_Fields. ?>
 				<?php
-				self::checkbox( $s, 'user_mark', __( 'Show who is reading over protected pages', 'scrapelock' ), __( 'A faint line repeated over the page with the account\'s user name and the date and time, so every screenshot, recording or photo shows whose account it came from. It never gets in the way of clicks, taps or selecting text, and appears again if it is removed.', 'scrapelock' ) );
-				self::checkbox( $s, 'user_mark_guests', __( 'Also for visitors who are not signed in (their IP address and the time)', 'scrapelock' ), __( 'Their line is fetched by the page, so cached pages work as before. Search engines do not see it.', 'scrapelock' ) );
+				self::checkbox( $s, 'user_mark', __( 'Show who is reading over protected pages', 'scrapelock' ), PNCP_Admin_Fields::help( __( 'A faint user name and time over the page, visible on every screenshot.', 'scrapelock' ), __( 'A faint line repeated over the page with the account\'s user name and the date and time, so every screenshot, recording or photo shows whose account it came from. It never gets in the way of clicks, taps or selecting text, and appears again if it is removed.', 'scrapelock' ) ) );
+				self::checkbox( $s, 'user_mark_guests', __( 'Also for visitors who are not signed in (their IP address and the time)', 'scrapelock' ), __( 'Loaded by the page, so caching still works; search engines do not see it.', 'scrapelock' ) );
 				self::number( $s, 'user_mark_opacity', __( 'How visible (percent):', 'scrapelock' ), __( '10 is faint but readable on a screenshot.', 'scrapelock' ) );
-				self::checkbox( $s, 'text_trace', __( 'Hide an invisible trace of the account in the text', 'scrapelock' ), __( 'For signed-in accounts: invisible characters, different for each account, are placed in the text of protected pages. When the text turns up somewhere else, paste it under Log → “Find whose copy this is” to see the account and when. Visitors who are not signed in get the text without a trace.', 'scrapelock' ) );
-				self::number( $s, 'rate_limit_account', __( 'Pages per minute per signed-in account (0 = off):', 'scrapelock' ), __( 'The other limits count per IP address; a member could run a script from many addresses with one account. For example 30.', 'scrapelock' ) );
-				self::checkbox( $s, 'shared_alert', __( 'Email me when one account is used from several addresses at once', 'scrapelock' ), __( 'Counted within 10 minutes. Mobile phones change address often, so one alert at most per account a day.', 'scrapelock' ) );
+				self::checkbox( $s, 'text_trace', __( 'Hide an invisible trace of the account in the text', 'scrapelock' ), PNCP_Admin_Fields::help( __( 'Invisible characters per account; Log → “Find whose copy this is” reads them.', 'scrapelock' ), __( 'For signed-in accounts: invisible characters, different for each account, are placed in the text of protected pages. When the text turns up somewhere else, paste it under Log → “Find whose copy this is” to see the account and when. Visitors who are not signed in get the text without a trace.', 'scrapelock' ) ) );
+				self::number( $s, 'rate_limit_account', __( 'Pages per minute per signed-in account (0 = off):', 'scrapelock' ), PNCP_Admin_Fields::help( __( 'Counts one account across all its IP addresses. For example 30.', 'scrapelock' ), __( 'The other limits count per IP address; a member could run a script from many addresses with one account.', 'scrapelock' ) ) );
+				self::checkbox( $s, 'shared_alert', __( 'Email me when one account is used from several addresses at once', 'scrapelock' ), PNCP_Admin_Fields::help( __( 'Counted over 10 minutes; at most one alert per account a day.', 'scrapelock' ), __( 'Mobile phones change address often, so there is one alert at most per account a day.', 'scrapelock' ) ) );
 				self::number( $s, 'shared_ips', __( 'Addresses at once:', 'scrapelock' ) );
-				self::checkbox( $s, 'shared_logout', __( 'Then sign the account out everywhere else', 'scrapelock' ), __( 'The session on the newest address stays signed in; the others must sign in again. Never for staff.', 'scrapelock' ) );
+				self::checkbox( $s, 'shared_logout', __( 'Then sign the account out everywhere else', 'scrapelock' ), __( 'The newest session stays; the others must sign in again. Never for staff.', 'scrapelock' ) );
 				?>
 			</td>
 		</tr>
@@ -961,7 +961,7 @@ final class PNCP_Admin {
 						'allow'       => __( 'Allow normally', 'scrapelock' ),
 					)
 				);
-				self::number( $s, 'attribution_min_chars', __( 'Append the source from this many characters and up:', 'scrapelock' ), __( 'Shorter snippets (e.g. a word or a phone number) are copied without the source. 0 = always.', 'scrapelock' ) );
+				self::number( $s, 'attribution_min_chars', __( 'Append the source from this many characters and up:', 'scrapelock' ), __( 'Shorter copies, like a phone number, go without the source. 0 = always.', 'scrapelock' ) );
 				?>
 				<p class="description"><?php esc_html_e( 'The source option makes sense when text selection is allowed.', 'scrapelock' ); ?></p>
 			</td>
@@ -996,7 +996,7 @@ final class PNCP_Admin {
 						'manage_options'    => __( 'Administrators only', 'scrapelock' ),
 						'none'              => __( 'Nobody (for testing the protection)', 'scrapelock' ),
 					),
-					__( 'Applies to the on-page protection and to the server checks (bots, limits, blocks). Customers with an account are not excluded.', 'scrapelock' )
+					PNCP_Admin_Fields::help( __( 'Covers on-page protection and server checks. Customers are not excluded.', 'scrapelock' ), __( 'The server checks are the bot checks, the limits and the blocks. Customers with an account get the protection like any visitor.', 'scrapelock' ) )
 				);
 				?>
 			</td>
@@ -1009,7 +1009,7 @@ final class PNCP_Admin {
 				<div class="pncp-field">
 				<label for="pncp-message" class="screen-reader-text"><?php esc_html_e( 'Message text', 'scrapelock' ); ?></label>
 				<input type="text" class="large-text" id="pncp-message" name="<?php echo esc_attr( PNCP_OPTION ); ?>[message]" value="<?php echo esc_attr( $s['message'] ); ?>" placeholder="<?php echo esc_attr( PNCP_Options::message( array() ) ); ?>" maxlength="200" aria-describedby="pncp-message-help pncp-message-requires"<?php echo PNCP_Admin_Fields::requires_attr( 'message', $s ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Escaped in requires_attr(). ?>>
-				<p class="description" id="pncp-message-help"><?php esc_html_e( 'Leave empty for the default message, which is shown in the language of the site.', 'scrapelock' ); ?></p>
+				<p class="description" id="pncp-message-help"><?php esc_html_e( 'Leave empty for the default message in the site language.', 'scrapelock' ); ?></p>
 				<?php echo PNCP_Admin_Fields::requires_note( 'message', $s ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Escaped in requires_note(). ?>
 				</div>
 			</td>
@@ -1039,7 +1039,7 @@ final class PNCP_Admin {
 		?>
 		<section class="pncp-card pncp-settings-io" aria-labelledby="pncp-settings-io-title">
 			<h2 id="pncp-settings-io-title"><?php esc_html_e( 'Export, import and undo', 'scrapelock' ); ?></h2>
-			<p class="description"><?php esc_html_e( 'Download the settings of every tab as a JSON file, e.g. to copy them to another site or keep a backup. The file leaves out secrets: the CDN shared secret, the API token for blocking at the CDN and the private feed tokens (of which only a hash is stored). Set those again on the other site.', 'scrapelock' ); ?></p>
+			<?php echo PNCP_Admin_Fields::para( __( 'All tabs as one JSON file, for a backup or another site. Secrets are left out.', 'scrapelock' ), __( 'The file leaves out secrets: the CDN shared secret, the API token for blocking at the CDN and the private feed tokens (of which only a hash is stored). Set those again on the other site.', 'scrapelock' ) ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Escaped in PNCP_Admin_Fields. ?>
 			<?php self::action_form_open( 'pncp_settings', 'pncp_settings', 'pncp-inline-form' ); ?>
 				<input type="hidden" name="op" value="export">
 				<p><button type="submit" class="button"><?php esc_html_e( 'Export settings', 'scrapelock' ); ?></button></p>
@@ -1053,11 +1053,11 @@ final class PNCP_Admin {
 					<input type="file" id="pncp-import-file" name="pncp_import_file" accept=".json,application/json" required aria-describedby="pncp-import-help">
 					<button type="submit" class="button"><?php esc_html_e( 'Check the file', 'scrapelock' ); ?></button>
 				</p>
-				<p class="description" id="pncp-import-help"><?php esc_html_e( 'Nothing changes yet: you first see which settings the file would change, and confirm.', 'scrapelock' ); ?></p>
+				<p class="description" id="pncp-import-help"><?php esc_html_e( 'Nothing changes until you have seen the changes and confirmed.', 'scrapelock' ); ?></p>
 			</form>
 			<h3><?php esc_html_e( 'Earlier versions', 'scrapelock' ); ?></h3>
 			<?php if ( ! $backups ) : ?>
-				<p class="description"><?php esc_html_e( 'None yet. Before a preset, an import or a reset changes the settings, the previous ones are kept here (the last 5).', 'scrapelock' ); ?></p>
+				<p class="description"><?php esc_html_e( 'None yet. Presets, imports and resets keep the previous settings here (last 5).', 'scrapelock' ); ?></p>
 			<?php else : ?>
 				<ul class="pncp-backups">
 					<?php foreach ( $backups as $item ) : ?>
@@ -1218,27 +1218,27 @@ final class PNCP_Admin {
 		$profiles = array(
 			'balanced' => array( __( 'Balanced', 'scrapelock' ), __( 'Copy with source, limit 60 pages/minute, block after 3 violations. For most sites.', 'scrapelock' ) ),
 			'strict'   => array( __( 'Strict', 'scrapelock' ), __( 'No text selection or copying, limit 40 pages/minute, 3-hour block after 2 violations.', 'scrapelock' ) ),
-			'maximum'  => array( __( 'Maximum', 'scrapelock' ), __( 'Also no printing and no RSS, browsers only, blur on screenshot, limit 30/minute, 12-hour block after 2 violations. May annoy some visitors.', 'scrapelock' ) ),
+			'maximum'  => array( __( 'Maximum', 'scrapelock' ), __( 'Adds no printing, no RSS, browsers only, screenshot blur; 30/minute, 12-hour blocks.', 'scrapelock' ) ),
 		);
 		$until    = PNCP_Options::emergency_until();
 		?>
 		<div class="pncp-cards">
 			<section class="pncp-card" aria-labelledby="pncp-profiles-title">
 				<h2 id="pncp-profiles-title"><?php esc_html_e( 'Presets', 'scrapelock' ); ?></h2>
-				<p class="description"><?php esc_html_e( 'One click changes the protection and limit settings. Lists, feeds, IPs and watermark do not change. You can adjust anything afterwards.', 'scrapelock' ); ?></p>
+				<p class="description"><?php esc_html_e( 'One click sets protection and limits; lists, feeds, IPs and watermark stay.', 'scrapelock' ); ?></p>
 				<p><?php esc_html_e( 'Current:', 'scrapelock' ); ?> <strong><?php echo esc_html( '' === $current ? __( 'Custom', 'scrapelock' ) : $profiles[ $current ][0] ); ?></strong></p>
 				<?php self::action_form_open( 'pncp_profile', 'pncp_profile', 'pncp-profile-form' ); ?>
 					<?php foreach ( $profiles as $key => $profile ) : ?>
 						<div class="pncp-profile<?php echo $current === $key ? ' is-current' : ''; ?>">
 							<button type="submit" name="profile" value="<?php echo esc_attr( $key ); ?>" class="button<?php echo 'balanced' === $key ? ' button-primary' : ''; ?>" aria-describedby="pncp-profile-<?php echo esc_attr( $key ); ?>"<?php self::profile_confirm( $s, $key ); ?>><?php echo esc_html( $profile[0] ); ?></button>
-							<p class="description" id="pncp-profile-<?php echo esc_attr( $key ); ?>"><?php echo esc_html( $profile[1] ); ?></p>
+							<p class="description" id="pncp-profile-<?php echo esc_attr( $key ); ?>"><?php echo esc_html( $profile[1] ); ?><?php echo 'maximum' === $key ? ' ' . PNCP_Admin_Fields::risk_icon() : ''; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Escaped in PNCP_Admin_Fields. ?></p>
 						</div>
 					<?php endforeach; ?>
 				</form>
 			</section>
 			<section class="pncp-card pncp-card--emergency" aria-labelledby="pncp-emergency-title">
 				<h2 id="pncp-emergency-title"><?php esc_html_e( 'Emergency Mode', 'scrapelock' ); ?></h2>
-				<p class="description"><?php esc_html_e( 'For a scraping attack in progress. Your settings do not change: when it ends, they apply again as they were.', 'scrapelock' ); ?></p>
+				<p class="description"><?php esc_html_e( 'For an attack in progress. Your own settings apply again when it ends.', 'scrapelock' ); ?></p>
 				<?php
 				// Made from the overlay itself (PNCP_Options::emergency_overlay()), so it lists exactly what changes.
 				$changes = PNCP_Options::emergency_changes( PNCP_Options::stored() );
@@ -1281,16 +1281,17 @@ final class PNCP_Admin {
 								/* translators: 1: usual pages per minute, 2: threshold */
 								? sprintf( __( 'Automatic start: on. Usually %1$s pages per minute; it starts above %2$d.', 'scrapelock' ), number_format_i18n( $state['avg'], 1 ), PNCP_Surge::threshold( $state, $s ) )
 								/* translators: %d: threshold */
-								: sprintf( __( 'Automatic start: on, still learning the usual rate; until then it starts above %d pages per minute.', 'scrapelock' ), PNCP_Surge::threshold( $state, $s ) )
+								: sprintf( __( 'Automatic start: on, still learning; meanwhile it starts above %d pages per minute.', 'scrapelock' ), PNCP_Surge::threshold( $state, $s ) )
 						) . '</p>';
 					} elseif ( ! empty( $s['auto_emergency'] ) ) {
 						echo '<p class="description">' . esc_html(
 							$state['samples'] >= PNCP_Surge::WARMUP
 								/* translators: 1: usual pages per minute, 2: threshold */
-								? sprintf( __( 'Attack alert: on. Usually %1$s pages per minute; above %2$d you get an email and a notice here with a button to start Emergency Mode.', 'scrapelock' ), number_format_i18n( $state['avg'], 1 ), PNCP_Surge::threshold( $state, $s ) )
+								? sprintf( __( 'Attack alert: on. Usually %1$s pages per minute; alert above %2$d.', 'scrapelock' ), number_format_i18n( $state['avg'], 1 ), PNCP_Surge::threshold( $state, $s ) )
 								/* translators: %d: threshold */
-								: sprintf( __( 'Attack alert: on, still learning the usual rate; until then you are alerted above %d pages per minute.', 'scrapelock' ), PNCP_Surge::threshold( $state, $s ) )
+								: sprintf( __( 'Attack alert: on, still learning; meanwhile the alert is above %d pages per minute.', 'scrapelock' ), PNCP_Surge::threshold( $state, $s ) )
 						) . '</p>';
+						echo PNCP_Admin_Fields::more( __( 'An alert is an email and a notice here with a button to start Emergency Mode.', 'scrapelock' ) ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Escaped in PNCP_Admin_Fields.
 					}
 					?>
 					<?php self::action_form_open( PNCP_Status::EMERGENCY, PNCP_Status::EMERGENCY ); ?>
@@ -1369,34 +1370,35 @@ final class PNCP_Admin {
 		?>
 		<?php self::row_open( 'monitor', __( 'Monitor only', 'scrapelock' ) ); ?>
 				<?php
-				self::checkbox( $s, 'monitor_mode', __( 'Monitor only (log what would be blocked, block nothing)', 'scrapelock' ), __( 'Every check below still runs, but a request it would refuse is let through and written to the log as “Would block”. No IP is blocked temporarily and nothing is blocked at the CDN. Use it to see what the settings would do before they do it: you and your staff are exempt, so you would never notice a block yourselves. Private URLs (feeds with a token) and Lockdown are not affected: they keep protecting.', 'scrapelock' ) );
+				self::checkbox( $s, 'monitor_mode', __( 'Monitor only (log what would be blocked, block nothing)', 'scrapelock' ), PNCP_Admin_Fields::help( __( 'Runs every check but only logs “Would block”; nothing is refused.', 'scrapelock' ), __( 'Every check below still runs, but a request it would refuse is let through and written to the log as “Would block”. No IP is blocked temporarily and nothing is blocked at the CDN. Use it to see what the settings would do before they do it: you and your staff are exempt, so you would never notice a block yourselves. Private URLs (feeds with a token) and Lockdown are not affected: they keep protecting.', 'scrapelock' ) ) );
 				if ( ! empty( $s['monitor_mode'] ) && ! empty( $s['monitor_until'] ) && PNCP_Options::monitoring( $s ) ) {
 					printf(
 						'<p class="description pncp-monitor-until">%s</p>',
 						esc_html(
 							sprintf(
 								/* translators: %s: date and time */
-								__( 'New install: ScrapeLock starts blocking on its own on %s. Untick the box (or use “Enforce now”) to start earlier; turned on by hand, “Monitor only” has no end.', 'scrapelock' ),
+								__( 'New install: blocking starts on its own on %s. Untick the box to start now.', 'scrapelock' ),
 								wp_date( get_option( 'date_format' ) . ' ' . get_option( 'time_format' ), (int) $s['monitor_until'] )
 							)
 						)
 					);
+					echo PNCP_Admin_Fields::more( __( 'You can also use “Enforce now”. Turned on by hand, “Monitor only” has no end.', 'scrapelock' ) ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Escaped in PNCP_Admin_Fields.
 				}
 				?>
 		<?php self::row_close(); ?>
-		<?php self::group_heading( 'bots', __( 'Bots', 'scrapelock' ), __( 'Who may read the site: the bot list, AI crawlers, and the User-Agents, IPs and referrers that are always allowed or always blocked.', 'scrapelock' ) ); ?>
+		<?php self::group_heading( 'bots', __( 'Bots', 'scrapelock' ), __( 'Who may read the site: bot list, AI crawlers, allowed and blocked lists.', 'scrapelock' ) ); ?>
 		<?php self::row_open( 'bots', __( 'Scrapers and bots', 'scrapelock' ) ); ?>
 				<?php
 				self::checkbox( $s, 'block_bots', __( 'Block (403) the User-Agents in the list', 'scrapelock' ) );
 				self::checkbox( $s, 'block_empty_ua', __( 'Block requests without a User-Agent', 'scrapelock' ) );
-				self::checkbox( $s, 'block_fake_crawlers', __( 'Block fake Googlebot, Bingbot, Applebot and Yandex', 'scrapelock' ), __( 'The IP is checked against the official Google and Bing lists and with reverse DNS. Real search engines always pass, without limits.', 'scrapelock' ) );
-				self::checkbox( $s, 'require_browser_headers', __( 'Browsers only: 403 for pages without Accept-Language or without “Mozilla/” in the User-Agent', 'scrapelock' ), __( 'Stops most scripts. Link previews (Facebook, Viber, WhatsApp etc.) in the “Always allowed” list pass.', 'scrapelock' ) );
-				self::checkbox( $s, 'block_headless', __( 'Block headless and fake browsers', 'scrapelock' ), __( 'Blocks Chrome running without a window when it says so in its headers (“HeadlessChrome”), and, on HTTPS, scripts that copy the User-Agent of Chrome, Edge or Firefox without the Sec-Fetch headers every modern browser sends. It catches common tools and cheap scrapers, not every automated browser: one that is carefully disguised (e.g. Puppeteer with “stealth”, or Selenium with a visible Chrome) sends the same headers as a person. The page limits, the human check and the bot trap still apply to those. In-app browsers (Android WebView) are not checked.', 'scrapelock' ) );
-				self::checkbox( $s, 'trap_enabled', __( 'Bot trap', 'scrapelock' ), __( 'Invisible link on every page, disallowed in robots.txt. Whoever opens it is blocked temporarily, even if it pretends to be a browser. Visitors do not see it, and another site cannot trap them.', 'scrapelock' ) );
+				self::checkbox( $s, 'block_fake_crawlers', __( 'Block fake Googlebot, Bingbot, Applebot and Yandex', 'scrapelock' ), PNCP_Admin_Fields::help( __( 'Checks the IP against the official lists and with reverse DNS.', 'scrapelock' ), __( 'The IP is checked against the official Google and Bing lists and with reverse DNS. Real search engines always pass, without limits.', 'scrapelock' ) ) );
+				self::checkbox( $s, 'require_browser_headers', __( 'Browsers only: 403 for pages without Accept-Language or without “Mozilla/” in the User-Agent', 'scrapelock' ), PNCP_Admin_Fields::help( __( 'Stops most scripts; link previews in “Always allowed” still pass.', 'scrapelock' ), __( 'Stops most scripts. Link previews (Facebook, Viber, WhatsApp etc.) in the “Always allowed” list pass.', 'scrapelock' ) ) );
+				self::checkbox( $s, 'block_headless', __( 'Block headless and fake browsers', 'scrapelock' ), PNCP_Admin_Fields::help( __( 'Catches HeadlessChrome and, on HTTPS, Chrome look-alikes without Sec-Fetch headers.', 'scrapelock' ), __( 'Blocks Chrome running without a window when it says so in its headers (“HeadlessChrome”), and, on HTTPS, scripts that copy the User-Agent of Chrome, Edge or Firefox without the Sec-Fetch headers every modern browser sends. It catches common tools and cheap scrapers, not every automated browser: one that is carefully disguised (e.g. Puppeteer with “stealth”, or Selenium with a visible Chrome) sends the same headers as a person. The page limits, the human check and the bot trap still apply to those. In-app browsers (Android WebView) are not checked.', 'scrapelock' ) ) );
+				self::checkbox( $s, 'trap_enabled', __( 'Bot trap', 'scrapelock' ), PNCP_Admin_Fields::help( __( 'A hidden link, disallowed in robots.txt; whoever opens it is blocked.', 'scrapelock' ), __( 'Invisible link on every page, disallowed in robots.txt. Whoever opens it is blocked temporarily, even if it pretends to be a browser. Visitors do not see it, and another site cannot trap them.', 'scrapelock' ) ) );
 				// 3.5: opt-in ban of vulnerability scanners on their first probe (PNCP_Bots::probe_guard()).
-				self::checkbox( $s, 'probe_ban', __( 'Ban scanners on their first probe', 'scrapelock' ), __( 'Blocks an IP for 10 minutes the first time it asks for a file that only attack scanners look for and that does not exist on this site: .env, .git, backup copies of wp-config.php, database dumps and backup archives at the top of the site, SSH keys, phpMyAdmin, Adminer, and PHP files in the uploads folder. A second probe within 24 hours gets the full temporary block. phpMyAdmin, Adminer and PHP files in uploads are caught only when the web server passes those requests to WordPress: Nginx usually answers a missing .php file itself, and “No PHP in uploads” refuses them first. Staff, verified search engines, the always-allowed IPs and User-Agents, and people who click a link or type the address in a browser are never blocked. On Nginx, add the updated rules from the “Server rules” tab so that requests for hidden files (.env, .git) reach WordPress.', 'scrapelock' ) );
-				self::textarea( $s, 'bot_list', __( 'User-Agents to block (one per line, matches anywhere in the User-Agent, case-insensitive):', 'scrapelock' ), __( 'It contains two AI categories: training crawlers (GPTBot, ClaudeBot, CCBot, Google-Extended etc.) and AI search / assistants (OAI-SearchBot, ChatGPT-User, Claude-SearchBot, PerplexityBot etc.). You can allow the second one in the next section.', 'scrapelock' ) . ' ' . sprintf( /* translators: %s: number of AI crawlers */ __( 'In addition, %s more AI crawlers and agents (DeepSeek, Grok, Qwen, Mistral, NotebookLM and others) are blocked by name: that list is built into ScrapeLock and updated with each version, so it is not shown here. A line that starts with “=” must be the whole User-Agent, e.g. “=node”.', 'scrapelock' ), number_format_i18n( count( PNCP_Bots::known_ai_agents() ) ) ), 10, true );
-				self::checkbox( $s, 'block_http_libs', __( 'Also block generic HTTP libraries (strict)', 'scrapelock' ), __( 'Blocks the User-Agent that programming libraries send by default: curl, Wget, python-requests, Go, Java, okhttp, Dart, node-fetch, axios, Guzzle and others. Many cheap scrapers use them, but so do WooCommerce mobile apps (Flutter, Android), headless front ends, ERP and price sync, and uptime monitors. Turn it on only if nothing like that reads your site, or add those services to “Always allowed” first.', 'scrapelock' ) );
+				self::checkbox( $s, 'probe_ban', __( 'Ban scanners on their first probe', 'scrapelock' ), PNCP_Admin_Fields::help( __( '10-minute block on the first request for .env, .git, dumps and similar.', 'scrapelock' ), __( 'Blocks an IP for 10 minutes the first time it asks for a file that only attack scanners look for and that does not exist on this site: .env, .git, backup copies of wp-config.php, database dumps and backup archives at the top of the site, SSH keys, phpMyAdmin, Adminer, and PHP files in the uploads folder. A second probe within 24 hours gets the full temporary block. phpMyAdmin, Adminer and PHP files in uploads are caught only when the web server passes those requests to WordPress: Nginx usually answers a missing .php file itself, and “No PHP in uploads” refuses them first. Staff, verified search engines, the always-allowed IPs and User-Agents, and people who click a link or type the address in a browser are never blocked. On Nginx, add the updated rules from the “Server rules” tab so that requests for hidden files (.env, .git) reach WordPress.', 'scrapelock' ) ) );
+				self::textarea( $s, 'bot_list', __( 'User-Agents to block (one per line, matches anywhere in the User-Agent, case-insensitive):', 'scrapelock' ), PNCP_Admin_Fields::help( __( 'Includes AI training crawlers and AI search bots; search can be allowed below.', 'scrapelock' ), __( 'It contains two AI categories: training crawlers (GPTBot, ClaudeBot, CCBot, Google-Extended etc.) and AI search / assistants (OAI-SearchBot, ChatGPT-User, Claude-SearchBot, PerplexityBot etc.). You can allow the second one in the next section.', 'scrapelock' ) . ' ' . sprintf( /* translators: %s: number of AI crawlers */ __( 'In addition, %s more AI crawlers and agents (DeepSeek, Grok, Qwen, Mistral, NotebookLM and others) are blocked by name: that list is built into ScrapeLock and updated with each version, so it is not shown here. A line that starts with “=” must be the whole User-Agent, e.g. “=node”.', 'scrapelock' ), number_format_i18n( count( PNCP_Bots::known_ai_agents() ) ) ) ), 10, true );
+				self::checkbox( $s, 'block_http_libs', __( 'Also block generic HTTP libraries (strict)', 'scrapelock' ), PNCP_Admin_Fields::help( __( 'Blocks curl, python-requests and similar, which apps and monitors also use.', 'scrapelock' ), __( 'Blocks the User-Agent that programming libraries send by default: curl, Wget, python-requests, Go, Java, okhttp, Dart, node-fetch, axios, Guzzle and others. Many cheap scrapers use them, but so do WooCommerce mobile apps (Flutter, Android), headless front ends, ERP and price sync, and uptime monitors. Turn it on only if nothing like that reads your site, or add those services to “Always allowed” first.', 'scrapelock' ) ) );
 				$libraries = PNCP_Options::http_libraries_in_list( $s );
 				if ( $libraries && empty( $s['block_http_libs'] ) ) {
 					printf(
@@ -1404,73 +1406,75 @@ final class PNCP_Admin {
 						esc_html(
 							sprintf(
 								/* translators: %s: list of User-Agents, e.g. "curl/, okhttp, Dart/" */
-								__( 'Your bot list above still contains generic HTTP libraries (%s), so they are blocked even with this option off: lists saved before ScrapeLock 3.4 had them by default. If a mobile app, a headless front end or a sync service gets a 403, remove those lines from the list, or allow the service in “Always allowed”.', 'scrapelock' ),
+								__( 'Your bot list still blocks these HTTP libraries, even with this off: %s.', 'scrapelock' ),
 								implode( ', ', $libraries )
 							)
 						)
 					);
+					echo PNCP_Admin_Fields::more( __( 'Lists saved before ScrapeLock 3.4 had them by default. If a mobile app, a headless front end or a sync service gets a 403, remove those lines from the list, or allow the service in “Always allowed”.', 'scrapelock' ) ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Escaped in PNCP_Admin_Fields.
 				}
 				// 3.7.
-				self::checkbox( $s, 'block_seo_crawlers', __( 'Block SEO and marketing data crawlers (Ahrefs, Semrush, Majestic…)', 'scrapelock' ), sprintf( /* translators: %s: list of User-Agents */ __( 'They are not search engines: backlink indexes and competitor research tools crawl hard and sell what they collect, to your competitors too. Blocked and asked in robots.txt: %s. Leave it off if you use one of these tools for your own site, or add its audit bot to “Always allowed”.', 'scrapelock' ), implode( ', ', PNCP_Bots::seo_agents() ) ) );
-				self::checkbox( $s, 'block_ip_host', __( 'Refuse requests that open the site by its IP address instead of its name', 'scrapelock' ), __( 'Scanners that sweep whole address ranges ask for http://203.0.113.5/ instead of your domain; people and search engines follow links, which carry the name. Requests for a private address (a load balancer\'s health check, a reverse proxy) and a site that is set up with its IP as its address are never refused. Always on in Emergency Mode.', 'scrapelock' ) );
+				self::checkbox( $s, 'block_seo_crawlers', __( 'Block SEO and marketing data crawlers (Ahrefs, Semrush, Majestic…)', 'scrapelock' ), PNCP_Admin_Fields::help( __( 'Backlink and competitor-research crawlers. Leave off if you use one.', 'scrapelock' ), sprintf( /* translators: %s: list of User-Agents */ __( 'They are not search engines: backlink indexes and competitor research tools crawl hard and sell what they collect, to your competitors too. Blocked and asked in robots.txt: %s. Leave it off if you use one of these tools for your own site, or add its audit bot to “Always allowed”.', 'scrapelock' ), implode( ', ', PNCP_Bots::seo_agents() ) ) ) );
+				self::checkbox( $s, 'block_ip_host', __( 'Refuse requests that open the site by its IP address instead of its name', 'scrapelock' ), PNCP_Admin_Fields::help( __( 'Scanners sweep IP ranges; people and search engines use the domain name.', 'scrapelock' ), __( 'Scanners that sweep whole address ranges ask for http://203.0.113.5/ instead of your domain; people and search engines follow links, which carry the name. Requests for a private address (a load balancer\'s health check, a reverse proxy) and a site that is set up with its IP as its address are never refused. Always on in Emergency Mode.', 'scrapelock' ) ) );
 				printf(
 					'<p class="description">%s</p>',
 					esc_html(
 						sprintf(
 							/* translators: %s: number of programs */
-							__( 'With the bot list on, %s site rippers and address harvesters (HTTrack, WebCopier, Teleport Pro, Offline Explorer, SiteSucker, Octoparse…) are blocked too, and so is any User-Agent that carries an attack instead of a name (HTML tags, Shellshock, Log4Shell, SQL injection): no browser or crawler sends one.', 'scrapelock' ),
+							__( 'With the bot list on, %s site rippers and attack User-Agents are blocked too.', 'scrapelock' ),
 							number_format_i18n( count( PNCP_Bots::ripper_agents() ) )
 						)
 					)
 				);
+				echo PNCP_Admin_Fields::more( __( 'Rippers and address harvesters such as HTTrack, WebCopier, Teleport Pro, Offline Explorer, SiteSucker and Octoparse, and any User-Agent that carries an attack instead of a name (HTML tags, Shellshock, Log4Shell, SQL injection): no browser or crawler sends one.', 'scrapelock' ) ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Escaped in PNCP_Admin_Fields.
 				?>
 		<?php self::row_close(); ?>
 		<?php self::row_open( 'ai', __( 'AI search and training', 'scrapelock' ) ); ?>
 				<?php
-				self::checkbox( $s, 'allow_ai_search', __( 'Allow AI search engines and assistants (not training crawlers)', 'scrapelock' ), sprintf( /* translators: %s: list of User-Agents */ __( 'So the site appears in AI search answers with a link, without being given for model training. Allowed: %s. They are also removed from the robots.txt Disallow and from the server rules. The page limit still applies, because the User-Agent can be spoofed.', 'scrapelock' ), implode( ', ', PNCP_Options::ai_search_agents() ) ) );
-				self::checkbox( $s, 'verify_ai_bots', __( 'Verify AI search bots with their official IP lists (OpenAI, Perplexity, Anthropic)', 'scrapelock' ), __( 'With AI search allowed: the real OAI-SearchBot, ChatGPT-User, PerplexityBot, Perplexity-User, Claude-SearchBot and Claude-User are never limited or blocked, and requests that only use their name get a 403 (“Fake AI search bot”). The lists are downloaded once a day; until then nothing changes.', 'scrapelock' ) );
-				self::checkbox( $s, 'robots_ai_block', __( 'Declare AI crawlers in robots.txt (Disallow)', 'scrapelock' ), __( 'Applies to the virtual robots.txt of WordPress. If a physical robots.txt file exists, it takes precedence.', 'scrapelock' ) );
-				self::checkbox( $s, 'block_archivers', __( 'Block web archives (Wayback Machine)', 'scrapelock' ), __( 'The Internet Archive keeps a public copy of every page it visits, and that copy can be scraped without ever reaching your site. This blocks its crawlers (ia_archiver, archive.org_bot, heritrix) and asks them in robots.txt. Copies already in the archive stay there. Leave it off if you want your site to be archived.', 'scrapelock' ) );
-				self::checkbox( $s, 'content_signal', __( 'Content Signals in robots.txt: search yes, AI training no', 'scrapelock' ), __( 'A line that says what the content may be used for (contentsignals.org): search=yes, ai-train=no, and ai-input according to “Allow AI search engines”. It does not block anything; it is a statement of your terms that well-behaved companies read.', 'scrapelock' ) );
+				self::checkbox( $s, 'allow_ai_search', __( 'Allow AI search engines and assistants (not training crawlers)', 'scrapelock' ), PNCP_Admin_Fields::help( __( 'Appear in AI search answers with a link, without feeding model training.', 'scrapelock' ), sprintf( /* translators: %s: list of User-Agents */ __( 'So the site appears in AI search answers with a link, without being given for model training. Allowed: %s. They are also removed from the robots.txt Disallow and from the server rules. The page limit still applies, because the User-Agent can be spoofed.', 'scrapelock' ), implode( ', ', PNCP_Options::ai_search_agents() ) ) ) );
+				self::checkbox( $s, 'verify_ai_bots', __( 'Verify AI search bots with their official IP lists (OpenAI, Perplexity, Anthropic)', 'scrapelock' ), PNCP_Admin_Fields::help( __( 'Real OpenAI, Perplexity and Anthropic search bots pass; impostors get a 403.', 'scrapelock' ), __( 'With AI search allowed: the real OAI-SearchBot, ChatGPT-User, PerplexityBot, Perplexity-User, Claude-SearchBot and Claude-User are never limited or blocked, and requests that only use their name get a 403 (“Fake AI search bot”). The lists are downloaded once a day; until then nothing changes.', 'scrapelock' ) ) );
+				self::checkbox( $s, 'robots_ai_block', __( 'Declare AI crawlers in robots.txt (Disallow)', 'scrapelock' ), __( 'Only the virtual robots.txt; a physical robots.txt file takes precedence.', 'scrapelock' ) );
+				self::checkbox( $s, 'block_archivers', __( 'Block web archives (Wayback Machine)', 'scrapelock' ), PNCP_Admin_Fields::help( __( 'Blocks the Internet Archive crawlers; pages already archived stay there.', 'scrapelock' ), __( 'The Internet Archive keeps a public copy of every page it visits, and that copy can be scraped without ever reaching your site. This blocks its crawlers (ia_archiver, archive.org_bot, heritrix) and asks them in robots.txt. Copies already in the archive stay there. Leave it off if you want your site to be archived.', 'scrapelock' ) ) );
+				self::checkbox( $s, 'content_signal', __( 'Content Signals in robots.txt: search yes, AI training no', 'scrapelock' ), PNCP_Admin_Fields::help( __( 'Says search=yes, ai-train=no: a statement of terms, not a block.', 'scrapelock' ), __( 'A line that says what the content may be used for (contentsignals.org): search=yes, ai-train=no, and ai-input according to “Allow AI search engines”. It does not block anything; it is a statement of your terms that well-behaved companies read.', 'scrapelock' ) ) );
 				?>
 		<?php self::row_close(); ?>
 		<?php self::row_open( 'allowed', __( 'Always allowed', 'scrapelock' ) ); ?>
 				<?php
-				self::textarea( $s, 'allow_list', __( 'Always allowed User-Agents (link previews, price comparison platforms, monitoring):', 'scrapelock' ), __( 'They override the bot list and “Browsers only”. The page limit applies to them too, because the User-Agent is easy to spoof. To accept an entry only from specific IPs, add @ and the addresses, e.g. Skroutz@203.0.113.0/24.', 'scrapelock' ), 5, true );
-				self::textarea( $s, 'allow_ips', __( 'Always allowed IPs / CIDR (office, ERP, monitoring), one per line:', 'scrapelock' ), __( 'They are never checked, never count towards limits and are never blocked.', 'scrapelock' ), 3 );
+				self::textarea( $s, 'allow_list', __( 'Always allowed User-Agents (link previews, price comparison platforms, monitoring):', 'scrapelock' ), PNCP_Admin_Fields::help( __( 'Overrides the bot list and “Browsers only”; the page limit still applies.', 'scrapelock' ), __( 'They override the bot list and “Browsers only”. The page limit applies to them too, because the User-Agent is easy to spoof. To accept an entry only from specific IPs, add @ and the addresses, e.g. Skroutz@203.0.113.0/24.', 'scrapelock' ) ), 5, true );
+				self::textarea( $s, 'allow_ips', __( 'Always allowed IPs / CIDR (office, ERP, monitoring), one per line:', 'scrapelock' ), __( 'Never checked, never limited, never blocked.', 'scrapelock' ), 3 );
 				PNCP_Plugin_Bots::render_panel(); // 3.10.
 				?>
 		<?php self::row_close(); ?>
 		<?php self::row_open( 'blocked', __( 'Always blocked', 'scrapelock' ) ); ?>
 				<?php
-				self::textarea( $s, 'block_ips', __( 'IPs / CIDR that are always blocked (403), one per line:', 'scrapelock' ), __( 'For example a scraper\'s server or a hosting network you see in the log. The “Always allowed IPs” take precedence.', 'scrapelock' ), 3 );
-				self::textarea( $s, 'block_referrers', __( 'Referrer domains that are always blocked (403), one per line, e.g. copy-site.example:', 'scrapelock' ), __( 'Requests that come from links or embeds on these sites. Each entry also covers its subdomains.', 'scrapelock' ), 3 );
-				self::checkbox( $s, 'block_user_enum', __( 'Hide usernames from visitors', 'scrapelock' ), __( '?author=1, 2, 3… returns “page not found” instead of the redirect to /author/username/, the REST API does not list users, the users sitemap is removed and oEmbed shows the site instead of the author. Logged-in users see everything as before. Author archives with a link stay.', 'scrapelock' ) );
+				self::textarea( $s, 'block_ips', __( 'IPs / CIDR that are always blocked (403), one per line:', 'scrapelock' ), __( 'For example a scraper\'s server from the log; “Always allowed IPs” win.', 'scrapelock' ), 3 );
+				self::textarea( $s, 'block_referrers', __( 'Referrer domains that are always blocked (403), one per line, e.g. copy-site.example:', 'scrapelock' ), __( 'Requests from links or embeds on these sites, subdomains included.', 'scrapelock' ), 3 );
+				self::checkbox( $s, 'block_user_enum', __( 'Hide usernames from visitors', 'scrapelock' ), PNCP_Admin_Fields::help( __( '?author=N, the REST API and the users sitemap stop showing usernames.', 'scrapelock' ), __( '?author=1, 2, 3… returns “page not found” instead of the redirect to /author/username/, the REST API does not list users, the users sitemap is removed and oEmbed shows the site instead of the author. Logged-in users see everything as before. Author archives with a link stay.', 'scrapelock' ) ) );
 				?>
 		<?php self::row_close(); ?>
 		<?php self::render_login_settings( $s ); ?>
-		<?php self::group_heading( 'limits', __( 'Limits', 'scrapelock' ), __( 'How much one visitor may read per minute, stricter limits for some visitors, countries, and the temporary block for those who keep going.', 'scrapelock' ) ); ?>
+		<?php self::group_heading( 'limits', __( 'Limits', 'scrapelock' ), __( 'Pages per minute, stricter limits for some visitors, and temporary blocks.', 'scrapelock' ) ); ?>
 		<?php self::row_open( 'limits', __( 'Limits per IP', 'scrapelock' ) ); ?>
 				<?php
-				self::number( $s, 'rate_limit', __( 'Pages per minute (0 = off):', 'scrapelock' ), __( 'Starting value: 60. Above the limit it returns 429. Be careful with networks that share an IP (companies, mobile carriers) and with CDNs: set the “Real visitor IP” correctly first.', 'scrapelock' ) );
-				self::number( $s, 'rate_limit_search', __( 'Searches (?s=) per minute (0 = off):', 'scrapelock' ), __( 'Search is heavy for the server and a favourite of scrapers. Starting value: 20.', 'scrapelock' ) );
-				self::number( $s, 'rate_limit_rest', __( 'REST API (/wp-json/) and GraphQL requests per minute (0 = off):', 'scrapelock' ), __( 'Only read requests from visitors. Cart, checkout and forms (POST) do not count. A list of more than 20 items (per_page) counts as 2 requests, more than 50 as 3. Starting value: 60.', 'scrapelock' ) );
-				self::number( $s, 'rate_limit_404', __( '“Page not found” (404) per minute (0 = off):', 'scrapelock' ), __( 'Scrapers guess addresses (?p=1, 2, 3…, old product URLs) to find content. Missing images, CSS, scripts and the favicon do not count. Starting value: 30.', 'scrapelock' ) );
-				self::number( $s, 'rate_limit_sitemap', __( 'Sitemaps per minute (0 = off):', 'scrapelock' ), __( 'Scrapers read the sitemap first to find every page. Covers the sitemaps of WordPress, Rank Math, Yoast and similar plugins. Google, Bing and the other verified search engines are never limited. Starting value: 5.', 'scrapelock' ) );
+				self::number( $s, 'rate_limit', __( 'Pages per minute (0 = off):', 'scrapelock' ), PNCP_Admin_Fields::help( __( '429 above it. Behind a CDN, set “Real visitor IP” first.', 'scrapelock' ), __( 'Above the limit it returns 429. Be careful with networks that share an IP (companies, mobile carriers) and with CDNs: set the “Real visitor IP” correctly first.', 'scrapelock' ) ) );
+				self::number( $s, 'rate_limit_search', __( 'Searches (?s=) per minute (0 = off):', 'scrapelock' ), __( 'Search is heavy for the server and a favourite of scrapers.', 'scrapelock' ) );
+				self::number( $s, 'rate_limit_rest', __( 'REST API (/wp-json/) and GraphQL requests per minute (0 = off):', 'scrapelock' ), PNCP_Admin_Fields::help( __( 'Visitor read requests only; long per_page lists count as 2 or 3.', 'scrapelock' ), __( 'Only read requests from visitors. Cart, checkout and forms (POST) do not count. A list of more than 20 items (per_page) counts as 2 requests, more than 50 as 3.', 'scrapelock' ) ) );
+				self::number( $s, 'rate_limit_404', __( '“Page not found” (404) per minute (0 = off):', 'scrapelock' ), PNCP_Admin_Fields::help( __( 'Catches address guessing; missing images, CSS and scripts do not count.', 'scrapelock' ), __( 'Scrapers guess addresses (?p=1, 2, 3…, old product URLs) to find content. Missing images, CSS, scripts and the favicon do not count.', 'scrapelock' ) ) );
+				self::number( $s, 'rate_limit_sitemap', __( 'Sitemaps per minute (0 = off):', 'scrapelock' ), PNCP_Admin_Fields::help( __( 'Scrapers read sitemaps first; verified search engines are never limited.', 'scrapelock' ), __( 'Scrapers read the sitemap first to find every page. Covers the sitemaps of WordPress, Rank Math, Yoast and similar plugins. Google, Bing and the other verified search engines are never limited.', 'scrapelock' ) ) );
 				// 3.7.
-				self::number( $s, 'rate_limit_apionly', __( 'REST API, GraphQL, feeds and sitemaps per minute for IPs that never opened a page (0 = off):', 'scrapelock' ), __( 'Many scrapers skip the HTML and read only the API, the feeds or the sitemaps. A visitor opens a page first; such a scraper never does. An IP that has not opened a page of the site in the last 24 hours (nor passed the human check, nor signed in) gets this limit on those addresses, on top of the others. Feed readers and apps that read the API from their own servers count here too: add them to “Always allowed”. A headless front end that reads the REST API from its server needs its IP in “Always allowed IPs”. With a page cache plugin, cached pages do not reach WordPress and so are not seen: turn on the pre-cache check or the human check, or keep this limit at 20 or more. Suggested value: 10.', 'scrapelock' ) );
-				self::checkbox( $s, 'ipv6_wide', __( 'IPv6: also limit the whole /56 network (four times the page limit)', 'scrapelock' ), __( 'Pages are counted per /64, because one connection usually gets a whole /64. A server or a home connection often has a /56 or more, so a scraper can take a new /64 for every request. This also counts the /56 the /64 belongs to, up to four times the page limit (429 above it, without a block). Some mobile networks give neighbouring phones addresses of the same /56: on a site with many visitors from them, keep it off. Always on in Emergency Mode.', 'scrapelock' ) );
-				self::number( $s, 'rate_limit_datacenter', __( 'Pages per minute from data centers (0 = off):', 'scrapelock' ), __( 'People rarely browse from a server; scrapers very often run on one. Visitors from the published addresses of AWS, Google Cloud, Oracle Cloud, DigitalOcean and Akamai / Linode get this stricter limit instead of the normal one. The lists are downloaded from the providers once a day. Some VPNs use these providers, so their users get this limit too: it is meant for reading, not for blocking. The always-allowed User-Agents (monitoring, price platforms) and verified search engines are not affected. Starting value: 15. 5 in Emergency Mode.', 'scrapelock' ) );
+				self::number( $s, 'rate_limit_apionly', __( 'REST API, GraphQL, feeds and sitemaps per minute for IPs that never opened a page (0 = off):', 'scrapelock' ), PNCP_Admin_Fields::help( __( 'For IPs that read only the API, feeds or sitemaps, never pages.', 'scrapelock' ), __( 'Many scrapers skip the HTML and read only the API, the feeds or the sitemaps. A visitor opens a page first; such a scraper never does. An IP that has not opened a page of the site in the last 24 hours (nor passed the human check, nor signed in) gets this limit on those addresses, on top of the others. Feed readers and apps that read the API from their own servers count here too: add them to “Always allowed”. A headless front end that reads the REST API from its server needs its IP in “Always allowed IPs”. With a page cache plugin, cached pages do not reach WordPress and so are not seen: turn on the pre-cache check or the human check, or keep this limit at 20 or more. Suggested value: 10.', 'scrapelock' ) ) );
+				self::checkbox( $s, 'ipv6_wide', __( 'IPv6: also limit the whole /56 network (four times the page limit)', 'scrapelock' ), PNCP_Admin_Fields::help( __( 'Also counts the whole /56, up to four times the page limit.', 'scrapelock' ), __( 'Pages are counted per /64, because one connection usually gets a whole /64. A server or a home connection often has a /56 or more, so a scraper can take a new /64 for every request. This also counts the /56 the /64 belongs to, up to four times the page limit (429 above it, without a block). Some mobile networks give neighbouring phones addresses of the same /56: on a site with many visitors from them, keep it off. Always on in Emergency Mode.', 'scrapelock' ) ) );
+				self::number( $s, 'rate_limit_datacenter', __( 'Pages per minute from data centers (0 = off):', 'scrapelock' ), PNCP_Admin_Fields::help( __( 'Cloud servers (AWS, Google Cloud…) get this instead; 5 in Emergency Mode.', 'scrapelock' ), __( 'People rarely browse from a server; scrapers very often run on one. Visitors from the published addresses of AWS, Google Cloud, Oracle Cloud, DigitalOcean and Akamai / Linode get this stricter limit instead of the normal one. The lists are downloaded from the providers once a day. Some VPNs use these providers, so their users get this limit too: it is meant for reading, not for blocking. The always-allowed User-Agents (monitoring, price platforms) and verified search engines are not affected. 5 in Emergency Mode.', 'scrapelock' ) ) );
 				if ( class_exists( 'WooCommerce' ) ) {
-					self::number( $s, 'rate_limit_cart', __( 'WooCommerce cart and checkout actions per minute (0 = off):', 'scrapelock' ), __( 'Adding, changing and removing cart items, coupons and placing the order, through the Store API (block cart and checkout), wc-ajax and the classic forms. A shopper needs a handful per minute; bots that fill carts, test stolen cards or spam orders need hundreds. Above the limit: 429, with a JSON error for the Store API and wc-ajax. Exempt staff and users who can edit posts or manage the shop are never limited. Starting value: 60. 30 in Emergency Mode.', 'scrapelock' ) );
-					self::number( $s, 'rate_limit_coupon', __( 'WooCommerce coupon attempts per minute (0 = off):', 'scrapelock' ), __( 'Each coupon code tried counts, valid or not, so guessing codes is slowed to this many per minute per IP. Starting value: 10. 5 in Emergency Mode.', 'scrapelock' ) );
+					self::number( $s, 'rate_limit_cart', __( 'WooCommerce cart and checkout actions per minute (0 = off):', 'scrapelock' ), PNCP_Admin_Fields::help( __( 'Cart, coupon and order actions; shoppers need a few, bots hundreds.', 'scrapelock' ), __( 'Adding, changing and removing cart items, coupons and placing the order, through the Store API (block cart and checkout), wc-ajax and the classic forms. A shopper needs a handful per minute; bots that fill carts, test stolen cards or spam orders need hundreds. Above the limit: 429, with a JSON error for the Store API and wc-ajax. Exempt staff and users who can edit posts or manage the shop are never limited. 30 in Emergency Mode.', 'scrapelock' ) ) );
+					self::number( $s, 'rate_limit_coupon', __( 'WooCommerce coupon attempts per minute (0 = off):', 'scrapelock' ), PNCP_Admin_Fields::help( __( 'Every code tried counts, valid or not; 5 in Emergency Mode.', 'scrapelock' ), __( 'Each coupon code tried counts, valid or not, so guessing codes is slowed to this many per minute per IP. 5 in Emergency Mode.', 'scrapelock' ) ) );
 				} else {
 					// Not shown without WooCommerce, but kept: saving this tab must not reset them.
 					foreach ( array( 'rate_limit_cart', 'rate_limit_coupon' ) as $pncp_key ) {
 						printf( '<input type="hidden" name="%s[%s]" value="%d">', esc_attr( PNCP_OPTION ), esc_attr( $pncp_key ), (int) $s[ $pncp_key ] );
 					}
 				}
-				self::checkbox( $s, 'auto_emergency', __( 'Watch for attacks spread over many IPs (automatic Emergency Mode)', 'scrapelock' ), __( 'The limits per IP cannot see a scraper that spreads its requests over hundreds of IPs. The whole site can: ScrapeLock learns how many pages per minute your site usually serves, and when that is exceeded five times over for 3 minutes in a row (and never below the minimum below), it does what you choose here. Verified search engines and exempt staff are not counted. Pages served from a page cache without reaching WordPress are not counted either.', 'scrapelock' ) );
+				self::checkbox( $s, 'auto_emergency', __( 'Watch for attacks spread over many IPs (automatic Emergency Mode)', 'scrapelock' ), PNCP_Admin_Fields::help( __( 'Reacts when traffic is five times the usual for 3 minutes.', 'scrapelock' ), __( 'The limits per IP cannot see a scraper that spreads its requests over hundreds of IPs. The whole site can: ScrapeLock learns how many pages per minute your site usually serves, and when that is exceeded five times over for 3 minutes in a row (and never below the minimum below), it does what you choose here. Verified search engines and exempt staff are not counted. Pages served from a page cache without reaching WordPress are not counted either.', 'scrapelock' ) ) );
 				echo '<div class="pncp-field"><label for="pncp-auto_emergency_mode">' . esc_html__( 'When it happens:', 'scrapelock' ) . '</label> ';
 				self::select(
 					$s,
@@ -1479,31 +1483,31 @@ final class PNCP_Admin {
 						'notify' => __( 'Email me and show a notice with a “Start Emergency Mode” button', 'scrapelock' ), // 3.5: "(default)" is added.
 						'start'  => __( 'Start Emergency Mode for 1 hour on its own, and email me', 'scrapelock' ),
 					),
-					__( 'A rush of real visitors (a newsletter, a link on a popular site) looks the same as an attack. Emergency Mode changes many settings at once, listed in its box on the first tab, e.g. excerpts instead of full text in lists and stricter limits for data centers, where some services in “Always allowed” run. Feeds stay open to feed readers and podcast apps.', 'scrapelock' )
+					PNCP_Admin_Fields::help( __( 'A rush of real visitors looks the same as an attack.', 'scrapelock' ), __( 'A rush of real visitors (a newsletter, a link on a popular site) looks the same as an attack. Emergency Mode changes many settings at once, listed in its box on the first tab, e.g. excerpts instead of full text in lists and stricter limits for data centers, where some services in “Always allowed” run. Feeds stay open to feed readers and podcast apps.', 'scrapelock' ) )
 				);
 				echo '</div>';
-				self::number( $s, 'auto_emergency_min', __( 'Minimum pages per minute for the automatic start:', 'scrapelock' ), __( 'Below this the site is never considered under attack, however quiet it usually is. Starting value: 300 (5 pages per second).', 'scrapelock' ) );
+				self::number( $s, 'auto_emergency_min', __( 'Minimum pages per minute for the automatic start:', 'scrapelock' ), __( 'Below this the site never counts as under attack.', 'scrapelock' ) );
 				?>
 		<?php self::row_close(); ?>
 		<?php self::row_open( 'human', __( 'Human check', 'scrapelock' ) ); ?>
 				<?php
-				self::checkbox( $s, 'human_check', __( 'Stricter page limit for visitors who have not shown they are people', 'scrapelock' ), __( 'A small script waits for the visitor\'s first real interaction (scroll, tap, key or mouse movement), solves a light challenge in the background and receives a cookie for 7 days. Nobody sees a captcha or a window. Visitors without the cookie (scripts, and people with JavaScript turned off) get the limit below instead of the normal page limit. Search engines and verified AI search bots are not affected. With a page cache plugin, turn on the pre-cache check so that cached pages get this limit too. A determined scraper can repeat the steps, but each of its IPs has to do the work.', 'scrapelock' ) );
-				self::number( $s, 'rate_limit_unverified', __( 'Pages per minute without the cookie (0 = off):', 'scrapelock' ), __( 'Starting value: 20. A person reads far fewer pages per minute, and gets the cookie with the first scroll or tap.', 'scrapelock' ) );
+				self::checkbox( $s, 'human_check', __( 'Stricter page limit for visitors who have not shown they are people', 'scrapelock' ), PNCP_Admin_Fields::help( __( 'An invisible check on the first scroll or tap; no captcha.', 'scrapelock' ), __( 'A small script waits for the visitor\'s first real interaction (scroll, tap, key or mouse movement), solves a light challenge in the background and receives a cookie for 7 days. Nobody sees a captcha or a window. Visitors without the cookie (scripts, and people with JavaScript turned off) get the limit below instead of the normal page limit. Search engines and verified AI search bots are not affected. With a page cache plugin, turn on the pre-cache check so that cached pages get this limit too. A determined scraper can repeat the steps, but each of its IPs has to do the work.', 'scrapelock' ) ) );
+				self::number( $s, 'rate_limit_unverified', __( 'Pages per minute without the cookie (0 = off):', 'scrapelock' ), PNCP_Admin_Fields::help( __( 'People get the cookie with their first scroll or tap.', 'scrapelock' ), __( 'A person reads far fewer pages per minute, and gets the cookie with the first scroll or tap.', 'scrapelock' ) ) );
 				?>
 		<?php self::row_close(); ?>
 		<?php self::row_open( 'reputation', __( 'Reputation', 'scrapelock' ) ); ?>
 				<?php
 				// 3.7: PNCP_Reputation.
-				self::checkbox( $s, 'reputation', __( 'Remember how each IP behaves (reputation)', 'scrapelock' ), __( 'Each IP gets a score from what it did here in the last 7 days, recent events counting more: someone signed in from it, it passed the human check, it reads pages (good); the bot trap, a scanner probe, a fake search engine, an attack in the request, limits exceeded, a temporary block (bad). An IP with a good score (someone signed in and passed the human check) is never blocked temporarily for exceeding a limit: it still gets “too many requests”, but an office, a school or a mobile network behind one address is not locked out because of one fast reader. An IP with a bad score gets the stricter limit below for days, instead of starting from zero when its block ends. Stored like the per-minute counters; no data leaves the server.', 'scrapelock' ) );
-				self::number( $s, 'rate_limit_lowrep', __( 'Pages per minute for IPs with a bad reputation (0 = off):', 'scrapelock' ), __( 'Starting value: 10.', 'scrapelock' ) );
+				self::checkbox( $s, 'reputation', __( 'Remember how each IP behaves (reputation)', 'scrapelock' ), PNCP_Admin_Fields::help( __( 'Scores each IP over 7 days: good ones are spared, bad ones limited.', 'scrapelock' ), __( 'Each IP gets a score from what it did here in the last 7 days, recent events counting more: someone signed in from it, it passed the human check, it reads pages (good); the bot trap, a scanner probe, a fake search engine, an attack in the request, limits exceeded, a temporary block (bad). An IP with a good score (someone signed in and passed the human check) is never blocked temporarily for exceeding a limit: it still gets “too many requests”, but an office, a school or a mobile network behind one address is not locked out because of one fast reader. An IP with a bad score gets the stricter limit below for days, instead of starting from zero when its block ends. Stored like the per-minute counters; no data leaves the server.', 'scrapelock' ) ) );
+				self::number( $s, 'rate_limit_lowrep', __( 'Pages per minute for IPs with a bad reputation (0 = off):', 'scrapelock' ), '' );
 				?>
 		<?php self::row_close(); ?>
 		<?php self::row_open( 'countries', __( 'Countries', 'scrapelock' ) ); ?>
 				<?php
-				self::checkbox( $s, 'geo_db', __( 'Download the free country database (DB-IP Lite, once a month)', 'scrapelock' ), __( 'Needed when the site is not behind Cloudflare or Bunny CDN. About 5 MB to download, stored as two small files in uploads/scrapelock-geo. Behind Cloudflare the country that Cloudflare sends is used, behind Bunny the one Bunny sends (when it reaches the site directly from Bunny), and the database is not needed.', 'scrapelock' ) );
-				self::textarea( $s, 'countries_block', __( 'Blocked countries (403), two-letter codes separated by commas, e.g. CN, RU:', 'scrapelock' ), __( 'Search engines, verified AI search bots and the “Always allowed” list are never blocked by country. People who travel or use a VPN appear with the country of their connection.', 'scrapelock' ), 2 );
+				self::checkbox( $s, 'geo_db', __( 'Download the free country database (DB-IP Lite, once a month)', 'scrapelock' ), PNCP_Admin_Fields::help( __( 'Not needed behind Cloudflare or Bunny CDN. About 5 MB, monthly.', 'scrapelock' ), __( 'Needed when the site is not behind Cloudflare or Bunny CDN. About 5 MB to download, stored as two small files in uploads/scrapelock-geo. Behind Cloudflare the country that Cloudflare sends is used, behind Bunny the one Bunny sends (when it reaches the site directly from Bunny), and the database is not needed.', 'scrapelock' ) ) );
+				self::textarea( $s, 'countries_block', __( 'Blocked countries (403), two-letter codes separated by commas, e.g. CN, RU:', 'scrapelock' ), PNCP_Admin_Fields::help( __( 'Search engines and “Always allowed” are never blocked by country.', 'scrapelock' ), __( 'Search engines, verified AI search bots and the “Always allowed” list are never blocked by country. People who travel or use a VPN appear with the country of their connection.', 'scrapelock' ) ), 2 );
 				self::textarea( $s, 'countries_strict', __( 'Countries with a stricter page limit, e.g. those your customers do not come from:', 'scrapelock' ), '', 2 );
-				self::number( $s, 'rate_limit_country', __( 'Pages per minute for these countries (0 = off):', 'scrapelock' ), __( 'Starting value: 10.', 'scrapelock' ) );
+				self::number( $s, 'rate_limit_country', __( 'Pages per minute for these countries (0 = off):', 'scrapelock' ), '' );
 				self::render_geo_status( $s );
 				?>
 		<?php self::row_close(); ?>
@@ -1519,7 +1523,7 @@ final class PNCP_Admin {
 						'lapi' => __( 'From my CrowdSec agent (LAPI, bouncer key)', 'scrapelock' ),
 						'list' => __( 'From a blocklist address (plain text, one IP or CIDR per line)', 'scrapelock' ),
 					),
-					__( 'CrowdSec is a free, open source security engine whose users share the IPs that attack them. Its community blocklist holds scanners, brute-forcers and scrapers seen on many sites, residential proxies among them, which the limits of a single site cannot recognise in time. With your own CrowdSec agent (on a VPS: install CrowdSec, then run “cscli bouncers add scrapelock” for the key), ScrapeLock asks it every 15 minutes for what changed. Without one, use the address of a CrowdSec Console blocklist integration (key: user:password) or of another plain-text list; it is downloaded once an hour. Private addresses, ranges wider than /16 (IPv6 /32), this server, CDN edges and official search engine addresses are never taken from a list.', 'scrapelock' )
+					PNCP_Admin_Fields::help( __( 'IPs that attack other sites, from your CrowdSec agent or a list.', 'scrapelock' ), __( 'CrowdSec is a free, open source security engine whose users share the IPs that attack them. Its community blocklist holds scanners, brute-forcers and scrapers seen on many sites, residential proxies among them, which the limits of a single site cannot recognise in time. With your own CrowdSec agent (on a VPS: install CrowdSec, then run “cscli bouncers add scrapelock” for the key), ScrapeLock asks it every 15 minutes for what changed. Without one, use the address of a CrowdSec Console blocklist integration (key: user:password) or of another plain-text list; it is downloaded once an hour. Private addresses, ranges wider than /16 (IPv6 /32), this server, CDN edges and official search engine addresses are never taken from a list.', 'scrapelock' ) )
 				);
 				echo '</div>';
 				printf(
@@ -1528,7 +1532,7 @@ final class PNCP_Admin {
 					esc_attr( PNCP_OPTION ),
 					esc_attr( (string) $s['crowdsec_url'] )
 				);
-				self::password( $s, 'crowdsec_key', __( 'Bouncer key (LAPI), or user:password for a list (optional for a public list):', 'scrapelock' ), __( 'Kept in the database and never shown or exported. To keep it out of the database, define SCRAPELOCK_CROWDSEC_KEY in wp-config.php instead.', 'scrapelock' ) );
+				self::password( $s, 'crowdsec_key', __( 'Bouncer key (LAPI), or user:password for a list (optional for a public list):', 'scrapelock' ), PNCP_Admin_Fields::help( __( 'Never shown or exported. Or define SCRAPELOCK_CROWDSEC_KEY in wp-config.php.', 'scrapelock' ), __( 'Kept in the database and never shown or exported. To keep it out of the database, define SCRAPELOCK_CROWDSEC_KEY in wp-config.php instead.', 'scrapelock' ) ) );
 				echo '<div class="pncp-field"><label for="pncp-crowdsec_action">' . esc_html__( 'What a listed IP gets:', 'scrapelock' ) . '</label> ';
 				self::select(
 					$s,
@@ -1537,20 +1541,20 @@ final class PNCP_Admin {
 						'limit' => __( 'The stricter page limit below', 'scrapelock' ),
 						'block' => __( 'A 403 on every request', 'scrapelock' ),
 					),
-					__( 'Addresses change hands (mobile networks, home connections that get a new address every day, VPNs), so a list is never certain. The stricter limit lets a real visitor read on slowly; the 403 refuses outright. A listed IP earns no violation either way.', 'scrapelock' )
+					PNCP_Admin_Fields::help( __( 'Addresses change hands, so the stricter limit is safer than a 403.', 'scrapelock' ), __( 'Addresses change hands (mobile networks, home connections that get a new address every day, VPNs), so a list is never certain. The stricter limit lets a real visitor read on slowly; the 403 refuses outright. A listed IP earns no violation either way.', 'scrapelock' ) )
 				);
 				echo '</div>';
-				self::number( $s, 'rate_limit_crowdsec', __( 'Pages per minute for listed IPs (0 = off):', 'scrapelock' ), __( 'Starting value: 10.', 'scrapelock' ) );
+				self::number( $s, 'rate_limit_crowdsec', __( 'Pages per minute for listed IPs (0 = off):', 'scrapelock' ), '' );
 				?>
 		<?php self::row_close(); ?>
 		<?php self::row_open( 'ban', __( 'Temporary block', 'scrapelock' ) ); ?>
 				<?php
-				self::number( $s, 'ban_strikes', __( 'Block after this many violations within 10 minutes (0 = never):', 'scrapelock' ), __( 'Violation: every minute in which the IP exceeded a limit, and every fake Googlebot. The trap blocks immediately: for 10 minutes the first time, for the full time if the same IP falls into it again within 24 hours.', 'scrapelock' ) );
+				self::number( $s, 'ban_strikes', __( 'Block after this many violations within 10 minutes (0 = never):', 'scrapelock' ), PNCP_Admin_Fields::help( __( 'A violation is a minute over a limit, or a fake Googlebot.', 'scrapelock' ), __( 'Violation: every minute in which the IP exceeded a limit, and every fake Googlebot. The trap blocks immediately: for 10 minutes the first time, for the full time if the same IP falls into it again within 24 hours.', 'scrapelock' ) ) );
 				self::number( $s, 'ban_minutes', __( 'Block duration (minutes):', 'scrapelock' ) );
 				// 3.7: PNCP_Fail2ban.
-				self::checkbox( $s, 'syslog_bans', __( 'Write each temporary block to the system log, for fail2ban', 'scrapelock' ), __( 'On a VPS or a dedicated server, fail2ban can read these lines and block the IP in the server\'s firewall for the same time, so a blocked scraper no longer reaches PHP at all. The filter and the jail to copy are on the “Server rules” tab. On shared hosting leave it off: nobody reads that log.', 'scrapelock' ) );
+				self::checkbox( $s, 'syslog_bans', __( 'Write each temporary block to the system log, for fail2ban', 'scrapelock' ), PNCP_Admin_Fields::help( __( 'Lets fail2ban block the IP in the firewall. Leave off on shared hosting.', 'scrapelock' ), __( 'On a VPS or a dedicated server, fail2ban can read these lines and block the IP in the server\'s firewall for the same time, so a blocked scraper no longer reaches PHP at all. The filter and the jail to copy are on the “Server rules” tab. On shared hosting leave it off: nobody reads that log.', 'scrapelock' ) ) );
 				if ( ! empty( $s['syslog_bans'] ) && ! PNCP_Fail2ban::available() ) {
-					echo '<p class="description pncp-inline-warning">' . esc_html__( 'PHP cannot write to the system log on this server (openlog() or syslog() is disabled): nothing is written.', 'scrapelock' ) . '</p>';
+					echo '<p class="description pncp-inline-warning">' . esc_html__( 'PHP cannot write to the system log here: enable openlog() and syslog() in php.ini.', 'scrapelock' ) . '</p>';
 				}
 				?>
 				<p class="description"><?php esc_html_e( 'How long the log is kept is set on the Log tab.', 'scrapelock' ); ?></p>
@@ -1561,7 +1565,7 @@ final class PNCP_Admin {
 				<h2 class="pncp-advanced__title"><?php esc_html_e( 'Network and CDN (advanced)', 'scrapelock' ); ?></h2>
 				<span class="pncp-advanced__state"><?php echo esc_html( self::network_summary( $s ) ); ?></span>
 			</summary>
-			<p class="description"><?php esc_html_e( 'Only for sites behind a CDN or a proxy, and for the checks that run before WordPress and the page cache. Most sites never need to change these.', 'scrapelock' ); ?></p>
+			<?php echo PNCP_Admin_Fields::para( __( 'Only for a CDN or proxy, and for checks before WordPress and the cache.', 'scrapelock' ), __( 'Most sites never need to change these.', 'scrapelock' ) ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Escaped in PNCP_Admin_Fields. ?>
 			<table class="form-table" role="presentation">
 			<tr id="pncp-sec-ip">
 				<th scope="row"><label for="pncp-ip_header"><?php esc_html_e( 'Real visitor IP', 'scrapelock' ); ?></label></th>
@@ -1577,23 +1581,24 @@ final class PNCP_Admin {
 							'x_real_ip'        => 'X-Real-IP',
 							'true_client_ip'   => 'True-Client-IP',
 						),
-						__( 'Behind a CDN or reverse proxy all visitors appear with the CDN\'s IP. Choose the header with the real IP.', 'scrapelock' )
+						PNCP_Admin_Fields::help( __( 'Behind a CDN or proxy, choose the header that carries the visitor IP.', 'scrapelock' ), __( 'Behind a CDN or reverse proxy all visitors appear with the CDN\'s IP. Choose the header with the real IP.', 'scrapelock' ) )
 					);
 					?>
-					<p><strong><?php esc_html_e( 'Trusted Proxy:', 'scrapelock' ); ?></strong> <?php esc_html_e( 'the header is read only when the request comes from a proxy you trust. Otherwise anyone could write any IP they want and bypass limits and blocks. CF-Connecting-IP: only from Cloudflare. X-Real-IP / X-Forwarded-For: from Bunny CDN, the server itself or a private network (Nginx in front of Apache). True-Client-IP: only from the proxies in the list.', 'scrapelock' ); ?></p>
+					<p><strong><?php esc_html_e( 'Trusted Proxy:', 'scrapelock' ); ?></strong> <?php esc_html_e( 'the header is read only from proxies you trust.', 'scrapelock' ); ?></p>
+					<?php echo PNCP_Admin_Fields::more( __( 'the header is read only when the request comes from a proxy you trust. Otherwise anyone could write any IP they want and bypass limits and blocks. CF-Connecting-IP: only from Cloudflare. X-Real-IP / X-Forwarded-For: from Bunny CDN, the server itself or a private network (Nginx in front of Apache). True-Client-IP: only from the proxies in the list.', 'scrapelock' ) ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Escaped in PNCP_Admin_Fields. ?>
 					<?php
 					self::checkbox( $s, 'trust_cloudflare', __( 'Trust Cloudflare addresses', 'scrapelock' ), __( 'The official Cloudflare list is refreshed every day.', 'scrapelock' ) );
-					self::checkbox( $s, 'trust_bunny', __( 'Trust Bunny CDN addresses', 'scrapelock' ), __( 'For X-Real-IP / X-Forwarded-For and Bunny\'s country header. The official list of Bunny edge servers is refreshed every day.', 'scrapelock' ) );
+					self::checkbox( $s, 'trust_bunny', __( 'Trust Bunny CDN addresses', 'scrapelock' ), PNCP_Admin_Fields::help( __( 'For X-Real-IP / X-Forwarded-For and Bunny\'s country header.', 'scrapelock' ), __( 'For X-Real-IP / X-Forwarded-For and Bunny\'s country header. The official list of Bunny edge servers is refreshed every day.', 'scrapelock' ) ) );
 					if ( ! empty( $s['trust_any_proxy'] ) ) {
 						echo '<div class="pncp-inline-warning">';
-						self::checkbox( $s, 'trust_any_proxy', __( 'Trust every request (1.4 behaviour, insecure)', 'scrapelock' ), __( 'On because this is how version 1.4 worked. Fill in your proxies below and uncheck it. Once turned off, it cannot be turned on again.', 'scrapelock' ) );
+						self::checkbox( $s, 'trust_any_proxy', __( 'Trust every request (1.4 behaviour, insecure)', 'scrapelock' ), PNCP_Admin_Fields::help( __( 'Add your proxies below, then untick it; it cannot be turned back on.', 'scrapelock' ), __( 'On because this is how version 1.4 worked. Fill in your proxies below and uncheck it. Once turned off, it cannot be turned on again.', 'scrapelock' ) ) );
 						echo '</div>';
 					}
 					self::textarea( $s, 'trusted_proxies', __( 'Other trusted proxies / load balancers (IP or CIDR, one per line):', 'scrapelock' ), '', 3 );
-					self::password( $s, 'cdn_secret', __( 'CDN shared secret (optional):', 'scrapelock' ), __( 'Only when "Real visitor IP" is a CDN header (CF-Connecting-IP, X-Real-IP, X-Forwarded-For). A CDN (Bunny, Cloudflare) is multi-tenant: its edge IPs are shared, so by default anyone could point their own CDN zone at your origin and set the real-IP header. Set a secret here and configure your CDN to send it on every request as the header “X-ScrapeLock-CDN”; the CDN’s real-IP header is then trusted only when the secret matches. Leave empty to keep the current behaviour. For best effect, also restrict your origin so it is reachable only through the CDN.', 'scrapelock' ) );
-					self::checkbox( $s, 'cdn_only', __( 'Only through the CDN: refuse (403) requests that do not bring the secret', 'scrapelock' ), __( 'Someone who finds your server\'s own address can go around the CDN and everything it blocks. With this on, every request without the secret in the X-ScrapeLock-CDN header gets a 403, also pages from the page cache when the pre-cache check is on. First make the CDN add the header to every request: in Bunny CDN, an Edge Rule with the action “Set Request Header” (X-ScrapeLock-CDN = your secret) for all requests; in Cloudflare, Rules → Transform Rules → “Modify Request Header”, set static. It can only be turned on from a request that brings the secret, so you cannot lock yourself out by mistake. Not affected: the server itself (cron, cache preload), WP-CLI. Files the web server sends without WordPress (images, CSS, JS) are not covered. If the CDN ever stops sending the header, add define( \'SCRAPELOCK_CDN_ONLY\', false ); to wp-config.php.', 'scrapelock' ) );
+					self::password( $s, 'cdn_secret', __( 'CDN shared secret (optional):', 'scrapelock' ), PNCP_Admin_Fields::help( __( 'Trust the CDN header only when the request carries this secret.', 'scrapelock' ), __( 'Only when "Real visitor IP" is a CDN header (CF-Connecting-IP, X-Real-IP, X-Forwarded-For). A CDN (Bunny, Cloudflare) is multi-tenant: its edge IPs are shared, so by default anyone could point their own CDN zone at your origin and set the real-IP header. Set a secret here and configure your CDN to send it on every request as the header “X-ScrapeLock-CDN”; the CDN’s real-IP header is then trusted only when the secret matches. Leave empty to keep the current behaviour. For best effect, also restrict your origin so it is reachable only through the CDN.', 'scrapelock' ) ) );
+					self::checkbox( $s, 'cdn_only', __( 'Only through the CDN: refuse (403) requests that do not bring the secret', 'scrapelock' ), PNCP_Admin_Fields::help( __( '403 for requests that bypass the CDN. Set up the CDN header first.', 'scrapelock' ), __( 'Someone who finds your server\'s own address can go around the CDN and everything it blocks. With this on, every request without the secret in the X-ScrapeLock-CDN header gets a 403, also pages from the page cache when the pre-cache check is on. First make the CDN add the header to every request: in Bunny CDN, an Edge Rule with the action “Set Request Header” (X-ScrapeLock-CDN = your secret) for all requests; in Cloudflare, Rules → Transform Rules → “Modify Request Header”, set static. It can only be turned on from a request that brings the secret, so you cannot lock yourself out by mistake. Not affected: the server itself (cron, cache preload), WP-CLI. Files the web server sends without WordPress (images, CSS, JS) are not covered. If the CDN ever stops sending the header, add define( \'SCRAPELOCK_CDN_ONLY\', false ); to wp-config.php.', 'scrapelock' ) ) );
 					if ( '' !== trim( (string) $s['cdn_secret'] ) ) {
-						echo '<p class="description pncp-cdn-only-status">' . esc_html( PNCP_Origin::has_secret( (string) $s['cdn_secret'] ) ? __( 'This request brought the secret: the CDN sends it.', 'scrapelock' ) : __( 'This request did not bring the secret: the CDN does not send it yet, or you opened the site around the CDN.', 'scrapelock' ) ) . '</p>';
+						echo '<p class="description pncp-cdn-only-status">' . esc_html( PNCP_Origin::has_secret( (string) $s['cdn_secret'] ) ? __( 'This request brought the secret: the CDN sends it.', 'scrapelock' ) : __( 'This request did not bring the secret: add it at the CDN, or open the site through the CDN.', 'scrapelock' ) ) . '</p>';
 					}
 					if ( defined( 'SCRAPELOCK_CDN_ONLY' ) && ! SCRAPELOCK_CDN_ONLY ) {
 						echo '<p class="description">' . esc_html__( 'Turned off in wp-config.php (SCRAPELOCK_CDN_ONLY).', 'scrapelock' ) . '</p>';
@@ -1618,12 +1623,12 @@ final class PNCP_Admin {
 				<th scope="row"><?php esc_html_e( 'Early checks', 'scrapelock' ); ?></th>
 				<td>
 					<?php
-					self::checkbox( $s, 'early_mode', __( 'Early check: block known bots before the theme and the other plugins load', 'scrapelock' ), __( 'Adds the small file wp-content/mu-plugins/scrapelock-early.php, which stops blocked IPs and referrers, temporarily blocked IPs and User-Agents in the bot list with less server load. Search engines, logged-in users, forms and feeds are left to the normal check. It is removed when you turn this off or deactivate the plugin.', 'scrapelock' ) );
+					self::checkbox( $s, 'early_mode', __( 'Early check: block known bots before the theme and the other plugins load', 'scrapelock' ), PNCP_Admin_Fields::help( __( 'Stops listed bots and blocked IPs earlier, through a small mu-plugin.', 'scrapelock' ), __( 'Adds the small file wp-content/mu-plugins/scrapelock-early.php, which stops blocked IPs and referrers, temporarily blocked IPs and User-Agents in the bot list with less server load. Search engines, logged-in users, forms and feeds are left to the normal check. It is removed when you turn this off or deactivate the plugin.', 'scrapelock' ) ) );
 					if ( ! empty( $s['early_mode'] ) && ! PNCP_Early::installed() ) {
-						echo '<p class="pncp-inline-warning">' . esc_html__( 'The file could not be created (the server does not allow direct file writes to wp-content/mu-plugins). The normal check works as before.', 'scrapelock' ) . '</p>';
+						echo '<p class="pncp-inline-warning">' . esc_html__( 'Could not create the file: make wp-content/mu-plugins writable. The normal check still runs.', 'scrapelock' ) . '</p>';
 					}
 					if ( ! is_multisite() ) {
-						self::checkbox( $s, 'precheck', __( 'Pre-cache check: apply the page limit and blocks also to pages served from the page cache', 'scrapelock' ), __( 'Page caches such as WP Rocket serve stored pages before any plugin loads, so a bot that looks like a browser could read them without a limit. This adds one line at the top of wp-config.php that loads a small check before the cache: always-blocked IPs, temporarily blocked IPs and the “Pages per minute” limit. Counters are kept in APCu or in a folder of the uploads directory (uploads/scrapelock). Search engines, logged-in users, forms, wp-admin and the REST API are left to the normal check. The line and the files are removed when you turn this off or deactivate the plugin.', 'scrapelock' ) );
+						self::checkbox( $s, 'precheck', __( 'Pre-cache check: apply the page limit and blocks also to pages served from the page cache', 'scrapelock' ), PNCP_Admin_Fields::help( __( 'Adds one line to wp-config.php so cached pages get limits and blocks.', 'scrapelock' ), __( 'Page caches such as WP Rocket serve stored pages before any plugin loads, so a bot that looks like a browser could read them without a limit. This adds one line at the top of wp-config.php that loads a small check before the cache: always-blocked IPs, temporarily blocked IPs and the “Pages per minute” limit. Counters are kept in APCu or in a folder of the uploads directory (uploads/scrapelock). Search engines, logged-in users, forms, wp-admin and the REST API are left to the normal check. The line and the files are removed when you turn this off or deactivate the plugin.', 'scrapelock' ) ) );
 						self::render_precheck_status( $s );
 					}
 					?>
@@ -1635,12 +1640,12 @@ final class PNCP_Admin {
 					<?php
 					// 3.8: PNCP_Bunny. The connection, Edge Rules and "Import now" are in the Bunny card under
 					// "Blocking at the CDN".
-					self::checkbox( $s, 'bunny_import', __( 'Import attacks from Bunny CDN\'s logs', 'scrapelock' ), __( 'Every 15 minutes ScrapeLock reads the new lines of the pull zone\'s log and records the attacks on pages Bunny served from its cache, which never reached WordPress. Needs logging on at the pull zone.', 'scrapelock' ) );
-					self::checkbox( $s, 'bunny_all_lines', __( 'Also record requests that reached WordPress', 'scrapelock' ), __( 'Off: only requests Bunny answered itself are recorded (WordPress already recorded the others). On: every attack-looking line, for sites where a page cache in front of WordPress hides requests.', 'scrapelock' ) );
-					self::number( $s, 'bunny_flood_4xx', __( 'Errors per IP that count as a flood (0 = off):', 'scrapelock' ), __( 'An IP with this many “page not found” or refused answers in one import is recorded as a 4xx flood.', 'scrapelock' ) );
-					self::checkbox( $s, 'bunny_strikes', __( 'Count IPs that are too fast at the CDN toward a temporary block', 'scrapelock' ), __( 'Uses the logs: every minute in which an IP asked Bunny for more pages than the limit below is a violation, also when Bunny served them from its cache. Not in Monitor only, and not when Bunny anonymizes IPs.', 'scrapelock' ) );
+					self::checkbox( $s, 'bunny_import', __( 'Import attacks from Bunny CDN\'s logs', 'scrapelock' ), PNCP_Admin_Fields::help( __( 'Records attacks on cached pages every 15 minutes. Needs pull zone logging.', 'scrapelock' ), __( 'Every 15 minutes ScrapeLock reads the new lines of the pull zone\'s log and records the attacks on pages Bunny served from its cache, which never reached WordPress. Needs logging on at the pull zone.', 'scrapelock' ) ) );
+					self::checkbox( $s, 'bunny_all_lines', __( 'Also record requests that reached WordPress', 'scrapelock' ), PNCP_Admin_Fields::help( __( 'On: also log attack lines that reached WordPress.', 'scrapelock' ), __( 'Off: only requests Bunny answered itself are recorded (WordPress already recorded the others). On: every attack-looking line, for sites where a page cache in front of WordPress hides requests.', 'scrapelock' ) ) );
+					self::number( $s, 'bunny_flood_4xx', __( 'Errors per IP that count as a flood (0 = off):', 'scrapelock' ), __( 'This many 404s or refusals in one import count as a 4xx flood.', 'scrapelock' ) );
+					self::checkbox( $s, 'bunny_strikes', __( 'Count IPs that are too fast at the CDN toward a temporary block', 'scrapelock' ), PNCP_Admin_Fields::help( __( 'A minute over the CDN limit below counts as a violation.', 'scrapelock' ), __( 'Uses the logs: every minute in which an IP asked Bunny for more pages than the limit below is a violation, also when Bunny served them from its cache. Not in Monitor only, and not when Bunny anonymizes IPs.', 'scrapelock' ) ) );
 					self::number( $s, 'bunny_rate', __( 'Pages per minute and IP at the CDN (0 = off):', 'scrapelock' ), __( 'Images, styles, scripts and fonts do not count.', 'scrapelock' ) );
-					self::textarea( $s, 'bunny_login_allow', __( 'Allowed IPs for the login page at Bunny, one per line:', 'scrapelock' ), __( 'When wp-login.php is locked at Bunny, only these IPs and ranges get through (an IPv6 /64 such as 2001:db8:1:2::/64 too). The lock is refused while the list is empty or does not hold your IP; the Bunny card under “Blocking at the CDN” suggests the IPs administrators used in the last 30 days.', 'scrapelock' ), 3 );
+					self::textarea( $s, 'bunny_login_allow', __( 'Allowed IPs for the login page at Bunny, one per line:', 'scrapelock' ), PNCP_Admin_Fields::help( __( 'Only these IPs reach wp-login.php when it is locked at Bunny.', 'scrapelock' ), __( 'When wp-login.php is locked at Bunny, only these IPs and ranges get through (an IPv6 /64 such as 2001:db8:1:2::/64 too). The lock is refused while the list is empty or does not hold your IP; the Bunny card under “Blocking at the CDN” suggests the IPs administrators used in the last 30 days.', 'scrapelock' ) ), 3 );
 					?>
 				</td>
 			</tr>
@@ -1689,11 +1694,11 @@ final class PNCP_Admin {
 		$state  = PNCP_Edge::state();
 		$locked = PNCP_Lockdown::is_locked();
 		?>
-		<p class="description pncp-edge-own-save"><strong><?php esc_html_e( 'This part has its own button: it saves only the connection to the CDN, not the settings above.', 'scrapelock' ); ?></strong></p>
-		<p class="description pncp-edge-intro"><?php esc_html_e( 'With “Send temporary blocks to the CDN” on, the IPs ScrapeLock blocks temporarily are also blocked by your CDN, with your own account. Saving the connection only connects and tests it. A scraper that keeps going is then stopped at the CDN, before its requests reach your server: no PHP, no database, no bandwidth. Each block is removed when the temporary block ends. Only the blocked addresses are sent, with the reason and the end time; nothing about your visitors or content.', 'scrapelock' ); ?></p>
+		<p class="description pncp-edge-own-save"><strong><?php esc_html_e( 'Its own button saves only the CDN connection, not the settings above.', 'scrapelock' ); ?></strong></p>
+		<?php echo PNCP_Admin_Fields::para( __( 'Sends temporary blocks to your CDN, which stops them before your server.', 'scrapelock' ), __( 'With “Send temporary blocks to the CDN” on, the IPs ScrapeLock blocks temporarily are also blocked by your CDN, with your own account. Saving the connection only connects and tests it. A scraper that keeps going is then stopped at the CDN, before its requests reach your server: no PHP, no database, no bandwidth. Each block is removed when the temporary block ends. Only the blocked addresses are sent, with the reason and the end time; nothing about your visitors or content.', 'scrapelock' ), 'pncp-edge-intro' ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Escaped in PNCP_Admin_Fields. ?>
 		<?php
 		if ( $locked ) {
-			echo '<p class="description">' . esc_html__( 'The site is locked: this setting cannot be changed until it is unlocked.', 'scrapelock' ) . '</p>';
+			echo '<p class="description">' . esc_html__( 'The site is locked: unlock it on the Lockdown tab to change this.', 'scrapelock' ) . '</p>';
 		}
 		PNCP_Edge::render_trust_warning( $s ); // 3.9.
 		if ( ! empty( $s['trust_any_proxy'] ) && PNCP_Edge::usable() ) {
@@ -1717,7 +1722,7 @@ final class PNCP_Admin {
 					<th scope="row"><label for="pncp-edge-zone"><?php esc_html_e( 'Zone ID', 'scrapelock' ); ?></label></th>
 					<td>
 						<input type="text" class="regular-text code" id="pncp-edge-zone" name="zone" value="<?php echo esc_attr( $c['zone'] ); ?>" autocomplete="off" spellcheck="false" aria-describedby="pncp-edge-zone-help"<?php disabled( $locked ); ?>>
-						<p class="description" id="pncp-edge-zone-help"><?php esc_html_e( 'Cloudflare: the Zone ID on the Overview page of your site (32 characters). Bunny CDN: the ID of the Pull Zone that serves this site (a number, in the address of its page in the bunny.net dashboard).', 'scrapelock' ); ?></p>
+						<?php echo PNCP_Admin_Fields::description( 'pncp-edge-zone-help', PNCP_Admin_Fields::help( __( 'Cloudflare: the Zone ID from Overview. Bunny CDN: the Pull Zone ID.', 'scrapelock' ), __( 'Cloudflare: the Zone ID on the Overview page of your site (32 characters). Bunny CDN: the ID of the Pull Zone that serves this site (a number, in the address of its page in the bunny.net dashboard).', 'scrapelock' ) ) ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Escaped in PNCP_Admin_Fields. ?>
 					</td>
 				</tr>
 				<tr>
@@ -1728,7 +1733,7 @@ final class PNCP_Admin {
 						<?php else : ?>
 							<input type="password" class="regular-text" id="pncp-edge-token" name="token" value="" autocomplete="new-password" spellcheck="false" placeholder="<?php echo esc_attr( '' !== $c['token'] ? __( 'Saved. Leave empty to keep it.', 'scrapelock' ) : '' ); ?>" aria-describedby="pncp-edge-token-help"<?php disabled( $locked ); ?>>
 						<?php endif; ?>
-						<p class="description" id="pncp-edge-token-help"><?php esc_html_e( 'Cloudflare: create an API token (My Profile → API Tokens → Create Token → Custom token) with the single permission Zone → Firewall Services → Edit, for this zone only. Bunny CDN: the API key of your account (Account settings → API); it gives access to the whole account. The token is stored in the database and never shown again; to keep it out of the database, add define( \'SCRAPELOCK_EDGE_TOKEN\', \'…\' ); to wp-config.php instead.', 'scrapelock' ); ?></p>
+						<?php echo PNCP_Admin_Fields::description( 'pncp-edge-token-help', PNCP_Admin_Fields::help( __( 'Cloudflare: a token with Firewall Services → Edit. Bunny CDN: the account API key.', 'scrapelock' ), __( 'Cloudflare: create an API token (My Profile → API Tokens → Create Token → Custom token) with the single permission Zone → Firewall Services → Edit, for this zone only. Bunny CDN: the API key of your account (Account settings → API); it gives access to the whole account. The token is stored in the database and never shown again; to keep it out of the database, add define( \'SCRAPELOCK_EDGE_TOKEN\', \'…\' ); to wp-config.php instead.', 'scrapelock' ) ) ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Escaped in PNCP_Admin_Fields. ?>
 					</td>
 				</tr>
 			</table>
@@ -1746,7 +1751,9 @@ final class PNCP_Admin {
 			echo '<input type="hidden" name="op" value="diagnose">';
 			echo '<p>';
 			submit_button( __( 'Test connection', 'scrapelock' ), 'secondary', 'submit', false, self::submit_attrs() );
-			echo '</p><p class="description">' . esc_html__( 'Checks step by step that the CDN can be reached, that the token is valid, active and has the permissions needed, that the zone exists and is active, and how much of the API rate limit is left. Then blocks the address 203.0.113.x (reserved for documentation, it belongs to nobody) at the CDN, checks that the CDN lists it and removes it again. No setting changes and no visitor is affected.', 'scrapelock' ) . '</p></form>';
+			echo '</p><p class="description">' . esc_html__( 'Checks the API step by step, then blocks and unblocks a test address.', 'scrapelock' ) . '</p>';
+			echo PNCP_Admin_Fields::more( __( 'Checks step by step that the CDN can be reached, that the token is valid, active and has the permissions needed, that the zone exists and is active, and how much of the API rate limit is left. Then blocks the address 203.0.113.x (reserved for documentation, it belongs to nobody) at the CDN, checks that the CDN lists it and removes it again. No setting changes and no visitor is affected.', 'scrapelock' ) ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Escaped in PNCP_Admin_Fields.
+			echo '</form>';
 		}
 		self::render_diagnosis();
 		echo '<ul class="pncp-list-status pncp-edge-status">';
@@ -2004,7 +2011,7 @@ final class PNCP_Admin {
 			<td>
 				<?php
 				self::textarea( $s, 'private_paths', __( 'Paths that are not public (one per line, * means “anything”), e.g. /skroutz.xml, /feeds/*.xml, or a feed served with a query, e.g. /?feed=skroutz:', 'scrapelock' ) );
-				self::textarea( $s, 'private_ips', __( 'Or allowed IPs / CIDR of the service (one per line):', 'scrapelock' ), __( 'Without a valid token or an allowed IP it returns 403. Applies to feeds generated by PHP. For static .xml files see the “Server rules” tab.', 'scrapelock' ), 3 );
+				self::textarea( $s, 'private_ips', __( 'Or allowed IPs / CIDR of the service (one per line):', 'scrapelock' ), PNCP_Admin_Fields::help( __( 'No valid token or allowed IP: 403. PHP feeds only.', 'scrapelock' ), __( 'Without a valid token or an allowed IP it returns 403. Applies to feeds generated by PHP. For static .xml files see the “Server rules” tab.', 'scrapelock' ) ), 3 );
 				?>
 			</td>
 		</tr>
@@ -2012,8 +2019,8 @@ final class PNCP_Admin {
 			<th scope="row"><?php esc_html_e( 'REST API', 'scrapelock' ); ?></th>
 			<td>
 				<?php
-				self::checkbox( $s, 'rest_hide_content', __( 'Hide the text (content, excerpt) of posts, pages and products from visitors', 'scrapelock' ), __( 'REST stays open for forms, oEmbed, SEO plugins and your own endpoints. Users who can write posts see the text normally. Exceptions from code: filter pncp_rest_hide_content.', 'scrapelock' ) );
-				self::checkbox( $s, 'hide_rest_discovery', __( 'Hide the REST API map from visitors', 'scrapelock' ), __( '/wp-json/ no longer lists the namespaces and routes (a map of your plugins), and the page head and the Link header no longer point to the REST API and to oEmbed. Every route keeps working when called; logged-in users see everything. Leave it off if an app or service reads /wp-json/ to discover your site.', 'scrapelock' ) );
+				self::checkbox( $s, 'rest_hide_content', __( 'Hide the text (content, excerpt) of posts, pages and products from visitors', 'scrapelock' ), PNCP_Admin_Fields::help( __( 'Forms, oEmbed and SEO plugins keep working; writers still see the text.', 'scrapelock' ), __( 'REST stays open for forms, oEmbed, SEO plugins and your own endpoints. Users who can write posts see the text normally. Exceptions from code: filter pncp_rest_hide_content.', 'scrapelock' ) ) );
+				self::checkbox( $s, 'hide_rest_discovery', __( 'Hide the REST API map from visitors', 'scrapelock' ), PNCP_Admin_Fields::help( __( '/wp-json/ stops listing your routes; every route still works.', 'scrapelock' ), __( '/wp-json/ no longer lists the namespaces and routes (a map of your plugins), and the page head and the Link header no longer point to the REST API and to oEmbed. Every route keeps working when called; logged-in users see everything. Leave it off if an app or service reads /wp-json/ to discover your site.', 'scrapelock' ) ) );
 				?>
 			</td>
 		</tr>
@@ -2040,29 +2047,29 @@ final class PNCP_Admin {
 						'disabled' => __( 'Disabled', 'scrapelock' ),
 					)
 				);
-				self::checkbox( $s, 'feed_source_link', __( 'Full text: add “The post … first appeared on …” at the end', 'scrapelock' ), __( 'Sites that republish the feed automatically then link back to the original article, so search engines see where it first appeared.', 'scrapelock' ) );
-				self::checkbox( $s, 'list_excerpts', __( 'Lists of articles: an excerpt and a link instead of the full text', 'scrapelock' ), __( 'Many themes print the whole text of every article on the home page, in categories, archives and search, so one request gives a scraper ten articles. With this on, visitors see an excerpt and a “Read the full article” link there, and each article has to be opened (and counted toward the page limit) on its own. The article pages do not change; the staff in “Who is exempt” see the full text. Changes how your lists look, so check them after turning it on. Always on in Emergency Mode.', 'scrapelock' ) );
+				self::checkbox( $s, 'feed_source_link', __( 'Full text: add “The post … first appeared on …” at the end', 'scrapelock' ), PNCP_Admin_Fields::help( __( 'Republishing sites then link back to the original article.', 'scrapelock' ), __( 'Sites that republish the feed automatically then link back to the original article, so search engines see where it first appeared.', 'scrapelock' ) ) );
+				self::checkbox( $s, 'list_excerpts', __( 'Lists of articles: an excerpt and a link instead of the full text', 'scrapelock' ), PNCP_Admin_Fields::help( __( 'Lists show an excerpt and a link; article pages do not change.', 'scrapelock' ), __( 'Many themes print the whole text of every article on the home page, in categories, archives and search, so one request gives a scraper ten articles. With this on, visitors see an excerpt and a “Read the full article” link there, and each article has to be opened (and counted toward the page limit) on its own. The article pages do not change; the staff in “Who is exempt” see the full text. Changes how your lists look, so check them after turning it on. Always on in Emergency Mode.', 'scrapelock' ) ) );
 				?>
 			</td>
 		</tr>
 		<tr>
 			<th scope="row"><?php esc_html_e( 'XML-RPC', 'scrapelock' ); ?></th>
 			<td>
-				<?php self::checkbox( $s, 'disable_pingback', __( 'Turn off pingbacks', 'scrapelock' ), __( 'pingback.ping stays open even when XML-RPC is "disabled", and is used to make your site send requests to other sites or to check which pages exist. This removes the two pingback methods and the X-Pingback header; other XML-RPC methods (e.g. Jetpack) keep working. You no longer receive pingbacks from other blogs.', 'scrapelock' ) ); ?>
+				<?php self::checkbox( $s, 'disable_pingback', __( 'Turn off pingbacks', 'scrapelock' ), PNCP_Admin_Fields::help( __( 'Removes the pingback methods and header; other XML-RPC keeps working.', 'scrapelock' ), __( 'pingback.ping stays open even when XML-RPC is "disabled", and is used to make your site send requests to other sites or to check which pages exist. This removes the two pingback methods and the X-Pingback header; other XML-RPC methods (e.g. Jetpack) keep working. You no longer receive pingbacks from other blogs.', 'scrapelock' ) ) ); ?>
 			</td>
 		</tr>
 		<tr>
 			<th scope="row"><?php esc_html_e( 'Versions', 'scrapelock' ); ?></th>
 			<td>
-				<?php self::checkbox( $s, 'hide_fingerprint', __( 'Hide that the site runs on WordPress, as far as possible', 'scrapelock' ), __( 'For visitors who are not signed in: everything “Hide the versions” below does, plus no REST API, oEmbed, RSD and shortlink links in the page head and headers, no emoji script, no X-Pingback and “X-Redirect-By: WordPress” headers. Tools such as BuiltWith and Wappalyzer, and scanners, look for these first. Everything keeps working. It cannot hide everything: the addresses of themes and plugins (/wp-content/…) still show it, and the hosting and DNS of a site are public anyway. Add the Nginx or Apache rules (Server rules tab) to refuse readme.html and license.txt too.', 'scrapelock' ) ); ?>
+				<?php self::checkbox( $s, 'hide_fingerprint', __( 'Hide that the site runs on WordPress, as far as possible', 'scrapelock' ), PNCP_Admin_Fields::help( __( 'Removes the WordPress traces scanners look for, for signed-out visitors.', 'scrapelock' ), __( 'For visitors who are not signed in: everything “Hide the versions” below does, plus no REST API, oEmbed, RSD and shortlink links in the page head and headers, no emoji script, no X-Pingback and “X-Redirect-By: WordPress” headers. Tools such as BuiltWith and Wappalyzer, and scanners, look for these first. Everything keeps working. It cannot hide everything: the addresses of themes and plugins (/wp-content/…) still show it, and the hosting and DNS of a site are public anyway. Add the Nginx or Apache rules (Server rules tab) to refuse readme.html and license.txt too.', 'scrapelock' ) ) ); ?>
 				<?php self::render_stealth_pointer(); ?>
-				<?php self::checkbox( $s, 'hide_versions', __( 'Hide the versions of WordPress, PHP and the plugins', 'scrapelock' ), __( 'Scanners read these versions and look them up in lists of known vulnerabilities. This removes the “generator” tag from the page head and the feeds, the X-Powered-By header with the PHP version, and replaces “?ver=7.1.3” on CSS and JS files with a code that changes when the version changes, so caches still work. The readme and changelog files of WordPress and the plugins are static files: the Nginx and Apache rules in the “Server rules” tab refuse them. It does not fix any vulnerability: keep WordPress and the plugins updated.', 'scrapelock' ) ); ?>
+				<?php self::checkbox( $s, 'hide_versions', __( 'Hide the versions of WordPress, PHP and the plugins', 'scrapelock' ), PNCP_Admin_Fields::help( __( 'Removes generator tags, X-Powered-By and ?ver= numbers scanners look up.', 'scrapelock' ), __( 'Scanners read these versions and look them up in lists of known vulnerabilities. This removes the “generator” tag from the page head and the feeds, the X-Powered-By header with the PHP version, and replaces “?ver=7.1.3” on CSS and JS files with a code that changes when the version changes, so caches still work. The readme and changelog files of WordPress and the plugins are static files: the Nginx and Apache rules in the “Server rules” tab refuse them. It does not fix any vulnerability: keep WordPress and the plugins updated.', 'scrapelock' ) ) ); ?>
 			</td>
 		</tr>
 		<tr>
 			<th scope="row"><?php esc_html_e( 'Uploads', 'scrapelock' ); ?></th>
 			<td>
-				<?php self::checkbox( $s, 'block_upload_php', __( 'No PHP in the uploads folder', 'scrapelock' ), __( 'Files uploaded to the site (images, documents) never need to run as code. A backdoor uploaded through a vulnerable plugin usually lands in the uploads folder, so this refuses every PHP file there. On Apache it is written into the .htaccess of the uploads folder at once; on Nginx add the rule from the “Server rules” tab. If a plugin of yours really runs PHP from the uploads folder (rare), leave it off.', 'scrapelock' ) ); ?>
+				<?php self::checkbox( $s, 'block_upload_php', __( 'No PHP in the uploads folder', 'scrapelock' ), PNCP_Admin_Fields::help( __( 'Refuses every PHP file under uploads, where backdoors usually land.', 'scrapelock' ), __( 'Files uploaded to the site (images, documents) never need to run as code. A backdoor uploaded through a vulnerable plugin usually lands in the uploads folder, so this refuses every PHP file there. On Apache it is written into the .htaccess of the uploads folder at once; on Nginx add the rule from the “Server rules” tab. If a plugin of yours really runs PHP from the uploads folder (rare), leave it off.', 'scrapelock' ) ) ); ?>
 			</td>
 		</tr>
 		<?php
@@ -2184,7 +2191,7 @@ final class PNCP_Admin {
 					<button type="submit" class="button button-primary"><?php echo esc_html( '' === $data['hash'] ? __( 'Create token', 'scrapelock' ) : __( 'New token (rotate)', 'scrapelock' ) ); ?></button>
 				</p>
 			</form>
-			<p class="description"><?php esc_html_e( 'Header for ERP and your own integrations (not visible in logs and history). Token in the URL for Skroutz, BestPrice and Google Merchant, which accept only URLs.', 'scrapelock' ); ?></p>
+			<?php echo PNCP_Admin_Fields::para( __( 'Use the header where you can; the URL only for services that need it.', 'scrapelock' ), __( 'Header for ERP and your own integrations (not visible in logs and history). Token in the URL for Skroutz, BestPrice and Google Merchant, which accept only URLs.', 'scrapelock' ) ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Escaped in PNCP_Admin_Fields. ?>
 
 			<?php if ( $paths ) : ?>
 				<h3><?php esc_html_e( 'Access per feed', 'scrapelock' ); ?></h3>
@@ -2238,11 +2245,11 @@ final class PNCP_Admin {
 			<th scope="row"><?php esc_html_e( 'Watermark', 'scrapelock' ); ?></th>
 			<td>
 				<?php
-				self::checkbox( $s, 'watermark_enabled', __( 'Watermark new images', 'scrapelock' ), __( 'It is added to the sizes WordPress generates (thumbnails, medium, large). For existing images, use the tool below. The site icon, the logo and the watermark itself never get it.', 'scrapelock' ) );
+				self::checkbox( $s, 'watermark_enabled', __( 'Watermark new images', 'scrapelock' ), PNCP_Admin_Fields::help( __( 'Added to generated sizes; existing images: use the tool below.', 'scrapelock' ), __( 'It is added to the sizes WordPress generates (thumbnails, medium, large). For existing images, use the tool below. The site icon, the logo and the watermark itself never get it.', 'scrapelock' ) ) );
 				if ( ! PNCP_Watermark::available() ) {
-					echo '<p class="pncp-inline-warning"><strong>' . esc_html__( 'The PHP GD library is not available on the server, so the watermark will not be applied.', 'scrapelock' ) . '</strong></p>';
+					echo '<p class="pncp-inline-warning"><strong>' . esc_html__( 'The PHP GD library is missing, so no watermark is applied: ask your host to enable it.', 'scrapelock' ) . '</strong></p>';
 				}
-				self::checkbox( $s, 'watermark_full', __( 'Watermark the full-size image too', 'scrapelock' ), __( 'Without this, the full image stays clean and can be downloaded from its URL. The clean original is kept in a hidden folder, so it can always be restored.', 'scrapelock' ) );
+				self::checkbox( $s, 'watermark_full', __( 'Watermark the full-size image too', 'scrapelock' ), PNCP_Admin_Fields::help( __( 'Otherwise the full image stays clean and downloadable. Originals are kept.', 'scrapelock' ), __( 'Without this, the full image stays clean and can be downloaded from its URL. The clean original is kept in a hidden folder, so it can always be restored.', 'scrapelock' ) ) );
 				self::checkbox( $s, 'watermark_products', __( 'Watermark WooCommerce product images too', 'scrapelock' ) );
 				?>
 				<p class="pncp-inline-warning" id="pncp-products-warning"><?php esc_html_e( 'Not recommended: Google Merchant Center, Skroutz and BestPrice reject product images with a watermark, and feeds usually show the full-size image. For products, hotlink protection (“Server rules” tab) is a better choice. If a watermarked image later becomes a product image, logo or icon, the watermark is removed automatically.', 'scrapelock' ); ?></p>
@@ -2252,7 +2259,7 @@ final class PNCP_Admin {
 			<th scope="row"><?php esc_html_e( 'Appearance', 'scrapelock' ); ?></th>
 			<td>
 				<?php
-				self::number( $s, 'watermark_image_id', __( 'PNG image ID from the Media Library (0 = the site\'s domain as text):', 'scrapelock' ), __( 'A PNG with a transparent background is recommended (e.g. the logo). The ID appears in the address when you open the image in the Library.', 'scrapelock' ) );
+				self::number( $s, 'watermark_image_id', __( 'PNG image ID from the Media Library (0 = the site\'s domain as text):', 'scrapelock' ), PNCP_Admin_Fields::help( __( 'A transparent PNG, e.g. the logo; the ID is in its Library address.', 'scrapelock' ), __( 'A PNG with a transparent background is recommended (e.g. the logo). The ID appears in the address when you open the image in the Library.', 'scrapelock' ) ) );
 				?>
 				<?php // 3.5: a <div>, not a <p>: select() now prints the requirement note (a <p>) after the select. ?>
 				<div class="pncp-field"><label for="pncp-watermark_position"><?php esc_html_e( 'Position:', 'scrapelock' ); ?></label>
@@ -2294,7 +2301,7 @@ final class PNCP_Admin {
 		<section class="pncp-card pncp-card--wide" aria-labelledby="pncp-tool-title">
 			<h2 id="pncp-tool-title"><?php esc_html_e( 'Existing images', 'scrapelock' ); ?></h2>
 			<p><?php echo esc_html( sprintf( /* translators: %s: count */ __( 'JPEG / PNG / WebP images in the library: %s.', 'scrapelock' ), number_format_i18n( $total ) ) ); ?></p>
-			<p class="description"><?php esc_html_e( 'Each image is regenerated from the clean original, so a watermark is never added twice, not even on images watermarked by version 1.x. If the page closes midway, click again: it resumes where it stopped. Keep a backup of the uploads folder before you start.', 'scrapelock' ); ?></p>
+			<?php echo PNCP_Admin_Fields::para( __( 'Back up the uploads folder first. An interrupted run resumes where it stopped.', 'scrapelock' ), __( 'Each image is regenerated from the clean original, so a watermark is never added twice, not even on images watermarked by version 1.x. If the page closes midway, click again: it resumes where it stopped. Keep a backup of the uploads folder before you start.', 'scrapelock' ) ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Escaped in PNCP_Admin_Fields. ?>
 			<?php if ( empty( $s['watermark_enabled'] ) ) : ?>
 				<p class="pncp-inline-warning"><?php esc_html_e( 'The watermark is off: “Apply” will leave the images clean. Enable it and save first.', 'scrapelock' ); ?></p>
 			<?php endif; ?>
@@ -2378,26 +2385,27 @@ final class PNCP_Admin {
 	 * @param array<string, mixed> $s Settings.
 	 */
 	private static function render_login_settings( $s ) {
-		self::group_heading( 'login', __( 'Sign-in', 'scrapelock' ), __( 'Password guessing on wp-login.php, XML-RPC and the REST API, and where the sign-in page is.', 'scrapelock' ) );
+		self::group_heading( 'login', __( 'Sign-in', 'scrapelock' ), __( 'Password guessing on wp-login.php, XML-RPC and the REST API; the sign-in address.', 'scrapelock' ) );
 		self::row_open( 'login', __( 'Failed sign-ins', 'scrapelock' ) );
-		self::checkbox( $s, 'login_limit', __( 'Limit failed sign-ins', 'scrapelock' ), __( 'Counts wrong passwords on wp-login.php, XML-RPC (each call of a system.multicall, the way bots try hundreds of passwords in one request) and application passwords. Too many from one IP block it for a while; too many for one username pause that username.', 'scrapelock' ) );
-		self::number( $s, 'login_max', __( 'Failed sign-ins per IP before it is blocked:', 'scrapelock' ), __( 'Within the time below. Failures for an account that already signed in from that IP do not count, so a person who forgot the password is not blocked. Starting value: 5.', 'scrapelock' ) );
-		self::number( $s, 'login_window', __( '…within this many minutes:', 'scrapelock' ), __( 'Starting value: 15.', 'scrapelock' ) );
-		self::number( $s, 'login_ban_minutes', __( 'Block the IP for (minutes):', 'scrapelock' ), __( 'The block covers the whole site, like the other temporary blocks, and is listed under “Blocked IPs”. Starting value: 30.', 'scrapelock' ) );
-		self::number( $s, 'login_user_max', __( 'Failed sign-ins per username before it is paused (0 = off):', 'scrapelock' ), __( 'Counted from all IPs together: password guessing spread over many addresses. Usernames that do not exist are paused too, so the answer does not tell which exist. Starting value: 10.', 'scrapelock' ) );
-		self::number( $s, 'login_user_minutes', __( 'Pause the username for (minutes):', 'scrapelock' ), __( 'Its owner can still sign in from where they signed in before, and with the one-time link emailed to the account. Starting value: 15.', 'scrapelock' ) );
-		self::checkbox( $s, 'login_user_email', __( 'Email the account a link to sign in during a pause', 'scrapelock' ), __( 'Once per pause. The link works once, for 24 hours, and lets that browser sign in for 30 days.', 'scrapelock' ) );
-		self::checkbox( $s, 'login_generic_errors', __( 'One error message for a wrong username, email or password', 'scrapelock' ), __( 'WordPress says “The username … is not registered” for an unknown user, which tells bots which usernames exist. “Lost your password” answers the same way for unknown accounts too.', 'scrapelock' ) );
+		self::checkbox( $s, 'login_limit', __( 'Limit failed sign-ins', 'scrapelock' ), PNCP_Admin_Fields::help( __( 'Counts wrong passwords on wp-login.php, XML-RPC and application passwords.', 'scrapelock' ), __( 'Counts wrong passwords on wp-login.php, XML-RPC (each call of a system.multicall, the way bots try hundreds of passwords in one request) and application passwords. Too many from one IP block it for a while; too many for one username pause that username.', 'scrapelock' ) ) );
+		self::number( $s, 'login_max', __( 'Failed sign-ins per IP before it is blocked:', 'scrapelock' ), PNCP_Admin_Fields::help( __( 'Failures for an account already used from that IP do not count.', 'scrapelock' ), __( 'Within the time below. Failures for an account that already signed in from that IP do not count, so a person who forgot the password is not blocked.', 'scrapelock' ) ) );
+		self::number( $s, 'login_window', __( '…within this many minutes:', 'scrapelock' ), '' );
+		self::number( $s, 'login_ban_minutes', __( 'Block the IP for (minutes):', 'scrapelock' ), __( 'Covers the whole site; listed under “Blocked IPs”.', 'scrapelock' ) );
+		self::number( $s, 'login_user_max', __( 'Failed sign-ins per username before it is paused (0 = off):', 'scrapelock' ), PNCP_Admin_Fields::help( __( 'Counted across all IPs; unknown usernames are paused too.', 'scrapelock' ), __( 'Counted from all IPs together: password guessing spread over many addresses. Usernames that do not exist are paused too, so the answer does not tell which exist.', 'scrapelock' ) ) );
+		self::number( $s, 'login_user_minutes', __( 'Pause the username for (minutes):', 'scrapelock' ), PNCP_Admin_Fields::help( __( 'Its owner can still use known places or the emailed one-time link.', 'scrapelock' ), __( 'Its owner can still sign in from where they signed in before, and with the one-time link emailed to the account.', 'scrapelock' ) ) );
+		self::checkbox( $s, 'login_user_email', __( 'Email the account a link to sign in during a pause', 'scrapelock' ), PNCP_Admin_Fields::help( __( 'One email per pause; the link works once, within 24 hours.', 'scrapelock' ), __( 'Once per pause. The link works once, for 24 hours, and lets that browser sign in for 30 days.', 'scrapelock' ) ) );
+		self::checkbox( $s, 'login_generic_errors', __( 'One error message for a wrong username, email or password', 'scrapelock' ), PNCP_Admin_Fields::help( __( 'Sign-in errors no longer tell bots which usernames exist.', 'scrapelock' ), __( 'WordPress says “The username … is not registered” for an unknown user, which tells bots which usernames exist. “Lost your password” answers the same way for unknown accounts too.', 'scrapelock' ) ) );
 		echo '<p class="description"><a href="' . esc_url( PNCP_Status::settings_url( array( 'tab' => 'hardening' ) ) . '#pncp-login-status' ) . '">' . esc_html__( 'Blocked IPs, paused usernames and the usernames tried', 'scrapelock' ) . '</a></p>';
 		self::row_close();
 		self::row_open( 'login_slug', __( 'Sign-in address', 'scrapelock' ) );
 		printf(
-			'<div class="pncp-field"><p><label for="pncp-login_slug">%1$s</label><br><code>%2$s</code><input type="text" class="regular-text code" id="pncp-login_slug" name="%3$s[login_slug]" value="%4$s" placeholder="my-login" spellcheck="false" autocomplete="off" pattern="[A-Za-z0-9_\-]{3,50}" aria-describedby="pncp-login_slug-help"></p><p class="description" id="pncp-login_slug-help">%5$s</p></div>',
+			'<div class="pncp-field"><p><label for="pncp-login_slug">%1$s</label><br><code>%2$s</code><input type="text" class="regular-text code" id="pncp-login_slug" name="%3$s[login_slug]" value="%4$s" placeholder="my-login" spellcheck="false" autocomplete="off" pattern="[A-Za-z0-9_\-]{3,50}" aria-describedby="pncp-login_slug-help"></p><p class="description" id="pncp-login_slug-help">%5$s</p>%6$s</div>',
 			esc_html__( 'Move the sign-in page to this address (empty = wp-login.php):', 'scrapelock' ),
 			esc_html( trailingslashit( home_url( '/' ) ) ),
 			esc_attr( PNCP_OPTION ),
 			esc_attr( (string) $s['login_slug'] ),
-			esc_html__( 'wp-login.php and /wp-admin/ then answer “page not found” to visitors who are not signed in, so password-guessing bots find nothing there; links, emails and redirects use the new address. Write it down. If you lose it, add define( \'SCRAPELOCK_LOGIN_SLUG_OFF\', true ); to wp-config.php. In Monitor only both addresses work. Letters, digits, “-” and “_”; not login, admin or an address a page already has.', 'scrapelock' )
+			esc_html__( 'Visitors then get “page not found” at wp-login.php and /wp-admin/. Write it down.', 'scrapelock' ),
+			PNCP_Admin_Fields::more( __( 'wp-login.php and /wp-admin/ then answer “page not found” to visitors who are not signed in, so password-guessing bots find nothing there; links, emails and redirects use the new address. Write it down. If you lose it, add define( \'SCRAPELOCK_LOGIN_SLUG_OFF\', true ); to wp-config.php. In Monitor only both addresses work. Letters, digits, “-” and “_”; not login, admin or an address a page already has.', 'scrapelock' ) ) // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Escaped in more().
 		);
 		if ( '' !== PNCP_Login::slug() ) {
 			echo '<p>' . esc_html__( 'Sign in at:', 'scrapelock' ) . ' <a href="' . esc_url( PNCP_Login::login_url() ) . '"><code>' . esc_html( PNCP_Login::login_url() ) . '</code></a></p>';
@@ -2411,11 +2419,12 @@ final class PNCP_Admin {
 	private static function render_stealth_pointer() {
 		$on = PNCP_Stealth::active();
 		printf(
-			'<p class="description pncp-stealth-pointer"><strong>%1$s</strong> %2$s <a href="%3$s">%4$s</a></p>',
+			'<p class="description pncp-stealth-pointer"><strong>%1$s</strong> %2$s <a href="%3$s">%4$s</a></p>%5$s',
 			esc_html( $on ? __( 'Stealth is on.', 'scrapelock' ) : __( 'More: Stealth.', 'scrapelock' ) ),
-			esc_html__( 'It also gives visitors and tools such as BuiltWith and Wappalyzer neutral addresses instead of /wp-content/ and /wp-includes/, another REST prefix and /sitemap.xml, and refuses readme.html, after testing the server rules. It includes the two settings here.', 'scrapelock' ),
+			esc_html__( 'Neutral addresses instead of /wp-content/, plus both settings here.', 'scrapelock' ),
 			esc_url( PNCP_Status::settings_url( array( 'tab' => PNCP_Stealth::tab() ) ) . '#pncp-stealth' ),
-			esc_html__( 'Stealth settings', 'scrapelock' )
+			esc_html__( 'Stealth settings', 'scrapelock' ),
+			PNCP_Admin_Fields::more( __( 'It also gives visitors and tools such as BuiltWith and Wappalyzer neutral addresses instead of /wp-content/ and /wp-includes/, another REST prefix and /sitemap.xml, and refuses readme.html, after testing the server rules. It includes the two settings here.', 'scrapelock' ) ) // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Escaped in more().
 		);
 	}
 
@@ -2439,7 +2448,7 @@ final class PNCP_Admin {
 					empty( $s['attack_record'] )
 						? __( 'Recording is off: only what was there before is shown.', 'scrapelock' )
 						/* translators: %s: number of days */
-						: sprintf( _n( 'Recording is on. It keeps IP addresses and the usernames tried, and is deleted automatically after %s day.', 'Recording is on. It keeps IP addresses and the usernames tried, and is deleted automatically after %s days.', PNCP_Attacks::retention(), 'scrapelock' ), number_format_i18n( PNCP_Attacks::retention() ) )
+						: sprintf( _n( 'Recording is on; IPs and usernames tried are deleted after %s day.', 'Recording is on; IPs and usernames tried are deleted after %s days.', PNCP_Attacks::retention(), 'scrapelock' ), number_format_i18n( PNCP_Attacks::retention() ) )
 				);
 				?>
 				<a href="<?php echo esc_url( PNCP_Status::settings_url( array( 'tab' => 'log' ) ) . '#pncp-sec-attack-record' ); ?>"><?php esc_html_e( 'Attack record settings', 'scrapelock' ); ?></a>
@@ -2447,7 +2456,7 @@ final class PNCP_Admin {
 			<?php self::action_form_open( 'pncp_attacks_clear', 'pncp_attacks_clear', 'pncp-inline-form' ); ?>
 				<button type="submit" class="button button-link-delete" data-pncp-confirm="<?php esc_attr_e( 'Delete the whole attack record? This cannot be undone.', 'scrapelock' ); ?>"<?php disabled( $locked ); ?>><?php esc_html_e( 'Delete the attack record', 'scrapelock' ); ?></button>
 				<?php if ( $locked ) : ?>
-					<span class="description"><?php esc_html_e( 'While the site is locked it cannot be deleted.', 'scrapelock' ); ?></span>
+					<span class="description"><?php esc_html_e( 'Unlock the site on the Lockdown tab to delete it.', 'scrapelock' ); ?></span>
 				<?php endif; ?>
 			</form>
 		</section>
@@ -2485,17 +2494,19 @@ final class PNCP_Admin {
 	private static function tab_rules( $s ) { // phpcs:ignore Generic.CodeAnalysis.UnusedFunctionParameter.Found -- Same signature as the other tabs.
 		?>
 		<div class="pncp-intro">
-		<p><?php esc_html_e( 'The plugin only checks requests that reach PHP. Pages from page cache, images and static files are served directly by the server or the CDN. The rules below are generated for your site, with the current settings. Test them on staging first.', 'scrapelock' ); ?></p>
-		<p class="description"><?php esc_html_e( 'The plugin does not keep a Cloudflare API token in the database: you add the rules yourself, where you already have access.', 'scrapelock' ); ?></p>
+		<p><?php esc_html_e( 'Generated for this site: they cover cached pages and files PHP never sees. Test on staging first.', 'scrapelock' ); ?></p>
+		<?php echo PNCP_Admin_Fields::more( __( 'The plugin only checks requests that reach PHP. Pages from page cache, images and static files are served directly by the server or the CDN. The rules below are generated for your site, with the current settings. Test them on staging first.', 'scrapelock' ) ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Escaped in PNCP_Admin_Fields. ?>
+		<p class="description"><?php esc_html_e( 'No Cloudflare token is stored: add the rules in your own Cloudflare account.', 'scrapelock' ); ?></p>
 		</div>
 
 		<div class="pncp-rules">
 		<section class="pncp-card pncp-rules-card" aria-labelledby="pncp-rules-cf">
 		<h2 id="pncp-rules-cf"><?php esc_html_e( 'Cloudflare', 'scrapelock' ); ?></h2>
 		<?php if ( PNCP_Ip::cloudflare_plugin_active() || PNCP_Ip::behind_cloudflare() ) : ?>
-			<div class="notice notice-info inline"><p><?php esc_html_e( 'APO and “Cache Everything”: pages served from the Cloudflare cache never reach the plugin, so the bot list, limits and the trap do not apply to them. The WAF rules below apply before the cache. ScrapeLock tells the Cloudflare plugin not to cache blocks and private feeds, and purges its cache when you save the settings.', 'scrapelock' ); ?></p></div>
+			<div class="notice notice-info inline"><p><?php esc_html_e( 'Pages from the Cloudflare cache skip ScrapeLock: add the WAF rules below to cover them.', 'scrapelock' ); ?></p>
+			<?php echo PNCP_Admin_Fields::more( __( 'APO and “Cache Everything”: pages served from the Cloudflare cache never reach the plugin, so the bot list, limits and the trap do not apply to them. The WAF rules below apply before the cache. ScrapeLock tells the Cloudflare plugin not to cache blocks and private feeds, and purges its cache when you save the settings.', 'scrapelock' ) ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Escaped in PNCP_Admin_Fields. ?></div>
 		<?php endif; ?>
-		<p class="description"><?php esc_html_e( 'Security → WAF → Custom rules → Create rule → Edit expression. Paste the expression and choose the action shown.', 'scrapelock' ); ?></p>
+		<p class="description"><?php esc_html_e( 'Security → WAF → Custom rules → Create rule → Edit expression; paste it, choose the action shown.', 'scrapelock' ); ?></p>
 		<?php foreach ( PNCP_Rules::cloudflare() as $key => $rule ) : ?>
 			<h3><?php echo esc_html( $rule['title'] ); ?> <span class="pncp-badge"><?php echo esc_html( $rule['action'] ); ?></span></h3>
 			<?php self::code_block( 'pncp-cf-' . $key, $rule['expression'], 3 ); ?>
@@ -2510,7 +2521,7 @@ final class PNCP_Admin {
 		<section class="pncp-card pncp-card--wide pncp-rules-card" aria-labelledby="pncp-rules-nginx">
 		<h2 id="pncp-rules-nginx"><?php esc_html_e( 'Nginx', 'scrapelock' ); ?></h2>
 		<?php self::render_nginx_status(); ?>
-		<p class="description"><?php esc_html_e( 'Optional: they stop the bots before PHP and the page cache, so the server does less work. Without access to the Nginx configuration (shared hosting) skip them: the plugin and the pre-cache check still protect the pages. The names carry this site\'s suffix, so several WordPress sites can use their rules on the same Nginx.', 'scrapelock' ); ?></p>
+		<?php echo PNCP_Admin_Fields::para( __( 'Optional: stops bots before PHP and the cache. Skip it on shared hosting.', 'scrapelock' ), __( 'Optional: they stop the bots before PHP and the page cache, so the server does less work. Without access to the Nginx configuration (shared hosting) skip them: the plugin and the pre-cache check still protect the pages. The names carry this site\'s suffix, so several WordPress sites can use their rules on the same Nginx.', 'scrapelock' ) ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Escaped in PNCP_Admin_Fields. ?>
 		<div class="pncp-rules-steps">
 		<div class="pncp-rules-step">
 		<p class="description"><?php esc_html_e( '1) Inside http { }: a new file in a folder that nginx.conf includes there, e.g.', 'scrapelock' ); ?></p>
@@ -2521,7 +2532,7 @@ final class PNCP_Admin {
 		<?php self::code_block( 'pncp-nginx-http', PNCP_Rules::nginx_http(), 8 ); ?>
 		</div>
 		<div class="pncp-rules-step">
-		<p class="description"><?php esc_html_e( '2) Inside the site\'s server { } (the one for HTTPS, and for HTTP if it serves pages too), before the other location blocks:', 'scrapelock' ); ?></p>
+		<p class="description"><?php esc_html_e( '2) Inside the site\'s server { } (HTTPS, and HTTP if it serves pages), before other location blocks:', 'scrapelock' ); ?></p>
 		<ul class="ul-disc description">
 			<li><?php esc_html_e( 'Your own server: the site\'s file, e.g. /etc/nginx/sites-available/, or a file it includes.', 'scrapelock' ); ?></li>
 			<li><?php esc_html_e( 'aaPanel: Website → the site → Config, or a file in the site\'s folder under /www/server/panel/vhost/nginx/extension/ when the site\'s configuration includes it.', 'scrapelock' ); ?></li>
@@ -2531,19 +2542,23 @@ final class PNCP_Admin {
 		<?php self::code_block( 'pncp-nginx-server', PNCP_Rules::nginx_server(), 18 ); ?>
 		</div>
 		</div>
-		<p class="description"><?php esc_html_e( '3) Run nginx -t: only if it says “test is successful”, reload Nginx (nginx -s reload or systemctl reload nginx). If it shows an error, nothing has changed yet: remove what you added. 4) Check the status above. After every change of the settings that changes the rules, it says “out of date”: copy the part it names again.', 'scrapelock' ); ?></p>
+		<p class="description"><?php esc_html_e( '3) Run nginx -t, and reload Nginx only if it says “test is successful”.', 'scrapelock' ); ?></p>
+		<p class="description"><?php esc_html_e( '4) Check the status above; when it says “out of date”, copy the named part again.', 'scrapelock' ); ?></p>
+		<?php echo PNCP_Admin_Fields::more( __( '3) Run nginx -t: only if it says “test is successful”, reload Nginx (nginx -s reload or systemctl reload nginx). If it shows an error, nothing has changed yet: remove what you added. 4) Check the status above. After every change of the settings that changes the rules, it says “out of date”: copy the part it names again.', 'scrapelock' ) ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Escaped in PNCP_Admin_Fields. ?>
 		</section>
 
 		<?php // 3.7: fail2ban (PNCP_Fail2ban). ?>
 		<section class="pncp-card pncp-card--wide pncp-rules-card" aria-labelledby="pncp-rules-fail2ban">
 		<h2 id="pncp-rules-fail2ban"><?php esc_html_e( 'fail2ban (VPS and dedicated servers)', 'scrapelock' ); ?></h2>
-		<p class="description"><?php esc_html_e( 'With “Write each temporary block to the system log” on (Bots and limits → Temporary block), every block ScrapeLock makes is also written to the system log, and fail2ban blocks the IP in the firewall for the same time: the scraper no longer reaches the web server at all. 1) Save the filter, 2) save the jail (check logpath for your system), 3) run fail2ban-client reload, 4) fail2ban-client status scrapelock shows the blocked IPs.', 'scrapelock' ); ?></p>
+		<p class="description"><?php esc_html_e( 'Turn on Bots and limits → Temporary block → “Write each temporary block to the system log”.', 'scrapelock' ); ?></p>
+		<p class="description"><?php esc_html_e( 'Save the filter and the jail, then run fail2ban-client reload.', 'scrapelock' ); ?></p>
+		<?php echo PNCP_Admin_Fields::more( __( 'With “Write each temporary block to the system log” on (Bots and limits → Temporary block), every block ScrapeLock makes is also written to the system log, and fail2ban blocks the IP in the firewall for the same time: the scraper no longer reaches the web server at all. 1) Save the filter, 2) save the jail (check logpath for your system), 3) run fail2ban-client reload, 4) fail2ban-client status scrapelock shows the blocked IPs.', 'scrapelock' ) ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Escaped in PNCP_Admin_Fields. ?>
 		<?php
 		$pncp_settings = PNCP_Options::get();
 		if ( empty( $pncp_settings['syslog_bans'] ) ) {
-			echo '<p class="pncp-inline-warning">' . esc_html__( 'The option is off: nothing is written to the system log yet.', 'scrapelock' ) . '</p>';
+			echo '<p class="pncp-inline-warning">' . esc_html__( 'The option is off: turn it on under Bots and limits → Temporary block.', 'scrapelock' ) . '</p>';
 		} elseif ( ! PNCP_Fail2ban::available() ) {
-			echo '<p class="pncp-inline-warning">' . esc_html__( 'PHP cannot write to the system log on this server (openlog() or syslog() is disabled).', 'scrapelock' ) . '</p>';
+			echo '<p class="pncp-inline-warning">' . esc_html__( 'PHP cannot write to the system log here: enable openlog() and syslog() in php.ini.', 'scrapelock' ) . '</p>';
 		}
 		?>
 		<div class="pncp-rules-steps">
@@ -2716,12 +2731,12 @@ final class PNCP_Admin {
 			<section class="pncp-card">
 				<h3><?php esc_html_e( 'Top User-Agents', 'scrapelock' ); ?></h3>
 				<?php self::ua_list( $summary['uas'], $summary['ua_reasons'], $reasons ); ?>
-				<p class="description"><?php esc_html_e( 'Verified search engines and AI bots are never blocked, so they never appear here: a known bot name in this list was a fake one or could not be verified.', 'scrapelock' ); ?></p>
+				<?php echo PNCP_Admin_Fields::para( __( 'A known bot name here was fake or could not be verified.', 'scrapelock' ), __( 'Verified search engines and AI bots are never blocked, so they never appear here: a known bot name in this list was a fake one or could not be verified.', 'scrapelock' ) ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Escaped in PNCP_Admin_Fields. ?>
 			</section>
 		</div>
 
 		<h2 class="pncp-section-title"><?php esc_html_e( 'What they try to copy', 'scrapelock' ); ?></h2>
-		<p class="description"><?php esc_html_e( 'The blocked requests grouped by address. “Pages” exist on your site: what scrapers were after. “Addresses that do not exist” are random strings and guesses. “Files” are scanners looking for passwords, backups or admin areas. No content leaks in the last two, they only show what was tried.', 'scrapelock' ); ?></p>
+		<?php echo PNCP_Admin_Fields::para( __( 'Blocked requests by address: real pages, made-up addresses and scanned files.', 'scrapelock' ), __( 'The blocked requests grouped by address. “Pages” exist on your site: what scrapers were after. “Addresses that do not exist” are random strings and guesses. “Files” are scanners looking for passwords, backups or admin areas. No content leaks in the last two, they only show what was tried.', 'scrapelock' ) ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Escaped in PNCP_Admin_Fields. ?>
 		<?php
 		$periods = array(
 			24  => __( 'Last 24 hours', 'scrapelock' ),
@@ -2970,7 +2985,7 @@ final class PNCP_Admin {
 				<?php submit_button( __( 'Delete these counts', 'scrapelock' ), 'delete', 'submit', false, self::submit_attrs() ); ?>
 			</form>
 		<?php endif; ?>
-		<p class="description"><?php esc_html_e( 'Counted on this server, without cookies or personal data: one count per day and page, for a page view whose referrer is an AI assistant or whose address carries its utm_source. Pages served by a page cache without reaching WordPress are not counted. Kept for 90 days.', 'scrapelock' ); ?></p>
+		<?php echo PNCP_Admin_Fields::para( __( 'Counted here without cookies or personal data; kept for 90 days.', 'scrapelock' ), __( 'Counted on this server, without cookies or personal data: one count per day and page, for a page view whose referrer is an AI assistant or whose address carries its utm_source. Pages served by a page cache without reaching WordPress are not counted. Kept for 90 days.', 'scrapelock' ) ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Escaped in PNCP_Admin_Fields. ?>
 		</section>
 		<?php
 	}
@@ -3006,7 +3021,7 @@ final class PNCP_Admin {
 		<tr id="pncp-sec-content-paths">
 			<th scope="row"><?php esc_html_e( 'Content addresses', 'scrapelock' ); ?></th>
 			<td>
-				<?php self::textarea( $s, 'content_paths', __( 'Content addresses: path prefixes of pages that other plugins show, one per line, e.g. /hub/space/', 'scrapelock' ), __( 'Only for the log: blocked requests under these addresses count as “Pages”. Routes that plugins register as WordPress rewrite rules, and all posts, pages, products and terms, are found without this. Nothing is blocked or allowed because of it.', 'scrapelock' ), 2 ); ?>
+				<?php self::textarea( $s, 'content_paths', __( 'Content addresses: path prefixes of pages that other plugins show, one per line, e.g. /hub/space/', 'scrapelock' ), PNCP_Admin_Fields::help( __( 'Only for the log: these count as “Pages”. Nothing is blocked by it.', 'scrapelock' ), __( 'Only for the log: blocked requests under these addresses count as “Pages”. Routes that plugins register as WordPress rewrite rules, and all posts, pages, products and terms, are found without this. Nothing is blocked or allowed because of it.', 'scrapelock' ) ), 2 ); ?>
 				<?php
 				// 3.11: what is added at runtime (FluentCommunity's portal), never stored in the setting.
 				$pncp_fcom = PNCP_Fluent_Community::note();
@@ -3019,13 +3034,13 @@ final class PNCP_Admin {
 		<tr id="pncp-sec-ai-referrals-setting">
 			<th scope="row"><?php esc_html_e( 'AI assistants', 'scrapelock' ); ?></th>
 			<td>
-				<?php self::checkbox( $s, 'ai_referrals', __( 'Count visitors who come from AI assistants (ChatGPT, Perplexity, Claude, Gemini, Copilot…)', 'scrapelock' ), __( 'One count per day, assistant and page; no IP, User-Agent or cookie is stored. Shown above.', 'scrapelock' ) ); ?>
+				<?php self::checkbox( $s, 'ai_referrals', __( 'Count visitors who come from AI assistants (ChatGPT, Perplexity, Claude, Gemini, Copilot…)', 'scrapelock' ), __( 'One count per day and page; no IP, User-Agent or cookie is stored.', 'scrapelock' ) ); ?>
 			</td>
 		</tr>
 		<tr id="pncp-sec-attack-record">
 			<th scope="row"><?php esc_html_e( 'Attack record', 'scrapelock' ); ?></th>
 			<td>
-				<?php self::checkbox( $s, 'attack_record', __( 'Record where bots and attackers hit the site', 'scrapelock' ), __( 'Failed sign-ins and the usernames tried, wp-login.php and wp-admin visits that do not sign in, XML-RPC calls, scanner and plugin probes, username enumeration and attack patterns in the address, also when nothing is refused. Kept per hour, address and IP; a normal page view writes nothing. Shown on the Attacks tab.', 'scrapelock' ) ); ?>
+				<?php self::checkbox( $s, 'attack_record', __( 'Record where bots and attackers hit the site', 'scrapelock' ), PNCP_Admin_Fields::help( __( 'Sign-in failures, wp-admin visits, probes and attack patterns; shown on Attacks.', 'scrapelock' ), __( 'Failed sign-ins and the usernames tried, wp-login.php and wp-admin visits that do not sign in, XML-RPC calls, scanner and plugin probes, username enumeration and attack patterns in the address, also when nothing is refused. Kept per hour, address and IP; a normal page view writes nothing. Shown on the Attacks tab.', 'scrapelock' ) ) ); ?>
 			</td>
 		</tr>
 		<tr>
@@ -3048,7 +3063,7 @@ final class PNCP_Admin {
 		<tr id="pncp-sec-attack-report">
 			<th scope="row"><?php esc_html_e( 'Attack report by email', 'scrapelock' ); ?></th>
 			<td>
-				<?php self::checkbox( $s, 'report_weekly', __( 'Weekly attack report by email', 'scrapelock' ), __( 'Every Monday, a plain-text summary of the last 7 days (attacks, wp-admin and sign-in attempts, the addresses attacked most, the usernames tried) to the site\'s administration email, with a link to the Attacks tab.', 'scrapelock' ) ); ?>
+				<?php self::checkbox( $s, 'report_weekly', __( 'Weekly attack report by email', 'scrapelock' ), PNCP_Admin_Fields::help( __( 'Every Monday, a 7-day summary to the site\'s administration email.', 'scrapelock' ), __( 'Every Monday, a plain-text summary of the last 7 days (attacks, wp-admin and sign-in attempts, the addresses attacked most, the usernames tried) to the site\'s administration email, with a link to the Attacks tab.', 'scrapelock' ) ) ); ?>
 			</td>
 		</tr>
 		<?php
@@ -3213,7 +3228,7 @@ final class PNCP_Admin {
 			echo esc_html(
 				sprintf(
 					/* translators: %s: number of requests */
-					__( 'IPs with at least two temporary blocks, or at least %s blocked requests. They keep coming back: you can block them permanently.', 'scrapelock' ),
+					__( 'IPs with two or more temporary blocks or %s blocked requests: block them permanently.', 'scrapelock' ),
 					number_format_i18n( (int) apply_filters( 'pncp_persistent_requests', 100 ) )
 				)
 			);

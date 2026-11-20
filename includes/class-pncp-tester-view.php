@@ -44,7 +44,7 @@ final class PNCP_Tester_View {
 				<span class="pncp-tester__state"><?php echo esc_html( PNCP_Tester::exempt_line() ); ?></span>
 			</summary>
 			<div class="pncp-tester__body">
-				<p class="description"><?php esc_html_e( 'See what ScrapeLock would answer to a request, without sending one: nothing is counted, logged or blocked. It uses your settings as they are now, including Monitor only and Emergency Mode.', 'scrapelock' ); ?></p>
+				<?php echo PNCP_Admin_Fields::para( __( 'What ScrapeLock would answer, without counting, logging or blocking anything.', 'scrapelock' ), __( 'See what ScrapeLock would answer to a request, without sending one: nothing is counted, logged or blocked. It uses your settings as they are now, including Monitor only and Emergency Mode.', 'scrapelock' ) ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Escaped in PNCP_Admin_Fields. ?>
 
 				<div class="pncp-tester__presets" role="group" aria-labelledby="pncp-tester-try">
 					<span id="pncp-tester-try" class="pncp-tester__try"><?php esc_html_e( 'Try:', 'scrapelock' ); ?></span>
@@ -57,7 +57,7 @@ final class PNCP_Tester_View {
 					<p class="pncp-tester__field">
 						<label for="pncp-tester-ip"><?php esc_html_e( 'IP address', 'scrapelock' ); ?></label>
 						<input type="text" id="pncp-tester-ip" name="ip" class="regular-text code" inputmode="text" autocomplete="off" value="<?php echo esc_attr( PNCP_Tester::SAMPLE_IP ); ?>" aria-describedby="pncp-tester-ip-help">
-						<span class="description" id="pncp-tester-ip-help"><?php esc_html_e( 'An example outside address is filled in. Use the IP of a visitor from the log to see why it was blocked.', 'scrapelock' ); ?></span>
+						<span class="description" id="pncp-tester-ip-help"><?php esc_html_e( 'Use a visitor IP from the log to see why it was blocked.', 'scrapelock' ); ?></span>
 					</p>
 					<p class="pncp-tester__field">
 						<label for="pncp-tester-ua"><?php esc_html_e( 'User-Agent', 'scrapelock' ); ?></label>
@@ -67,7 +67,7 @@ final class PNCP_Tester_View {
 					<p class="pncp-tester__field">
 						<label for="pncp-tester-address"><?php esc_html_e( 'Address on this site', 'scrapelock' ); ?></label>
 						<input type="text" id="pncp-tester-address" name="address" class="regular-text code" maxlength="2048" placeholder="/" autocomplete="off" aria-describedby="pncp-tester-address-help">
-						<span class="description" id="pncp-tester-address-help"><?php esc_html_e( 'A path such as /shop/, /?s=shoes, /feed/ or /wp-json/wp/v2/posts, or a full address of this site. Empty = the home page.', 'scrapelock' ); ?></span>
+						<span class="description" id="pncp-tester-address-help"><?php esc_html_e( 'A path, e.g. /shop/ or /wp-json/wp/v2/posts. Empty = the home page.', 'scrapelock' ); ?></span>
 					</p>
 					<p class="pncp-tester__field pncp-tester__check">
 						<label for="pncp-tester-browser">

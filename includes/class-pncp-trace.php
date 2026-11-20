@@ -179,9 +179,9 @@ final class PNCP_Trace {
 		?>
 		<details class="pncp-card pncp-trace" id="pncp-trace"<?php echo $posted ? ' open' : ''; ?>>
 			<summary><h2 class="pncp-tester__title"><?php esc_html_e( 'Find whose copy this is', 'scrapelock' ); ?></h2></summary>
-			<p class="description"><?php esc_html_e( 'Paste text copied from this site that turned up somewhere else (a website, a document, a message). If it was copied by a signed-in account while “Hide an invisible trace of the account in the text” was on, the account and the day are shown. Copy it from the original place as text; a screenshot or retyped text carries no trace.', 'scrapelock' ); ?></p>
+			<?php echo PNCP_Admin_Fields::para( __( 'Paste copied text to see which signed-in account copied it, and when.', 'scrapelock' ), __( 'Paste text copied from this site that turned up somewhere else (a website, a document, a message). If it was copied by a signed-in account while “Hide an invisible trace of the account in the text” was on, the account and the day are shown. Copy it from the original place as text; a screenshot or retyped text carries no trace.', 'scrapelock' ) ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Escaped in PNCP_Admin_Fields. ?>
 			<?php if ( empty( $s['text_trace'] ) ) : ?>
-				<p class="description"><?php esc_html_e( 'The trace is off now (On the page → Members and readers): only text copied while it was on carries one.', 'scrapelock' ); ?></p>
+				<p class="description"><?php esc_html_e( 'The trace is off; only older copies carry one. Enable it under On the page → Members and readers.', 'scrapelock' ); ?></p>
 			<?php endif; ?>
 			<form method="post" action="#pncp-trace" data-pncp-nodirty>
 				<?php wp_nonce_field( self::ACTION, '_pncp_trace' ); ?>

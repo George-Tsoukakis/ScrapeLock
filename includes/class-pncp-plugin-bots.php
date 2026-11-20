@@ -493,14 +493,15 @@ final class PNCP_Plugin_Bots {
 		if ( ! $bots ) {
 			$names = wp_list_pluck( self::registry(), 'name' );
 			printf(
-				'<p class="description">%s</p></div>',
+				'<p class="description">%1$s</p>%2$s</div>',
 				esc_html(
 					sprintf(
 						/* translators: %s: list of plugin names */
-						__( 'None of the plugins whose service bots ScrapeLock knows (%s) is active here. When one is, its bot is allowed while the plugin stays active.', 'scrapelock' ),
+						__( 'None of the plugins whose service bots ScrapeLock knows (%s) is active here.', 'scrapelock' ),
 						implode( ', ', $names )
 					)
-				)
+				),
+				PNCP_Admin_Fields::more( __( 'When one is, its bot is allowed while the plugin stays active.', 'scrapelock' ) ) // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Escaped in more().
 			);
 			return;
 		}
@@ -527,7 +528,7 @@ final class PNCP_Plugin_Bots {
 			}
 			echo '</li>';
 		}
-		echo '</ul><p class="description">' . esc_html__( 'Allowed like the User-Agents above: they pass the bot list, “Browsers only” and the headless check. The page limits, the bot trap and the attack checks still apply, because a User-Agent is easy to spoof. The buttons save at once.', 'scrapelock' ) . '</p></div>';
+		echo '</ul>' . PNCP_Admin_Fields::para( __( 'Allowed like the User-Agents above. The buttons save at once.', 'scrapelock' ), __( 'Allowed like the User-Agents above: they pass the bot list, “Browsers only” and the headless check. The page limits, the bot trap and the attack checks still apply, because a User-Agent is easy to spoof. The buttons save at once.', 'scrapelock' ) ) . '</div>'; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Escaped in PNCP_Admin_Fields.
 	}
 
 	/**
