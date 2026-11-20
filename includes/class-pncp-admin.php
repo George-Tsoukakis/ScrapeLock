@@ -2830,6 +2830,7 @@ final class PNCP_Admin {
 										)
 									);
 								}
+								PNCP_Bot_Match::render_reason( $row, $s ); // 3.11: the bot list entry that matched.
 								?>
 							</td>
 							<td><?php echo esc_html( number_format_i18n( (int) $row['hits'] ) ); ?></td>
@@ -2841,6 +2842,7 @@ final class PNCP_Admin {
 								if ( 'bot_ua' === $row['reason'] && '' !== trim( (string) $row['ua'] ) && ! isset( $allow_buttons[ strtolower( (string) $row['ua'] ) ] ) ) {
 									$allow_buttons[ strtolower( (string) $row['ua'] ) ] = true;
 									self::allow_ua_button( (string) $row['ua'], $s );
+									PNCP_Bot_Match::render_allow_button( (string) $row['ua'], $s ); // 3.11: generic HTTP libraries.
 								}
 								if ( isset( $row['uas'] ) && (int) $row['uas'] > 1 ) {
 									echo '<br><span class="pncp-badge">' . esc_html(

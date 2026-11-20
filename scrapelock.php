@@ -114,6 +114,7 @@ PNCP_Attack_Report::init(); // The Attacks tab, the weekly email and the dashboa
 PNCP_Hardening::init(); // Vulnerable points.
 PNCP_Plugin_Bots::init(); // 3.10: the service bots of active plugins (WP Rocket and others) are allowed.
 PNCP_Server_Ips::init(); // 3.11: the server's own addresses (the site's requests to itself through the CDN).
+PNCP_Bot_Match::init(); // 3.11: the Log names the bot list entry that matched, "Allow this service".
 PNCP_Ai_Search_List::init(); // 3.11: "Remove from the list" for allowed AI search bots still in the bot list.
 PNCP_Site_Files::init(); // 3.10.1: apple-touch-icon.png and OneSignalSDKWorker.js in Site Health, Wordfence's address check.
 

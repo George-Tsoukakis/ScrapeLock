@@ -213,6 +213,8 @@ final class PNCP_Settings_Io {
 				return __( 'Before restoring an earlier version', 'scrapelock' );
 			case 'ai_search_list': // 3.11.
 				return __( 'Before removing the allowed AI search bots from the bot list', 'scrapelock' );
+			case 'allow_service': // 3.11.
+				return __( 'Before allowing a service from the Log', 'scrapelock' );
 			case 'cli':
 				/* translators: %s: WP-CLI command */
 				return sprintf( __( 'Before “wp scrapelock settings %s”', 'scrapelock' ), $what );

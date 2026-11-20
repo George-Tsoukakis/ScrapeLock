@@ -399,5 +399,91 @@ settings(
 );
 PNCP_Log::unban_all();
 
+/* ---------- A10. The bot list entry in the Log, "Allow this service" ---------- */
+settings(
+	array(
+		'block_http_libs' => 1,
+		'bot_list'        => $saved['bot_list'],
+		'allow_list'      => '',
+	)
+);
+PNCP_Log::clear();
+$py   = 'python-requests/2.31.0';
+$ok   = 'MyShopApp/3.2 okhttp/4.9.2';
+$ip   = '198.51.100.160';
+list( $code ) = http( '/', $ip, $py );
+t( 'A10: python-requests with "Also block generic HTTP libraries": 403', 403 === $code, (string) $code );
+$s     = PNCP_Options::get();
+$entry = PNCP_Bot_Match::entry( $py, $s );
+t( 'A10: entry() names the library token and its source', is_array( $entry ) && 'python-requests' === $entry['token'] && 'http_libs' === $entry['source'] && $entry['http_lib'], wp_json_encode( $entry ) );
+$entry = PNCP_Bot_Match::entry( $ok, $s );
+t( 'A10: entry() for okhttp inside an app User-Agent', is_array( $entry ) && 'okhttp' === strtolower( rtrim( $entry['token'], '/' ) ) && $entry['http_lib'], wp_json_encode( $entry ) );
+$entry = PNCP_Bot_Match::entry( 'Mozilla/5.0 (compatible; GPTBot/1.2)', $s );
+t( 'A10: entry() for GPTBot: not a library', is_array( $entry ) && 'GPTBot' === $entry['token'] && ! $entry['http_lib'], wp_json_encode( $entry ) );
+foreach ( array( $ok => '198.51.100.161', 'Mozilla/5.0 (compatible; GPTBot/1.2)' => '198.51.100.162' ) as $row_ua => $row_ip ) {
+	PNCP_Log::insert(
+		array(
+			'time'   => time(),
+			'ip'     => $row_ip,
+			'reason' => 'bot_ua',
+			'code'   => 403,
+			'hits'   => 3,
+			'path'   => '/',
+			'ua'     => $row_ua,
+		)
+	);
+}
+$cookies          = login_cookies( $admin->ID );
+list( $code, $body ) = http( $log_tab, '192.0.2.210', $browser, null, $cookies );
+t( 'A10 UI: Log tab 200 without PHP warnings', 200 === $code && ! php_errors( $body ), (string) $code );
+t( 'A10 UI: the reason is kept ("User-Agent in the bot list")', false !== strpos( $body, 'User-Agent in the bot list (403)' ) );
+t( 'A10 UI: the library that matched is named', false !== strpos( $body, 'Matched “python-requests”: a generic HTTP library (“Also block generic HTTP libraries”)' ) && false !== strpos( $body, 'data-token="okhttp' ) );
+t( 'A10 UI: GPTBot is named as a bot list entry, not a library', false !== strpos( $body, 'Matched “GPTBot” (your bot list)' ) );
+t( 'A10 UI: "Allow this service" for the library rows only (2), with the whole User-Agent', 2 === substr_count( $body, 'pncp-allow-service-form' ) && false !== strpos( $body, 'name="ua" value="' . esc_attr( $py ) . '"' ) && false !== strpos( $body, 'name="ua" value="' . esc_attr( $ok ) . '"' ) );
+t( 'A10 UI: the existing "Always allow this User-Agent" button stays', false !== strpos( $body, 'Always allow this User-Agent' ) );
+
+$post = array(
+	'action'   => PNCP_Bot_Match::ACTION,
+	'ua'       => $py,
+	'_wpnonce' => 'wrong',
+);
+list( $code ) = http( '/wp-admin/admin-post.php', '192.0.2.210', $browser, $post, $cookies );
+t( 'A10 security: a wrong nonce is refused, nothing added', 403 === $code && '' === reread()['allow_list'], (string) $code );
+$ed_cookies       = login_cookies( $editor_id );
+$post['_wpnonce'] = wp_create_nonce( PNCP_Bot_Match::ACTION );
+list( $code ) = http( '/wp-admin/admin-post.php', '192.0.2.211', $browser, $post, $ed_cookies );
+t( 'A10 security: an editor (no manage_options) is refused, nothing added', 403 === $code && '' === reread()['allow_list'], (string) $code );
+$cookies          = login_cookies( $admin->ID );
+$post['_wpnonce'] = wp_create_nonce( PNCP_Bot_Match::ACTION );
+lock_site();
+list( $code, , $loc ) = http( '/wp-admin/admin-post.php', '192.0.2.210', $browser, $post, $cookies );
+unlock_site();
+t( 'A10 security: while the site is locked nothing is added', ( 403 === $code || false !== strpos( $loc, 'allow_service_locked' ) ) && '' === reread()['allow_list'], $code . ' ' . $loc );
+list( $code, , $loc ) = http( '/wp-admin/admin-post.php', '192.0.2.210', $browser, array_merge( $post, array( 'ua' => 'Mozilla/5.0 (compatible; GPTBot/1.2)' ) ), $cookies );
+t( 'A10: a User-Agent not blocked by a library is refused', false !== strpos( $loc, 'pncp_message=allow_service_refused' ) && '' === reread()['allow_list'], $loc );
+
+$backups_before = count( PNCP_Settings_Io::backups() );
+list( $code, , $loc ) = http( '/wp-admin/admin-post.php', '192.0.2.210', $browser, $post, $cookies );
+$after = reread();
+t( 'A10: "Allow this service" adds the whole User-Agent', 302 === $code && false !== strpos( $loc, 'pncp_message=allow_service_added' ) && $py === $after['allow_list'], $code . ' ' . $loc . ' ' . $after['allow_list'] );
+$backups = PNCP_Settings_Io::backups();
+t( 'A10: an earlier version was saved first', count( $backups ) === min( 5, $backups_before + 1 ) && PNCP_Bot_Match::BACKUP_REASON === $backups[0]['reason'] && '' === $backups[0]['settings']['allow_list'] && 'Before allowing a service from the Log' === PNCP_Settings_Io::reason_label( $backups[0] ) );
+list( $code, , $loc ) = http( '/wp-admin/admin-post.php', '192.0.2.210', $browser, $post, $cookies );
+t( 'A10: a second click: "already allowed", no second line', false !== strpos( $loc, 'pncp_message=allow_service_exists' ) && $py === reread()['allow_list'], $loc );
+list( $code, $body ) = http( $log_tab . '&pncp_message=allow_service_added', '192.0.2.210', $browser, null, $cookies );
+t( 'A10 UI: the notice, and no button any more for the allowed User-Agent', false !== strpos( $body, 'The service&#039;s User-Agent was added' ) && false === strpos( $body, 'name="ua" value="' . esc_attr( $py ) . '"' ) && ! php_errors( $body ) );
+wp_set_current_user( 0 );
+list( $code ) = http( '/', '198.51.100.163', $py );
+t( 'A10: that service passes now', 200 === $code, (string) $code );
+list( $code ) = http( '/', '198.51.100.164', 'python-requests/2.30.0' );
+t( 'A10: another python-requests client is still blocked', 403 === $code, (string) $code );
+settings(
+	array(
+		'block_http_libs' => $saved['block_http_libs'],
+		'allow_list'      => $saved['allow_list'],
+	)
+);
+PNCP_Log::clear();
+
 echo $fails ? "\n$fails FAIL\n" : "\nALL PASS\n";
 exit( $fails ? 1 : 0 );
