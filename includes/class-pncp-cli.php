@@ -2,7 +2,7 @@
 /**
  * WP-CLI: wp scrapelock status | block | unblock | blocked | emergency | lockdown status | check | log | settings |
  * reputation | crowdsec | ai-referrals (3.7) | attacks | attack-report | login | harden | bunny | stealth (3.8) |
- * wizard (3.11).
+ * wizard (3.11) | traffic (3.12).
  * Lockdown cannot be unlocked from here: it opens only with the authenticator app (or SCRAPELOCK_UNLOCK in
  * wp-config.php).
  *
@@ -1102,6 +1102,92 @@ final class PNCP_Cli {
 	 */
 	public function bunny( $args, $assoc_args ) {
 		PNCP_Bunny::cli( $args, $assoc_args );
+	}
+
+	/**
+	 * 3.12: Traffic: the sources, the figures, the requests, a CSV export, delete, run the job, test a log path.
+	 *
+	 * ## OPTIONS
+	 *
+	 * [<subcommand>]
+	 * : status (default), overview, top <dimension>, problems <type>, raw, export <file>, purge, run or test-path <path>.
+	 *
+	 * [<arg>]
+	 * : For top: ua, ua_family, path, referer, ip, country or status. For problems: 404, 5xx, 3xx, uncached, large or slow. For export: the CSV file ("-" = standard output). For test-path: the access log.
+	 *
+	 * [--from=<when>]
+	 * : Start: 24h, 7d, 30m (that long ago), 2026-11-01, "2026-11-01 13:00" or a Unix time. Default: 24 hours ago.
+	 *
+	 * [--to=<when>]
+	 * : End, in the same forms (a date = its end). Default: now.
+	 *
+	 * [--src=<source>]
+	 * : auto (default), bunny, server or wp.
+	 *
+	 * [--status=<status>]
+	 * : A status code such as 404, or 4xx / 5xx.
+	 *
+	 * [--ua=<user-agent>]
+	 * : One User-Agent, exactly.
+	 *
+	 * [--family=<family>]
+	 * : browser, verified_bot, fake_bot, ai_bot, seo_bot, preview, service, script, empty or other.
+	 *
+	 * [--page=<path>]
+	 * : One path, exactly, e.g. /shop/. (--path is WP-CLI's own option, which chooses the WordPress folder.)
+	 *
+	 * [--path-like=<text>]
+	 * : Part of the path.
+	 *
+	 * [--ip=<ip>]
+	 * : One IP.
+	 *
+	 * [--country=<cc>]
+	 * : Two-letter country code.
+	 *
+	 * [--cache=<cache>]
+	 * : HIT or MISS.
+	 *
+	 * [--search=<text>]
+	 * : Part of the path or of the User-Agent.
+	 *
+	 * [--order=<order>]
+	 * : For top: hits, ips, bytes, s4xx, s5xx, misses, last or first.
+	 *
+	 * [--limit=<rows>]
+	 * : Rows, 1-500 (top and problems: 20, raw: 50).
+	 *
+	 * [--offset=<rows>]
+	 * : Rows to skip.
+	 *
+	 * [--series]
+	 * : For overview: the requests per hour (or per day) instead of the totals.
+	 *
+	 * [--force]
+	 * : For export: replace an existing file.
+	 *
+	 * [--yes]
+	 * : For purge: confirm.
+	 *
+	 * [--format=<format>]
+	 * : table (default), json, csv or yaml.
+	 *
+	 * ## EXAMPLES
+	 *
+	 *     wp scrapelock traffic status
+	 *     wp scrapelock traffic overview --from=7d
+	 *     wp scrapelock traffic top ua --from=24h --family=ai_bot
+	 *     wp scrapelock traffic problems 404 --from=2026-11-01 --to=2026-11-07
+	 *     wp scrapelock traffic raw --status=5xx --limit=20 --format=json
+	 *     wp scrapelock traffic export traffic.csv --from=3d --force
+	 *     wp scrapelock traffic purge --yes
+	 *     wp scrapelock traffic test-path /var/log/nginx/access.log
+	 *
+	 * @param string[]              $args       Arguments.
+	 * @param array<string, string> $assoc_args Options.
+	 */
+	public function traffic( $args, $assoc_args ) {
+		PNCP_Traffic_Cli::cli( $args, $assoc_args );
 	}
 
 	/**
