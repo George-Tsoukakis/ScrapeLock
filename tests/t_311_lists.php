@@ -121,6 +121,15 @@ function login_cookies( $user_id ) {
 	return $cookies;
 }
 
+// A6: the filter before anything else, as a plugin adds it: the list is built once per request, and the A5 part
+// can build it already (the Bunny log import reads the probe list).
+$extra_probe = static function ( $paths ) {
+	$paths[] = '/pncp-test-probe.cfg';
+	$paths[] = '/*';
+	return $paths;
+};
+add_filter( 'pncp_probe_paths', $extra_probe );
+
 $saved         = PNCP_Options::stored();
 $saved_backups = get_option( PNCP_Settings_Io::BACKUPS, null );
 $saved_lock    = get_site_option( PNCP_Lockdown::OPTION, null );
@@ -308,13 +317,6 @@ settings(
 );
 
 /* ---------- A6. Scanner probes of other software ---------- */
-// The filter first (the list is built once per request).
-$extra_probe = static function ( $paths ) {
-	$paths[] = '/pncp-test-probe.cfg';
-	$paths[] = '/*';
-	return $paths;
-};
-add_filter( 'pncp_probe_paths', $extra_probe );
 t( 'A6 filter: an added path is on the list', PNCP_Probe::matches( '/pncp-test-probe.cfg' ) );
 t( 'A6 filter: a too broad path ("/*") is dropped, not the whole list', ! PNCP_Probe::matches( '/hello-world/' ) && ! PNCP_Probe::matches( '/' ) && PNCP_Probe::matches( '/Dockerfile' ) );
 
