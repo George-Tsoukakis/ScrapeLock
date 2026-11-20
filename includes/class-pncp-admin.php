@@ -1019,7 +1019,7 @@ final class PNCP_Admin {
 			<td>
 				<?php
 				self::checkbox( $s, 'block_framing', __( 'Pages do not open inside another site\'s iframe', 'scrapelock' ), __( 'X-Frame-Options and CSP frame-ancestors headers. WordPress embeds (oEmbed) keep working.', 'scrapelock' ) );
-				self::checkbox( $s, 'tdm_reservation', __( 'Opt-out declaration from AI training and text and data mining (TDM)', 'scrapelock' ), __( 'tdm-reservation header and meta, /.well-known/tdmrep.json and noai/noimageai. Legal basis: Directive (EU) 2019/790, Article 4(3): reservation of rights in a machine-readable format.', 'scrapelock' ) );
+				self::checkbox( $s, 'tdm_reservation', __( 'Opt-out declaration from AI training and text and data mining (TDM)', 'scrapelock' ), PNCP_Admin_Fields::help( __( 'Sends the tdm-reservation header and meta, tdmrep.json and noai/noimageai.', 'scrapelock' ), __( 'The file is /.well-known/tdmrep.json. Legal basis: Directive (EU) 2019/790, Article 4(3): reservation of rights in a machine-readable format.', 'scrapelock' ) ) );
 				?>
 				<p><label for="pncp-tdm_policy_url"><?php esc_html_e( 'Page with the licensing terms (optional):', 'scrapelock' ); ?></label>
 				<input type="url" class="regular-text code" id="pncp-tdm_policy_url" name="<?php echo esc_attr( PNCP_OPTION ); ?>[tdm_policy_url]" value="<?php echo esc_attr( $s['tdm_policy_url'] ); ?>" placeholder="https://" aria-describedby="pncp-tdm_policy_url-requires"<?php echo PNCP_Admin_Fields::requires_attr( 'tdm_policy_url', $s ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Escaped in requires_attr(). ?>></p>
