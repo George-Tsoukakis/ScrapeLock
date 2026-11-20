@@ -394,6 +394,10 @@ final class PNCP_Admin {
 	 * @param string $title Title.
 	 */
 	private static function row_open( $id, $title ) {
+		if ( PNCP_Admin_Accordion::active() ) {
+			PNCP_Admin_Accordion::part_open( $id, $title ); // 3.11: a folded part of the accordion.
+			return;
+		}
 		printf( '<tr id="pncp-sec-%s"><th scope="row">%s</th><td>', esc_attr( $id ), esc_html( $title ) );
 	}
 
@@ -401,6 +405,10 @@ final class PNCP_Admin {
 	 * Closes a settings card.
 	 */
 	private static function row_close() {
+		if ( PNCP_Admin_Accordion::active() ) {
+			PNCP_Admin_Accordion::part_close();
+			return;
+		}
 		echo '</td></tr>';
 	}
 
@@ -414,10 +422,11 @@ final class PNCP_Admin {
 	 * @param string $intro One sentence about what the part holds.
 	 */
 	private static function group_heading( $id, $title, $intro ) {
-		echo '</table>';
+		$accordion = PNCP_Admin_Accordion::active(); // 3.11: the parts are <details> of their own, no table between them.
+		echo $accordion ? '' : '</table>';
 		printf( '<h2 class="pncp-group-title" id="pncp-group-%s">%s</h2>', esc_attr( $id ), esc_html( $title ) );
 		printf( '<p class="description pncp-group-intro">%s</p>', esc_html( $intro ) );
-		echo '<table class="form-table" role="presentation">';
+		echo $accordion ? '' : '<table class="form-table" role="presentation">';
 	}
 
 	/**
@@ -619,7 +628,7 @@ final class PNCP_Admin {
 		echo '<form method="post" action="options.php" class="pncp-settings-form" data-pncp-watch="1">';
 		settings_fields( self::GROUP );
 		printf( '<input type="hidden" name="%s[_sections][]" value="%s">', esc_attr( PNCP_OPTION ), esc_attr( $section ) );
-		echo '<table class="form-table" role="presentation">';
+		echo PNCP_Admin_Accordion::active() ? '' : '<table class="form-table" role="presentation">';
 	}
 
 	/**
@@ -1401,6 +1410,8 @@ final class PNCP_Admin {
 		// One form in three parts: Bots, Limits, and "Network and CDN" (folded: most sites never change it).
 		// The parts are only headings between tables; every field still belongs to the same form and the same
 		// "bots" section of the settings, so saving keeps working exactly as before.
+		// 3.11: every part is a folded <details> (PNCP_Admin_Accordion); only Bots, Limits and Sign-in are open.
+		PNCP_Admin_Accordion::start();
 		self::form_open( 'bots' );
 		?>
 		<?php self::row_open( 'monitor', __( 'Monitor only', 'scrapelock' ) ); ?>
@@ -1546,6 +1557,7 @@ final class PNCP_Admin {
 				self::render_geo_status( $s );
 				?>
 		<?php self::row_close(); ?>
+		<?php ob_start(); // 3.11: printed under "Advanced", after the temporary block. ?>
 		<?php self::row_open( 'crowdsec', __( 'CrowdSec blocklist', 'scrapelock' ) ); ?>
 				<?php
 				// 3.7: PNCP_Crowdsec.
@@ -1582,6 +1594,7 @@ final class PNCP_Admin {
 				self::number( $s, 'rate_limit_crowdsec', __( 'Pages per minute for listed IPs (0 = off):', 'scrapelock' ), '' );
 				?>
 		<?php self::row_close(); ?>
+		<?php $crowdsec = (string) ob_get_clean(); ?>
 		<?php self::row_open( 'ban', __( 'Temporary block', 'scrapelock' ) ); ?>
 				<?php
 				self::number( $s, 'ban_strikes', __( 'Block after this many violations within 10 minutes (0 = never):', 'scrapelock' ), PNCP_Admin_Fields::help( __( 'A violation is a minute over a limit, or a fake Googlebot.', 'scrapelock' ), __( 'Violation: every minute in which the IP exceeded a limit, and every fake Googlebot. The trap blocks immediately: for 10 minutes the first time, for the full time if the same IP falls into it again within 24 hours.', 'scrapelock' ) ) );
@@ -1594,7 +1607,10 @@ final class PNCP_Admin {
 				?>
 				<p class="description"><?php esc_html_e( 'How long the log is kept is set on the Log tab.', 'scrapelock' ); ?></p>
 		<?php self::row_close(); ?>
-		</table>
+		<?php
+		self::group_heading( 'advanced', __( 'Advanced', 'scrapelock' ), __( 'Shared blocklists, the network in front of the site, blocking at the CDN and the official IP lists. Most sites never need to change these.', 'scrapelock' ) );
+		echo $crowdsec; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Printed and escaped above (output buffer).
+		?>
 		<details class="pncp-advanced" id="pncp-sec-network"<?php echo self::network_needs_attention( $s ) || PNCP_Admin_Sections::requested( 'pncp-sec-network' ) ? ' open' : ''; ?>>
 			<summary>
 				<h2 class="pncp-advanced__title"><?php esc_html_e( 'Network and CDN (advanced)', 'scrapelock' ); ?></h2>
@@ -1717,6 +1733,7 @@ final class PNCP_Admin {
 		PNCP_Bunny::render_card(); // 3.8: Bunny CDN logs and Edge Rules (own forms).
 		echo '</details>';
 		self::render_ip_lists();
+		PNCP_Admin_Accordion::stop();
 	}
 
 	/**
@@ -1981,8 +1998,10 @@ final class PNCP_Admin {
 			}
 		}
 		?>
-		<section class="pncp-card pncp-card--wide pncp-ip-lists" aria-labelledby="pncp-sec-lists">
-		<h2 id="pncp-sec-lists"><?php esc_html_e( 'Official IP lists', 'scrapelock' ); ?></h2>
+		<?php // 3.11: a folded part of the accordion, under "Advanced". ?>
+		<details class="pncp-advanced pncp-acc pncp-acc--lists" id="pncp-acc-lists"<?php echo self::ip_lists_open() ? ' open' : ''; ?>>
+		<summary><h2 class="pncp-advanced__title" id="pncp-sec-lists"><?php esc_html_e( 'Official IP lists', 'scrapelock' ); ?></h2></summary>
+		<section class="pncp-ip-lists" aria-labelledby="pncp-sec-lists">
 		<ul class="pncp-list-status">
 			<?php foreach ( $names as $key => $label ) : ?>
 				<li>
@@ -2029,7 +2048,21 @@ final class PNCP_Admin {
 			</form>
 		<?php endif; ?>
 		</section>
+		</details>
 		<?php
+	}
+
+	/**
+	 * 3.11: whether the folded "Official IP lists" part opens: it was open when a form was saved, or one of its
+	 * own buttons (Refresh lists now, CrowdSec, Download now) just answered.
+	 *
+	 * @return bool
+	 */
+	private static function ip_lists_open() {
+		// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Only decides whether a part is shown open.
+		$message = isset( $_GET['pncp_message'] ) ? sanitize_key( wp_unslash( $_GET['pncp_message'] ) ) : '';
+		return PNCP_Admin_Sections::requested( 'pncp-acc-lists' )
+			|| in_array( $message, array( 'lists', 'lists_partial', 'crowdsec', 'crowdsec_failed', 'geo', 'geo_failed' ), true );
 	}
 
 	/**

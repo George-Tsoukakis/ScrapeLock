@@ -1315,6 +1315,41 @@ fieldset + .pncp-field {
 	box-shadow: none;
 }
 
+/* 3.11: the parts of the Bots and limits tab as an accordion: one folded card per part, the title in the
+   summary, the fields inside without a second card around them. */
+.pncp-admin .pncp-acc {
+	margin-block-end: var(--pncp-s3);
+}
+
+.pncp-admin .pncp-acc > summary {
+	padding-block: var(--pncp-s3);
+}
+
+.pncp-admin .pncp-acc > .form-table {
+	margin-block-start: 0;
+}
+
+.pncp-admin .pncp-acc .form-table > tbody > tr.pncp-acc__card {
+	margin: 0;
+	border: 0;
+	border-radius: 0;
+	background: transparent;
+	box-shadow: none;
+}
+
+.pncp-admin .pncp-acc .form-table > tbody > tr.pncp-acc__card > td {
+	padding-inline: 0;
+}
+
+.pncp-admin .pncp-acc > summary:focus-visible {
+	outline: 2px solid var(--pncp-accent);
+	outline-offset: -2px;
+}
+
+.pncp-admin .pncp-acc--lists > .pncp-ip-lists {
+	padding-block: var(--pncp-s4) var(--pncp-s5);
+}
+
 /* Save bar: stays at the bottom while a long tab scrolls; it lights up while there are unsaved changes. */
 .pncp-admin .pncp-settings-form p.submit {
 	position: sticky;

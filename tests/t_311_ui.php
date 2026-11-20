@@ -117,6 +117,37 @@ t( 'άγνωστη καρτέλα: η πρώτη καρτέλα με την ει
 list( $code, $body ) = http( $page );
 t( 'χωρίς tab: η πρώτη καρτέλα (On the page)', 200 === $code && 'general' === shown_tab( $body ) && false === strpos( $body, 'pncp-unknown-tab' ) );
 
+/* ---------- Bots: accordion ---------- */
+function part_open( $body, $id ) {
+	return (bool) preg_match( '/<details class="[^"]*pncp-acc[^"]*" id="' . preg_quote( $id, '/' ) . '" open>/', $body );
+}
+function part_closed( $body, $id ) {
+	return (bool) preg_match( '/<details class="[^"]*" id="' . preg_quote( $id, '/' ) . '">/', $body );
+}
+list( $code, $body ) = http( $page . '&tab=bots' );
+$parts = array( 'monitor', 'bots', 'ai', 'allowed', 'blocked', 'login', 'login_slug', 'limits', 'human', 'reputation', 'countries', 'ban', 'crowdsec' );
+$ok    = 200 === $code && ! php_errors( $body );
+foreach ( $parts as $id ) {
+	$ok = $ok && 1 === substr_count( $body, 'id="pncp-sec-' . $id . '"' ) && ( part_open( $body, 'pncp-sec-' . $id ) || part_closed( $body, 'pncp-sec-' . $id ) );
+}
+t( 'bots: κάθε μέρος είναι <details> με το παλιό id', $ok, $code );
+t( 'bots: ανοιχτά μόνο Bots, Limits, Sign-in', part_open( $body, 'pncp-sec-bots' ) && part_open( $body, 'pncp-sec-limits' ) && part_open( $body, 'pncp-sec-login' ) && 3 === preg_match_all( '/<details class="[^"]*pncp-acc[^"]*" id="[^"]+" open>/', $body ) );
+t( 'bots: Network and CDN, Blocking at the CDN κλειστά όπως πριν', part_closed( $body, 'pncp-sec-network' ) && part_closed( $body, 'pncp-sec-edge' ) && part_closed( $body, 'pncp-acc-lists' ) );
+$adv = strpos( $body, 'id="pncp-group-advanced"' );
+t(
+	'bots: «Advanced» πριν από CrowdSec, Network and CDN, Blocking at the CDN, Official IP lists, μετά το Temporary block',
+	false !== $adv && $adv > strpos( $body, 'id="pncp-sec-ban"' ) && $adv < strpos( $body, 'id="pncp-sec-crowdsec"' ) && $adv < strpos( $body, 'id="pncp-sec-network"' ) && $adv < strpos( $body, 'id="pncp-sec-edge"' ) && $adv < strpos( $body, 'id="pncp-sec-lists"' )
+);
+$form = preg_match( '#<form method="post" action="options.php" class="pncp-settings-form".*?</form>#s', $body, $m ) ? $m[0] : '';
+t( 'bots: CrowdSec και Temporary block μέσα στη φόρμα της καρτέλας (ίδια πεδία)', false !== strpos( $form, 'name="pncp_settings[crowdsec_mode]"' ) && false !== strpos( $form, 'name="pncp_settings[ban_minutes]"' ) && false !== strpos( $form, 'name="pncp_settings[bot_list]"' ) && false !== strpos( $form, 'name="pncp_settings[ip_header]"' ) );
+t( 'bots: γρήγοροι σύνδεσμοι στα μέρη', false !== strpos( $body, 'href="#pncp-sec-human"' ) && false !== strpos( $body, 'href="#pncp-sec-lists"' ) );
+list( , $body ) = http( $page . '&tab=bots&pncp_sections=pncp-sec-human,pncp-sec-network,pncp-acc-lists' );
+t( 'bots μετά από Save: ανοιχτά όσα ήταν ανοιχτά (Human check, Network, IP lists), κλειστά τα υπόλοιπα', part_open( $body, 'pncp-sec-human' ) && (bool) preg_match( '/id="pncp-sec-network" open>/', $body ) && part_open( $body, 'pncp-acc-lists' ) && part_closed( $body, 'pncp-sec-bots' ) && part_closed( $body, 'pncp-sec-limits' ) );
+list( , $body ) = http( $page . '&tab=bots&pncp_message=lists' );
+t( 'bots μετά από «Refresh lists now»: το Official IP lists ανοιχτό', part_open( $body, 'pncp-acc-lists' ) );
+list( $code, $body ) = http( $page . '&tab=content' );
+t( 'άλλες καρτέλες: χωρίς accordion (πίνακας ρυθμίσεων όπως πριν)', 200 === $code && false === strpos( $body, 'pncp-acc' ) && false !== strpos( $body, '<table class="form-table"' ) );
+
 /* __MORE__ */
 
 update_option( PNCP_OPTION, $saved );

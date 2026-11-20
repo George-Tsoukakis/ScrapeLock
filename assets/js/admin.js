@@ -52,6 +52,13 @@
 	window.addEventListener( 'hashchange', function () {
 		openFor( window.location.hash );
 	} );
+	// 3.11: a quick link to the part already in the address (no "hashchange") still opens it.
+	document.addEventListener( 'click', function ( e ) {
+		var link = e.target.closest ? e.target.closest( '.pncp-admin a[href^="#"]' ) : null;
+		if ( link && link.getAttribute( 'href' ) === window.location.hash ) {
+			openFor( link.getAttribute( 'href' ) );
+		}
+	} );
 
 	/* ---------- Copy ---------- */
 	document.addEventListener( 'click', function ( e ) {
