@@ -217,6 +217,12 @@ final class PNCP_Settings_Io {
 				return __( 'Before allowing a service from the Log', 'scrapelock' );
 			case 'wizard':
 				return __( 'Before the “For my site” assistant', 'scrapelock' ); // 3.11: PNCP_Wizard.
+			case 'traffic_block': // 3.12: PNCP_Traffic_Actions.
+				return __( 'Before blocking a User-Agent from the Traffic tab', 'scrapelock' );
+			case 'traffic_allow':
+				return __( 'Before allowing a User-Agent from the Traffic tab', 'scrapelock' );
+			case 'traffic_start':
+				return __( 'Before “Start collecting” on the Traffic tab', 'scrapelock' );
 			case 'cli':
 				/* translators: %s: WP-CLI command */
 				return sprintf( __( 'Before “wp scrapelock settings %s”', 'scrapelock' ), $what );
@@ -302,7 +308,7 @@ final class PNCP_Settings_Io {
 		$settings = array();
 		$ignored  = array();
 		foreach ( $data as $key => $value ) {
-			$key = (string) $key;
+			$key   = (string) $key;
 			$value = in_array( $key, $known, true ) ? self::import_value( $key, $value ) : null;
 			if ( null === $value ) {
 				$ignored[] = sanitize_key( $key );
