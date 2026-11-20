@@ -58,6 +58,9 @@ ScrapeLock — δοκιμές σε πραγματικό WordPress (όχι stubs)
                     κάρτα, wp-login allowed IPs, WP-CLI (με WP_CLI)
   t_metadata.php    3.10: /llms.txt, /ai.txt, /.well-known/*, εικονίδια, service workers ποτέ «Scanner probe» (καταγραφή
                     επιθέσεων, ομάδες του log, ban σαρωτών, εισαγωγή logs του Bunny με mock), σβήσιμο των παλιών γραμμών
+  t_311_texts.php   3.11: κείμενα βοήθειας σε κάθε καρτέλα ως διαχειριστής: καμία περιγραφή πάνω από 20 λέξεις (γραμμή
+                    βοήθειας πεδίου 14) έξω από το «More», κανένα «Directive (EU)» έξω από το «More», κανένα
+                    «Starting value:», «May affect visitors/SEO» ως εικονίδιο (title + κείμενο για αναγνώστες οθόνης)
   browser/          protect.js σε Chromium: δεξί κλικ/αντιγραφή/επιλογή/σύρσιμο ακόμη και με «εχθρικό» script,
                     αντιγραφή με πηγή, .pncp-allow, πεδία φόρμας, ελληνική διάταξη, θόλωμα (npm install && npm test)
                     admin.mjs (3.10): καρτέλες με άλλο όνομα / άγνωστη καρτέλα, ανοιχτά <details> και κύλιση μετά από Save
