@@ -55,7 +55,9 @@ jobs:
       - name: Build scrapelock.zip (only the plugin, see .gitattributes)
         run: |
           git archive --format=zip --prefix=scrapelock/ -o scrapelock.zip HEAD
-          if unzip -l scrapelock.zip | grep -qE 'tests/|\.po$|\.mo$'; then echo "::error::tests or translations in the zip"; exit 1; fi
+          if unzip -l scrapelock.zip | grep -qE 'tests/|\.po$'; then echo "::error::tests or translation sources in the zip"; exit 1; fi
+          # 3.11: the compiled translations in languages/ ship with the plugin, as in the CI zip.
+          if ! unzip -l scrapelock.zip | grep -q 'scrapelock/languages/scrapelock-el\.mo$'; then echo "::error::languages/scrapelock-el.mo missing from the zip"; exit 1; fi
           cp scrapelock.zip "scrapelock-$VERSION.zip"
       - name: Release notes from readme.txt
         run: |
