@@ -305,6 +305,15 @@ final class PNCP_Precheck_Runtime {
 		if ( $limit < 1 ) {
 			return null;
 		}
+		// 3.11: a static file is not a page: its own counter, never a violation (as the normal check).
+		if ( isset( $c['media'] ) && is_array( $c['media'] ) && self::is_media( $c ) ) {
+			$preview = isset( $c['media']['preview'] ) ? array_filter( array_map( 'strval', (array) $c['media']['preview'] ) ) : array();
+			if ( $allowed && '' !== $ua && $preview && self::ua_in( $ua, $preview ) ) {
+				return null;
+			}
+			$factor = isset( $c['media']['factor'] ) ? max( 1, (int) $c['media']['factor'] ) : 10;
+			return self::hit( $c, $bankey . '|media', $now, $ip ) > $factor * $limit ? array( 429, 'rate_media', $ip ) : null;
+		}
 		// 3.4.3: a crawler that cannot be verified here (Applebot, YandexBot: DNS, which the normal check does)
 		// was not counted at all, so "Applebot" in the User-Agent read every cached page without limit. It now has
 		// four times the page limit, never a violation: far above what the real crawler asks of one site.
@@ -896,6 +905,26 @@ final class PNCP_Precheck_Runtime {
 			}
 		}
 		return true;
+	}
+
+	/**
+	 * 3.11: a static file, by the extension of the last part of the path (PNCP_Bots::is_static_request())?
+	 *
+	 * @param array<string, mixed> $c Configuration.
+	 * @return bool
+	 */
+	public static function is_media( $c ) {
+		$ext = isset( $c['media']['ext'] ) ? (array) $c['media']['ext'] : array();
+		if ( ! $ext ) {
+			return false;
+		}
+		$uri  = isset( $_SERVER['REQUEST_URI'] ) ? (string) $_SERVER['REQUEST_URI'] : '/';
+		$path = strtolower( rawurldecode( (string) parse_url( $uri, PHP_URL_PATH ) ) );
+		$dot  = strrpos( $path, '.' );
+		if ( false === $dot || false !== strpos( substr( $path, $dot ), '/' ) ) {
+			return false;
+		}
+		return in_array( substr( $path, $dot + 1 ), array_map( 'strval', $ext ), true );
 	}
 
 	/**

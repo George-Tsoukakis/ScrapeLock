@@ -365,6 +365,13 @@ final class PNCP_Precheck {
 			// sets in crawlers.json, at these positions).
 			'wk_agents'       => array_values( array_filter( array_map( 'strtolower', PNCP_Bots::well_known_agents() ) ) ),
 			'official'        => self::official_sets(),
+			// 3.11: static files (PNCP_Bots::is_static_request()): their own counter, "factor" times the page limit,
+			// never a violation; the link previews of the always-allowed list are not counted on them.
+			'media'           => array(
+				'ext'     => PNCP_Bots::static_extensions(),
+				'factor'  => PNCP_Bots::MEDIA_FACTOR,
+				'preview' => array_values( array_filter( array_map( 'strtolower', PNCP_Bots::link_preview_agents() ) ) ),
+			),
 			// 3.4.3: the stricter limit of visitors who have not passed the human check (see human()).
 			'human'           => self::human( $s ),
 		);

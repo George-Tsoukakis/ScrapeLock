@@ -471,6 +471,7 @@ final class PNCP_Cli {
 			'search_engine' => __( 'a verified search engine (never blocked or limited)', 'scrapelock' ),
 			'ai_search'     => __( 'a verified AI search bot (never blocked or limited)', 'scrapelock' ),
 			'prefetch'      => __( 'a prefetch within its own limit', 'scrapelock' ),
+			'media'         => __( 'a static file (image, video, font, CSS, JS) within its own limit', 'scrapelock' ),
 			'passed'        => __( 'it passes every check, and is within the limits this minute', 'scrapelock' ),
 		);
 	}

@@ -307,6 +307,7 @@ final class PNCP_Log {
 			// The limits are named after their settings ("Pages per minute", "Searches per minute"…).
 			'rate_page'       => __( 'Pages per minute', 'scrapelock' ),
 			'rate_prefetch'   => __( 'Prefetches per minute', 'scrapelock' ),
+			'rate_media'      => __( 'Media files per minute (images, video, fonts, CSS, JS)', 'scrapelock' ), // 3.11.
 			'rate_page56'     => __( 'Pages per minute for the IPv6 network (/56)', 'scrapelock' ),
 			'rate_datacenter' => __( 'Pages per minute from data centers', 'scrapelock' ),
 			'rate_search'     => __( 'Searches per minute', 'scrapelock' ),

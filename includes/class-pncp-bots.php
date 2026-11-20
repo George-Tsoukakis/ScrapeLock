@@ -25,6 +25,15 @@ final class PNCP_Bots {
 	const SURGE_SAMPLE = 10;
 
 	/**
+	 * 3.11: static files (is_static_request()) have a per-minute counter of their own, this many times the page
+	 * limit ("Pages per minute"), never a violation. No setting of its own: it follows the page limit (and
+	 * Emergency Mode's stricter one).
+	 *
+	 * @var int
+	 */
+	const MEDIA_FACTOR = 10;
+
+	/**
 	 * 3.4.3: without an object cache or APCu, how many new per-IP counter rows wp_options may get per minute,
 	 * site-wide (see db_incr_capped()).
 	 *
@@ -726,7 +735,10 @@ final class PNCP_Bots {
 		// With the automatic Emergency Mode on, every page that reaches this point counts toward the site's pages
 		// per minute (verified search engines and exempt staff do not), blocked or not: what matters is how hard
 		// the site is being hit. One counter write per page, so only when the option is on.
-		if ( $count && in_array( $context, array( 'page', 'search' ), true ) && ! empty( $s['auto_emergency'] ) && null === self::$dry ) {
+		// 3.11: a static file (image, video, audio, font, CSS, JavaScript) that reached PHP (a WebP rewrite, an image
+		// proxy, a 404 handler) is not a page: it never counts toward the page limits (media_limit() below).
+		$media = 'page' === $context && self::is_static_request();
+		if ( $count && ! $media && in_array( $context, array( 'page', 'search' ), true ) && ! empty( $s['auto_emergency'] ) && null === self::$dry ) {
 			self::surge( $s );
 		}
 
@@ -876,6 +888,21 @@ final class PNCP_Bots {
 			'graphql' => array( 'rate_limit_rest', 'rate_rest' ),
 			'sitemap' => array( 'rate_limit_sitemap', 'rate_sitemap' ),
 		);
+		// 3.11: static files: a counter of their own, MEDIA_FACTOR times the page limit, never a violation, and none
+		// of the page limits below (stricter, 404, account, /56). One image opened again and again in a chat app's
+		// browser (a Viber user got "Pages per minute" for 18 requests to one .webp) is not scraping pages. The
+		// link previews of the "Always allowed" list (link_preview_agents()) are not counted at all on media.
+		if ( $count && $media ) {
+			if ( $allowed_ua && self::ua_in_list( $ua, self::link_preview_agents() ) && self::allow_list_match( $ua, $ip, $s ) ) {
+				return self::pass( 'media' );
+			}
+			$limit = self::MEDIA_FACTOR * (int) $s['rate_limit'];
+			if ( $limit > 0 && self::hit( $ip, 'rate_media' ) > $limit ) {
+				return self::verdict( 429, 'rate_media', $ip );
+			}
+			return self::pass( 'media' );
+		}
+
 		// Prefetch / prerender: a limit of its own, three times the page limit, never a violation. Speed plugins
 		// (Flying Pages, instant.page, speculative loading) prefetch many links of each page a visitor reads, so
 		// with the page limit a real visitor could be stopped and even banned. Its headers are sent by any script
@@ -1865,6 +1892,58 @@ final class PNCP_Bots {
 			return false;
 		}
 		return PNCP_Paths::is_site_metadata( $path );
+	}
+
+	/**
+	 * 3.11: the extensions of static files (images, video, audio, fonts, CSS, JavaScript) that never count as
+	 * pages. Filter `pncp_static_extensions` (lowercase, without the dot).
+	 *
+	 * @return string[]
+	 */
+	public static function static_extensions() {
+		$ext = apply_filters( 'pncp_static_extensions', array( 'jpg', 'jpeg', 'jpe', 'png', 'gif', 'webp', 'avif', 'svg', 'ico', 'bmp', 'tif', 'tiff', 'heic', 'heif', 'jxl', 'mp4', 'm4v', 'webm', 'ogv', 'mov', 'mp3', 'm4a', 'aac', 'oga', 'ogg', 'opus', 'wav', 'flac', 'woff', 'woff2', 'ttf', 'otf', 'eot', 'css', 'js', 'mjs', 'map' ) );
+		$out = array();
+		foreach ( is_array( $ext ) ? $ext : array() as $e ) {
+			$e = strtolower( trim( (string) $e, ". \t\n\r\0\x0B" ) );
+			if ( preg_match( '/^[a-z0-9]{1,10}$/', $e ) ) {
+				$out[] = $e;
+			}
+		}
+		return array_values( array_unique( $out ) );
+	}
+
+	/**
+	 * 3.11: is this a GET / HEAD of a static file, by the extension of the last part of its path (a query string
+	 * does not count)? Such a request may still reach PHP: a WebP rewrite, an image proxy, a 404 handler.
+	 *
+	 * @param string|null $path Path (null = this request).
+	 * @return bool
+	 */
+	public static function is_static_request( $path = null ) {
+		if ( null === $path ) {
+			$method = null !== self::$dry || ! isset( $_SERVER['REQUEST_METHOD'] ) ? 'GET' : strtoupper( sanitize_key( wp_unslash( $_SERVER['REQUEST_METHOD'] ) ) );
+			if ( ! in_array( $method, array( 'GET', 'HEAD' ), true ) ) {
+				return false;
+			}
+			$path = self::request_path();
+		}
+		$path = strtolower( (string) $path );
+		$dot  = strrpos( $path, '.' );
+		if ( false === $dot || false !== strpos( substr( $path, $dot ), '/' ) ) {
+			return false;
+		}
+		return in_array( substr( $path, $dot + 1 ), self::static_extensions(), true );
+	}
+
+	/**
+	 * 3.11: the link previews of chat and social apps: on static files they are not counted at all when they are in
+	 * the "Always allowed" list. Filter `pncp_link_preview_agents`.
+	 *
+	 * @return string[]
+	 */
+	public static function link_preview_agents() {
+		$agents = apply_filters( 'pncp_link_preview_agents', array( 'Viber', 'WhatsApp', 'facebookexternalhit', 'Facebot', 'Twitterbot', 'TelegramBot', 'Slackbot', 'LinkedInBot', 'Discordbot', 'Skype' ) );
+		return array_values( array_filter( array_map( 'strval', is_array( $agents ) ? $agents : array() ) ) );
 	}
 
 	/**

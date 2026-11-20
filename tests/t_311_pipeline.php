@@ -437,6 +437,64 @@ t( 'A3 HTTP: the passkeys agent, bot list line, no browser headers: not refused'
 settings( array( 'early_mode' => 0, 'bot_list' => $saved['bot_list'] ) );
 PNCP_Early::sync();
 
+/* ---------- A4. Static files are not pages ---------- */
+$mobile = 'Mozilla/5.0 (Linux; Android 14; SM-A546B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Mobile Safari/537.36';
+$greek  = array( 'HTTP_ACCEPT_LANGUAGE' => 'el-GR,el;q=0.9', 'HTTP_SEC_FETCH_MODE' => 'no-cors', 'HTTP_SEC_CH_UA' => '"Chromium";v="141"' );
+settings( array( 'rate_limit' => 3, 'human_check' => 1, 'rate_limit_unverified' => 2, 'ban_strikes' => 1 ) );
+same_minute();
+$ip4 = '94.65.10.' . wp_rand( 2, 250 );
+as_request( '127.0.0.1', $mobile, array( 'HTTP_X_REAL_IP' => $ip4 ) + $greek, '/wp-content/uploads/2025/10/product.webp' );
+$v = array();
+for ( $i = 0; $i < 18; $i++ ) {
+	$v[] = verdict( true );
+}
+t( 'A4: 18 requests to one .webp (page limit 3, human check limit 2): all pass', array_fill( 0, 18, 'pass' ) === $v, implode( ',', array_unique( $v ) ) );
+for ( $i = 0; $i < 12; $i++ ) {
+	$v[] = verdict( true );
+}
+$v[] = verdict( true );
+t( 'A4: media have their own counter, 10 x the page limit (31st: 429 rate_media)', 'pass' === $v[29] && '429 rate_media' === $v[30], $v[29] . ' / ' . $v[30] );
+PNCP_Log::reset_cache();
+t( 'A4: no violation for the media limit (block after 1 violation: not blocked)', ! PNCP_Log::is_banned( $ip4 ) );
+settings( array( 'human_check' => 0, 'rate_limit_unverified' => 0, 'ban_strikes' => 0 ) );
+as_request( '127.0.0.1', $mobile, array( 'HTTP_X_REAL_IP' => $ip4 ) + $greek, '/shop/' );
+$v = array( verdict( true ), verdict( true ), verdict( true ), verdict( true ) );
+t( 'A4: the media did not use up the page limit (3 pages pass, the 4th 429 rate_page)', array( 'pass', 'pass', 'pass', '429 rate_page' ) === $v, implode( ',', $v ) );
+foreach ( array( '/style.css', '/wp-includes/js/jquery/jquery.min.js?ver=3.7.1', '/fonts/inter.woff2', '/video/clip.mp4', '/a/b/IMAGE.JPG' ) as $path ) {
+	t( 'A4: static file ' . $path, PNCP_Bots::is_static_request( (string) wp_parse_url( $path, PHP_URL_PATH ) ) );
+}
+foreach ( array( '/product/webp/', '/index.php', '/feed/', '/img.webp/x', '/page.html' ) as $path ) {
+	t( 'A4: not a static file ' . $path, ! PNCP_Bots::is_static_request( $path ) );
+}
+as_request( '127.0.0.1', $mobile, array( 'HTTP_X_REAL_IP' => $ip4 ) + $greek, '/image.webp' );
+$_SERVER['REQUEST_METHOD'] = 'POST';
+t( 'A4: a POST to a .webp address is not a static file', ! PNCP_Bots::is_static_request() );
+// Link previews of the always-allowed list: not counted at all on media; on pages as before.
+$viber = 'Viber/24.1.0 CFNetwork/1568.100.1 Darwin/24.0.0';
+$ipv   = '94.65.11.' . wp_rand( 2, 250 );
+as_request( '127.0.0.1', $viber, array( 'HTTP_X_REAL_IP' => $ipv ), '/wp-content/uploads/a.webp' );
+$v = array();
+for ( $i = 0; $i < 40; $i++ ) {
+	$v[] = verdict( true );
+}
+t( 'A4: Viber (always allowed link preview) on media: never limited (40 requests)', array_fill( 0, 40, 'pass' ) === $v, implode( ',', array_unique( $v ) ) );
+as_request( '127.0.0.1', $viber, array( 'HTTP_X_REAL_IP' => $ipv ), '/shop/' );
+$v = array( verdict( true ), verdict( true ), verdict( true ), verdict( true ) );
+t( 'A4: Viber on pages: the page limit still applies', '429 rate_page' === $v[3], implode( ',', $v ) );
+settings( array( 'allow_list' => 'Skroutz' ) );
+as_request( '127.0.0.1', 'WhatsApp/2.24', array( 'HTTP_X_REAL_IP' => '94.65.12.10' ), '/a.webp' );
+$v = array();
+for ( $i = 0; $i < 31; $i++ ) {
+	$v[] = verdict( true );
+}
+t( 'A4: a link preview NOT in the always-allowed list is counted (and refused by Browsers only)', '403 no_browser' === $v[0], $v[0] );
+settings( array( 'allow_list' => $saved['allow_list'] ) );
+// Over HTTP: a missing .webp reaches WordPress (404 handler).
+same_minute();
+$c = codes( '/wp-content/uploads/2025/10/missing-' . wp_rand() . '.webp', via_cdn( '94.65.13.' . wp_rand( 2, 250 ), $mobile, array( 'Accept-Language' => 'el-GR' ) ), 18 );
+t( 'A4 HTTP: 18 requests to a .webp that reaches PHP (page limit 3): none 429', ! in_array( 429, $c, true ) && ! in_array( 403, $c, true ), implode( ',', array_unique( $c ) ) );
+settings( array( 'rate_limit' => 0 ) );
+
 /* ---------- The pre-cache check (stand-in page cache) ---------- */
 file_put_contents( $config_file, "<?php\ndefine( 'WP_CACHE', true ); // test cache\n" . substr( $original, 6 ) );
 file_put_contents( $cache_file, "<?php\nif ( isset( \$_SERVER['REQUEST_URI'] ) && 0 === strpos( \$_SERVER['REQUEST_URI'], '/cached-page/' ) ) {\n\theader( 'X-Test-Cache: HIT' );\n\techo 'CACHED PAGE';\n\texit;\n}\n" );
@@ -502,6 +560,20 @@ foreach ( $lists_saved as $name => $list ) {
 PNCP_Ip::reset();
 PNCP_Precheck::sync();
 sleep( 3 );
+
+// A4 on the pre-cache check: /cached-page/photo.webp is served from the stand-in cache before plugins load.
+same_minute();
+$ipc = '94.65.14.' . wp_rand( 2, 250 );
+$c   = codes( '/cached-page/photo.webp', via_cdn( $ipc, $mobile, array( 'Accept-Language' => 'el-GR' ) ), 18 );
+t( 'A4 pre-cache: 18 cached .webp (page limit 3): all 200', array_fill( 0, 18, 200 ) === $c, implode( ',', $c ) );
+$c = codes( '/cached-page/', via_cdn( $ipc, $mobile, array( 'Accept-Language' => 'el-GR' ) ), 4 );
+t( 'A4 pre-cache: the page limit is still whole (3 pages, then 429)', array( 200, 200, 200, 429 ) === $c, implode( ',', $c ) );
+$c = codes( '/cached-page/photo.webp', via_cdn( $ipc, $mobile, array( 'Accept-Language' => 'el-GR' ) ), 13 );
+t( 'A4 pre-cache: media counter 10 x the page limit (31st: 429)', 200 === $c[11] && 429 === $c[12], implode( ',', $c ) );
+$c = codes( '/cached-page/photo.webp', via_cdn( '94.65.15.' . wp_rand( 2, 250 ), 'Viber/24.1.0 CFNetwork/1568.100.1 Darwin/24.0.0' ), 35 );
+t( 'A4 pre-cache: Viber (always allowed) on media: never limited', array_fill( 0, 35, 200 ) === $c, implode( ',', array_unique( $c ) ) );
+$cfg = json_decode( (string) file_get_contents( PNCP_Precheck::config_file() ), true );
+t( 'A4 pre-cache: its configuration has the extensions and the factor', isset( $cfg['media']['ext'] ) && in_array( 'webp', $cfg['media']['ext'], true ) && 10 === $cfg['media']['factor'] );
 
 if ( null === $server_old ) {
 	unset( $_SERVER['SERVER_ADDR'] );
