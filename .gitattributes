@@ -2,6 +2,8 @@
 /tests export-ignore
 /docs export-ignore
 /translations export-ignore
+# 3.11: the compiled Greek translation (languages/scrapelock-el.mo) ships; its source .po stays in the repository.
+/languages/*.po export-ignore
 /wporg-assets export-ignore
 /.github export-ignore
 /.gitattributes export-ignore

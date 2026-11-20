@@ -118,10 +118,20 @@ PNCP_Bot_Match::init(); // 3.11: the Log names the bot list entry that matched, 
 PNCP_Ai_Search_List::init(); // 3.11: "Remove from the list" for allowed AI search bots still in the bot list.
 PNCP_Site_Files::init(); // 3.10.1: apple-touch-icon.png and OneSignalSDKWorker.js in Site Health, Wordfence's address check.
 PNCP_Fluent_Community::init(); // 3.11: FluentCommunity's portal in the content addresses, its members' REST reads off the REST limit.
+// 3.11: the translations shipped in languages/ (Greek). WordPress 6.7+ finds them through "Domain Path" on its own;
+// 6.2 to 6.6 need this. A language pack in wp-content/languages/plugins/ is still read first.
+add_action( 'init', 'pncp_load_textdomain', 0 );
 
 if ( defined( 'WP_CLI' ) && WP_CLI ) {
 	require_once PNCP_DIR . 'includes/class-pncp-cli.php';
 	PNCP_Cli::init();
+}
+
+/**
+ * Loads the plugin's own translations (languages/), after a language pack in wp-content/languages/plugins/.
+ */
+function pncp_load_textdomain() {
+	load_plugin_textdomain( 'scrapelock', false, dirname( plugin_basename( PNCP_FILE ) ) . '/languages' );
 }
 
 /**
