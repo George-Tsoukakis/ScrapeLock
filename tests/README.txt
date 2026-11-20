@@ -58,6 +58,10 @@ ScrapeLock — δοκιμές σε πραγματικό WordPress (όχι stubs)
   t_311_integration.php 3.11: πώς δένουν τα κομμάτια της 3.11: pre-cache/early check με τις ίδιες ρυθμίσεις «AI search»
                     όπως η λίστα bots, ο οδηγός «For my site» με FluentCommunity / plugin bots / ετικέτες ρυθμίσεων,
                     οι ειδοποιήσεις των 3.11 στις νέες καρτέλες, τα σύντομα κείμενα στις νέες περιγραφές
+  t_311_compat.php  3.11: τίποτα δεν αφαιρέθηκε: κάθε κλειδί ρυθμίσεων, καρτέλα και πεδίο φόρμας της 3.10.1 υπάρχει
+                    ακόμη· ένα export της 3.10.1 (tests/fixtures/settings-export-3.10.1.json, κάθε ρύθμιση αλλαγμένη)
+                    γίνεται import χωρίς απώλεια και ξαναβγαίνει ίδιο (tests/fixtures/keys-3.10.1.json: τα κλειδιά και
+                    τα πεδία της 3.10.1)
   t_cli.php         wp scrapelock … μέσα από το πραγματικό wp (χρειάζεται WP_CLI, αλλιώς SKIP)
   t_bunny_rules.php Edge Rules στο Bunny μέσα στα όριά του (το πολύ 5 μοτίβα ανά συνθήκη) με ψεύτικο API που δίνει
                     HTTP 400 όπως το πραγματικό: χωρισμός, κλείδωμα/Remove, rollback, Monitor only, sync, προεπισκόπηση,
