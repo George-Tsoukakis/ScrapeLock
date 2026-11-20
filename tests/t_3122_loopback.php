@@ -444,7 +444,10 @@ t( 'M: the pre-cache check: "refused" without a signature', 'refused' === PNCP_P
 PNCP_Precheck_Runtime::$self_result = 'nonce_reused';
 t( 'M: ... with the site\'s replayed signature: reason, layer pre-cache and result', 'refused banned layer=pre-cache sig=nonce_reused' === PNCP_Precheck_Runtime::refusal_marker( 'banned' ) );
 PNCP_Precheck_Runtime::$self_result = 'host_mismatch';
-t( 'M: ... with a signature for another host: no reason', 'refused layer=pre-cache sig=host_mismatch' === PNCP_Precheck_Runtime::refusal_marker( 'banned' ) );
+t( 'M: ... with a signature for another host from the server\'s address: no reason', 'refused layer=pre-cache sig=host_mismatch' === PNCP_Precheck_Runtime::refusal_marker( 'banned', true ) );
+t( 'M: ... the same from anyone else (a forged header): just "refused"', 'refused' === PNCP_Precheck_Runtime::refusal_marker( 'banned' ) && 'refused' === PNCP_Precheck_Runtime::refusal_marker( 'banned', false ) );
+PNCP_Precheck_Runtime::$self_result = 'bad_mac';
+t( 'M: ... a stranger\'s signature that does not match: just "refused"', 'refused' === PNCP_Precheck_Runtime::refusal_marker( 'not_via_cdn' ) );
 PNCP_Precheck_Runtime::$self_result = '';
 // Over HTTP, against the test server, as the site's request coming back through the edge.
 $ht = sig( '/' );
@@ -454,6 +457,12 @@ list( $code, $h ) = req( $home_path, from_edge( array( 'X-ScrapeLock-Sig' => $ht
 t( 'M HTTP: the same signature again: 403 "refused fake_browser layer=wp sig=nonce_reused"', 403 === $code && 'refused fake_browser layer=wp sig=nonce_reused' === hdr( $h, 'x-scrapelock' ), $code . ' ' . hdr( $h, 'x-scrapelock' ) );
 list( $code, $h ) = req( $home_path, array( 'X-Test-Remote-Addr' => VISITOR, 'User-Agent' => 'python-requests/2.32.3' ) );
 t( 'M HTTP: a bot: 403 with just "refused"', 403 === $code && 'refused' === hdr( $h, 'x-scrapelock' ), $code . ' ' . hdr( $h, 'x-scrapelock' ) );
+// Anyone can send an X-ScrapeLock-Sig header: a stranger's forged or replayed one learns neither the layer, the
+// signature's result nor the reason.
+list( $code, $h ) = req( $home_path, array( 'X-Test-Remote-Addr' => VISITOR, 'User-Agent' => 'python-requests/2.32.3', 'X-ScrapeLock-Sig' => time() . '.' . str_repeat( 'a', 24 ) . '.' . str_repeat( 'b', 64 ) ) );
+t( 'M HTTP: a stranger with a forged signature: 403 with just "refused"', 403 === $code && 'refused' === hdr( $h, 'x-scrapelock' ), $code . ' ' . hdr( $h, 'x-scrapelock' ) );
+list( $code, $h ) = req( $home_path, array( 'X-Test-Remote-Addr' => VISITOR, 'User-Agent' => 'python-requests/2.32.3', 'X-ScrapeLock-Sig' => 'garbage' ) );
+t( 'M HTTP: ... an unreadable one: just "refused"', 403 === $code && 'refused' === hdr( $h, 'x-scrapelock' ), $code . ' ' . hdr( $h, 'x-scrapelock' ) );
 list( $code, $h ) = req( $home_path, array( 'X-Test-Remote-Addr' => VISITOR, 'User-Agent' => SELF_UA, 'Accept-Language' => 'en', 'Sec-Fetch-Mode' => 'navigate', 'Sec-Fetch-Dest' => 'document', 'Sec-CH-UA' => '"Chromium";v="130"' ) );
 t( 'M HTTP: a visitor who passes gets no X-ScrapeLock header', '' === hdr( $h, 'x-scrapelock' ), $code . ' ' . hdr( $h, 'x-scrapelock' ) );
 $seen = PNCP_Self_Check::entries();

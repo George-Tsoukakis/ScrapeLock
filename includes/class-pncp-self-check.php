@@ -163,14 +163,16 @@ final class PNCP_Self_Check {
 		if ( ! in_array( $code, array( 403, 429 ), true ) || ( function_exists( 'wp_doing_cron' ) && wp_doing_cron() ) || ( class_exists( 'PNCP_Bots', false ) && PNCP_Bots::explaining() ) ) {
 			return;
 		}
-		$sig  = null !== self::$entry ? (string) self::$entry['sig'] : '';
-		$mine = null === $own ? null !== self::$entry && ! empty( self::$entry['authentic'] ) : (bool) $own;
+		$sig    = null !== self::$entry ? (string) self::$entry['sig'] : '';
+		$mine   = null === $own ? null !== self::$entry && ! empty( self::$entry['authentic'] ) : (bool) $own;
+		$server = class_exists( 'PNCP_Server_Ips', false ) && class_exists( 'PNCP_Ip', false ) && PNCP_Server_Ips::is_server_ip( PNCP_Ip::client_ip() );
 		if ( ! self::$marked && ! headers_sent() ) {
 			header_remove( self::HEADER );
-			header( self::HEADER . ': ' . self::marker( (string) $reason, $sig, $mine ) );
+			// The layer and the signature's result only for the site's own request or one from the server's
+			// addresses: anyone can send an X-ScrapeLock-Sig header, and a stranger learns nothing but "refused".
+			header( self::HEADER . ': ' . self::marker( (string) $reason, $mine || $server ? $sig : '', $mine ) );
 			self::$marked = true;
 		}
-		$server = class_exists( 'PNCP_Server_Ips', false ) && class_exists( 'PNCP_Ip', false ) && PNCP_Server_Ips::is_server_ip( PNCP_Ip::client_ip() );
 		if ( null === self::$entry && ! $server && ! $mine ) {
 			return;
 		}
@@ -188,7 +190,8 @@ final class PNCP_Self_Check {
 	 * The value of the refusal header: "refused"; with a signature also its layer and result ("refused layer=wp
 	 * sig=host_mismatch"); for the site's own request also the reason ("refused fake_browser layer=wp sig=
 	 * nonce_reused"). The pre-cache check makes the same (PNCP_Precheck_Runtime::refusal_marker()). Free of personal
-	 * data: no address, User-Agent or path.
+	 * data: no address, User-Agent or path. refused() passes the signature's result only for the site's own request
+	 * or one from the server's addresses, so a stranger's forged header gets just "refused".
 	 *
 	 * @param string $reason Reason key.
 	 * @param string $sig    Result of the signature check ('' = no signature).

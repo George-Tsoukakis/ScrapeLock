@@ -186,7 +186,10 @@ final class PNCP_Precheck_Runtime {
 			header( 'Content-Type: text/html; charset=utf-8' );
 			header( 'Cache-Control: no-store, no-cache, must-revalidate, max-age=0' );
 			header( 'X-Robots-Tag: noindex' );
-			header( 'X-ScrapeLock: ' . self::refusal_marker( $reason ) ); // 3.12.2: who refused (PNCP_Self_Check).
+			$from_server = false;
+			$server_ip   = self::client_ip( $c, $from_server );
+			$from_server = self::is_server_request( $c, $server_ip, $from_server );
+			header( 'X-ScrapeLock: ' . self::refusal_marker( $reason, $from_server ) ); // 3.12.2: who refused (PNCP_Self_Check).
 			if ( 429 === $code ) {
 				header( 'Retry-After: 60' );
 			}
@@ -201,16 +204,21 @@ final class PNCP_Precheck_Runtime {
 	 * 3.12.2: the value of the X-ScrapeLock header of this check's 403 / 429, as PNCP_Self_Check::marker() makes it
 	 * in WordPress: "refused"; for a request that carries the site's signature also the layer and the signature's
 	 * result, and the reason only when the signature is the site's own (its MAC matched). No address or other data
-	 * of the visitor.
+	 * of the visitor. The layer and the signature's result only for the site's own signature or a request from the
+	 * server's addresses: anyone can send the header, and a stranger gets just "refused".
 	 *
-	 * @param string $reason The reason of the refusal.
+	 * @param string $reason      The reason of the refusal.
+	 * @param bool   $from_server Whether the request came from one of the server's addresses (is_server_request()).
 	 * @return string
 	 */
-	public static function refusal_marker( $reason ) {
+	public static function refusal_marker( $reason, $from_server = false ) {
 		if ( '' === self::$self_result ) {
 			return 'refused';
 		}
 		$own = in_array( self::$self_result, array( 'ok', 'nonce_reused' ), true );
+		if ( ! $own && ! $from_server ) {
+			return 'refused';
+		}
 		return 'refused' . ( $own && preg_match( '/^[a-z0-9_]{1,40}$/', (string) $reason ) ? ' ' . $reason : '' ) . ' layer=pre-cache sig=' . self::$self_result;
 	}
 
