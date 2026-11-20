@@ -918,8 +918,10 @@ final class PNCP_Bots {
 		// browser (a Viber user got "Pages per minute" for 18 requests to one .webp) is not scraping pages. The
 		// link previews of the "Always allowed" list (link_preview_agents()) are not counted at all on media.
 		if ( $count && $media ) {
-			if ( $allowed_ua && self::ua_in_list( $ua, self::link_preview_agents() ) && self::allow_list_match( $ua, $ip, $s ) ) {
-				return self::pass( 'media' );
+			// 3.12.2: a pass of its own ("media_preview"), so "Check a request" and "wp scrapelock check" can say that
+			// nothing was counted instead of showing the media counter.
+			if ( $allowed_ua && self::is_allowed_link_preview( $ua, $ip, $s ) ) {
+				return self::pass( 'media_preview' );
 			}
 			$limit = self::MEDIA_FACTOR * (int) $s['rate_limit'];
 			if ( $limit > 0 && self::hit( $ip, 'rate_media' ) > $limit ) {
@@ -1721,6 +1723,20 @@ final class PNCP_Bots {
 			return 0 === strcasecmp( trim( (string) $ua ), trim( substr( $needle, 1 ) ) );
 		}
 		return false !== stripos( (string) $ua, $needle );
+	}
+
+	/**
+	 * 3.12.2: a link preview (link_preview_agents()) that the "Always allowed" list lets through (any entry form:
+	 * part of the User-Agent, "=" the whole User-Agent, "@" pinned to addresses): on a static file it is not
+	 * counted at all, in WordPress and in the pre-cache check.
+	 *
+	 * @param string               $ua User-Agent.
+	 * @param string               $ip IP.
+	 * @param array<string, mixed> $s  Settings.
+	 * @return bool
+	 */
+	public static function is_allowed_link_preview( $ua, $ip, $s ) {
+		return '' !== trim( (string) $ua ) && self::ua_in_list( $ua, self::link_preview_agents() ) && self::allow_list_match( $ua, $ip, $s );
 	}
 
 	/**

@@ -161,6 +161,7 @@ ScrapeLock — δοκιμές σε πραγματικό WordPress (όχι stubs)
                     Telegram, Slack, X, LinkedIn, Discord) on .webp / .jpg 30 times a minute with page limit 1: never 429
                     in WordPress, the early check or the pre-cache check; a browser, a preview not in the list and
                     Pinterest still count; the entry forms (part, "=" whole User-Agent, "@" pinned); "Check a request"
+                    and wp scrapelock check say "Not counted: link preview in the “Always allowed” list", not "N of M"
   t_cli.php         wp scrapelock … μέσα από το πραγματικό wp (χρειάζεται WP_CLI, αλλιώς SKIP)
   t_bunny_rules.php Edge Rules στο Bunny μέσα στα όριά του (το πολύ 5 μοτίβα ανά συνθήκη) με ψεύτικο API που δίνει
                     HTTP 400 όπως το πραγματικό: χωρισμός, κλείδωμα/Remove, rollback, Monitor only, sync, προεπισκόπηση,

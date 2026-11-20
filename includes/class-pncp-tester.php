@@ -247,7 +247,10 @@ final class PNCP_Tester {
 	 * @param array<string, mixed> $result What PNCP_Bots::explain() returns.
 	 * @param string               $ip     IP.
 	 * @param array<string, mixed> $s      Settings.
-	 * @return array{bucket:string, label:string, count:int, limit:int, text:string}|null
+	 * 3.12.2: for a link preview of the "Always allowed" list on a static file (pass "media_preview"), which is not
+	 * counted at all: "Not counted: …" with counted false, instead of "N of M".
+	 *
+	 * @return array{bucket:string, label:string, count:int, limit:int, text:string, counted:bool}|null
 	 */
 	public static function counter( array $result, $ip, array $s ) {
 		$context = ! empty( $result['media'] ) ? 'media' : (string) $result['context'];
@@ -263,19 +266,30 @@ final class PNCP_Tester {
 			return null;
 		}
 		list( $bucket, $limit ) = $buckets[ $context ];
-		$code                   = (int) $result['code'];
+		$code    = (int) $result['code'];
+		$reasons = PNCP_Log::reasons();
+		if ( ! $code && 'media_preview' === (string) $result['pass'] ) {
+			return array(
+				'bucket'  => $bucket,
+				'label'   => isset( $reasons[ $bucket ] ) ? $reasons[ $bucket ] : __( 'Limit', 'scrapelock' ),
+				'count'   => 0,
+				'limit'   => $limit,
+				'text'    => __( 'Not counted: link preview in the “Always allowed” list', 'scrapelock' ),
+				'counted' => false,
+			);
+		}
 		if ( $code ? (string) $result['reason'] !== $bucket : ! in_array( (string) $result['pass'], array( 'passed', 'media' ), true ) ) {
 			return null;
 		}
-		$count   = PNCP_Bots::counter_now( $ip, $bucket ) + 1;
-		$reasons = PNCP_Log::reasons();
+		$count = PNCP_Bots::counter_now( $ip, $bucket ) + 1;
 		return array(
-			'bucket' => $bucket,
-			'label'  => isset( $reasons[ $bucket ] ) ? $reasons[ $bucket ] : __( 'Limit', 'scrapelock' ),
-			'count'  => $count,
-			'limit'  => $limit,
+			'bucket'  => $bucket,
+			'label'   => isset( $reasons[ $bucket ] ) ? $reasons[ $bucket ] : __( 'Limit', 'scrapelock' ),
+			'count'   => $count,
+			'limit'   => $limit,
 			/* translators: 1: requests counted this minute (with this one), 2: the limit per minute */
-			'text'   => sprintf( __( '%1$s of %2$s this minute', 'scrapelock' ), number_format_i18n( $count ), number_format_i18n( $limit ) ),
+			'text'    => sprintf( __( '%1$s of %2$s this minute', 'scrapelock' ), number_format_i18n( $count ), number_format_i18n( $limit ) ),
+			'counted' => true,
 		);
 	}
 
@@ -569,6 +583,8 @@ final class PNCP_Tester {
 			'prefetch'      => __( 'a prefetch within its own limit', 'scrapelock' ),
 			// 3.12.1: the static-file pass of 3.11 (it showed as "media").
 			'media'         => __( 'image or file; counted in the media limit, not as a page', 'scrapelock' ),
+			// 3.12.2: a link preview of the "Always allowed" list on a static file: not counted at all.
+			'media_preview' => __( 'a link preview in the “Always allowed” list; its images and files are not counted', 'scrapelock' ),
 			'passed'        => __( 'it passes every check, and is within the limits this minute', 'scrapelock' ),
 		);
 	}
@@ -943,6 +959,10 @@ final class PNCP_Tester {
 						PNCP_Bots::MEDIA_FACTOR
 					);
 					$link = $limits;
+					break;
+				case 'media_preview': // 3.12.2.
+					$why  = __( 'A link preview (Viber, WhatsApp, Facebook, Telegram, Slack, X, LinkedIn, Discord…) that is in “Always allowed User-Agents”: its requests for static files (images, video, audio, fonts, CSS, JavaScript) are not counted toward any limit. Its pages still count toward the page limit.', 'scrapelock' );
+					$link = $allowed;
 					break;
 				case 'passed':
 					$why = __( 'It passes every check that is on, and this IP is within the limits this minute.', 'scrapelock' );

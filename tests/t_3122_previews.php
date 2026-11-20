@@ -15,6 +15,9 @@
  *     30 missing .webp / .jpg that reach WordPress: never 429; a browser gets 429.
  * P4. The pre-cache check over HTTP (stand-in page cache, as t_311_pipeline.php): 30 cached .webp / .jpg per
  *     link preview: all 200; a browser and a link preview not in the list: 429; an "=" entry passes there too.
+ * P5. "Check a request" and "wp scrapelock check": an allowed link preview on a static file says
+ *     "Not counted: link preview in the “Always allowed” list" instead of "N of M this minute"; a browser, a link
+ *     preview not in the list and the same preview on a page still show "N of M"; no raw key in what is drawn.
  *
  * wp-config.php, advanced-cache.php and the settings are put back at the end. Only on a test WordPress.
  */
@@ -322,6 +325,70 @@ $c = codes( '/img/missing-' . wp_rand() . '.webp', via_cdn( fresh_ip( '94.66.23'
 t( 'P3 HTTP: a normal browser on missing .webp is counted (429 after 10)', 404 === $c[9] && 429 === $c[11], implode( ',', $c ) );
 settings( array( 'early_mode' => 0 ) );
 PNCP_Early::sync();
+
+/* ---------- P5. "Check a request" and wp scrapelock check ---------- */
+settings( array( 'rate_limit' => 60 ) );
+wp_set_current_user( 1 );
+$check = static function ( $ip, $ua, $address, $browser = false ) {
+	return PNCP_Tester::run(
+		array(
+			'mode'    => 'custom',
+			'ip'      => $ip,
+			'ua'      => $ua,
+			'address' => $address,
+			'browser' => $browser ? '1' : '',
+		)
+	);
+};
+$not_counted = 'Not counted: link preview in the “Always allowed” list';
+$media_label = PNCP_Log::reasons()['rate_media'];
+foreach ( $previews as $name => $ua ) {
+	$r = $check( fresh_ip( '94.66.40' ), $ua, '/wp-content/uploads/2026/11/photo.webp' );
+	t(
+		"P5 Check a request: $name on a .webp: \"$not_counted\", not \"N of M\"",
+		is_array( $r ) && 'allowed' === $r['verdict'] && 'media_preview' === $r['pass'] && is_array( $r['counter'] ) && false === $r['counter']['counted'] && $not_counted === $r['counter']['text'] && $media_label === $r['counter']['label'] && false === strpos( $r['counter']['text'], ' of ' ),
+		wp_json_encode( is_array( $r ) ? array( $r['pass'], $r['counter'] ) : $r )
+	);
+}
+$r = $check( fresh_ip( '94.66.41' ), $previews['Viber'], '/wp-content/uploads/2026/11/photo.jpg' );
+t( 'P5 Check a request: the verdict and the why say it is not counted, with no internal key', 'Allowed: a link preview in the “Always allowed” list; its images and files are not counted' === $r['headline'] && false !== strpos( $r['why'], 'not counted toward any limit' ) && false === strpos( $r['headline'] . $r['why'], 'media_preview' ), $r['headline'] . ' | ' . $r['why'] );
+t( 'P5 Check a request: checked as Media', 'media' === $r['checked_as'] && 'Media' === $r['checked_as_label'], $r['checked_as_label'] );
+$r = $check( fresh_ip( '94.66.42' ), $mobile, '/wp-content/uploads/2026/11/photo.webp', true );
+t( 'P5 Check a request: a normal browser on a .webp still shows "1 of 600 this minute"', is_array( $r['counter'] ) && true === $r['counter']['counted'] && '1 of 600 this minute' === $r['counter']['text'] && 'media' === $r['pass'], wp_json_encode( $r['counter'] ) );
+$r = $check( fresh_ip( '94.66.43' ), $previews['Viber'], '/a-page/' );
+t( 'P5 Check a request: Viber on a page still shows the page counter "1 of 60 this minute"', 'passed' === $r['pass'] && 'rate_page' === $r['counter']['bucket'] && '1 of 60 this minute' === $r['counter']['text'], wp_json_encode( $r['counter'] ) );
+settings( array( 'allow_list' => $no_whatsapp, 'require_browser_headers' => 0, 'block_headless' => 0 ) );
+$r = $check( fresh_ip( '94.66.44' ), $previews['WhatsApp'], '/wp-content/uploads/2026/11/photo.webp' );
+t( 'P5 Check a request: WhatsApp NOT in the list on a .webp: "1 of 600 this minute"', 'media' === $r['pass'] && '1 of 600 this minute' === $r['counter']['text'], wp_json_encode( $r['counter'] ) );
+settings( array( 'allow_list' => '=' . $viber, 'require_browser_headers' => 1, 'block_headless' => 1 ) );
+$r = $check( fresh_ip( '94.66.45' ), $viber, '/wp-content/uploads/2026/11/photo.webp' );
+t( 'P5 Check a request: an "=" entry: not counted', 'media_preview' === $r['pass'] && $not_counted === $r['counter']['text'], wp_json_encode( $r['counter'] ) );
+settings( array( 'allow_list' => $allow ) );
+// The card's script draws label and text as they are (assets/js/tester.js): the text has no internal key.
+$js = (string) file_get_contents( PNCP_DIR . 'assets/js/tester.js' );
+t( 'P5 tester.js draws the counter row from its label and text', false !== strpos( $js, 'data.counter.label' ) && false !== strpos( $js, 'data.counter.text' ) );
+$cli = getenv( 'WP_CLI' );
+if ( $cli ) {
+	$out  = (string) shell_exec( $cli . ' scrapelock check --ip=94.66.46.9 --ua=' . escapeshellarg( $previews['WhatsApp'] ) . ' --address=/wp-content/uploads/2026/11/b.webp --format=json 2>/dev/null' );
+	$rows = json_decode( $out, true );
+	$map  = array();
+	foreach ( is_array( $rows ) ? $rows : array() as $row ) {
+		$map[ $row['check'] ] = $row['value'];
+	}
+	t( 'P5 wp scrapelock check: an allowed link preview on a .webp: "' . $not_counted . '"', isset( $map[ $media_label ] ) && $not_counted === $map[ $media_label ], $out );
+	t( 'P5 wp scrapelock check: its verdict by label, no internal key', isset( $map['Verdict'] ) && 'Allowed: a link preview in the “Always allowed” list; its images and files are not counted' === $map['Verdict'], $out );
+	$out  = (string) shell_exec( $cli . ' scrapelock check --ip=94.66.47.9 --ua=' . escapeshellarg( $mobile ) . ' --browser --address=/wp-content/uploads/2026/11/b.webp --format=json 2>/dev/null' );
+	$rows = json_decode( $out, true );
+	$map  = array();
+	foreach ( is_array( $rows ) ? $rows : array() as $row ) {
+		$map[ $row['check'] ] = $row['value'];
+	}
+	t( 'P5 wp scrapelock check: a browser on a .webp still shows "N of M this minute"', isset( $map[ $media_label ] ) && preg_match( '/^\d+ of [\d,.]+ this minute$/', $map[ $media_label ] ), $out );
+} else {
+	echo "SKIP P5 wp scrapelock check: WP_CLI not given\n";
+}
+settings( array( 'rate_limit' => 1 ) );
+wp_set_current_user( 0 );
 
 /* ---------- P4. The pre-cache check over HTTP ---------- */
 file_put_contents( $config_file, "<?php\ndefine( 'WP_CACHE', true ); // test cache\n" . substr( $original, 6 ) );

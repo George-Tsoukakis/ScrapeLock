@@ -521,6 +521,7 @@ final class PNCP_Cli {
 			'ai_search'     => __( 'a verified AI search bot (never blocked or limited)', 'scrapelock' ),
 			'prefetch'      => __( 'a prefetch within its own limit', 'scrapelock' ),
 			'media'         => __( 'image or file; counted in the media limit, not as a page', 'scrapelock' ), // 3.12.1: as on the card.
+			'media_preview' => __( 'a link preview in the “Always allowed” list; its images and files are not counted', 'scrapelock' ), // 3.12.2: as on the card.
 			'passed'        => __( 'it passes every check, and is within the limits this minute', 'scrapelock' ),
 		);
 	}
