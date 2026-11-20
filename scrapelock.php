@@ -2,7 +2,7 @@
 /**
  * Plugin Name:       ScrapeLock – Content & AI Bot Protection
  * Description:       Protects your content: makes copying text and images harder, hides the text in the REST API, GraphQL and RSS, blocks scrapers, AI bots and fake Googlebots, temporarily blocks persistent IPs, protects XML feeds with a token and adds an optional watermark. Lockdown freezes every change to the site until it is unlocked with an authenticator app. Forms, cart, checkout and search engines are not affected.
- * Version:           3.11.0
+ * Version:           3.12.0
  * Requires at least: 6.2
  * Requires PHP:      7.4
  * Author:            CodeBunny
@@ -19,7 +19,7 @@ if ( defined( 'PNCP_VERSION' ) ) {
 	return;
 }
 
-define( 'PNCP_VERSION', '3.11.0' );
+define( 'PNCP_VERSION', '3.12.0' );
 define( 'PNCP_FILE', __FILE__ );
 define( 'PNCP_DIR', plugin_dir_path( __FILE__ ) );
 define( 'PNCP_URL', plugin_dir_url( __FILE__ ) );
@@ -118,6 +118,7 @@ PNCP_Bot_Match::init(); // 3.11: the Log names the bot list entry that matched, 
 PNCP_Ai_Search_List::init(); // 3.11: "Remove from the list" for allowed AI search bots still in the bot list.
 PNCP_Site_Files::init(); // 3.10.1: apple-touch-icon.png and OneSignalSDKWorker.js in Site Health, Wordfence's address check.
 PNCP_Fluent_Community::init(); // 3.11: FluentCommunity's portal in the content addresses, its members' REST reads off the REST limit.
+PNCP_Traffic::init(); // 3.12: every request from the CDN logs, the access log and WordPress (off until turned on).
 // 3.11: the translations shipped in languages/ (Greek). WordPress 6.7+ finds them through "Domain Path" on its own;
 // 6.2 to 6.6 need this. A language pack in wp-content/languages/plugins/ is still read first.
 add_action( 'init', 'pncp_load_textdomain', 0 );
@@ -211,7 +212,7 @@ function pncp_deactivate_site() {
 	// wp_unschedule_hook() removes every event of a hook, whatever its arguments: some carry some (the missing
 	// IP lists, the image to clean up, the numbers in the surge email), which wp_clear_scheduled_hook() would
 	// only remove when given the same ones.
-	foreach ( array( PNCP_Ip::CRON, PNCP_Log::CRON, PNCP_Log::CRON . '_more', PNCP_Integrity::OFFICIAL, PNCP_Integrity::RESUME, PNCP_Surge::MAIL, PNCP_Surge::MAIL_ALERT, PNCP_Watermark::CRON_UNMARK, 'pncp_background_purge', 'pncp_upgrade_files', PNCP_Crowdsec::CRON, PNCP_Bunny::CRON, 'pncp_attack_report_weekly' ) as $pncp_hook ) {
+	foreach ( array( PNCP_Ip::CRON, PNCP_Log::CRON, PNCP_Log::CRON . '_more', PNCP_Integrity::OFFICIAL, PNCP_Integrity::RESUME, PNCP_Surge::MAIL, PNCP_Surge::MAIL_ALERT, PNCP_Watermark::CRON_UNMARK, 'pncp_background_purge', 'pncp_upgrade_files', PNCP_Crowdsec::CRON, PNCP_Bunny::CRON, 'pncp_attack_report_weekly', PNCP_Traffic::CRON ) as $pncp_hook ) {
 		wp_unschedule_hook( $pncp_hook );
 	}
 	// The blocks ScrapeLock made at the CDN go away with it (the bans themselves end with the plugin).
@@ -277,6 +278,11 @@ function pncp_upgrade() {
 				update_option( PNCP_Edge::NOTICE, 1, false );
 			}
 		}
+		// 3.12: Traffic and its alerts, off (PNCP_Traffic, PNCP_Traffic_Alerts). Stored now, so an export or a
+		// settings list shows them.
+		if ( version_compare( $from_settings, '3.12.0', '<' ) ) {
+			$added += PNCP_Options::new_in_3120();
+		}
 		$added = array_diff_key( $added, $stored );
 		// 3.4: the automatic Emergency Mode only tells the administrator on new installs; a site that had it on
 		// keeps starting it on its own, as before.
@@ -326,6 +332,7 @@ function pncp_upgrade() {
 	}
 
 	PNCP_Log::install();
+	PNCP_Traffic::maybe_install(); // 3.12: the Traffic tables, only where collection is on (or an older schema is stored).
 	// 3.10: rows that counted /llms.txt, /.well-known/* and other site-metadata files as scanner probes (once).
 	PNCP_Attacks::purge_site_metadata();
 	// 3.10: the Vulnerable points live results cached by 3.9 read the first answer of the home page (often a

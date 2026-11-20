@@ -120,7 +120,8 @@ final class PNCP_Health {
 			'label' => __( 'ScrapeLock and Bunny CDN logs', 'scrapelock' ),
 			'test'  => array( 'PNCP_Bunny', 'health_test' ),
 		);
-		return $tests;
+		// 3.12: Traffic statistics, only while collection is on.
+		return PNCP_Traffic_Alerts::health_tests( $tests );
 	}
 
 	/**
@@ -1895,6 +1896,8 @@ final class PNCP_Health {
 			'lockdown_roles' => array( __( 'Roles frozen while locked', 'scrapelock' ), implode( ', ', PNCP_Lockdown::frozen_roles() ) ),
 			'lockdown_work'  => array( __( 'Roles that keep their work while locked', 'scrapelock' ), implode( ', ', PNCP_Lockdown::limited_roles() ) ),
 		);
+		// 3.12: Traffic statistics (on / off, the source; while on the rows stored and the days counted).
+		$fields = array_merge( $fields, PNCP_Traffic_Alerts::info_fields() );
 		if ( ! class_exists( 'WooCommerce' ) ) {
 			unset( $fields['cart_limits'] );
 		}

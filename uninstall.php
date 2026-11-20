@@ -37,7 +37,7 @@ spl_autoload_register(
  */
 function pncp_uninstall_380() {
 	$pncp_bunny_rules = get_option( 'pncp_bunny_rules', array() );
-	$pncp_parts       = array( 'PNCP_Hardening', 'PNCP_Stealth', 'PNCP_Login', 'PNCP_Attack_Report', 'PNCP_Attacks' );
+	$pncp_parts       = array( 'PNCP_Hardening', 'PNCP_Stealth', 'PNCP_Login', 'PNCP_Attack_Report', 'PNCP_Attacks', 'PNCP_Traffic' ); // 3.12: PNCP_Traffic.
 	if ( is_array( $pncp_bunny_rules ) && $pncp_bunny_rules ) {
 		array_unshift( $pncp_parts, 'PNCP_Bunny' ); // Leftover rules carry "ScrapeLock:" in the Bunny dashboard.
 	}
@@ -92,8 +92,17 @@ function pncp_uninstall_site() {
 	delete_option( 'pncp_server_ips' ); // 3.11: the server's own addresses (PNCP_Server_Ips).
 	delete_option( 'pncp_server_key' ); // 3.11: the key of the site's signed requests to itself.
 	delete_option( 'pncp_plugin_bot_agents' ); // 3.11: the allowed plugin bots, for the early check.
+	// 3.12: Traffic (also dropped by PNCP_Traffic::uninstall() above; here too, should that have failed).
+	foreach ( array( 'pncp_traffic', 'pncp_traffic_hour', 'pncp_traffic_day', 'pncp_traffic_err' ) as $pncp_table ) {
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery, WordPress.DB.DirectDatabaseQuery.SchemaChange -- Uninstall.
+		$wpdb->query( $wpdb->prepare( 'DROP TABLE IF EXISTS %i', $wpdb->prefix . $pncp_table ) );
+	}
+	unset( $pncp_table );
+	foreach ( array( 'pncp_traffic_db', 'pncp_traffic_state', 'pncp_traffic_gen', 'pncp_traffic_alerts' ) as $pncp_option ) {
+		delete_option( $pncp_option );
+	}
 	// Every event of each hook, whatever its arguments (wp_clear_scheduled_hook() only removes the ones without).
-	foreach ( array( 'pncp_refresh_ip_lists', 'pncp_log_cleanup', 'pncp_log_cleanup_more', 'pncp_wm_unmark', 'pncp_edge_sync', 'pncp_integrity_official', 'pncp_integrity_resume', 'pncp_surge_mail', 'pncp_surge_mail_alert', 'pncp_background_purge', 'pncp_upgrade_files', 'pncp_crowdsec_sync', 'pncp_attack_report_weekly', 'pncp_bunny_run', 'pncp_stealth_check', 'pncp_stealth_refresh', 'pncp_stealth_restart', 'pncp_server_ips_changed' ) as $pncp_hook ) {
+	foreach ( array( 'pncp_refresh_ip_lists', 'pncp_log_cleanup', 'pncp_log_cleanup_more', 'pncp_wm_unmark', 'pncp_edge_sync', 'pncp_integrity_official', 'pncp_integrity_resume', 'pncp_surge_mail', 'pncp_surge_mail_alert', 'pncp_background_purge', 'pncp_upgrade_files', 'pncp_crowdsec_sync', 'pncp_attack_report_weekly', 'pncp_bunny_run', 'pncp_stealth_check', 'pncp_stealth_refresh', 'pncp_stealth_restart', 'pncp_server_ips_changed', 'pncp_traffic_run' ) as $pncp_hook ) {
 		wp_unschedule_hook( $pncp_hook );
 	}
 	// The Lockdown guard (must-use plugin), only if it is ours.

@@ -59,6 +59,7 @@ final class PNCP_Admin {
 		add_action( 'admin_notices', array( __CLASS__, 'upgrade_notices' ) );
 		PNCP_Admin_Sections::init(); // 3.10: folded parts stay open after a Save.
 		PNCP_Wizard::init(); // 3.11: "For my site" (admin-post pncp_wizard).
+		PNCP_Admin_Traffic::init(); // 3.12: the Traffic tab and its actions.
 	}
 
 	/**
@@ -155,6 +156,8 @@ final class PNCP_Admin {
 			'log'       => __( 'Log', 'scrapelock' ),
 			// 3.8: where bots hit the site, and the points to lock.
 			'attacks'   => __( 'Attacks', 'scrapelock' ),
+			// 3.12: every request the site answered (PNCP_Admin_Traffic).
+			'traffic'   => __( 'Traffic', 'scrapelock' ),
 			'hardening' => __( 'Vulnerable points', 'scrapelock' ),
 			'lockdown'  => __( 'Lockdown', 'scrapelock' ),
 		);
@@ -726,6 +729,7 @@ final class PNCP_Admin {
 			'rules'     => 'editor-code',
 			'log'       => 'chart-bar',
 			'attacks'   => 'warning',
+			'traffic'   => 'chart-line',
 			'hardening' => 'shield-alt',
 			'lockdown'  => $locked ? 'lock' : 'unlock',
 		);
@@ -2534,6 +2538,86 @@ final class PNCP_Admin {
 			</form>
 		</section>
 		<?php
+	}
+
+	/**
+	 * 3.12: the Traffic tab (PNCP_Admin_Traffic).
+	 *
+	 * @param array<string, mixed> $s Settings.
+	 */
+	private static function tab_traffic( $s ) {
+		PNCP_Admin_Traffic::render( $s );
+	}
+
+	/**
+	 * 3.12: the settings form of the Traffic tab (section "traffic"), with the same fields as the other tabs.
+	 *
+	 * @param array<string, mixed> $s Settings.
+	 */
+	public static function render_traffic_settings( $s ) {
+		$path_id = 'pncp-traffic_log_path';
+		self::form_open( 'traffic' );
+		?>
+		<tr id="pncp-sec-traffic">
+			<th scope="row"><?php esc_html_e( 'Collect', 'scrapelock' ); ?></th>
+			<td>
+				<?php
+				self::checkbox( $s, 'traffic', __( 'Collect traffic (every request the site answers)', 'scrapelock' ), PNCP_Admin_Fields::help( __( 'Off: nothing is read, stored or scheduled.', 'scrapelock' ), __( 'The requests come from the Bunny CDN logs while their import is on, from the access log below, or from WordPress itself. Only one source is counted at a time, so a request seen by two of them is never counted twice.', 'scrapelock' ) ) );
+				self::checkbox( $s, 'traffic_wp', __( 'Also record the pages WordPress serves itself', 'scrapelock' ), PNCP_Admin_Fields::help( __( 'Fallback without a CDN or access log; misses cached pages.', 'scrapelock' ), __( 'One row per page that PHP answers, at the end of the request, with its response time. Pages served from a page cache (WP Rocket, the CDN) never reach PHP, so they are missing here; wp-admin, AJAX, cron, signed-in administrators and the site\'s requests to itself are left out.', 'scrapelock' ) ) );
+				// Traffic alerts (PNCP_Traffic_Alerts).
+				self::checkbox( $s, 'traffic_alerts', PNCP_Setting_Labels::label( 'traffic_alerts' ), __( 'An email when errors or a source stop look wrong.', 'scrapelock' ) );
+				$mail_id = 'pncp-traffic_alert_email';
+				printf(
+					'<div class="pncp-field"><p><label for="%1$s">%2$s</label></p><input type="text" class="regular-text" id="%1$s" name="%3$s[traffic_alert_email]" value="%4$s" maxlength="500" placeholder="%5$s" aria-describedby="%1$s-help">%6$s</div>',
+					esc_attr( $mail_id ),
+					esc_html__( 'Send the alerts to:', 'scrapelock' ),
+					esc_attr( PNCP_OPTION ),
+					esc_attr( isset( $s['traffic_alert_email'] ) ? (string) $s['traffic_alert_email'] : '' ),
+					esc_attr( (string) get_option( 'admin_email' ) ),
+					PNCP_Admin_Fields::description( $mail_id . '-help', __( 'Empty = the site\'s admin email; separate several with commas.', 'scrapelock' ) ) // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Escaped in description().
+				);
+				?>
+			</td>
+		</tr>
+		<tr id="pncp-sec-traffic-log">
+			<th scope="row"><label for="<?php echo esc_attr( $path_id ); ?>"><?php esc_html_e( 'Access log', 'scrapelock' ); ?></label></th>
+			<td>
+				<div class="pncp-field">
+					<input type="text" class="regular-text code" id="<?php echo esc_attr( $path_id ); ?>" name="<?php echo esc_attr( PNCP_OPTION ); ?>[traffic_log_path]" value="<?php echo esc_attr( (string) $s['traffic_log_path'] ); ?>" maxlength="500" placeholder="/var/log/nginx/access.log" aria-describedby="<?php echo esc_attr( $path_id ); ?>-help"<?php disabled( ! PNCP_Traffic_Log::user_may_read() ); ?>>
+					<?php
+					echo PNCP_Admin_Fields::description( $path_id . '-help', PNCP_Admin_Fields::help( __( 'Full path of the Nginx or Apache access log; empty = not read.', 'scrapelock' ), __( 'The "combined" log format and its common variants are read, also rotated files (.1, .1.gz), every 15 minutes, from where the last run stopped. The first run reads the last 4 MB. PHP must be allowed to read the file (permissions, open_basedir). Use “Test this path” below before saving.', 'scrapelock' ) ) ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Escaped in description().
+					?>
+				</div>
+			</td>
+		</tr>
+		<tr id="pncp-sec-traffic-keep">
+			<th scope="row"><?php esc_html_e( 'Keep', 'scrapelock' ); ?></th>
+			<td>
+				<?php
+				self::number( $s, 'traffic_raw_days', __( 'Keep each request for (days):', 'scrapelock' ), PNCP_Admin_Fields::help( __( 'Single requests, for the Requests view and every filter.', 'scrapelock' ), __( 'Whole days in the site\'s time zone, plus today. At most one million requests are kept; the oldest go first.', 'scrapelock' ) ) );
+				self::number( $s, 'traffic_days', __( 'Keep the daily traffic figures for (days):', 'scrapelock' ), __( 'Totals per day, for the longer periods.', 'scrapelock' ) );
+				?>
+			</td>
+		</tr>
+		<tr id="pncp-sec-traffic-ip">
+			<th scope="row"><?php esc_html_e( 'IP addresses', 'scrapelock' ); ?></th>
+			<td>
+				<?php
+				self::radios(
+					$s,
+					'traffic_ip_mode',
+					__( 'IP addresses in the traffic record:', 'scrapelock' ),
+					array(
+						'full'   => __( 'Full addresses', 'scrapelock' ),
+						'masked' => __( 'Masked (the last part removed)', 'scrapelock' ),
+					)
+				);
+				echo PNCP_Admin_Fields::para( __( 'Masked addresses cannot be blocked or checked from here.', 'scrapelock' ) ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Escaped in PNCP_Admin_Fields.
+				?>
+			</td>
+		</tr>
+		<?php
+		self::form_close();
 	}
 
 	/**

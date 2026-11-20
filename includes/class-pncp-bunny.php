@@ -2473,6 +2473,13 @@ final class PNCP_Bunny {
 					self::count_points( $analysis, $row ); // 3.9: every request for a lockable address, for the preview.
 					self::analyse( $analysis, $row );
 					++$result['lines'];
+					/**
+					 * One log line the import read (3.12: Traffic stores it while collection is on).
+					 *
+					 * @since 3.12.0
+					 * @param array<string, mixed> $row parse_line() result.
+					 */
+					do_action( 'pncp_bunny_log_line', $row );
 				}
 			}
 			$state['offset'] = $offset + $count;
@@ -2486,6 +2493,12 @@ final class PNCP_Bunny {
 				break; // Caught up.
 			}
 		}
+		/**
+		 * The import has read its lines (3.12: Traffic writes what it buffered).
+		 *
+		 * @since 3.12.0
+		 */
+		do_action( 'pncp_bunny_log_read' );
 		// 3.9: full or anonymized IPs, from every line read (also with no attack at all), before store() uses it.
 		$state['ips']    = self::ip_verdict( $state['ips'], $sample );
 		$result['found'] = self::store( $analysis, $state );

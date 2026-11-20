@@ -115,6 +115,10 @@ t( 'risk_tag(): τίποτα για ρύθμιση χωρίς κίνδυνο', '
 /* ---------- Κάθε καρτέλα ---------- */
 $page    = '/wp-admin/options-general.php?page=scrapelock';
 $tabs    = array( 'general', 'bots', 'content', 'images', 'rules', 'log', 'attacks', 'hardening', 'lockdown' );
+// 3.12: the Traffic tab and each of its views (collection on or off, as the site has it).
+foreach ( array( '', '&tr_view=agents', '&tr_view=problems', '&tr_view=problems&tr_type=uncached', '&tr_view=visitors', '&tr_view=log', '&tr_view=settings' ) as $pncp_view ) {
+	$tabs[] = 'traffic' . $pncp_view;
+}
 $all     = '';
 $folds   = 0;
 foreach ( $tabs as $tab ) {

@@ -43,6 +43,15 @@ final class PNCP_Admin_Tabs {
 			'report'            => 'attacks',
 			// "Log".
 			'logs'              => 'log',
+			// "Traffic" (3.12).
+			'access'            => 'traffic',
+			'access-log'        => 'traffic',
+			'access_log'        => 'traffic',
+			'visitors'          => 'traffic',
+			'requests'          => 'traffic',
+			'user-agents'       => 'traffic',
+			'useragents'        => 'traffic',
+			'agents'            => 'traffic',
 			// "Bots and limits".
 			'bot'               => 'bots',
 			'limits'            => 'bots',
@@ -95,7 +104,7 @@ final class PNCP_Admin_Tabs {
 			),
 			'records'  => array(
 				'label' => __( 'Records', 'scrapelock' ),
-				'tabs'  => array( 'log', 'attacks' ),
+				'tabs'  => array( 'log', 'traffic', 'attacks' ),
 			),
 		);
 		/**

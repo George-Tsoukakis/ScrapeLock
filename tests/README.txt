@@ -68,6 +68,36 @@ ScrapeLock — δοκιμές σε πραγματικό WordPress (όχι stubs)
                     placeholders / tags, .mo ίδιο με το .po, χωρίς μισές προτάσεις· φορτώνεται από το languages/ του
                     plugin (και όπως στις WordPress 6.2–6.6, με pncp_load_textdomain() στο init), ενώ ένα language pack
                     στο wp-content/languages/plugins/ προηγείται
+  t_traffic.php     3.12: Traffic (PNCP_Traffic), the data layer: settings (path checks, upgrade, export/import),
+                    nothing hooked or stored while off, ~40 User-Agents classified (verified / fake with stored official
+                    lists), Bunny lines through parse_line() and the real import (mocked log API), the server access log
+                    (combined / vhost / Nginx with rt and X-Forwarded-For, cursor, rotation to .1 and .1.gz, budget,
+                    "Test this path" also with open_basedir and a symlink in a child PHP), the WordPress source over HTTP
+                    (404 recorded; off, loopback and admin-ajax not), every query with filters and paging, CSV (formula
+                    injection), the aggregates over a range longer than the raw window, retention, caps, masked IPs,
+                    sources, purge and uninstall (on SQLite the drop-in cannot drop tables: they are emptied); the
+                    fast paths: a status class from the daily figures, problems with their own status, one pass for a
+                    detail (and its newest rows only for a very busy key), more keys than one query reads (has_more),
+                    schema 1 -> 2 (the covering index) without dbDelta()
+  t_traffic_ops.php 3.12: Traffic operations (PNCP_Traffic_Alerts, PNCP_Traffic_Cli) on 8 days of seeded traffic:
+                    the alert settings (defaults off, bad address refused, export/import), the 5xx, 404 (probes and
+                    metadata files excluded), new heavy User-Agent and stopped-source alerts firing and not firing
+                    (below thresholds, alerts off, traffic off), throttling, recipients, the email text and its link to
+                    the Traffic tab, the weekly email's and the dashboard widget's Traffic part, the Site Health test
+                    (good / recommended) and info lines, every "wp scrapelock traffic" subcommand and format (needs
+                    WP_CLI, else those checks SKIP), export refusing to overwrite, purge needing --yes, uninstall
+  t_traffic_ui.php  3.12: the Traffic tab (PNCP_Admin_Traffic, PNCP_Traffic_Actions) over HTTP with seeded requests:
+                    every view 200 without notices, the numbers are the API's, filters / sort / pages in the address and
+                    the alert-email parameters, <script> in a User-Agent and a path escaped everywhere, CSV (headers,
+                    filters, formulas), nonce and manage_options on every action (editor 403, wrong nonce), Block /
+                    Always allow write one line after the confirmation and save an earlier version (Undo), search
+                    engine and own-browser guards, Test this path, the settings form, Delete, off state, Start collecting
+  t_traffic_sec.php 3.12: the security review of Traffic: the read-only actions (CSV, Test this path) refused while
+                    the site is locked, the WordPress source never records a signed-in administrator, "Masked" IPs
+                    turned on with full addresses stored (raw rows and per-IP figures masked, nothing shown unmasked),
+                    the sample of "Test this path" masked too
+  t_traffic_ms.php  3.12: Traffic on a multisite network (SKIP on a single site; SITE=/two/ with a "subadmin"): only a
+                    network administrator may test the access log or have "Start collecting" pick it
   t_cli.php         wp scrapelock … μέσα από το πραγματικό wp (χρειάζεται WP_CLI, αλλιώς SKIP)
   t_bunny_rules.php Edge Rules στο Bunny μέσα στα όριά του (το πολύ 5 μοτίβα ανά συνθήκη) με ψεύτικο API που δίνει
                     HTTP 400 όπως το πραγματικό: χωρισμός, κλείδωμα/Remove, rollback, Monitor only, sync, προεπισκόπηση,

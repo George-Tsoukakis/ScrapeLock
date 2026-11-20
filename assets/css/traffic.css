@@ -1,0 +1,453 @@
+/*
+ * ScrapeLock – the Traffic tab (PNCP_Admin_Traffic). Loaded on that tab only, after attack-report.css, whose
+ * tiles, period links and charts it reuses. Colours come from the tokens of admin.css (--pncp-*). Logical
+ * properties (margin-inline, inset-inline) keep it right for right-to-left languages.
+ */
+
+.pncp-tr {
+	--pncp-tr-err: var(--pncp-bad, #d63638);
+}
+
+/* Views inside the tab */
+.pncp-tr__nav ul {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 4px;
+	margin: 0 0 var(--pncp-s4, 16px);
+	padding: 0;
+	border-bottom: 1px solid var(--pncp-border, #dcdcde);
+	list-style: none;
+}
+
+.pncp-tr__nav li {
+	margin: 0;
+}
+
+.pncp-tr__nav a {
+	display: inline-block;
+	padding: 8px 12px;
+	border-bottom: 3px solid transparent;
+	color: var(--pncp-text, #1d2327);
+	font-weight: 500;
+	text-decoration: none;
+}
+
+.pncp-tr__nav a:hover,
+.pncp-tr__nav a:focus {
+	color: var(--pncp-accent, #2271b1);
+}
+
+.pncp-tr__nav a.is-current {
+	border-bottom-color: var(--pncp-accent, #2271b1);
+	color: var(--pncp-accent, #2271b1);
+	font-weight: 600;
+}
+
+/* Filters */
+.pncp-tr__toolbar {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 8px 16px;
+	align-items: flex-end;
+	margin: 0 0 var(--pncp-s3, 12px);
+	padding: 12px 14px;
+	border: 1px solid var(--pncp-border, #dcdcde);
+	border-radius: var(--pncp-radius-sm, 8px);
+	background: var(--pncp-surface, #fff);
+}
+
+.pncp-tr__field {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 4px 6px;
+	align-items: center;
+	margin: 0;
+}
+
+.pncp-tr__field label {
+	font-weight: 600;
+}
+
+.pncp-tr__search input[type="search"] {
+	width: 16em;
+	max-width: 100%;
+}
+
+.pncp-tr__dates[hidden] {
+	display: none;
+}
+
+.pncp-tr__chips {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 6px;
+	margin: 0 0 12px;
+	padding: 0;
+	list-style: none;
+}
+
+.pncp-tr__chip {
+	display: inline-flex;
+	gap: 6px;
+	align-items: center;
+	max-width: 100%;
+	padding: 2px 4px 2px 10px;
+	border: 1px solid var(--pncp-accent-line, #c5d9ed);
+	border-radius: 999px;
+	background: var(--pncp-accent-soft, #eef4fb);
+}
+
+.pncp-tr__chip code {
+	overflow-wrap: anywhere;
+	background: none;
+}
+
+.pncp-tr__chip-x {
+	display: inline-block;
+	min-width: 24px;
+	min-height: 24px;
+	border-radius: 999px;
+	font-size: 16px;
+	line-height: 24px;
+	text-align: center;
+	text-decoration: none;
+}
+
+.pncp-tr__chip-x:hover,
+.pncp-tr__chip-x:focus {
+	background: var(--pncp-accent, #2271b1);
+	color: #fff;
+}
+
+/* Cards side by side */
+.pncp-tr__grid {
+	display: grid;
+	grid-template-columns: repeat(auto-fit, minmax(min(100%, 340px), 1fr));
+	gap: var(--pncp-s4, 16px);
+	margin: 0 0 var(--pncp-s5, 20px);
+}
+
+.pncp-tr__grid > .pncp-card {
+	min-width: 0;
+	margin: 0;
+}
+
+.pncp-tr__label {
+	overflow-wrap: anywhere;
+}
+
+.pncp-tr__more {
+	margin: 8px 0 0;
+}
+
+.pncp-tr .pncp-tr__table code {
+	word-break: break-all;
+}
+
+.pncp-tr__ua {
+	font-size: 12px;
+}
+
+.pncp-tr__ua-name {
+	display: block;
+}
+
+.pncp-tr__full {
+	display: inline-block;
+	max-width: 100%;
+	overflow-wrap: anywhere;
+	white-space: normal;
+}
+
+.pncp-tr__count {
+	color: var(--pncp-subtle, #646970);
+	font-size: 12px;
+	font-variant-numeric: tabular-nums;
+}
+
+.pncp-tr__note {
+	color: var(--pncp-muted, #50575e);
+}
+
+.pncp-tr__err {
+	color: var(--pncp-bad-text, #8a2424);
+}
+
+/* Families */
+.pncp-tr__fams {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 6px;
+	margin: 12px 0;
+	padding: 0;
+	list-style: none;
+}
+
+.pncp-tr__fams .pncp-ar__period.is-current .pncp-tr__count {
+	color: inherit;
+}
+
+.pncp-tr__fam {
+	display: inline-block;
+	padding: 0 8px;
+	border-radius: 999px;
+	background: var(--pncp-surface-2, #f6f7f7);
+	color: var(--pncp-muted, #50575e);
+	font-size: 11.5px;
+	line-height: 1.8;
+	white-space: nowrap;
+}
+
+.pncp-tr__fam--browser,
+.pncp-tr__fam--verified_bot {
+	background: var(--pncp-on-soft, #e7f5ec);
+	color: var(--pncp-on-text, #005c32);
+}
+
+.pncp-tr__fam--fake_bot,
+.pncp-tr__fam--script {
+	background: var(--pncp-bad-soft, #fcf0f1);
+	color: var(--pncp-bad-text, #8a2424);
+}
+
+.pncp-tr__fam--ai_bot,
+.pncp-tr__fam--seo_bot,
+.pncp-tr__fam--empty {
+	background: var(--pncp-warn-soft, #fcf3e6);
+	color: var(--pncp-warn-text, #7a3e00);
+}
+
+.pncp-tr__fam--preview,
+.pncp-tr__fam--service {
+	background: var(--pncp-accent-soft, #eef4fb);
+	color: var(--pncp-accent-strong, #135e96);
+}
+
+/* Status codes */
+.pncp-tr__st {
+	display: inline-block;
+	min-width: 2.6em;
+	padding: 0 6px;
+	border-radius: 4px;
+	font-family: var(--pncp-mono, monospace);
+	font-size: 12px;
+	font-weight: 600;
+	text-align: center;
+}
+
+.pncp-tr__st--2 {
+	background: var(--pncp-on-soft, #e7f5ec);
+	color: var(--pncp-on-text, #005c32);
+}
+
+.pncp-tr__st--3 {
+	background: var(--pncp-accent-soft, #eef4fb);
+	color: var(--pncp-accent-strong, #135e96);
+}
+
+.pncp-tr__st--4 {
+	background: var(--pncp-warn-soft, #fcf3e6);
+	color: var(--pncp-warn-text, #7a3e00);
+}
+
+.pncp-tr__st--5 {
+	background: var(--pncp-bad-soft, #fcf0f1);
+	color: var(--pncp-bad-text, #8a2424);
+}
+
+.pncp-tr__method {
+	color: var(--pncp-subtle, #646970);
+	font-size: 11px;
+}
+
+.pncp-tr__log tr.pncp-tr__row--5 td {
+	background: var(--pncp-bad-soft, #fcf0f1);
+}
+
+.pncp-tr__codes .pncp-tr__st {
+	margin-inline-start: 6px;
+}
+
+/* Chart */
+.pncp-tr__bar-err {
+	fill: var(--pncp-tr-err);
+}
+
+.pncp-tr__legend {
+	margin: 6px 0 0;
+	color: var(--pncp-subtle, #646970);
+	font-size: 12px;
+}
+
+.pncp-tr__key {
+	display: inline-block;
+	width: 10px;
+	height: 10px;
+	margin-inline-start: 8px;
+	border-radius: 2px;
+	background: var(--pncp-accent, #2271b1);
+	vertical-align: middle;
+}
+
+.pncp-tr__key--err {
+	background: var(--pncp-tr-err);
+}
+
+/* Sources */
+.pncp-tr__sources {
+	margin: 0;
+	padding: 0;
+	list-style: none;
+}
+
+.pncp-tr__sources li {
+	margin: 0 0 8px;
+}
+
+.pncp-tr__dot {
+	display: inline-block;
+	width: 9px;
+	height: 9px;
+	border-radius: 50%;
+	background: var(--pncp-border-strong, #c3c4c7);
+}
+
+.pncp-tr__source.is-on .pncp-tr__dot {
+	background: var(--pncp-on, #00733f);
+}
+
+.pncp-tr__facts,
+.pncp-tr__found {
+	margin-inline-start: 1.4em;
+	list-style: disc;
+}
+
+/* What ScrapeLock does */
+.pncp-tr__verdict {
+	margin: 0 0 12px;
+	padding: 0;
+	list-style: none;
+}
+
+.pncp-tr__v {
+	margin: 0 0 4px;
+	padding: 4px 10px;
+	border-inline-start: 4px solid var(--pncp-border-strong, #c3c4c7);
+}
+
+.pncp-tr__v--good {
+	border-inline-start-color: var(--pncp-on, #00733f);
+}
+
+.pncp-tr__v--bad {
+	border-inline-start-color: var(--pncp-bad, #d63638);
+}
+
+.pncp-tr__v--warn {
+	border-inline-start-color: var(--pncp-warn, #b35c00);
+}
+
+.pncp-tr__confirm {
+	margin: 12px 0 0;
+	padding: 12px 14px;
+	border: 1px solid var(--pncp-warn-line, #f0c8a0);
+	border-radius: var(--pncp-radius-sm, 8px);
+	background: var(--pncp-surface-3, #fbfbfc);
+}
+
+.pncp-tr__line {
+	display: inline-block;
+	max-width: 100%;
+	font-size: 13px;
+	overflow-wrap: anywhere;
+}
+
+/* Problems */
+.pncp-tr__reflist {
+	margin: 0;
+	padding: 0;
+	list-style: none;
+}
+
+.pncp-tr__reflist li {
+	margin: 0 0 2px;
+}
+
+.pncp-tr__ref {
+	font-size: 11.5px;
+	overflow-wrap: anywhere;
+}
+
+.pncp-tr__redirect summary {
+	color: var(--pncp-accent, #2271b1);
+	cursor: pointer;
+}
+
+.pncp-tr__pager {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 8px;
+	align-items: center;
+	margin: 12px 0 0;
+}
+
+.pncp-tr__sort a {
+	color: inherit;
+	text-decoration: none;
+}
+
+.pncp-tr__sort a:hover,
+.pncp-tr__sort a:focus,
+.pncp-tr__sort.is-sorted a {
+	color: var(--pncp-accent, #2271b1);
+}
+
+@media screen and (max-width: 782px) {
+	.pncp-tr__agents,
+	.pncp-tr__problems {
+		min-width: 640px;
+	}
+
+	.pncp-tr__log {
+		min-width: 900px;
+	}
+
+	.pncp-tr__toolbar {
+		align-items: stretch;
+	}
+
+	.pncp-tr__field {
+		flex: 1 1 100%;
+	}
+
+	.pncp-tr__field select,
+	.pncp-tr__search input[type="search"] {
+		flex: 1 1 auto;
+		width: auto;
+		min-width: 0;
+	}
+}
+
+@media (forced-colors: active) {
+	.pncp-tr__bar-err {
+		fill: Highlight;
+	}
+
+	.pncp-tr__nav a.is-current {
+		border-bottom-color: Highlight;
+	}
+}
+
+@media print {
+	.pncp-tr__toolbar,
+	.pncp-tr__export,
+	.pncp-tr__actions {
+		display: none !important;
+	}
+}
+
+/* Small cards: the bar column may shrink. */
+.pncp-tr__box .pncp-ar__col-bar {
+	width: 30%;
+	min-width: 60px;
+}
