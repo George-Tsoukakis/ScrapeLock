@@ -39,6 +39,7 @@ final class PNCP_Health {
 			// 3.5: the two tests that request the site itself run after the page has loaded (Site Health's async tests).
 			add_action( 'wp_ajax_health-check-scrapelock-robots', array( __CLASS__, 'ajax_robots' ) );
 			add_action( 'wp_ajax_health-check-scrapelock-folders', array( __CLASS__, 'ajax_folders' ) );
+			add_action( 'wp_ajax_health-check-scrapelock-selfrequest', array( __CLASS__, 'ajax_selfrequest' ) ); // 3.12.2.
 			add_action( 'admin_post_' . self::RECHECK, array( __CLASS__, 'handle_recheck' ) );
 		}
 	}
@@ -92,6 +93,13 @@ final class PNCP_Health {
 			'test'              => 'scrapelock_folders',
 			'has_rest'          => false,
 			'async_direct_test' => array( __CLASS__, 'test_folders' ),
+		);
+		// 3.12.2: a real request of the site to itself, and who refused it when something did.
+		$tests['async']['scrapelock_selfrequest'] = array(
+			'label'             => __( 'ScrapeLock self-request test', 'scrapelock' ),
+			'test'              => 'scrapelock_selfrequest',
+			'has_rest'          => false,
+			'async_direct_test' => array( __CLASS__, 'test_selfrequest' ),
 		);
 
 		// 3.7.
@@ -529,6 +537,39 @@ final class PNCP_Health {
 			wp_send_json_error( null, 403 );
 		}
 		wp_send_json_success( self::test_folders() );
+	}
+
+	/**
+	 * 3.12.2: Site Health's script runs the self-request test through admin-ajax.
+	 */
+	public static function ajax_selfrequest() {
+		check_ajax_referer( 'health-check-site-status' );
+		if ( ! current_user_can( 'view_site_health_checks' ) ) {
+			wp_send_json_error( null, 403 );
+		}
+		wp_send_json_success( self::test_selfrequest() );
+	}
+
+	/**
+	 * 3.12.2: the site's request to its own home page (PNCP_Self_Check::run()): good when the public address
+	 * answers it; recommended when something on the way refused it but the server answers directly (ScrapeLock's
+	 * checks then use that way, and the owner is told who refused and what to check); critical when neither works.
+	 *
+	 * @return array<string, mixed>
+	 */
+	public static function test_selfrequest() {
+		$trace   = PNCP_Self_Check::run();
+		$details = '';
+		$lines   = PNCP_Self_Check::lines( $trace );
+		if ( $lines ) {
+			$details = self::html_list( $lines );
+		}
+		if ( ! empty( $trace['ok'] ) ) {
+			return self::result( 'selfrequest', 'good', __( 'The site\'s requests to itself reach it', 'scrapelock' ), PNCP_Self_Check::summary( $trace ), '', '', '', $details );
+		}
+		$status = ! empty( $trace['origin'] ) ? 'recommended' : 'critical';
+		$label  = ! empty( $trace['origin'] ) ? __( 'Something refuses the site\'s requests to itself on its public address', 'scrapelock' ) : __( 'The site cannot reach itself', 'scrapelock' );
+		return self::result( 'selfrequest', $status, $label, PNCP_Self_Check::summary( $trace ), 'log', 'pncp-tester', '', $details );
 	}
 
 	/**

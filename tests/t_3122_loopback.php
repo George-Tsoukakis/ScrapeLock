@@ -24,6 +24,7 @@
  * E. A block of the server's address at the CDN is removed at once; the Bunny presets never match the home page.
  * O. "Only through the CDN" without a secret never refuses anything; with one, a signed request passes.
  * T. "Check a request": the preset "The site itself (loopback)", "Run a real self-check now" (nonce, capability).
+ * K. Site Health "ScrapeLock self-request test"; "wp scrapelock selfcheck" (with WP_CLI).
  *
  * Self-requests are made from this test process to the test server, never from a page the single-process
  * server is serving (it would wait for itself). Only on a test WordPress.
@@ -747,6 +748,34 @@ list( $st, $j ) = self_ajax( 1, $admin_nonce );
 t( 'T: ... the administrator: a real self-check with its headline and trace', ! empty( $j['success'] ) && '' !== (string) $j['data']['headline'] && is_array( $j['data']['lines'] ) && $j['data']['lines'], wp_json_encode( $j ) );
 require_once ABSPATH . 'wp-admin/includes/user.php';
 wp_delete_user( $sub );
+
+/* ---------- K. Site Health and WP-CLI ---------- */
+add_filter( 'pre_http_request', $mock, 5, 3 );
+$edge403 = false;
+$res     = PNCP_Health::test_selfrequest();
+t( 'K: Site Health "ScrapeLock self-request test": good when the public address answers', 'good' === $res['status'] && 'scrapelock_selfrequest' === $res['test'], wp_json_encode( $res ) );
+$edge403 = true;
+$origin  = 'ok';
+$res     = PNCP_Health::test_selfrequest();
+t( 'K: ... recommended, naming Bunny\'s edge, when it refuses and the server answers', 'recommended' === $res['status'] && false !== strpos( $res['description'], 'Bunny CDN edge' ) && false !== strpos( $res['description'], 'In the Bunny dashboard' ), wp_json_encode( $res ) );
+$origin = 'error';
+delete_transient( PNCP_Self_Check::ROUTE );
+$res = PNCP_Health::test_selfrequest();
+t( 'K: ... critical when the server cannot be reached either', 'critical' === $res['status'], wp_json_encode( $res ) );
+remove_filter( 'pre_http_request', $mock, 5 );
+delete_transient( PNCP_Self_Check::ROUTE );
+$tests = PNCP_Health::tests( array( 'direct' => array(), 'async' => array() ) );
+$src   = (string) file_get_contents( dirname( __DIR__ ) . '/includes/class-pncp-health.php' );
+t( 'K: registered as an async test (one underscore: health-check-scrapelock-selfrequest)', isset( $tests['async']['scrapelock_selfrequest'] ) && false !== strpos( $src, "'wp_ajax_health-check-scrapelock-selfrequest'" ) );
+$cli = getenv( 'WP_CLI' );
+if ( $cli ) {
+	$out = (string) shell_exec( $cli . ' scrapelock selfcheck 2>&1' );
+	t( 'K: wp scrapelock selfcheck: the summary and the trace of both sides', false !== strpos( $out, 'reaches itself' ) && false !== strpos( $out, 'Through the public address' ) && false !== strpos( $out, 'signature: valid' ), $out );
+	$out = (string) shell_exec( $cli . ' scrapelock selfcheck --log 2>&1' );
+	t( 'K: wp scrapelock selfcheck --log: the notes of both sides', false !== strpos( $out, 'Notes of the site' ), $out );
+} else {
+	echo "SKIP K: wp scrapelock selfcheck (no WP_CLI)\n";
+}
 
 // Clean up the temporary data folder.
 foreach ( glob( $pc_dir . '/self/*' ) ?: array() as $pncp_f ) {
