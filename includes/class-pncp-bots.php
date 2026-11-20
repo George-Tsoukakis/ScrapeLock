@@ -1693,7 +1693,7 @@ final class PNCP_Bots {
 	 */
 	public static function allow_list_match( $ua, $ip, $s ) {
 		foreach ( self::allow_entries( $s ) as $entry ) {
-			if ( '' === $entry['ua'] || false === stripos( $ua, $entry['ua'] ) ) {
+			if ( ! self::allow_ua_matches( $ua, $entry['ua'] ) ) {
 				continue;
 			}
 			if ( ! $entry['pinned'] || ( PNCP_Ip::reliable() && PNCP_Ip::in_any( $ip, $entry['ips'] ) ) ) {
@@ -1701,6 +1701,26 @@ final class PNCP_Bots {
 			}
 		}
 		return false;
+	}
+
+	/**
+	 * 3.12.2: does the User-Agent part of an "always allowed" entry match? Part of the User-Agent, case-insensitive;
+	 * an entry that starts with "=" must be the whole User-Agent ("=Viber/22.4.0.0 (Android 14)"), as in the bot
+	 * list (ua_in_list()) and the server rules (PNCP_Rules). Until 3.12.1 such an entry matched nothing here.
+	 *
+	 * @param string $ua     User-Agent.
+	 * @param string $needle The entry's User-Agent part (before "@").
+	 * @return bool
+	 */
+	private static function allow_ua_matches( $ua, $needle ) {
+		$needle = (string) $needle;
+		if ( '' === $needle || '=' === $needle ) {
+			return false;
+		}
+		if ( '=' === $needle[0] ) {
+			return 0 === strcasecmp( trim( (string) $ua ), trim( substr( $needle, 1 ) ) );
+		}
+		return false !== stripos( (string) $ua, $needle );
 	}
 
 	/**
@@ -1738,7 +1758,7 @@ final class PNCP_Bots {
 	 */
 	public static function allow_list_match_pinned( $ua, $ip, $s ) {
 		foreach ( self::allow_entries( $s ) as $entry ) {
-			if ( '' === $entry['ua'] || false === stripos( $ua, $entry['ua'] ) ) {
+			if ( ! self::allow_ua_matches( $ua, $entry['ua'] ) ) {
 				continue;
 			}
 			if ( $entry['pinned'] && PNCP_Ip::reliable() && PNCP_Ip::in_any( $ip, $entry['ips'] ) ) {

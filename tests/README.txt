@@ -157,6 +157,10 @@ ScrapeLock — δοκιμές σε πραγματικό WordPress (όχι stubs)
   t_3121_integration.php 3.12.1: how the parts of 3.12.1 fit together: rate_member (per account) is no reputation
                     event of the IP and every log reason has a label; the attack record keeps nothing of the site's
                     own requests (signed, or a CDN log line of SCRAPELOCK_SERVER_IPS)
+  t_3122_previews.php 3.12.2: link previews of "Always allowed" (the real User-Agents of Viber, WhatsApp, Facebook,
+                    Telegram, Slack, X, LinkedIn, Discord) on .webp / .jpg 30 times a minute with page limit 1: never 429
+                    in WordPress, the early check or the pre-cache check; a browser, a preview not in the list and
+                    Pinterest still count; the entry forms (part, "=" whole User-Agent, "@" pinned); "Check a request"
   t_cli.php         wp scrapelock … μέσα από το πραγματικό wp (χρειάζεται WP_CLI, αλλιώς SKIP)
   t_bunny_rules.php Edge Rules στο Bunny μέσα στα όριά του (το πολύ 5 μοτίβα ανά συνθήκη) με ψεύτικο API που δίνει
                     HTTP 400 όπως το πραγματικό: χωρισμός, κλείδωμα/Remove, rollback, Monitor only, sync, προεπισκόπηση,

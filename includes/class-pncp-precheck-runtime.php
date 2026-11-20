@@ -1235,7 +1235,12 @@ final class PNCP_Precheck_Runtime {
 			return false;
 		}
 		foreach ( $c['allow_ua'] as $entry ) {
-			if ( ! is_array( $entry ) || ! isset( $entry[0] ) || '' === (string) $entry[0] || false === strpos( $ua, (string) $entry[0] ) ) {
+			if ( ! is_array( $entry ) || ! isset( $entry[0] ) || '' === (string) $entry[0] || '=' === (string) $entry[0] ) {
+				continue;
+			}
+			// 3.12.2: "=name" = the whole User-Agent, as PNCP_Bots::allow_list_match() (it matched nothing before).
+			$needle = (string) $entry[0];
+			if ( '=' === $needle[0] ? trim( $ua ) !== trim( substr( $needle, 1 ) ) : false === strpos( $ua, $needle ) ) {
 				continue;
 			}
 			if ( ! isset( $entry[1] ) || ( $reliable && is_array( $entry[1] ) && self::in_any( $ip, $entry[1] ) ) ) {
