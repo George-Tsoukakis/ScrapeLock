@@ -354,6 +354,11 @@ final class PNCP_Bots {
 			if ( ! $first ) {
 				$count = false;
 			}
+			// 3.11: FluentCommunity's portal loads every screen through its own REST routes: a signed-in member's
+			// reads of them do not count toward the REST limit (guests still count; every other check applies).
+			if ( $count && PNCP_Fluent_Community::uncounted_rest( $request ) ) {
+				$count = false;
+			}
 		}
 		$cost    = $count ? self::rest_cost( $request ) : 1; // 3.5: weighted by list size (see rest_cost()).
 		$verdict = self::check( 'rest', $count, $cart, $cost );

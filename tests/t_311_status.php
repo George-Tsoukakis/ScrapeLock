@@ -260,5 +260,84 @@ t( 'A8: «Reset this tab»: the settings in words (Block SEO and marketing data 
 t( 'A8: «Reset this tab»: no bare key in a cell', false === strpos( $body, '<td><code>block_seo_crawlers</code></td>' ) );
 settings( array( 'block_seo_crawlers' => 0 ) );
 
+/* ---------- 3. A9: FluentCommunity ---------- */
+if ( $created ) {
+	mkdir( $plugin_dir );
+}
+// A stand-in: its header, its constant and one REST route of its namespace (GET, open to everyone, as the portal's feeds).
+file_put_contents(
+	$plugin_dir . '/fluent-community.php',
+	"<?php\n/*\nPlugin Name: FluentCommunity (test stand-in)\nVersion: 0.0.1\n*/\n"
+	. "defined( 'FLUENT_COMMUNITY_PLUGIN_VERSION' ) || define( 'FLUENT_COMMUNITY_PLUGIN_VERSION', '0.0.1' );\n"
+	. "add_action( 'rest_api_init', function () { register_rest_route( 'fluent-community/v2', '/feeds', array( 'methods' => 'GET', 'permission_callback' => '__return_true', 'callback' => function () { return array( 'feeds' => array(), 'user' => get_current_user_id() ); } ) ); } );\n"
+);
+settings( array( 'content_paths' => "/forum/\n", 'rate_limit_rest' => 3, 'rate_limit_apionly' => 0, 'ban_strikes' => 0, 'reputation' => 0 ) );
+t( 'A9: FluentCommunity not active: nothing added', ! PNCP_Fluent_Community::active() && array( '/forum' ) === PNCP_Log::content_paths(), wp_json_encode( PNCP_Log::content_paths() ) );
+activate_plugin( PNCP_Fluent_Community::BASENAME );
+wp_cache_delete( 'alloptions', 'options' );
+t( 'A9: active (by the list of active plugins): detected', PNCP_Fluent_Community::active() );
+t( 'A9: the portal /hub added to the content addresses', array( '/forum', '/hub' ) === PNCP_Log::content_paths(), wp_json_encode( PNCP_Log::content_paths() ) );
+t( 'A9: the stored setting is not changed', "/forum/\n" === PNCP_Options::stored()['content_paths'] || '/forum/' === trim( PNCP_Options::stored()['content_paths'] ), wp_json_encode( PNCP_Options::stored()['content_paths'] ) );
+t( 'A9: a portal address counts as a page of the site in the log', PNCP_Log::is_site_content( '/hub/space/greek-pharmacists/home' ) );
+add_filter(
+	'pncp_fluent_community_slug',
+	static function () {
+		return 'community';
+	}
+);
+t( 'A9: the slug configured in FluentCommunity is used', array( '/forum', '/community' ) === PNCP_Log::content_paths(), wp_json_encode( PNCP_Log::content_paths() ) );
+remove_all_filters( 'pncp_fluent_community_slug' );
+settings( array( 'content_paths' => "/hub/\n" ) );
+t( 'A9: already in the list: not added twice', array( '/hub' ) === PNCP_Log::content_paths(), wp_json_encode( PNCP_Log::content_paths() ) );
+settings( array( 'content_paths' => "/forum/\n" ) );
+list( , $body ) = http( $page . '&tab=log', $admin_cookies );
+t( 'A9: Log tab: «added because FluentCommunity is active»', false !== strpos( $body, 'id="pncp-content_paths-added"' ) && false !== strpos( $body, 'added because FluentCommunity is active' ) && false !== strpos( $body, '/hub/' ) );
+t( 'A9: Log tab: the field still holds only the stored list', (bool) preg_match( '#<textarea[^>]*name="pncp_settings\[content_paths\]"[^>]*>\s*/forum/\s*</textarea>#', $body ) );
+
+// The REST limit (3 per minute). Addresses of their own on every run (the counters last a minute).
+$net = '203.0.' . mt_rand( 1, 250 ) . '.';
+$member = wp_insert_user( array( 'user_login' => 'fc_member', 'user_pass' => wp_generate_password(), 'user_email' => 'fc_member@example.com', 'role' => 'subscriber' ) );
+list( $m_cookies, $m_nonce ) = session_of( $member );
+$codes = array();
+for ( $i = 0; $i < 6; $i++ ) {
+	list( $c, $b ) = http( '/wp-json/fluent-community/v2/feeds', $m_cookies, array( 'X-WP-Nonce: ' . $m_nonce ), $net . '81' );
+	$codes[] = $c;
+}
+t( 'A9: signed-in member, 6 portal reads in a minute with a limit of 3: all 200', array( 200, 200, 200, 200, 200, 200 ) === $codes && false !== strpos( $b, '"user":' . $member ), implode( ',', $codes ) . ' ' . substr( $b, 0, 120 ) );
+$codes = array();
+for ( $i = 0; $i < 5; $i++ ) {
+	list( $c ) = http( '/wp-json/fluent-community/v2/feeds', array(), array(), $net . '82' );
+	$codes[] = $c;
+}
+t( 'A9: guest: the 4th portal read in a minute gets 429', array( 200, 200, 200, 429, 429 ) === $codes, implode( ',', $codes ) );
+$codes = array();
+for ( $i = 0; $i < 5; $i++ ) {
+	list( $c ) = http( '/wp-json/fluent-community/v2/feeds', $m_cookies, array(), $net . '83' );
+	$codes[] = $c;
+}
+t( 'A9: the member\'s cookie without the session nonce: counted (429 on the 4th)', array( 200, 200, 200, 429, 429 ) === $codes, implode( ',', $codes ) );
+$codes = array();
+for ( $i = 0; $i < 5; $i++ ) {
+	list( $c ) = http( '/wp-json/wp/v2/posts', $m_cookies, array( 'X-WP-Nonce: ' . $m_nonce ), $net . '84' );
+	$codes[] = $c;
+}
+t( 'A9: the member on another route (/wp/v2/posts): counted (429 on the 4th)', array( 200, 200, 200, 429, 429 ) === $codes, implode( ',', $codes ) );
+settings( array( 'block_ips' => $net . '85' ) );
+list( $c ) = http( '/wp-json/fluent-community/v2/feeds', $m_cookies, array( 'X-WP-Nonce: ' . $m_nonce ), $net . '85' );
+t( 'A9: an always-blocked IP is still refused, signed in or not', 403 === $c, (string) $c );
+settings( array( 'block_ips' => '' ) );
+
+deactivate_plugins( PNCP_Fluent_Community::BASENAME, true );
+wp_cache_delete( 'alloptions', 'options' );
+// Asked over HTTP: this process loaded the stand-in (its constant stays defined here).
+list( , $body ) = http( $page . '&tab=log', $admin_cookies );
+t( 'A9: deactivated: the portal is no longer added (Log tab)', ! in_array( PNCP_Fluent_Community::BASENAME, (array) get_option( 'active_plugins' ), true ) && false === strpos( $body, 'id="pncp-content_paths-added"' ) && false !== strpos( $body, 'pncp-sec-content-paths' ) );
+$codes = array();
+for ( $i = 0; $i < 5; $i++ ) {
+	list( $c ) = http( '/wp-json/scrapelock-none/v1/x', $m_cookies, array( 'X-WP-Nonce: ' . $m_nonce ), $net . '86' );
+	$codes[] = $c;
+}
+t( 'A9: deactivated: the member\'s REST reads count again (429 on the 4th)', 429 === $codes[3], implode( ',', $codes ) );
+
 echo $fails ? "\n$fails FAIL\n" : "\nALL PASS\n";
 exit( $fails ? 1 : 0 );

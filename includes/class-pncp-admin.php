@@ -3005,6 +3005,13 @@ final class PNCP_Admin {
 			<th scope="row"><?php esc_html_e( 'Content addresses', 'scrapelock' ); ?></th>
 			<td>
 				<?php self::textarea( $s, 'content_paths', __( 'Content addresses: path prefixes of pages that other plugins show, one per line, e.g. /hub/space/', 'scrapelock' ), __( 'Only for the log: blocked requests under these addresses count as “Pages”. Routes that plugins register as WordPress rewrite rules, and all posts, pages, products and terms, are found without this. Nothing is blocked or allowed because of it.', 'scrapelock' ), 2 ); ?>
+				<?php
+				// 3.11: what is added at runtime (FluentCommunity's portal), never stored in the setting.
+				$pncp_fcom = PNCP_Fluent_Community::note();
+				if ( '' !== $pncp_fcom ) {
+					echo '<p class="description pncp-content-paths-added" id="pncp-content_paths-added">' . esc_html( $pncp_fcom ) . '</p>';
+				}
+				?>
 			</td>
 		</tr>
 		<tr id="pncp-sec-ai-referrals-setting">

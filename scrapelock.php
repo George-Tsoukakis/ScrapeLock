@@ -117,6 +117,7 @@ PNCP_Server_Ips::init(); // 3.11: the server's own addresses (the site's request
 PNCP_Bot_Match::init(); // 3.11: the Log names the bot list entry that matched, "Allow this service".
 PNCP_Ai_Search_List::init(); // 3.11: "Remove from the list" for allowed AI search bots still in the bot list.
 PNCP_Site_Files::init(); // 3.10.1: apple-touch-icon.png and OneSignalSDKWorker.js in Site Health, Wordfence's address check.
+PNCP_Fluent_Community::init(); // 3.11: FluentCommunity's portal in the content addresses, its members' REST reads off the REST limit.
 
 if ( defined( 'WP_CLI' ) && WP_CLI ) {
 	require_once PNCP_DIR . 'includes/class-pncp-cli.php';

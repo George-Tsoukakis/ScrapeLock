@@ -830,7 +830,7 @@ final class PNCP_Log {
 	public static function aggregate( $what, $hours, $count ) {
 		$generation = (string) self::cache_get( 'pncp_agg_gen' );
 		// The content addresses setting changes how top_paths() groups the paths: a new setting counts again.
-		$key    = 'pncp_agg_' . md5( $what . '|' . (int) $hours . '|' . $generation . '|' . PNCP_Options::stored()['content_paths'] );
+		$key    = 'pncp_agg_' . md5( $what . '|' . (int) $hours . '|' . $generation . '|' . PNCP_Options::stored()['content_paths'] . '|' . implode( ',', PNCP_Fluent_Community::added_paths() ) );
 		$cached = self::cache_get( $key );
 		if ( is_array( $cached ) && isset( $cached['time'] ) && array_key_exists( 'value', $cached ) && (int) $cached['time'] > time() - self::AGGREGATE_TTL ) {
 			return $cached;
@@ -1037,7 +1037,8 @@ final class PNCP_Log {
 	public static function is_site_content( $path ) {
 		static $seen = array();
 		$path        = '/' . ltrim( (string) $path, '/' );
-		$key         = 'pncp_pc_' . md5( $path . '|' . PNCP_Options::stored()['content_paths'] ); // A new prefix asks again.
+		// A new prefix asks again (3.11: also one added at runtime, e.g. the FluentCommunity portal).
+		$key         = 'pncp_pc_' . md5( $path . '|' . PNCP_Options::stored()['content_paths'] . '|' . implode( ',', PNCP_Fluent_Community::added_paths() ) );
 		if ( isset( $seen[ $key ] ) ) {
 			return $seen[ $key ];
 		}
