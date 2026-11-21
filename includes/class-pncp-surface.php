@@ -204,6 +204,23 @@ final class PNCP_Surface {
 		remove_filter( 'the_content_feed', 'wp_staticize_emoji' );
 		remove_filter( 'comment_text_rss', 'wp_staticize_emoji' );
 		remove_filter( 'wp_mail', 'wp_staticize_emoji_for_email' );
+		self::quiet_cache_plugins();
+	}
+
+	/**
+	 * 3.12.7: the footer comments of cache plugins, switched off where they are made. WP Rocket appends its
+	 * footprint ("This website is like a Rocket … Performance optimized by WP Rocket") in its page-cache buffer,
+	 * after every filter and after Stealth's buffer, to the page and to the cache file it stores: it has no filter
+	 * for it, only the constant WP_ROCKET_WHITE_LABEL_FOOTPRINT, which makes it "Cached for great performance" and
+	 * leaves out its generator tag. Redis Object Cache prints its note at shutdown unless WP_REDIS_DISABLE_COMMENT is
+	 * set. Both are read when the page is finished, so defining them now is in time; a value the site set is kept.
+	 */
+	private static function quiet_cache_plugins() {
+		foreach ( array( 'WP_ROCKET_WHITE_LABEL_FOOTPRINT', 'WP_REDIS_DISABLE_COMMENT' ) as $name ) {
+			if ( ! defined( $name ) ) {
+				define( $name, true );
+			}
+		}
 	}
 
 	/**

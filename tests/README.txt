@@ -228,7 +228,11 @@ ScrapeLock — δοκιμές σε πραγματικό WordPress (όχι stubs)
   t_3127_traces.php 3.12.7: the last traces Stealth left: the JSON of script translations (wp_set_script_translations()
                     with a fake translation file of a stand-in mu-plugin) without "comment" (wp-includes/…, plugin
                     paths) and "generator" while Stealth is on, translations, plural forms and text domain kept,
-                    "</script>" still escaped; unchanged with Stealth off
+                    "</script>" still escaped; unchanged with Stealth off. The footer comments of performance and cache
+                    plugins (their words in wp_footer; no third-party code): removed with Stealth on, kept with it off,
+                    IE conditional and unrelated comments untouched; the source switches WP_ROCKET_WHITE_LABEL_FOOTPRINT
+                    (a WP Rocket-like page-cache buffer outside Stealth's) and WP_REDIS_DISABLE_COMMENT (a note at
+                    shutdown) with Stealth on and with «Hide that the site runs on WordPress» alone
   t_cli.php         wp scrapelock … μέσα από το πραγματικό wp (χρειάζεται WP_CLI, αλλιώς SKIP)
   t_bunny_rules.php Edge Rules στο Bunny μέσα στα όριά του (το πολύ 5 μοτίβα ανά συνθήκη) με ψεύτικο API που δίνει
                     HTTP 400 όπως το πραγματικό: χωρισμός, κλείδωμα/Remove, rollback, Monitor only, sync, προεπισκόπηση,
