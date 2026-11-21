@@ -171,6 +171,13 @@ ScrapeLock — δοκιμές σε πραγματικό WordPress (όχι stubs)
                     aria-label of a "?" button of its row (keyboard-reachable); the notice of "Apply selected" lists
                     the changes by label, before → after in words; no key in the text of any tab; wp scrapelock wizard
                     still prints the keys
+  t_3123_rules.php  3.12.3: the self-checks send "ScrapeLock-Selftest/<version> (+home)" with the signature (every
+                    check, captured with pre_http_request, and wp scrapelock selfcheck); the server's own addresses in
+                    the generated Nginx geo / Apache conditions (never a CDN edge, an invalid entry or a private range
+                    wider than /24), the block decision 0 for the server; the X-ScrapeLock-Rules header; "Allow AI
+                    search" in the rules; out of date at once after a settings change, fresh with a matching header,
+                    no nag without rules; the notice, Site Health and "See what changed" (nonce, manage_options); the
+                    evaluator ("ScrapeLock's own server rule (fake browser)") against real Nginx when it is on PATH
   t_cli.php         wp scrapelock … μέσα από το πραγματικό wp (χρειάζεται WP_CLI, αλλιώς SKIP)
   t_bunny_rules.php Edge Rules στο Bunny μέσα στα όριά του (το πολύ 5 μοτίβα ανά συνθήκη) με ψεύτικο API που δίνει
                     HTTP 400 όπως το πραγματικό: χωρισμός, κλείδωμα/Remove, rollback, Monitor only, sync, προεπισκόπηση,

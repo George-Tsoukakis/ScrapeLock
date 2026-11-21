@@ -21,6 +21,7 @@
  *    diff view (nonce, manage_options; the text kept by the Server rules tab, or "not known").
  * E. The evaluator: a fake-Chrome request is "ScrapeLock's own server rule (fake browser)" for the self-check, and it
  *    agrees with the generated rules on a table of requests (with real Nginx when `nginx` is on PATH, else SKIP).
+ * D. "Allow AI search": its bots are not in the blocked User-Agents of the rules while it is on, and are while off.
  *
  * Only on a test WordPress.
  */
@@ -835,6 +836,51 @@ if ( '' === $nginx_bin || '' === $openssl || ! function_exists( 'curl_init' ) ) 
 	@rmdir( $dir . '/tmp' );
 	@rmdir( $dir );
 }
+
+/* ---------- D. Allow AI search in the generated rules ---------- */
+
+$ua_req = static function ( $ua ) {
+	return array(
+		'ua'      => $ua,
+		'headers' => array(),
+		'https'   => true,
+		'path'    => '/',
+		'remote'  => VISITOR,
+	);
+};
+$bot_rx = static function () use ( $id ) {
+	$map = PNCP_Rules::nginx_maps()['bad_bot']['entries'];
+	foreach ( $map as $e ) {
+		if ( '1' === $e[1] && '""' !== $e[0] ) {
+			return substr( PNCP_Rules::nginx_unquote( $e[0] ), 2 );
+		}
+	}
+	return '';
+};
+settings( array( 'allow_ai_search' => 1 ) );
+foreach ( PNCP_Options::ai_search_agents() as $agent ) {
+	$ok = ! preg_match( "\x01" . $bot_rx() . "\x01i", 'Mozilla/5.0 (compatible; ' . $agent . '/1.0)' );
+	if ( ! $ok ) {
+		break;
+	}
+}
+t( 'D on: no AI search bot is in the blocked User-Agents of the Nginx rules', $ok, $agent );
+t( 'D on: ChatGPT-User and PerplexityBot pass the rules (Nginx), GPTBot does not', null === PNCP_Rules::evaluate( $ua_req( CHATGPT ) ) && null === PNCP_Rules::evaluate( $ua_req( PERPLEXITY ) ) && 'bad_bot' === ( PNCP_Rules::evaluate( $ua_req( 'Mozilla/5.0 (compatible; GPTBot/1.2)' ) )['rule'] ?? '' ) );
+preg_match( '/^RewriteCond %\{HTTP_USER_AGENT\} (\(.*\)) \[NC\]$/m', PNCP_Rules::apache(), $apache_bots );
+t( 'D on: Apache does not list ChatGPT-User / PerplexityBot among the blocked', isset( $apache_bots[1] ) && ! preg_match( "\x01" . $apache_bots[1] . "\x01i", CHATGPT ) && ! preg_match( "\x01" . $apache_bots[1] . "\x01i", PERPLEXITY ) && preg_match( "\x01" . $apache_bots[1] . "\x01i", 'GPTBot/1.2' ) );
+t( 'D on: Cloudflare blocks only the "AI Crawler" category', false !== strpos( PNCP_Rules::cloudflare()['ai']['expression'], '{"AI Crawler"}' ) );
+settings( array( 'allow_ai_search' => 0 ) );
+t( 'D off: ChatGPT-User and PerplexityBot are blocked by the rules (the built-in list, as in PHP)', 'bad_bot' === ( PNCP_Rules::evaluate( $ua_req( CHATGPT ) )['rule'] ?? '' ) && 'bad_bot' === ( PNCP_Rules::evaluate( $ua_req( PERPLEXITY ) )['rule'] ?? '' ) );
+settings( array( 'bot_list' => 'GPTBot' ) );
+t( 'D off: blocked also when the stored bot list no longer names them', 'bad_bot' === ( PNCP_Rules::evaluate( $ua_req( CHATGPT ) )['rule'] ?? '' ) );
+settings(
+	array(
+		'allow_ai_search' => 1,
+		'bot_list'        => "GPTBot\nChatGPT-User\nPerplexityBot",
+	)
+);
+t( 'D on: not blocked even when the stored bot list still names them', null === PNCP_Rules::evaluate( $ua_req( CHATGPT ) ) && null === PNCP_Rules::evaluate( $ua_req( PERPLEXITY ) ) && false === stripos( (string) $bot_rx(), 'ChatGPT' ) );
+settings( array( 'bot_list' => PNCP_Options::default_bot_list() ) );
 
 wp_delete_user( $sub );
 exit( $fails ? 1 : 0 );
