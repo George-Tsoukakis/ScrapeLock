@@ -17,6 +17,19 @@ defined( 'ABSPATH' ) || exit;
 final class PNCP_Rules {
 
 	/**
+	 * 3.12.3: the request headers in which a proxy passes on the address of the client it forwards. A loopback or
+	 * private address of the server counts as the server itself only when the request carries none of them.
+	 */
+	const FORWARD_HEADERS = array( 'X-Forwarded-For', 'X-Real-IP', 'Forwarded', 'CF-Connecting-IP' );
+
+	/**
+	 * 3.12.3: the key of the Nginx map $pncp_block_<site> ("<the block checks>:<open path>:<self><forwarded>") that
+	 * blocks: a check says so, the path is not open, and the request is not the server's own ("0x" = not one of its
+	 * addresses; "21" = a loopback or private one that a proxy passed on).
+	 */
+	const BLOCK_REGEX = '^[01]*1[01]*:0:(0[01]|21)$';
+
+	/**
 	 * Platforms that load images from your site (hotlinking allowed).
 	 *
 	 * @return string[]
@@ -278,6 +291,87 @@ final class PNCP_Rules {
 	}
 
 	/**
+	 * 3.12.3: the server's own addresses for the server rules, validated: 127.0.0.1, ::1, SERVER_ADDR, the outbound
+	 * addresses the site's signed requests to itself were seen leaving from (detected and learned, PNCP_Server_Ips)
+	 * and SCRAPELOCK_SERVER_IPS, plus the filter pncp_server_ips. Not the addresses the site's name resolves to:
+	 * behind a CDN that ScrapeLock does not know, those are the CDN's, which stands in for every visitor. Never a CDN
+	 * edge, never anything but an IPv4 / IPv6 address or CIDR, never a range wider than /8 (IPv6 /16), and a private
+	 * range no wider than /24 (IPv6 /64). "local" (loopback and private) count only when no proxy passed the request
+	 * on.
+	 *
+	 * @return array{public: string[], local: string[]}
+	 */
+	public static function self_addresses() {
+		$out    = array(
+			'public' => array(),
+			'local'  => array( '127.0.0.1', '::1' ),
+		);
+		$ips    = array( '127.0.0.1', '::1' );
+		$server = isset( $_SERVER['SERVER_ADDR'] ) ? PNCP_Ip::normalize( sanitize_text_field( wp_unslash( $_SERVER['SERVER_ADDR'] ) ) ) : '';
+		if ( '' !== $server ) {
+			$ips[] = $server;
+		}
+		$ips = array_merge( $ips, PNCP_Server_Ips::outbound_ips(), array_keys( PNCP_Server_Ips::stored()['learned'] ), PNCP_Server_Ips::const_ips() );
+		/** This filter is documented in includes/class-pncp-server-ips.php */
+		$ips = apply_filters( 'pncp_server_ips', $ips );
+		foreach ( is_array( $ips ) ? $ips : array() as $range ) {
+			if ( ! is_string( $range ) ) {
+				continue;
+			}
+			$entry = self::self_entry( (string) $range );
+			if ( null !== $entry && ! in_array( $entry[0], $out[ $entry[1] ], true ) ) {
+				$out[ $entry[1] ][] = $entry[0];
+			}
+		}
+		return $out;
+	}
+
+	/**
+	 * 3.12.3: one address or CIDR for the server rules, in canonical form (a CIDR by its network address), with
+	 * its kind; null when it must not be written into a web server's configuration.
+	 *
+	 * @param string $range Address or CIDR.
+	 * @return array{0: string, 1: string}|null The address and "public" or "local".
+	 */
+	public static function self_entry( $range ) {
+		$range = trim( (string) $range );
+		// Only the characters of an address: whatever else reached the list never reaches a configuration file.
+		if ( ! preg_match( '#^[0-9A-Fa-f:.]{2,45}(?:/[0-9]{1,3})?$#', $range ) || ! PNCP_Ip::valid_range( $range ) ) {
+			return null;
+		}
+		$range = PNCP_Options::unmap_range( $range );
+		$parts = explode( '/', $range, 2 );
+		$bin   = @inet_pton( $parts[0] ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged -- Invalid value = false.
+		if ( false === $bin ) {
+			return null;
+		}
+		$bits   = 8 * strlen( $bin );
+		$prefix = isset( $parts[1] ) ? (int) $parts[1] : $bits;
+		if ( $prefix > $bits || PNCP_Options::range_too_wide( $range ) ) {
+			return null;
+		}
+		// The network address: the host bits of a CIDR are cleared (Nginx warns about them otherwise).
+		$net = '';
+		$size = strlen( $bin );
+		for ( $i = 0; $i < $size; $i++ ) {
+			$keep = max( 0, min( 8, $prefix - 8 * $i ) );
+			$net .= chr( ord( $bin[ $i ] ) & ( 0xff << ( 8 - $keep ) ) & 0xff );
+		}
+		$addr = (string) inet_ntop( $net );
+		if ( '0.0.0.0' === $addr || '::' === $addr ) {
+			return null; // The unspecified address: every address, or none.
+		}
+		$local = in_array( $addr, array( '127.0.0.1', '::1' ), true ) || 0 === strpos( $addr, '127.' ) || PNCP_Ip::is_private( $addr );
+		if ( $local && $prefix < ( 32 === $bits ? 24 : 64 ) ) {
+			return null; // A private range wider than one network of the server.
+		}
+		if ( ! $local && PNCP_Ip::is_cdn( $addr ) ) {
+			return null; // A CDN edge stands in for every visitor behind it.
+		}
+		return array( $prefix < $bits ? $addr . '/' . $prefix : $addr, $local ? 'local' : 'public' );
+	}
+
+	/**
 	 * Fingerprint of the rules: the lines without the comments, so a new plugin version with the same rules is
 	 * not reported as out of date.
 	 *
@@ -367,60 +461,52 @@ final class PNCP_Rules {
 	/**
 	 * Nginx, part 1: inside http { } (map for the bots, limit zone).
 	 *
+	 * 3.12.3: the maps come from nginx_maps(), and the server's own addresses
+	 * (self_geo()) are exempt from every block and from the page limit.
+	 *
 	 * @return string
 	 */
 	public static function nginx_http() {
-		$s     = PNCP_Options::get();
-		$lines = array();
-		if ( $s['block_bots'] && self::bots() ) {
-			$lines[] = 'map $http_user_agent $' . self::nv( 'bad_bot' ) . ' {';
+		$s        = PNCP_Options::get();
+		$lines    = array();
+		$volatile = array(); // Lines left out of the fingerprint: the server's addresses (not settings).
+		$maps     = self::nginx_maps();
+		foreach ( $maps as $name => $map ) {
+			$lines[] = 'map ' . $map['key'] . ' $' . self::nv( $name ) . ' {';
 			$lines[] = '    default 0;';
-			if ( self::allowed() ) {
-				$lines[] = '    "~*' . self::nginx_alternation( self::allowed() ) . '" 0;'; // First: it matches first.
-			}
-			$lines[] = '    "~*' . self::nginx_alternation( self::bots() ) . '" 1;';
-			if ( $s['block_empty_ua'] ) {
-				$lines[] = '    "" 1;';
+			foreach ( $map['entries'] as $entry ) {
+				$lines[] = '    ' . $entry[0] . ' ' . $entry[1] . ';';
 			}
 			$lines[] = '}';
 		}
-		if ( ( $s['block_bots'] && self::bots() ) || $s['block_headless'] ) {
-			// robots.txt and llms.txt stay open for every bot: it must be able to read the rules it is asked to follow.
-			$lines[] = 'map $uri $' . self::nv( 'open_path' ) . ' {';
-			$lines[] = '    default 0;';
-			$lines[] = '    "~*^/(robots|llms|llms-full)\.txt$" 1;';
-			$lines[] = '    "~*^/\.well-known/tdmrep\.json$" 1;';
-			$lines[] = '    ' . self::nginx_check_path() . ' 1;';
-			$lines[] = '}';
+		// 3.12.3: the server's own addresses (PNCP_Server_Ips): its requests to itself (the self-checks, cron, cache
+		// preloads) are never blocked by these rules. 1 = a public address of the server; 2 = a loopback or private
+		// one, which counts only when no proxy passed the request on (a proxy on the same machine, e.g. a tunnel,
+		// would otherwise make every visitor "the server").
+		$self    = self::self_addresses();
+		$lines[] = '# The server\'s own addresses: never blocked or limited by these rules (1 = public; 2 = loopback / private,';
+		$lines[] = '# only when no proxy passed the request on). Behind a CDN, Nginx needs real_ip for the public one.';
+		$lines[] = 'geo $' . self::nv( 'self' ) . ' {';
+		$lines[] = '    default 0;';
+		$values  = array(
+			'local'  => '2',
+			'public' => '1',
+		);
+		foreach ( $values as $kind => $value ) {
+			foreach ( $self[ $kind ] as $range ) {
+				$volatile[ count( $lines ) ] = true;
+				$lines[]                     = '    ' . $range . ' ' . $value . ';';
+			}
 		}
-		if ( $s['block_headless'] ) {
-			// Chrome / Edge / Opera 90+ always send Sec-Fetch-Mode and Sec-CH-UA over HTTPS, Firefox 90+ Sec-Fetch-Mode:
-			// a "browser" without them is a script. Android in-app browsers (; wv) and the always-allowed User-Agents pass.
-			$lines[] = 'map "$https|$http_sec_fetch_mode|$http_sec_ch_ua|$http_user_agent" $' . self::nv( 'fake_browser' ) . ' {';
-			$lines[] = '    default 0;';
-			$lines[] = '    "~*^[^|]*\\|[^|]*\\|[^|]*HeadlessChrome" 1;';
-			$lines[] = '    "~; wv\\)" 0;';
-			// Search engines and other bots also write "Chrome/" in their User-Agent and send no browser headers: they
-			// are not fake browsers (WordPress verifies them by IP / DNS). Bot User-Agents name themselves or a URL.
-			$lines[] = '    "~*^[^|]*\\|[^|]*\\|[^|]*\\|.*' . self::nginx_alternation( self::not_fake_browsers() ) . '" 0;';
-			$lines[] = '    "~^on\\|\\|\\|.*\\b(Chrome|Chromium)/(9[0-9]|[1-9][0-9]{2})\\." 1;';
-			$lines[] = '    "~^on\\|\\|[^|]*\\|.*\\bFirefox/(9[0-9]|[1-9][0-9]{2})\\." 1;';
-			$lines[] = '}';
-		}
-		if ( self::private_regexes() ) {
-			// Token for the static feeds: in the URL (cp_token) or in the header. Put your own in place of YOUR_TOKEN.
-			$lines[] = 'map "$arg_cp_token:$http_x_scrapelock_token" $' . self::nv( 'token_ok' ) . ' {';
-			$lines[] = '    default 0;';
-			$lines[] = '    "~^YOUR_TOKEN:" 1;';
-			$lines[] = '    "~:YOUR_TOKEN$" 1;';
-			$lines[] = '}';
-		}
-		$checks = self::nginx_block_vars();
+		$lines[] = '}';
+		$lines[] = 'map "' . self::nginx_forward_key() . '" $' . self::nv( 'fwd' ) . ' { default 1; "" 0; }';
+		$checks  = self::nginx_block_vars();
 		if ( $checks ) {
-			// One variable for the server { } part: blocked when a check says so, except on the open paths.
-			$lines[] = 'map "' . implode( '', $checks ) . ':$' . self::nv( 'open_path' ) . '" $' . self::nv( 'block' ) . ' {';
+			// One variable for the server { } part: blocked when a check says so, except on the open paths and for
+			// the server itself (3.12.3: "0x" = not the server, "21" = a local address passed on by a proxy).
+			$lines[] = 'map "' . implode( '', $checks ) . ':$' . self::nv( 'open_path' ) . ':$' . self::nv( 'self' ) . '$' . self::nv( 'fwd' ) . '" $' . self::nv( 'block' ) . ' {';
 			$lines[] = '    default 0;';
-			$lines[] = '    "~^[01]*1[01]*:0$" 1;';
+			$lines[] = '    "~' . self::BLOCK_REGEX . '" 1;';
 			$lines[] = '}';
 		}
 		$rate = (int) $s['rate_limit'] > 0 ? (int) $s['rate_limit'] : 60;
@@ -441,13 +527,98 @@ final class PNCP_Rules {
 				$lines[] = '    ' . $range . ' 1;';
 			}
 			$lines[] = '}';
-			$lines[] = 'map $' . self::nv( 'limit_exempt' ) . ' $' . self::nv( 'limit_key' ) . ' { 1 ""; default $binary_remote_addr; }';
+			// 3.12.3: the server itself is not counted either. Only where the zone already had this key: Nginx refuses
+			// to reload (the test passes, the reload fails) when the key of an existing zone changes, so a zone keyed
+			// by $binary_remote_addr keeps it.
+			$lines[] = 'map "$' . self::nv( 'limit_exempt' ) . '$' . self::nv( 'self' ) . '$' . self::nv( 'fwd' ) . '" $' . self::nv( 'limit_key' ) . ' { default $binary_remote_addr; "~^1" ""; "~^.(1.|20)$" ""; }';
 			$key     = '$' . self::nv( 'limit_key' );
 		}
 		$lines[] = 'limit_req_zone ' . $key . ' zone=' . self::nv( 'pages' ) . ':10m rate=' . $rate . 'r/m;';
 		// Lets the plugin see that this part is installed and matches the current settings.
-		$lines[] = 'map $host $' . self::nv( 'rules' ) . ' { default "' . self::nginx_hash( $lines ) . '"; }';
+		$lines[] = 'map $host $' . self::nv( 'rules' ) . ' { default "' . self::nginx_hash( array_diff_key( $lines, $volatile ) ) . '"; }';
 		return implode( "\n", $lines ) . "\n";
+	}
+
+	/**
+	 * 3.12.3: the request headers a proxy adds with the address it passes on, as one Nginx string (empty when the
+	 * request came straight from the machine that sent it).
+	 *
+	 * @return string
+	 */
+	private static function nginx_forward_key() {
+		$out = '';
+		foreach ( self::FORWARD_HEADERS as $header ) {
+			$out .= '$http_' . str_replace( '-', '_', strtolower( $header ) );
+		}
+		return $out;
+	}
+
+	/**
+	 * 3.12.3: the maps of part 1 that decide on a request, in order: name (without the site suffix) => the Nginx
+	 * key, the request fields it is made of (joined by "|") and the entries (pattern as written in the
+	 * configuration, value), written by nginx_http().
+	 *
+	 * @return array<string, array{key:string, fields:string[], entries:array<int, array{0:string, 1:string}>}>
+	 */
+	public static function nginx_maps() {
+		$s    = PNCP_Options::get();
+		$maps = array();
+		if ( $s['block_bots'] && self::bots() ) {
+			$entries = array();
+			if ( self::allowed() ) {
+				$entries[] = array( '"~*' . self::nginx_alternation( self::allowed() ) . '"', '0' ); // First: it matches first.
+			}
+			$entries[] = array( '"~*' . self::nginx_alternation( self::bots() ) . '"', '1' );
+			if ( $s['block_empty_ua'] ) {
+				$entries[] = array( '""', '1' );
+			}
+			$maps['bad_bot'] = array(
+				'key'     => '$http_user_agent',
+				'fields'  => array( 'ua' ),
+				'entries' => $entries,
+			);
+		}
+		if ( ( $s['block_bots'] && self::bots() ) || $s['block_headless'] ) {
+			// robots.txt and llms.txt stay open for every bot: it must be able to read the rules it is asked to follow.
+			$maps['open_path'] = array(
+				'key'     => '$uri',
+				'fields'  => array( 'uri' ),
+				'entries' => array(
+					array( '"~*^/(robots|llms|llms-full)\.txt$"', '1' ),
+					array( '"~*^/\.well-known/tdmrep\.json$"', '1' ),
+					array( self::nginx_check_path(), '1' ),
+				),
+			);
+		}
+		if ( $s['block_headless'] ) {
+			// Chrome / Edge / Opera 90+ always send Sec-Fetch-Mode and Sec-CH-UA over HTTPS, Firefox 90+ Sec-Fetch-Mode:
+			// a "browser" without them is a script. Android in-app browsers (; wv) and the always-allowed User-Agents pass.
+			// Search engines and other bots also write "Chrome/" in their User-Agent and send no browser headers: they
+			// are not fake browsers (WordPress verifies them by IP / DNS). Bot User-Agents name themselves or a URL.
+			$maps['fake_browser'] = array(
+				'key'     => '"$https|$http_sec_fetch_mode|$http_sec_ch_ua|$http_user_agent"',
+				'fields'  => array( 'https', 'sec_fetch_mode', 'sec_ch_ua', 'ua' ),
+				'entries' => array(
+					array( '"~*^[^|]*\\|[^|]*\\|[^|]*HeadlessChrome"', '1' ),
+					array( '"~; wv\\)"', '0' ),
+					array( '"~*^[^|]*\\|[^|]*\\|[^|]*\\|.*' . self::nginx_alternation( self::not_fake_browsers() ) . '"', '0' ),
+					array( '"~^on\\|\\|\\|.*\\b(Chrome|Chromium)/(9[0-9]|[1-9][0-9]{2})\\."', '1' ),
+					array( '"~^on\\|\\|[^|]*\\|.*\\bFirefox/(9[0-9]|[1-9][0-9]{2})\\."', '1' ),
+				),
+			);
+		}
+		if ( self::private_regexes() ) {
+			// Token for the static feeds: in the URL (cp_token) or in the header. Put your own in place of YOUR_TOKEN.
+			$maps['token_ok'] = array(
+				'key'     => '"$arg_cp_token:$http_x_scrapelock_token"',
+				'fields'  => array(),
+				'entries' => array(
+					array( '"~^YOUR_TOKEN:"', '1' ),
+					array( '"~:YOUR_TOKEN$"', '1' ),
+				),
+			);
+		}
+		return $maps;
 	}
 
 	/**
@@ -657,8 +828,48 @@ final class PNCP_Rules {
 		$lines[] = '<IfModule mod_rewrite.c>';
 		$lines[] = 'RewriteEngine On';
 		$open    = 'RewriteCond %{REQUEST_URI} !^/(?:(robots|llms|llms-full)\.txt|\.well-known/tdmrep\.json)$ [NC]';
+		// 3.12.3: the server's own addresses are never blocked by the rules below (its self-checks, cron, cache
+		// preloads). A loopback or private address only when no proxy passed the request on: the address and the
+		// forwarding headers together are then just the address.
+		$self    = self::self_addresses();
+		$single  = array(
+			'public' => array(),
+			'local'  => array(),
+		);
+		$cidrs   = array();
+		foreach ( $self as $kind => $ranges ) {
+			foreach ( $ranges as $range ) {
+				if ( false === strpos( $range, '/' ) ) {
+					$single[ $kind ][] = str_replace( '.', '\\.', $range ); // Only digits, hex, dots and colons (self_entry()).
+				} else {
+					$cidrs[] = array( $range, $kind );
+				}
+			}
+		}
+		$forward = '';
+		foreach ( self::FORWARD_HEADERS as $header ) {
+			$forward .= '%{HTTP:' . $header . '}';
+		}
+		$lines[] = '# The server\'s own addresses: never blocked by the rules below (loopback / private ones only when no proxy';
+		$lines[] = '# passed the request on). Behind a CDN, Apache needs mod_remoteip for the public ones.';
+		if ( $single['public'] ) {
+			$lines[] = 'RewriteCond %{REMOTE_ADDR} ^(?:' . implode( '|', $single['public'] ) . ')$ [OR]';
+		}
+		$lines[] = 'RewriteCond %{REMOTE_ADDR}' . $forward . ' ^(?:' . implode( '|', $single['local'] ) . ')$';
+		$lines[] = 'RewriteRule .* - [E=PNCP_SELF:1]';
+		if ( $cidrs ) {
+			// Ranges need Apache 2.4's expressions, which LiteSpeed does not read: there only single addresses count.
+			$lines[] = '<IfModule !LiteSpeed>';
+			foreach ( $cidrs as $i => $cidr ) {
+				$lines[] = 'RewriteCond expr "-R \'' . $cidr[0] . '\'' . ( 'local' === $cidr[1] ? ' && -z \'' . $forward . '\'' : '' ) . '"' . ( $i < count( $cidrs ) - 1 ? ' [OR]' : '' );
+			}
+			$lines[] = 'RewriteRule .* - [E=PNCP_SELF:1]';
+			$lines[] = '</IfModule>';
+		}
+		$not_self = 'RewriteCond %{ENV:PNCP_SELF} !^1$';
 		if ( $s['block_bots'] && self::bots() ) {
 			$lines[] = '# Bots in the list: 403 before the page cache. robots.txt / llms.txt stay open for every bot.';
+			$lines[] = $not_self;
 			$lines[] = $open;
 			if ( self::allowed() ) {
 				$lines[] = 'RewriteCond %{HTTP_USER_AGENT} !' . self::alternation( self::allowed() ) . ' [NC]';
@@ -666,6 +877,7 @@ final class PNCP_Rules {
 			$lines[] = 'RewriteCond %{HTTP_USER_AGENT} ' . self::alternation( self::bots() ) . ' [NC]';
 			$lines[] = 'RewriteRule .* - [F,L]';
 			if ( $s['block_empty_ua'] ) {
+				$lines[] = $not_self;
 				$lines[] = $open;
 				$lines[] = 'RewriteCond %{HTTP_USER_AGENT} ^-?$';
 				$lines[] = 'RewriteRule .* - [F,L]';
@@ -675,6 +887,7 @@ final class PNCP_Rules {
 			$lines[] = '# Fake browsers: Chrome / Edge 90+ without Sec-Fetch-Mode and Sec-CH-UA, Firefox 90+ without Sec-Fetch-Mode (HTTPS only).';
 			$lines[] = '# Search engines and other bots that write "Chrome/" in their User-Agent are not affected.';
 			foreach ( array( 'chrome', 'firefox' ) as $browser ) {
+				$lines[] = $not_self;
 				$lines[] = $open;
 				$lines[] = 'RewriteCond %{HTTPS} =on';
 				$lines[] = 'RewriteCond %{HTTP:Sec-Fetch-Mode} ^$';
