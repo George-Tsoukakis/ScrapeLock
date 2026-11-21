@@ -19,6 +19,7 @@
  *    untouched; the source switches (the WP Rocket-like cache footprint is generic, the Redis-like note gone)
  *    with Stealth on and with "Hide that the site runs on WordPress" alone.
  * U. PNCP_Stealth::without_footprints() on its own: each signature, and what it must leave alone.
+ * T. The texts: "What can never be hidden" and the readme FAQ.
  *
  * Only on a test WordPress.
  */
@@ -253,5 +254,12 @@ foreach ( array_merge( $footers, $keep ) as $name => $comment ) {
 	t( "F Stealth off: the $name comment stays", 1 === count_of( $page, $comment ) );
 }
 t( 'F Stealth off: the Redis-like note and the WP Rocket-like brand footprint stay', 1 === count_of( $page, $redis_note ) && 1 === count_of( $page, $rocket ) );
+
+/* ---------- Texts ---------- */
+
+$src = (string) file_get_contents( PNCP_DIR . 'includes/class-pncp-stealth.php' );
+t( 'T "What can never be hidden" names the comments page-cache plugins add when they store the page', false !== strpos( $src, 'Comments a page-cache plugin adds when it stores the page' ) );
+$readme = (string) file_get_contents( PNCP_DIR . 'readme.txt' );
+t( 'T the readme FAQ mentions the footer comments and script translations', false !== strpos( $readme, 'The footer comments of WP Rocket and Redis Object Cache and the file paths in script translations go too.' ) );
 
 exit( $fails ? 1 : 0 );
