@@ -1,6 +1,6 @@
 <?php
 /**
- * ScrapeLock 3.12.8 — "cdn purge" also empties the cache plugins' page caches.
+ * ScrapeLock 3.12.8 — "cdn purge" also empties the cache plugins' page caches; "cache status" and the constant.
  *
  *   WP_DIR=/path/to/wordpress BASE=http://127.0.0.1:8099 [WP_CLI="wp --path=…"] php t_3128_purge.php
  *
@@ -14,7 +14,12 @@
  *    the fastcgi cache, then the CDN (a fake Bunny API), in that order (output and calls); --no-plugin-cache;
  *    --minify (rocket_clean_minify before rocket_clean_domain; Autoptimize); --minify refused for addresses and
  *    with --no-plugin-cache; addresses; the question names the plugins and nothing runs without an answer; help.
- * T. readme: the plugin caches and --minify.
+ * S. cache status: the ready-made "wp config set … --anchor=… --placement=before" line, whether the constant is
+ *    defined and matches the folder found (or differs, or cannot be compared); the helpers in this process.
+ * W. cache status --save-constant on a temporary copy of wp-config.php (WP_CONFIG_PATH): asks; adds the line
+ *    before wp-settings.php, the site still loads, and status then says it matches; refused when already
+ *    defined, without the anchor line, or for a folder the purge refuses (the file unchanged each time).
+ * T. readme: the anchor variant and the plugin caches.
  *
  * Only on a test WordPress.
  */
@@ -206,10 +211,52 @@ $after_save = call_names();
 update_option( PNCP_OPTION, $opts );
 t( 'P its callers unchanged: saving a setting cached pages depend on empties WP Rocket and the others', $cache_key && ( in_array( 'rocket_clean_domain', $after_save, true ) && in_array( 'w3tc_flush_all', $after_save, true ) ), wp_json_encode( $after_save ) );
 
+/* ---------- S. The helpers ---------- */
+
+$cmd = PNCP_Cli_Server::constant_command(
+	array(
+		array(
+			'path'   => '/data/cache/a',
+			'source' => 'x',
+		),
+	)
+);
+t( 'S the ready-made line: quoted folder, --type=constant, the anchor before wp-settings.php', "wp config set SCRAPELOCK_FASTCGI_CACHE_PATH '/data/cache/a' --type=constant --anchor=\"require_once ABSPATH . 'wp-settings.php';\" --placement=before" === $cmd, $cmd );
+$cmd = PNCP_Cli_Server::constant_command(
+	array(
+		array(
+			'path'   => "/c/it's",
+			'source' => 'x',
+		),
+		array(
+			'path'   => '/c/b',
+			'source' => 'y',
+		),
+	)
+);
+t( 'S several folders comma separated; a quote in a folder name stays one shell word', false !== strpos( $cmd, "'/c/it'\\''s,/c/b'" ), $cmd );
+@mkdir( $tmp . '/real', 0700 );
+@symlink( $tmp . '/real', $tmp . '/link' );
+$d = static function ( ...$paths ) {
+	return array_map(
+		static function ( $p ) {
+			return array(
+				'path'   => $p,
+				'source' => 's',
+			);
+		},
+		$paths
+	);
+};
+t( 'S constant_matches(): order, a trailing slash, a link; not a different folder, not one of two', PNCP_Cli_Server::constant_matches( '/b,/a/', $d( '/a', '/b' ) ) && PNCP_Cli_Server::constant_matches( $tmp . '/link', $d( $tmp . '/real' ) ) && ! PNCP_Cli_Server::constant_matches( '/a', $d( '/c' ) ) && ! PNCP_Cli_Server::constant_matches( '/a', $d( '/a', '/b' ) ) && ! PNCP_Cli_Server::constant_matches( '', $d( '/a' ) ) );
+$good = "<?php\ndefine( 'DB_NAME', 'x' );\ndefine( 'SCRAPELOCK_FASTCGI_CACHE_PATH', '/c/a' );\nrequire_once ABSPATH . 'wp-settings.php';\n";
+t( 'S config_check(): a good file', '' === PNCP_Cli_Server::config_check( $good, '/c/a' ) );
+t( 'S config_check(): a parse error, the line after wp-settings.php, twice, another value', '' !== PNCP_Cli_Server::config_check( $good . 'define( (', '/c/a' ) && '' !== PNCP_Cli_Server::config_check( "<?php\nrequire_once ABSPATH . 'wp-settings.php';\ndefine( 'SCRAPELOCK_FASTCGI_CACHE_PATH', '/c/a' );\n", '/c/a' ) && '' !== PNCP_Cli_Server::config_check( str_replace( "require_once", "define( 'SCRAPELOCK_FASTCGI_CACHE_PATH', '/c/b' );\nrequire_once", $good ), '/c/a' ) && '' !== PNCP_Cli_Server::config_check( $good, '/c/b' ) );
+
 /* ---------- T. readme ---------- */
 
 $readme = (string) file_get_contents( dirname( __DIR__ ) . '/readme.txt' );
-t( 'T readme: the plugin caches, --no-plugin-cache and --minify', false !== strpos( $readme, '--no-plugin-cache' ) && false !== strpos( $readme, '--minify' ) && false !== strpos( $readme, 'then the server\'s fastcgi cache, then the CDN' ) );
+t( 'T readme: the anchor variant of wp config set, --save-constant, the plugin caches and --minify', false !== strpos( $readme, "--type=constant --anchor=\"require_once ABSPATH . 'wp-settings.php';\" --placement=before" ) && false !== strpos( $readme, '--save-constant' ) && false !== strpos( $readme, '--no-plugin-cache' ) && false !== strpos( $readme, '--minify' ) );
 
 /* ---------- C. WP-CLI ---------- */
 
@@ -243,7 +290,7 @@ function cache_tree( $root ) {
 }
 
 if ( '' === $wp_cli ) {
-	echo "note: C skipped without WP_CLI\n";
+	echo "note: C, S (WP-CLI) and W skipped without WP_CLI\n";
 } else {
 	foreach ( array( PNCP_Edge::CONFIG, PNCP_Bunny::CONFIG ) as $name ) {
 		delete_option( $name );
@@ -302,6 +349,81 @@ if ( '' === $wp_cli ) {
 	list( $rc, $out ) = cli( 'cdn --help' );
 	t( 'C cdn --help: --[no-]plugin-cache and --minify', false !== strpos( $out, '--[no-]plugin-cache' ) && false !== strpos( $out, '--minify' ), $out );
 	delete_option( PNCP_Bunny::CONFIG );
+
+	/* ---------- S. cache status (WP-CLI) ---------- */
+
+	$host = PNCP_Edge::site_hosts()[0];
+	$bin  = $tmp . '/bin';
+	@mkdir( $bin );
+	list( $root ) = cache_tree( $tmp . '/fcgi' );
+	$real         = realpath( $root );
+	file_put_contents( $tmp . '/dump.txt', "# configuration file /etc/nginx/nginx.conf:\nhttp {\n fastcgi_cache_path $root levels=1:2 keys_zone=z8:10m;\n server { server_name $host; location / { fastcgi_cache z8; } }\n}\n" );
+	file_put_contents( $bin . '/nginx', "#!/bin/sh\n[ \"\$1\" = \"-T\" ] && cat " . escapeshellarg( $tmp . '/dump.txt' ) . " && exit 0\nexit 1\n" );
+	chmod( $bin . '/nginx', 0755 );
+	$env  = 'PATH=' . escapeshellarg( $bin ) . ':"$PATH"';
+	$line = "wp config set SCRAPELOCK_FASTCGI_CACHE_PATH '" . $real . "' --type=constant --anchor=\"require_once ABSPATH . 'wp-settings.php';\" --placement=before";
+
+	stand_ins( 'rocket' );
+	list( $rc, $out ) = cli( 'cache status', $env );
+	t( 'S status: not defined, the ready-made line with the anchor, why the anchor, --save-constant offered', 0 === $rc && false !== strpos( $out, 'SCRAPELOCK_FASTCGI_CACHE_PATH is not defined.' ) && false !== strpos( $out, $line ) && false !== strpos( $out, 'stop editing!' ) && false !== strpos( $out, '--save-constant' ), $out );
+	stand_ins( 'rocket', $root . '/' );
+	list( $rc, $out ) = cli( 'cache status', $env );
+	t( 'S status: the constant defined with the folder of the Nginx configuration: matches, no line', 0 === $rc && false !== strpos( $out, 'SCRAPELOCK_FASTCGI_CACHE_PATH is defined and matches the folder found.' ) && false === strpos( $out, 'wp config set' ), $out );
+	@mkdir( $tmp . '/elsewhere' );
+	stand_ins( 'rocket', $tmp . '/elsewhere' );
+	list( $rc, $out ) = cli( 'cache status', $env );
+	t( 'S status: the constant names another folder: a warning, and the line with the folder found', 0 === $rc && false !== strpos( $out, 'is defined (' . $tmp . '/elsewhere) but the folder found is ' . $real ) && false !== strpos( $out, $line ), $out );
+	file_put_contents( $tmp . '/none.conf', "http { server { server_name other-3128.example; } }\n" );
+	list( $rc, $out ) = cli( 'cache status --nginx-conf=' . escapeshellarg( $tmp . '/none.conf' ) );
+	t( 'S status: the constant defined, nothing to compare it with: says so', 0 === $rc && false !== strpos( $out, 'the Nginx configuration gave no folder to compare it with' ), $out );
+	list( $rc, $out ) = cli( 'cache purge --all --yes', $env );
+	t( 'S cache purge (constant set): no line printed', 0 === $rc && false === strpos( $out, 'wp config set' ), $out );
+
+	/* ---------- W. --save-constant on a copy of wp-config.php ---------- */
+
+	$config = is_file( $wp_dir . '/wp-config.php' ) ? $wp_dir . '/wp-config.php' : ( is_file( dirname( $wp_dir ) . '/wp-config.php' ) ? dirname( $wp_dir ) . '/wp-config.php' : '' );
+	if ( '' === $config ) {
+		t( 'W the test site\'s wp-config.php found', false );
+	} else {
+		$orig = (string) file_get_contents( $config );
+		$copy = $tmp . '/site/wp-config.php';
+		@mkdir( dirname( $copy ), 0700 );
+		$wenv = $env . ' WP_CONFIG_PATH=' . escapeshellarg( $copy );
+		stand_ins( 'rocket' );
+
+		file_put_contents( $copy, $orig );
+		list( $rc, $out ) = cli( 'cache status --save-constant', $wenv );
+		t( 'W --save-constant without --yes: the trial on a copy passes, asks, the file unchanged', false !== strpos( $out, 'Trial on a copy of ' . realpath( $copy ) . ': passed.' ) && false !== strpos( $out, 'Add it to wp-config.php now?' ) && $orig === file_get_contents( $copy ), $out );
+		list( $rc, $out ) = cli( 'cache status --save-constant --yes', $wenv );
+		$saved            = (string) file_get_contents( $copy );
+		t( 'W --save-constant --yes: added once, before the line that loads wp-settings.php', 0 === $rc && false !== strpos( $out, 'SCRAPELOCK_FASTCGI_CACHE_PATH added to wp-config.php' ) && '' === PNCP_Cli_Server::config_check( $saved, $real ) && strlen( $saved ) > strlen( $orig ), $out );
+		exec( $wenv . ' ' . $wp_cli . ' eval ' . escapeshellarg( 'echo SCRAPELOCK_FASTCGI_CACHE_PATH;' ) . ' < /dev/null 2>&1', $o, $erc );
+		t( 'W the site still loads with it, and the constant has the folder', 0 === $erc && $real === trim( (string) end( $o ) ), implode( ' ', $o ) );
+		list( $rc, $out ) = cli( 'cache status --save-constant --yes', $wenv );
+		t( 'W again: defined and matches, nothing to save, the file unchanged', 0 === $rc && false !== strpos( $out, 'defined and matches' ) && false !== strpos( $out, 'Nothing to save.' ) && $saved === file_get_contents( $copy ), $out );
+		@mkdir( $tmp . '/other' );
+		file_put_contents( $tmp . '/dump.txt', str_replace( $root, $tmp . '/other', (string) file_get_contents( $tmp . '/dump.txt' ) ) );
+		list( $rc, $out ) = cli( 'cache status --save-constant --yes', $wenv );
+		t( 'W the constant defined with another folder: refused (changed by hand), the file unchanged', 0 !== $rc && false !== strpos( $out, 'already defined' ) && $saved === file_get_contents( $copy ), $out );
+		file_put_contents( $tmp . '/dump.txt', str_replace( $tmp . '/other', $root, (string) file_get_contents( $tmp . '/dump.txt' ) ) );
+
+		$no_anchor = str_replace( "require_once ABSPATH . 'wp-settings.php';", 'require_once ABSPATH . "wp-settings.php";', $orig );
+		file_put_contents( $copy, $no_anchor );
+		list( $rc, $out ) = cli( 'cache status --save-constant --yes', $wenv );
+		t( 'W wp-config.php without the anchor line: refused, the file unchanged', 0 !== $rc && false !== strpos( $out, 'has no line' ) && $no_anchor === file_get_contents( $copy ), $out );
+
+		file_put_contents( $copy, $orig );
+		list( $rc, $out ) = cli( 'cache status --save-constant --yes --cache-dir=/', $wenv );
+		t( 'W a folder the purge refuses (/): not saved, the file unchanged', 0 !== $rc && false !== strpos( $out, 'Not saved' ) && $orig === file_get_contents( $copy ), $out );
+		if ( function_exists( 'posix_geteuid' ) && 0 !== posix_geteuid() ) {
+			chmod( $copy, 0444 );
+			list( $rc, $out ) = cli( 'cache status --save-constant --yes', $wenv );
+			chmod( $copy, 0600 );
+			t( 'W wp-config.php not writable: refused, the file unchanged', 0 !== $rc && false !== strpos( $out, 'not writable' ) && $orig === file_get_contents( $copy ), $out );
+		} else {
+			echo "note: W not-writable case skipped as root\n";
+		}
+	}
 }
 
 echo $fails ? "\n$fails FAIL\n" : "\nALL PASS\n";

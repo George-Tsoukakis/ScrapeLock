@@ -1335,6 +1335,12 @@ final class PNCP_Cli {
 	 * that this site's server { } block uses in the Nginx configuration (nginx -T, or --nginx-conf). Only cache
 	 * files whose key names this site's host are deleted; files of other sites stay.
 	 *
+	 * 3.12.8: status says whether the constant is defined and names that folder, and prints the line that adds it:
+	 *
+	 *     wp config set SCRAPELOCK_FASTCGI_CACHE_PATH '<dir>' --type=constant --anchor="require_once ABSPATH . 'wp-settings.php';" --placement=before
+	 *
+	 * (WP-CLI's default anchor, "That's all, stop editing!", is missing in some wp-config.php files.)
+	 *
 	 * ## OPTIONS
 	 *
 	 * [<action>]
@@ -1361,12 +1367,18 @@ final class PNCP_Cli {
 	 * [--dry-run]
 	 * : For purge: count the files, delete nothing.
 	 *
+	 * [--save-constant]
+	 * : 3.12.8, for status: add SCRAPELOCK_FASTCGI_CACHE_PATH with the folder found to wp-config.php (WP-CLI's
+	 * "config set", before the line that loads wp-settings.php), so that the automatic purges empty it too. Only
+	 * when the constant is not defined yet and wp-config.php is writable; tried on a copy first; asks first.
+	 *
 	 * [--yes]
-	 * : With --all: do not ask for confirmation.
+	 * : With --all, or --save-constant: do not ask for confirmation.
 	 *
 	 * ## EXAMPLES
 	 *
 	 *     wp scrapelock cache status
+	 *     wp scrapelock cache status --save-constant
 	 *     wp scrapelock cache purge --all --yes
 	 *     wp scrapelock cache purge / /about/
 	 *     wp scrapelock cache purge --all --dry-run --nginx-conf=/etc/nginx/nginx.conf
