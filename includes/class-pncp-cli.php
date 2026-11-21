@@ -2,7 +2,7 @@
 /**
  * WP-CLI: wp scrapelock status | block | unblock | blocked | emergency | lockdown status | check | log | settings |
  * reputation | crowdsec | ai-referrals (3.7) | attacks | attack-report | login | harden | bunny | stealth (3.8) |
- * wizard (3.11) | traffic (3.12).
+ * wizard (3.11) | traffic (3.12) | cdn (3.12.6).
  * Lockdown cannot be unlocked from here: it opens only with the authenticator app (or SCRAPELOCK_UNLOCK in
  * wp-config.php).
  *
@@ -1158,6 +1158,42 @@ final class PNCP_Cli {
 	 */
 	public function bunny( $args, $assoc_args ) {
 		PNCP_Bunny::cli( $args, $assoc_args );
+	}
+
+	/**
+	 * 3.12.6: purges addresses of this site (or the whole cache) at the CDN, with the plugin's stored credentials:
+	 * the Bunny CDN pull zone and / or the Cloudflare zone. Only addresses on this site's own hosts; the keys are
+	 * never printed. Bunny's and Cloudflare's rate limits are respected as for the other calls.
+	 *
+	 * ## OPTIONS
+	 *
+	 * <action>
+	 * : purge
+	 * ---
+	 * options:
+	 *   - purge
+	 * ---
+	 *
+	 * [<url>...]
+	 * : Addresses of this site, or paths such as /builtwith.txt (on the home address).
+	 *
+	 * [--all]
+	 * : Purge the whole cache instead.
+	 *
+	 * [--yes]
+	 * : With --all: do not ask for confirmation.
+	 *
+	 * ## EXAMPLES
+	 *
+	 *     wp scrapelock cdn purge https://example.com/builtwith.txt
+	 *     wp scrapelock cdn purge /builtwith.txt /robots.txt
+	 *     wp scrapelock cdn purge --all --yes
+	 *
+	 * @param string[]              $args       Arguments.
+	 * @param array<string, string> $assoc_args Options.
+	 */
+	public function cdn( $args, $assoc_args ) {
+		PNCP_Cli_Server::cdn( $args, $assoc_args );
 	}
 
 	/**

@@ -2001,6 +2001,156 @@ final class PNCP_Edge {
 		return $base . substr( $url, strlen( $def ) );
 	}
 
+	/* ---------- Purge (3.12.6) ---------- */
+
+	/**
+	 * 3.12.6: the hosts of this site (home and WordPress addresses), lowercase.
+	 *
+	 * @return string[]
+	 */
+	public static function site_hosts() {
+		$hosts = array();
+		foreach ( array( home_url( '/' ), site_url( '/' ) ) as $url ) {
+			$host = strtolower( (string) wp_parse_url( $url, PHP_URL_HOST ) );
+			if ( '' !== $host ) {
+				$hosts[] = $host;
+			}
+		}
+		return array_values( array_unique( $hosts ) );
+	}
+
+	/**
+	 * 3.12.6: an address of this site to purge: a full http(s) address on one of its hosts, or a path ("/x.txt",
+	 * on the home address). '' when it is not this site's (another host, credentials in it, not http(s)).
+	 *
+	 * @param string $url Address or path.
+	 * @return string The full address, or ''.
+	 */
+	public static function own_url( $url ) {
+		$url = trim( (string) $url );
+		if ( '' === $url || strlen( $url ) > 2048 || preg_match( '/[\x00-\x20\x7f]/', $url ) ) {
+			return '';
+		}
+		if ( '/' === $url[0] && ( ! isset( $url[1] ) || '/' !== $url[1] ) ) {
+			$home = wp_parse_url( home_url( '/' ) );
+			if ( ! is_array( $home ) || empty( $home['host'] ) ) {
+				return '';
+			}
+			$url = ( isset( $home['scheme'] ) ? $home['scheme'] : 'https' ) . '://' . $home['host'] . ( isset( $home['port'] ) ? ':' . $home['port'] : '' ) . $url;
+		}
+		$parts = wp_parse_url( $url );
+		if ( ! is_array( $parts ) || empty( $parts['host'] ) || ! isset( $parts['scheme'] ) || ! in_array( strtolower( $parts['scheme'] ), array( 'http', 'https' ), true )
+			|| isset( $parts['user'] ) || isset( $parts['pass'] ) || isset( $parts['fragment'] ) ) {
+			return '';
+		}
+		return in_array( strtolower( $parts['host'] ), self::site_hosts(), true ) ? $url : '';
+	}
+
+	/**
+	 * 3.12.6: is a Cloudflare zone connected ("Blocking at the CDN" set to Cloudflare, with zone ID and token)?
+	 *
+	 * @return bool
+	 */
+	public static function cloudflare_connected() {
+		$c = self::config();
+		return 'cloudflare' === $c['provider'] && self::usable( $c );
+	}
+
+	/**
+	 * 3.12.6: purges addresses from Cloudflare's cache (purge_cache with files, 30 per call), with the stored
+	 * token. Rate limits and refusals as request() reports them; the token is never in the answer.
+	 *
+	 * @param string[] $urls Addresses of this site.
+	 * @return array{status:string, done:int, message:string}
+	 */
+	public static function purge_urls( $urls ) {
+		$c = self::config();
+		if ( ! self::cloudflare_connected() ) {
+			return array(
+				'status'  => 'none',
+				'done'    => 0,
+				'message' => __( 'No Cloudflare connection is set.', 'scrapelock' ),
+			);
+		}
+		$done = 0;
+		foreach ( array_chunk( array_values( array_unique( array_map( 'strval', (array) $urls ) ) ), 30 ) as $chunk ) {
+			$r = self::request( $c, 'POST', self::CLOUDFLARE_API . '/zones/' . rawurlencode( $c['zone'] ) . '/purge_cache', array( 'files' => $chunk ) );
+			if ( 'ok' !== $r['status'] ) {
+				return array(
+					'status'  => $r['status'],
+					'done'    => $done,
+					'message' => $r['message'],
+				);
+			}
+			$done += count( $chunk );
+		}
+		return array(
+			'status'  => 'ok',
+			'done'    => $done,
+			'message' => '',
+		);
+	}
+
+	/**
+	 * 3.12.6: purges everything from the Cloudflare zone's cache (purge_everything).
+	 *
+	 * @return array{status:string, done:int, message:string}
+	 */
+	public static function purge_all() {
+		$c = self::config();
+		if ( ! self::cloudflare_connected() ) {
+			return array(
+				'status'  => 'none',
+				'done'    => 0,
+				'message' => __( 'No Cloudflare connection is set.', 'scrapelock' ),
+			);
+		}
+		$r = self::request( $c, 'POST', self::CLOUDFLARE_API . '/zones/' . rawurlencode( $c['zone'] ) . '/purge_cache', array( 'purge_everything' => true ) );
+		return array(
+			'status'  => $r['status'],
+			'done'    => 'ok' === $r['status'] ? 1 : 0,
+			'message' => $r['message'],
+		);
+	}
+
+	/**
+	 * 3.12.6: purges at every CDN the plugin has credentials for (Bunny CDN: the pull zone of "Blocking at the CDN"
+	 * or of the Bunny card; Cloudflare: the zone of "Blocking at the CDN"). Only addresses of this site; none
+	 * given with $all false purges nothing.
+	 *
+	 * @param string[] $urls Addresses or paths (own_url()).
+	 * @param bool     $all  Purge everything instead.
+	 * @return array{rows:array<string, array{status:string, done:int, message:string}>, refused:string[]} rows:
+	 *         provider name => result; refused: the addresses that are not this site's (nothing was purged then).
+	 */
+	public static function cdn_purge( $urls, $all = false ) {
+		$out  = array(
+			'rows'    => array(),
+			'refused' => array(),
+		);
+		$good = array();
+		if ( ! $all ) {
+			foreach ( (array) $urls as $url ) {
+				$own = self::own_url( (string) $url );
+				if ( '' === $own ) {
+					$out['refused'][] = (string) $url;
+				} else {
+					$good[] = $own;
+				}
+			}
+			if ( $out['refused'] || ! $good ) {
+				return $out;
+			}
+		}
+		if ( null !== PNCP_Bunny::credentials() ) {
+			$out['rows']['Bunny CDN'] = $all ? PNCP_Bunny::purge_all() : PNCP_Bunny::purge_urls( $good );
+		}
+		if ( self::cloudflare_connected() ) {
+			$out['rows']['Cloudflare'] = $all ? self::purge_all() : self::purge_urls( $good );
+		}
+		return $out;
+	}
+
 	/* ---------- Connection check ---------- */
 
 	/**

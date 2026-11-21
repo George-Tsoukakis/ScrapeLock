@@ -542,6 +542,68 @@ final class PNCP_Bunny {
 		return self::call( $c, 'GET', self::base( 'api' ) . '/pullzone/' . rawurlencode( $c['zone'] ) );
 	}
 
+	/**
+	 * 3.12.6: purges addresses from the pull zone's cache (Bunny's purge API, one call per address), with the
+	 * stored API key. The caller checks that they are this site's (PNCP_Edge::cdn_purge()). Rate limits and
+	 * refusals are kept as call() reports them; the key is never in the answer.
+	 *
+	 * @param string[] $urls Addresses.
+	 * @return array{status:string, done:int, message:string} status: ok, none (no Bunny connection) or call()'s.
+	 */
+	public static function purge_urls( $urls ) {
+		$c = self::credentials();
+		if ( null === $c ) {
+			return array(
+				'status'  => 'none',
+				'done'    => 0,
+				'message' => __( 'No Bunny CDN connection is set.', 'scrapelock' ),
+			);
+		}
+		$done = 0;
+		foreach ( array_values( array_unique( array_map( 'strval', (array) $urls ) ) ) as $url ) {
+			$query = array(
+				'url'   => $url,
+				'async' => 'false',
+			);
+			$r     = self::call( $c, 'POST', self::base( 'api' ) . '/purge?' . http_build_query( $query, '', '&', PHP_QUERY_RFC3986 ) );
+			if ( 'ok' !== $r['status'] ) {
+				return array(
+					'status'  => $r['status'],
+					'done'    => $done,
+					'message' => $r['message'],
+				);
+			}
+			++$done;
+		}
+		return array(
+			'status'  => 'ok',
+			'done'    => $done,
+			'message' => '',
+		);
+	}
+
+	/**
+	 * 3.12.6: purges the whole cache of the pull zone, with the stored API key.
+	 *
+	 * @return array{status:string, done:int, message:string}
+	 */
+	public static function purge_all() {
+		$c = self::credentials();
+		if ( null === $c ) {
+			return array(
+				'status'  => 'none',
+				'done'    => 0,
+				'message' => __( 'No Bunny CDN connection is set.', 'scrapelock' ),
+			);
+		}
+		$r = self::call( $c, 'POST', self::base( 'api' ) . '/pullzone/' . rawurlencode( $c['zone'] ) . '/purgeCache' );
+		return array(
+			'status'  => $r['status'],
+			'done'    => 'ok' === $r['status'] ? 1 : 0,
+			'message' => $r['message'],
+		);
+	}
+
 	/* ---------- State ---------- */
 
 	/**
