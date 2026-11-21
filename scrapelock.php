@@ -43,6 +43,7 @@ spl_autoload_register(
 if ( is_admin() ) {
 	require_once PNCP_DIR . 'includes/class-pncp-admin.php';
 	PNCP_Admin::init();
+	PNCP_Rules_State::init(); // 3.12.3: the notice when the server rules on the server are out of date.
 }
 
 PNCP_Ip::init();
@@ -730,6 +731,8 @@ add_action( 'update_option_' . PNCP_OPTION, 'pncp_settings_changed', 0 );
 add_action( 'update_option_' . PNCP_OPTION, array( 'PNCP_Early', 'sync' ) );
 add_action( 'update_option_' . PNCP_OPTION, array( 'PNCP_Precheck', 'sync' ) );
 add_action( 'update_option_' . PNCP_OPTION, array( 'PNCP_Rules', 'settings_saved' ) );
+// 3.12.3: a setting that changes the server rules marks the installed ones out of date at once.
+add_action( 'update_option_' . PNCP_OPTION, array( 'PNCP_Rules_State', 'settings_changed' ), 20 );
 // The first-week "Monitor only" of a new install ends on its own: hourly, and on the next wp-admin page load.
 add_action( PNCP_Log::CRON, array( 'PNCP_Options', 'end_monitor_trial' ) );
 add_action( 'admin_init', array( 'PNCP_Options', 'end_monitor_trial' ) );

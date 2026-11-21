@@ -14,6 +14,11 @@
  * A. The server's own addresses in the generated Nginx (geo) and Apache rules: the right ones, never a CDN edge,
  *    an invalid entry or a private range wider than needed.
  * B. The block decision is 0 for the server itself (a loopback / private address only without a proxy's header).
+ * C. The fingerprint header: Nginx (only with X-ScrapeLock-Sig) and Apache (mod_headers).
+ * S. Out of date: a settings change marks the rules stale at once; a matching header is fresh; no header on a site
+ *    that never had rules is no nag; the rules of before 3.12.3 (check address only) are seen as installed.
+ * N. The admin notice and Site Health (texts, manage_options, ScrapeLock pages, dismissed per fingerprint) and the
+ *    diff view (nonce, manage_options; the text kept by the Server rules tab, or "not known").
  *
  * Only on a test WordPress.
  */
@@ -331,4 +336,234 @@ foreach ( array( '0:0:00' => 0, '1:0:00' => 1, '01:0:01' => 1, '1:1:00' => 0, '1
 	t( "B the block expression for \"$key\" → $want", ( 1 === preg_match( '#' . PNCP_Rules::BLOCK_REGEX . '#', $key ) ) === (bool) $want );
 }
 
+/* ---------- C. The fingerprint header ---------- */
+
+$srv = PNCP_Rules::nginx_server();
+t( 'C Nginx: the header only for the site\'s own signed requests', false !== strpos( $srv, "set \$pncp_rules_hdr_$id \"\";\nif (\$http_x_scrapelock_sig) { set \$pncp_rules_hdr_$id \"\$pncp_rules_$id " ) && false !== strpos( $srv, "add_header X-ScrapeLock-Rules \$pncp_rules_hdr_$id always;" ) );
+$fp = PNCP_Rules::nginx_fingerprint();
+t( 'C Nginx: the header value is "<http> <server>", the same as the check address answers', 'nginx' === PNCP_Rules_State::format_of( $fp ) && false !== strpos( $srv, '"$pncp_rules_' . $id . ' ' . explode( ' ', $fp )[1] . '"; }' ) && false !== strpos( $srv, 'return 200 "$pncp_rules_' . $id . ' ' . explode( ' ', $fp )[1] . '\n";' ) && false !== strpos( $http, 'map $host $pncp_rules_' . $id . ' { default "' . explode( ' ', $fp )[0] . '"; }' ) );
+t( 'C Nginx: the header lines come before the block (set before any return)', strpos( $srv, 'add_header X-ScrapeLock-Rules' ) < strpos( $srv, 'if ($pncp_block_' ) );
+t( 'C Nginx: the comment tells how add_header is inherited', false !== strpos( $srv, 'a location with add_header' ) );
+$afp = PNCP_Rules::apache_fingerprint();
+t( 'C Apache: Header always set with the fingerprint, only with X-ScrapeLock-Sig, guarded by mod_headers', 'apache' === PNCP_Rules_State::format_of( $afp ) && false !== strpos( $ap, "<IfModule mod_headers.c>\nHeader always set X-ScrapeLock-Rules \"$afp\" \"expr=-n %{HTTP:X-ScrapeLock-Sig}\"\n</IfModule>\n# END ScrapeLock" ) );
+settings( array( 'rate_limit' => (int) PNCP_Options::stored()['rate_limit'] + 1 ) );
+t( 'C another setting, other fingerprints (Nginx and Apache)', PNCP_Rules::nginx_fingerprint() !== $fp );
+settings( array( 'rate_limit' => (int) PNCP_Options::stored()['rate_limit'] - 1 ) );
+settings( array( 'block_empty_ua' => 0 ) );
+t( 'C Apache: another setting, another fingerprint', PNCP_Rules::apache_fingerprint() !== $afp );
+settings( array( 'block_empty_ua' => 1 ) );
+$before = PNCP_Rules::nginx_fingerprint();
+$extra_ips[] = '203.0.113.99';
+t( 'C the server\'s addresses are not settings: another address, the same fingerprint (no "out of date")', PNCP_Rules::nginx_fingerprint() === $before && PNCP_Rules::apache_fingerprint() !== '' && false !== strpos( PNCP_Rules::nginx_http(), '203.0.113.99 1;' ) );
+array_pop( $extra_ips );
+
+
+/* ---------- S. Out of date ---------- */
+
+delete_option( PNCP_Rules_State::STATE );
+delete_transient( 'pncp_nginx_status' );
+$no_rules = static function ( $pre, $args, $url ) {
+	return false !== strpos( $url, '/.well-known/scrapelock-nginx' ) ? array(
+		'headers'  => array(),
+		'body'     => 'not found',
+		'response' => array(
+			'code'    => 404,
+			'message' => 'Not Found',
+		),
+		'cookies'  => array(),
+		'filename' => null,
+	) : $pre;
+};
+add_filter( 'pre_http_request', $no_rules, 5, 3 );
+PNCP_Rules_State::record( '' );
+t( 'S no header on a site that never had rules: no nag', ! PNCP_Rules_State::is_stale() && ! PNCP_Rules_State::in_use() );
+$fp = PNCP_Rules::nginx_fingerprint();
+PNCP_Rules_State::record( $fp );
+$st = PNCP_Rules_State::state();
+t( 'S a matching header: fresh, kept with the time', ! PNCP_Rules_State::is_stale() && PNCP_Rules_State::in_use() && $fp === $st['installed'] && $fp === $st['current'] && 'nginx' === $st['format'] && $st['time'] >= time() - 5 );
+settings( array( 'block_headless' => 0 ) );
+t( 'S a setting that changes the rules: out of date at once, without a self-check', PNCP_Rules_State::is_stale() && PNCP_Rules::nginx_fingerprint() === PNCP_Rules_State::state()['current'] );
+settings( array( 'traffic_days' => (int) PNCP_Options::stored()['traffic_days'] + 1 ) );
+t( 'S a setting the rules do not read: the current fingerprint stays', PNCP_Rules::nginx_fingerprint() === PNCP_Rules_State::state()['current'] );
+settings( array( 'block_headless' => 1 ) );
+t( 'S the setting back: fresh again', ! PNCP_Rules_State::is_stale() );
+PNCP_Rules_State::record( '' );
+t( 'S the header gone while the site uses rules: out of date ("not found")', PNCP_Rules_State::is_stale() && false !== strpos( PNCP_Rules_State::message(), 'installed: not found' ) );
+PNCP_Rules_State::record( $fp );
+remove_filter( 'pre_http_request', $no_rules, 5 );
+
+// The Nginx rules of before 3.12.3 have no header; their check address answers the old fingerprints.
+delete_option( PNCP_Rules_State::STATE );
+set_transient(
+	'pncp_nginx_status',
+	array(
+		'want'  => PNCP_Rules::nginx_fingerprint(),
+		'body'  => 'aaaaaaaaaaaa bbbbbbbbbbbb',
+		'error' => '',
+	),
+	300
+);
+PNCP_Rules_State::record( '' );
+$st = PNCP_Rules_State::state();
+t( 'S rules of before 3.12.3 (check address only): seen as installed, and out of date', PNCP_Rules_State::is_stale() && 'aaaaaaaaaaaa bbbbbbbbbbbb' === $st['installed'] );
+t( 'S the message names both fingerprints and the tab', PNCP_Rules_State::message() === 'The server rules are out of date (installed: aaaaaaaaaaaa bbbbbbbbbbbb, current: ' . PNCP_Rules::nginx_fingerprint() . '). Copy them again from Server rules.', PNCP_Rules_State::message() );
+delete_transient( 'pncp_nginx_status' );
+
+// observe(): only an answer this WordPress gave to that very request counts (not a CDN's cached copy).
+delete_option( PNCP_Rules_State::STATE );
+$sig  = PNCP_Server_Ips::sig_token( 'GET', home_url( '/' ) );
+$rid  = PNCP_Self_Check::request_id( $sig );
+$resp = static function ( $marker, $rules ) {
+	return array(
+		'headers'  => array_filter(
+			array(
+				'x-scrapelock'       => $marker,
+				'x-scrapelock-rules' => $rules,
+			)
+		),
+		'body'     => 'page',
+		'response' => array(
+			'code'    => 200,
+			'message' => 'OK',
+		),
+		'cookies'  => array(),
+		'filename' => null,
+	);
+};
+PNCP_Rules_State::observe( $resp( '', $fp ), $rid );
+t( 'S observe(): an answer WordPress did not mark for this request is ignored', ! PNCP_Rules_State::in_use() );
+PNCP_Rules_State::observe( $resp( PNCP_Self_Check::ok_marker( $rid ), $fp ), $rid );
+t( 'S observe(): this WordPress\'s answer with the header: noted', PNCP_Rules_State::in_use() && ! PNCP_Rules_State::is_stale() );
+PNCP_Rules_State::observe( $resp( PNCP_Self_Check::ok_marker( $rid ), PNCP_Rules::apache_fingerprint() ), $rid );
+t( 'S observe(): an Apache fingerprint is compared with the Apache rules', 'apache' === PNCP_Rules_State::state()['format'] && ! PNCP_Rules_State::is_stale() );
+
+/* ---------- N. Notice, Site Health and the diff ---------- */
+
+$admins = get_users(
+	array(
+		'role'   => 'administrator',
+		'number' => 1,
+	)
+);
+$admin  = $admins[0]->ID;
+$sub    = wp_insert_user(
+	array(
+		'user_login' => 'pncp3123sub' . wp_rand( 1000, 9999 ),
+		'user_pass'  => wp_generate_password(),
+		'role'       => 'subscriber',
+	)
+);
+// Old rules shown in the Server rules tab and copied, then a setting changed.
+settings( array( 'block_empty_ua' => 1 ) );
+PNCP_Rules_State::remember_texts();
+$old_fp   = PNCP_Rules::nginx_fingerprint();
+$old_afp  = PNCP_Rules::apache_fingerprint();
+$old_ap   = PNCP_Rules::apache();
+$old_text = PNCP_Rules::nginx();
+delete_option( PNCP_Rules_State::STATE );
+PNCP_Rules_State::record( $old_fp );
+settings( array( 'block_empty_ua' => 0 ) );
+t( 'N the text of the shown rules is kept under its fingerprint (Nginx and Apache)', PNCP_Rules_State::text_of( 'nginx', $old_fp ) === $old_text && PNCP_Rules_State::text_of( 'apache', $old_afp ) === $old_ap );
+$notice = static function ( $user, $screen ) {
+	wp_set_current_user( $user );
+	set_current_screen( $screen );
+	ob_start();
+	PNCP_Rules_State::notice();
+	return (string) ob_get_clean();
+};
+$html = $notice( $admin, 'dashboard' );
+t( 'N notice: administrator on the dashboard, with the message and "See what changed"', false !== strpos( $html, esc_html( PNCP_Rules_State::message() ) ) && false !== strpos( $html, 'See what changed' ) && false !== strpos( $html, 'pncp_rules_diff=1' ) && false !== strpos( $html, '_wpnonce=' ), $html );
+t( 'N notice: also on ScrapeLock\'s settings page', '' !== $notice( $admin, 'settings_page_' . PNCP_Admin::PAGE ) );
+t( 'N notice: not on other screens (Posts)', '' === $notice( $admin, 'edit-post' ) );
+t( 'N notice: never for a subscriber', '' === $notice( $sub, 'dashboard' ) );
+$st              = PNCP_Rules_State::state();
+$st['dismissed'] = $st['installed'] . '|' . $st['current'];
+update_option( PNCP_Rules_State::STATE, $st, false );
+t( 'N notice: dismissed for these fingerprints', '' === $notice( $admin, 'dashboard' ) );
+settings( array( 'block_headless' => 0 ) );
+t( 'N notice: back with other fingerprints', '' !== $notice( $admin, 'dashboard' ) );
+settings( array( 'block_headless' => 1 ) );
+wp_set_current_user( $admin );
+$ht = PNCP_Rules_State::health_test();
+t( 'N Site Health: "recommended", with the message and the button', 'recommended' === $ht['status'] && 'scrapelock_server_rules' === $ht['test'] && false !== strpos( $ht['description'], esc_html( PNCP_Rules_State::message() ) ) && false !== strpos( $ht['actions'], 'See what changed' ) );
+t( 'N Site Health: the test is registered', isset( PNCP_Health::tests( array() )['direct']['scrapelock_server_rules'] ) );
+wp_set_current_user( $sub );
+t( 'N Site Health: no button without manage_options', '' === PNCP_Rules_State::health_test()['actions'] );
+$diff = static function ( $user, $nonce ) {
+	wp_set_current_user( $user );
+	$_GET = array( PNCP_Rules_State::DIFF => '1' );
+	if ( null !== $nonce ) {
+		$_GET['_wpnonce'] = $nonce;
+	}
+	$out  = PNCP_Rules_State::render_diff();
+	$_GET = array();
+	return $out;
+};
+wp_set_current_user( $admin );
+$good = wp_create_nonce( PNCP_Rules_State::DIFF );
+$d    = $diff( $admin, $good );
+t( 'N diff: a line diff of the installed rules against the current ones', false !== strpos( $d, 'What changed in the server rules' ) && preg_match( '/<table class=["\']diff/', $d ) && false !== strpos( $d, 'Installed' ) && false !== strpos( $d, 'Current' ), substr( $d, 0, 300 ) );
+t( 'N diff: without a valid nonce, nothing is shown', false === strpos( $diff( $admin, 'bad' ), '<table' ) && false === strpos( $diff( $admin, null ), '<table' ) );
+t( 'N diff: never for a subscriber', '' === $diff( $sub, wp_create_nonce( PNCP_Rules_State::DIFF ) ) );
+$st              = PNCP_Rules_State::state();
+$st['installed'] = 'cccccccccccc dddddddddddd';
+update_option( PNCP_Rules_State::STATE, $st, false );
+wp_set_current_user( $admin );
+$d = $diff( $admin, wp_create_nonce( PNCP_Rules_State::DIFF ) );
+t( 'N diff: the installed text unknown: the current rules, and says so', false !== strpos( $d, 'The text of the installed rules is not known' ) && false !== strpos( $d, esc_textarea( PNCP_Rules::nginx() ) ) );
+// The dismissal over HTTP: admin-post with nonce and manage_options.
+$cookies = static function ( $user ) {
+	$expire = time() + HOUR_IN_SECONDS;
+	$token  = WP_Session_Tokens::get_instance( $user )->create( $expire );
+	return array(
+		AUTH_COOKIE      => wp_generate_auth_cookie( $user, $expire, 'auth', $token ),
+		LOGGED_IN_COOKIE => wp_generate_auth_cookie( $user, $expire, 'logged_in', $token ),
+		'cookie_line'    => '',
+		'token'          => $token,
+		'expire'         => $expire,
+	);
+};
+$post = static function ( $user, $nonce ) use ( $base, $cookies ) {
+	$c = $cookies( $user );
+	$_COOKIE[ LOGGED_IN_COOKIE ] = $c[ LOGGED_IN_COOKIE ];
+	wp_set_current_user( $user );
+	$nonce = true === $nonce ? wp_create_nonce( PNCP_Rules_State::DISMISS ) : $nonce;
+	$ch    = curl_init( $base . '/wp-admin/admin-post.php' );
+	curl_setopt_array(
+		$ch,
+		array(
+			CURLOPT_RETURNTRANSFER => true,
+			CURLOPT_POST           => true,
+			CURLOPT_POSTFIELDS     => http_build_query(
+				array(
+					'action'   => PNCP_Rules_State::DISMISS,
+					'_wpnonce' => $nonce,
+				)
+			),
+			CURLOPT_COOKIE         => AUTH_COOKIE . '=' . rawurlencode( $c[ AUTH_COOKIE ] ) . '; ' . LOGGED_IN_COOKIE . '=' . rawurlencode( $c[ LOGGED_IN_COOKIE ] ),
+			CURLOPT_HTTPHEADER     => array( 'User-Agent: ' . BROWSER, 'Accept-Language: en' ),
+			CURLOPT_TIMEOUT        => 30,
+			CURLOPT_PROXY          => '',
+		)
+	);
+	curl_exec( $ch );
+	$code = (int) curl_getinfo( $ch, CURLINFO_HTTP_CODE );
+	curl_close( $ch );
+	wp_cache_delete( PNCP_Rules_State::STATE, 'options' );
+	return $code;
+};
+$st              = PNCP_Rules_State::state();
+$st['dismissed'] = '';
+update_option( PNCP_Rules_State::STATE, $st, false );
+$code = $post( $sub, true );
+t( 'N Dismiss: refused for a subscriber', 403 === $code && '' === PNCP_Rules_State::state()['dismissed'], (string) $code );
+$code = $post( $admin, 'bad' );
+t( 'N Dismiss: refused without a valid nonce', in_array( $code, array( 403, 400 ), true ) && '' === PNCP_Rules_State::state()['dismissed'], (string) $code );
+$code = $post( $admin, true );
+$st   = PNCP_Rules_State::state();
+t( 'N Dismiss: an administrator with the nonce dismisses it for these fingerprints', 302 === $code && $st['installed'] . '|' . $st['current'] === $st['dismissed'], $code . ' ' . wp_json_encode( $st ) );
+wp_set_current_user( 0 );
+settings( array( 'block_empty_ua' => 1 ) );
+
+wp_delete_user( $sub );
 exit( $fails ? 1 : 0 );

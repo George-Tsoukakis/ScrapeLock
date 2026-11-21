@@ -23,6 +23,17 @@ final class PNCP_Rules {
 	const FORWARD_HEADERS = array( 'X-Forwarded-For', 'X-Real-IP', 'Forwarded', 'CF-Connecting-IP' );
 
 	/**
+	 * 3.12.3: the response header with the fingerprint of the installed rules (only for the site's own signed
+	 * requests, which carry X-ScrapeLock-Sig).
+	 */
+	const HASH_HEADER = 'X-ScrapeLock-Rules';
+
+	/**
+	 * 3.12.3: where the fingerprint goes in the lines, before it is known.
+	 */
+	const HASH_SLOT = '{{pncp-hash}}';
+
+	/**
 	 * 3.12.3: the key of the Nginx map $pncp_block_<site> ("<the block checks>:<open path>:<self><forwarded>") that
 	 * blocks: a check says so, the path is not open, and the request is not the server's own ("0x" = not one of its
 	 * addresses; "21" = a loopback or private one that a proxy passed on).
@@ -406,9 +417,7 @@ final class PNCP_Rules {
 	 *                                                               the out-of-date parts (http, server).
 	 */
 	public static function nginx_status( $fresh = false ) {
-		preg_match( '/default "([0-9a-f]+)"/', self::nginx_http(), $http );
-		preg_match( '/ ([0-9a-f]+)\\\\n";/', self::nginx_server(), $server );
-		$want = ( $http[1] ?? '' ) . ' ' . ( $server[1] ?? '' );
+		$want = self::nginx_fingerprint();
 		$key  = 'pncp_nginx_status';
 		$got  = $fresh ? false : get_transient( $key );
 		if ( ! is_array( $got ) || ( $got['want'] ?? '' ) !== $want ) {
@@ -446,6 +455,27 @@ final class PNCP_Rules {
 			$out['state'] = $out['parts'] ? 'stale' : 'current';
 		}
 		return $out;
+	}
+
+	/**
+	 * 3.12.3: the fingerprints of the current Nginx rules as the installed ones report them ("<http> <server>", the
+	 * answer of nginx_check_path() and the header HASH_HEADER).
+	 *
+	 * @return string
+	 */
+	public static function nginx_fingerprint() {
+		preg_match( '/\$' . preg_quote( self::nv( 'rules' ), '/' ) . ' \{ default "([0-9a-f]+)"; \}/', self::nginx_http(), $http );
+		preg_match( '/ ([0-9a-f]+)\\\\n";/', self::nginx_server(), $server );
+		return ( $http[1] ?? '' ) . ' ' . ( $server[1] ?? '' );
+	}
+
+	/**
+	 * 3.12.3: the fingerprint of the current Apache rules (the value of their header HASH_HEADER).
+	 *
+	 * @return string
+	 */
+	public static function apache_fingerprint() {
+		return preg_match( '/^Header always set ' . self::HASH_HEADER . ' "([0-9a-f]+)"/m', self::apache(), $m ) ? $m[1] : '';
 	}
 
 	/**
@@ -649,6 +679,17 @@ final class PNCP_Rules {
 		$uploads = self::uploads_path();
 		$backup  = (string) get_option( 'pncp_backup_dir' );
 		$lines   = array();
+		// 3.12.3: the fingerprint of the installed rules, only in the answers to the site's own signed requests (the
+		// header X-ScrapeLock-Sig; Nginx cannot verify it, but the fingerprint says nothing about the site), so every
+		// self-check sees whether the rules on the server are the current ones. An empty value sends no header.
+		$lines[] = '# The fingerprint of these rules, sent only to ScrapeLock\'s own requests (X-ScrapeLock-Sig): the plugin sees';
+		$lines[] = '# which rules are installed. Nginx uses add_header lines of one level only: a location with add_header';
+		$lines[] = '# lines of its own needs this add_header line too, and add_header lines that nginx.conf has only in';
+		$lines[] = '# http { } must be repeated in this server { } (a server { } with its own add_header ignores them).';
+		$lines[] = 'set $' . self::nv( 'rules_hdr' ) . ' "";';
+		$lines[] = 'if ($http_x_scrapelock_sig) { set $' . self::nv( 'rules_hdr' ) . ' "$' . self::nv( 'rules' ) . ' ' . self::HASH_SLOT . '"; }';
+		$lines[] = 'add_header ' . self::HASH_HEADER . ' $' . self::nv( 'rules_hdr' ) . ' always;';
+		$lines[] = '';
 		if ( self::nginx_block_vars() ) {
 			$lines[] = '# Blocks bots' . ( $s['block_headless'] ? ' and fake browsers' : '' ) . ' BEFORE the page cache (FastCGI cache, WP Rocket, WP Super Cache), also';
 			$lines[] = '# for files that never reach WordPress (e.g. scanners asking for .php files). robots.txt / llms.txt stay open.';
@@ -750,9 +791,16 @@ final class PNCP_Rules {
 		$lines[] = 'location = ' . self::nginx_check_path() . ' {';
 		$lines[] = '    default_type text/plain;';
 		$lines[] = '    add_header Cache-Control "no-store" always;';
-		$lines[] = '    return 200 "$' . self::nv( 'rules' ) . ' ' . self::nginx_hash( $lines ) . '\\n";';
+		$lines[] = '    return 200 "$' . self::nv( 'rules' ) . ' ' . self::HASH_SLOT . '\\n";';
 		$lines[] = '}';
-		return implode( "\n", $lines ) . "\n";
+		// The fingerprint of this part: every line but the two that carry it.
+		$hashed = array();
+		foreach ( $lines as $line ) {
+			if ( false === strpos( $line, self::HASH_SLOT ) ) {
+				$hashed[] = $line;
+			}
+		}
+		return str_replace( self::HASH_SLOT, self::nginx_hash( $hashed ), implode( "\n", $lines ) ) . "\n";
 	}
 
 	/**
@@ -824,6 +872,8 @@ final class PNCP_Rules {
 		$backup  = (string) get_option( 'pncp_backup_dir' );
 		$lines   = array();
 
+		$volatile = array(); // Lines left out of the fingerprint: the server's addresses (not settings).
+
 		$lines[] = '# BEGIN ScrapeLock ' . PNCP_VERSION;
 		$lines[] = '<IfModule mod_rewrite.c>';
 		$lines[] = 'RewriteEngine On';
@@ -853,15 +903,18 @@ final class PNCP_Rules {
 		$lines[] = '# The server\'s own addresses: never blocked by the rules below (loopback / private ones only when no proxy';
 		$lines[] = '# passed the request on). Behind a CDN, Apache needs mod_remoteip for the public ones.';
 		if ( $single['public'] ) {
-			$lines[] = 'RewriteCond %{REMOTE_ADDR} ^(?:' . implode( '|', $single['public'] ) . ')$ [OR]';
+			$volatile[ count( $lines ) ] = true;
+			$lines[]                     = 'RewriteCond %{REMOTE_ADDR} ^(?:' . implode( '|', $single['public'] ) . ')$ [OR]';
 		}
-		$lines[] = 'RewriteCond %{REMOTE_ADDR}' . $forward . ' ^(?:' . implode( '|', $single['local'] ) . ')$';
-		$lines[] = 'RewriteRule .* - [E=PNCP_SELF:1]';
+		$volatile[ count( $lines ) ] = true;
+		$lines[]                     = 'RewriteCond %{REMOTE_ADDR}' . $forward . ' ^(?:' . implode( '|', $single['local'] ) . ')$';
+		$lines[]                     = 'RewriteRule .* - [E=PNCP_SELF:1]';
 		if ( $cidrs ) {
 			// Ranges need Apache 2.4's expressions, which LiteSpeed does not read: there only single addresses count.
 			$lines[] = '<IfModule !LiteSpeed>';
 			foreach ( $cidrs as $i => $cidr ) {
-				$lines[] = 'RewriteCond expr "-R \'' . $cidr[0] . '\'' . ( 'local' === $cidr[1] ? ' && -z \'' . $forward . '\'' : '' ) . '"' . ( $i < count( $cidrs ) - 1 ? ' [OR]' : '' );
+				$volatile[ count( $lines ) ] = true;
+				$lines[]                     = 'RewriteCond expr "-R \'' . $cidr[0] . '\'' . ( 'local' === $cidr[1] ? ' && -z \'' . $forward . '\'' : '' ) . '"' . ( $i < count( $cidrs ) - 1 ? ' [OR]' : '' );
 			}
 			$lines[] = 'RewriteRule .* - [E=PNCP_SELF:1]';
 			$lines[] = '</IfModule>';
@@ -945,6 +998,12 @@ final class PNCP_Rules {
 		}
 		$lines[] = '# Authorization: Bearer reaches PHP with PHP-FPM / CGI too.';
 		$lines[] = 'RewriteRule .* - [E=HTTP_AUTHORIZATION:%{HTTP:Authorization}]';
+		$lines[] = '</IfModule>';
+		// 3.12.3: the fingerprint of these rules, only in the answers to the site's own signed requests (mod_headers).
+		$hashed  = array_diff_key( $lines, $volatile );
+		$lines[] = '# The fingerprint of these rules, sent only to ScrapeLock\'s own requests: the plugin sees which rules are installed.';
+		$lines[] = '<IfModule mod_headers.c>';
+		$lines[] = 'Header always set ' . self::HASH_HEADER . ' "' . self::nginx_hash( $hashed ) . '" "expr=-n %{HTTP:X-ScrapeLock-Sig}"';
 		$lines[] = '</IfModule>';
 		$lines[] = '# END ScrapeLock';
 		return implode( "\n", $lines ) . "\n";

@@ -610,8 +610,10 @@ final class PNCP_Self_Check {
 			$public['pncp_public'] = true; // Never through route_request(): this is the check of the public way.
 			$before                = PNCP_Server_Ips::last_sent();
 			$response              = wp_remote_request( $url, $public );
+			$sent                  = self::sent_since( $before );
 			$class                 = self::answer_class( $response );
-			$steps[]               = self::step( 'public', $url, self::sent_since( $before ), $response, $class, '' );
+			$steps[]               = self::step( 'public', $url, $sent, $response, $class, '' );
+			PNCP_Rules_State::observe( $response, self::request_id( $sent ) );
 			$out['response']       = $response;
 			$out['public']         = $class;
 			if ( ! self::should_retry( $response, $class, $mode ) ) {
@@ -629,8 +631,10 @@ final class PNCP_Self_Check {
 			if ( null === $response ) {
 				break; // Not possible here (no cURL, an address that is not the site's).
 			}
+			$sent    = self::sent_since( $before );
 			$class   = self::answer_class( $response );
-			$steps[] = self::step( 'origin', $url, self::sent_since( $before ), $response, $class, $ip );
+			$steps[] = self::step( 'origin', $url, $sent, $response, $class, $ip );
+			PNCP_Rules_State::observe( $response, self::request_id( $sent ) );
 			if ( is_wp_error( $response ) ) {
 				continue;
 			}
@@ -943,6 +947,9 @@ final class PNCP_Self_Check {
 	 *                              (classification), ok (the public way answered a page), time.
 	 */
 	public static function run() {
+		// 3.12.3: the check address of the Nginx rules (kept 5 minutes), for the rules of before 3.12.3, which send
+		// no fingerprint header (PNCP_Rules_State::record()).
+		PNCP_Rules::nginx_status();
 		$url    = home_url( '/' );
 		$result = self::request(
 			$url,
@@ -1054,6 +1061,10 @@ final class PNCP_Self_Check {
 					'sig'    => isset( $public['sig'] ) ? (string) $public['sig'] : '',
 				)
 			);
+		}
+		// 3.12.3: the installed server rules are not the current ones.
+		if ( PNCP_Rules_State::is_stale() ) {
+			$lines[] = PNCP_Rules_State::message();
 		}
 		return $lines;
 	}

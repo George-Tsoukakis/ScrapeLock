@@ -2654,7 +2654,10 @@ final class PNCP_Admin {
 	 * @param array<string, mixed> $s Settings.
 	 */
 	private static function tab_rules( $s ) { // phpcs:ignore Generic.CodeAnalysis.UnusedFunctionParameter.Found -- Same signature as the other tabs.
-		$pncp_self = PNCP_Rules::self_addresses(); // 3.12.3: the server's own addresses, exempt from the rules.
+		// 3.12.3: the text of the rules shown here is kept under their fingerprint, for "See what changed" later.
+		PNCP_Rules_State::remember_texts();
+		$pncp_self = PNCP_Rules::self_addresses();
+		echo PNCP_Rules_State::render_diff(); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Escaped in PNCP_Rules_State.
 		?>
 		<div class="pncp-intro">
 		<p><?php esc_html_e( 'Generated for this site: they cover cached pages and files PHP never sees. Test on staging first.', 'scrapelock' ); ?></p>
@@ -2746,6 +2749,9 @@ final class PNCP_Admin {
 	private static function render_nginx_status() {
 		// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Only asks the site again; changes nothing.
 		$status = PNCP_Rules::nginx_status( isset( $_GET['pncp_nginx_check'] ) );
+		if ( in_array( $status['state'], array( 'current', 'stale' ), true ) ) {
+			PNCP_Rules_State::from_status(); // 3.12.3: the site uses the Nginx rules; their fingerprint is noted.
+		}
 		$names  = array(
 			'http'   => __( '1) http { }', 'scrapelock' ),
 			'server' => __( '2) server { }', 'scrapelock' ),
