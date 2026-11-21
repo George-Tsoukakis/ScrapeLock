@@ -444,12 +444,31 @@ if ( ! extension_loaded( 'apcu' ) && ! function_exists( 'apcu_enabled' ) ) {
 	PNCP_Breaker::trip( 'precheck_files', 444 );
 	t( 'APCu: η κατάσταση στο APCu, κανένα αρχείο', 'apcu' === PNCP_Breaker::kind() && glob( $tmp . '/breaker/*' ) === $files_before && PNCP_Breaker::open( 'precheck_files' ) );
 	PNCP_Breaker::reset( '', true );
+	$sapis = static function () {
+		return array( PHP_SAPI ); // As PHP-FPM.
+	};
+	add_filter( 'pncp_precheck_apcu_sapis', $sapis );
+	$hc = PNCP_Breaker_Status::health_counters();
+	remove_filter( 'pncp_precheck_apcu_sapis', $sapis );
+	t( 'Site Health «ScrapeLock counters»: APCu ενεργό (στο FPM) → good, «APCu (inferred)»', 'good' === $hc['status'] && false !== strpos( $hc['description'], 'APCu (inferred)' ) && false !== strpos( $hc['label'], 'APCu' ), wp_json_encode( $hc ) );
+	PNCP_Breaker::record_backend( 'redis' );
+	$hc = PNCP_Breaker_Status::health_counters();
+	t( 'record_backend( redis ) από τους μετρητές: Site Health «Redis» χωρίς «inferred», με τη γραμμή του breaker', 'good' === $hc['status'] && false !== strpos( $hc['description'], 'Counters: Redis.' ) && false !== strpos( $hc['description'], 'Circuit breaker: Nothing tripped' ), wp_json_encode( $hc ) );
 	$GLOBALS['pncp_t_apcu'] = array();
 	$GLOBALS['pncp_t_apcu_on'] = false;
 	PNCP_Breaker::forget();
 	PNCP_Breaker::setup( $tmp );
+	PNCP_Breaker::record_backend( 'apcu' );
+	t( 'record_backend(): ποτέ στον δίσκο (store αρχείων)', array() === PNCP_Breaker::recorded_backend() && ! is_file( $tmp . '/breaker/_backend.json' ) );
 } else {
 	echo "skip APCu stub (το APCu υπάρχει)\n";
+}
+if ( ! defined( 'WP_REDIS_HOST' ) && ! defined( 'WP_REDIS_VERSION' ) && ! ( function_exists( 'apcu_enabled' ) && apcu_enabled() ) ) {
+	$hc = PNCP_Breaker_Status::health_counters();
+	t( 'Site Health «ScrapeLock counters»: αρχεία → recommended, «Install APCu or a Redis object cache…»', 'recommended' === $hc['status'] && false !== strpos( $hc['description'], 'Install APCu or a Redis object cache so ScrapeLock never touches the disk' ) && false !== strpos( $hc['description'], 'files (inferred)' ), wp_json_encode( $hc ) );
+	$first = trim( wp_strip_all_tags( (string) preg_replace( '#</p>.*#s', '', $hc['description'] ) ) );
+	t( 'Site Health «ScrapeLock counters»: πρώτη γραμμή ≤ 20 λέξεις', str_word_count( $first ) <= 20, $first );
+	t( 'Site Health: το test «scrapelock_counters» είναι καταχωρημένο', isset( PNCP_Health::tests( array() )['direct']['scrapelock_counters'] ) );
 }
 PNCP_Breaker::$clock   = null;
 PNCP_Breaker::$ms      = array();
@@ -619,16 +638,23 @@ $feature = 'precheck_files'; // The test server is cli-server: APCu (if any) is 
 $sh      = site_health();
 $brk     = $sh['scrapelock_breaker'] ?? array();
 t( 'HTTP → Site Health του server: critical, τι, πόσο, μέχρι πότε, 24ωρο, συμβουλή', 'critical' === ( $brk['status'] ?? '' ) && false !== strpos( (string) $brk['description'], PNCP_Breaker_Status::label( $feature ) ) && false !== strpos( (string) $brk['description'], 'Suspended until' ) && false !== strpos( (string) $brk['description'], 'Tripped 1 time in the last 24 hours' ) && false !== strpos( (string) $brk['description'], 'iowait' ), wp_json_encode( $brk ) );
+$cnt = $sh['scrapelock_counters'] ?? array();
+t( 'HTTP → Site Health «ScrapeLock counters»: files (cli-server) → recommended, με τη γραμμή του breaker', 'recommended' === ( $cnt['status'] ?? '' ) && false !== strpos( (string) $cnt['description'], 'files (inferred)' ) && false !== strpos( (string) $cnt['description'], 'Circuit breaker: ' . $feature . ' suspended until' ), wp_json_encode( $cnt ) );
 if ( '' !== $wp_cli ) {
 	list( $rc, $out ) = cli( 'status --format=json' );
 	$rows  = json_decode( $out, true );
 	$line  = '';
+	$cline = '';
 	foreach ( (array) $rows as $row ) {
 		if ( 0 === strpos( (string) $row['setting'], 'Circuit breaker' ) ) {
 			$line = (string) $row['value'];
 		}
+		if ( 0 === strpos( (string) $row['setting'], 'Counters stored in' ) ) {
+			$cline = (string) $row['value'];
+		}
 	}
 	t( 'wp scrapelock status: «Circuit breaker» ' . $feature . ' suspended until …', 0 === $rc && false !== strpos( $line, $feature . ' suspended until' ), $line ?: $out );
+	t( 'wp scrapelock status: «Counters stored in» με τη σημείωση ότι το WP-CLI δεν βλέπει το APCu', false !== strpos( $cline, 'files (inferred)' ) && false !== strpos( $cline, 'WP-CLI cannot see' ), $cline );
 	$rows = cli_rows();
 	$row  = $rows[ $feature ] ?? array();
 	t( 'wp scrapelock breaker: open, όριο, trips24 = 1, συμβουλή', 'open' === ( $row['state'] ?? '' ) && '1' === (string) $row['trips24'] && false !== strpos( (string) $row['advice'], 'iowait' ), wp_json_encode( $rows ) );

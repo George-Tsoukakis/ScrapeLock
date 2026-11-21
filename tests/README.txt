@@ -304,7 +304,7 @@ ScrapeLock — δοκιμές σε πραγματικό WordPress (όχι stubs)
   t_3129_breaker.php 3.12.9: circuit breaker (PNCP_Breaker): a slow operation (usleep 250 ms, or a threshold of 0.001 ms
                     through the filter for the pre-cache check over HTTP) suspends it for 10 minutes (clock set by the
                     test): skipped meanwhile, back after; the pre-cache check passes without counting (hit()/strike()/
-                    new files) while bans still apply; Site Health («counting and storage speed»),
+                    new files) while bans still apply; Site Health («counting and storage speed», «ScrapeLock counters»),
                     the notice, `wp scrapelock status` / `breaker` / `breaker reset` (with APCu on the test server through
                     WP-CLI's copy and request); 10,000 closed checks < 50 ms; damaged or locked state file (no error,
                     no wait); stores: files, APCu (stub when the extension is missing), use_store(), Redis when

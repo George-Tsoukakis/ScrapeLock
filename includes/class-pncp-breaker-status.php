@@ -351,6 +351,95 @@ final class PNCP_Breaker_Status {
 	}
 
 	/**
+	 * Which backend ScrapeLock's counters use: the one the pre-cache check recorded in the last day
+	 * (PNCP_Breaker::record_backend()), else inferred: phpredis with the WP_REDIS_* constants of a Redis object
+	 * cache, APCu when enabled in this PHP (never seen from WP-CLI), else files.
+	 *
+	 * @return array{kind: string, inferred: bool, cli: bool}
+	 */
+	public static function counters() {
+		$cli  = defined( 'WP_CLI' ) && WP_CLI;
+		$seen = PNCP_Breaker::recorded_backend();
+		if ( $seen && (int) $seen['at'] > time() - DAY_IN_SECONDS && in_array( $seen['kind'], array( 'redis', 'apcu', 'files' ), true ) ) {
+			return array(
+				'kind'     => (string) $seen['kind'],
+				'inferred' => false,
+				'cli'      => $cli,
+			);
+		}
+		$kind = 'files';
+		if ( class_exists( 'Redis', false ) && ( defined( 'WP_REDIS_HOST' ) || defined( 'WP_REDIS_PATH' ) || defined( 'WP_REDIS_SCHEME' ) || defined( 'WP_REDIS_VERSION' ) ) ) {
+			$kind = 'redis';
+		} elseif ( function_exists( 'apcu_enabled' ) && apcu_enabled() && apply_filters( 'pncp_precheck_apcu', true ) && in_array( PHP_SAPI, (array) apply_filters( 'pncp_precheck_apcu_sapis', array( 'fpm-fcgi', 'apache2handler' ) ), true ) ) {
+			// As PNCP_Precheck_Runtime::apcu_usable(): only where APCu is shared by every PHP process.
+			$kind = 'apcu';
+		}
+		return array(
+			'kind'     => $kind,
+			'inferred' => true,
+			'cli'      => $cli,
+		);
+	}
+
+	/**
+	 * The counters' backend in words.
+	 *
+	 * @param array{kind: string, inferred: bool, cli: bool} $counters counters().
+	 * @return string
+	 */
+	public static function counters_text( $counters ) {
+		$names = array(
+			'redis' => 'Redis',
+			'apcu'  => 'APCu',
+			'files' => __( 'files', 'scrapelock' ),
+		);
+		$text = isset( $names[ $counters['kind'] ] ) ? $names[ $counters['kind'] ] : $counters['kind'];
+		if ( $counters['inferred'] ) {
+			$text .= ' ' . __( '(inferred)', 'scrapelock' );
+		}
+		if ( $counters['cli'] && 'files' === $counters['kind'] && $counters['inferred'] ) {
+			$text .= ' — ' . __( 'WP-CLI cannot see PHP-FPM\'s APCu: Site Health shows what the site uses.', 'scrapelock' );
+		}
+		return $text;
+	}
+
+	/**
+	 * Site Health "ScrapeLock counters": good with Redis or APCu, recommended with files; plus the breaker's line.
+	 *
+	 * @return array<string, mixed>
+	 */
+	public static function health_counters() {
+		$counters = self::counters();
+		$memory   = 'files' !== $counters['kind'];
+		$details  = '<p>' . esc_html(
+			sprintf(
+				/* translators: 1: Redis, APCu or files, 2: the circuit breaker's state */
+				__( 'Counters: %1$s. Circuit breaker: %2$s.', 'scrapelock' ),
+				self::counters_text( $counters ),
+				self::info()
+			)
+		) . '</p>';
+		return array(
+			'label'       => $memory
+				/* translators: %s: Redis or APCu */
+				? sprintf( __( 'ScrapeLock counts in memory (%s)', 'scrapelock' ), 'redis' === $counters['kind'] ? 'Redis' : 'APCu' )
+				: __( 'ScrapeLock counts in files on the disk', 'scrapelock' ),
+			'status'      => $memory ? 'good' : 'recommended',
+			'badge'       => array(
+				'label' => __( 'Performance', 'scrapelock' ),
+				'color' => $memory ? 'blue' : 'orange',
+			),
+			'description' => '<p>' . esc_html(
+				$memory
+					? __( 'Visitors\' requests are counted without touching the disk.', 'scrapelock' )
+					: __( 'Install APCu or a Redis object cache so ScrapeLock never touches the disk in visitors\' requests.', 'scrapelock' )
+			) . '</p>' . $details,
+			'actions'     => '',
+			'test'        => 'scrapelock_counters',
+		);
+	}
+
+	/**
 	 * The line of Site Health's info and `wp scrapelock status`.
 	 *
 	 * @return string

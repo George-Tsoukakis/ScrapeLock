@@ -571,6 +571,38 @@ final class PNCP_Breaker {
 		}
 	}
 
+	/**
+	 * The counters' backend the pre-cache check last recorded (record_backend()), or array().
+	 *
+	 * @return array<string, mixed> kind (redis, apcu, files), at.
+	 */
+	public static function recorded_backend() {
+		$seen = self::get( 'backend' );
+		return isset( $seen['kind'], $seen['at'] ) && is_string( $seen['kind'] ) ? $seen : array();
+	}
+
+	/**
+	 * For the counters' code: records the backend it used (redis, apcu, files), for Site Health. Only in a memory
+	 * store (never the disk), and at most once a minute per process: call it freely.
+	 *
+	 * @param string $kind redis, apcu or files.
+	 */
+	public static function record_backend( $kind ) {
+		static $done = array();
+		$now = self::now();
+		if ( ! in_array( self::kind(), array( 'redis', 'apcu', 'custom' ), true ) || ( isset( $done[ $kind ] ) && $done[ $kind ] > $now - 60 ) ) {
+			return;
+		}
+		$done[ $kind ] = $now;
+		self::set(
+			'backend',
+			array(
+				'kind' => (string) $kind,
+				'at'   => $now,
+			)
+		);
+	}
+
 	/* ---------- The store ---------- */
 
 	/**
