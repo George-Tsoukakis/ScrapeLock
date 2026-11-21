@@ -72,6 +72,8 @@ final class PNCP_Rules_Status {
 				'v'    => self::VERSION,
 			) + self::probe_nginx( $want );
 			set_transient( self::NGINX, $got, 5 * MINUTE_IN_SECONDS );
+			// 3.12.6: a fresh check: what the server itself reported (or that it answered without the rules).
+			PNCP_Rules_State::checked( 'nginx', (string) $got['body'], in_array( $got['kind'], array( 'wp', 'nginx' ), true ) );
 		}
 		return self::nginx_of( $got, $want );
 	}
@@ -618,6 +620,7 @@ final class PNCP_Rules_Status {
 				'code'  => 0,
 			);
 			set_transient( self::APACHE, $got, 5 * MINUTE_IN_SECONDS );
+			PNCP_Rules_State::checked( 'apache', (string) $got['body'], 'no_header' === $got['kind'] ); // 3.12.6.
 		}
 		$out  = self::base( $got );
 		$body = trim( (string) ( $got['body'] ?? '' ) );
