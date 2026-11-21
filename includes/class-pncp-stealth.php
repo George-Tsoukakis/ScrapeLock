@@ -1887,7 +1887,100 @@ final class PNCP_Stealth {
 			},
 			$text
 		);
+		$out = is_string( $out ) ? $out : $text;
+		return '' !== $base && false !== strpos( $out, $base ) ? self::code_new_addresses( $out, $state, $home ) : $out;
+	}
+
+	/**
+	 * 3.12.8: the new addresses already in a text (made by an earlier pass, or kept by a plugin from one) get the
+	 * codes of the words they still carry: /assets/<alias>/cache/min/1/wp-content/… becomes …/1/<code>/…, as the
+	 * first pass would have made it. The rest of the address only; the codes in it are left as they are, so a
+	 * second run changes nothing. The server rules turn every code back wherever it is in the address (at most
+	 * twice per word, as here).
+	 *
+	 * @param string               $text  Text.
+	 * @param array<string, mixed> $state State.
+	 * @param string               $home  Home path.
+	 * @return string
+	 */
+	private static function code_new_addresses( $text, $state, $home ) {
+		$words = (array) $state['words'];
+		$map   = (array) $state['map'];
+		if ( ! $words || ! $map ) {
+			return $text;
+		}
+		$sep  = '\\\\?/';
+		$path = '';
+		foreach ( array_filter( explode( '/', $home . (string) $state['base'] ), 'strlen' ) as $segment ) {
+			$path .= $sep . preg_quote( $segment, '~' );
+		}
+		$hosts = array_map(
+			function ( $h ) {
+				return preg_quote( $h, '~' );
+			},
+			self::hosts( true )
+		);
+		$regex = '~(?:(?:https?:)?' . $sep . $sep . '(?:' . implode( '|', $hosts ) . ')|(?<=[\s"\'(=,]))' . $path . $sep . '([0-9a-f]{6})((?:' . $sep . '(?:[^\s"\'<>(),\\\\?#&]|\\\\/)*)?)~';
+		$out   = preg_replace_callback(
+			$regex,
+			function ( $m ) use ( $words, $map ) {
+				if ( ! isset( $map[ $m[1] ] ) || '' === $m[2] ) {
+					return $m[0];
+				}
+				$plain = str_replace( '\\/', '/', $m[2] );
+				$new   = self::encode_left( $plain, $words );
+				if ( $new === $plain || preg_match( '/\.php$/i', $plain ) ) {
+					return $m[0];
+				}
+				if ( false !== strpos( $m[2], '\\/' ) ) {
+					$new = str_replace( '/', '\\/', $new );
+				}
+				return substr( $m[0], 0, strlen( $m[0] ) - strlen( $m[2] ) ) . $new;
+			},
+			$text
+		);
 		return is_string( $out ) ? $out : $text;
+	}
+
+	/**
+	 * 3.12.8: encode_words() for a path that may already hold codes: only the text between the codes changes, and
+	 * a word only while the path then holds it at most twice (coded or not), as the server rules turn it back.
+	 *
+	 * @param string                $path  Path.
+	 * @param array<string, string> $words Code => word.
+	 * @return string
+	 */
+	private static function encode_left( $path, $words ) {
+		$parts = preg_split( '~(' . implode( '|', array_map( 'preg_quote', array_keys( $words ) ) ) . ')~', $path, -1, PREG_SPLIT_DELIM_CAPTURE );
+		if ( ! is_array( $parts ) ) {
+			return $path;
+		}
+		$codes = array();
+		$plain = '';
+		foreach ( $parts as $i => $part ) {
+			if ( 1 === $i % 2 ) {
+				$codes[] = $part;
+			} else {
+				$plain .= $part . '/';
+			}
+		}
+		$counts = array_count_values( $codes );
+		$map    = array();
+		foreach ( $words as $token => $word ) {
+			$n = substr_count( $plain, $word );
+			if ( $n > 0 && $n + ( isset( $counts[ $token ] ) ? $counts[ $token ] : 0 ) <= 2 ) {
+				$map[ $word ] = $token;
+			}
+		}
+		if ( ! $map ) {
+			return $path;
+		}
+		foreach ( $parts as $i => $part ) {
+			if ( 0 === $i % 2 ) {
+				$parts[ $i ] = strtr( $part, $map );
+			}
+		}
+		return implode( '', $parts );
 	}
 
 	/**

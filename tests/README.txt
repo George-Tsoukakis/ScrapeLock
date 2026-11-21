@@ -234,6 +234,12 @@ ScrapeLock — δοκιμές σε πραγματικό WordPress (όχι stubs)
                     (a WP Rocket-like page-cache buffer outside Stealth's) and WP_REDIS_DISABLE_COMMENT (a note at
                     shutdown) with Stealth on and with «Hide that the site runs on WordPress» alone; the texts («What can never
                     be hidden», the readme FAQ)
+  t_3128_stealth_inner.php 3.12.8: the inner wp-content of WP Rocket's minified addresses with Stealth: rewrite() of
+                    the exact shapes (http / https / protocol- and root-relative, ?ver=, href, data-rocket-src,
+                    JSON-escaped) gives the inner code, twice = once; an address already new with the inner word
+                    left (/assets/<alias>/cache/min/1/wp-content/themes/<code>/…, the live shape) gets it from the
+                    next pass, idempotent, a word three times / a PHP file / another host / an unknown alias unchanged,
+                    every address maps back with the Nginx and Apache rules (PCRE, as the server applies them)
   t_cli.php         wp scrapelock … μέσα από το πραγματικό wp (χρειάζεται WP_CLI, αλλιώς SKIP)
   t_bunny_rules.php Edge Rules στο Bunny μέσα στα όριά του (το πολύ 5 μοτίβα ανά συνθήκη) με ψεύτικο API που δίνει
                     HTTP 400 όπως το πραγματικό: χωρισμός, κλείδωμα/Remove, rollback, Monitor only, sync, προεπισκόπηση,
