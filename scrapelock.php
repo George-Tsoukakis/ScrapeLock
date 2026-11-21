@@ -82,6 +82,7 @@ if ( $pncp_backend ) {
 	PNCP_Integrity::init();
 	PNCP_Health::init();
 	PNCP_Wizard::watch(); // 3.12.6: "For my site" notes the settings chosen against its proposals.
+	PNCP_Breaker_Status::init(); // 3.12.9: the circuit breaker's notice, "Resume counting" and hourly tidy-up.
 } else {
 	// The file check's hourly event is kept scheduled while the site is locked (PNCP_Integrity::ensure_cron()).
 	add_action(

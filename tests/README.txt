@@ -301,6 +301,14 @@ ScrapeLock — δοκιμές σε πραγματικό WordPress (όχι stubs)
                     bot, the trap and its ban (in effect at once), an AI referral, Traffic's WordPress rows; the
                     scheduled event (PNCP_Defer::flush()) then writes them to the database; the automatic Emergency
                     Mode starts at once without a query, closes a minute in < 5 ms and is stored by that event
+  t_3129_breaker.php 3.12.9: circuit breaker (PNCP_Breaker): a slow operation (usleep 250 ms, or a threshold of 0.001 ms
+                    through the filter for the pre-cache check over HTTP) suspends it for 10 minutes (clock set by the
+                    test): skipped meanwhile, back after; the pre-cache check passes without counting (hit()/strike()/
+                    new files) while bans still apply; Site Health («counting and storage speed»),
+                    the notice, `wp scrapelock status` / `breaker` / `breaker reset` (with APCu on the test server through
+                    WP-CLI's copy and request); 10,000 closed checks < 50 ms; damaged or locked state file (no error,
+                    no wait); stores: files, APCu (stub when the extension is missing), use_store(), Redis when
+                    phpredis and redis-server exist (a private one on port 16391), Redis down = never the disk
   t_cli.php         wp scrapelock … μέσα από το πραγματικό wp (χρειάζεται WP_CLI, αλλιώς SKIP)
   t_bunny_rules.php Edge Rules στο Bunny μέσα στα όριά του (το πολύ 5 μοτίβα ανά συνθήκη) με ψεύτικο API που δίνει
                     HTTP 400 όπως το πραγματικό: χωρισμός, κλείδωμα/Remove, rollback, Monitor only, sync, προεπισκόπηση,

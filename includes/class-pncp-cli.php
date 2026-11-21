@@ -1666,6 +1666,39 @@ final class PNCP_Cli {
 	}
 
 	/**
+	 * 3.12.9: the circuit breaker: what was too slow (over 200 ms) and is or was suspended, and resuming it.
+	 *
+	 * ## OPTIONS
+	 *
+	 * [<action>]
+	 * : status (default) or reset.
+	 *
+	 * [<feature>]
+	 * : Only this feature (e.g. precheck_files, dns).
+	 *
+	 * [--history]
+	 * : With reset: also clear the history of trips.
+	 *
+	 * [--format=<format>]
+	 * : table, json, csv or yaml.
+	 * ---
+	 * default: table
+	 * ---
+	 *
+	 * ## EXAMPLES
+	 *
+	 *     wp scrapelock breaker
+	 *     wp scrapelock breaker reset
+	 *     wp scrapelock breaker reset precheck_files --history
+	 *
+	 * @param string[]              $args       Arguments.
+	 * @param array<string, string> $assoc_args Options.
+	 */
+	public function breaker( $args, $assoc_args ) {
+		PNCP_Breaker_Status::cli( $args, $assoc_args );
+	}
+
+	/**
 	 * 3.11: "For my site": what the assistant found (plugins, CDN, server) and the settings it proposes, as on the
 	 * first tab of the settings page. Nothing changes without --apply; the settings as they are now are saved
 	 * first ("wp scrapelock settings undo" puts them back).

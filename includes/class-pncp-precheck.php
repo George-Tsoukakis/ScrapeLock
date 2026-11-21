@@ -448,6 +448,13 @@ final class PNCP_Precheck {
 			),
 			// 3.4.3: the stricter limit of visitors who have not passed the human check (see human()).
 			'human'           => self::human( $s ),
+			// 3.12.9: the circuit breaker (PNCP_Breaker): a check slower than "ms" suspends the counters for
+			// "minutes"; its state in this Redis server when there is one (never a password), else APCu or files.
+			'breaker'         => array(
+				'ms'      => PNCP_Breaker::threshold( 'precheck' ),
+				'minutes' => PNCP_Breaker::minutes( 'precheck' ),
+				'redis'   => PNCP_Breaker::wp_redis_config(),
+			),
 		);
 		// 3.12.6: the verification files (PNCP_Verify_Files), path => until: every bot may read them. Absent when
 		// there is none, so config.json stays as it was.

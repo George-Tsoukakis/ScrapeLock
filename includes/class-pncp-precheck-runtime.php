@@ -24,7 +24,8 @@
  * address and User-Agent helpers (client_ip(), normalize_ip(), in_any(), is_local(), ua_listed(), limit_key())
  * repeat PNCP_Ip and PNCP_Bots on purpose. Those need WordPress, and a second file missing during a plugin update
  * would be a fatal error in wp-config.php for every page. A change to one side must be made on the other too
- * (tests/t_fixes351.php and t_311_integration.php send the same requests to both).
+ * (tests/t_fixes351.php and t_311_integration.php send the same requests to both). 3.12.9: the one exception is
+ * the circuit breaker (class-pncp-breaker.php), loaded only when it is there and readable (breaker()).
  *
  * @package ScrapeLock
  */
@@ -168,6 +169,14 @@ final class PNCP_Precheck_Runtime {
 	 * @var string
 	 */
 	public static $self_nonce = '';
+
+	/**
+	 * 3.12.9: the circuit breaker has the counters of this check suspended (PNCP_Breaker): hit() counts nothing,
+	 * strike() records nothing and no new file is created, so the request passes; bans already written still apply.
+	 *
+	 * @var bool
+	 */
+	public static $count_off = false;
 
 	/**
 	 * Called by the line in wp-config.php: reads the configuration from the data folder and runs the check.
@@ -323,10 +332,17 @@ final class PNCP_Precheck_Runtime {
 		if ( ! is_array( $c ) || ! isset( $c['format'] ) || ! in_array( $c['format'], array( 2, 3 ), true ) ) {
 			return;
 		}
+		// 3.12.9: the check is timed; one that took longer than the breaker's threshold (200 ms: a stalled disk or
+		// counter store) suspends the counters for 10 minutes (breaker()).
+		$breaker = 'cli' === PHP_SAPI ? '' : self::breaker( $c );
+		$start   = hrtime( true );
 		try {
 			$verdict = self::verdict( $c, time() );
 		} catch ( Throwable $e ) {
-			return;
+			$verdict = null;
+		}
+		if ( '' !== $breaker ) {
+			PNCP_Breaker::observe( $breaker, hrtime( true ) - $start, 'pre-cache check' );
 		}
 		if ( null === $verdict ) {
 			return;
@@ -357,6 +373,37 @@ final class PNCP_Precheck_Runtime {
 			echo 429 === $code ? 'Too many requests.' : 'Access denied.';
 		}
 		exit;
+	}
+
+	/**
+	 * 3.12.9: loads the circuit breaker (includes/class-pncp-breaker.php, the one other file this check reads: when
+	 * it is missing or broken, e.g. halfway through a plugin update, the check runs without it) and sets
+	 * $count_off. Returns the breaker's name for the counters' store ("precheck_files", "precheck_apcu"), or ''
+	 * when there is nothing to time: no breaker, or already suspended.
+	 *
+	 * @param array<string, mixed> $c Configuration.
+	 * @return string
+	 */
+	public static function breaker( $c ) {
+		self::$count_off = false;
+		try {
+			if ( ! class_exists( 'PNCP_Breaker', false ) ) {
+				$file = __DIR__ . '/class-pncp-breaker.php';
+				if ( ! is_file( $file ) ) {
+					return '';
+				}
+				include_once $file;
+				if ( ! class_exists( 'PNCP_Breaker', false ) ) {
+					return '';
+				}
+			}
+			PNCP_Breaker::setup( (string) $c['dir'], isset( $c['breaker'] ) && is_array( $c['breaker'] ) ? $c['breaker'] : array() );
+			$name            = 'precheck_' . ( self::apcu_usable( $c ) ? 'apcu' : 'files' );
+			self::$count_off = PNCP_Breaker::open( $name );
+			return self::$count_off ? '' : $name;
+		} catch ( Throwable $e ) {
+			return '';
+		}
 	}
 
 	/**
@@ -1550,7 +1597,10 @@ final class PNCP_Precheck_Runtime {
 	public static function hit( $c, $key, $now, $ip = '' ) {
 		self::$shared_hit = false;
 		self::$exact      = true;
-		$minute           = (int) floor( $now / 60 );
+		if ( self::$count_off ) {
+			return 1; // 3.12.9: suspended by the circuit breaker (breaker()).
+		}
+		$minute = (int) floor( $now / 60 );
 		if ( self::apcu_usable( $c ) ) {
 			$name = 'pncp_pc_' . md5( $c['dir'] . '|' . $key . '|' . $minute );
 			apcu_add( $name, 0, 120 );
@@ -1676,6 +1726,9 @@ final class PNCP_Precheck_Runtime {
 	 * @return bool
 	 */
 	public static function new_file_ok( $c, $now, $times = 1 ) {
+		if ( self::$count_off ) {
+			return false; // 3.12.9: suspended by the circuit breaker (breaker()).
+		}
 		$cap = isset( $c['new_files'] ) ? (int) $c['new_files'] : self::NEW_FILES;
 		if ( $cap <= 0 ) {
 			return true;
@@ -1895,7 +1948,7 @@ final class PNCP_Precheck_Runtime {
 	 */
 	public static function strike( $c, $key, $now ) {
 		$needed = (int) $c['ban_strikes'];
-		if ( $needed < 1 ) {
+		if ( $needed < 1 || self::$count_off ) {
 			return false;
 		}
 		if ( '' !== self::store( $c ) ) {

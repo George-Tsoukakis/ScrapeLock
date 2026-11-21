@@ -129,6 +129,11 @@ final class PNCP_Health {
 			'label' => __( 'ScrapeLock server rules', 'scrapelock' ),
 			'test'  => array( 'PNCP_Rules_State', 'health_test' ),
 		);
+		// 3.12.9: the circuit breaker (PNCP_Breaker): what was too slow and is or was suspended.
+		$tests['direct']['scrapelock_breaker'] = array(
+			'label' => __( 'ScrapeLock counting and storage speed', 'scrapelock' ),
+			'test'  => array( 'PNCP_Breaker_Status', 'health_test' ),
+		);
 		$tests['direct']['pncp_bunny']           = array(
 			'label' => __( 'ScrapeLock and Bunny CDN logs', 'scrapelock' ),
 			'test'  => array( 'PNCP_Bunny', 'health_test' ),
@@ -1949,6 +1954,7 @@ final class PNCP_Health {
 			'lockdown'       => array( __( 'Lockdown', 'scrapelock' ), $lock ),
 			'lockdown_roles' => array( __( 'Roles frozen while locked', 'scrapelock' ), implode( ', ', PNCP_Lockdown::frozen_roles() ) ),
 			'lockdown_work'  => array( __( 'Roles that keep their work while locked', 'scrapelock' ), implode( ', ', PNCP_Lockdown::limited_roles() ) ),
+			'breaker'        => array( __( 'Circuit breaker (slow counting suspended)', 'scrapelock' ), PNCP_Breaker_Status::info() ),
 		);
 		// 3.12: Traffic statistics (on / off, the source; while on the rows stored and the days counted).
 		$fields = array_merge( $fields, PNCP_Traffic_Alerts::info_fields() );
