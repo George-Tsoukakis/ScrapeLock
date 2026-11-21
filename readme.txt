@@ -4,7 +4,7 @@ Tags: ai crawlers, anti-scraping, bot protection, rate limit, content protection
 Requires at least: 6.2
 Tested up to: 7.2
 Requires PHP: 7.4
-Stable tag: 3.12.5
+Stable tag: 3.12.6
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -88,7 +88,7 @@ Whatever a visitor sees has already reached their device, so nothing stops a det
 * Presets (Balanced, Strict, Maximum) with undo, settings export and import, and a block log with a 24-hour summary and automatic deletion.
 * **3.7:** visitors from AI assistants (ChatGPT, Perplexity, Claude, Gemini…) per assistant and page, counted on your server without personal data.
 * **Traffic (3.12):** every request, from the Bunny CDN logs, your web server's access log or WordPress itself: User-Agents by family, pages answering 404 or 5xx with the links that lead there, visitors, CSV and email alerts. Kept only in your database; off until you start it.
-* WP-CLI: `wp scrapelock status`, `block`, `unblock`, `blocked`, `emergency`, `log`, `check --ip=<ip>` (what ScrapeLock would answer, without side effects), `settings`, `lockdown status`, `reputation`, `crowdsec`, `ai-referrals`, in 3.8 `attacks`, `attack-report`, `login`, `harden`, `bunny` and `stealth`, and in 3.12 `traffic`.
+* WP-CLI: `wp scrapelock status`, `block`, `unblock`, `blocked`, `emergency`, `log`, `check --ip=<ip>` (what ScrapeLock would answer, without side effects), `settings`, `lockdown status`, `reputation`, `crowdsec`, `ai-referrals`, in 3.8 `attacks`, `attack-report`, `login`, `harden`, `bunny` and `stealth`, in 3.12 `traffic`, and in 3.12.6 `rules`, `cdn` and `verify-file`.
 * Abilities API (WordPress 6.9+) for administrators: read the summary, block or unblock an IP and start Emergency Mode from an AI agent or MCP client. None of them unlocks Lockdown.
 
 = On the page and images =
@@ -340,6 +340,18 @@ Mostly. Turn on Stealth (Vulnerable points tab). Visitors then get neutral addre
 
 Inside the site's server { }, at its top level and above the WordPress rewrite: panels such as aaPanel, BT Panel and CloudPanel put that rewrite at server level (if (!-e $request_filename) { rewrite … }), and it runs before any location. On aaPanel, save them as a file of their own in /www/server/panel/vhost/nginx/extension/<site>/, after scrapelock.conf (the files there are read in alphabetical order), e.g. z-scrapelock-stealth.conf: that folder is included at the top of the site's server { }, before the rewrite include. Then nginx -t, reload, and "Test again" in Stealth. The rules carry a fingerprint: Server rules → Stealth (and Site Health) says whether they are installed and up to date, out of date, or not found, asking the server directly first. After the folder of the addresses changes or a plugin or theme is added, ScrapeLock asks you to copy them again. With WP Rocket, Autoptimize, LiteSpeed Cache or W3 Total Cache, the inner wp-content / wp-includes of their minified and combined files get neutral codes too; the rules map them back by pattern, so files written after "Clear cache" keep working.
 
+= Can WP-CLI install the server rules for me (aaPanel)? =
+
+Yes (3.12.6). `wp scrapelock rules show --part=nginx-http` (or `nginx-server`, `stealth-nginx`, `stealth-apache`, `apache`) prints a part exactly as the Server rules tab shows it. `wp scrapelock rules status` says whether the installed rules are current, out of date or not found, how the server was asked and both fingerprints (`--format=json` too). `wp scrapelock rules install` writes only the files you name: each one first as `<file>.new`, shows the diff, keeps the old file as `<file>.old`, runs `nginx -t`, reloads, removes the `.old` files and prints the status; when the test or the reload fails, every file is put back as it was. `--dry-run` only shows the diff. On aaPanel, as root, with `<site>` the site's folder name and `<id>` the name of part 1's file:
+
+`wp --allow-root --skip-themes scrapelock rules install --nginx-http=/www/server/panel/vhost/nginx/0.scrapelock-<id>.conf --nginx-server=/www/server/panel/vhost/nginx/extension/<site>/scrapelock.conf --stealth=/www/server/panel/vhost/nginx/extension/<site>/z-scrapelock-stealth.conf --dry-run`
+
+Then the same without `--dry-run` (add `--yes` to skip the question). Nginx files must end in .conf, Apache files be .htaccess (only ScrapeLock's block is replaced) or end in .conf; a symlink is written through only into its own folder, and a leftover .old stops it. If nginx is not on the PATH, give `--test-cmd="/www/server/nginx/sbin/nginx -t" --reload-cmd="/www/server/nginx/sbin/nginx -s reload"`: these two run through the shell exactly as typed. It never runs from a web request, and not while the site is locked. `wp scrapelock cdn purge <address>…` (or `--all --yes`) purges this site's addresses at Bunny CDN and Cloudflare with the keys stored in ScrapeLock, which are never printed; addresses of other hosts are refused.
+
+= A service asks me to put a file on my site to verify it. The bot list blocks it. =
+
+Use Server rules → Verification files, or `wp scrapelock verify-file add /builtwith.txt --content=<the code>`. The file (one name at the root, e.g. /builtwith.txt, /google<code>.html, /BingSiteAuth.xml, or a name under /.well-known/; text only, at most 64 KB) is served by WordPress to every bot, also to one the bot list or "Block technology profilers" blocks, for 24 hours (1 to 168), then removed. It is purged at your CDN when added and when removed, and robots.txt lets the blocked bots read it. Server rules that block bots (Nginx part 1, Apache) let it through once you copy them again (or `wp scrapelock rules install`); their fingerprint does not change for it. "Also write it to the site's root folder" is only needed when the server answers that address without WordPress; it never replaces a file that is there. An HTML or XML file with markup needs the unfiltered_html capability.
+
 = Does a REST API list count more toward the REST limit? =
 
 Yes (3.5): an anonymous request for a long list from the REST API (posts, pages, products) counts 2 above 20 items per page, 3 above 50. Lists of up to 20 items and logged-in users count as before, and the WooCommerce cart and checkout are not counted. JSON 429 answers (REST API, GraphQL, cart) also carry `retry_after`, the seconds of their Retry-After header.
@@ -386,6 +398,18 @@ No, on purpose: only an app code, a recovery code or the SCRAPELOCK_UNLOCK line 
 6. Dashboard widget with the protection status and the last 24 hours.
 
 == Changelog ==
+
+= 3.12.6 =
+* New: Stealth with WP Rocket, Autoptimize, LiteSpeed Cache and W3 Total Cache: the inner wp-content / wp-includes of their minified and combined files (e.g. WP Rocket's cache/min/1/wp-content/themes/…) get neutral codes too, also in their stored pages. The rules map them back by pattern, so files written after "Clear cache" keep working. Copy the Stealth rules again.
+* New: the Stealth rules carry a fingerprint of their own. Server rules → Stealth (and Site Health) say whether they are installed and up to date, out of date, from before 3.12.6, or not found, asking the server directly first; after a change of the folder of the addresses or a new plugin or theme folder, a notice asks to copy them again. The aaPanel place: a file of its own in extension/<site>/ after scrapelock.conf, e.g. z-scrapelock-stealth.conf.
+* New: `wp scrapelock rules show | status | install` (install writes only the files named: .new, diff, .old, nginx -t, reload, everything put back on failure) and `wp scrapelock cdn purge <address>… | --all` with the stored Bunny CDN and Cloudflare keys (never printed).
+* New: Verification files (Server rules, and `wp scrapelock verify-file`): a file a service asks for to verify the site (/builtwith.txt, /google….html, /BingSiteAuth.xml, /.well-known/…), served to every bot for a few hours, purged at the CDN, allowed in robots.txt, then removed.
+* New: "Block technology profilers (BuiltWith, Wappalyzer, WhatCMS…)" on the Bots tab, off by default, with an updatable list (filter `pncp_tech_profiler_agents`). "For my site" proposes it (not ticked) when such names are in the bot list, and removes those lines.
+* New: "For my site": "Dismiss" per proposal (it comes back only when the setting or the proposal changes), "Show dismissed" with "Restore", and "you chose this" next to a value you set against a proposal. `wp scrapelock wizard dismiss | restore <setting>`.
+* Fix: the notice "The server rules are out of date (installed: not found, …)" right after saving the Bots tab although part 2 was installed. "Installed" is what the server last reported; "not found" only after a second check a few seconds later; when only part 1 or part 2 differs, the notice names it.
+* Fix: a verification file refuses every PHP or ASP opening tag; deactivation removes the verification files; uninstall removes the new options and events.
+* Change: the note under "Addresses that do not exist" (Log tab) is one line, the rest under "More".
+* Greek translation of the new texts.
 
 = 3.12.5 =
 * New: "Blur the page on screenshot shortcuts" (On the page) has "Applies to: Everyone / Only visitors who are not signed in". Everyone is the default and what every existing site keeps. With the second choice signed-in members can take screenshots; staff in "Who is excluded" never get the blur, as before.
@@ -566,6 +590,9 @@ No, on purpose: only an app code, a recovery code or the SCRAPELOCK_UNLOCK line 
 The changes of 3.5.0 and earlier versions are in changelog.txt in the plugin folder.
 
 == Upgrade Notice ==
+
+= 3.12.6 =
+Copy the server rules and the Stealth rules again (Settings → ScrapeLock → Server rules, then nginx -t and reload), or use `wp scrapelock rules install`: the Stealth rules now carry a fingerprint and cover WP Rocket's minified files. "Block technology profilers" starts off. Settings are kept.
 
 = 3.12.5 =
 The screenshot blur can now apply only to visitors who are not signed in (On the page → Applies to). Existing sites keep "Everyone". Settings are kept.
