@@ -198,6 +198,9 @@ ScrapeLock — δοκιμές σε πραγματικό WordPress (όχι stubs)
                     the same value pair keeps it dismissed: the owner's blur_on_capture / block_devtools case); «you
                     chose this» after a dismiss or a save of other values; one small option, not autoloaded;
                     wp scrapelock wizard dismiss / restore / --include-dismissed
+  t_3126_integration.php 3.12.6: how the parts fit together: «Block technology profilers» on and a BuiltWith
+                    verification file (200 for BuiltWith in WordPress, early and pre-cache checks, 403 elsewhere;
+                    robots.txt «Allow: /builtwith.txt» before «Disallow: /»)
   t_cli.php         wp scrapelock … μέσα από το πραγματικό wp (χρειάζεται WP_CLI, αλλιώς SKIP)
   t_bunny_rules.php Edge Rules στο Bunny μέσα στα όριά του (το πολύ 5 μοτίβα ανά συνθήκη) με ψεύτικο API που δίνει
                     HTTP 400 όπως το πραγματικό: χωρισμός, κλείδωμα/Remove, rollback, Monitor only, sync, προεπισκόπηση,

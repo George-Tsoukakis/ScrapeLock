@@ -3343,6 +3343,14 @@ final class PNCP_Bots {
 			$star[] = 'Content-Signal: search=yes, ai-input=' . ( empty( $s['allow_ai_search'] ) ? 'no' : 'yes' ) . ', ai-train=no';
 		}
 		$output = $star ? self::add_to_star_group( $output, $star ) : $output;
+		// 3.12.6: each group below asks its bots to stay away from the whole site, but an open verification file
+		// (PNCP_Verify_Files) is for exactly such a bot (BuiltWith reads /builtwith.txt): an Allow line for it, the
+		// longer rule, which wins over "Disallow: /" (RFC 9309).
+		$disallow = '';
+		foreach ( array_keys( class_exists( 'PNCP_Verify_Files' ) ? PNCP_Verify_Files::paths() : array() ) as $open ) {
+			$disallow .= 'Allow: ' . $open . "\n";
+		}
+		$disallow .= "Disallow: /\n";
 
 		if ( ! empty( $s['robots_ai_block'] ) ) {
 			$block  = "\n# ScrapeLock: AI crawlers\n";
@@ -3353,14 +3361,14 @@ final class PNCP_Bots {
 				}
 				$block .= 'User-agent: ' . $agent . "\n";
 			}
-			$output = rtrim( $output ) . "\n" . $block . "Disallow: /\n";
+			$output = rtrim( $output ) . "\n" . $block . $disallow;
 		}
 		if ( ! empty( $s['block_archivers'] ) ) {
 			$block = "\n# ScrapeLock: web archives\n";
 			foreach ( self::archive_agents() as $agent ) {
 				$block .= 'User-agent: ' . $agent . "\n";
 			}
-			$output = rtrim( $output ) . "\n" . $block . "Disallow: /\n";
+			$output = rtrim( $output ) . "\n" . $block . $disallow;
 		}
 		// 3.7: SEO and marketing data crawlers, and the site rippers that read robots.txt at all.
 		if ( ! empty( $s['block_seo_crawlers'] ) ) {
@@ -3368,7 +3376,7 @@ final class PNCP_Bots {
 			foreach ( self::seo_agents() as $agent ) {
 				$block .= 'User-agent: ' . $agent . "\n";
 			}
-			$output = rtrim( $output ) . "\n" . $block . "Disallow: /\n";
+			$output = rtrim( $output ) . "\n" . $block . $disallow;
 		}
 		// 3.12.6: technology profilers, as the SEO data crawlers above.
 		if ( ! empty( $s['block_tech_profilers'] ) ) {
@@ -3376,7 +3384,7 @@ final class PNCP_Bots {
 			foreach ( self::tech_profiler_agents() as $agent ) {
 				$block .= 'User-agent: ' . $agent . "\n";
 			}
-			$output = rtrim( $output ) . "\n" . $block . "Disallow: /\n";
+			$output = rtrim( $output ) . "\n" . $block . $disallow;
 		}
 		return $output;
 	}
