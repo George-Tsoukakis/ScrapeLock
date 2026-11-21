@@ -2,7 +2,7 @@
 /**
  * WP-CLI: wp scrapelock status | block | unblock | blocked | emergency | lockdown status | check | log | settings |
  * reputation | crowdsec | ai-referrals (3.7) | attacks | attack-report | login | harden | bunny | stealth (3.8) |
- * wizard (3.11) | traffic (3.12) | cdn (3.12.6).
+ * wizard (3.11) | traffic (3.12) | rules, cdn (3.12.6).
  * Lockdown cannot be unlocked from here: it opens only with the authenticator app (or SCRAPELOCK_UNLOCK in
  * wp-config.php).
  *
@@ -1158,6 +1158,75 @@ final class PNCP_Cli {
 	 */
 	public function bunny( $args, $assoc_args ) {
 		PNCP_Bunny::cli( $args, $assoc_args );
+	}
+
+	/**
+	 * 3.12.6: the server rules: print a part exactly as the Server rules tab shows it, check whether the installed
+	 * ones are current, or install them into the files you name (test, reload, put back on failure).
+	 *
+	 * "install" writes <file>.new, shows a unified diff, keeps the current file as <file>.old, puts the new one in
+	 * place, runs the test (nginx -t; for a .conf of Apache apachectl -t; for a .htaccess a request of the home
+	 * page) and the reload (nginx -s reload, else systemctl reload nginx; apachectl -k graceful), then removes the
+	 * .old files and prints the status. When the test or the reload fails, every file is put back from its .old and
+	 * the command exits with an error and the test's output. Nothing is guessed: only the files named are written,
+	 * Nginx files must end in .conf, Apache files be .htaccess or end in .conf, a symlink must point into its own
+	 * folder. An unchanged file is skipped. Only from WP-CLI; never while the site is locked.
+	 *
+	 * ## OPTIONS
+	 *
+	 * [<action>]
+	 * : status (default), show or install.
+	 *
+	 * [--part=<part>]
+	 * : For show: nginx-http, nginx-server, stealth-nginx, stealth-apache or apache.
+	 *
+	 * [--nginx-http=<file>]
+	 * : For install: the file of Nginx part 1 (inside http { }).
+	 *
+	 * [--nginx-server=<file>]
+	 * : For install: the file of Nginx part 2 (inside the site's server { }).
+	 *
+	 * [--stealth=<file>]
+	 * : For install: the file of the Stealth rules for Nginx (inside the site's server { }, after part 2).
+	 *
+	 * [--apache=<file>]
+	 * : For install: the .htaccess (only ScrapeLock's block is replaced, or added above # BEGIN WordPress) or a .conf.
+	 *
+	 * [--stealth-apache=<file>]
+	 * : For install: the .htaccess (or .conf) for the Stealth rules for Apache.
+	 *
+	 * [--dry-run]
+	 * : For install: show the diff only; nothing is changed.
+	 *
+	 * [--test-cmd=<command>]
+	 * : For install: the test command instead of the default (e.g. "/www/server/nginx/sbin/nginx -t").
+	 *
+	 * [--reload-cmd=<command>]
+	 * : For install: the reload command instead of the default (e.g. "systemctl reload nginx").
+	 *
+	 * [--yes]
+	 * : For install: do not ask for confirmation.
+	 *
+	 * [--server=<server>]
+	 * : For status: nginx or apache (default: the server the rules were seen on).
+	 *
+	 * [--format=<format>]
+	 * : For status: table (default), json, csv or yaml.
+	 *
+	 * ## EXAMPLES
+	 *
+	 *     wp scrapelock rules show --part=nginx-http > /etc/nginx/conf.d/scrapelock.conf.new
+	 *     wp scrapelock rules status
+	 *     wp scrapelock rules status --format=json
+	 *     wp scrapelock rules install --nginx-http=/etc/nginx/conf.d/scrapelock.conf --nginx-server=/etc/nginx/snippets/scrapelock-site.conf --dry-run
+	 *     wp scrapelock rules install --nginx-http=/www/server/panel/vhost/nginx/0.scrapelock-example_com.conf --nginx-server=/www/server/panel/vhost/nginx/extension/example.com/scrapelock.conf --stealth=/www/server/panel/vhost/nginx/extension/example.com/z-scrapelock-stealth.conf --yes
+	 *     wp scrapelock rules install --apache=/var/www/html/.htaccess
+	 *
+	 * @param string[]              $args       Arguments.
+	 * @param array<string, string> $assoc_args Options.
+	 */
+	public function rules( $args, $assoc_args ) {
+		PNCP_Cli_Server::rules( $args, $assoc_args );
 	}
 
 	/**

@@ -1,9 +1,19 @@
 <?php
 /**
- * ScrapeLock 3.12.6 — WP-CLI for the server: wp scrapelock cdn purge (C).
+ * ScrapeLock 3.12.6 — WP-CLI for the server: wp scrapelock rules show | status | install, cdn purge.
  *
  *   WP_DIR=/path/to/wordpress BASE=http://127.0.0.1:8099 WP_CLI="wp --path=…" php t_3126_cli.php
  *
+ * S. rules show: each part exactly as the Server rules tab shows it, kept as "shown" (3.12.3 diff store).
+ * T. rules status: the fields (state, parts, via, installed, current), JSON, an unknown --server.
+ * I. rules install: only the files named, .conf / .htaccess only, no "..", no symlink out of its folder, no
+ *    leftover .old; --dry-run; an unchanged file skipped; the test failing (--test-cmd=false) or the reload
+ *    failing puts every file back byte for byte; the default commands (nginx -t, nginx -s reload, then
+ *    systemctl reload nginx) found on PATH (fake programs); no answer to the question changes nothing; a symlink
+ *    into its own folder is written through; .htaccess: only ScrapeLock's block, above # BEGIN WordPress; the
+ *    token of the static feeds kept from the installed file and never printed; the CLI class refuses a web request.
+ * R. Real Nginx (SKIP without nginx on PATH): install into a temporary prefix, nginx -t, reload, the check address
+ *    answers the new fingerprints; part 2 put where nginx -t fails: put back, the running rules unchanged.
  * C. cdn purge: with fake Bunny and Cloudflare APIs (a temporary mu-plugin, so that WP-CLI, another process, talks
  *    to them): one address, a path on the home address, several, --all (only with --yes), an address of another
  *    host (nothing purged), Bunny's 429 and Cloudflare's refusal (the other CDN still purged, exit code 1), no
@@ -123,6 +133,224 @@ function mock_calls() {
 	wp_cache_delete( 'pncp_test_3126_cdn', 'options' );
 	$db = get_option( 'pncp_test_3126_cdn' );
 	return is_array( $db ) ? $db['calls'] : array();
+}
+
+/* ---------- S. rules show ---------- */
+
+$tmp = sys_get_temp_dir() . '/pncp-t3126-cli-' . getmypid();
+wp_mkdir_p( $tmp );
+register_shutdown_function(
+	static function () use ( $tmp ) {
+		exec( 'rm -rf ' . escapeshellarg( $tmp ) );
+	}
+);
+delete_option( PNCP_Rules_State::TEXTS );
+$texts = array(
+	'nginx-http'     => PNCP_Rules::nginx_http(),
+	'nginx-server'   => PNCP_Rules::nginx_server(),
+	'stealth-nginx'  => PNCP_Stealth::rules_text( 'nginx' ),
+	'stealth-apache' => PNCP_Stealth::rules_text( 'apache' ),
+	'apache'         => PNCP_Rules::apache(),
+);
+foreach ( $texts as $part => $text ) {
+	exec( $wp_cli . ' scrapelock rules show --part=' . $part . ' > ' . escapeshellarg( $tmp . '/show.txt' ) . ' 2>/dev/null', $o, $rc );
+	t( "S rules show --part=$part: exactly the text of the Server rules tab", 0 === $rc && $text === file_get_contents( $tmp . '/show.txt' ), (string) $rc );
+}
+unlink( $tmp . '/show.txt' );
+wp_cache_flush();
+t( 'S ...and kept as shown, under its fingerprint (for "See what changed")', PNCP_Rules::nginx() === PNCP_Rules_State::text_of( 'nginx', PNCP_Rules::nginx_fingerprint() ) && PNCP_Rules::apache() === PNCP_Rules_State::text_of( 'apache', PNCP_Rules::apache_fingerprint() ) );
+list( $rc, $out ) = cli( 'rules show --part=nginx' );
+t( 'S an unknown part: an error naming the parts', 0 !== $rc && false !== strpos( $out, 'nginx-http, nginx-server, stealth-nginx, stealth-apache, apache' ), $out );
+list( $rc, $out ) = cli( 'rules --help' );
+t( 'S rules --help: show, status, install and the options', 0 === $rc && false !== strpos( $out, '--nginx-http=<file>' ) && false !== strpos( $out, '--dry-run' ) && false !== strpos( $out, '--test-cmd=<command>' ), $out );
+
+/* ---------- T. rules status ---------- */
+
+list( $rc, $out ) = cli( 'rules status --server=nginx --format=json' );
+$st               = json_decode( $out, true );
+t( 'T rules status --format=json: state, parts, via, installed, current, message', 0 === $rc && is_array( $st ) && 'nginx' === $st['server'] && isset( $st['state'], $st['parts'], $st['via'], $st['installed'], $st['current'], $st['message'] ) && PNCP_Rules::nginx_fingerprint() === $st['current'], $out );
+// The test server is not Nginx: WordPress answers the check address, twice (4 s apart): "not_found".
+t( 'T ...a server without the rules: not_found, asked directly (origin)', is_array( $st ) && 'not_found' === $st['state'] && 0 === strpos( $st['via'], 'origin' ), $out );
+list( $rc, $out ) = cli( 'rules status --server=apache' );
+t( 'T rules status --server=apache: a table', 0 === $rc && preg_match( '/server\s+apache/', $out ) && false !== strpos( $out, PNCP_Rules::apache_fingerprint() ), $out );
+list( $rc, $out ) = cli( 'rules status --server=iis' );
+t( 'T an unknown --server: an error', 0 !== $rc );
+
+/* ---------- I. rules install ---------- */
+
+$http = $tmp . '/0.scrapelock-site.conf';
+$srv  = $tmp . '/scrapelock.conf';
+$ls   = static function () use ( $tmp ) {
+	$out = array();
+	foreach ( (array) scandir( $tmp ) as $f ) {
+		if ( '.' !== $f && '..' !== $f && is_file( $tmp . '/' . $f ) ) {
+			$out[] = $f;
+		}
+	}
+	sort( $out );
+	return implode( ',', $out );
+};
+file_put_contents( $http, "# old part 1\n" );
+file_put_contents( $srv, "# old part 2\n" );
+$args = '--nginx-http=' . escapeshellarg( $http ) . ' --nginx-server=' . escapeshellarg( $srv );
+
+list( $rc, $out ) = cli( 'rules install' );
+t( 'I no files named: an error, nothing guessed', 0 !== $rc && false !== strpos( $out, 'Nothing is guessed' ), $out );
+foreach (
+	array(
+		'--nginx-http=' . escapeshellarg( $tmp . '/rules.txt' )         => 'ending in .conf',
+		'--nginx-http=relative.conf'                                    => 'absolute path',
+		'--nginx-http=' . escapeshellarg( $tmp . '/../x.conf' )        => 'absolute path',
+		'--nginx-http=' . escapeshellarg( $tmp . '/nope/x.conf' )      => 'does not exist',
+		'--apache=' . escapeshellarg( $tmp . '/index.php' )            => '.htaccess file or a file ending in .conf',
+		'--nginx-http=' . escapeshellarg( $tmp . '/a.conf' ) . ' --nginx-server=' . escapeshellarg( $tmp . '/a.conf' ) => 'same file',
+	) as $bad => $why
+) {
+	list( $rc, $out ) = cli( 'rules install ' . $bad . ' --yes' );
+	t( "I refused ($why)", 0 !== $rc && false !== strpos( $out, $why ), $out );
+}
+symlink( '/etc/hostname', $tmp . '/outside.conf' );
+list( $rc, $out ) = cli( 'rules install --nginx-http=' . escapeshellarg( $tmp . '/outside.conf' ) . ' --yes --test-cmd=true --reload-cmd=true' );
+t( 'I a symlink to a file outside its folder: refused, the target untouched', 0 !== $rc && false !== strpos( $out, 'symlink' ) && is_link( $tmp . '/outside.conf' ), $out );
+unlink( $tmp . '/outside.conf' );
+file_put_contents( $srv . '.old', 'x' );
+list( $rc, $out ) = cli( 'rules install ' . $args . ' --yes --test-cmd=true --reload-cmd=true' );
+t( 'I a leftover .old: refused (never overwritten)', 0 !== $rc && false !== strpos( $out, 'scrapelock.conf.old first' ) && 'x' === file_get_contents( $srv . '.old' ), $out );
+unlink( $srv . '.old' );
+
+list( $rc, $out ) = cli( 'rules install ' . $args . ' --dry-run' );
+t( 'I --dry-run: a unified diff of both files, nothing changed, no .new left', 0 === $rc && false !== strpos( $out, '--- ' . $http ) && false !== strpos( $out, '+++ ' . $srv . '.new' ) && false !== strpos( $out, "@@ -1 +1," ) && false !== strpos( $out, '-# old part 2' ) && false !== strpos( $out, 'Dry run' ) && "# old part 1\n" === file_get_contents( $http ) && '0.scrapelock-site.conf,scrapelock.conf' === $ls(), $out );
+
+list( $rc, $out ) = cli( 'rules install ' . $args );
+t( 'I no answer to the question: nothing changed', "# old part 1\n" === file_get_contents( $http ) && "# old part 2\n" === file_get_contents( $srv ) && false !== strpos( $out, 'Install these 2 files' ), $out );
+
+list( $rc, $out ) = cli( 'rules install ' . $args . ' --yes --test-cmd=' . escapeshellarg( 'echo "nginx: [emerg] unknown directive" && false' ) . ' --reload-cmd=true' );
+t( 'I the test fails: every file put back byte for byte, exit 1 with the test\'s output', 0 !== $rc && false !== strpos( $out, '[emerg] unknown directive' ) && false !== strpos( $out, 'every file was put back' ) && "# old part 1\n" === file_get_contents( $http ) && "# old part 2\n" === file_get_contents( $srv ) && '0.scrapelock-site.conf,scrapelock.conf' === $ls(), $out . ' ' . $ls() );
+list( $rc, $out ) = cli( 'rules install ' . $args . ' --yes --test-cmd=true --reload-cmd=false' );
+t( 'I the reload fails: put back too', 0 !== $rc && false !== strpos( $out, 'The reload (false) failed' ) && "# old part 1\n" === file_get_contents( $http ) && '0.scrapelock-site.conf,scrapelock.conf' === $ls(), $out );
+
+chmod( $http, 0640 );
+list( $rc, $out ) = cli( 'rules install ' . $args . ' --yes --test-cmd=true --reload-cmd=' . escapeshellarg( 'echo reloaded' ) );
+t( 'I test and reload pass: both installed, the .old files removed, the status printed', 0 === $rc && PNCP_Rules::nginx_http() === file_get_contents( $http ) && PNCP_Rules::nginx_server() === file_get_contents( $srv ) && '0.scrapelock-site.conf,scrapelock.conf' === $ls() && false !== strpos( $out, '2 files installed' ) && false !== strpos( $out, 'Reloaded: echo reloaded' ) && preg_match( '/state\s+not_found/', $out ), $out . ' ' . $ls() );
+t( 'I ...the file keeps its permissions', 0640 === ( fileperms( $http ) & 0777 ), decoct( fileperms( $http ) & 0777 ) );
+list( $rc, $out ) = cli( 'rules install ' . $args . ' --yes --test-cmd=false' );
+t( 'I again: unchanged files skipped, no test, no reload', 0 === $rc && false !== strpos( $out, 'Unchanged, skipped' ) && false !== strpos( $out, 'already the current rules' ), $out );
+
+// The default commands: nginx found on PATH (a fake one that notes its arguments), then systemctl.
+$bin = $tmp . '/bin';
+wp_mkdir_p( $bin );
+file_put_contents( $bin . '/nginx', "#!/bin/sh\necho \"nginx \$*\" >> " . escapeshellarg( $tmp . '/calls.log' ) . "\n[ \"\$1\" = \"-s\" ] && [ -f " . escapeshellarg( $tmp . '/reload-fails' ) . " ] && exit 1\nexit 0\n" );
+file_put_contents( $bin . '/systemctl', "#!/bin/sh\necho \"systemctl \$*\" >> " . escapeshellarg( $tmp . '/calls.log' ) . "\nexit 0\n" );
+chmod( $bin . '/nginx', 0755 );
+chmod( $bin . '/systemctl', 0755 );
+$with_path = 'PATH=' . escapeshellarg( $bin . ':' . getenv( 'PATH' ) ) . ' ';
+file_put_contents( $srv, "# old part 2\n" );
+exec( $with_path . $wp_cli . ' scrapelock rules install ' . $args . ' --yes < /dev/null 2>&1', $o2, $rc );
+$calls = is_file( $tmp . '/calls.log' ) ? file_get_contents( $tmp . '/calls.log' ) : '';
+t( 'I the defaults: nginx -t, then nginx -s reload (nginx from PATH)', 0 === $rc && "nginx -t\nnginx -s reload\n" === $calls, $calls . ' ' . implode( "\n", $o2 ) );
+@unlink( $tmp . '/calls.log' );
+touch( $tmp . '/reload-fails' );
+file_put_contents( $srv, "# old part 2\n" );
+$o2 = array();
+exec( $with_path . $wp_cli . ' scrapelock rules install ' . $args . ' --yes < /dev/null 2>&1', $o2, $rc );
+$calls = is_file( $tmp . '/calls.log' ) ? file_get_contents( $tmp . '/calls.log' ) : '';
+t( 'I nginx -s reload fails: systemctl reload nginx instead', 0 === $rc && "nginx -t\nnginx -s reload\nsystemctl reload nginx\n" === $calls && PNCP_Rules::nginx_server() === file_get_contents( $srv ), $calls . ' ' . implode( "\n", $o2 ) );
+exec( 'rm -rf ' . escapeshellarg( $bin ) . ' ' . escapeshellarg( $tmp . '/calls.log' ) . ' ' . escapeshellarg( $tmp . '/reload-fails' ) );
+
+// A symlink into its own folder is written through (the link stays).
+file_put_contents( $tmp . '/real.conf', "# old\n" );
+symlink( $tmp . '/real.conf', $tmp . '/link.conf' );
+list( $rc, $out ) = cli( 'rules install --stealth=' . escapeshellarg( $tmp . '/link.conf' ) . ' --yes --test-cmd=true --reload-cmd=true' );
+t( 'I a symlink into its own folder: its file written, the link kept (--stealth)', 0 === $rc && is_link( $tmp . '/link.conf' ) && PNCP_Stealth::rules_text( 'nginx' ) === file_get_contents( $tmp . '/real.conf' ), $out );
+unlink( $tmp . '/link.conf' );
+unlink( $tmp . '/real.conf' );
+
+// .htaccess: only ScrapeLock's block, above # BEGIN WordPress; the rest byte for byte.
+$ht   = $tmp . '/.htaccess';
+$wp   = "# BEGIN WordPress\nRewriteEngine On\nRewriteRule . /index.php [L]\n# END WordPress\n";
+$mine = "# my own line\n";
+file_put_contents( $ht, $mine . $wp );
+list( $rc, $out ) = cli( 'rules install --apache=' . escapeshellarg( $ht ) . ' --yes' );
+$text = (string) file_get_contents( $ht );
+t( 'I .htaccess: the block above # BEGIN WordPress, the rest kept; tested with a request of the home page', 0 === $rc && $mine . PNCP_Rules::apache() . "\n" . $wp === $text && false !== strpos( $out, 'Test passed: HTTP' ), $out );
+file_put_contents( $ht, (string) preg_replace( '/^RewriteEngine On$/m', "RewriteEngine On\n# old line", $text, 1 ) );
+list( $rc, $out ) = cli( 'rules install --apache=' . escapeshellarg( $ht ) . ' --yes' );
+t( 'I .htaccess again: only the block replaced', 0 === $rc && $text === file_get_contents( $ht ) && false !== strpos( $out, '-# old line' ), $out );
+
+// The token of the static feeds: kept from the installed file, never printed.
+$paths = PNCP_Options::stored()['private_paths'];
+update_option( PNCP_OPTION, array_merge( PNCP_Options::stored(), array( 'private_paths' => '/private-feed/*.xml' ) ) );
+PNCP_Options::flush();
+file_put_contents( $http, "# nothing\n" );
+list( $rc, $out ) = cli( 'rules install --nginx-http=' . escapeshellarg( $http ) . ' --yes --test-cmd=true --reload-cmd=true' );
+t( 'I YOUR_TOKEN in the rules and no token to keep: refused, nothing changed', 0 !== $rc && false !== strpos( $out, 'YOUR_TOKEN' ) && "# nothing\n" === file_get_contents( $http ), $out );
+file_put_contents( $http, str_replace( 'YOUR_TOKEN', 'Secret3126Token', PNCP_Rules::nginx_http() ) . "# changed\n" );
+list( $rc, $out ) = cli( 'rules install --nginx-http=' . escapeshellarg( $http ) . ' --yes --test-cmd=true --reload-cmd=true' );
+t( 'I the installed token kept in the new file, and never printed', 0 === $rc && str_replace( 'YOUR_TOKEN', 'Secret3126Token', PNCP_Rules::nginx_http() ) === file_get_contents( $http ) && false === strpos( $out, 'Secret3126Token' ), $out );
+update_option( PNCP_OPTION, array_merge( PNCP_Options::stored(), array( 'private_paths' => $paths ) ) );
+PNCP_Options::flush();
+
+$code = (string) wp_remote_retrieve_response_code( wp_remote_get( $base . '/wp-content/plugins/scrapelock/includes/class-pncp-cli-server.php' ) );
+t( 'I the CLI class is never run by a web request (ABSPATH guard)', in_array( $code, array( '200', '403', '404' ), true ) && '' === trim( (string) wp_remote_retrieve_body( wp_remote_get( $base . '/wp-content/plugins/scrapelock/includes/class-pncp-cli-server.php' ) ) ), $code );
+
+/* ---------- R. Real Nginx ---------- */
+
+$nginx_bin = trim( (string) shell_exec( 'command -v nginx 2>/dev/null' ) );
+if ( '' === $nginx_bin || ! function_exists( 'curl_init' ) ) {
+	echo "SKIP R real Nginx (nginx not on PATH)\n";
+} else {
+	$dir  = $tmp . '/nginx';
+	$port = 19500 + ( getmypid() % 400 );
+	wp_mkdir_p( $dir . '/tmp' );
+	wp_mkdir_p( $dir . '/www' );
+	file_put_contents( $dir . '/http.conf', "# part 1 comes here\n" );
+	file_put_contents( $dir . '/server.conf', "# part 2 comes here\n" );
+	file_put_contents( $dir . '/inhttp.conf', "# nothing\n" );
+	file_put_contents(
+		$dir . '/nginx.conf',
+		'worker_processes 1; error_log ' . $dir . '/error.log; pid ' . $dir . '/nginx.pid; events { worker_connections 64; }' . "\n"
+		. 'http { access_log off; client_body_temp_path ' . $dir . '/tmp; proxy_temp_path ' . $dir . '/tmp; fastcgi_temp_path ' . $dir . '/tmp; uwsgi_temp_path ' . $dir . '/tmp; scgi_temp_path ' . $dir . '/tmp;' . "\n"
+		. 'include ' . $dir . '/http.conf;' . "\n" . 'include ' . $dir . '/inhttp.conf;' . "\n"
+		. 'server { listen 127.0.0.1:' . $port . '; server_name localhost; root ' . $dir . '/www;' . "\n"
+		. 'include ' . $dir . '/server.conf;' . "\n"
+		. 'location / { try_files $uri $uri/ =404; }' . "\n"
+		. 'location ~ \.well-known { allow all; }' . "\n"
+		. '} }' . "\n"
+	);
+	$ctl = escapeshellarg( $nginx_bin ) . ' -p ' . escapeshellarg( $dir ) . ' -c ' . escapeshellarg( $dir . '/nginx.conf' ) . ' -e ' . escapeshellarg( $dir . '/error.log' );
+	exec( $ctl . ' 2>&1', $o3, $rc );
+	usleep( 500000 );
+	$get = static function () use ( $port ) {
+		$ch = curl_init( 'http://127.0.0.1:' . $port . '/.well-known/scrapelock-nginx' );
+		curl_setopt_array(
+			$ch,
+			array(
+				CURLOPT_RETURNTRANSFER => true,
+				CURLOPT_TIMEOUT        => 10,
+				CURLOPT_PROXY          => '',
+			)
+		);
+		$body = trim( (string) curl_exec( $ch ) );
+		$code = (int) curl_getinfo( $ch, CURLINFO_HTTP_CODE );
+		curl_close( $ch );
+		return array( $code, $body );
+	};
+	list( $code ) = $get();
+	t( 'R a real Nginx in a temporary prefix, without the rules (404)', 0 === $rc && 404 === $code, implode( ' ', $o3 ) . ' ' . $code );
+	$cmds = ' --test-cmd=' . escapeshellarg( $ctl . ' -t' ) . ' --reload-cmd=' . escapeshellarg( $ctl . ' -s reload' );
+	list( $rc, $out ) = cli( 'rules install --nginx-http=' . escapeshellarg( $dir . '/http.conf' ) . ' --nginx-server=' . escapeshellarg( $dir . '/server.conf' ) . ' --yes' . $cmds );
+	usleep( 800000 );
+	list( $code, $body ) = $get();
+	t( 'R install: nginx -t passes, reloaded, the check address answers the current fingerprints', 0 === $rc && 200 === $code && PNCP_Rules::nginx_fingerprint() === $body && false !== strpos( $out, 'Test passed' ), $out . ' ' . $code . ' ' . $body );
+	// Part 2 named where nginx -t fails (a file included in http { }: if is not allowed there).
+	list( $rc, $out ) = cli( 'rules install --nginx-server=' . escapeshellarg( $dir . '/inhttp.conf' ) . ' --yes' . $cmds );
+	usleep( 500000 );
+	list( $code, $body ) = $get();
+	t( 'R part 2 where nginx -t fails: put back, exit 1 with nginx\'s message, the running rules unchanged', 0 !== $rc && false !== strpos( $out, 'nginx: [emerg]' ) && "# nothing\n" === file_get_contents( $dir . '/inhttp.conf' ) && ! file_exists( $dir . '/inhttp.conf.old' ) && 200 === $code && PNCP_Rules::nginx_fingerprint() === $body, $out . ' ' . $code );
+	if ( is_file( $dir . '/nginx.pid' ) ) {
+		exec( 'kill ' . (int) file_get_contents( $dir . '/nginx.pid' ) );
+		usleep( 300000 );
+	}
 }
 
 /* ---------- C. cdn purge ---------- */
