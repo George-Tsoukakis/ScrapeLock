@@ -415,18 +415,10 @@ if ( '' === $wp_cli ) {
 
 /* ---------- R. Real Nginx ---------- */
 
-$nginx = '';
-foreach ( array( '/usr/sbin/nginx', '/usr/local/sbin/nginx' ) as $p ) {
-	if ( is_executable( $p ) ) {
-		$nginx = $p;
-	}
-}
+// On PATH only, as the other tests with a real Nginx: a run with nginx hidden from PATH skips this part.
+$nginx = trim( (string) shell_exec( 'command -v nginx 2>/dev/null' ) );
 if ( '' === $nginx ) {
-	exec( 'command -v nginx', $o );
-	$nginx = isset( $o[0] ) ? $o[0] : '';
-}
-if ( '' === $nginx ) {
-	echo "note: R skipped without nginx\n";
+	echo "SKIP R real Nginx (nginx not on PATH)\n";
 } else {
 	$pre   = $tmp . '/ngx';
 	$port  = 20000 + wp_rand( 0, 9000 );
