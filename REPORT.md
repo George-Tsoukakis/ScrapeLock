@@ -1,3 +1,77 @@
+# ScrapeLock 3.12.7 — η cache του Nginx (fastcgi), `wp scrapelock cache`, τα τελευταία ίχνη του Stealth
+
+Η αναφορά μένει στο αποθετήριο (`/REPORT.md export-ignore`): δεν μπαίνει στο zip του plugin. Στις εντολές, `<site>` είναι το όνομα φακέλου του ιστότοπου στο aaPanel και `<cache>` ο φάκελος της fastcgi cache του server· τίποτα από τον live server (domain, IP, paths) δεν είναι στον κώδικα, στις δοκιμές ή εδώ.
+
+## F1. Γιατί το «/» είχε ακόμα wp-content μετά την 3.12.6 (αιτία)
+
+**Τι φάνηκε live.** Μετά την 3.12.6 το «/» (HIT της fastcgi cache του Nginx) είχε ακόμα `/assets/<alias>/cache/min/1/wp-content/themes/<κωδικός theme>/…`, ενώ το `/?nocache=<ts>` ήταν καθαρό.
+
+**Ευρήματα.**
+- **Ο κώδικας της 3.12.6 ξαναγράφει ήδη πριν γράψει το WP Rocket την cache του.** Από τον κώδικα του WP Rocket: η page cache του γράφεται στο callback του buffer που ανοίγει το `advanced-cache.php` πριν από τα plugins, και παίρνει την έξοδο όλων των εσωτερικών buffers: του buffer του Stealth (`template_redirect` -9999) και του buffer βελτιστοποίησης (`template_redirect` 2, `rocket_buffer`, τελευταίο στάδιο που προσθέτει διευθύνσεις στο 110000, Stealth στο `PHP_INT_MAX`). Άρα το αρχείο της cache του WP Rocket (και το `_gzip`) είναι καθαρό. Η σειρά δεν άλλαξε· ένα σχόλιο στα hooks γράφει γιατί το rewrite μένει στο τέλος του `rocket_buffer` και όχι στα `rocket_css_url` / `rocket_js_url` (τα επόμενα στάδιά του, delay JS και background CSS, θέλουν την πραγματική διεύθυνση του minified αρχείου).
+- **Αυτό που έμενε live ήταν μια παλιά σελίδα της fastcgi cache του Nginx** που δεν άδειασε: γραμμένη με τη λίστα λέξεων πριν από την 3.12.6 (το theme κωδικοποιημένο, το εσωτερικό wp-content όχι). Το purge του Nginx Helper δεν έφτανε σε αυτήν: το `rt_nginx_helper_purge_all` δεν κάνει τίποτα όταν η μέθοδος ή ο φάκελός του δεν είναι αυτά του server.
+- **Το `?nocache=` δεν απέδειξε τίποτα:** το WP Rocket δεν βελτιστοποιεί (ούτε αποθηκεύει) διεύθυνση με query string που δεν γνωρίζει, άρα εκεί δεν υπάρχουν καθόλου διευθύνσεις `cache/min`· δεν μπορούσε να δείξει αν οι minified διευθύνσεις ήταν σωστές.
+
+**Δοκιμές.** `t_3127_stealth_cache` (21 PASS): stand-in τύπου WP Rocket (όχι κώδικας του WP Rocket) με την ίδια σειρά buffers / priorities: MISS, αποθηκευμένο αρχείο και `_gzip`, HIT πριν από το WordPress με 0 `wp-content` / `wp-includes` στις διευθύνσεις των assets, καθεμία γυρίζει στο πραγματικό αρχείο με τους κανόνες Nginx και Apache· `?nocache=` χωρίς βελτιστοποίηση· σελίδα αποθηκευμένη με τις παλιές λέξεις (η live περίπτωση), νέος χάρτης / Stealth off / on αδειάζουν την page cache· πραγματικός Nginx με cache μπροστά: MISS / HIT καθαρά, κάθε asset 200, και μια παλιά σελίδα της cache του Nginx μένει HIT με το υπόλοιπο μέχρι να αδειάσει η cache (SKIP χωρίς nginx). Αποτυγχάνει με την κλάση Stealth της 3.12.5.
+
+**Δεν δοκιμάστηκε.** Πραγματικό WP Rocket με άδεια· μόνο ο stand-in, γραμμένος από τον κώδικά του (3.24.2).
+
+## F2. Η fastcgi cache του Nginx αδειάζει μαζί με τις άλλες
+
+**Τι άλλαξε.** `PNCP_Fastcgi_Cache::purge_known()` από το `pncp_purge_page_cache()` (αποθήκευση ρυθμίσεων, Stealth on / off ή νέος χάρτης, αναβάθμιση): όταν ο φάκελος είναι γνωστός (`SCRAPELOCK_FASTCGI_CACHE_PATH`, πολλοί με κόμμα· αλλιώς το `RT_WP_NGINX_HELPER_CACHE_PATH` ή ο προεπιλεγμένος φάκελος του Nginx Helper με μέθοδο «Delete local server cache files» και μόνο αν υπάρχει), σβήνει τα αρχεία αυτού του site. Χωρίς γνωστό φάκελο δεν κάνει τίποτα (καμία αλλαγή στην αναβάθμιση). Σβήνονται μόνο κανονικά αρχεία με όνομα MD5, header cache του Nginx και γραμμή `KEY:` της οποίας το MD5 είναι το όνομα (ή στο header για παραλλαγή Vary), με host του site στην αρχή του κλειδιού (μετά από scheme / method, με port)· ποτέ άλλος host που απλώς τελειώνει έτσι ή εμφανίζεται στο query string. Links δεν ακολουθούνται, `/`, φάκελοι συστήματος, home, aaPanel (`/www/server`, `/www/wwwroot`) και WordPress απορρίπτονται, η δουλειά έχει όριο ανά κλήση. Η κλάση δεν τρέχει καμία εντολή.
+
+**aaPanel.**
+```
+wp --allow-root --skip-themes scrapelock cache status
+# τυπώνει τον φάκελο της zone που χρησιμοποιεί το server { } του site και τη γραμμή:
+wp --allow-root config set SCRAPELOCK_FASTCGI_CACHE_PATH '<cache>'
+wp --allow-root --skip-themes scrapelock cache purge --all --yes
+```
+Αν το nginx δεν βρεθεί (PATH, `/usr/sbin`, `/usr/local/sbin`, `/www/server/nginx/sbin`): `--nginx-conf=/www/server/nginx/conf/nginx.conf` ή `--cache-dir=<cache>`. Το WP-CLI πρέπει να τρέχει ως root ή ως ο χρήστης του web server για να σβήσει τα αρχεία (το `status` λέει «Writable by this user»).
+
+**Δοκιμές.** `t_3127_fastcgi` (82 PASS): αρχεία cache σε πραγματική μορφή σε ψεύτικο δέντρο κάτω από /tmp (F, K, P, U), φάκελοι που απορρίπτονται και το όριο (D), η σειρά σταθερά / Nginx Helper και το purge από `pncp_purge_page_cache()` και από το Stealth σε άλλη διεργασία (N), ο parser του `nginx -T` (X), η κάρτα Stealth και το readme (T), πραγματικός Nginx με `fastcgi_cache` σε προσωρινό prefix μπροστά από το `lib/fcgi-stub.php`: MISS, HIT, purge διεύθυνσης και όλου του site με `--nginx-conf`, ο άλλος host μένει HIT (R· SKIP χωρίς nginx).
+
+**Δεν δοκιμάστηκε.** Σε πραγματικό aaPanel ούτε με πραγματικό Nginx Helper (μόνο οι ρυθμίσεις του όπως τις αποθηκεύει). `fastcgi_cache_key` πολύ διαφορετικό από τα συνήθη (π.χ. χωρίς τον host) δεν ταιριάζει, και τότε δεν σβήνεται τίποτα. Ένας Nginx σε άλλο μηχάνημα από το WordPress δεν φτάνεται.
+
+## F3. `wp scrapelock cache status | purge`, `cdn purge --[no-]server-cache`
+
+**Τι άλλαξε.** `cache status`: ο φάκελος (η σταθερά / Nginx Helper, αλλιώς το `fastcgi_cache_path` της zone του server { } αυτού του site στο `nginx -T` ή στο `--nginx-conf`, με includes, σχόλια, quotes, zone από το http { }, wildcards· μεταβλητή ή άγνωστη zone → μήνυμα), το κλειδί, πόσες σελίδες του site είναι στην cache, αν είναι εγγράψιμος, το τελευταίο purge και η γραμμή `wp config set`. `cache purge --all | <διευθύνσεις>… [--dry-run] [--yes] [--cache-dir=…]`. Το `cdn purge --all` αδειάζει πρώτα την cache του server, ώστε το CDN να μην ξαναπάρει παλιά σελίδα (`--no-server-cache` για να παραλειφθεί)· `--server-cache` για διευθύνσεις. Μόνο από WP-CLI, ποτέ όσο το site είναι κλειδωμένο. Το `run()` καλείται επιπλέον μόνο με `escapeshellarg( $bin ) . ' -T'` του προγράμματος που βρέθηκε (`t_3126_integration` S).
+
+**Δοκιμές.** `t_3127_fastcgi` C (ψεύτικο `nginx -T` στο PATH, `--nginx-conf`, `--cache-dir`, `--dry-run`, `--yes`, `cdn purge --[no-]server-cache`), R (πραγματικός Nginx), `t_cli` (νέα εντολή στη λίστα).
+
+## F4. Τα σχόλια των plugins cache
+
+**Τι άλλαξε.** Το WP Rocket γράφει το «This website is like a Rocket … Performance optimized by WP Rocket … wp-rocket.me» στο δικό του buffer page cache (`Buffer\Cache::maybe_process_buffer`), μετά το `rocket_buffer` και μετά το buffer του Stealth, και στη σελίδα και στο αρχείο της cache. **Δεν υπάρχει φίλτρο `rocket_disable_footprint`** (ούτε στην 3.24.2): ο μόνος διακόπτης είναι η σταθερά `WP_ROCKET_WHITE_LABEL_FOOTPRINT`, που διαβάζεται εκείνη τη στιγμή και κάνει το σχόλιο «Cached for great performance» χωρίς το generator tag. Το Redis Object Cache τυπώνει τη σημείωσή του στο shutdown εκτός αν υπάρχει `WP_REDIS_DISABLE_COMMENT`. Με «Hide that the site runs on WordPress» ή Stealth, το `PNCP_Surface::quiet_cache_plugins()` ορίζει και τις δύο για τους επισκέπτες (μόνο αν δεν τις έχει ορίσει το site). Το buffer του Stealth σβήνει επίσης, με τις ακριβείς λέξεις τους, τα σχόλια των WP Rocket, Redis Object Cache, W3 Total Cache, WP Super Cache, LiteSpeed Cache, Autoptimize, WP Fastest Cache, Hummingbird και SG Optimizer **που φτάνουν σε αυτό**· conditional σχόλια (`<!--[if IE]>`) και τα άλλα σχόλια μένουν.
+
+**Δοκιμές.** `t_3127_traces` F, U (κάθε υπογραφή, ό,τι πρέπει να μείνει, ίδιες λέξεις εκτός σχολίων), οι δύο σταθερές με Stealth και με το «Hide…» μόνο του (stand-in buffer τύπου WP Rocket έξω από το buffer του Stealth, σημείωση στο shutdown).
+
+## F5. Οι μεταφράσεις των scripts χωρίς paths
+
+**Τι άλλαξε.** Το `wp_set_script_translations()` τυπώνει το αρχείο μετάφρασης όπως είναι, και τα αρχεία του GlotPress / WP-CLI έχουν `"comment":{"reference":"wp-includes/js/dist/…"}` (ή path plugin) και `"generator"`. Με Stealth το φίλτρο `load_script_translations` τα αφαιρεί για τους επισκέπτες· το `wp.i18n` διαβάζει μόνο το `locale_data`, και το text domain και η γλώσσα μένουν. Ξανακωδικοποιείται με τα προεπιλεγμένα flags, άρα το «/» μένει escaped και κανένα `</script>` δεν κλείνει το inline script.
+
+**Δοκιμές.** `t_3127_traces` J: ψεύτικο αρχείο μετάφρασης ενός stand-in mu-plugin, μεταφράσεις, πληθυντικοί και text domain ίδια, χωρίς αλλαγή με Stealth off.
+
+## Όρια
+
+- Σχόλια που προσθέτει ένα plugin page cache στο **δικό του εξωτερικό buffer**, όταν αποθηκεύει τη σελίδα (W3 Total Cache, WP Super Cache, LiteSpeed Cache, WP Fastest Cache, Hummingbird), δεν φτάνουν στο buffer του Stealth: κλείνουν στις ρυθμίσεις εκείνου του plugin (γράφεται στο «What can never be hidden»). Το text domain στις μεταφράσεις των scripts μένει.
+- Η fastcgi cache αδειάζει αυτόματα μόνο όταν ο φάκελος είναι γνωστός (σταθερά ή Nginx Helper)· το `cache status` τον βρίσκει, αλλά η γραμμή στο wp-config.php μπαίνει με το χέρι. Η αυτόματη διαγραφή τρέχει ως ο χρήστης της PHP: αν τα αρχεία είναι του χρήστη του Nginx χωρίς δικαίωμα εγγραφής για την PHP, μένουν (το μετρά το «could not be deleted»).
+- Το CDN (Bunny / Cloudflare) δεν αδειάζει αυτόματα σε αυτές τις στιγμές: `wp scrapelock cdn purge --all --yes` (που τώρα αδειάζει πρώτα και την cache του server).
+- Οι κανόνες server και Stealth δεν άλλαξαν (ίδια αποτυπώματα): καμία αντιγραφή δεν χρειάζεται.
+
+## Έλεγχος ενοποίησης (διόρθωση)
+
+- Οι `t_3127_stealth_cache`, `t_3127_fastcgi`, `t_3127_traces` γράφτηκαν χωριστά: τρέχουν μαζί στο `run-all.sh` (και οι τρεις στη λίστα, καθεμία με τη γραμμή της στο `tests/README.txt`) χωρίς να αφήνουν τίποτα που επηρεάζει την επόμενη.
+- `t_3127_fastcgi` R έψαχνε πρώτα `/usr/sbin/nginx` / `/usr/local/sbin/nginx` και μετά το PATH, άρα με το nginx έξω από το PATH ξεκινούσε πάλι πραγματικό Nginx, και χωρίς nginx έγραφε «note» αντί για SKIP. Τώρα όπως οι άλλες δοκιμές: `command -v nginx`, αλλιώς «SKIP R real Nginx (nginx not on PATH)» (commit `fix(tests)`).
+- Ελέγχθηκαν χωρίς αλλαγή: κάθε είσοδος εντολής (rules, verify_file, cdn, cache) σταματά πρώτα εκτός WP-CLI, το `run()` μόνο με τις τέσσερις γνωστές εντολές, κανένα κλειδί στην έξοδο, η νέα εντολή στο `t_cli`, κανένα νέο κλειδί ρυθμίσεων (`t_311_compat`), τα αποτυπώματα των κανόνων Nginx / Apache / Stealth ίδια με της 3.12.6 με τις ίδιες ρυθμίσεις (στο Apache αλλάζει μόνο η γραμμή `# BEGIN ScrapeLock 3.12.7`, έξω από το αποτύπωμα).
+
+## Δοκιμές της έκδοσης
+
+- **php -l** σε κάθε αρχείο PHP, **phpcs** (phpcs.xml.dist) 0 σφάλματα, **PHPStan level 5** όπως στο CI χωρίς σφάλματα.
+- **Όλο το `tests/run-all.sh` σε φρέσκο MariaDB** (nginx και apache2 παρόντα): 50 ok, 1 skip (t_traffic_ms), αποτυχίες μόνο οι γνωστές τοπικές (t_http inline styles / data-cfasync / Applebot PTR ×2 / CF-Connecting-IP / αυτόματο Emergency ×2, t_metadata_paths «fake Applebot», t_lockdown «busy» ×2). t_3127_stealth_cache 21, t_3127_fastcgi 82, t_3127_traces 68 PASS· μόνες τους επίσης, με τα τμήματα πραγματικού Nginx (N, R) να τρέχουν.
+- **SQLite όπως στο CI** (wp-sqlite-db, ένας php -S, WP_DEBUG): 51 ok, 1 skip (t_traffic_ms), αποτυχίες μόνο t_http (inline styles, data-cfasync) και t_site_files στο SQLite. t_3127_* 21 / 82 / 68 PASS· t_cli, t_311_texts, t_311_compat, t_311_i18n PASS.
+- **Χωρίς nginx στο PATH** (`/usr/sbin`, `/sbin`, `/usr/local/sbin` έξω), φρέσκο MariaDB: ίδια εικόνα με το πρώτο τρέξιμο (μόνο οι γνωστές). t_3127_stealth_cache 16 PASS + SKIP N, t_3127_fastcgi 78 PASS + SKIP R (μετά τη διόρθωση), t_3126_cli SKIP R, t_3123_rules SKIP E, t_3124_nginx_status / t_3126_stealth / t_3126_verify περνούν χωρίς το τμήμα του πραγματικού Nginx· κανένα FAIL.
+- **Αναβάθμιση 3.12.6 (zip της release) → 3.12.7** (`wp plugin install --force` με το zip αυτής της έκδοσης) σε site με ρυθμίσεις (devtools, blur guests, hide_fingerprint, early, όριο 45, block_tech_profilers, Stealth ενεργό με base «assets»): κάθε τιμή ίδια (κανένα κλειδί προστέθηκε ή χάθηκε), ίδια options εκτός από `pncp_version` και τα συνηθισμένα (`pncp_server_ips`, `pncp_upgrade_lock`, η λίστα αιτημάτων), ίδια cron, η αρχική σελίδα, το άρθρο και το robots.txt για επισκέπτη byte προς byte ίδια (εκτός από nonces / hashes), καμία ειδοποίηση «out of date» ή «copy again», κανένα PHP μήνυμα από το ScrapeLock (μόνο τα warnings του WordPress ότι δεν φτάνει το wordpress.org). Χωρίς γνωστό φάκελο fastcgi η αναβάθμιση δεν σβήνει τίποτα.
+- **Zip** όπως στο release.yml (`git archive`): Version 3.12.7, `languages/scrapelock-el.mo` μέσα, χωρίς tests/, .po, REPORT.md.
+
 # ScrapeLock 3.12.6 — Stealth με WP Rocket, κατάσταση κανόνων Stealth, WP-CLI για κανόνες και CDN, αρχεία επαλήθευσης, technology profilers
 
 Η αναφορά μένει στο αποθετήριο (`/REPORT.md export-ignore`): δεν μπαίνει στο zip του plugin. Στις εντολές, `<site>` είναι το όνομα φακέλου του ιστότοπου στο aaPanel και `<id>` το όνομα του αρχείου του μέρους 1· τίποτα από τον live server δεν είναι στον κώδικα ή στις δοκιμές.
