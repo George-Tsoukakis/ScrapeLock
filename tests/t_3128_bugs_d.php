@@ -16,6 +16,8 @@
  * O. rules install as root (WP-CLI run with --allow-root, as on most servers; SKIP otherwise, or without WP_CLI):
  *    the new file keeps the owner and group of the file it replaces. 3.12.6 left a root-owned .htaccess that
  *    WordPress (the web server's user) could no longer write: permalinks, ScrapeLock's own .htaccess blocks.
+ * L. wp scrapelock selfcheck --log (SKIP without WP_CLI): the heading of the notes is translated like every other
+ *    line of the command (3.12.2 printed it in English only).
  *
  * Only on a test WordPress.
  */
@@ -129,6 +131,7 @@ if ( '' === $wp_cli || ! function_exists( 'posix_geteuid' ) || 0 !== posix_geteu
 	chown( $ht, 65534 );
 	chgrp( $ht, 65534 );
 	clearstatcache();
+	$out = array();
 	exec( $wp_cli . ' scrapelock rules install --apache=' . escapeshellarg( $ht ) . ' --yes < /dev/null 2>&1', $out, $rc );
 	clearstatcache();
 	$text = (string) file_get_contents( $ht );
@@ -137,6 +140,26 @@ if ( '' === $wp_cli || ! function_exists( 'posix_geteuid' ) || 0 !== posix_geteu
 	t( 'O ...with its permissions', 0664 === ( fileperms( $ht ) & 0777 ), decoct( fileperms( $ht ) & 0777 ) );
 	update_option( PNCP_OPTION, array_merge( PNCP_Options::stored(), array( 'private_paths' => $saved_paths ) ) );
 	PNCP_Options::flush();
+}
+
+/* ---------- L. Translatable texts of the CLI ---------- */
+
+if ( '' === $wp_cli ) {
+	echo "SKIP L (needs WP_CLI)\n";
+} else {
+	// Every text of the scrapelock domain the command translates comes back marked.
+	$req = $tmp . '/mark-texts.php';
+	file_put_contents( $req, "<?php\nWP_CLI::add_wp_hook( 'gettext', static function ( \$t, \$x, \$d ) { return 'scrapelock' === \$d ? '[tr]' . \$t : \$t; }, 10, 3 );\n" );
+	$out = array();
+	exec( $wp_cli . ' --require=' . escapeshellarg( $req ) . ' scrapelock selfcheck --log < /dev/null 2>&1', $out, $rc );
+	t( 'L the marking works (the summary line is translated)', isset( $out[0] ) && 0 === strpos( $out[0], '[tr]' ), implode( "\n", array_slice( $out, 0, 4 ) ) );
+	$heading = '';
+	foreach ( $out as $line ) {
+		if ( false !== stripos( $line, 'own requests (newest first)' ) ) {
+			$heading = $line;
+		}
+	}
+	t( 'L selfcheck --log: the heading of the notes goes through the translation', 0 === strpos( $heading, '[tr]' ), $heading . ' | ' . implode( "\n", array_slice( $out, 0, 8 ) ) );
 }
 
 exit( $fails ? 1 : 0 );

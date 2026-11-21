@@ -273,7 +273,8 @@ ScrapeLock — δοκιμές σε πραγματικό WordPress (όχι stubs)
                     option the plugin writes (pncp_fastcgi_last was left); rules install: a configuration read only
                     at a reload (Nginx, an Apache .conf) needs a test and a reload command (systemctl as the fallback,
                     else it stops and puts every file back), a .htaccess alone neither; as root (SKIP otherwise) the new
-                    file keeps the owner, group and permissions of the one it replaces
+                    file keeps the owner, group and permissions of the one it replaces; wp scrapelock selfcheck --log:
+                    the heading of the notes goes through the translation (a gettext hook marks the texts)
   t_cli.php         wp scrapelock … μέσα από το πραγματικό wp (χρειάζεται WP_CLI, αλλιώς SKIP)
   t_bunny_rules.php Edge Rules στο Bunny μέσα στα όριά του (το πολύ 5 μοτίβα ανά συνθήκη) με ψεύτικο API που δίνει
                     HTTP 400 όπως το πραγματικό: χωρισμός, κλείδωμα/Remove, rollback, Monitor only, sync, προεπισκόπηση,

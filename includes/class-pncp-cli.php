@@ -61,7 +61,7 @@ final class PNCP_Cli {
 		}
 		if ( isset( $assoc_args['log'] ) ) {
 			WP_CLI::line( '' );
-			WP_CLI::line( 'Notes of the site\'s own requests (newest first):' );
+			WP_CLI::line( __( 'Notes of the site\'s own requests (newest first):', 'scrapelock' ) );
 			foreach ( PNCP_Self_Check::entries() as $entry ) {
 				$when = gmdate( 'H:i:s', (int) $entry['time'] );
 				WP_CLI::line( '  ' . $when . ' ' . ( 'out' === $entry['side'] ? PNCP_Self_Check::step_line( $entry ) : $entry['method'] . ' ' . $entry['path'] . ': ' . PNCP_Self_Check::entry_line( $entry ) ) );
