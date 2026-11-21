@@ -14,6 +14,8 @@
  *    rewriting twice (no change the second time); each new address maps back to its file.
  * X. Links to uploaded files whose type the rules do not serve (.zip, .docx, …) keep their real address (they
  *    used to get a neutral one that answered 404); the types the rules serve still get the neutral one.
+ * Q. Root-relative addresses inside an attribute after an HTML-escaped quote (url(&quot;/wp-content/…&quot;),
+ *    url(&#039;…&#039;)) are rewritten like those after a plain quote.
  *
  * Only on a test WordPress.
  */
@@ -296,5 +298,18 @@ foreach ( array_merge( $served, $not ) as $f ) {
 }
 $dir = PNCP_Stealth::rewrite( '<script>var cfg={"base":"' . str_replace( '/', '\\/', $pr ) . '\\/js\\/","url":"' . $pr . '/js"};</script>' );
 t( 'X folder addresses (a script adds the file name) still get the neutral address', false === strpos( $dir, 'wp-content' ), $dir );
+
+/* ---------- Q. HTML-escaped quotes ---------- */
+
+foreach ( array( '&quot;', '&#039;', '&#39;' ) as $quote ) {
+	$in  = '<div style="background-image:url(' . $quote . $ur . '/bg.png' . $quote . ')"></div>';
+	$out = PNCP_Stealth::rewrite( $in );
+	t( 'Q url(' . $quote . '/…' . $quote . ') in an attribute is rewritten', false === strpos( $out, '/wp-content/' ) && false !== strpos( $out, 'url(' . $quote . '/assets/' ), $out );
+	t( 'Q url(' . $quote . '/…' . $quote . ') maps back to its file', array() === unmapped( str_replace( $quote, '"', $out ), $nginx, $apache ), $out );
+	$other = '<div style="background:url(' . $quote . 'https://other.example/wp-content/uploads/a.png' . $quote . ')"></div>';
+	t( 'Q url(' . $quote . '…' . $quote . ') of another host stays', PNCP_Stealth::rewrite( $other ) === $other );
+}
+$text = '<p>Copy it to my-folder/wp-content/uploads or to x&amp;/wp-content/ please.</p>';
+t( 'Q a path glued to other text is not rewritten', PNCP_Stealth::rewrite( $text ) === $text, PNCP_Stealth::rewrite( $text ) );
 
 exit( $fails ? 1 : 0 );

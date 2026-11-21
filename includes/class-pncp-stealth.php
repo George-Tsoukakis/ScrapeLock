@@ -1864,7 +1864,8 @@ final class PNCP_Stealth {
 			foreach ( $segments as $segment ) {
 				$path .= $sep . preg_quote( $segment, '~' );
 			}
-			$alts[]       = '(?:(?:https?:)?' . $sep . $sep . '(?:' . implode( '|', $hosts ) . ')|(?<=[\s"\'(=,]))' . $path . '(*MARK:' . $key . ')';
+			// 3.12.8: also after a quote escaped in an attribute (style="background:url(&quot;/wp-content/…&quot;)").
+			$alts[]       = '(?:(?:https?:)?' . $sep . $sep . '(?:' . implode( '|', $hosts ) . ')|(?<=[\s"\'(=,]|&quot;|&#039;|&#39;|&#34;|&apos;))' . $path . '(*MARK:' . $key . ')';
 			$repl[ $key ] = $item;
 		}
 		if ( ! $alts ) {
