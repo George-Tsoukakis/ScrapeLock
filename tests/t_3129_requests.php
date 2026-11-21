@@ -298,6 +298,28 @@ for ( $i = 1; $i <= 3; $i++ ) {
 	list( $code, $rec ) = visit( $page, '198.51.100.91' );
 	$clean( "B page view $i of a known visitor: no query (read or write) and no file access of ScrapeLock", $rec, 200, $code );
 }
+list( $code, $rec ) = visit( $page, '198.51.100.92' );
+$clean( 'B the first page view of a new visitor: none either (bans, counters, reputation in the cache)', $rec, 200, $code );
+list( $code, $rec ) = visit( $page, '198.51.100.94', $bot );
+$clean( 'B a refused bot (no User-Agent: 403, logged): none either', $rec, 403, $code );
+for ( $i = 1; $i <= 3; $i++ ) {
+	list( $code, $rec ) = visit( $trap, '198.51.100.93' );
+	$clean( "B the trap, violation $i (403" . ( 3 === $i ? ', a new ban' : '' ) . '): none either', $rec, 403, $code );
+}
+list( $code, $rec ) = visit( $page, '198.51.100.93' );
+$clean( 'B ...the ban is in effect at once (403), with none either', $rec, 403, $code );
+$count_code = '$since = ' . (int) $t_start . '; global $wpdb;
+	return array(
+		"ban"     => (int) $wpdb->get_var( $wpdb->prepare( "SELECT COUNT(*) FROM " . PNCP_Log::bans_table() . " WHERE ip = %s", "198.51.100.93" ) ),
+		"log"     => (int) $wpdb->get_var( $wpdb->prepare( "SELECT SUM(hits) FROM " . PNCP_Log::table() . " WHERE ip = %s AND created >= %s", "198.51.100.94", gmdate( "Y-m-d H:i:s", $since - 60 ) ) ),
+		"traffic" => PNCP_Traffic::ready() ? (int) $wpdb->get_var( $wpdb->prepare( "SELECT COUNT(*) FROM " . PNCP_Traffic::table() . " WHERE ip LIKE %s AND src = %s AND ts >= %d", "198.51.100.%", "wp", $since ) ) : -1,
+		"air"     => (int) $wpdb->get_var( $wpdb->prepare( "SELECT SUM(hits) FROM " . PNCP_Ai_Referrals::table() . " WHERE platform = %s", "chatgpt" ) ),
+	);';
+$before = wp_run( $count_code );
+t( 'B before the scheduled event: the ban is not in the database yet', is_array( $before ) && 0 === $before['ban'], wp_json_encode_safe( $before ) );
+$after = wp_run( 'add_filter( "pncp_defer_ready", "__return_true" ); PNCP_Defer::flush(); ' . $count_code );
+t( 'B after it: the ban is in the table', is_array( $after ) && 1 === $after['ban'], wp_json_encode_safe( $after ) );
+t( 'B ...the refused bot\'s log row, with its hits', is_array( $after ) && $after['log'] >= 2 && $after['log'] > $before['log'], wp_json_encode_safe( array( $before, $after ) ) );
 
 $r = wp_run( $surge_code( true ) );
 t( 'S with an object cache, in a visitor\'s request: 3 minutes over the threshold, Emergency Mode in effect at once', is_array( $r ) && $r['until'] > time() && 3 === $r['streak'], wp_json_encode_safe( $r ) );
