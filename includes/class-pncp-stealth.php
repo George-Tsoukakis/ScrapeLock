@@ -139,6 +139,7 @@ final class PNCP_Stealth {
 			add_action( 'admin_post_' . self::ACTION_OFF, array( __CLASS__, 'handle_off' ) );
 			add_action( 'admin_post_' . self::ACTION_SCAN, array( __CLASS__, 'handle_scan' ) );
 			add_action( 'wp_ajax_health-check-scrapelock-stealth', array( __CLASS__, 'ajax_health' ) );
+			PNCP_Stealth_Status::init(); // 3.12.6: "copy the Stealth rules again".
 		}
 		add_filter( 'site_status_tests', array( __CLASS__, 'health_tests' ) );
 		add_action( 'init', array( __CLASS__, 'ensure_cron' ), 30 );
@@ -315,6 +316,7 @@ final class PNCP_Stealth {
 	private static function save_state( $state ) {
 		update_option( self::OPTION, $state, true );
 		self::$compiled = null;
+		PNCP_Stealth_Status::reset();
 	}
 
 	/**
@@ -722,7 +724,7 @@ final class PNCP_Stealth {
 				$lines[] = 'RewriteRule ^(?:' . implode( '|', $files ) . ')$ - [R=404,L,NC]';
 			}
 			$lines[] = '</IfModule>';
-			return $lines;
+			return PNCP_Stealth_Status::with_fingerprint( 'apache', $lines ); // 3.12.6: the installed rules can be checked.
 		}
 		$lines[] = '# Inside the site\'s server { }, above the location blocks. Then nginx -t and reload.';
 		$prefix  = $home . $base;
@@ -741,7 +743,7 @@ final class PNCP_Stealth {
 		if ( self::blocks_files( $s ) ) {
 			$lines[] = 'location ~* "^' . $home . '(?:' . implode( '|', array_map( 'preg_quote', self::blocked_files() ) ) . ')$" { return 404; }';
 		}
-		return $lines;
+		return PNCP_Stealth_Status::with_fingerprint( 'nginx', $lines ); // 3.12.6: the installed rules can be checked.
 	}
 
 	/**
@@ -2733,6 +2735,8 @@ final class PNCP_Stealth {
 			<?php endif; ?>
 			<?php if ( $active && $state['pending'] && 'apache' !== $state['server'] ) : ?>
 				<div class="notice notice-info inline"><p><?php esc_html_e( 'A plugin or theme changed: copy the new server rules below and press "Test again". Until then its files are served through the general wp-content address, which works but shows the plugin\'s folder name.', 'scrapelock' ); ?></p></div>
+			<?php else : ?>
+				<?php PNCP_Stealth_Status::render_card_line(); // 3.12.6: the Stealth rules on the server. ?>
 			<?php endif; ?>
 			<?php if ( $locked ) : ?>
 				<p><strong><?php esc_html_e( 'The site is locked with Lockdown: unlock it to change Stealth.', 'scrapelock' ); ?></strong></p>
@@ -2790,6 +2794,8 @@ final class PNCP_Stealth {
 				<summary><?php echo esc_html( 'apache' === $server ? __( 'Server rules (written into .htaccess for you)', 'scrapelock' ) : __( 'Server rules (add them, then press Save and test)', 'scrapelock' ) ); ?></summary>
 				<?php if ( 'apache' !== $server ) : ?>
 					<?php echo PNCP_Admin_Fields::para( __( 'Nginx: in the server { } block above the locations, then nginx -t and reload.', 'scrapelock' ), __( 'Nginx: inside the site\'s server { } block, above the location blocks; then nginx -t and reload. Other servers (IIS, Caddy): the same rewrites in their own syntax. After adding or removing a plugin, copy them again.', 'scrapelock' ) ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Escaped in PNCP_Admin_Fields. ?>
+					<?php echo PNCP_Admin_Fields::para( __( 'aaPanel: a file of its own in extension/<site>/, after scrapelock.conf, e.g. z-scrapelock-stealth.conf.', 'scrapelock' ), PNCP_Stealth_Status::aapanel_text() ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Escaped in PNCP_Admin_Fields. ?>
+					<p><a href="<?php echo esc_url( PNCP_Status::settings_url( array( 'tab' => 'rules' ) ) . '#pncp-rules-stealth' ); ?>"><?php esc_html_e( 'Status of the Stealth rules', 'scrapelock' ); ?></a></p>
 				<?php elseif ( ! self::htaccess_writable() ) : ?>
 					<p class="description"><?php esc_html_e( 'The .htaccess file cannot be written: copy the Apache rules into it yourself, above # BEGIN WordPress.', 'scrapelock' ); ?></p>
 				<?php endif; ?>
@@ -2888,7 +2894,7 @@ final class PNCP_Stealth {
 			$result['status']      = 'recommended';
 			$result['label']       = __( 'ScrapeLock Stealth is turned on but not working', 'scrapelock' );
 			$result['description'] = '<p>' . esc_html( '' !== (string) $state['error'] ? (string) $state['error'] : __( 'The new addresses have not been tested yet.', 'scrapelock' ) ) . '</p>';
-			return $result;
+			return PNCP_Stealth_Status::health( $result );
 		}
 		$scan = get_transient( self::SCAN );
 		if ( ! is_array( $scan ) || empty( $scan['active'] ) ) {
@@ -2911,7 +2917,7 @@ final class PNCP_Stealth {
 			);
 			$result['description'] = '<ul>' . implode( '', $items ) . '</ul>';
 		}
-		return $result;
+		return PNCP_Stealth_Status::health( $result ); // 3.12.6: the Stealth rules on the server.
 	}
 
 	/**
@@ -2943,6 +2949,7 @@ final class PNCP_Stealth {
 			'htaccess' => ! empty( $state['htaccess'] ) ? 'written' : 'no',
 			'tested'   => $state['tested'] ? gmdate( 'Y-m-d H:i:s', (int) $state['tested'] ) . ' UTC' : '-',
 			'folders'  => (string) count( (array) $state['map'] ),
+			'rules'    => null !== PNCP_Stealth_Status::kept_status() ? PNCP_Stealth_Status::kept_status()['state'] : '-', // 3.12.6.
 			'error'    => (string) $state['error'],
 		);
 	}

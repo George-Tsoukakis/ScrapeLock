@@ -2745,6 +2745,8 @@ final class PNCP_Admin {
 		<?php echo PNCP_Admin_Fields::more( __( '3) Run nginx -t: only if it says “test is successful”, reload Nginx (nginx -s reload or systemctl reload nginx). If it shows an error, nothing has changed yet: remove what you added. 4) Check the status above. After every change of the settings that changes the rules, it says “out of date”: copy the part it names again.', 'scrapelock' ) ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Escaped in PNCP_Admin_Fields. ?>
 		</section>
 
+		<?php PNCP_Stealth_Status::render_rules_card(); // 3.12.6: the Stealth rules, their status and where they go. ?>
+
 		<?php // 3.7: fail2ban (PNCP_Fail2ban). ?>
 		<section class="pncp-card pncp-card--wide pncp-rules-card" aria-labelledby="pncp-rules-fail2ban">
 		<h2 id="pncp-rules-fail2ban"><?php esc_html_e( 'fail2ban (VPS and dedicated servers)', 'scrapelock' ); ?></h2>

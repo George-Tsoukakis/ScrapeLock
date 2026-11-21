@@ -1,6 +1,6 @@
 <?php
 /**
- * ScrapeLock 3.12.6 — Stealth with optimization plugins.
+ * ScrapeLock 3.12.6 — Stealth with optimization plugins (E1) and the install status of the Stealth rules (E5).
  *
  *   WP_DIR=/path/to/wordpress BASE=http://127.0.0.1:8099 php t_3126_stealth.php
  *
@@ -19,10 +19,16 @@
  *    before the plugins, served before WordPress on the next request): 0 wp-content / wp-includes in the HTML,
  *    also from its page cache, after clearing its cache and regenerating; the late rocket_buffer filter; the
  *    page cache is emptied when Stealth turns on or off.
+ * F. The fingerprint of the Stealth rules: server-level if + location = (Nginx), header (Apache), the hash leaves
+ *    out its own lines and the comments, changes with the base folder and the folders.
+ * S. The status (fake answers): current / stale / unmarked / missing (WordPress answered) / error, the server first,
+ *    kept 5 minutes; the texts; "copy the Stealth rules again" after a base or folder change (notice, Dismiss,
+ *    Site Health, the Server rules tab with the aaPanel instructions, the Stealth card).
  * R. Real Nginx (SKIP without nginx on PATH): an aaPanel-like server { } with the server-level WordPress rewrite;
  *    the Stealth rules in the extension include (top of server { }): nginx -t, every CSS/JS/image address of the
- *    page answers 200 with the real file, after clearing the stand-in's cache too; the real self-test passes.
- * A. Real Apache (SKIP without apache2): the Apache rules in <Directory>: the page's files answer 200.
+ *    page answers 200 with the real file, after clearing the stand-in's cache too; the check address answers
+ *    "current", the real self-test passes; the rules below the panel rewrite: the check address reaches WordPress.
+ * A. Real Apache (SKIP without apache2): the Apache rules in <Directory>: the page's files answer 200, the header.
  *
  * Only on a test WordPress.
  */
@@ -170,7 +176,7 @@ function asset_urls( $html ) {
 
 $saved        = array();
 // The settings first: restoring them turns Stealth on or off (settings_changed()), then its state is put back.
-foreach ( array( PNCP_OPTION, PNCP_Stealth::OPTION, 'pncp_test_optimizer', 'pncp_test_optimizer_purges' ) as $name ) {
+foreach ( array( PNCP_OPTION, PNCP_Stealth::OPTION, PNCP_Stealth_Status::SEEN, 'pncp_test_optimizer', 'pncp_test_optimizer_purges' ) as $name ) {
 	$saved[ $name ] = get_option( $name, null );
 }
 $mu       = WP_CONTENT_DIR . '/mu-plugins/pncp-test-optimizer.php';
@@ -204,6 +210,7 @@ register_shutdown_function(
 				update_option( $name, $value, PNCP_Stealth::OPTION === $name || PNCP_OPTION === $name );
 			}
 		}
+		delete_transient( PNCP_Stealth_Status::STATUS );
 		foreach ( array( $mu, $lazy_js, $png ) as $f ) {
 			if ( is_file( $f ) ) {
 				unlink( $f );
@@ -222,6 +229,8 @@ register_shutdown_function(
 		}
 	}
 );
+delete_transient( PNCP_Stealth_Status::STATUS );
+delete_option( PNCP_Stealth_Status::SEEN );
 
 /* ---------- O. Which optimization plugins are seen ---------- */
 
@@ -370,6 +379,188 @@ wp_set_current_user( 1 );
 $late_admin = PNCP_Stealth::optimized_html( '<link href="' . $files['rocket_min_theme'][1] . '">' );
 wp_set_current_user( 0 );
 t( 'W ... never for signed-in users (their pages keep the real addresses)', false !== strpos( $late_admin, 'wp-content' ) );
+
+/* ---------- F. The fingerprint ---------- */
+
+$fp_n = PNCP_Stealth_Status::current( 'nginx' );
+$fp_a = PNCP_Stealth_Status::current( 'apache' );
+$path = PNCP_Stealth_Status::check_path();
+t( 'F Nginx: the check address answered at server level by if ($uri = …) and by location = (fallback)', preg_match( '/^[0-9a-f]{12}$/', $fp_n ) && false !== strpos( $nginx, 'if ($uri = ' . $path . ') { return 200 "' . $fp_n . '\\n"; }' ) && false !== strpos( $nginx, 'location = ' . $path . ' {' ) );
+$lines   = explode( "\n", $nginx );
+$if_at   = array_search( 'if ($uri = ' . $path . ') { return 200 "' . $fp_n . '\\n"; }', $lines, true );
+$first_r = 0;
+foreach ( $lines as $k => $l ) {
+	if ( 0 === strpos( $l, 'rewrite ' ) ) {
+		$first_r = $k;
+		break;
+	}
+}
+t( 'F ... above every rewrite of the rules', false !== $if_at && $if_at < $first_r );
+$rest = array();
+foreach ( $lines as $l ) {
+	if ( false === strpos( $l, $fp_n ) && 0 !== strpos( $l, '# BEGIN' ) && 0 !== strpos( $l, '# END' ) ) {
+		$rest[] = $l;
+	}
+}
+t( 'F the hash covers every rule line but its own and the comments', PNCP_Stealth_Status::hash( array_filter( $rest, static function ( $l ) use ( $path ) {
+	return false === strpos( $l, 'location = ' . $path ) && ! in_array( trim( $l ), array( 'default_type text/plain;', 'add_header Cache-Control "no-store" always;', '}' ), true );
+} ) ) === $fp_n );
+t( 'F a comment does not change it', PNCP_Stealth_Status::hash( array( '# x', 'rewrite a b;' ) ) === PNCP_Stealth_Status::hash( array( 'rewrite a b;', '# y' ) ) );
+t( 'F Apache: a header for the site\'s own signed requests (mod_headers), after the rewrites', false !== strpos( $apache, 'Header always set X-ScrapeLock-Stealth "' . $fp_a . '" "expr=-n %{HTTP:X-ScrapeLock-Sig}"' ) && strpos( $apache, '</IfModule>' ) < strpos( $apache, 'X-ScrapeLock-Stealth' ) );
+settings( array( 'stealth_base' => 'static' ) );
+PNCP_Stealth_Status::reset();
+$fp_b = PNCP_Stealth_Status::current( 'nginx' );
+settings( array( 'stealth_base' => 'assets' ) );
+PNCP_Stealth_Status::reset();
+t( 'F another base folder: another fingerprint', $fp_b !== $fp_n && $fp_n === PNCP_Stealth_Status::current( 'nginx' ) );
+$plug = static function ( $plugins ) {
+	return array_merge( (array) $plugins, array( 'akismet/akismet.php' ) );
+};
+add_filter( 'option_active_plugins', $plug );
+PNCP_Stealth_Status::reset();
+$fp_p    = PNCP_Stealth_Status::current( 'nginx' );
+$folders = PNCP_Stealth_Status::folders();
+remove_filter( 'option_active_plugins', $plug );
+PNCP_Stealth_Status::reset();
+t( 'F a new plugin folder: another fingerprint', is_dir( WP_PLUGIN_DIR . '/akismet' ) ? $fp_p !== $fp_n && PNCP_Stealth_Status::folders() !== $folders : true );
+
+/* ---------- S. The status ---------- */
+
+$answer = null;
+$asked  = array();
+$fake   = static function ( $pre, $args, $url ) use ( &$answer, &$asked ) {
+	$where   = isset( $args['pncp_resolve'] ) ? 'origin' : 'public';
+	$asked[] = $where . ' ' . $url;
+	return is_callable( $answer ) ? $answer( $where, $url ) : resp( 404 );
+};
+add_filter( 'pre_http_request', $fake, 10, 3 );
+add_filter(
+	'pncp_selfcheck_origin_ips',
+	static function () {
+		return array( '127.0.0.1' );
+	}
+);
+$server_f = static function () {
+	return 'nginx';
+};
+add_filter( 'pncp_stealth_server', $server_f );
+$status = static function ( $fresh = true ) {
+	return PNCP_Stealth_Status::status( $fresh );
+};
+$answer = static function ( $where ) use ( $fp_n ) {
+	return 'origin' === $where ? resp( 200, array( 'server' => 'nginx' ), $fp_n . "\n" ) : resp( 404 );
+};
+$st     = $status();
+t( 'S the server answers the current fingerprint: current, via the server directly', 'current' === $st['state'] && 'origin' === $st['via'] && 0 === strpos( $asked[0], 'origin ' ) && false !== strpos( $asked[0], $path ), wp_json_encode( $st ) . ' ' . implode( ',', $asked ) );
+t( 'S ... the installed fingerprint is noted with the base and the folders', $fp_n === PNCP_Stealth_Status::seen()['installed'] && 'assets' === PNCP_Stealth_Status::seen()['base'] && '' !== PNCP_Stealth_Status::seen()['folders'] );
+$asked = array();
+$st2   = $status( false );
+t( 'S kept 5 minutes (nothing asked again)', 'current' === $st2['state'] && ! $asked && null !== PNCP_Stealth_Status::kept_status() );
+$answer = static function ( $where ) {
+	return 'origin' === $where ? resp( 200, array(), "0123456789ab\n" ) : resp( 404 );
+};
+$st     = $status();
+t( 'S another fingerprint: stale (out of date)', 'stale' === $st['state'] && '0123456789ab' === $st['installed'] );
+$answer = static function () {
+	return resp( 404, array( 'x-scrapelock' => 'ok' ), '<html><body class="error404">' );
+};
+$st     = $status();
+t( 'S WordPress answered and Stealth works: installed without a fingerprint (rules of before 3.12.6)', 'unmarked' === $st['state'] && 'wp' === $st['kind'], wp_json_encode( $st ) );
+$was_state = get_option( PNCP_Stealth::OPTION );
+$tmp       = $was_state;
+$tmp['active'] = 0;
+update_option( PNCP_Stealth::OPTION, $tmp, true );
+$st = $status();
+t( 'S ... and with Stealth not working: not found (WordPress answered)', 'missing' === $st['state'] && 'wp' === $st['kind'] );
+$tx = PNCP_Stealth_Status::text( $st );
+t( 'S the text says the rules are not in this server { } or below the server-level rewrite', 'Not found on this server.' === $tx['line'] && false !== strpos( $tx['more'], 'below a WordPress rewrite at server level' ) );
+update_option( PNCP_Stealth::OPTION, $was_state, true );
+$answer = static function () {
+	return new WP_Error( 'x', 'down' );
+};
+$st     = $status();
+t( 'S nothing answers: error', 'error' === $st['state'] );
+$answer = static function ( $where, $url ) use ( $fp_n ) {
+	if ( 'origin' === $where && 0 === strpos( $url, 'http://' ) ) {
+		$port = wp_parse_url( $url, PHP_URL_PORT );
+		return resp( 301, array( 'location' => 'https://' . wp_parse_url( $url, PHP_URL_HOST ) . ( $port ? ':' . $port : '' ) . PNCP_Stealth_Status::check_path() ) );
+	}
+	return 'origin' === $where ? resp( 200, array(), $fp_n . "\n" ) : resp( 404 );
+};
+$st     = $status();
+t( 'S an http:// site sent to https:// by the server: the check address there', 'current' === $st['state'] && false !== strpos( implode( ' ', $asked ), 'origin https://' ), wp_json_encode( $st ) );
+$tx = PNCP_Stealth_Status::text( array_merge( $st, array( 'state' => 'current' ) ) );
+t( 'S the texts: current', 'Installed and up to date.' === $tx['line'] && 'notice-success' === $tx['class'] );
+$tx = PNCP_Stealth_Status::text( array_merge( $st, array( 'state' => 'stale' ) ) );
+t( 'S the texts: out of date, copy again', false !== strpos( $tx['line'], 'out of date' ) && false !== strpos( $tx['line'], 'Copy the Stealth rules again' ) );
+$aa = static function () {
+	return true;
+};
+add_filter( 'pncp_is_aapanel', $aa );
+$tx = PNCP_Stealth_Status::text( array_merge( $st, array( 'state' => 'stale' ) ) );
+remove_filter( 'pncp_is_aapanel', $aa );
+t( 'S aaPanel: extension/<site>/ as its own file after scrapelock.conf (z-scrapelock-stealth.conf), before the rewrite include', false !== strpos( $tx['more'], '/www/server/panel/vhost/nginx/extension/<site>/' ) && false !== strpos( $tx['more'], 'after scrapelock.conf' ) && false !== strpos( $tx['more'], 'z-scrapelock-stealth.conf' ) && false !== strpos( $tx['more'], 'before the rewrite include' ) );
+
+// "Copy the Stealth rules again".
+$answer = static function ( $where ) use ( $fp_n ) {
+	return 'origin' === $where ? resp( 200, array(), $fp_n . "\n" ) : resp( 404 );
+};
+$status();
+t( 'S rules current: nothing to copy', '' === PNCP_Stealth_Status::needs_copy() );
+settings( array( 'stealth_base' => 'static' ) );
+PNCP_Stealth_Status::reset();
+t( 'S the base folder changed: copy again (base)', 'base' === PNCP_Stealth_Status::needs_copy() && false !== strpos( PNCP_Stealth_Status::message( 'base' ), 'The folder of the Stealth addresses changed' ) );
+settings( array( 'stealth_base' => 'assets' ) );
+PNCP_Stealth_Status::reset();
+add_filter( 'option_active_plugins', $plug );
+PNCP_Stealth_Status::reset();
+t( 'S a new plugin folder: copy again (folders)', ! is_dir( WP_PLUGIN_DIR . '/akismet' ) || 'folders' === PNCP_Stealth_Status::needs_copy() );
+// The notice on ScrapeLock's page, then Dismiss for this change.
+wp_set_current_user( 1 );
+set_current_screen( 'settings_page_' . PNCP_Admin::PAGE );
+ob_start();
+PNCP_Stealth_Status::notice();
+$notice = (string) ob_get_clean();
+t( 'S the notice: its own text, a link to the Stealth rules of the Server rules tab, Dismiss', ! is_dir( WP_PLUGIN_DIR . '/akismet' ) || ( false !== strpos( $notice, 'pncp-stealth-rules-stale' ) && false !== strpos( $notice, 'A plugin or theme folder changed' ) && false !== strpos( $notice, 'tab=rules' ) && false !== strpos( $notice, '#pncp-rules-stealth' ) && false !== strpos( $notice, PNCP_Stealth_Status::DISMISS ) ), wp_strip_all_tags( $notice ) );
+$seen              = PNCP_Stealth_Status::seen();
+$seen['dismissed'] = 'folders|' . $seen['installed'] . '|' . PNCP_Stealth_Status::current( 'nginx' );
+update_option( PNCP_Stealth_Status::SEEN, $seen, false );
+ob_start();
+PNCP_Stealth_Status::notice();
+t( 'S dismissed: not shown again for this change', '' === (string) ob_get_clean() );
+$hr = PNCP_Stealth::health_result();
+t( 'S Site Health: recommended, "out of date", with the text', ! is_dir( WP_PLUGIN_DIR . '/akismet' ) || ( 'recommended' === $hr['status'] && false !== strpos( $hr['label'], 'Stealth server rules are out of date' ) && false !== strpos( $hr['actions'], '#pncp-rules-stealth' ) ), wp_json_encode( $hr ) );
+remove_filter( 'option_active_plugins', $plug );
+PNCP_Stealth_Status::reset();
+delete_transient( PNCP_Stealth::SCAN );
+$hr = PNCP_Stealth::health_result();
+t( 'S Site Health with current rules: the line "Stealth server rules: Installed and up to date."', false !== strpos( $hr['description'], 'Installed and up to date.' ), wp_json_encode( $hr ) );
+// Rules of before 3.12.6 (nothing seen): what Stealth itself noticed (a pending map).
+delete_option( PNCP_Stealth_Status::SEEN );
+$tmp            = get_option( PNCP_Stealth::OPTION );
+$tmp['pending'] = 'abc';
+update_option( PNCP_Stealth::OPTION, $tmp, true );
+t( 'S no fingerprint seen, a plugin changed (pending): copy again (folders)', 'folders' === PNCP_Stealth_Status::needs_copy() );
+update_option( PNCP_Stealth::OPTION, $was_state, true );
+// The Server rules tab and the Stealth card.
+ob_start();
+PNCP_Stealth_Status::render_rules_card();
+$tab = (string) ob_get_clean();
+t( 'S the Server rules tab: the Stealth card, its status, "Check again", both rules to copy, the aaPanel file', false !== strpos( $tab, 'id="pncp-rules-stealth"' ) && false !== strpos( $tab, 'id="pncp-stealth-rules-status"' ) && false !== strpos( $tab, 'pncp_stealth_check=1' ) && false !== strpos( $tab, 'id="pncp-stealth-nginx"' ) && false !== strpos( $tab, 'id="pncp-stealth-apache"' ) && false !== strpos( $tab, 'z-scrapelock-stealth.conf' ) );
+$admin = file_get_contents( PNCP_DIR . 'includes/class-pncp-admin.php' );
+t( 'S ... shown in the tab', false !== strpos( $admin, 'PNCP_Stealth_Status::render_rules_card();' ) );
+ob_start();
+PNCP_Stealth::render_card();
+$card = (string) ob_get_clean();
+t( 'S the Stealth card: the status of its rules and the aaPanel place', false !== strpos( $card, 'id="pncp-stealth-card-rules"' ) && false !== strpos( $card, 'z-scrapelock-stealth.conf' ) && false !== strpos( $card, 'What optimization plugins print' ), substr( wp_strip_all_tags( $card ), 0, 200 ) );
+wp_set_current_user( 0 );
+$cli = PNCP_Stealth::cli_status();
+t( 'S wp scrapelock stealth status: the rules\' state', 'current' === $cli['rules'], wp_json_encode( $cli ) );
+remove_filter( 'pre_http_request', $fake, 10 );
+remove_filter( 'pncp_stealth_server', $server_f );
+delete_transient( PNCP_Stealth_Status::STATUS );
+$readme = file_get_contents( PNCP_DIR . 'readme.txt' );
+t( 'S readme FAQ: the Stealth rules on aaPanel (z-scrapelock-stealth.conf after scrapelock.conf, before the rewrite include)', false !== strpos( $readme, 'z-scrapelock-stealth.conf' ) && false !== strpos( $readme, 'after scrapelock.conf' ) );
 
 /* ---------- B. The page through a WP Rocket-like optimizer ---------- */
 
@@ -637,6 +828,9 @@ if ( '' === $nginx_bin ) {
 	t( 'R nginx -t passes with the Stealth rules in the extension folder (z-scrapelock-stealth.conf after scrapelock.conf)', 0 === $rc, $msg );
 	list( $rc, $msg ) = $run( '' );
 	usleep( 400000 );
+	$want_fp          = PNCP_Stealth_Status::current( 'nginx' );
+	list( $cc, $cb )  = $get( PNCP_Stealth_Status::check_path() . '?t=1' );
+	t( 'R the check address answers the fingerprint at server level, before the WordPress rewrite', 200 === $cc && $want_fp . "\n" === $cb, $cc . ' ' . substr( $cb, 0, 80 ) );
 	$clear();
 	list( $code, $page ) = http( $base . '/' );
 	$bad                 = array();
@@ -664,10 +858,7 @@ if ( '' === $nginx_bin ) {
 	t( "R after clearing the stand-in's cache and regenerating: every address still 200 ($n, no copy of the rules)", $n >= 5 && ! $bad, implode( ' | ', $bad ) );
 	list( $vc, $vb ) = $get( '/assets/' . array_search( 'includes', wp_list_pluck( PNCP_Stealth::state()['map'], 'kind' ), true ) . '/version.php' );
 	t( 'R a PHP file never runs through the new addresses (version.php is not served as PHP)', 200 !== $vc || '' !== trim( $vb ) );
-	// The real self-test, with the site's address on this Nginx.
-	$server_f = static function () {
-		return 'nginx';
-	};
+	// The status and the real self-test, with the site's address on this Nginx.
 	$nurl = 'http://127.0.0.1:' . $port;
 	$opt  = static function () use ( $nurl ) {
 		return $nurl;
@@ -675,13 +866,28 @@ if ( '' === $nginx_bin ) {
 	add_filter( 'option_home', $opt, 99 );
 	add_filter( 'option_siteurl', $opt, 99 );
 	add_filter( 'pncp_stealth_server', $server_f );
+	PNCP_Stealth_Status::reset();
 	file_put_contents( $dir . '/ext/z-scrapelock-stealth.conf', PNCP_Stealth::rules_text( 'nginx' ) );
 	$run( '-s reload' );
 	usleep( 500000 );
+	delete_transient( PNCP_Stealth_Status::STATUS );
+	$st = PNCP_Stealth_Status::status( true );
+	t( 'R the status through the real Nginx: installed and up to date, the server asked directly', 'current' === $st['state'] && 'origin' === $st['via'], wp_json_encode( $st ) );
 	remove_filter( 'pncp_stealth_self_test', '__return_true' );
 	$real_test = PNCP_Stealth::self_test( 'assets', PNCP_Stealth::build() );
 	add_filter( 'pncp_stealth_self_test', '__return_true' );
 	t( 'R the real self-test through Nginx passes (the file with the inner words, the endpoints, no PHP)', true === $real_test, is_wp_error( $real_test ) ? $real_test->get_error_message() : '' );
+	settings( array( 'stealth_base' => 'static' ) );
+	PNCP_Stealth_Status::reset();
+	$st = PNCP_Stealth_Status::status( true );
+	t( 'R another base folder, the old rules on the server: out of date, "copy again" (base)', 'stale' === $st['state'] && 'base' === PNCP_Stealth_Status::needs_copy(), wp_json_encode( $st ) );
+	settings( array( 'stealth_base' => 'assets' ) );
+	PNCP_Stealth_Status::reset();
+	$write( true );
+	$run( '-s reload' );
+	usleep( 500000 );
+	list( $cc, $cb ) = $get( PNCP_Stealth_Status::check_path() . '?t=2' );
+	t( 'R the Stealth rules BELOW the server-level WordPress rewrite: the check address reaches WordPress (the order matters)', $want_fp . "\n" !== $cb && 200 !== $cc, $cc . ' ' . substr( $cb, 0, 60 ) );
 	remove_filter( 'option_home', $opt, 99 );
 	remove_filter( 'option_siteurl', $opt, 99 );
 	remove_filter( 'pncp_stealth_server', $server_f );
@@ -732,6 +938,7 @@ if ( '' === $apache_bin || ! is_file( $mods . '/mod_rewrite.so' ) || ! is_file( 
 		}
 	}
 	t( "A every CSS / JS / image address of the page answers 200 through Apache ($n)", $n >= 5 && ! $bad, implode( ' | ', $bad ) );
+	t( 'A the fingerprint header for the site\'s own signed requests', PNCP_Stealth_Status::current( 'apache' ) === $hdr_fp, $hdr_fp );
 	exec( escapeshellarg( $apache_bin ) . ' -k stop -f ' . escapeshellarg( $dir . '/httpd.conf' ) . ' 2>&1' );
 	usleep( 500000 );
 	rmtree( $dir );
