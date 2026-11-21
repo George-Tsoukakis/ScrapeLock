@@ -106,6 +106,7 @@ function pncp_uninstall_site() {
 	delete_option( 'pncp_selfcheck_last' );
 	delete_option( 'pncp_rules_state' ); // 3.12.3: the installed server rules against the current ones.
 	delete_option( 'pncp_rules_texts' ); // 3.12.3: the text of the last rules shown, for "See what changed".
+	delete_option( 'pncp_wizard_state' ); // 3.12.6: the dismissed "For my site" proposals.
 	delete_transient( 'pncp_selfcheck_route' );
 	delete_transient( 'pncp_edge_spare' );
 	// 3.12: Traffic (also dropped by PNCP_Traffic::uninstall() above; here too, should that have failed).

@@ -1533,10 +1533,23 @@ final class PNCP_Cli {
 	 * first tab of the settings page. Nothing changes without --apply; the settings as they are now are saved
 	 * first ("wp scrapelock settings undo" puts them back).
 	 *
+	 * 3.12.6: "dismiss <setting>" hides a proposal as it is now (it is then not listed, counted or applied, until
+	 * its setting or the proposal changes); "restore <setting>" shows it again.
+	 *
 	 * ## OPTIONS
 	 *
+	 * [<action>]
+	 * : dismiss or restore (nothing = list the proposals, or apply them with --apply).
+	 *
+	 * [<setting>]
+	 * : With dismiss or restore: the proposal (its setting name, as listed).
+	 *
+	 * [--include-dismissed]
+	 * : Also list the dismissed proposals, with a "state" column (proposed or dismissed).
+	 *
 	 * [--apply]
-	 * : Apply the proposals that block nothing more (the ones ticked by default on the settings page).
+	 * : Apply the proposals that block nothing more (the ones ticked by default on the settings page). Dismissed
+	 * proposals are never applied.
 	 *
 	 * [--all]
 	 * : With --apply: also the proposals that block more (marked "more").
@@ -1558,22 +1571,43 @@ final class PNCP_Cli {
 	 *     wp scrapelock wizard
 	 *     wp scrapelock wizard --apply --yes
 	 *     wp scrapelock wizard --apply --only=precheck
+	 *     wp scrapelock wizard dismiss block_devtools
+	 *     wp scrapelock wizard --include-dismissed
+	 *     wp scrapelock wizard restore block_devtools
 	 *
 	 * @param string[]              $args       Arguments.
 	 * @param array<string, string> $assoc_args Options.
 	 */
-	public function wizard( $args, $assoc_args ) { // phpcs:ignore Generic.CodeAnalysis.UnusedFunctionParameter.FoundBeforeLastUsed -- WP-CLI signature.
-		$format    = self::format( $assoc_args );
-		$env       = PNCP_Wizard::detect();
-		$proposals = PNCP_Wizard::proposals( null, $env );
-		$items     = array();
-		foreach ( $proposals as $key => $row ) {
+	public function wizard( $args, $assoc_args ) {
+		$format = self::format( $assoc_args );
+		$env    = PNCP_Wizard::detect();
+		$action = isset( $args[0] ) ? (string) $args[0] : '';
+		if ( '' !== $action ) {
+			if ( ! in_array( $action, array( 'dismiss', 'restore' ), true ) || ! isset( $args[1] ) ) {
+				WP_CLI::error( __( 'Use: wp scrapelock wizard dismiss <setting> or wp scrapelock wizard restore <setting>.', 'scrapelock' ) );
+			}
+			$done = 'dismiss' === $action ? PNCP_Wizard::dismiss( (string) $args[1], $env ) : PNCP_Wizard::restore( (string) $args[1] );
+			if ( is_wp_error( $done ) ) {
+				WP_CLI::error( $done->get_error_message() );
+			}
+			WP_CLI::success( 'dismiss' === $action ? __( 'Dismissed: it is no longer listed, counted or applied, until its setting or the proposal changes.', 'scrapelock' ) : __( 'Restored: the proposal is listed again.', 'scrapelock' ) );
+			return;
+		}
+		$state = PNCP_Wizard::state();
+		// 3.12.6: the dismissed proposals only with --include-dismissed, and never applied.
+		list( $proposals, $dismissed ) = PNCP_Wizard::split( PNCP_Wizard::proposals( null, $env ), $state );
+		$with_dismissed                = ! empty( $assoc_args['include-dismissed'] );
+		$fields                        = $with_dismissed ? array( 'setting', 'now', 'proposed', 'risk', 'state', 'reason' ) : array( 'setting', 'now', 'proposed', 'risk', 'reason' );
+		$items                         = array();
+		foreach ( $with_dismissed ? $proposals + $dismissed : $proposals as $key => $row ) {
 			$texts         = PNCP_Wizard::row_texts( $row ); // 3.12.1: a row may change two settings (ban_strikes, ban_minutes).
 			$items[ $key ] = array(
 				'setting'  => $key,
-				'now'      => $texts[0],
+				/* translators: %s: the value now */
+				'now'      => PNCP_Wizard::is_chosen( $key, $row, $state ) ? sprintf( __( '%s (you chose this)', 'scrapelock' ), $texts[0] ) : $texts[0],
 				'proposed' => $texts[1],
 				'risk'     => $row['risk'],
+				'state'    => isset( $dismissed[ $key ] ) ? 'dismissed' : 'proposed',
 				'reason'   => $row['reason'],
 			);
 		}
@@ -1585,14 +1619,18 @@ final class PNCP_Cli {
 				if ( ! $items ) {
 					WP_CLI::success( __( 'Nothing to change: the settings already suit what was found.', 'scrapelock' ) );
 				} else {
-					WP_CLI\Utils\format_items( 'table', array_values( $items ), array( 'setting', 'now', 'proposed', 'risk', 'reason' ) );
+					WP_CLI\Utils\format_items( 'table', array_values( $items ), $fields );
+				}
+				if ( $dismissed && ! $with_dismissed ) {
+					/* translators: %d: number of dismissed proposals */
+					WP_CLI::line( sprintf( _n( '%d dismissed proposal is not listed (--include-dismissed lists it).', '%d dismissed proposals are not listed (--include-dismissed lists them).', count( $dismissed ), 'scrapelock' ), count( $dismissed ) ) );
 				}
 				foreach ( PNCP_Wizard::notes( null, $env ) as $note ) {
 					WP_CLI::line( '- ' . $note['for'] . ': ' . $note['text'] );
 				}
 				return;
 			}
-			WP_CLI\Utils\format_items( $format, array_values( $items ), array( 'setting', 'now', 'proposed', 'risk', 'reason' ) );
+			WP_CLI\Utils\format_items( $format, array_values( $items ), $fields );
 			return;
 		}
 		if ( PNCP_Lockdown::is_locked() ) {
@@ -1601,6 +1639,10 @@ final class PNCP_Cli {
 		$keys = array();
 		if ( ! empty( $assoc_args['only'] ) ) {
 			foreach ( array_filter( array_map( 'trim', explode( ',', (string) $assoc_args['only'] ) ) ) as $key ) {
+				if ( isset( $dismissed[ $key ] ) ) {
+					/* translators: %1$s: setting name */
+					WP_CLI::error( sprintf( __( '"%1$s" is dismissed: "wp scrapelock wizard restore %1$s" lists it again.', 'scrapelock' ), $key ) );
+				}
 				if ( ! isset( $proposals[ $key ] ) ) {
 					/* translators: %s: setting name */
 					WP_CLI::error( sprintf( __( '"%s" is not one of the proposals.', 'scrapelock' ), $key ) );

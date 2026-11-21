@@ -191,6 +191,12 @@ ScrapeLock — δοκιμές σε πραγματικό WordPress (όχι stubs)
                     PNCP_Bots::tech_profiler_agents() with its filter; every layer of the SEO switch: blocked_agents(),
                     HTTP 403 / 200, early check, pre-cache config, Nginx / Apache rules, robots.txt group, the log's
                     «Matched … (technology profilers)», Traffic «Explain», Site Health info
+  t_3126_wizard.php 3.12.6: «For my site»: «Dismiss» per proposal (admin-post, nonce, manage_options, Lockdown), not
+                    counted and never applied (also when posted or with --apply / --only), «Show dismissed (N)» with
+                    «Restore»; the hash id + values now + proposed values (another value or proposal brings it back,
+                    the same value pair keeps it dismissed: the owner's blur_on_capture / block_devtools case); «you
+                    chose this» after a dismiss or a save of other values; one small option, not autoloaded;
+                    wp scrapelock wizard dismiss / restore / --include-dismissed
   t_cli.php         wp scrapelock … μέσα από το πραγματικό wp (χρειάζεται WP_CLI, αλλιώς SKIP)
   t_bunny_rules.php Edge Rules στο Bunny μέσα στα όριά του (το πολύ 5 μοτίβα ανά συνθήκη) με ψεύτικο API που δίνει
                     HTTP 400 όπως το πραγματικό: χωρισμός, κλείδωμα/Remove, rollback, Monitor only, sync, προεπισκόπηση,

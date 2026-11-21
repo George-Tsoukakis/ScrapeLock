@@ -38,6 +38,19 @@ final class PNCP_Wizard {
 	const DONE_PREFIX = 'pncp_wizard_done_';
 
 	/**
+	 * 3.12.6: option with the dismissed proposals and the values the administrator chose against a proposal
+	 * (state()). One for the whole site, not per user: the proposals are about the site's settings, which every
+	 * administrator shares, and the count on the panel must be the same for all of them.
+	 */
+	const STATE = 'pncp_wizard_state';
+
+	/**
+	 * 3.12.6: at most this many entries in each part of state() (the oldest go first). There are about twenty
+	 * kinds of proposals, so this is never reached in normal use; it only keeps a damaged or filtered list small.
+	 */
+	const STATE_MAX = 60;
+
+	/**
 	 * Risk of a proposal: it blocks nothing more (ticked by default).
 	 */
 	const RISK_NONE = 'none';
@@ -52,6 +65,14 @@ final class PNCP_Wizard {
 	 */
 	public static function init() {
 		add_action( 'admin_post_' . self::ACTION, array( __CLASS__, 'handle' ) );
+	}
+
+	/**
+	 * 3.12.6: notes which proposals the administrator decided against when the settings are saved (state(),
+	 * settings_saved()). Registered where settings can be saved: wp-admin, WP-CLI, scheduled events.
+	 */
+	public static function watch() {
+		add_action( 'update_option_' . PNCP_OPTION, array( __CLASS__, 'settings_saved' ), 20, 2 );
 	}
 
 	/* ---------- Detection ---------- */
@@ -208,7 +229,7 @@ final class PNCP_Wizard {
 	 * 3.12.1: a row may also change other settings with it ('also': key => value, shown and applied together),
 	 * and carry its own short texts for the "Now" and "Proposed" columns ('now_text', 'proposed_text').
 	 *
-	 * @return array<string, array{key:string, current:mixed, proposed:mixed, reason:string, risk:string, for:string, also?:array<string, mixed>, now_text?:string, proposed_text?:string}>
+	 * @return array<string, array{key:string, current:mixed, proposed:mixed, reason:string, risk:string, for:string, hash:string, now_hash:string, also?:array<string, mixed>, now_text?:string, proposed_text?:string}>
 	 */
 	public static function proposals( $s = null, $env = null ) {
 		$s   = null === $s ? PNCP_Options::stored() : $s;
@@ -312,7 +333,7 @@ final class PNCP_Wizard {
 	 * @param string               $key Setting (the row's id).
 	 * @param array<string, mixed> $row proposed, reason; risk, for, also, now_text, proposed_text.
 	 * @param array<string, mixed> $s   Settings.
-	 * @return array{key:string, current:mixed, proposed:mixed, reason:string, risk:string, for:string, also?:array<string, mixed>, now_text?:string, proposed_text?:string}|null
+	 * @return array{key:string, current:mixed, proposed:mixed, reason:string, risk:string, for:string, hash:string, now_hash:string, also?:array<string, mixed>, now_text?:string, proposed_text?:string}|null
 	 */
 	private static function clean_row( $key, $row, $s ) {
 		$public = PNCP_Settings_Io::public_keys();
@@ -332,6 +353,13 @@ final class PNCP_Wizard {
 		if ( ! $changes ) {
 			return null;
 		}
+		// 3.12.6: what the row changes, from what to what (dismissed proposals are told apart by it).
+		$now      = array( $key => (string) $s[ $key ] );
+		$proposed = array( $key => (string) $row['proposed'] );
+		foreach ( $also as $other => $value ) {
+			$now[ $other ]      = (string) $s[ $other ];
+			$proposed[ $other ] = (string) $value;
+		}
 		$clean = array(
 			'key'      => $key,
 			'current'  => $s[ $key ],
@@ -339,6 +367,8 @@ final class PNCP_Wizard {
 			'reason'   => (string) $row['reason'],
 			'risk'     => isset( $row['risk'] ) && self::RISK_NONE === $row['risk'] ? self::RISK_NONE : self::RISK_MORE,
 			'for'      => isset( $row['for'] ) ? (string) $row['for'] : '',
+			'hash'     => self::hash( $key, $now, $proposed ),
+			'now_hash' => self::values_hash( $now ),
 		);
 		if ( $also ) {
 			$clean['also'] = $also;
@@ -584,6 +614,272 @@ final class PNCP_Wizard {
 		return false;
 	}
 
+	/* ---------- Dismissed proposals (3.12.6) ---------- */
+
+	/**
+	 * The identity of a proposal: its id, the values now and the proposed values. A dismissed proposal comes back
+	 * only when one of them changes (the setting was changed, or the assistant now proposes something else).
+	 *
+	 * @param string                $id       Proposal id (its setting).
+	 * @param array<string, string> $now      Setting => value now (the row's setting and those of 'also').
+	 * @param array<string, string> $proposed Setting => proposed value.
+	 * @return string
+	 */
+	private static function hash( $id, $now, $proposed ) {
+		ksort( $now );
+		ksort( $proposed );
+		return md5( (string) wp_json_encode( array( (string) $id, $now, $proposed ) ) );
+	}
+
+	/**
+	 * The values of some settings, as one short string (for "you chose this").
+	 *
+	 * @param array<string, string> $values Setting => value.
+	 * @return string
+	 */
+	private static function values_hash( $values ) {
+		ksort( $values );
+		return md5( (string) wp_json_encode( array_map( 'strval', $values ) ) );
+	}
+
+	/**
+	 * What the assistant remembers, for the whole site:
+	 * - dismissed: id => {hash, at}: the proposal with exactly this hash() is not shown, counted or applied;
+	 * - chosen: id => values_hash() of the values the administrator chose against the proposal (by dismissing it,
+	 *   or by saving other values after it was proposed or applied): while the values are those, the proposal
+	 *   says "you chose this";
+	 * - applied: id => {keys, hash}: the values "Apply selected" set, so that a later save of other values counts
+	 *   as a choice too.
+	 *
+	 * @return array{dismissed: array<string, array{hash: string, at: int}>, chosen: array<string, string>, applied: array<string, array{keys: string[], hash: string}>}
+	 */
+	public static function state() {
+		$raw = get_option( self::STATE, array() );
+		$raw = is_array( $raw ) ? $raw : array();
+		$out = array(
+			'dismissed' => array(),
+			'chosen'    => array(),
+			'applied'   => array(),
+		);
+		foreach ( isset( $raw['dismissed'] ) && is_array( $raw['dismissed'] ) ? $raw['dismissed'] : array() as $id => $item ) {
+			if ( is_array( $item ) && isset( $item['hash'] ) && is_string( $item['hash'] ) ) {
+				$out['dismissed'][ (string) $id ] = array(
+					'hash' => $item['hash'],
+					'at'   => isset( $item['at'] ) ? (int) $item['at'] : 0,
+				);
+			}
+		}
+		foreach ( isset( $raw['chosen'] ) && is_array( $raw['chosen'] ) ? $raw['chosen'] : array() as $id => $hash ) {
+			if ( is_string( $hash ) ) {
+				$out['chosen'][ (string) $id ] = $hash;
+			}
+		}
+		foreach ( isset( $raw['applied'] ) && is_array( $raw['applied'] ) ? $raw['applied'] : array() as $id => $item ) {
+			if ( is_array( $item ) && isset( $item['keys'], $item['hash'] ) && is_array( $item['keys'] ) && is_string( $item['hash'] ) ) {
+				$out['applied'][ (string) $id ] = array(
+					'keys' => array_values( array_map( 'strval', $item['keys'] ) ),
+					'hash' => $item['hash'],
+				);
+			}
+		}
+		return $out;
+	}
+
+	/**
+	 * Stores state(), each part cut to STATE_MAX entries (the oldest dismissed first, else the first ones).
+	 *
+	 * @param array{dismissed: array<string, array{hash: string, at: int}>, chosen: array<string, string>, applied: array<string, array{keys: string[], hash: string}>} $state State.
+	 */
+	private static function save_state( $state ) {
+		if ( count( $state['dismissed'] ) > self::STATE_MAX ) {
+			uasort(
+				$state['dismissed'],
+				static function ( $a, $b ) {
+					return $b['at'] <=> $a['at'];
+				}
+			);
+			$state['dismissed'] = array_slice( $state['dismissed'], 0, self::STATE_MAX, true );
+		}
+		$state['chosen']  = array_slice( $state['chosen'], -self::STATE_MAX, null, true );
+		$state['applied'] = array_slice( $state['applied'], -self::STATE_MAX, null, true );
+		if ( ! $state['dismissed'] && ! $state['chosen'] && ! $state['applied'] ) {
+			delete_option( self::STATE );
+			return;
+		}
+		update_option( self::STATE, $state, false );
+	}
+
+	/**
+	 * Is this proposal dismissed (the same proposal, from the same values)?
+	 *
+	 * @param string               $id    Proposal id.
+	 * @param array<string, mixed> $row   A proposal.
+	 * @param array<string, mixed> $state state().
+	 * @return bool
+	 */
+	public static function is_dismissed( $id, $row, $state ) {
+		return isset( $state['dismissed'][ $id ], $row['hash'] ) && $state['dismissed'][ $id ]['hash'] === $row['hash'];
+	}
+
+	/**
+	 * Is the value now the administrator's own choice against this proposal ("you chose this")?
+	 *
+	 * @param string               $id    Proposal id.
+	 * @param array<string, mixed> $row   A proposal.
+	 * @param array<string, mixed> $state state().
+	 * @return bool
+	 */
+	public static function is_chosen( $id, $row, $state ) {
+		return isset( $state['chosen'][ $id ], $row['now_hash'] ) && $state['chosen'][ $id ] === $row['now_hash'];
+	}
+
+	/**
+	 * The proposals split into those shown (counted, applied) and the dismissed ones.
+	 *
+	 * @param array<string, array<string, mixed>> $proposals proposals().
+	 * @param array<string, mixed>|null           $state     state() (null = stored).
+	 * @return array{0: array<string, array<string, mixed>>, 1: array<string, array<string, mixed>>} [shown, dismissed].
+	 */
+	public static function split( $proposals, $state = null ) {
+		$state = null === $state ? self::state() : $state;
+		$shown = array();
+		$gone  = array();
+		foreach ( $proposals as $id => $row ) {
+			if ( self::is_dismissed( (string) $id, $row, $state ) ) {
+				$gone[ $id ] = $row;
+			} else {
+				$shown[ $id ] = $row;
+			}
+		}
+		return array( $shown, $gone );
+	}
+
+	/**
+	 * Dismisses a proposal as it is now proposed. Also notes the value now as the administrator's choice.
+	 *
+	 * @param string                    $id  Proposal id.
+	 * @param array<string, mixed>|null $env detect() (null = now).
+	 * @return true|WP_Error
+	 */
+	public static function dismiss( $id, $env = null ) {
+		if ( PNCP_Lockdown::is_locked() ) {
+			return new WP_Error( 'pncp_locked', __( 'The site is locked: the settings cannot be changed until it is unlocked.', 'scrapelock' ) );
+		}
+		$id        = (string) $id;
+		$proposals = self::proposals( null, $env );
+		if ( ! isset( $proposals[ $id ] ) ) {
+			/* translators: %s: setting name */
+			return new WP_Error( 'pncp_wizard_gone', sprintf( __( '"%s" is not one of the proposals.', 'scrapelock' ), $id ) );
+		}
+		$state                    = self::state();
+		$state['dismissed'][ $id ] = array(
+			'hash' => (string) $proposals[ $id ]['hash'],
+			'at'   => time(),
+		);
+		$state['chosen'][ $id ]    = (string) $proposals[ $id ]['now_hash'];
+		self::save_state( $state );
+		return true;
+	}
+
+	/**
+	 * Shows a dismissed proposal again (the "you chose this" note stays while the value is the same).
+	 *
+	 * @param string $id Proposal id.
+	 * @return true|WP_Error
+	 */
+	public static function restore( $id ) {
+		if ( PNCP_Lockdown::is_locked() ) {
+			return new WP_Error( 'pncp_locked', __( 'The site is locked: the settings cannot be changed until it is unlocked.', 'scrapelock' ) );
+		}
+		$id    = (string) $id;
+		$state = self::state();
+		if ( ! isset( $state['dismissed'][ $id ] ) ) {
+			/* translators: %s: setting name */
+			return new WP_Error( 'pncp_wizard_gone', sprintf( __( '"%s" is not dismissed.', 'scrapelock' ), $id ) );
+		}
+		unset( $state['dismissed'][ $id ] );
+		self::save_state( $state );
+		return true;
+	}
+
+	/**
+	 * After a save of the settings: a setting the assistant proposed (with the settings before the save), or one
+	 * it set with "Apply selected", that now has another value than the proposed one is the administrator's
+	 * choice. Nothing else is stored.
+	 *
+	 * @param mixed $old Settings before.
+	 * @param mixed $new Settings after.
+	 */
+	public static function settings_saved( $old, $new ) {
+		if ( ! is_array( $old ) || ! is_array( $new ) ) {
+			return;
+		}
+		$defaults = PNCP_Options::defaults();
+		$old      = array_merge( $defaults, $old );
+		$new      = array_merge( $defaults, $new );
+		$state    = self::state();
+		$before   = $state;
+		$values   = static function ( $keys, $from ) {
+			$out = array();
+			foreach ( $keys as $key ) {
+				$out[ $key ] = isset( $from[ $key ] ) && is_scalar( $from[ $key ] ) ? (string) $from[ $key ] : '';
+			}
+			return $out;
+		};
+		$changed  = static function ( $keys ) use ( $values, $old, $new ) {
+			return $values( $keys, $old ) !== $values( $keys, $new );
+		};
+		$seen     = array();
+		foreach ( self::proposals( $old ) as $id => $row ) {
+			$id     = (string) $id;
+			$keys   = array_merge( array( (string) $row['key'] ), array_map( 'strval', array_keys( isset( $row['also'] ) ? $row['also'] : array() ) ) );
+			$wanted = array_merge( array( (string) $row['key'] => (string) $row['proposed'] ), array_map( 'strval', isset( $row['also'] ) ? $row['also'] : array() ) );
+			$seen[] = $id;
+			if ( ! $changed( $keys ) ) {
+				continue;
+			}
+			$now = $values( $keys, $new );
+			ksort( $now );
+			ksort( $wanted );
+			// The proposed values themselves leave the note as it is: it only counts while the values are the
+			// chosen ones again (e.g. turned off and back on), and "Apply selected" forgets it (note_applied()).
+			if ( $now !== $wanted ) {
+				$state['chosen'][ $id ] = self::values_hash( $now );
+			}
+		}
+		foreach ( $state['applied'] as $id => $item ) {
+			if ( in_array( $id, $seen, true ) || ! $changed( $item['keys'] ) ) {
+				continue;
+			}
+			$now = $values( $item['keys'], $new );
+			if ( self::values_hash( $now ) !== $item['hash'] ) {
+				$state['chosen'][ $id ] = self::values_hash( $now );
+				unset( $state['applied'][ $id ] );
+			}
+		}
+		if ( $state !== $before ) {
+			self::save_state( $state );
+		}
+	}
+
+	/**
+	 * Notes the values "Apply selected" set (settings_saved() then sees a later change of them as a choice).
+	 *
+	 * @param array<string, array<string, mixed>> $rows The applied proposals.
+	 */
+	private static function note_applied( $rows ) {
+		$state = self::state();
+		foreach ( $rows as $id => $row ) {
+			$wanted = array_merge( array( (string) $row['key'] => (string) $row['proposed'] ), array_map( 'strval', isset( $row['also'] ) ? $row['also'] : array() ) );
+			$state['applied'][ (string) $id ] = array(
+				'keys' => array_keys( $wanted ),
+				'hash' => self::values_hash( $wanted ),
+			);
+			unset( $state['chosen'][ (string) $id ] );
+		}
+		self::save_state( $state );
+	}
+
 	/* ---------- Apply ---------- */
 
 	/**
@@ -597,10 +893,13 @@ final class PNCP_Wizard {
 		if ( PNCP_Lockdown::is_locked() ) {
 			return new WP_Error( 'pncp_locked', __( 'The site is locked: the settings cannot be changed until it is unlocked.', 'scrapelock' ) );
 		}
-		$proposals = self::proposals( null, $env );
-		$values    = array();
+		// 3.12.6: never a dismissed proposal, whatever the form or the command line sent.
+		list( $proposals ) = self::split( self::proposals( null, $env ) );
+		$values            = array();
+		$rows              = array();
 		foreach ( array_unique( array_map( 'strval', (array) $keys ) ) as $key ) {
 			if ( isset( $proposals[ $key ] ) ) {
+				$rows[ $key ]   = $proposals[ $key ];
 				$values[ $key ] = $proposals[ $key ]['proposed'];
 				// 3.12.1: the settings that change with it (one row, e.g. violations and block duration).
 				foreach ( isset( $proposals[ $key ]['also'] ) ? $proposals[ $key ]['also'] : array() as $other => $value ) {
@@ -623,6 +922,9 @@ final class PNCP_Wizard {
 		if ( is_wp_error( $id ) ) {
 			return $id;
 		}
+		if ( '' !== (string) $id ) {
+			self::note_applied( $rows );
+		}
 		PNCP_Ip::reset();
 		return array(
 			'id'       => (string) $id,
@@ -641,6 +943,17 @@ final class PNCP_Wizard {
 		check_admin_referer( self::ACTION );
 		if ( PNCP_Lockdown::is_locked() ) {
 			self::back( 'locked' );
+		}
+		// 3.12.6: "Dismiss" on a row, "Restore" under "Show dismissed".
+		foreach ( array( 'dismiss', 'restore' ) as $op ) {
+			if ( isset( $_POST[ 'pncp_wizard_' . $op ] ) ) {
+				$id   = sanitize_key( wp_unslash( $_POST[ 'pncp_wizard_' . $op ] ) );
+				$done = 'dismiss' === $op ? self::dismiss( $id ) : self::restore( $id );
+				if ( is_wp_error( $done ) ) {
+					self::back( 'pncp_locked' === $done->get_error_code() ? 'locked' : 'gone' );
+				}
+				self::back( 'dismiss' === $op ? 'dismissed' : 'restored' );
+			}
 		}
 		$keys   = isset( $_POST['pncp_wizard_keys'] ) ? array_map( 'sanitize_key', (array) wp_unslash( $_POST['pncp_wizard_keys'] ) ) : array(); // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- Sanitized by sanitize_key().
 		$result = self::apply( $keys );
@@ -661,7 +974,7 @@ final class PNCP_Wizard {
 	/**
 	 * Back to the first tab, at the assistant, with the result.
 	 *
-	 * @param string                $result applied, none, locked, error.
+	 * @param string                $result applied, none, locked, error, dismissed, restored, gone.
 	 * @param array<string, string> $args   More query arguments.
 	 */
 	private static function back( $result, $args = array() ) {
@@ -744,7 +1057,9 @@ final class PNCP_Wizard {
 		}
 		$s         = PNCP_Options::stored();
 		$env       = self::detect();
-		$proposals = self::proposals( $s, $env );
+		$state     = self::state();
+		// 3.12.6: the dismissed ones are not counted or applied; they are listed under "Show dismissed".
+		list( $proposals, $dismissed ) = self::split( self::proposals( $s, $env ), $state );
 		$notes     = self::notes( $s, $env );
 		$found     = self::detected_names( $env );
 		// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Only displays the result.
@@ -780,6 +1095,7 @@ final class PNCP_Wizard {
 							<th scope="col"><?php esc_html_e( 'Now', 'scrapelock' ); ?></th>
 							<th scope="col"><?php esc_html_e( 'Proposed', 'scrapelock' ); ?></th>
 							<th scope="col"><?php esc_html_e( 'Why', 'scrapelock' ); ?></th>
+							<th scope="col"><span class="screen-reader-text"><?php esc_html_e( 'Dismiss', 'scrapelock' ); ?></span></th>
 						</tr></thead>
 						<tbody>
 							<?php foreach ( $proposals as $key => $row ) : ?>
@@ -799,9 +1115,21 @@ final class PNCP_Wizard {
 										?>
 									</td>
 									<?php list( $now_text, $proposed_text ) = self::row_texts( $row ); ?>
-									<td><?php echo esc_html( $now_text ); ?></td>
+									<td><?php echo esc_html( $now_text ); ?><?php self::render_chosen( $key, $row, $state ); ?></td>
 									<td><?php echo esc_html( $proposed_text ); ?></td>
 									<td><?php echo esc_html( $row['reason'] ); ?></td>
+									<td>
+										<?php
+										// 3.12.6: in the form below (form=), so that this form's default button stays "Apply selected".
+										printf(
+											'<button type="submit" class="button button-small pncp-wizard-dismiss" form="pncp-wizard-dismiss-form" name="pncp_wizard_dismiss" value="%1$s" aria-label="%2$s">%3$s</button>',
+											esc_attr( $key ),
+											/* translators: %s: setting label */
+											esc_attr( sprintf( __( 'Dismiss: %s', 'scrapelock' ), self::label( $key ) ) ),
+											esc_html__( 'Dismiss', 'scrapelock' )
+										);
+										?>
+									</td>
 								</tr>
 							<?php endforeach; ?>
 						</tbody>
@@ -812,6 +1140,7 @@ final class PNCP_Wizard {
 			<?php else : ?>
 				<p class="description pncp-wizard-none"><?php esc_html_e( 'Nothing to change: the settings already suit what was found.', 'scrapelock' ); ?></p>
 			<?php endif; ?>
+			<?php self::render_dismissed( $proposals, $dismissed, $state ); ?>
 			<?php if ( $notes ) : ?>
 				<h3><?php esc_html_e( 'Also check', 'scrapelock' ); ?></h3>
 				<ul class="pncp-wizard-notes">
@@ -826,6 +1155,70 @@ final class PNCP_Wizard {
 				</ul>
 			<?php endif; ?>
 		</details>
+		<?php
+	}
+
+	/**
+	 * 3.12.6: "you chose this" after the value now, when it is the administrator's choice against the proposal.
+	 *
+	 * @param string               $id    Proposal id.
+	 * @param array<string, mixed> $row   A proposal.
+	 * @param array<string, mixed> $state state().
+	 */
+	private static function render_chosen( $id, $row, $state ) {
+		if ( self::is_chosen( $id, $row, $state ) ) {
+			echo ' <span class="pncp-tag pncp-tag--default pncp-wizard-chosen">' . esc_html__( 'you chose this', 'scrapelock' ) . '</span>';
+		}
+	}
+
+	/**
+	 * 3.12.6: the form of the "Dismiss" buttons, with "Show dismissed (N)" and a "Restore" button for each.
+	 *
+	 * @param array<string, array<string, mixed>> $shown     The proposals shown.
+	 * @param array<string, array<string, mixed>> $dismissed The dismissed ones.
+	 * @param array<string, mixed>                $state     state().
+	 */
+	private static function render_dismissed( $shown, $dismissed, $state ) {
+		if ( ! $shown && ! $dismissed ) {
+			return;
+		}
+		?>
+		<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>" id="pncp-wizard-dismiss-form" class="pncp-wizard-dismiss-form">
+			<input type="hidden" name="action" value="<?php echo esc_attr( self::ACTION ); ?>">
+			<?php echo preg_replace( '/ id="_wpnonce"/', '', wp_nonce_field( self::ACTION, '_wpnonce', true, false ), 1 ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Core markup. ?>
+			<?php if ( $dismissed ) : ?>
+				<details class="pncp-wizard-dismissed">
+					<summary>
+						<?php
+						/* translators: %d: number of dismissed suggestions */
+						echo esc_html( sprintf( __( 'Show dismissed (%d)', 'scrapelock' ), count( $dismissed ) ) );
+						?>
+					</summary>
+					<?php echo PNCP_Admin_Fields::para( __( 'Not counted and never applied. One comes back if its setting changes.', 'scrapelock' ), __( 'A dismissed suggestion stays hidden while the setting keeps the value it had when you dismissed it and ScrapeLock proposes the same value. It comes back if you change the setting, or if ScrapeLock later proposes something else for it. Changing the setting and putting the same value back keeps it dismissed.', 'scrapelock' ) ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Escaped in PNCP_Admin_Fields. ?>
+					<ul class="pncp-wizard-dismissed-list">
+						<?php foreach ( $dismissed as $key => $row ) : ?>
+							<?php list( $now_text, $proposed_text ) = self::row_texts( $row ); ?>
+							<li>
+								<strong><?php echo esc_html( self::label( $key ) ); ?></strong>
+								<?php echo PNCP_Admin_Fields::key_hint( array_merge( array( $key ), array_keys( isset( $row['also'] ) ? $row['also'] : array() ) ) ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Escaped in PNCP_Admin_Fields. ?>
+								<?php
+								echo esc_html(
+									sprintf(
+										/* translators: 1: the value now, 2: the proposed value */
+										__( 'Now %1$s, proposed %2$s.', 'scrapelock' ),
+										$now_text,
+										$proposed_text
+									)
+								);
+								self::render_chosen( $key, $row, $state );
+								?>
+								<button type="submit" class="button button-small pncp-wizard-restore" name="pncp_wizard_restore" value="<?php echo esc_attr( $key ); ?>"><?php esc_html_e( 'Restore', 'scrapelock' ); ?></button>
+							</li>
+						<?php endforeach; ?>
+					</ul>
+				</details>
+			<?php endif; ?>
+		</form>
 		<?php
 	}
 
@@ -866,7 +1259,7 @@ final class PNCP_Wizard {
 	/**
 	 * The result of "Apply selected", with "Undo" (restores the version saved just before).
 	 *
-	 * @param string $result applied, none, locked, error or ''.
+	 * @param string $result applied, none, locked, error, dismissed, restored, gone or ''.
 	 */
 	private static function render_result( $result ) {
 		$texts = array(
@@ -874,6 +1267,10 @@ final class PNCP_Wizard {
 			'none'    => array( 'info', __( 'Nothing was selected, so nothing changed.', 'scrapelock' ) ),
 			'locked'  => array( 'error', __( 'The site is locked: unlock it on the Lockdown tab to apply these changes.', 'scrapelock' ) ),
 			'error'   => array( 'error', __( 'The changes were not applied: reload this page and try again.', 'scrapelock' ) ),
+			// 3.12.6.
+			'dismissed' => array( 'success', __( 'Dismissed. It is under “Show dismissed” and comes back only if its setting or the suggestion changes.', 'scrapelock' ) ),
+			'restored'  => array( 'success', __( 'Restored: the suggestion is in the list again.', 'scrapelock' ) ),
+			'gone'      => array( 'info', __( 'That suggestion is no longer in the list: nothing changed.', 'scrapelock' ) ),
 		);
 		if ( ! isset( $texts[ $result ] ) ) {
 			return;
