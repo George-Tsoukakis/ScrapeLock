@@ -23,6 +23,9 @@
  *    plugin's url() into another plugin resolve, in the browser, to /<base>/<folder>/…; the rules serve them.
  * E. Addresses URL-encoded inside another address (a share link's media=https%3A%2F%2F<host>%2Fwp-content%2F…)
  *    get the neutral address, encoded the same way; "+" and the other parameters stay; other hosts stay.
+ * W. WooCommerce's cart fragments (/?wc-ajax=get_refreshed_fragments, a stand-in mu-plugin in WooCommerce's
+ *    order: DOING_AJAX defined at init 0, the JSON sent at template_redirect 0): the HTML in them gets the neutral
+ *    addresses for guests like the page it goes into. Through the test server (BASE).
  *
  * Only on a test WordPress.
  */
@@ -166,8 +169,12 @@ $made    = array(
 	get_theme_root() . '/pncp-t3128-parent',
 	get_theme_root() . '/pncp-t3128-child',
 );
+$mu = WP_CONTENT_DIR . '/mu-plugins/pncp-t3128-wc-ajax.php';
 register_shutdown_function(
-	static function () use ( $saved, $made ) {
+	static function () use ( $saved, $made, $mu ) {
+		if ( is_file( $mu ) ) {
+			unlink( $mu );
+		}
 		foreach ( $saved as $name => $value ) {
 			if ( null === $value ) {
 				delete_option( $name );
@@ -421,5 +428,62 @@ $keep_enc = array(
 foreach ( $keep_enc as $label => $in ) {
 	t( 'E encoded: ' . $label . ' keeps its address', PNCP_Stealth::rewrite( $in ) === $in, PNCP_Stealth::rewrite( $in ) );
 }
+
+/* ---------- W. WooCommerce cart fragments (wc-ajax) ---------- */
+
+$standin = <<<'PHP'
+<?php
+/**
+ * Test stand-in written by tests/t_3128_stealth_edges.php (removed after the test). Not WooCommerce's code: the
+ * order in which WooCommerce answers /?wc-ajax=… (DOING_AJAX at init 0, the answer at template_redirect 0).
+ */
+add_action(
+	'init',
+	static function () {
+		if ( ! empty( $_GET['wc-ajax'] ) && ! defined( 'DOING_AJAX' ) ) {
+			define( 'DOING_AJAX', true );
+		}
+	},
+	0
+);
+add_action(
+	'template_redirect',
+	static function () {
+		if ( empty( $_GET['wc-ajax'] ) || 'get_refreshed_fragments' !== $_GET['wc-ajax'] ) {
+			return;
+		}
+		$img = wp_upload_dir( null, false )['baseurl'] . '/pncp-t3128/a.jpg';
+		wp_send_json(
+			array(
+				'fragments' => array( 'div.widget_shopping_cart_content' => '<div class="widget_shopping_cart_content"><img src="' . esc_url( $img ) . '" width="32"></div>' ),
+				'cart_hash' => 'x',
+			)
+		);
+	},
+	0
+);
+PHP;
+if ( ! is_dir( dirname( $mu ) ) ) {
+	mkdir( dirname( $mu ), 0777, true );
+}
+file_put_contents( $mu, $standin );
+$ch = curl_init( $base . '/?wc-ajax=get_refreshed_fragments' );
+curl_setopt_array(
+	$ch,
+	array(
+		CURLOPT_RETURNTRANSFER => true,
+		CURLOPT_TIMEOUT        => 60,
+		CURLOPT_HTTPHEADER     => array( 'X-Test-IP: 192.0.2.238', 'User-Agent: Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0 Safari/537.36', 'Accept-Language: en', 'Accept: application/json' ),
+	)
+);
+$body = (string) curl_exec( $ch );
+$code = (int) curl_getinfo( $ch, CURLINFO_RESPONSE_CODE );
+curl_close( $ch );
+$json = json_decode( $body, true );
+$frag = is_array( $json ) && isset( $json['fragments'] ) ? implode( '', (array) $json['fragments'] ) : '';
+t( 'W the cart fragments answer (stand-in)', 200 === $code && false !== strpos( $frag, 'pncp-t3128/a.jpg' ), $code . ' ' . substr( $body, 0, 200 ) );
+t( 'W the HTML of the fragments has the neutral addresses for guests', '' !== $frag && false === strpos( $frag, 'wp-content' ) && false !== strpos( $frag, '/assets/' ), $frag );
+t( 'W they map back to their file', array() === unmapped( $frag, $nginx, $apache ), implode( '; ', unmapped( $frag, $nginx, $apache ) ) );
+unlink( $mu );
 
 exit( $fails ? 1 : 0 );

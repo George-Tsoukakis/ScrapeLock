@@ -1747,7 +1747,7 @@ final class PNCP_Stealth {
 	 * @return bool
 	 */
 	private static function rewrites_request() {
-		if ( is_admin() || wp_doing_ajax() || wp_doing_cron() || ( defined( 'XMLRPC_REQUEST' ) && XMLRPC_REQUEST ) || ( defined( 'WP_CLI' ) && WP_CLI ) ) {
+		if ( is_admin() || ( wp_doing_ajax() && ! self::wc_ajax() ) || wp_doing_cron() || ( defined( 'XMLRPC_REQUEST' ) && XMLRPC_REQUEST ) || ( defined( 'WP_CLI' ) && WP_CLI ) ) {
 			return false;
 		}
 		if ( is_user_logged_in() || is_customize_preview() || is_preview() || is_feed() || is_robots() || get_query_var( 'sitemap' ) || get_query_var( 'sitemap-stylesheet' ) ) {
@@ -1759,6 +1759,16 @@ final class PNCP_Stealth {
 		 * @param bool $yes Rewritten.
 		 */
 		return (bool) apply_filters( 'pncp_stealth_rewrite', true );
+	}
+
+	/**
+	 * 3.12.8: a front-end request of WooCommerce's own Ajax (/?wc-ajax=get_refreshed_fragments, …). WooCommerce
+	 * defines DOING_AJAX for it at init, but its answer is HTML of the page (the cart fragments) that guests get.
+	 *
+	 * @return bool
+	 */
+	private static function wc_ajax() {
+		return ! empty( $_GET['wc-ajax'] ) && ! is_admin(); // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Only the presence of the key.
 	}
 
 	/**
