@@ -18,6 +18,16 @@
  *    JSON-escaped): 0 wp-content, the inner code; twice = once.
  * B. An address already new with the inner word left (the live shape): coded by the next pass, idempotent;
  *    a word three times, a PHP file, another host: unchanged.
+ * C. The cause (stale state): the stored words without the inner ones (as before 3.12.6, or WP Rocket seen
+ *    after "Test again"), Nginx: the new map is used once the check address answers the current fingerprint
+ *    and the self-test passes (before: pending forever, the old words), and the page caches are emptied; not
+ *    while the server has the old rules or a file does not load; the rules status seeing the current rules
+ *    while the map is pending schedules it. A changed base folder still needs "Test again".
+ * D. The page through a WP Rocket-like stand-in (optimization buffer at template_redirect 2, rocket_buffer:
+ *    minify CSS 16, delay JS 26 with data-rocket-src) on a MISS, the plain Stealth buffer (the shapes printed
+ *    by the theme), and a stage after Stealth's rocket_buffer pass (raw and half-new addresses): 0 wp-content
+ *    in the page, the code of wp-content there, every asset address maps back with the Nginx and Apache rules.
+ * N. Real Nginx (SKIP without nginx on PATH): the Stealth rules, every asset of the page 200 with the real file.
  *
  * Only on a test WordPress.
  */
@@ -387,5 +397,142 @@ t( 'B another host and a PHP file: unchanged', PNCP_Stealth::rewrite( $other ) =
 $unknown = '<link href="/assets/abcdef/cache/min/1/wp-content/x.css">';
 t( 'B an alias that is not in the map: unchanged', isset( $st['map']['abcdef'] ) || PNCP_Stealth::rewrite( $unknown ) === $unknown );
 
+/* ---------- C. The cause: the stored words without the inner ones ---------- */
+
+$old_words = static function () {
+	return array();
+};
+add_filter( 'pncp_stealth_optimizers', $old_words );
+PNCP_Stealth::activate( false ); // As stored before 3.12.6, or at a "Test again" before WP Rocket was seen.
+remove_filter( 'pncp_stealth_optimizers', $old_words );
+$old = PNCP_Stealth::state();
+t( 'C the stored words lack wp-content, the rules made now have its code (the live state)', ! in_array( 'wp-content', $old['words'], true ) && false !== strpos( PNCP_Stealth::rules_text( 'nginx' ), $code ) );
+// The fingerprint the server's check address answers (what the rules installed there carry).
+$installed = 'aaaaaaaaaaaa';
+add_filter(
+	'pre_http_request',
+	static function ( $pre, $args, $url ) use ( &$installed ) {
+		if ( false === strpos( (string) $url, PNCP_Stealth_Status::check_path() ) ) {
+			return $pre;
+		}
+		return array(
+			'headers'  => array( 'content-type' => 'text/plain' ),
+			'body'     => $installed . "\n",
+			'response' => array(
+				'code'    => 200,
+				'message' => 'OK',
+			),
+			'cookies'  => array(),
+			'filename' => null,
+		);
+	},
+	10,
+	3
+);
+if ( ! function_exists( 'rocket_clean_domain' ) ) {
+	/** WP Rocket's purge, counted (pncp_purge_page_cache() calls it). */
+	function rocket_clean_domain() {
+		$GLOBALS['pncp_t3128_purges'] = ( isset( $GLOBALS['pncp_t3128_purges'] ) ? $GLOBALS['pncp_t3128_purges'] : 0 ) + 1;
+	}
+}
+$fresh = static function () {
+	PNCP_Stealth_Status::reset();
+	delete_transient( PNCP_Stealth_Status::STATUS );
+	wp_clear_scheduled_hook( PNCP_Stealth::REFRESH );
+};
+$fresh();
+PNCP_Stealth::refresh();
+$st = PNCP_Stealth::state();
+t( 'C the server still has the old rules (self-test passing, the check address answers another fingerprint): pending, the old words kept', '' !== (string) $st['pending'] && ! in_array( 'wp-content', $st['words'], true ) && PNCP_Stealth::active(), (string) $st['pending'] );
+t( 'C ... and the pages keep the live leftover (no code the server cannot turn back)', 1 === preg_match( '#/assets/[0-9a-f]{6}/cache/min/1/wp-content/themes/#', PNCP_Stealth::rewrite( $shapes['href https'] ) ) );
+$fresh();
+$installed = PNCP_Stealth_Status::current( 'nginx' );
+$fail_test = static function () {
+	return new WP_Error( 'pncp_stealth_test', 'a file does not load' );
+};
+remove_filter( 'pncp_stealth_self_test', '__return_true' );
+add_filter( 'pncp_stealth_self_test', $fail_test );
+PNCP_Stealth::refresh();
+$st = PNCP_Stealth::state();
+t( 'C the current rules on the server but the self-test fails: still pending, the old words', '' !== (string) $st['pending'] && ! in_array( 'wp-content', $st['words'], true ) );
+remove_filter( 'pncp_stealth_self_test', $fail_test );
+add_filter( 'pncp_stealth_self_test', '__return_true' );
+$fresh();
+$status = PNCP_Stealth_Status::status( true );
+t( 'C the rules status sees the current rules while the map is pending: the map is tested shortly', 'current' === $status['state'] && false !== wp_next_scheduled( PNCP_Stealth::REFRESH ), $status['state'] );
+$fresh();
+$GLOBALS['pncp_t3128_purges'] = 0;
+PNCP_Stealth::check(); // The twice-daily check (and the scheduled refresh) takes the new map up.
+$st = PNCP_Stealth::state();
+t( 'C the current rules and a passing self-test: the new map in use (words with wp-content, nothing pending)', '' === (string) $st['pending'] && in_array( 'wp-content', $st['words'], true ) && PNCP_Stealth::active(), (string) $st['pending'] . ' ' . implode( ',', $st['words'] ) );
+t( 'C ... the page caches emptied (WP Rocket\'s purge called)', $GLOBALS['pncp_t3128_purges'] >= 1 );
+$html = PNCP_Stealth::rewrite( $shapes['href https'] . $shapes['data-rocket-src'] );
+t( 'C ... the pages: 0 wp-content, the code of the rules there', 0 === substr_count( $html, 'wp-content' ) && 2 === substr_count( $html, '/' . $code . '/' ), $html );
+
+/* ---------- D. The page ---------- */
+
+foreach ( array( 'rocket' => 'through the WP Rocket-like buffer (MISS)', 'plain' => 'through the plain Stealth buffer', 'late' => 'with a stage after Stealth\'s rocket_buffer pass' ) as $mode => $label ) {
+	update_option( 'pncp_t3128_mode', $mode, false );
+	update_option( 'pncp_t3128_half', 'late' === $mode ? home_url( $half_js ) : '', false );
+	list( $c, $page ) = http( $base . '/' );
+	$plain            = str_replace( '\\/', '/', $page );
+	$minified         = substr_count( $plain, '/assets/' . $alias . '/cache/min/1/' . $code . '/' );
+	t( "D $label: minified addresses (href" . ( 'rocket' === $mode ? ', data-rocket-src' : '' ) . ") with the inner code ($minified)", 200 === $c && $minified >= ( 'late' === $mode ? 5 : 2 ) && false !== strpos( $page, 'data-rocket-src=' ), $c . ' ' . around( $page, 'cache/min' ) );
+	t( "D $label: 0 wp-content in the whole page", 0 === substr_count( $page, 'wp-content' ), around( $page ) );
+	$bad = unmapped( $page );
+	t( "D $label: every CSS / JS address maps back to a real file (Nginx and Apache rules)", ! $bad, implode( ' | ', $bad ) );
+}
+
+/* ---------- N. Real Nginx ---------- */
+
+update_option( 'pncp_t3128_mode', 'rocket', false );
+$nginx_bin = trim( (string) shell_exec( 'command -v nginx 2>/dev/null' ) );
+if ( '' === $nginx_bin ) {
+	echo "SKIP N real Nginx (nginx not on PATH)\n";
+} else {
+	$dir  = sys_get_temp_dir() . '/pncp-t3128-nginx-' . getmypid();
+	$port = 19000 + ( getmypid() % 1000 );
+	foreach ( array( $dir, $dir . '/tmp', $dir . '/ext' ) as $d ) {
+		wp_mkdir_p( $d );
+	}
+	$php_host = (string) wp_parse_url( $base, PHP_URL_HOST ) . ':' . (string) wp_parse_url( $base, PHP_URL_PORT );
+	$conf     = ( function_exists( 'posix_geteuid' ) && 0 === posix_geteuid() ? 'user root; ' : '' ) . 'worker_processes 1; error_log ' . $dir . '/error.log; pid ' . $dir . '/nginx.pid; events { worker_connections 64; }' . "\n"
+		. 'http { include /etc/nginx/mime.types; access_log off; client_body_temp_path ' . $dir . '/tmp; proxy_temp_path ' . $dir . '/tmp; fastcgi_temp_path ' . $dir . '/tmp; uwsgi_temp_path ' . $dir . '/tmp; scgi_temp_path ' . $dir . '/tmp;' . "\n"
+		. 'server { listen 127.0.0.1:' . $port . '; server_name _; root ' . ABSPATH . '; index index.php;' . "\n"
+		. 'include ' . $dir . '/ext/*.conf;' . "\n"
+		. 'location = / { proxy_pass http://' . $php_host . '; proxy_set_header Host ' . $php_host . '; proxy_set_header X-Test-IP $http_x_test_ip; }' . "\n"
+		. 'location ~ [^/]\.php(/|$) { proxy_pass http://' . $php_host . '; proxy_set_header Host ' . $php_host . '; }' . "\n"
+		. 'if (!-e $request_filename) { rewrite ^.+?(/wp-.*) $1 last; rewrite ^.+?(/.*\.php)$ $1 last; rewrite ^ /index.php last; }' . "\n"
+		. 'location ~ .*\.(js|css)?$ { expires 12h; }' . "\n"
+		. '} }' . "\n";
+	file_put_contents( $dir . '/nginx.conf', $conf );
+	file_put_contents( $dir . '/ext/z-scrapelock-stealth.conf', PNCP_Stealth::rules_text( 'nginx' ) );
+	$run = static function ( $args ) use ( $nginx_bin, $dir ) {
+		$out = array();
+		$rc  = 0;
+		exec( escapeshellarg( $nginx_bin ) . ' ' . $args . ' -e ' . escapeshellarg( $dir . '/error.log' ) . ' -p ' . escapeshellarg( $dir ) . ' -c ' . escapeshellarg( $dir . '/nginx.conf' ) . ' 2>&1', $out, $rc );
+		return array( $rc, implode( ' ', $out ) );
+	};
+	list( $rc, $msg ) = $run( '-t' );
+	t( 'N nginx -t passes with the Stealth rules', 0 === $rc, $msg );
+	$run( '' );
+	usleep( 400000 );
+	$nurl             = 'http://127.0.0.1:' . $port;
+	list( $c, $page ) = http( $nurl . '/' );
+	$bad              = array();
+	$n                = 0;
+	foreach ( asset_paths( $page ) as $p ) {
+		++$n;
+		list( $ac, $ab ) = http( $nurl . $p );
+		$real            = ABSPATH . ltrim( nginx_apply( PNCP_Stealth::rules_text( 'nginx' ), $p ), '/' );
+		if ( 200 !== $ac || ! is_file( $real ) || md5( $ab ) !== md5( (string) file_get_contents( $real ) ) ) {
+			$bad[] = $p . ' ' . $ac;
+		}
+	}
+	t( "N the page through Nginx: 0 wp-content, every CSS / JS address (inner code too) 200 with the real file ($n)", 200 === $c && 0 === substr_count( $page, 'wp-content' ) && false !== strpos( $page, '/cache/min/1/' . $code . '/' ) && $n >= 2 && ! $bad, $c . ' ' . implode( ' | ', $bad ) . ' ' . around( $page ) );
+	$run( '-s quit' );
+	usleep( 300000 );
+	rmtree( $dir );
+}
 
 exit( $fails ? 1 : 0 );

@@ -1436,6 +1436,13 @@ final class PNCP_Stealth {
 	 * Brings the map and the rules up to date after a change (plugins, theme, Monitor only). On Apache the new
 	 * rules are written and tested, and put back when the test fails; on other servers the new rules wait for
 	 * the administrator (the old ones keep working: a new plugin's files are served through the wp-content address).
+	 *
+	 * 3.12.8: on those servers the new map is tested here too, and used as soon as the server serves it. Before,
+	 * only "Test again" put it into use: rules copied by hand or with `wp scrapelock rules install` were reported
+	 * "installed and up to date" (their fingerprint is of build()), while the pages kept being rewritten with the
+	 * words of the stored map (rewrite() reads state['words']). After 3.12.6 that map lacked the inner words of
+	 * WP Rocket's files, so /assets/<alias>/cache/min/1/wp-content/… kept its inner wp-content on every fresh page.
+	 * Taking the new map up empties the page caches (WP Rocket, the Nginx fastcgi cache…, pncp_purge_page_cache()).
 	 */
 	public static function refresh() {
 		if ( ! self::active() || PNCP_Lockdown::is_locked() ) {
@@ -1464,6 +1471,17 @@ final class PNCP_Stealth {
 				self::htaccess_restore( $before );
 				$state['pending'] = 'failed';
 			}
+		} elseif ( self::sanitize_base( (string) $s['stealth_base'] ) === $base && 'current' === PNCP_Stealth_Status::status( true )['state'] && true === self::self_test( $base, $config ) ) {
+			// The server already has the rules of the new map: the check address answers their fingerprint (that of
+			// build()) and the self-test passes (its file carries the inner words). A new base folder still needs
+			// "Test again" (the old addresses would stop working).
+			$state['sig']     = $sig;
+			$state['map']     = $config['map'];
+			$state['words']   = $config['words'];
+			$state['ends']    = ! empty( $s['stealth_endpoints'] ) ? $config['ends'] : array();
+			$state['files']   = $files;
+			$state['pending'] = '';
+			$state['tested']  = time();
 		} else {
 			$state['pending'] = $sig;
 		}

@@ -492,6 +492,12 @@ final class PNCP_Stealth_Status {
 		if ( $installed === $want ) {
 			$new['base']    = (string) PNCP_Stealth::settings()['stealth_base'];
 			$new['folders'] = self::folders();
+			// 3.12.8: the server has the rules of a map the pages do not use yet (copied or installed without
+			// "Test again"): it is tested and put into use shortly (PNCP_Stealth::refresh()).
+			$state = PNCP_Stealth::state();
+			if ( '' !== (string) $state['pending'] && 'failed' !== (string) $state['pending'] ) {
+				PNCP_Stealth::schedule_refresh();
+			}
 		}
 		if ( $new !== $seen ) {
 			if ( false === get_option( self::SEEN, false ) ) {
