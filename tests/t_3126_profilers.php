@@ -170,7 +170,7 @@ $field = isset( $info['scrapelock']['fields']['tech_profilers'] ) ? $info['scrap
 t( 'B: Site Health info: “Technology profilers blocked”: Yes', is_array( $field ) && 'Technology profilers blocked' === $field['label'] && __( 'Yes' ) === $field['value'], wp_json_encode( $field ) );
 
 // The early check, as WordPress runs it before the other plugins.
-settings( array( 'early_mode' => 1 ) );
+settings( array( 'early_mode' => 1, 'block_bots' => 1, 'enabled' => 1, 'monitor_mode' => 0 ) );
 $keep_server                = $_SERVER;
 $_SERVER['REMOTE_ADDR']     = '198.51.100.77';
 $_SERVER['HTTP_USER_AGENT'] = $uas['Wappalyzer'];
@@ -184,7 +184,7 @@ t( 'B: early check: passes while off', null === $early_off || 'bot_ua' !== $earl
 settings( array( 'early_mode' => (int) ( is_array( $saved ) && ! empty( $saved['early_mode'] ) ) ) );
 
 // WordPress over HTTP.
-settings( array( 'block_tech_profilers' => 0, 'block_bots' => 1, 'monitor_mode' => 0 ) );
+settings( array( 'block_tech_profilers' => 0, 'block_bots' => 1, 'monitor_mode' => 0, 'enabled' => 1 ) );
 list( $code_off ) = http( '/', $uas['BuiltWith'], '198.51.100.81' );
 list( $robots_off_code, $robots_off ) = http( '/robots.txt', $browser, '198.51.100.82' );
 settings( array( 'block_tech_profilers' => 1 ) );
