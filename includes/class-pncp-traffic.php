@@ -176,6 +176,7 @@ final class PNCP_Traffic {
 	public static function init() {
 		add_action( self::CRON, array( __CLASS__, 'run' ) );
 		add_action( 'update_option_' . PNCP_OPTION, array( __CLASS__, 'settings_changed' ), 30, 2 );
+		PNCP_Defer::handle( 'traffic', array( __CLASS__, 'store_deferred' ) ); // 3.12.9: the rows of wp_shutdown().
 		$s = PNCP_Options::get();
 		if ( empty( $s['traffic'] ) ) {
 			return;
@@ -1047,22 +1048,51 @@ final class PNCP_Traffic {
 		$status = function_exists( 'http_response_code' ) ? http_response_code() : 200;
 		$ip     = PNCP_Ip::client_ip();
 		$start  = isset( $_SERVER['REQUEST_TIME_FLOAT'] ) && is_numeric( $_SERVER['REQUEST_TIME_FLOAT'] ) ? (float) $_SERVER['REQUEST_TIME_FLOAT'] : 0.0;
-		self::ingest(
-			array(
-				'ts'      => time(),
-				'ip'      => $ip,
-				'country' => '' !== $ip ? PNCP_Geo::country( $ip ) : '',
-				'method'  => isset( $_SERVER['REQUEST_METHOD'] ) ? sanitize_key( wp_unslash( $_SERVER['REQUEST_METHOD'] ) ) : '',
-				'status'  => is_int( $status ) && $status > 0 ? $status : 200,
-				'path'    => $parts[0],
-				'query'   => isset( $parts[1] ) ? $parts[1] : '',
-				'referer' => isset( $_SERVER['HTTP_REFERER'] ) ? esc_url_raw( wp_unslash( $_SERVER['HTTP_REFERER'] ) ) : '',
-				'ua'      => isset( $_SERVER['HTTP_USER_AGENT'] ) ? sanitize_text_field( wp_unslash( $_SERVER['HTTP_USER_AGENT'] ) ) : '',
-				'bytes'   => 0,
-				'rt_ms'   => $start > 0 ? (int) round( ( microtime( true ) - $start ) * 1000 ) : null,
-			),
-			'wp'
+		$defer  = PNCP_Defer::active();
+		$row    = array(
+			'ts'      => time(),
+			'ip'      => $ip,
+			// 3.12.9: the country database is a file: looked up when the queued row is written (store_deferred()).
+			'country' => '' !== $ip && ! $defer ? PNCP_Geo::country( $ip ) : '',
+			'method'  => isset( $_SERVER['REQUEST_METHOD'] ) ? sanitize_key( wp_unslash( $_SERVER['REQUEST_METHOD'] ) ) : '',
+			'status'  => is_int( $status ) && $status > 0 ? $status : 200,
+			'path'    => $parts[0],
+			'query'   => isset( $parts[1] ) ? $parts[1] : '',
+			'referer' => isset( $_SERVER['HTTP_REFERER'] ) ? esc_url_raw( wp_unslash( $_SERVER['HTTP_REFERER'] ) ) : '',
+			'ua'      => isset( $_SERVER['HTTP_USER_AGENT'] ) ? sanitize_text_field( wp_unslash( $_SERVER['HTTP_USER_AGENT'] ) ) : '',
+			'bytes'   => 0,
+			'rt_ms'   => $start > 0 ? (int) round( ( microtime( true ) - $start ) * 1000 ) : null,
 		);
+		// 3.12.9: with a persistent object cache or APCu the row is queued there, and the scheduled event writes the
+		// rows of every request in a few INSERTs (store_deferred()): no INSERT at the end of each visitor's request.
+		if ( $defer ) {
+			PNCP_Defer::push( 'traffic', $row ); // A full queue (a flood) drops the row: never written here.
+			return;
+		}
+		// Without such a store: the visitor gets the end of the page first, then the row is written.
+		PNCP_Defer::finish_request();
+		self::ingest( $row, 'wp' );
+		self::flush();
+	}
+
+	/**
+	 * 3.12.9: writes the rows wp_shutdown() queued (PNCP_Defer::flush()), with their country.
+	 *
+	 * @param array<int, mixed> $rows Queued rows.
+	 */
+	public static function store_deferred( $rows ) {
+		if ( ! self::enabled() || ! self::ready() ) {
+			return;
+		}
+		foreach ( $rows as $row ) {
+			if ( ! is_array( $row ) || ! isset( $row['ts'], $row['ip'] ) ) {
+				continue;
+			}
+			if ( '' === (string) $row['country'] && '' !== (string) $row['ip'] ) {
+				$row['country'] = PNCP_Geo::country( (string) $row['ip'] );
+			}
+			self::ingest( $row, 'wp' );
+		}
 		self::flush();
 	}
 

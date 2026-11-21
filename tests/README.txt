@@ -296,9 +296,11 @@ ScrapeLock — δοκιμές σε πραγματικό WordPress (όχι stubs)
   t_3129_requests.php 3.12.9: what a visitor's request costs (lib/probe-3129.php, copied into mu-plugins for the test,
                     notes ScrapeLock's own queries and file access for requests with X-PNCP-Probe): without an object
                     cache a known visitor's page views write only the counters of the limits (and the surge state at
-                    most once a minute); with one (REDIS_DROPIN, else lib/object-cache-stub.php) the automatic
-                    Emergency Mode starts at once without a query, closes a minute in < 5 ms and is stored by the
-                    scheduled event (PNCP_Defer::flush())
+                    most once a minute); with one (REDIS_DROPIN, else lib/object-cache-stub.php) no query, read or
+                    write, and no file access of ScrapeLock: page views of a known and a new visitor, a refused AI
+                    bot, the trap and its ban (in effect at once), an AI referral, Traffic's WordPress rows; the
+                    scheduled event (PNCP_Defer::flush()) then writes them to the database; the automatic Emergency
+                    Mode starts at once without a query, closes a minute in < 5 ms and is stored by that event
   t_cli.php         wp scrapelock … μέσα από το πραγματικό wp (χρειάζεται WP_CLI, αλλιώς SKIP)
   t_bunny_rules.php Edge Rules στο Bunny μέσα στα όριά του (το πολύ 5 μοτίβα ανά συνθήκη) με ψεύτικο API που δίνει
                     HTTP 400 όπως το πραγματικό: χωρισμός, κλείδωμα/Remove, rollback, Monitor only, sync, προεπισκόπηση,

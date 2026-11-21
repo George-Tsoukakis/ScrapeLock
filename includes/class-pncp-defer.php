@@ -148,6 +148,31 @@ final class PNCP_Defer {
 		self::$handlers[ (string) $queue ] = array( $handler, $ready );
 	}
 
+	/**
+	 * 3.12.9: sends the visitor the end of the response before ScrapeLock's own work at the end of the request (a
+	 * row written to the database where no persistent store exists): PHP-FPM's fastcgi_finish_request() or
+	 * LiteSpeed's litespeed_finish_request(). Only from shutdown priority 2 on, once WordPress has emptied the
+	 * output buffers (wp_ob_end_flush_all() at priority 1, where page caches store the page), and only once.
+	 * Filter `pncp_finish_request` (false: never).
+	 *
+	 * @return bool Whether the response was finished.
+	 */
+	public static function finish_request() {
+		static $done = false;
+		if ( $done || ! doing_action( 'shutdown' ) || ( defined( 'WP_CLI' ) && WP_CLI ) || ! (bool) apply_filters( 'pncp_finish_request', true ) ) {
+			return $done;
+		}
+		$fn = function_exists( 'fastcgi_finish_request' ) && 'fpm-fcgi' === PHP_SAPI ? 'fastcgi_finish_request' : ( function_exists( 'litespeed_finish_request' ) ? 'litespeed_finish_request' : '' );
+		if ( '' === $fn ) {
+			return false;
+		}
+		while ( ob_get_level() > 0 && @ob_end_flush() ) { // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged -- A buffer that cannot be removed ends the loop.
+			continue;
+		}
+		$done = (bool) call_user_func( $fn );
+		return $done;
+	}
+
 	/* ---------- APCu without an object cache: ScrapeLock's options and transients ---------- */
 
 	/**

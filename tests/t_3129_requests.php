@@ -308,6 +308,14 @@ for ( $i = 1; $i <= 3; $i++ ) {
 }
 list( $code, $rec ) = visit( $page, '198.51.100.93' );
 $clean( 'B ...the ban is in effect at once (403), with none either', $rec, 403, $code );
+list( $code, $rec ) = visit( $page, '198.51.100.92', '', array( 'Referer' => 'https://chatgpt.com/' ) );
+$clean( 'B a reader from ChatGPT (AI referrals): none either', $rec, 200, $code );
+
+settings( array( 'traffic' => 1, 'traffic_wp' => 1 ) );
+visit( $page, '198.51.100.91' );
+list( $code, $rec ) = visit( $page, '198.51.100.91' );
+$clean( 'B Traffic of WordPress on: the row is queued, none either', $rec, 200, $code );
+
 $count_code = '$since = ' . (int) $t_start . '; global $wpdb;
 	return array(
 		"ban"     => (int) $wpdb->get_var( $wpdb->prepare( "SELECT COUNT(*) FROM " . PNCP_Log::bans_table() . " WHERE ip = %s", "198.51.100.93" ) ),
@@ -316,10 +324,13 @@ $count_code = '$since = ' . (int) $t_start . '; global $wpdb;
 		"air"     => (int) $wpdb->get_var( $wpdb->prepare( "SELECT SUM(hits) FROM " . PNCP_Ai_Referrals::table() . " WHERE platform = %s", "chatgpt" ) ),
 	);';
 $before = wp_run( $count_code );
-t( 'B before the scheduled event: the ban is not in the database yet', is_array( $before ) && 0 === $before['ban'], wp_json_encode_safe( $before ) );
+t( 'B before the scheduled event: the ban, the log rows and the Traffic rows are not in the database yet', is_array( $before ) && 0 === $before['ban'] && 0 === $before['traffic'], wp_json_encode_safe( $before ) );
 $after = wp_run( 'add_filter( "pncp_defer_ready", "__return_true" ); PNCP_Defer::flush(); ' . $count_code );
 t( 'B after it: the ban is in the table', is_array( $after ) && 1 === $after['ban'], wp_json_encode_safe( $after ) );
 t( 'B ...the refused bot\'s log row, with its hits', is_array( $after ) && $after['log'] >= 2 && $after['log'] > $before['log'], wp_json_encode_safe( array( $before, $after ) ) );
+t( 'B ...the Traffic rows of WordPress', is_array( $after ) && $after['traffic'] >= 2, wp_json_encode_safe( $after ) );
+t( 'B ...and the AI referral', is_array( $after ) && $after['air'] > $before['air'], wp_json_encode_safe( array( $before, $after ) ) );
+settings( array( 'traffic' => 0, 'traffic_wp' => 0 ) );
 
 $r = wp_run( $surge_code( true ) );
 t( 'S with an object cache, in a visitor\'s request: 3 minutes over the threshold, Emergency Mode in effect at once', is_array( $r ) && $r['until'] > time() && 3 === $r['streak'], wp_json_encode_safe( $r ) );

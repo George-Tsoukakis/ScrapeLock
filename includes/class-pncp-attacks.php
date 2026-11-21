@@ -569,6 +569,20 @@ final class PNCP_Attacks {
 		if ( self::in_web_request() ) {
 			self::classify_request();
 		}
+		// 3.12.9: without a persistent store the rows are written after the visitor has the whole response.
+		if ( self::$buffer && ! PNCP_Defer::active() && doing_action( 'shutdown' ) ) {
+			add_action( 'shutdown', array( __CLASS__, 'flush_late' ), 3 );
+			return;
+		}
+		self::flush();
+	}
+
+	/**
+	 * 3.12.9: shutdown, once WordPress has emptied the output buffers: the response is finished first
+	 * (PNCP_Defer::finish_request()), then the records are written.
+	 */
+	public static function flush_late() {
+		PNCP_Defer::finish_request();
 		self::flush();
 	}
 

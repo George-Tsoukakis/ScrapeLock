@@ -31,6 +31,7 @@ final class PNCP_Ai_Referrals {
 	public static function init() {
 		// After page_guard (priority 0) has let the request through, and before the theme prints anything.
 		add_action( 'template_redirect', array( __CLASS__, 'count' ), 5 );
+		PNCP_Defer::handle( 'air', array( __CLASS__, 'store_deferred' ) ); // 3.12.9: see add().
 	}
 
 	/**
@@ -229,14 +230,54 @@ final class PNCP_Ai_Referrals {
 	 * @param string $path     Page.
 	 */
 	public static function add( $platform, $path ) {
-		global $wpdb;
+		// 3.12.9: in a visitor's request with a persistent object cache or APCu, queued there and added up by the
+		// scheduled event (store_deferred()): no write in the visitor's request.
+		if ( PNCP_Defer::active() ) {
+			PNCP_Defer::push( 'air', array( wp_date( 'Y-m-d' ), substr( (string) $platform, 0, 20 ), (string) $path ) );
+			return;
+		}
 		if ( ! PNCP_Log::ready() ) {
 			return;
 		}
+		self::write( wp_date( 'Y-m-d' ), substr( (string) $platform, 0, 20 ), (string) $path, 1 );
+	}
+
+	/**
+	 * One counter of a day, platform and page, raised by $hits.
+	 *
+	 * @param string $day      Day (Y-m-d).
+	 * @param string $platform Platform.
+	 * @param string $path     Page.
+	 * @param int    $hits     How many.
+	 */
+	private static function write( $day, $platform, $path, $hits ) {
+		global $wpdb;
 		$suppress = $wpdb->suppress_errors( true );
 		// phpcs:ignore WordPress.DB.DirectDatabaseQuery -- Plugin table, one atomic counter.
-		$wpdb->query( $wpdb->prepare( 'INSERT INTO %i (day, platform, path, hits) VALUES (%s, %s, %s, 1) ON DUPLICATE KEY UPDATE hits = hits + 1', self::table(), wp_date( 'Y-m-d' ), substr( (string) $platform, 0, 20 ), (string) $path ) );
+		$wpdb->query( $wpdb->prepare( 'INSERT INTO %i (day, platform, path, hits) VALUES (%s, %s, %s, %d) ON DUPLICATE KEY UPDATE hits = hits + %d', self::table(), $day, $platform, $path, $hits, $hits ) );
 		$wpdb->suppress_errors( $suppress );
+	}
+
+	/**
+	 * 3.12.9: adds up the referrals visitors' requests queued (PNCP_Defer::flush()), one query per page and day.
+	 *
+	 * @param array<int, mixed> $rows Queued rows: [day, platform, path].
+	 */
+	public static function store_deferred( $rows ) {
+		if ( ! PNCP_Log::ready() ) {
+			return;
+		}
+		$sum = array();
+		foreach ( $rows as $row ) {
+			if ( is_array( $row ) && 3 === count( $row ) ) {
+				$k         = implode( "\n", array_map( 'strval', $row ) );
+				$sum[ $k ] = isset( $sum[ $k ] ) ? $sum[ $k ] + 1 : 1;
+			}
+		}
+		foreach ( $sum as $k => $hits ) {
+			$parts = explode( "\n", (string) $k, 3 );
+			self::write( $parts[0], $parts[1], $parts[2], $hits );
+		}
 	}
 
 	/**
