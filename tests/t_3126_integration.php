@@ -8,6 +8,8 @@
  * P. "Block technology profilers" on (BuiltWith not in the bot list): a BuiltWith verification file is served to
  *    BuiltWith (WordPress, the early check, the pre-cache check) while the rest of the site is 403, and robots.txt
  *    asks BuiltWith to stay away from everything but that file (Allow: /builtwith.txt before Disallow: /).
+ * U. uninstall.php deletes every option and event of 3.12.6; deactivation removes the verification files (a copy
+ *    in the root folder would otherwise stay served after its time).
  *
  * Only on a test WordPress.
  */
@@ -181,5 +183,22 @@ PNCP_Precheck::sync();
 PNCP_Verify_Files::remove( '/builtwith.txt' );
 list( $code ) = req( '/builtwith.txt' );
 t( 'P removed: 403 again, and robots.txt without the Allow line', 403 === $code && false === strpos( PNCP_Bots::robots_txt( '', true ), 'Allow: /builtwith.txt' ), (string) $code );
+
+/* ---------- U. Uninstall and deactivation ---------- */
+
+$pncp_uninstall = (string) file_get_contents( PNCP_DIR . 'uninstall.php' );
+foreach ( array( PNCP_Verify_Files::INDEX, PNCP_Verify_Files::DATA, PNCP_Wizard::STATE, PNCP_Stealth_Status::SEEN, PNCP_Rules_State::STATE ) as $pncp_name ) {
+	t( "U uninstall.php deletes the option $pncp_name", false !== strpos( $pncp_uninstall, "delete_option( '$pncp_name' )" ) );
+}
+t( 'U uninstall.php removes the verification files\' event (also when remove_all() fails)', (bool) preg_match( "/foreach \\( array\\([^)]*'" . PNCP_Verify_Files::CRON . "'[^)]*\\) as \\\$pncp_hook \\)/", $pncp_uninstall ) );
+t( 'U uninstall.php: the Stealth status transient goes with every _transient_pncp_ row', 0 === strpos( PNCP_Stealth_Status::STATUS, 'pncp_' ) && false !== strpos( $pncp_uninstall, "esc_like( '_transient_pncp_' )" ) );
+t( 'U uninstall.php: remove_all() first (only ScrapeLock\'s own files in the root folder)', false !== strpos( $pncp_uninstall, 'PNCP_Verify_Files::remove_all();' ) );
+$pncp_main = (string) file_get_contents( PNCP_FILE );
+t( 'U deactivation removes the verification files (nothing would remove them on time without the plugin)', (bool) preg_match( '/function pncp_deactivate_site\(\) \{.*?PNCP_Verify_Files::remove_all\(\);.*?\n\}/s', $pncp_main ) );
+$added = PNCP_Verify_Files::add( '/BingSiteAuth.xml', '<?xml version="1.0"?><users><user>X3126</user></users>', 2, true );
+$pncp_disk = $tmp . '/root/BingSiteAuth.xml';
+t( 'U a file written to the root folder, with its event', is_array( $added ) && 'written' === $added['disk'] && is_file( $pncp_disk ) && false !== wp_next_scheduled( PNCP_Verify_Files::CRON ), wp_json_encode( $added ) );
+PNCP_Verify_Files::remove_all();
+t( 'U remove_all() (deactivation, uninstall): the file in the root folder, both options and the event go', ! is_file( $pncp_disk ) && false === get_option( PNCP_Verify_Files::INDEX ) && false === get_option( PNCP_Verify_Files::DATA ) && false === wp_next_scheduled( PNCP_Verify_Files::CRON ) );
 
 exit( $fails ? 1 : 0 );

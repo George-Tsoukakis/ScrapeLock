@@ -107,6 +107,7 @@ function pncp_uninstall_site() {
 	delete_option( 'pncp_rules_state' ); // 3.12.3: the installed server rules against the current ones.
 	delete_option( 'pncp_rules_texts' ); // 3.12.3: the text of the last rules shown, for "See what changed".
 	delete_option( 'pncp_wizard_state' ); // 3.12.6: the dismissed "For my site" proposals.
+	delete_option( 'pncp_stealth_rules_seen' ); // 3.12.6: the Stealth rules last seen on the server.
 	delete_transient( 'pncp_selfcheck_route' );
 	delete_transient( 'pncp_edge_spare' );
 	// 3.12: Traffic (also dropped by PNCP_Traffic::uninstall() above; here too, should that have failed).
@@ -119,7 +120,7 @@ function pncp_uninstall_site() {
 		delete_option( $pncp_option );
 	}
 	// Every event of each hook, whatever its arguments (wp_clear_scheduled_hook() only removes the ones without).
-	foreach ( array( 'pncp_refresh_ip_lists', 'pncp_log_cleanup', 'pncp_log_cleanup_more', 'pncp_wm_unmark', 'pncp_edge_sync', 'pncp_integrity_official', 'pncp_integrity_resume', 'pncp_surge_mail', 'pncp_surge_mail_alert', 'pncp_background_purge', 'pncp_upgrade_files', 'pncp_crowdsec_sync', 'pncp_attack_report_weekly', 'pncp_bunny_run', 'pncp_stealth_check', 'pncp_stealth_refresh', 'pncp_stealth_restart', 'pncp_server_ips_changed', 'pncp_traffic_run' ) as $pncp_hook ) {
+	foreach ( array( 'pncp_refresh_ip_lists', 'pncp_log_cleanup', 'pncp_log_cleanup_more', 'pncp_wm_unmark', 'pncp_edge_sync', 'pncp_integrity_official', 'pncp_integrity_resume', 'pncp_surge_mail', 'pncp_surge_mail_alert', 'pncp_background_purge', 'pncp_upgrade_files', 'pncp_crowdsec_sync', 'pncp_attack_report_weekly', 'pncp_bunny_run', 'pncp_stealth_check', 'pncp_stealth_refresh', 'pncp_stealth_restart', 'pncp_server_ips_changed', 'pncp_traffic_run', 'pncp_verify_files_expire' ) as $pncp_hook ) {
 		wp_unschedule_hook( $pncp_hook );
 	}
 	// The Lockdown guard (must-use plugin), only if it is ours.

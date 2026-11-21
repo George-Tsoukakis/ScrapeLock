@@ -232,6 +232,9 @@ function pncp_deactivate_site() {
 	PNCP_Attack_Report::deactivate();
 	// 3.12.2: the way straight to the server for the site's requests to itself (asked again after a reactivation).
 	delete_transient( PNCP_Self_Check::ROUTE );
+	// 3.12.6: the verification files are temporary: without the plugin nothing would remove them on time (a copy
+	// in the root folder would stay served for good), so they go now, with their event.
+	PNCP_Verify_Files::remove_all();
 	pncp_purge_page_cache();
 }
 
