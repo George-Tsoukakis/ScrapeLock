@@ -236,6 +236,10 @@ Yes. Add it to "Always allowed User-Agents", pinned to its addresses so the name
 
 ScrapeLock tells WP Rocket not to serve cached pages to the bots in its list. Other page cache plugins serve stored pages before WordPress loads: turn on the pre-cache check (Bots and limits) to apply the bot list, the page limits and the blocks to them too. Site Health tells you when a page cache answers first. A cache in the web server (Nginx FastCGI cache, LiteSpeed, Varnish) answers before PHP: there use the "Server rules" tab or blocking at the CDN.
 
+= Does ScrapeLock empty the Nginx fastcgi cache? =
+
+Yes, where it empties the page caches (settings saved, Stealth turned on or off), when it knows the cache folder: set `define( 'SCRAPELOCK_FASTCGI_CACHE_PATH', '/path/to/fastcgi/cache' );` in wp-config.php, or Nginx Helper's `RT_WP_NGINX_HELPER_CACHE_PATH` (or its "Delete local server cache files" method). On the server, `wp scrapelock cache status` reads the Nginx configuration (nginx -T) to find the folder of the zone this site's server block uses with fastcgi_cache, and prints the line to add; `wp scrapelock cache purge --all` (and `wp scrapelock cdn purge --all`) empties it. Only cache files whose key names this site's host are deleted, never files of other sites, links or folders outside it.
+
 = What does the pre-cache check change on my server? =
 
 It adds two comment lines and one `include` line at the top of `wp-config.php`, which loads the check from the plugin's folder. Its data are plain files in a protected, randomly named folder in `uploads/scrapelock/` (counters in APCu if available). It runs before the page cache, without a database, and stops blocked IPs, the bot list and visitors over the page limits. Search engines, forms, wp-admin and the REST API are left to the normal check; a login cookie, which it cannot verify, gets four times the page limit. If `wp-config.php` is not writable, it shows the lines to add. Everything is removed when you turn it off or deactivate the plugin. Not on multisite.

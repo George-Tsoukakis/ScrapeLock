@@ -23,6 +23,7 @@
  * C. WP-CLI (SKIP without WP_CLI): cache status (nginx -T of a fake nginx on PATH, the hint line), cache purge
  *    --all (asks; --yes), addresses, --dry-run, --cache-dir=/ refused, --nginx-conf, another host refused; cdn purge
  *    --all also the server cache (none connected: a warning, exit 0), --no-server-cache, --server-cache.
+ * T. The Stealth card's help line (at most 20 words, the rest under More) and the readme FAQ.
  * R. Real Nginx with fastcgi_cache in a temporary prefix in front of a small FastCGI responder (SKIP without
  *    nginx): MISS, HIT, purge, MISS; another host sharing the zone stays HIT; cache purge <url> --nginx-conf.
  *
@@ -301,6 +302,17 @@ t( 'X fastcgi_cache inherited from http { } (text without file headers)', array(
 $loop = PNCP_Fastcgi_Cache::tree( '/a.conf', array( '/a.conf' => 'include /a.conf; x 1;' ), '/' );
 t( 'X an include loop ends', is_array( $loop ) );
 t( 'X server_name forms', PNCP_Fastcgi_Cache::server_matches( array( '.example.test' ), array( 'example.test' ) ) && PNCP_Fastcgi_Cache::server_matches( array( 'example.*' ), array( 'example.org' ) ) && ! PNCP_Fastcgi_Cache::server_matches( array( '*.example.test' ), array( 'example.test' ) ) && ! PNCP_Fastcgi_Cache::server_matches( array( '~^(?<s>.+)\.test$' ), array( 'example.test' ) ) );
+
+/* ---------- T. The help line of the Stealth card ---------- */
+
+wp_set_current_user( 1 );
+ob_start();
+PNCP_Stealth::render_card();
+$card = (string) ob_get_clean();
+preg_match( '#<p class="description">(Nginx fastcgi cache:[^<]*)</p>#', $card, $line );
+t( 'T the Stealth card: one line on the fastcgi cache and SCRAPELOCK_FASTCGI_CACHE_PATH, at most 20 words, the rest under More', isset( $line[1] ) && false !== strpos( $line[1], 'SCRAPELOCK_FASTCGI_CACHE_PATH' ) && str_word_count( $line[1], 0, '_' ) <= 20 && false !== strpos( $card, 'wp scrapelock cache status' ), isset( $line[1] ) ? $line[1] : substr( $card, 0, 300 ) );
+$readme = (string) file_get_contents( dirname( __DIR__ ) . '/readme.txt' );
+t( 'T readme FAQ: the fastcgi cache, the constant, the commands', false !== strpos( $readme, '= Does ScrapeLock empty the Nginx fastcgi cache? =' ) && false !== strpos( $readme, "define( 'SCRAPELOCK_FASTCGI_CACHE_PATH'" ) && false !== strpos( $readme, 'wp scrapelock cache purge --all' ) );
 
 /* ---------- C. WP-CLI ---------- */
 

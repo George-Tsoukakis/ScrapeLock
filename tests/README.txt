@@ -221,7 +221,7 @@ ScrapeLock — δοκιμές σε πραγματικό WordPress (όχι stubs)
                     WordPress folders refused; the cap; SCRAPELOCK_FASTCGI_CACHE_PATH, Nginx Helper's constant and
                     settings, the constant first, pncp_purge_page_cache() and Stealth's purge in another process;
                     the nginx -T parser (includes, comments, quotes, the zone of this site's server block, inherited
-                    from http, wildcards, a variable or undefined zone);
+                    from http, wildcards, a variable or undefined zone); the Stealth card line and readme FAQ;
                     wp scrapelock cache status / purge (fake nginx -T on PATH, --nginx-conf, --cache-dir, --dry-run,
                     --yes) and cdn purge --[no-]server-cache (WP_CLI); a real Nginx with fastcgi_cache in a
                     temporary prefix in front of lib/fcgi-stub.php (MISS, HIT, purge, MISS; SKIP without nginx)
