@@ -241,6 +241,32 @@ final class PNCP_Admin {
 	}
 
 	/**
+	 * 3.12.5: "Applies to:" under the screenshot blur: everyone, or only visitors who are not signed in. Dimmed with
+	 * the requirement note while the blur is off.
+	 *
+	 * @param array<string, mixed> $s Settings.
+	 */
+	private static function blur_scope( $s ) {
+		echo '<div class="pncp-field pncp-field--sub">';
+		echo '<span class="pncp-field__label" aria-hidden="true">' . esc_html__( 'Applies to:', 'scrapelock' ) . '</span>';
+		self::radios(
+			$s,
+			'blur_on_capture_scope',
+			__( 'Screenshot blur applies to', 'scrapelock' ),
+			array(
+				'all'    => __( 'Everyone', 'scrapelock' ),
+				'guests' => __( 'Only visitors who are not signed in', 'scrapelock' ),
+			)
+		);
+		$help = PNCP_Admin_Fields::help(
+			__( 'Members can then take screenshots; staff in “Who is excluded” never get the blur.', 'scrapelock' ),
+			__( 'The page itself decides, so it works with page caches (WP Rocket, a CDN): ScrapeLock gives signed-in browsers a small cookie, pncp_si, with no personal data, and the blur stays off where it is found or where the page is shown signed in. Accounts that were already signed in before this version get the cookie on their next page that is not served from a cache, or when they sign in again. Someone who adds the cookie by hand only turns the blur off in their own browser: like the blur itself, it is a deterrent, not a lock.', 'scrapelock' )
+		);
+		echo PNCP_Admin_Fields::description( 'pncp-blur_on_capture_scope-help', $help ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Escaped in description().
+		echo '</div>';
+	}
+
+	/**
 	 * Select.
 	 *
 	 * @param array<string, mixed>      $s       Settings.
@@ -981,6 +1007,7 @@ final class PNCP_Admin {
 				self::checkbox( $s, 'block_image_drag', __( 'Dragging images and “Save image” with a long press on mobile', 'scrapelock' ) );
 				self::checkbox( $s, 'block_text_drag', __( 'Dragging selected text to another window', 'scrapelock' ) );
 				self::checkbox( $s, 'blur_on_capture', __( 'Blur the page when Print Screen or a screenshot shortcut is pressed', 'scrapelock' ), PNCP_Admin_Fields::help( __( 'Catches only the shortcuts the browser sees.', 'scrapelock' ), __( 'Print Screen, Win+Shift+S and Cmd+Shift+3/4/5. It does not stop tools outside the browser or a photo taken with a phone.', 'scrapelock' ) ) );
+				self::blur_scope( $s );
 				?>
 			</td>
 		</tr>

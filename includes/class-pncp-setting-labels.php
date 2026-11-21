@@ -63,6 +63,7 @@ final class PNCP_Setting_Labels {
 			'block_upload_php'        => __( 'No PHP in the uploads folder', 'scrapelock' ),
 			'block_user_enum'         => __( 'Hide usernames from visitors', 'scrapelock' ),
 			'blur_on_capture'         => __( 'Blur the page when Print Screen or a screenshot shortcut is pressed', 'scrapelock' ),
+			'blur_on_capture_scope'   => __( 'Screenshot blur applies to', 'scrapelock' ),
 			'bot_list'                => __( 'User-Agents to block (one per line, matches anywhere in the User-Agent, case-insensitive):', 'scrapelock' ),
 			'bunny_all_lines'         => __( 'Also record requests that reached WordPress', 'scrapelock' ),
 			'bunny_flood_4xx'         => __( 'Errors per IP that count as a flood (0 = off):', 'scrapelock' ),

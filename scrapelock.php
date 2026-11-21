@@ -287,6 +287,11 @@ function pncp_upgrade() {
 		if ( version_compare( $from_settings, '3.12.0', '<' ) ) {
 			$added += PNCP_Options::new_in_3120();
 		}
+		// 3.12.5: the screenshot blur keeps applying to everyone ("all"), as before. Stored now, so an export or a
+		// settings list shows it.
+		if ( version_compare( $from_settings, '3.12.5', '<' ) ) {
+			$added += PNCP_Options::new_in_3125();
+		}
 		$added = array_diff_key( $added, $stored );
 		// 3.4: the automatic Emergency Mode only tells the administrator on new installs; a site that had it on
 		// keeps starting it on its own, as before.

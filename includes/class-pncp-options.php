@@ -66,23 +66,26 @@ final class PNCP_Options {
 	 */
 	public static function choices() {
 		return array(
-			'copy_mode'           => array( 'block', 'attribution', 'allow' ),
-			'print_mode'          => array( 'allow', 'source', 'block' ),
-			'exempt_cap'          => array( 'manage_options', 'edit_others_posts', 'edit_posts', 'none' ),
-			'feed_mode'           => array( 'full', 'excerpt', 'disabled' ),
-			'ip_header'           => array( 'remote_addr', 'x_forwarded_for', 'x_real_ip', 'cf_connecting_ip', 'true_client_ip' ),
-			'watermark_position'  => array( 'br', 'bl', 'tr', 'tl', 'center', 'tiled' ),
-			'log_retention'       => array( '1', '7', '30' ),
+			'copy_mode'             => array( 'block', 'attribution', 'allow' ),
+			'print_mode'            => array( 'allow', 'source', 'block' ),
+			'exempt_cap'            => array( 'manage_options', 'edit_others_posts', 'edit_posts', 'none' ),
+			'feed_mode'             => array( 'full', 'excerpt', 'disabled' ),
+			'ip_header'             => array( 'remote_addr', 'x_forwarded_for', 'x_real_ip', 'cf_connecting_ip', 'true_client_ip' ),
+			'watermark_position'    => array( 'br', 'bl', 'tr', 'tl', 'center', 'tiled' ),
+			'log_retention'         => array( '1', '7', '30' ),
 			// What the automatic Emergency Mode does when the site is hit far harder than usual: tell the
 			// administrator (email + notice with a "Start Emergency Mode" button), or start it on its own.
-			'auto_emergency_mode' => array( 'notify', 'start' ),
+			'auto_emergency_mode'   => array( 'notify', 'start' ),
 			// 3.7: the CrowdSec blocklist (PNCP_Crowdsec): where it comes from, and what a listed IP gets.
-			'crowdsec_mode'       => array( 'off', 'lapi', 'list' ),
-			'crowdsec_action'     => array( 'limit', 'block' ),
+			'crowdsec_mode'         => array( 'off', 'lapi', 'list' ),
+			'crowdsec_action'       => array( 'limit', 'block' ),
 			// 3.8: how long the attack record (PNCP_Attacks) is kept, in days.
-			'attack_retention'    => array( '7', '30', '90' ),
+			'attack_retention'      => array( '7', '30', '90' ),
 			// 3.12: the IPs of the Traffic record (PNCP_Traffic): as they are, or IPv4 /24 and IPv6 /48 only.
-			'traffic_ip_mode'     => array( 'full', 'masked' ),
+			'traffic_ip_mode'       => array( 'full', 'masked' ),
+			// 3.12.5: who gets the screenshot blur: everyone, or only visitors who are not signed in (decided in the
+			// browser, so cached pages work: PNCP_Signin_Hint).
+			'blur_on_capture_scope' => array( 'all', 'guests' ),
 		);
 	}
 
@@ -253,7 +256,7 @@ final class PNCP_Options {
 	 */
 	public static function sections() {
 		return array(
-			'general' => array( 'enabled', 'scope_posts', 'scope_pages', 'scope_home', 'scope_products', 'skip_woo_pages', 'excluded_ids', 'block_selection', 'block_context_menu', 'block_shortcuts', 'block_devtools', 'block_image_drag', 'block_text_drag', 'blur_on_capture', 'copy_mode', 'attribution_min_chars', 'print_mode', 'exempt_cap', 'show_message', 'message', 'block_framing', 'tdm_reservation', 'tdm_policy_url', 'user_mark', 'user_mark_guests', 'user_mark_opacity', 'text_trace', 'rate_limit_account', 'shared_alert', 'shared_ips', 'shared_logout' ),
+			'general' => array( 'enabled', 'scope_posts', 'scope_pages', 'scope_home', 'scope_products', 'skip_woo_pages', 'excluded_ids', 'block_selection', 'block_context_menu', 'block_shortcuts', 'block_devtools', 'block_image_drag', 'block_text_drag', 'blur_on_capture', 'blur_on_capture_scope', 'copy_mode', 'attribution_min_chars', 'print_mode', 'exempt_cap', 'show_message', 'message', 'block_framing', 'tdm_reservation', 'tdm_policy_url', 'user_mark', 'user_mark_guests', 'user_mark_opacity', 'text_trace', 'rate_limit_account', 'shared_alert', 'shared_ips', 'shared_logout' ),
 			'bots'    => array( 'monitor_mode', 'block_bots', 'block_empty_ua', 'block_fake_crawlers', 'require_browser_headers', 'block_headless', 'trap_enabled', 'probe_ban', 'block_http_libs', 'block_archivers', 'block_seo_crawlers', 'block_ip_host', 'ipv6_wide', 'bot_list', 'allow_list', 'allow_ips', 'allow_ai_search', 'verify_ai_bots', 'robots_ai_block', 'content_signal', 'block_ips', 'block_referrers', 'block_user_enum', 'rate_limit', 'rate_limit_search', 'rate_limit_rest', 'rate_limit_404', 'rate_limit_sitemap', 'human_check', 'rate_limit_unverified', 'geo_db', 'countries_block', 'countries_strict', 'rate_limit_country', 'rate_limit_datacenter', 'rate_limit_cart', 'rate_limit_coupon', 'reputation', 'rate_limit_lowrep', 'rate_limit_apionly', 'crowdsec_mode', 'crowdsec_url', 'crowdsec_key', 'crowdsec_action', 'rate_limit_crowdsec', 'ban_strikes', 'ban_minutes', 'syslog_bans', 'auto_emergency', 'auto_emergency_mode', 'auto_emergency_min', 'early_mode', 'precheck', 'ip_header', 'trust_cloudflare', 'trust_bunny', 'trust_any_proxy', 'trusted_proxies', 'cdn_secret', 'cdn_only', 'login_limit', 'login_max', 'login_window', 'login_ban_minutes', 'login_user_max', 'login_user_minutes', 'login_user_email', 'login_generic_errors', 'login_slug', 'bunny_import', 'bunny_all_lines', 'bunny_flood_4xx', 'bunny_strikes', 'bunny_rate', 'bunny_login_allow' ),
 			'content' => array( 'rest_hide_content', 'hide_rest_discovery', 'graphql_hide_content', 'feed_mode', 'feed_source_link', 'list_excerpts', 'private_paths', 'private_ips', 'disable_pingback', 'hide_versions', 'hide_fingerprint', 'block_upload_php' ),
 			'images'  => array( 'watermark_enabled', 'watermark_full', 'watermark_products', 'watermark_image_id', 'watermark_opacity', 'watermark_size', 'watermark_position', 'watermark_min_width' ),
@@ -660,6 +663,8 @@ final class PNCP_Options {
 			'block_image_drag'        => 1,
 			'block_text_drag'         => 1,
 			'blur_on_capture'         => 0,
+			// 3.12.5: who gets the blur. "all" is how it always worked; existing sites get it too (new_in_3125()).
+			'blur_on_capture_scope'   => 'all',
 			'show_message'            => 1,
 			'skip_woo_pages'          => 1,
 			'copy_mode'               => 'attribution',
@@ -1051,6 +1056,16 @@ final class PNCP_Options {
 	 */
 	public static function new_in_3120() {
 		return array_intersect_key( self::defaults(), array_flip( array( 'traffic', 'traffic_wp', 'traffic_log_path', 'traffic_raw_days', 'traffic_days', 'traffic_ip_mode', 'traffic_alerts', 'traffic_alert_email' ) ) );
+	}
+
+	/**
+	 * The setting added in 3.12.5, with the value existing sites get on upgrade: the blur keeps applying to everyone,
+	 * as before. Stored on upgrade, so an export or a settings list shows it.
+	 *
+	 * @return array<string, string>
+	 */
+	public static function new_in_3125() {
+		return array_intersect_key( self::defaults(), array_flip( array( 'blur_on_capture_scope' ) ) );
 	}
 
 	/**
@@ -1675,6 +1690,7 @@ final class PNCP_Options {
 			'block_image_drag',
 			'block_text_drag',
 			'blur_on_capture',
+			'blur_on_capture_scope',
 			'copy_mode',
 			'attribution_min_chars',
 			'print_mode',

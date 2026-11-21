@@ -178,6 +178,11 @@ ScrapeLock — δοκιμές σε πραγματικό WordPress (όχι stubs)
                     search" in the rules; out of date at once after a settings change, fresh with a matching header,
                     no nag without rules; the notice, Site Health and "See what changed" (nonce, manage_options); the
                     evaluator ("ScrapeLock's own server rule (fake browser)") against real Nginx when it is on PATH
+  t_3125_blur.php   3.12.5: «Blur the page on screenshot shortcuts» → «Applies to: Everyone / Only visitors who are not
+                    signed in» (blur_on_capture_scope): default "all" (and on a new install), sanitize (anything else →
+                    "all"), section, label, requires note, cache key; upgrade 3.12.4 → 3.12.5 (every value unchanged,
+                    "all" added, a stored "guests" kept); export / import; the form (two radios under the blur, dimmed
+                    while it is off)
   t_cli.php         wp scrapelock … μέσα από το πραγματικό wp (χρειάζεται WP_CLI, αλλιώς SKIP)
   t_bunny_rules.php Edge Rules στο Bunny μέσα στα όριά του (το πολύ 5 μοτίβα ανά συνθήκη) με ψεύτικο API που δίνει
                     HTTP 400 όπως το πραγματικό: χωρισμός, κλείδωμα/Remove, rollback, Monitor only, sync, προεπισκόπηση,
