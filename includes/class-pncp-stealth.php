@@ -178,6 +178,7 @@ final class PNCP_Stealth {
 		add_filter( 'emoji_svg_url', array( __CLASS__, 'emoji_svg_url' ), 99 );
 		add_filter( 'the_password_form', array( __CLASS__, 'password_form' ), 99 );
 		add_action( 'rest_api_init', array( __CLASS__, 'rest_headers' ), 99 );
+		add_filter( 'load_script_translations', array( __CLASS__, 'script_translations' ), 99 );
 	}
 
 	/* ---------- Settings and state ---------- */
@@ -2072,6 +2073,28 @@ final class PNCP_Stealth {
 			$html
 		);
 		return is_string( $out ) ? $out : $html;
+	}
+
+	/**
+	 * 3.12.7: the JSON of script translations (wp_set_script_translations()) without what names files and tools:
+	 * "comment":{"reference":"wp-includes/js/dist/…"} or a plugin's path, and "generator" (GlotPress, WP-CLI).
+	 * wp.i18n reads only "locale_data"; the text domain and locale stay (the scripts look their texts up by them).
+	 *
+	 * @param mixed $json JSON of the translations, or false.
+	 * @return mixed
+	 */
+	public static function script_translations( $json ) {
+		if ( ! is_string( $json ) || ( false === strpos( $json, '"comment"' ) && false === strpos( $json, '"generator"' ) ) || ! self::rewrites_request() ) {
+			return $json;
+		}
+		$data = json_decode( $json );
+		if ( ! $data instanceof stdClass || ! isset( $data->locale_data ) ) {
+			return $json;
+		}
+		unset( $data->comment, $data->generator );
+		// Default flags, as the files are written: "/" stays escaped, so no "</script>" can end the inline script.
+		$out = wp_json_encode( $data );
+		return is_string( $out ) ? $out : $json;
 	}
 
 	/**

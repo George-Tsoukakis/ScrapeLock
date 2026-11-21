@@ -225,6 +225,10 @@ ScrapeLock — δοκιμές σε πραγματικό WordPress (όχι stubs)
                     wp scrapelock cache status / purge (fake nginx -T on PATH, --nginx-conf, --cache-dir, --dry-run,
                     --yes) and cdn purge --[no-]server-cache (WP_CLI); a real Nginx with fastcgi_cache in a
                     temporary prefix in front of lib/fcgi-stub.php (MISS, HIT, purge, MISS; SKIP without nginx)
+  t_3127_traces.php 3.12.7: the last traces Stealth left: the JSON of script translations (wp_set_script_translations()
+                    with a fake translation file of a stand-in mu-plugin) without "comment" (wp-includes/…, plugin
+                    paths) and "generator" while Stealth is on, translations, plural forms and text domain kept,
+                    "</script>" still escaped; unchanged with Stealth off
   t_cli.php         wp scrapelock … μέσα από το πραγματικό wp (χρειάζεται WP_CLI, αλλιώς SKIP)
   t_bunny_rules.php Edge Rules στο Bunny μέσα στα όριά του (το πολύ 5 μοτίβα ανά συνθήκη) με ψεύτικο API που δίνει
                     HTTP 400 όπως το πραγματικό: χωρισμός, κλείδωμα/Remove, rollback, Monitor only, sync, προεπισκόπηση,
