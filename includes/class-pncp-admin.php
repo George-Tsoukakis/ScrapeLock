@@ -2963,7 +2963,7 @@ final class PNCP_Admin {
 					<h4><?php esc_html_e( 'Addresses that do not exist', 'scrapelock' ); ?></h4>
 					<?php self::path_table( $top['unknown'] ); ?>
 					<?php if ( $top['unknown'] ) : ?>
-						<p class="description"><?php esc_html_e( 'A real page here? Pages of plugins that WordPress does not know (e.g. a community or forum) count as “Pages” when you add their prefix in “Content addresses” (“Log settings”, at the bottom of this tab).', 'scrapelock' ); ?></p>
+						<?php echo PNCP_Admin_Fields::para( __( 'A real page here? Add its prefix in “Content addresses” to count it as “Pages”.', 'scrapelock' ), __( 'Pages of plugins that WordPress does not know (e.g. a community or forum) count as “Pages” when you add their prefix in “Content addresses” (“Log settings”, at the bottom of this tab).', 'scrapelock' ) ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Escaped in PNCP_Admin_Fields. ?>
 					<?php endif; ?>
 				</section>
 				<section class="pncp-card">

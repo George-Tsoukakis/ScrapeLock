@@ -101,6 +101,28 @@ $stored = PNCP_Options::stored();
 update_option( PNCP_OPTION, array_merge( $stored, array( 'enabled' => 1, 'monitor_mode' => 0, 'monitor_until' => 0 ) ) );
 PNCP_Options::flush();
 delete_transient( PNCP_Hardening::LIVE ); // Οι σημειώσεις του πίνακα «Vulnerable points» από τον τρέχοντα κώδικα.
+// 3.12.6: μια μπλοκαρισμένη διεύθυνση που δεν υπάρχει, ώστε η καρτέλα Log να δείχνει πάντα την κάρτα «Addresses
+// that do not exist» με τη σημείωσή της (πριν εξαρτιόταν από παλιές γραμμές του αρχείου και η δοκιμή άλλαζε).
+$pncp_t_path = '/pncp-t311-texts-no-such-page-' . getmypid();
+PNCP_Log::insert(
+	array(
+		'time'   => time() - 60,
+		'code'   => 403,
+		'reason' => 'bot',
+		'ip'     => '192.0.2.211',
+		'path'   => $pncp_t_path,
+		'ua'     => 'pncp-t311-texts',
+		'hits'   => 1,
+	)
+);
+PNCP_Log::flush_aggregates();
+register_shutdown_function(
+	static function () use ( $pncp_t_path ) {
+		global $wpdb;
+		$wpdb->delete( PNCP_Log::table(), array( 'path' => $pncp_t_path ), array( '%s' ) );
+		PNCP_Log::flush_aggregates();
+	}
+);
 
 /* ---------- Ο renderer ---------- */
 $html = PNCP_Admin_Fields::description( 'pncp-x-help', PNCP_Admin_Fields::help( 'Short line.', 'The longer <explanation>.' ) );
@@ -161,6 +183,7 @@ foreach ( $tabs as $tab ) {
 	t( "$tab: κανένα «Starting value:»", false === strpos( $body, 'Starting value:' ) );
 	t( "$tab: το «May affect visitors/SEO» μόνο ως εικονίδιο", ! preg_match( '/>\s*May affect visitors\/SEO\s*</', preg_replace( '#<span class="screen-reader-text">May affect visitors/SEO</span>#', '', $body ) ) );
 }
+t( 'log: η σημείωση «A real page here?» σε μία γραμμή, το υπόλοιπο στο «More» (με γραμμές διευθύνσεων που δεν υπάρχουν)', false !== strpos( $all, $pncp_t_path ) && false !== strpos( $all, '<p class="description">A real page here? Add its prefix in “Content addresses” to count it as “Pages”.</p><details class="pncp-more">' ) );
 t( 'οι μεγάλες εξηγήσεις υπάρχουν, διπλωμένες στο «More» (καμία δεν σβήστηκε)', $folds >= 60, (string) $folds );
 t( 'η παραπομπή στην Οδηγία 2019/790 μένει, μέσα στο «More»', false !== strpos( $all, 'Directive (EU) 2019/790, Article 4(3)' ) );
 t( 'ids και names των πεδίων ίδια (π.χ. pncp-rate_limit, aria-describedby της βοήθειας και του κινδύνου)', false !== strpos( $all, 'id="pncp-rate_limit"' ) && false !== strpos( $all, 'name="' . PNCP_OPTION . '[rate_limit]"' ) && false !== strpos( $all, 'aria-describedby="pncp-rate_limit-help pncp-rate_limit-risk"' ) && false !== strpos( $all, 'id="pncp-rate_limit-help"' ) && false !== strpos( $all, 'id="pncp-rate_limit-risk"' ) );
