@@ -104,6 +104,7 @@ function pncp_uninstall_site() {
 	// (pncp_selfcheck_route, pncp_edge_spare) go with every _transient_pncp_ row below.
 	delete_option( 'pncp_selfcheck_log' );
 	delete_option( 'pncp_selfcheck_last' );
+	delete_option( 'pncp_fastcgi_last' ); // 3.12.7: the counts of the last purge of the Nginx fastcgi cache.
 	delete_option( 'pncp_rules_state' ); // 3.12.3: the installed server rules against the current ones.
 	delete_option( 'pncp_rules_texts' ); // 3.12.3: the text of the last rules shown, for "See what changed".
 	delete_option( 'pncp_wizard_state' ); // 3.12.6: the dismissed "For my site" proposals.

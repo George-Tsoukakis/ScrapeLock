@@ -1,3 +1,97 @@
+# ScrapeLock 3.12.8 — ο νέος χάρτης του Stealth σε Nginx, `stealth check | debug`, το `cdn purge` και με τις caches των plugins
+
+Η αναφορά μένει στο αποθετήριο (`/REPORT.md export-ignore`): δεν μπαίνει στο zip του plugin. `<site>` είναι το όνομα φακέλου του ιστότοπου στο aaPanel, `<αρχείο>` το αρχείο των κανόνων Stealth στον server (π.χ. `extension/<site>/z-scrapelock-stealth.conf`)· τίποτα από τον live server (domain, IP, paths, slugs, κωδικοί) δεν είναι στον κώδικα, στις δοκιμές ή εδώ.
+
+## G1. Η πραγματική αιτία του εσωτερικού wp-content (διόρθωση της 3.12.7)
+
+**Τι φάνηκε live μετά την 3.12.7.** Σε **φρέσκια** σελίδα (μετά από `rocket_clean_domain()` και `wp scrapelock cdn purge --all`, `x-pn-fastcgi-cache: MISS`) ακόμα 10 `wp-content`: `/assets/<alias>/cache/min/1/wp-content/themes/<κωδικός>/…` σε `href` και `data-rocket-src`. Το εξωτερικό wp-content και τα slugs είχαν κωδικό, το εσωτερικό όχι, και ο κωδικός του `wp-content` που υπάρχει στους κανόνες Stealth εμφανιζόταν 0 φορές στη σελίδα.
+
+**Το συμπέρασμα της 3.12.7 (F1) ήταν λάθος.** Η 3.12.7 έγραψε ότι έμενε «μια παλιά σελίδα της fastcgi cache του Nginx». Δεν ήταν η cache: η σελίδα έβγαινε έτσι και φρέσκια. Δεν ήταν ούτε η σειρά του WP Rocket. Με το **πραγματικό WP Rocket 3.24.2** (με άδεια, μόνο τοπικά σε site δοκιμών, τίποτα από αυτό στο αποθετήριο) η σειρά είναι: buffer page cache του `advanced-cache.php` (έξω απ' όλα) > buffer του Stealth (`template_redirect` -9999) > buffer βελτιστοποίησης (`template_redirect` 2, `rocket_buffer`: minify CSS 16, minify JS 22, delay JS 26 που γράφει τα `data-rocket-src`, background CSS 110000, Stealth `PHP_INT_MAX`). Τίποτα δεν γράφει διευθύνσεις μετά το Stealth, και η page cache αποθηκεύει ό,τι βγάζει το buffer του Stealth. Σε φρέσκια εγκατάσταση η 3.12.7 έδινε ήδη 0 `wp-content` σε MISS, HIT και στο αρχείο της cache του WP Rocket.
+
+**Η αιτία: παλιός χάρτης λέξεων του Stealth σε Nginx.**
+- Οι σελίδες ξαναγράφονται με τις λέξεις που αποθηκεύτηκαν στο τελευταίο «Test again» (`state['words']`). Οι κανόνες που δείχνει η καρτέλα, που εγκαθιστά το `wp scrapelock rules install` και που ελέγχει η κατάσταση («installed and up to date») φτιάχνονται από το `build()`, δηλαδή από τον χάρτη του τώρα.
+- Σε Nginx (όπου το ScrapeLock δεν γράφει κανόνες μόνο του) το `refresh()` (ο έλεγχος δύο φορές τη μέρα, οι αλλαγές plugins / θέματος) έβαζε τον νέο χάρτη μόνο σε «pending». Μόνο το «Test again» τον έβαζε σε χρήση.
+- Site όπου το Stealth δοκιμάστηκε πριν από την 3.12.6 (τότε δεν υπήρχαν οι εσωτερικές λέξεις) ή πριν ενεργοποιηθεί το WP Rocket έμενε για πάντα με τις παλιές λέξεις: χωρίς κωδικό για το `wp-content`, με κωδικούς για τα slugs. Ο κάτοχος αντέγραφε τους νέους κανόνες, η κατάσταση έλεγε «up to date», οι σελίδες δεν άλλαζαν.
+- Αναπαράχθηκε ακριβώς με το πραγματικό WP Rocket (σενάριο «stale», 3.12.7): 10 `wp-content` σε MISS / HIT / αρχείο cache, 0 φορές ο κωδικός. Λύση για όποιον έχει ακόμα 3.12.7: «Test again» (`wp scrapelock stealth test`), μετά άδειασμα των caches.
+
+## G2. Η διόρθωση
+
+- **Ο νέος χάρτης μπαίνει σε χρήση μόνος του** (`PNCP_Stealth::refresh()`): όταν ο φάκελος βάσης δεν άλλαξε, η διεύθυνση ελέγχου απαντά το **τρέχον** αποτύπωμα (αυτό του `build()`, μαζί με τους νέους κανόνες της 3.12.8) και το self-test περνά (το αρχείο του έχει τις εσωτερικές λέξεις στο όνομά του, άρα με παλιούς κανόνες αποτυγχάνει). Μετά αδειάζουν οι page caches (`pncp_purge_page_cache()`: plugins cache, fastcgi, Cloudflare plugin). Όταν η κατάσταση των κανόνων βλέπει τους τρέχοντες κανόνες ενώ ένας χάρτης περιμένει, προγραμματίζει αυτόν τον έλεγχο (30 s, WP-Cron). Νέος φάκελος βάσης θέλει ακόμα «Test again» (οι παλιές διευθύνσεις θα σταματούσαν).
+- **Δεύτερο πέρασμα** (`code_new_addresses()`, `encode_left()`): διεύθυνση ήδη νέα, φτιαγμένη από πέρασμα με λιγότερες λέξεις, παίρνει τους κωδικούς των λέξεων που κρατά (μόνο το κείμενο ανάμεσα στους κωδικούς, το πολύ δύο φορές ανά λέξη)· δεύτερο πέρασμα δεν αλλάζει τίποτα.
+- **Εργαλεία για τον έλεγχο live**: `wp scrapelock stealth check [<url>]` (η σελίδα όπως τη βλέπει ο επισκέπτης, μέσα από τις caches: wp-content / wp-includes, `/cache/min/`, κωδικοί, headers cache, «words not used», «rules», «next») και το προαιρετικό αρχείο debug (`SCRAPELOCK_STEALTH_DEBUG`, μία γραμμή ανά στάδιο με αριθμούς μόνο, χωρίς στοιχεία επισκέπτη, έως 256 KB, λήγει μόνο του· `wp scrapelock stealth debug [--clear]`). Ένα buffer στο `template_redirect` `PHP_INT_MAX`, όπως προτάθηκε, θα ήταν **μέσα** στο buffer του WP Rocket και θα έτρεχε πριν από το `rocket_buffer`: το buffer του Stealth είναι ήδη το τελευταίο σημείο πριν η page cache αποθηκεύσει τη σελίδα.
+
+## G3. Πώς δένουν οι τέσσερις κλάδοι (έλεγχος και διορθώσεις)
+
+Οι κλάδοι γράφτηκαν παράλληλα (j1 χάρτης / debug, j5 ακραίες περιπτώσεις Stealth, j3 purge, j4 μικρές διορθώσεις). Ελέγχθηκαν μαζί και διορθώθηκαν:
+- **Το αποτύπωμα αλλάζει με τους κανόνες «αδελφών» φακέλων του j5.** Υπάρχει πάντα τουλάχιστον ένας τέτοιος κανόνας (`uploads|plugins|themes` κάτω από το wp-content), άρα **κάθε** site με Stealth σε Nginx βλέπει μετά την ενημέρωση «out of date». Η αυτόματη υιοθέτηση του j1 ζητά το νέο αποτύπωμα: με τους κανόνες της 3.12.7 ο χάρτης που περιμένει **δεν** μπαίνει σε χρήση (δοκιμή `t_3128_release` F και πραγματικό WP Rocket, G6). Η ειδοποίηση λέει «copy the Stealth rules again» και, νέο, το WP-CLI το ίδιο με τις εντολές: `stealth status` (γραμμές `map`: in use / waiting, `next`) και `stealth check` (`rules`, `next`· το «words not used» ζητά πρώτα αντιγραφή όσο οι κανόνες δεν είναι τρέχοντες).
+- **Apache με κανόνες που γράφει το ScrapeLock στο .htaccess**: το `refresh()` τους ξανάγραφε μόνο όταν άλλαζε ο χάρτης, άρα μετά την ενημέρωση θα έμεναν για πάντα «out of date». Τώρα γράφονται ξανά όταν το αποτύπωμα του block στο .htaccess δεν είναι το τρέχον (ίδιος φάκελος βάσης), και η αναβάθμιση προγραμματίζει αυτόν τον έλεγχο (`pncp_upgrade_files()`).
+- **Η υιοθέτηση και το purge του j3**: το `pncp_purge_page_cache()` επιστρέφει πλέον γραμμές (τι άδειασε)· το Stealth το καλεί όπως πριν και αγνοεί την επιστροφή· η σειρά (plugins → fastcgi → Cloudflare) ισχύει και εκεί.
+- **`encode_left()` με τα `served_type`, `rewrite_encoded` και τους κανόνες αδελφών**: ελέγχθηκαν μαζί (`t_3128_stealth_inner`, `t_3128_stealth_edges`, `t_3128_release`): ένα upload που κρατά την πραγματική του διεύθυνση δεν γίνεται ποτέ νέα διεύθυνση, άρα το δεύτερο πέρασμα δεν το αγγίζει· μια URL-encoded διεύθυνση περνά από το ίδιο `rewrite()` (και το δεύτερο πέρασμα)· κάθε νέα διεύθυνση γυρίζει στο αρχείο της με τους κανόνες Nginx και Apache.
+- **`own_url()` με το WordPress σε υποφάκελο**: `cache purge /about/` / `cdn purge /x` χρησιμοποιούσαν τη ρίζα του host. Τώρα η διεύθυνση του home· διαδρομή που ήδη αρχίζει με τον φάκελο μένει όπως είναι, τα αρχεία επαλήθευσης και το `/.well-known/` μένουν στη ρίζα (εκεί τα σερβίρει το `PNCP_Verify_Files`).
+- **«Ο κανόνας του κωδικού του woocommerce δύο φορές»**: δεν είναι διπλότυπο. Κάθε λέξη έχει δύο ίδιους κανόνες, και στο Nginx και στο Apache, γιατί μια λέξη μπορεί να είναι δύο φορές στη διεύθυνση (το αντίγραφο του WP Rocket του `woocommerce/assets/css/woocommerce.css`) και κάθε κανόνας γυρίζει μία. Με έναν κανόνα τέτοια διεύθυνση δίνει 404 (`t_3128_release` R το δείχνει). Δεν αφαιρέθηκε· ένα σχόλιο πάνω από τα ζευγάρια το λέει (τα σχόλια δεν αλλάζουν το αποτύπωμα).
+
+## G4. Stealth: ακραίες περιπτώσεις (j5)
+
+Κανόνες για τους «αδελφούς» φακέλους που φτάνει ένα stylesheet με `../` (child theme → parent theme, plugin → άλλο plugin), όχι όταν υπάρχει πραγματικός φάκελος στη διεύθυνση βάσης. Uploads τύπων που δεν σερβίρουν οι κανόνες (.zip, .docx, .csv…) κρατούν την πραγματική διεύθυνση (έδιναν 404). Διευθύνσεις μετά από escaped εισαγωγικό (`url(&quot;…&quot;)`, `&#039;`), διευθύνσεις του site URL-encoded σε links κοινοποίησης, cart fragments του WooCommerce (`wc-ajax`) για επισκέπτες. Φάκελος με κενό ή άλλο χαρακτήρα που δεν χωρά σε κανόνα δεν παίρνει δική του διεύθυνση (το `nginx -t` αποτύγχανε, το Apache έδινε 500 μέχρι το self-test).
+
+## G5. WP-CLI και μικρές διορθώσεις (j3, j4)
+
+- `wp scrapelock cdn purge`: πρώτα οι page caches των ενεργών plugins (WP Rocket, LiteSpeed Cache, W3 Total Cache, WP Super Cache, WP Fastest Cache, Nginx Helper, Cache Enabler, SiteGround Optimizer), με μία γραμμή για καθένα («cleaned» / «not active»), μετά η fastcgi cache, μετά το CDN· `--no-plugin-cache`· `--minify` (με `--all`) και τα minified CSS / JS του WP Rocket και του Autoptimize.
+- `wp scrapelock cache status`: αν ορίστηκε η `SCRAPELOCK_FASTCGI_CACHE_PATH`, και η έτοιμη γραμμή `wp config set SCRAPELOCK_FASTCGI_CACHE_PATH '<cache>' --type=constant --anchor="require_once ABSPATH . 'wp-settings.php';" --placement=before` (σε κάποια wp-config.php λείπει το προεπιλεγμένο anchor του WP-CLI)· `--save-constant` την προσθέτει μετά από δοκιμή σε αντίγραφο.
+- `rules install`: ποτέ «installed» χωρίς reload (systemctl ως εναλλακτική, αλλιώς σταματά και επαναφέρει τα αρχεία)· κρατά ιδιοκτήτη και ομάδα του αρχείου που αντικαθιστά. Το uninstall σβήνει και το `pncp_fastcgi_last`. Η επικεφαλίδα του `selfcheck --log` μεταφράζεται.
+
+## G6. Με το πραγματικό WP Rocket 3.24.2
+
+Site δοκιμών μόνο τοπικά (το WP Rocket με άδεια αντιγράφεται στο site δοκιμών, ποτέ στο αποθετήριο, και δεν αλλάζει σε τίποτα): πραγματικός Nginx 1.24 τύπου aaPanel (κανόνες Stealth σε include στην αρχή του `server { }`, rewrite του WordPress σε επίπεδο server), proxy cache στη θέση της fastcgi cache του κατόχου (`X-Cache`), WP Rocket με page cache, minify + combine CSS / JS, defer, delay JS, lazyload και background CSS, θέμα με 5 CSS / JS και plugin με 4. MISS = πρώτη σελίδα (το WP Rocket τη φτιάχνει και τη γράφει), HIT = cache του Nginx, RCACHE = cache του Nginx παρακαμφθείσα, απάντηση από το αρχείο του WP Rocket.
+
+| σενάριο | wp-content MISS / HIT / RCACHE | wp-includes | `/cache/min/` | κωδικός του wp-content | assets 200 |
+|---|---|---|---|---|---|
+| 3.12.8, φρέσκια εγκατάσταση | 0 / 0 / 0 | 0 | 9 | 10 | 14 / 14 |
+| 3.12.8, «stale» (Stealth πριν από το WP Rocket, νέοι κανόνες αντιγραμμένοι, ο έλεγχος του cron, χωρίς «Test again») | 0 / 0 / 0 | 0 | 9 | 10 | 14 / 14 |
+| 3.12.7, «stale» (η live εικόνα) | 10 / 10 / 10 | 0 | 9 | 0 | 14 / 14 |
+| ίδιο site → 3.12.8, κανόνες της 3.12.7 ακόμα στον server | 10 / 10 / 10 (χάρτης «waiting», ειδοποίηση «copy the Stealth rules again») | 0 | 9 | 0 | 14 / 14 |
+| … μετά το `wp scrapelock rules install --stealth=<αρχείο>` και το προγραμματισμένο refresh (WP-Cron, όχι «Test again») | 0 / 0 / 0 | 0 | 9 | 10 | 14 / 14 |
+
+Στο ίδιο site: `wp scrapelock cdn purge --all --yes` (χωρίς συνδεδεμένο CDN) έγραψε «WP Rocket page cache: cleaned», «WP Rocket minified CSS/JS: kept (--minify empties them)», τα άλλα plugins «not active», «Server cache: no fastcgi cache folder is known» και στο τέλος μόνο warning «No CDN connection is set» (exit 0). Τα αρχεία της page cache του WP Rocket πήγαν από 2 σε 0· η επόμενη σελίδα τα ξανάγραψε (2, 0 `wp-content` μέσα τους), 14 / 14 assets 200. Με `--minify`: «WP Rocket minified CSS/JS: cleaned» πρώτα, page cache 0 και minified αρχεία 9 → 0· η επόμενη σελίδα τα ξανάφτιαξε (9), 0 `wp-content`, 14 / 14 assets 200, και τα HIT μετά καθαρά. `wp scrapelock cache status` με ρύθμιση Nginx με `fastcgi_cache`: φάκελος, κλειδί, «SCRAPELOCK_FASTCGI_CACHE_PATH is not defined» και η γραμμή `wp config set … --anchor="require_once ABSPATH . 'wp-settings.php';" --placement=before`. `wp scrapelock stealth check`: code 200, wp-content 0, wp-includes 0, cache/min 9, κωδικός wp-content 10, rules current, verdict clean.
+
+## Όρια
+
+- **Μετά την ενημέρωση οι κανόνες Stealth πρέπει να αντιγραφούν ξανά** σε κάθε site με Stealth σε Nginx (οι κανόνες αδελφών φακέλων άλλαξαν το αποτύπωμα)· μέχρι τότε οι σελίδες μένουν όπως είναι και η ειδοποίηση μένει. Ο νέος χάρτης μπαίνει σε χρήση μόνο με WP-Cron (ή τον έλεγχο δύο φορές τη μέρα), αλλιώς με `wp scrapelock stealth test`.
+- **Τα minified αρχεία** του WP Rocket κρατούν τις διευθύνσεις με τις οποίες φτιάχτηκαν: η αυτόματη υιοθέτηση αδειάζει τις page caches, όχι αυτά· γι' αυτό το Upgrade Notice ζητά `cdn purge --all --minify --yes` μία φορά.
+- **WooCommerce `wc-ajax`**: η σειρά με την οποία απαντά το WooCommerce (DOING_AJAX στο init, απάντηση στο `template_redirect`) είναι από μνήμης, δοκιμασμένη μόνο με stand-in· όχι με πραγματικό WooCommerce.
+- **Τα ονόματα συναρτήσεων / hooks των άλλων plugins cache** (LiteSpeed, W3 Total Cache, WP Super Cache, WP Fastest Cache, Nginx Helper, Cache Enabler, SiteGround Optimizer, Autoptimize) δεν επαληθεύτηκαν με τα πραγματικά plugins, μόνο με stand-ins που καταγράφουν τις κλήσεις. Πραγματικό ήταν μόνο το WP Rocket.
+- Στη δοκιμή με το πραγματικό WP Rocket η cache του Nginx είναι proxy cache (το ScrapeLock αδειάζει μόνο fastcgi cache, με γνωστό φάκελο)· σε πραγματικό aaPanel με fastcgi cache δεν δοκιμάστηκε. Το αντίγραφο background CSS του WP Rocket κρατά το όνομα του host στο path του (`cache/background-css/1/<host>/…`, κάτω από `/assets/<alias>/`).
+- Νέος φάκελος βάσης θέλει πάντα «Test again».
+
+## Έλεγχος αναβάθμισης 3.12.7 → 3.12.8
+
+Από το πραγματικό zip της release v3.12.7 (`gh api`, asset `scrapelock-3.12.7.zip`), εγκατεστημένο κανονικά (όχι symlink) πίσω από πραγματικό Nginx, με τις ρυθμίσεις του fixture 3.10.1 εισαγμένες, `rate_limit` 45, `block_tech_profilers`, `hide_fingerprint`, Stealth ενεργό με base «assets» και τους κανόνες του εγκατεστημένους· μετά `wp plugin install --force` με το zip της 3.12.8 και το προγραμματισμένο refresh:
+- όλες οι ρυθμίσεις ίδιες (κανένα κλειδί προστέθηκε ή χάθηκε), η κατάσταση του Stealth ίδια (χάρτης, λέξεις, υπογραφή, base, pending), ίδια options εκτός από `pncp_version` και `pncp_upgrade_lock`, ίδια cron, ίδιοι πίνακες·
+- η αρχική σελίδα για επισκέπτη byte προς byte ίδια, το άρθρο ίδιο εκτός από την τυχαία τιμή του Akismet (`ak_js`)·
+- κανένα PHP μήνυμα στο wp-admin και καμία γραμμή του ScrapeLock στο debug.log· η μόνη ειδοποίηση του ScrapeLock είναι η αναμενόμενη «The Stealth rules on the server are out of date: copy the Stealth rules again» (dashboard, ScrapeLock, Server rules), και το `stealth status` λέει το ίδιο στο «next» με την εντολή·
+- τίποτα άλλο δεν αλλάζει μέχρι να εγκατασταθούν οι κανόνες· μετά το `rules install --stealth=<αρχείο>` η κατάσταση είναι «current», η ειδοποίηση φεύγει, το `stealth test` περνά και το `stealth check` δίνει 0 wp-content.
+
+## Δοκιμές της έκδοσης
+
+- **php -l**, **phpcs** (phpcs.xml.dist, `--warning-severity=0`) 0 σφάλματα, **PHPStan** όπως στο CI (`phpstan.neon.dist`, phpstan 2.1.56) χωρίς σφάλματα.
+- **Νέα δοκιμή `t_3128_release`** (27 PASS): S `own_url()` με το WordPress σε υποφάκελο, R οι διπλοί κανόνες λέξεων (Nginx και Apache, και ότι με έναν κανόνα η διεύθυνση δεν γυρίζει), F το αποτύπωμα με τους κανόνες αδελφών, η ειδοποίηση και το WP-CLI, η υιοθέτηση μόνο με τους νέους κανόνες, H το .htaccess στο Apache. Στο `run-all.sh` και στο `tests/README.txt`.
+- **Όλο το `tests/run-all.sh` σε φρέσκο MariaDB** (nginx και apache2 παρόντα): 55 ok, 1 skip (t_traffic_ms), αποτυχίες μόνο οι γνωστές τοπικές (t_http inline styles / data-cfasync / Applebot PTR ×2 / CF-Connecting-IP / αυτόματο Emergency ×2, t_metadata_paths «fake Applebot», t_lockdown «busy» ×2). Το `t_3121_loopback` R απέτυχε μία φορά επειδή τρία suites έτρεχαν παράλληλα και ο stand-in server του στη σταθερή θύρα 8953 συγκρούστηκε· μόνο του 116 PASS. t_3128_stealth_inner 55, t_3128_stealth_edges 91, t_3128_purge 39, t_3128_bugs_d 16, t_3128_release 27 PASS.
+- **SQLite όπως στο CI** (wp-sqlite-db, ένας php -S): 56 ok, 1 skip (t_traffic_ms), αποτυχίες μόνο t_http (inline styles, data-cfasync) και t_site_files στο SQLite. t_cli, t_311_compat, t_311_i18n PASS.
+- **Χωρίς nginx στο PATH** (`/usr/sbin`, `/sbin`, `/usr/local/sbin` έξω), φρέσκο MariaDB: μόνο οι γνωστές αποτυχίες, τα τμήματα πραγματικού Nginx SKIP (t_3128_stealth_inner 53 PASS, t_3128_stealth_edges 90 PASS). Το `t_311_integration` «signature» απέτυχε για τον ίδιο λόγο (σταθερή θύρα 8952, παράλληλα suites)· μόνο του 50 PASS.
+- **Zip** όπως στο release.yml (`git archive`): Version 3.12.8, `languages/scrapelock-el.mo` μέσα, χωρίς tests/, .po, REPORT.md.
+
+## Τι κάνει ο κάτοχος μετά την ενημέρωση
+
+```
+wp --allow-root --skip-themes scrapelock rules install --stealth=/www/server/panel/vhost/nginx/extension/<site>/z-scrapelock-stealth.conf --dry-run
+wp --allow-root --skip-themes scrapelock rules install --stealth=/www/server/panel/vhost/nginx/extension/<site>/z-scrapelock-stealth.conf --yes
+wp --allow-root --skip-themes scrapelock stealth test
+wp --allow-root --skip-themes scrapelock cdn purge --all --minify --yes
+wp --allow-root --skip-themes scrapelock stealth check
+```
+(ή αντιγραφή των κανόνων από Server rules → Stealth, `nginx -t`, reload, «Test again».) Αν το `cache status` δείχνει ότι λείπει η σταθερά: η γραμμή `wp config set … --anchor=… --placement=before` που τυπώνει, ή `wp scrapelock cache status --save-constant`.
+
+
 # ScrapeLock 3.12.7 — η cache του Nginx (fastcgi), `wp scrapelock cache`, τα τελευταία ίχνη του Stealth
 
 Η αναφορά μένει στο αποθετήριο (`/REPORT.md export-ignore`): δεν μπαίνει στο zip του plugin. Στις εντολές, `<site>` είναι το όνομα φακέλου του ιστότοπου στο aaPanel και `<cache>` ο φάκελος της fastcgi cache του server· τίποτα από τον live server (domain, IP, paths) δεν είναι στον κώδικα, στις δοκιμές ή εδώ.

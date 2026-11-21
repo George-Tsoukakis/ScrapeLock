@@ -2,7 +2,7 @@
 /**
  * Plugin Name:       ScrapeLock – Content & AI Bot Protection
  * Description:       Protects your content: makes copying text and images harder, hides the text in the REST API, GraphQL and RSS, blocks scrapers, AI bots and fake Googlebots, temporarily blocks persistent IPs, protects XML feeds with a token and adds an optional watermark. Lockdown freezes every change to the site until it is unlocked with an authenticator app. Forms, cart, checkout and search engines are not affected.
- * Version:           3.12.7
+ * Version:           3.12.8
  * Requires at least: 6.2
  * Requires PHP:      7.4
  * Author:            CodeBunny
@@ -19,7 +19,7 @@ if ( defined( 'PNCP_VERSION' ) ) {
 	return;
 }
 
-define( 'PNCP_VERSION', '3.12.7' );
+define( 'PNCP_VERSION', '3.12.8' );
 define( 'PNCP_FILE', __FILE__ );
 define( 'PNCP_DIR', plugin_dir_path( __FILE__ ) );
 define( 'PNCP_URL', plugin_dir_url( __FILE__ ) );
@@ -500,6 +500,12 @@ function pncp_upgrade_files() {
 	// A list that is new in this version (e.g. Anthropic in 2.6.2) is downloaded now, not with the daily refresh.
 	PNCP_Ip::forget_missing_try();
 	PNCP_Ip::fetch_missing();
+	// 3.12.8: an update can change the Stealth rules with the same address map (the rules for sibling folders):
+	// where ScrapeLock wrote them into .htaccess they are written and tested again; on Nginx a map waiting for
+	// its rules is taken up once the server serves them (PNCP_Stealth::refresh()).
+	if ( class_exists( 'PNCP_Stealth' ) ) {
+		PNCP_Stealth::schedule_refresh();
+	}
 	// Cache plugins (e.g. LiteSpeed, WP Rocket) finish loading later: before init the purge waits for init.
 	pncp_purge_page_cache();
 }
@@ -658,6 +664,11 @@ add_action( 'plugins_loaded', 'pncp_maybe_upgrade', -100 );
  * Covers WP Rocket, WP Super Cache, W3 Total Cache, LiteSpeed Cache, Cache Enabler, WP Fastest Cache, SiteGround Optimizer,
  * Nginx Helper (FastCGI cache) and the Cloudflare plugin, whichever are present, and (3.12.7) the Nginx fastcgi
  * cache folder itself when it is known (PNCP_Fastcgi_Cache::purge_known()).
+ * 3.12.8: the cache plugins first (pncp_purge_plugin_caches()), then the fastcgi folder, then the Cloudflare plugin,
+ * so a cache further out never stores a page again from a cache that still held the old one. Returns what ran.
+ *
+ * @return array<int, array{name:string, kind:string, status:string}> One row per cache (see
+ *         pncp_purge_plugin_caches()); empty when the purge waits for init.
  */
 function pncp_purge_page_cache() {
 	// Before init (the upgrade runs on plugins_loaded) the cache plugins have not finished loading: WP Rocket
@@ -666,7 +677,7 @@ function pncp_purge_page_cache() {
 		if ( ! has_action( 'init', 'pncp_purge_page_cache' ) ) {
 			add_action( 'init', 'pncp_purge_page_cache', 99 );
 		}
-		return;
+		return array();
 	}
 	// WP Rocket rewrites its config so the bot list takes effect (rocket_cache_reject_ua).
 	if ( function_exists( 'rocket_generate_config_file' ) ) {
@@ -675,39 +686,191 @@ function pncp_purge_page_cache() {
 	if ( function_exists( 'flush_rocket_htaccess' ) ) {
 		flush_rocket_htaccess();
 	}
-	if ( function_exists( 'rocket_clean_domain' ) ) {
-		rocket_clean_domain();
-	}
-	// phpcs:disable WordPress.NamingConventions.PrefixAllGlobals.NonPrefixedHooknameFound -- Hooks of other plugins.
-	do_action( 'rt_nginx_helper_purge_all' ); // Nginx Helper (FastCGI cache).
-	do_action( 'litespeed_purge_all' ); // LiteSpeed Cache.
-	do_action( 'cache_enabler_clear_complete_cache' ); // 3.4.3: Cache Enabler.
-	// phpcs:enable
+	$rows = pncp_purge_plugin_caches();
 	// 3.12.7: this site's pages in the Nginx fastcgi cache, when its folder is known (SCRAPELOCK_FASTCGI_CACHE_PATH
 	// or Nginx Helper's): Nginx Helper's own purge above does nothing when its method or folder is not the server's.
 	if ( class_exists( 'PNCP_Fastcgi_Cache' ) ) {
-		PNCP_Fastcgi_Cache::purge_known();
-	}
-	if ( function_exists( 'wp_cache_clear_cache' ) ) {
-		wp_cache_clear_cache( is_multisite() ? get_current_blog_id() : 0 ); // WP Super Cache (on multisite, only this site).
-	}
-	if ( function_exists( 'w3tc_flush_all' ) ) {
-		w3tc_flush_all(); // W3 Total Cache.
-	}
-	if ( function_exists( 'wpfc_clear_all_cache' ) ) {
-		wpfc_clear_all_cache( true ); // WP Fastest Cache.
-	}
-	if ( function_exists( 'sg_cachepress_purge_cache' ) ) {
-		sg_cachepress_purge_cache(); // SiteGround Optimizer.
+		$rows[] = array(
+			'name'   => 'Nginx fastcgi cache',
+			'kind'   => 'page',
+			'status' => PNCP_Fastcgi_Cache::purge_known() ? 'cleaned' : 'inactive',
+		);
 	}
 	// Cloudflare plugin: purges the edge cache when its APO or HTML caching is on (otherwise it does nothing).
 	if ( isset( $GLOBALS['cloudflareHooks'] ) && is_object( $GLOBALS['cloudflareHooks'] ) && method_exists( $GLOBALS['cloudflareHooks'], 'purgeCacheEverything' ) ) {
+		$status = 'cleaned';
 		try {
 			$GLOBALS['cloudflareHooks']->purgeCacheEverything();
 		} catch ( Throwable $e ) {
 			unset( $e ); // A Cloudflare API error must not break saving the settings.
+			$status = 'failed';
+		}
+		$rows[] = array(
+			'name'   => 'Cloudflare plugin',
+			'kind'   => 'page',
+			'status' => $status,
+		);
+	}
+	return $rows;
+}
+
+/**
+ * 3.12.8: the WordPress cache plugins pncp_purge_plugin_caches() knows, and whether each is active here (its
+ * functions or hooks exist: they do once the plugins are loaded, as in WP-CLI).
+ *
+ * @return array<string, bool> Name => active.
+ */
+function pncp_cache_plugins() {
+	// phpcs:disable WordPress.NamingConventions.PrefixAllGlobals.NonPrefixedHooknameFound -- Hooks of other plugins.
+	return array(
+		'WP Rocket'            => function_exists( 'rocket_clean_domain' ),
+		'LiteSpeed Cache'      => (bool) has_action( 'litespeed_purge_all' ) || (bool) has_action( 'litespeed_purge_url' ),
+		'W3 Total Cache'       => function_exists( 'w3tc_flush_all' ) || function_exists( 'w3tc_flush_url' ),
+		'WP Super Cache'       => function_exists( 'wp_cache_clear_cache' ),
+		'WP Fastest Cache'     => function_exists( 'wpfc_clear_all_cache' ),
+		'Nginx Helper'         => (bool) has_action( 'rt_nginx_helper_purge_all' ) || ( isset( $GLOBALS['nginx_purger'] ) && is_object( $GLOBALS['nginx_purger'] ) ),
+		'Cache Enabler'        => (bool) has_action( 'cache_enabler_clear_complete_cache' ) || (bool) has_action( 'cache_enabler_clear_page_cache_by_url' ),
+		'SiteGround Optimizer' => function_exists( 'sg_cachepress_purge_cache' ),
+	);
+	// phpcs:enable
+}
+
+/**
+ * 3.12.8: empties the page caches of the WordPress cache plugins that are active (pncp_cache_plugins()), and
+ * says which. Used by pncp_purge_page_cache() and by "wp scrapelock cdn purge" (which empties these first, then
+ * the fastcgi cache, then the CDN). Each plugin's own functions and hooks, only when they exist.
+ *
+ * WP Rocket's minified and combined CSS / JS (wp-content/cache/min, and its cache-busting copies) are kept unless
+ * $minify: rebuilding them costs every first visit, and the pages that are not rebuilt still link them. With
+ * $minify they go first, then the pages (as WP Rocket's own "Clear cache" does), and Autoptimize's cache too.
+ *
+ * @param string[]|null $urls   Full addresses of this site, or null for every page.
+ * @param bool          $minify Also the minified CSS / JS files (only with $urls null).
+ * @return array<int, array{name:string, kind:string, status:string}> kind: page or minify. status: cleaned,
+ *         inactive (not installed or not active), skipped (it cannot empty single addresses), kept (no $minify).
+ */
+function pncp_purge_plugin_caches( $urls = null, $minify = false ) {
+	$all    = null === $urls;
+	$urls   = $all ? array() : array_values( array_map( 'strval', (array) $urls ) );
+	$active = pncp_cache_plugins();
+	$rows   = array();
+	$add    = static function ( $name, $status, $kind = 'page' ) use ( &$rows ) {
+		$rows[] = array(
+			'name'   => $name,
+			'kind'   => $kind,
+			'status' => $status,
+		);
+	};
+	// phpcs:disable WordPress.NamingConventions.PrefixAllGlobals.NonPrefixedHooknameFound -- Hooks of other plugins.
+	foreach ( $active as $name => $on ) {
+		if ( ! $on ) {
+			$add( $name, 'inactive' );
+			continue;
+		}
+		$done = true;
+		switch ( $name ) {
+			case 'WP Rocket':
+				if ( $all && $minify && function_exists( 'rocket_clean_minify' ) ) {
+					rocket_clean_minify();
+					if ( function_exists( 'rocket_clean_cache_busting' ) ) {
+						rocket_clean_cache_busting();
+					}
+					$add( 'WP Rocket minified CSS/JS', 'cleaned', 'minify' );
+				}
+				if ( $all && function_exists( 'rocket_clean_domain' ) ) {
+					rocket_clean_domain();
+				} elseif ( function_exists( 'rocket_clean_files' ) ) {
+					rocket_clean_files( $urls );
+				} else {
+					$done = false;
+				}
+				break;
+			case 'LiteSpeed Cache':
+				if ( $all ) {
+					do_action( 'litespeed_purge_all' );
+				} elseif ( has_action( 'litespeed_purge_url' ) ) {
+					foreach ( $urls as $url ) {
+						do_action( 'litespeed_purge_url', $url );
+					}
+				} else {
+					$done = false;
+				}
+				break;
+			case 'W3 Total Cache':
+				if ( $all && function_exists( 'w3tc_flush_all' ) ) {
+					w3tc_flush_all();
+				} elseif ( ! $all && function_exists( 'w3tc_flush_url' ) ) {
+					foreach ( $urls as $url ) {
+						w3tc_flush_url( $url );
+					}
+				} else {
+					$done = false;
+				}
+				break;
+			case 'WP Super Cache':
+				if ( $all && function_exists( 'wp_cache_clear_cache' ) ) {
+					wp_cache_clear_cache( is_multisite() ? get_current_blog_id() : 0 ); // On multisite, only this site.
+				} elseif ( function_exists( 'wpsc_delete_url_cache' ) ) {
+					foreach ( $urls as $url ) {
+						wpsc_delete_url_cache( $url );
+					}
+				} else {
+					$done = false;
+				}
+				break;
+			case 'WP Fastest Cache':
+				if ( $all && function_exists( 'wpfc_clear_all_cache' ) ) {
+					wpfc_clear_all_cache( true );
+				} else {
+					$done = false;
+				}
+				break;
+			case 'Nginx Helper':
+				$purger = isset( $GLOBALS['nginx_purger'] ) && is_object( $GLOBALS['nginx_purger'] ) && method_exists( $GLOBALS['nginx_purger'], 'purge_url' ) ? $GLOBALS['nginx_purger'] : null;
+				if ( $all ) {
+					do_action( 'rt_nginx_helper_purge_all' );
+				} elseif ( $purger ) {
+					foreach ( $urls as $url ) {
+						$purger->purge_url( $url );
+					}
+				} else {
+					$done = false;
+				}
+				break;
+			case 'Cache Enabler':
+				if ( $all ) {
+					do_action( 'cache_enabler_clear_complete_cache' );
+				} elseif ( has_action( 'cache_enabler_clear_page_cache_by_url' ) ) {
+					foreach ( $urls as $url ) {
+						do_action( 'cache_enabler_clear_page_cache_by_url', $url );
+					}
+				} else {
+					$done = false;
+				}
+				break;
+			case 'SiteGround Optimizer':
+				if ( $all && function_exists( 'sg_cachepress_purge_cache' ) ) {
+					sg_cachepress_purge_cache();
+				} else {
+					$done = false;
+				}
+				break;
+		}
+		$add( $name, $done ? 'cleaned' : 'skipped' );
+		if ( 'WP Rocket' === $name && $all && ! $minify && function_exists( 'rocket_clean_minify' ) ) {
+			$add( 'WP Rocket minified CSS/JS', 'kept', 'minify' );
 		}
 	}
+	// phpcs:enable
+	// Autoptimize: its minified files only when asked (they are not a page cache).
+	if ( $all && $minify ) {
+		$ao = is_callable( array( 'autoptimizeCache', 'clearall' ) );
+		if ( $ao ) {
+			call_user_func( array( 'autoptimizeCache', 'clearall' ) );
+		}
+		$add( 'Autoptimize minified CSS/JS', $ao ? 'cleaned' : 'inactive', 'minify' );
+	}
+	return $rows;
 }
 
 /**

@@ -61,7 +61,7 @@ final class PNCP_Cli {
 		}
 		if ( isset( $assoc_args['log'] ) ) {
 			WP_CLI::line( '' );
-			WP_CLI::line( 'Notes of the site\'s own requests (newest first):' );
+			WP_CLI::line( __( 'Notes of the site\'s own requests (newest first):', 'scrapelock' ) );
 			foreach ( PNCP_Self_Check::entries() as $entry ) {
 				$when = gmdate( 'H:i:s', (int) $entry['time'] );
 				WP_CLI::line( '  ' . $when . ' ' . ( 'out' === $entry['side'] ? PNCP_Self_Check::step_line( $entry ) : $entry['method'] . ' ' . $entry['path'] . ': ' . PNCP_Self_Check::entry_line( $entry ) ) );
@@ -1301,6 +1301,16 @@ final class PNCP_Cli {
 	 * : 3.12.7: also this site's pages in the Nginx fastcgi cache of this server, first (as "wp scrapelock cache
 	 * purge"), so the CDN does not fetch a stale page again. On by default with --all, off for addresses.
 	 *
+	 * [--[no-]plugin-cache]
+	 * : 3.12.8: before the fastcgi cache and the CDN, the page caches of the WordPress cache plugins that are
+	 * active (WP Rocket, LiteSpeed Cache, W3 Total Cache, WP Super Cache, WP Fastest Cache, Nginx Helper, Cache
+	 * Enabler, SiteGround Optimizer), each reported as "cleaned" or "not active". On by default.
+	 *
+	 * [--minify]
+	 * : 3.12.8, with --all: also the minified and combined CSS / JS files of WP Rocket (wp-content/cache/min and its
+	 * cache-busting copies) and of Autoptimize, first. They hold the addresses as they were when they were made:
+	 * use it after Stealth's words or addresses change. Not by default: every first visit rebuilds them.
+	 *
 	 * [--yes]
 	 * : With --all: do not ask for confirmation.
 	 *
@@ -1309,7 +1319,8 @@ final class PNCP_Cli {
 	 *     wp scrapelock cdn purge https://example.com/builtwith.txt
 	 *     wp scrapelock cdn purge /builtwith.txt /robots.txt --server-cache
 	 *     wp scrapelock cdn purge --all --yes
-	 *     wp scrapelock cdn purge --all --no-server-cache --yes
+	 *     wp scrapelock cdn purge --all --minify --yes
+	 *     wp scrapelock cdn purge --all --no-server-cache --no-plugin-cache --yes
 	 *
 	 * @param string[]              $args       Arguments.
 	 * @param array<string, string> $assoc_args Options.
@@ -1323,6 +1334,12 @@ final class PNCP_Cli {
 	 * The folder: SCRAPELOCK_FASTCGI_CACHE_PATH, else Nginx Helper's, else the fastcgi_cache_path of the zone
 	 * that this site's server { } block uses in the Nginx configuration (nginx -T, or --nginx-conf). Only cache
 	 * files whose key names this site's host are deleted; files of other sites stay.
+	 *
+	 * 3.12.8: status says whether the constant is defined and names that folder, and prints the line that adds it:
+	 *
+	 *     wp config set SCRAPELOCK_FASTCGI_CACHE_PATH '<dir>' --type=constant --anchor="require_once ABSPATH . 'wp-settings.php';" --placement=before
+	 *
+	 * (WP-CLI's default anchor, "That's all, stop editing!", is missing in some wp-config.php files.)
 	 *
 	 * ## OPTIONS
 	 *
@@ -1350,12 +1367,18 @@ final class PNCP_Cli {
 	 * [--dry-run]
 	 * : For purge: count the files, delete nothing.
 	 *
+	 * [--save-constant]
+	 * : 3.12.8, for status: add SCRAPELOCK_FASTCGI_CACHE_PATH with the folder found to wp-config.php (WP-CLI's
+	 * "config set", before the line that loads wp-settings.php), so that the automatic purges empty it too. Only
+	 * when the constant is not defined yet and wp-config.php is writable; tried on a copy first; asks first.
+	 *
 	 * [--yes]
-	 * : With --all: do not ask for confirmation.
+	 * : With --all, or --save-constant: do not ask for confirmation.
 	 *
 	 * ## EXAMPLES
 	 *
 	 *     wp scrapelock cache status
+	 *     wp scrapelock cache status --save-constant
 	 *     wp scrapelock cache purge --all --yes
 	 *     wp scrapelock cache purge / /about/
 	 *     wp scrapelock cache purge --all --dry-run --nginx-conf=/etc/nginx/nginx.conf
@@ -1454,12 +1477,20 @@ final class PNCP_Cli {
 	}
 
 	/**
-	 * 3.8: Stealth (do not show that the site runs on WordPress): status, on, off, test, scan, rules.
+	 * 3.8: Stealth (do not show that the site runs on WordPress): status, on, off, test, scan, rules; 3.12.8:
+	 * check (a page as a visitor gets it: wp-content / wp-includes left, the codes found) and debug (the opt-in
+	 * debug log: SCRAPELOCK_STEALTH_DEBUG in wp-config.php).
 	 *
 	 * ## OPTIONS
 	 *
 	 * [<action>]
-	 * : status (default), on, off, test, scan or rules.
+	 * : status (default), on, off, test, scan, rules, check or debug.
+	 *
+	 * [<url>]
+	 * : For check: the page of this site (default: the home page).
+	 *
+	 * [--clear]
+	 * : For debug: delete the log (the next one starts a new period).
 	 *
 	 * [--base=<folder>]
 	 * : For on: the folder of the new addresses (default assets).
@@ -1483,6 +1514,8 @@ final class PNCP_Cli {
 	 *     wp scrapelock stealth on --base=static --rest=api
 	 *     wp scrapelock stealth rules --server=nginx
 	 *     wp scrapelock stealth scan --page=https://example.com/blog/
+	 *     wp scrapelock stealth check https://example.com/blog/
+	 *     wp scrapelock stealth debug
 	 *
 	 * @param string[]              $args       Arguments.
 	 * @param array<string, string> $assoc_args Options.
@@ -1523,8 +1556,32 @@ final class PNCP_Cli {
 				$server = isset( $assoc_args['server'] ) ? sanitize_key( (string) $assoc_args['server'] ) : PNCP_Stealth::server();
 				WP_CLI::line( PNCP_Stealth::rules_text( $server ) );
 				return;
+			case 'check':
+				$check = PNCP_Stealth_Debug::check( isset( $args[1] ) ? esc_url_raw( (string) $args[1] ) : '' );
+				if ( is_wp_error( $check ) ) {
+					WP_CLI::error( $check->get_error_message() );
+				}
+				$items = array();
+				foreach ( $check as $key => $value ) {
+					$items[] = array(
+						'field' => $key,
+						'value' => $value,
+					);
+				}
+				WP_CLI\Utils\format_items( self::format( $assoc_args ), $items, array( 'field', 'value' ) );
+				return;
+			case 'debug':
+				if ( isset( $assoc_args['clear'] ) ) {
+					$done( PNCP_Stealth_Debug::clear() ? true : new WP_Error( 'pncp_stealth_debug', __( 'The log could not be deleted.', 'scrapelock' ) ), __( 'The Stealth debug log was deleted.', 'scrapelock' ) );
+					return;
+				}
+				WP_CLI::line( PNCP_Stealth_Debug::hours() > 0 ? ( PNCP_Stealth_Debug::on() ? 'on: ' : 'over (delete it with --clear for a new period): ' ) . PNCP_Stealth_Debug::file() : 'off (define SCRAPELOCK_STEALTH_DEBUG in wp-config.php)' );
+				foreach ( PNCP_Stealth_Debug::tail( 50 ) as $line ) {
+					WP_CLI::line( $line );
+				}
+				return;
 		}
-		WP_CLI::error( __( 'Unknown action. Use: status, on, off, test, scan or rules.', 'scrapelock' ) );
+		WP_CLI::error( __( 'Unknown action. Use: status, on, off, test, scan, rules, check or debug.', 'scrapelock' ) );
 	}
 
 	/**

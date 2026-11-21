@@ -491,6 +491,51 @@ final class PNCP_Cli_Server {
 	}
 
 	/**
+	 * 3.12.8: the test and reload commands "rules install" runs for a server: --test-cmd and --reload-cmd as given,
+	 * else the defaults (commands()); the reload falls back to the alternative (systemctl reload nginx) when the
+	 * server's own program was not found. A configuration that is read only at a reload (Nginx, an Apache .conf)
+	 * needs both: "missing" names the one that is not there (the install then stops and puts every file back). A
+	 * .htaccess alone needs neither: the home page is asked instead, and Apache reads it on every request.
+	 *
+	 * @param string                                        $server     nginx or apache.
+	 * @param bool                                          $htaccess   Only .htaccess files.
+	 * @param array<string, string>                         $assoc_args Options.
+	 * @param array{test:string, reload:string, alt:string} $cmds       commands().
+	 * @return array{test:string, reload:string, alt:string, missing:string, message:string}
+	 */
+	public static function install_commands( $server, $htaccess, $assoc_args, $cmds ) {
+		$given  = isset( $assoc_args['reload-cmd'] );
+		$test   = isset( $assoc_args['test-cmd'] ) ? (string) $assoc_args['test-cmd'] : (string) $cmds['test'];
+		$reload = $given ? (string) $assoc_args['reload-cmd'] : (string) $cmds['reload'];
+		$alt    = $given ? '' : (string) $cmds['alt'];
+		if ( '' === $reload && '' !== $alt ) {
+			$reload = $alt;
+			$alt    = '';
+		}
+		$out = array(
+			'test'    => $test,
+			'reload'  => $reload,
+			'alt'     => $alt,
+			'missing' => '',
+			'message' => '',
+		);
+		if ( $htaccess ) {
+			return $out;
+		}
+		if ( '' === $test ) {
+			$out['missing'] = 'test';
+			$out['message'] = 'nginx' === $server
+				? __( 'nginx was not found on PATH: give --test-cmd and --reload-cmd.', 'scrapelock' )
+				: __( 'apachectl was not found on PATH: give --test-cmd and --reload-cmd.', 'scrapelock' );
+		} elseif ( '' === $reload ) {
+			$out['missing'] = 'reload';
+			/* translators: %s: nginx or apache */
+			$out['message'] = sprintf( __( 'No command to reload %s was found: give --reload-cmd.', 'scrapelock' ), $server );
+		}
+		return $out;
+	}
+
+	/**
 	 * The site's home page answers (not 5xx) after a .htaccess change, which Apache reads on the next request.
 	 *
 	 * @return array{0:int, 1:string}
@@ -601,6 +646,16 @@ final class PNCP_Cli_Server {
 			}
 			if ( is_file( $real ) ) {
 				@chmod( $real . '.new', fileperms( $real ) & 0777 ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged, WordPress.WP.AlternativeFunctions.file_system_operations_chmod -- The permissions of the file it replaces.
+				// 3.12.8: and its owner and group (WP-CLI often runs as root): a root-owned .htaccess could no longer
+				// be written by WordPress (permalinks, ScrapeLock's own blocks). Only possible as root; else no change.
+				$owner = fileowner( $real );
+				$group = filegroup( $real );
+				if ( false !== $owner && fileowner( $real . '.new' ) !== $owner ) {
+					@chown( $real . '.new', $owner ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged, WordPress.WP.AlternativeFunctions.file_system_operations_chown -- The owner of the file it replaces.
+				}
+				if ( false !== $group && filegroup( $real . '.new' ) !== $group ) {
+					@chgrp( $real . '.new', $group ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged, WordPress.WP.AlternativeFunctions.file_system_operations_chgrp -- The group of the file it replaces.
+				}
 			}
 			$diff = self::unified_diff( $old, $new, $f['path'] );
 			WP_CLI::log( '' !== $token ? str_replace( $token, '[token]', $diff ) : $diff );
@@ -665,11 +720,12 @@ final class PNCP_Cli_Server {
 		};
 		$reloads = array();
 		foreach ( $servers as $server => $htaccess ) {
-			$cmds = self::commands( $server, $htaccess );
-			$test = isset( $assoc_args['test-cmd'] ) ? (string) $assoc_args['test-cmd'] : $cmds['test'];
-			if ( '' === $test && 'nginx' === $server ) {
-				$fail( __( 'The test', 'scrapelock' ), __( 'nginx was not found on PATH: give --test-cmd and --reload-cmd.', 'scrapelock' ) );
+			// 3.12.8: a configuration read only at a reload needs a test and a reload command (install_commands()).
+			$plan = self::install_commands( $server, $htaccess, $assoc_args, self::commands( $server, $htaccess ) );
+			if ( '' !== $plan['missing'] ) {
+				$fail( 'test' === $plan['missing'] ? __( 'The test', 'scrapelock' ) : __( 'The reload', 'scrapelock' ), $plan['message'] );
 			}
+			$test                = $plan['test'];
 			list( $rc, $output ) = '' === $test ? self::http_test() : self::run( $test );
 			if ( 0 !== $rc ) {
 				/* translators: %s: command */
@@ -677,15 +733,15 @@ final class PNCP_Cli_Server {
 			}
 			/* translators: %s: command */
 			WP_CLI::log( sprintf( __( 'Test passed: %s', 'scrapelock' ), '' === $test ? 'HTTP' : $test ) );
-			$reloads[ $server ] = $cmds;
+			$reloads[ $server ] = $plan;
 		}
 		foreach ( $reloads as $server => $cmds ) {
-			$reload = isset( $assoc_args['reload-cmd'] ) ? (string) $assoc_args['reload-cmd'] : $cmds['reload'];
+			$reload = $cmds['reload'];
 			if ( '' === $reload ) {
 				continue; // A .htaccess: read on every request.
 			}
 			list( $rc, $output ) = self::run( $reload );
-			if ( 0 !== $rc && ! isset( $assoc_args['reload-cmd'] ) && '' !== $cmds['alt'] ) {
+			if ( 0 !== $rc && '' !== $cmds['alt'] ) {
 				list( $rc, $output ) = self::run( $cmds['alt'] );
 				$reload              = $cmds['alt'];
 			}
@@ -814,14 +870,20 @@ final class PNCP_Cli_Server {
 		// 3.12.7: the server's fastcgi cache first (by default with --all), so the CDN fetches fresh pages.
 		$server = isset( $assoc_args['server-cache'] ) ? (bool) $assoc_args['server-cache'] : $all;
 		$cdn    = null !== PNCP_Bunny::credentials() || PNCP_Edge::cloudflare_connected();
-		if ( ! $cdn && ! $server ) {
+		// 3.12.8: before both, the page caches of the WordPress cache plugins (WP Rocket and the others).
+		$plugin = self::plugin_cache_wanted( $assoc_args, $all );
+		if ( ! $cdn && ! $server && ! $plugin ) { // Nothing to empty: as in 3.12.6.
 			WP_CLI::error( __( 'No CDN connection is set (Bunny CDN or Cloudflare under "Blocking at the CDN", or the Bunny card).', 'scrapelock' ) );
 		}
 		$good = self::own_urls( $urls );
 		if ( $all && empty( $assoc_args['yes'] ) ) {
+			self::plugin_cache_announce( (array) $plugin );
 			WP_CLI::confirm( $server ? __( 'Purge the whole CDN cache of this site, and its pages in the server\'s fastcgi cache?', 'scrapelock' ) : __( 'Purge the whole CDN cache of this site?', 'scrapelock' ) );
 		}
 		$failed = 0;
+		if ( null !== $plugin ) {
+			self::plugin_cache_purge( $all ? null : $good, ! empty( $assoc_args['minify'] ) );
+		}
 		if ( $server && ! self::server_cache_purge( $all ? null : $good, $assoc_args, false ) ) {
 			++$failed;
 		}
@@ -847,6 +909,65 @@ final class PNCP_Cli_Server {
 		}
 		if ( $failed ) {
 			WP_CLI::halt( 1 );
+		}
+	}
+
+	/**
+	 * 3.12.8: whether "cdn purge" empties the cache plugins' page caches: on unless --no-plugin-cache.
+	 * --minify needs --all (the CDN would keep the old minified files that other pages still link).
+	 *
+	 * @param array<string, string> $assoc_args Options.
+	 * @param bool                  $all        --all.
+	 * @return string[]|null Names of the active cache plugins; null with --no-plugin-cache.
+	 */
+	private static function plugin_cache_wanted( $assoc_args, $all ) {
+		if ( ! empty( $assoc_args['minify'] ) && ! $all ) {
+			WP_CLI::error( __( '--minify needs --all: the CDN would keep the old minified files.', 'scrapelock' ) );
+		}
+		if ( isset( $assoc_args['plugin-cache'] ) && ! $assoc_args['plugin-cache'] ) {
+			if ( ! empty( $assoc_args['minify'] ) ) {
+				WP_CLI::error( __( '--minify empties the cache plugins\' files: not with --no-plugin-cache.', 'scrapelock' ) );
+			}
+			return null;
+		}
+		return array_keys( array_filter( pncp_cache_plugins() ) );
+	}
+
+	/**
+	 * Before the confirmation of --all: the cache plugins whose page caches are emptied first.
+	 *
+	 * @param string[] $names Active cache plugins.
+	 */
+	private static function plugin_cache_announce( $names ) {
+		if ( $names ) {
+			/* translators: %s: names of cache plugins */
+			WP_CLI::log( sprintf( __( 'First the page caches of: %s.', 'scrapelock' ), implode( ', ', $names ) ) );
+		}
+	}
+
+	/**
+	 * Empties the cache plugins' page caches (pncp_purge_plugin_caches()) and prints one line for each.
+	 *
+	 * @param string[]|null $urls   Full addresses of this site, or null for every page.
+	 * @param bool          $minify Also the minified CSS / JS files (--minify).
+	 */
+	private static function plugin_cache_purge( $urls, $minify ) {
+		foreach ( pncp_purge_plugin_caches( $urls, $minify ) as $row ) {
+			$page = 'page' === $row['kind'];
+			if ( 'cleaned' === $row['status'] ) {
+				/* translators: %s: name of a cache plugin */
+				$text = sprintf( $page ? __( '%s page cache: cleaned', 'scrapelock' ) : __( '%s: cleaned', 'scrapelock' ), $row['name'] );
+			} elseif ( 'skipped' === $row['status'] ) {
+				/* translators: %s: name of a cache plugin */
+				$text = sprintf( __( '%s page cache: not cleaned (it cannot empty single addresses; use --all)', 'scrapelock' ), $row['name'] );
+			} elseif ( 'kept' === $row['status'] ) {
+				/* translators: %s: name of a cache plugin */
+				$text = sprintf( __( '%s: kept (--minify empties them)', 'scrapelock' ), $row['name'] );
+			} else {
+				/* translators: %s: name of a cache plugin */
+				$text = sprintf( $page ? __( '%s page cache: not active', 'scrapelock' ) : __( '%s: not active', 'scrapelock' ), $row['name'] );
+			}
+			WP_CLI::log( $text );
 		}
 	}
 
@@ -915,9 +1036,10 @@ final class PNCP_Cli_Server {
 	 * configuration (--nginx-conf=<file>, else nginx -T).
 	 *
 	 * @param array<string, string> $assoc_args Options.
+	 * @param bool                  $known      3.12.8: false = not the constant / Nginx Helper (to compare them).
 	 * @return array{dirs:array<int, array{path:string, source:string}>, notes:string[], keys:array<string, string>}
 	 */
-	public static function cache_dirs( $assoc_args ) {
+	public static function cache_dirs( $assoc_args, $known = true ) {
 		$out = array(
 			'dirs'  => array(),
 			'notes' => array(),
@@ -934,7 +1056,7 @@ final class PNCP_Cli_Server {
 			}
 			return $out;
 		}
-		$out['dirs'] = PNCP_Fastcgi_Cache::known_dirs();
+		$out['dirs'] = $known ? PNCP_Fastcgi_Cache::known_dirs() : array();
 		if ( $out['dirs'] ) {
 			return $out;
 		}
@@ -1015,6 +1137,15 @@ final class PNCP_Cli_Server {
 			return;
 		}
 		$rows = PNCP_Fastcgi_Cache::purge( $found['dirs'], null, array( 'dry' => true ) );
+		$good = array(); // 3.12.8: the folders the purge accepts, for the constant.
+		foreach ( $rows as $row ) {
+			if ( '' === $row['error'] ) {
+				$good[] = array(
+					'path'   => $row['path'],
+					'source' => $row['source'],
+				);
+			}
+		}
 		foreach ( $rows as $row ) {
 			/* translators: 1: folder, 2: how it was found */
 			WP_CLI::log( sprintf( __( 'Folder: %1$s (from %2$s)', 'scrapelock' ), $row['path'], $row['source'] ) );
@@ -1030,7 +1161,11 @@ final class PNCP_Cli_Server {
 			WP_CLI::log( sprintf( __( 'This site\'s cached pages: %1$d (of %2$d files).', 'scrapelock' ), $row['matched'], $row['files'] ) );
 			WP_CLI::log( wp_is_writable( $row['path'] ) ? __( 'Writable by this user: yes.', 'scrapelock' ) : __( 'Writable by this user: no (run WP-CLI as root or as the web server\'s user).', 'scrapelock' ) );
 		}
-		self::constant_hint( $found['dirs'] );
+		if ( $good ) {
+			self::constant_state( $good, $assoc_args );
+		} elseif ( ! empty( $assoc_args['save-constant'] ) ) {
+			WP_CLI::error( __( 'Not saved: no folder the purge accepts.', 'scrapelock' ) );
+		}
 		$last = get_option( PNCP_Fastcgi_Cache::LAST );
 		if ( is_array( $last ) && isset( $last['time'], $last['rows'] ) && is_array( $last['rows'] ) ) {
 			$removed = 0;
@@ -1053,9 +1188,225 @@ final class PNCP_Cli_Server {
 		if ( ! $dirs || PNCP_Fastcgi_Cache::known_dirs() ) {
 			return;
 		}
-		$paths = implode( ',', wp_list_pluck( $dirs, 'path' ) );
 		/* translators: %s: command */
-		WP_CLI::log( sprintf( __( 'So that ScrapeLock\'s automatic purges (settings, Stealth) empty it too: %s', 'scrapelock' ), 'wp config set SCRAPELOCK_FASTCGI_CACHE_PATH ' . escapeshellarg( $paths ) . ' --type=constant' ) );
+		WP_CLI::log( sprintf( __( 'So that ScrapeLock\'s automatic purges (settings, Stealth) empty it too: %s', 'scrapelock' ), self::constant_command( $dirs ) ) );
+	}
+
+	/**
+	 * 3.12.8: the anchor of "wp config set": the line every wp-config.php has. WP-CLI's default anchor, the
+	 * comment "That's all, stop editing!", is missing in some wp-config.php files, and then the command fails.
+	 */
+	const CONFIG_ANCHOR = "require_once ABSPATH . 'wp-settings.php';";
+
+	/**
+	 * 3.12.8: the ready-made "wp config set" command for SCRAPELOCK_FASTCGI_CACHE_PATH (the folders quoted for the
+	 * shell; the anchor and placement put the line before wp-settings.php is loaded).
+	 *
+	 * @param array<int, array{path:string, source:string}> $dirs Folders.
+	 * @return string
+	 */
+	public static function constant_command( $dirs ) {
+		return 'wp config set SCRAPELOCK_FASTCGI_CACHE_PATH ' . escapeshellarg( self::constant_value( $dirs ) ) . ' --type=constant --anchor="' . self::CONFIG_ANCHOR . '" --placement=before';
+	}
+
+	/**
+	 * The value of SCRAPELOCK_FASTCGI_CACHE_PATH for these folders (comma separated).
+	 *
+	 * @param array<int, array{path:string, source:string}> $dirs Folders.
+	 * @return string
+	 */
+	private static function constant_value( $dirs ) {
+		return implode( ',', array_values( array_unique( wp_list_pluck( $dirs, 'path' ) ) ) );
+	}
+
+	/**
+	 * 3.12.8: whether SCRAPELOCK_FASTCGI_CACHE_PATH names the same folders as $found (order, a trailing slash
+	 * and links aside).
+	 *
+	 * @param string                                        $value Value of the constant.
+	 * @param array<int, array{path:string, source:string}> $found Folders found.
+	 * @return bool
+	 */
+	public static function constant_matches( $value, $found ) {
+		$norm = static function ( $paths ) {
+			$out = array();
+			foreach ( $paths as $path ) {
+				$path = trim( (string) $path );
+				if ( '' === $path ) {
+					continue;
+				}
+				$real  = realpath( $path );
+				$out[] = untrailingslashit( false !== $real ? $real : $path );
+			}
+			$out = array_values( array_unique( $out ) );
+			sort( $out );
+			return $out;
+		};
+		$a = $norm( explode( ',', $value ) );
+		return array() !== $a && $norm( wp_list_pluck( $found, 'path' ) ) === $a;
+	}
+
+	/**
+	 * 3.12.8, cache status: whether SCRAPELOCK_FASTCGI_CACHE_PATH is defined and names the folder found, and the
+	 * ready-made "wp config set" line when it should be added or changed; --save-constant writes it.
+	 *
+	 * @param array<int, array{path:string, source:string}> $dirs       Folders cache_dirs() returned.
+	 * @param array<string, string>                         $assoc_args Options.
+	 */
+	private static function constant_state( $dirs, $assoc_args ) {
+		$defined = defined( 'SCRAPELOCK_FASTCGI_CACHE_PATH' ) && is_string( SCRAPELOCK_FASTCGI_CACHE_PATH ) && '' !== trim( SCRAPELOCK_FASTCGI_CACHE_PATH );
+		$found   = $dirs;
+		if ( $defined ) {
+			// The folders came from the constant: read the Nginx configuration (or --cache-dir) to compare.
+			$found = self::cache_dirs( $assoc_args, false )['dirs'];
+			if ( ! $found ) {
+				/* translators: %s: value of the constant */
+				WP_CLI::log( sprintf( __( 'SCRAPELOCK_FASTCGI_CACHE_PATH is defined (%s); the Nginx configuration gave no folder to compare it with.', 'scrapelock' ), SCRAPELOCK_FASTCGI_CACHE_PATH ) );
+				if ( ! empty( $assoc_args['save-constant'] ) ) {
+					WP_CLI::log( __( 'Nothing to save.', 'scrapelock' ) );
+				}
+				return;
+			}
+			if ( self::constant_matches( SCRAPELOCK_FASTCGI_CACHE_PATH, $found ) ) {
+				WP_CLI::log( __( 'SCRAPELOCK_FASTCGI_CACHE_PATH is defined and matches the folder found.', 'scrapelock' ) );
+				if ( ! empty( $assoc_args['save-constant'] ) ) {
+					WP_CLI::log( __( 'Nothing to save.', 'scrapelock' ) );
+				}
+				return;
+			}
+			/* translators: 1: value of the constant, 2: folders */
+			WP_CLI::warning( sprintf( __( 'SCRAPELOCK_FASTCGI_CACHE_PATH is defined (%1$s) but the folder found is %2$s. To change it:', 'scrapelock' ), SCRAPELOCK_FASTCGI_CACHE_PATH, self::constant_value( $found ) ) );
+		} elseif ( $dirs && 'Nginx Helper' === $dirs[0]['source'] ) {
+			WP_CLI::log( __( 'SCRAPELOCK_FASTCGI_CACHE_PATH is not defined; Nginx Helper\'s folder is used. To name it anyway:', 'scrapelock' ) );
+		} else {
+			WP_CLI::log( __( 'SCRAPELOCK_FASTCGI_CACHE_PATH is not defined. So that ScrapeLock\'s automatic purges (settings, Stealth) empty this folder too, add it:', 'scrapelock' ) );
+		}
+		WP_CLI::log( '  ' . self::constant_command( $found ) );
+		WP_CLI::log( __( '(The anchor: WP-CLI\'s default anchor "/* That\'s all, stop editing! */" is missing in some wp-config.php files.)', 'scrapelock' ) );
+		if ( ! empty( $assoc_args['save-constant'] ) ) {
+			self::save_constant( $found, $defined, $assoc_args );
+		} elseif ( ! $defined && 'Nginx Helper' !== $found[0]['source'] ) {
+			WP_CLI::log( __( 'Or run "wp scrapelock cache status --save-constant" to add it (checked on a copy of wp-config.php first).', 'scrapelock' ) );
+		}
+	}
+
+	/**
+	 * 3.12.8: cache status --save-constant: adds SCRAPELOCK_FASTCGI_CACHE_PATH to wp-config.php with WP-CLI's own
+	 * "config set" (its config transformer), before the line that loads wp-settings.php. Only when the constant is
+	 * not defined yet, the folders were found here (Nginx configuration or --cache-dir) and the purge accepts each,
+	 * and wp-config.php is writable. First on a copy of wp-config.php: the copy must still parse and hold the line
+	 * before wp-settings.php; then the file itself, checked the same way, and put back as it was if it is not.
+	 *
+	 * @param array<int, array{path:string, source:string}> $dirs       Folders found.
+	 * @param bool                                          $defined    The constant is already defined.
+	 * @param array<string, string>                         $assoc_args Options (--yes).
+	 */
+	private static function save_constant( $dirs, $defined, $assoc_args ) {
+		if ( $defined ) {
+			WP_CLI::error( __( 'Not saved: SCRAPELOCK_FASTCGI_CACHE_PATH is already defined. Change it with the command above, or by hand.', 'scrapelock' ) );
+		}
+		if ( 'Nginx Helper' === $dirs[0]['source'] ) {
+			WP_CLI::error( __( 'Not saved: Nginx Helper\'s folder is already used by the automatic purges.', 'scrapelock' ) );
+		}
+		foreach ( PNCP_Fastcgi_Cache::purge( $dirs, null, array( 'dry' => true ) ) as $row ) {
+			if ( '' !== $row['error'] ) {
+				/* translators: %s: why the folder is refused */
+				WP_CLI::error( sprintf( __( 'Not saved: %s', 'scrapelock' ), $row['error'] ) );
+			}
+		}
+		$file = (string) \WP_CLI\Utils\locate_wp_config();
+		if ( '' === $file || ! is_file( $file ) ) {
+			WP_CLI::error( __( 'Not saved: wp-config.php was not found.', 'scrapelock' ) );
+		}
+		if ( ! wp_is_writable( $file ) || is_link( $file ) ) {
+			/* translators: %s: file */
+			WP_CLI::error( sprintf( __( 'Not saved: %s is not writable by this user (or is a link). Run the command above as its owner.', 'scrapelock' ), $file ) );
+		}
+		$value  = self::constant_value( $dirs );
+		$before = (string) file_get_contents( $file ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- wp-config.php, a local file.
+		if ( false === strpos( $before, self::CONFIG_ANCHOR ) ) {
+			/* translators: %s: line of wp-config.php */
+			WP_CLI::error( sprintf( __( 'Not saved: wp-config.php has no line %s. Add the constant by hand, before wp-settings.php is loaded.', 'scrapelock' ), self::CONFIG_ANCHOR ) );
+		}
+		// The dry run: the same command on a copy.
+		if ( ! function_exists( 'wp_tempnam' ) ) {
+			require_once ABSPATH . 'wp-admin/includes/file.php';
+		}
+		$copy = wp_tempnam( 'pncp-wp-config' );
+		file_put_contents( $copy, $before ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_file_put_contents -- A temporary copy.
+		$res   = self::config_set( $value, $copy );
+		$error = 0 === $res['code'] ? self::config_check( (string) file_get_contents( $copy ), $value ) : trim( $res['stderr'] . ' ' . $res['stdout'] ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- The temporary copy.
+		wp_delete_file( $copy );
+		if ( '' !== $error ) {
+			/* translators: %s: error */
+			WP_CLI::error( sprintf( __( 'Not saved: the trial on a copy of wp-config.php failed: %s', 'scrapelock' ), $error ) );
+		}
+		/* translators: 1: file, 2: value */
+		WP_CLI::log( sprintf( __( 'Trial on a copy of %1$s: passed. It adds SCRAPELOCK_FASTCGI_CACHE_PATH = %2$s.', 'scrapelock' ), $file, $value ) );
+		if ( empty( $assoc_args['yes'] ) ) {
+			WP_CLI::confirm( __( 'Add it to wp-config.php now?', 'scrapelock' ) );
+		}
+		$res   = self::config_set( $value, $file );
+		clearstatcache( true, $file );
+		$error = 0 === $res['code'] ? self::config_check( (string) file_get_contents( $file ), $value ) : trim( $res['stderr'] . ' ' . $res['stdout'] ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- wp-config.php, a local file.
+		if ( '' !== $error ) {
+			file_put_contents( $file, $before ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_file_put_contents -- wp-config.php put back as it was.
+			/* translators: %s: error */
+			WP_CLI::error( sprintf( __( 'Not saved (wp-config.php put back as it was): %s', 'scrapelock' ), $error ) );
+		}
+		WP_CLI::success( __( 'SCRAPELOCK_FASTCGI_CACHE_PATH added to wp-config.php: the automatic purges (settings, Stealth) empty this folder too.', 'scrapelock' ) );
+	}
+
+	/**
+	 * Runs WP-CLI's "config set" for SCRAPELOCK_FASTCGI_CACHE_PATH on a file, in another process.
+	 *
+	 * @param string $value Value.
+	 * @param string $file  wp-config.php or its copy.
+	 * @return array{code:int, stdout:string, stderr:string}
+	 */
+	private static function config_set( $value, $file ) {
+		$res = WP_CLI::runcommand(
+			'config set SCRAPELOCK_FASTCGI_CACHE_PATH ' . escapeshellarg( $value ) . ' --type=constant --anchor=' . escapeshellarg( self::CONFIG_ANCHOR ) . ' --placement=before --config-file=' . escapeshellarg( $file ),
+			array(
+				'return'     => 'all',
+				'exit_error' => false,
+				'launch'     => true,
+			)
+		);
+		return array(
+			'code'   => is_object( $res ) && isset( $res->return_code ) ? (int) $res->return_code : 1,
+			'stdout' => is_object( $res ) && isset( $res->stdout ) ? (string) $res->stdout : '',
+			'stderr' => is_object( $res ) && isset( $res->stderr ) ? (string) $res->stderr : '',
+		);
+	}
+
+	/**
+	 * 3.12.8: checks a wp-config.php text after "config set": it parses as PHP, defines SCRAPELOCK_FASTCGI_CACHE_PATH
+	 * once with this value, before the line that loads wp-settings.php. '' when good, else why not.
+	 *
+	 * @param string $text  Contents of the file.
+	 * @param string $value Value of the constant.
+	 * @return string
+	 */
+	public static function config_check( $text, $value ) {
+		try {
+			if ( ! token_get_all( $text, TOKEN_PARSE ) ) {
+				return __( 'the file is empty.', 'scrapelock' );
+			}
+		} catch ( \ParseError $e ) {
+			/* translators: %s: PHP parse error */
+			return sprintf( __( 'the file no longer parses as PHP (%s).', 'scrapelock' ), $e->getMessage() );
+		}
+		$define = "define( 'SCRAPELOCK_FASTCGI_CACHE_PATH', " . var_export( $value, true ) . ' );'; // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_var_export -- The PHP literal WP-CLI writes.
+		$at     = strpos( $text, $define );
+		$load   = strpos( $text, self::CONFIG_ANCHOR );
+		if ( false === $at || 1 !== substr_count( $text, "'SCRAPELOCK_FASTCGI_CACHE_PATH'" ) ) {
+			return __( 'the line of the constant is not in the file once.', 'scrapelock' );
+		}
+		if ( false === $load || $at > $load ) {
+			return __( 'the constant is not before the line that loads wp-settings.php.', 'scrapelock' );
+		}
+		return '';
 	}
 
 	/**

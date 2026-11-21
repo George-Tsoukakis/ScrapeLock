@@ -492,6 +492,12 @@ final class PNCP_Stealth_Status {
 		if ( $installed === $want ) {
 			$new['base']    = (string) PNCP_Stealth::settings()['stealth_base'];
 			$new['folders'] = self::folders();
+			// 3.12.8: the server has the rules of a map the pages do not use yet (copied or installed without
+			// "Test again"): it is tested and put into use shortly (PNCP_Stealth::refresh()).
+			$state = PNCP_Stealth::state();
+			if ( '' !== (string) $state['pending'] && 'failed' !== (string) $state['pending'] ) {
+				PNCP_Stealth::schedule_refresh();
+			}
 		}
 		if ( $new !== $seen ) {
 			if ( false === get_option( self::SEEN, false ) ) {
@@ -537,6 +543,29 @@ final class PNCP_Stealth_Status {
 			return 'base';
 		}
 		return ! empty( $state['active'] ) && '' !== (string) $state['pending'] && 'failed' !== (string) $state['pending'] ? 'folders' : '';
+	}
+
+	/**
+	 * 3.12.8: what the administrator has to do next about the Stealth rules, for WP-CLI ('' = nothing): the
+	 * notice's text with the commands, or, while the new map waits for its rules, how to put it into use.
+	 *
+	 * @return string
+	 */
+	public static function cli_next() {
+		$reason = self::needs_copy();
+		if ( '' !== $reason ) {
+			return self::message( $reason ) . ' ' . ( 'apache' === self::format()
+				? __( 'With WP-CLI: wp scrapelock rules install --stealth-apache=<file>, then wp scrapelock stealth test.', 'scrapelock' )
+				: __( 'With WP-CLI: wp scrapelock rules install --stealth=<file>, then wp scrapelock stealth test.', 'scrapelock' ) );
+		}
+		$state = PNCP_Stealth::state();
+		if ( empty( $state['active'] ) || '' === (string) $state['pending'] || 'failed' === (string) $state['pending'] ) {
+			return '';
+		}
+		$kept = self::kept_status();
+		return null !== $kept && 'current' === $kept['state']
+			? __( 'The server has the Stealth rules of a new address map: ScrapeLock tests it and puts it into use within a minute (or now: wp scrapelock stealth test).', 'scrapelock' )
+			: __( 'A new address map waits for its Stealth rules: copy the Stealth rules again (wp scrapelock rules install), then run wp scrapelock stealth test.', 'scrapelock' );
 	}
 
 	/**

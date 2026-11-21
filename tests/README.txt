@@ -234,6 +234,55 @@ ScrapeLock — δοκιμές σε πραγματικό WordPress (όχι stubs)
                     (a WP Rocket-like page-cache buffer outside Stealth's) and WP_REDIS_DISABLE_COMMENT (a note at
                     shutdown) with Stealth on and with «Hide that the site runs on WordPress» alone; the texts («What can never
                     be hidden», the readme FAQ)
+  t_3128_stealth_inner.php 3.12.8: the inner wp-content of WP Rocket's minified addresses with Stealth: rewrite() of
+                    the exact shapes (http / https / protocol- and root-relative, ?ver=, href, data-rocket-src,
+                    JSON-escaped) gives the inner code, twice = once; an address already new with the inner word
+                    left (/assets/<alias>/cache/min/1/wp-content/themes/<code>/…, the live shape) gets it from the
+                    next pass, idempotent, a word three times / a PHP file / another host / an unknown alias unchanged,
+                    every address maps back with the Nginx and Apache rules (PCRE, as the server applies them).
+                    The cause of the live leftover: the stored words without the inner ones (before 3.12.6, or WP
+                    Rocket seen after «Test again») on Nginx: refresh() keeps them while the server lacks the new
+                    rules and uses the new map once it serves them; the rules status seeing the current rules
+                    schedules that. The page through a WP Rocket-like stand-in (rocket_buffer: minify 16, delay JS 26
+                    with data-rocket-src, MISS), the plain Stealth buffer and a stage after Stealth's rocket_buffer
+                    pass: 0 wp-content, the inner code; real Nginx (SKIP without it): every asset 200. The opt-in
+                    debug log (pncp_stealth_debug / SCRAPELOCK_STEALTH_DEBUG): off by default, a line per stage, no IP /
+                    User-Agent / query string, 256 KB cap, ends by itself, --clear; wp scrapelock stealth check
+                    (in-process and, with WP_CLI, through wp)
+  t_3128_stealth_edges.php 3.12.8: Stealth edge cases, in-process, every new address mapped back to its file with
+                    the generated Nginx and Apache rules (PCRE): srcset/sizes, data-src/-srcset/-bg/-rocket-src, style
+                    url(), <style> @import, preload/modulepreload, import map and JSON with \/, protocol-relative,
+                    query and fragment, rewriting twice, other hosts and PHP unchanged; links to uploads of types the
+                    rules do not serve (.zip, .docx, .csv…) keep their real address; root-relative addresses after an
+                    escaped quote in an attribute (url(&quot;…&quot;), &#039;) rewritten; a plugin folder with a space in
+                    its name: valid rules (real nginx -t, SKIP without nginx on PATH), its files served; "../" into a
+                    sibling folder (a child theme's @import of its parent, a plugin's url() into another plugin) served,
+                    but no such rule over a real folder at the base address; addresses URL-encoded in share links
+                    (media=https%3A%2F%2F…) rewritten, encoded the same way;
+                    WooCommerce cart fragments (/?wc-ajax=…, a stand-in mu-plugin in WooCommerce's order) rewritten
+  t_3128_purge.php  3.12.8: wp scrapelock cdn purge also empties the cache plugins' page caches: stand-ins for WP
+                    Rocket, LiteSpeed Cache, W3 Total Cache, WP Super Cache, WP Fastest Cache, Nginx Helper, Cache
+                    Enabler, SiteGround Optimizer and Autoptimize in a temporary mu-plugin that records each call;
+                    pncp_purge_plugin_caches() (--all, addresses, $minify) and pncp_purge_page_cache()'s rows and
+                    callers; the CLI lines ("… page cache: cleaned" / "not active"), the order plugin caches → fastcgi →
+                    CDN (fake Bunny API), --no-plugin-cache, --minify (WP Rocket's minified files first; refused for
+                    addresses); cache status: the "wp config set … --anchor=… --placement=before" line, the constant
+                    defined / matching / different; --save-constant on a copy of wp-config.php (WP_CONFIG_PATH): asks,
+                    the trial, the line before wp-settings.php, refusals leave the file unchanged (WP_CLI)
+  t_3128_bugs_d.php 3.12.8: fixes of the 3.12.0–3.12.7 code, each with its test: uninstall.php deletes every
+                    option the plugin writes (pncp_fastcgi_last was left); rules install: a configuration read only
+                    at a reload (Nginx, an Apache .conf) needs a test and a reload command (systemctl as the fallback,
+                    else it stops and puts every file back), a .htaccess alone neither; as root (SKIP otherwise) the new
+                    file keeps the owner, group and permissions of the one it replaces; wp scrapelock selfcheck --log:
+                    the heading of the notes goes through the translation (a gettext hook marks the texts)
+  t_3128_release.php 3.12.8: how the parts of 3.12.8 work together: own_url() (cache purge / cdn purge <path>) with
+                    WordPress in a folder (/about/ → /blog/about/; a path already in the folder, the verification
+                    files and /.well-known/ at the root); each word's Stealth rule twice on purpose (a comment says it;
+                    a word twice in an address maps back with the Nginx and Apache rules, and would not with one
+                    rule); the fingerprint with the sibling-folder rules: rules as 3.12.7 wrote them are stale, the
+                    notice and WP-CLI (stealth status / check: rules, map, next) say to copy the Stealth rules again
+                    with the command, a waiting map is taken up only once the new rules are served; Apache: the same
+                    map with other rules written into .htaccess again by the refresh the upgrade schedules
   t_cli.php         wp scrapelock … μέσα από το πραγματικό wp (χρειάζεται WP_CLI, αλλιώς SKIP)
   t_bunny_rules.php Edge Rules στο Bunny μέσα στα όριά του (το πολύ 5 μοτίβα ανά συνθήκη) με ψεύτικο API που δίνει
                     HTTP 400 όπως το πραγματικό: χωρισμός, κλείδωμα/Remove, rollback, Monitor only, sync, προεπισκόπηση,

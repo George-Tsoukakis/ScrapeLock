@@ -407,7 +407,7 @@ final class PNCP_Stealth {
 		$slugs = array();
 		$add   = function ( $kind, $url, $dir, $slug = '' ) use ( &$dirs, &$slugs ) {
 			$path = self::same_host_path( $url );
-			if ( '' === $path || ! is_dir( $dir ) ) {
+			if ( '' === $path || ! is_dir( $dir ) || ! self::rule_safe_path( $path ) ) {
 				return;
 			}
 			$dirs[ $kind . '|' . $path ] = array(
@@ -488,6 +488,19 @@ final class PNCP_Stealth {
 			'words' => $words,
 			'ends'  => $ends,
 		);
+	}
+
+	/**
+	 * 3.12.8: can a folder's path be written as the target of a rule? A space (a plugin uploaded as "my plugin (2)"),
+	 * a quote, ";", "{", "$" or "%" would break the Nginx rules (nginx -t fails) or the .htaccess (every page answers
+	 * 500 until the self-test puts it back). Such a folder gets no address of its own: its files are served through
+	 * the address of the folder above it (plugins, themes, wp-content).
+	 *
+	 * @param string $path Path.
+	 * @return bool
+	 */
+	private static function rule_safe_path( $path ) {
+		return (bool) preg_match( '#^[A-Za-z0-9._~@+/-]+$#', (string) $path );
 	}
 
 	/**
@@ -706,6 +719,10 @@ final class PNCP_Stealth {
 			$lines[] = '<IfModule mod_rewrite.c>';
 			$lines[] = 'RewriteEngine On';
 			$lines[] = 'RewriteBase ' . $home;
+			if ( $config['words'] ) {
+				// 3.12.8: said in the rules, so the pairs are not taken for a mistake and "cleaned up" by hand.
+				$lines[] = '# Each code twice on purpose: a word can be in an address two times (folder and file name).';
+			}
 			foreach ( $config['words'] as $token => $word ) {
 				// Twice: a word can be in the address two times (folder and file name).
 				$lines[] = 'RewriteRule ^(' . $q . '/[0-9a-f]{6}/.*?)' . $token . '(.*)$ $1' . $word . '$2 [DPI]';
@@ -714,6 +731,7 @@ final class PNCP_Stealth {
 			foreach ( $config['map'] as $alias => $entry ) {
 				$lines[] = 'RewriteRule ^' . $q . '/' . $alias . '/(.+\.(?:' . $ext . '))$ ' . $entry['path'] . '/$1 [L,NC]';
 			}
+			$lines = array_merge( $lines, self::sibling_lines( 'apache', $q, $base, $config ) );
 			if ( ! empty( $s['stealth_endpoints'] ) ) {
 				foreach ( $config['ends'] as $name => $path ) {
 					$lines[] = 'RewriteRule ^' . $q . '/' . $name . '$ ' . $path . ' [L,QSA]';
@@ -733,6 +751,9 @@ final class PNCP_Stealth {
 		}
 		$lines[] = '# Inside the site\'s server { }, above the location blocks. Then nginx -t and reload.';
 		$prefix  = $home . $base;
+		if ( $config['words'] ) {
+			$lines[] = '# Each code twice on purpose: a word can be in an address two times (folder and file name).';
+		}
 		foreach ( $config['words'] as $token => $word ) {
 			$lines[] = 'rewrite "^(' . $prefix . '/[0-9a-f]{6}/.*?)' . $token . '(.*)$" $1' . $word . '$2;';
 			$lines[] = 'rewrite "^(' . $prefix . '/[0-9a-f]{6}/.*?)' . $token . '(.*)$" $1' . $word . '$2;';
@@ -740,6 +761,7 @@ final class PNCP_Stealth {
 		foreach ( $config['map'] as $alias => $entry ) {
 			$lines[] = 'rewrite "(?i)^' . $prefix . '/' . $alias . '/(.+\.(?:' . $ext . '))$" ' . $entry['path'] . '/$1 last;';
 		}
+		$lines = array_merge( $lines, self::sibling_lines( 'nginx', $prefix, $base, $config ) );
 		if ( ! empty( $s['stealth_endpoints'] ) ) {
 			foreach ( $config['ends'] as $name => $path ) {
 				$lines[] = 'rewrite "^' . $prefix . '/' . $name . '$" ' . $path . ' last;';
@@ -749,6 +771,53 @@ final class PNCP_Stealth {
 			$lines[] = 'location ~* "^' . $home . '(?:' . implode( '|', array_map( 'preg_quote', self::blocked_files() ) ) . ')$" { return 404; }';
 		}
 		return PNCP_Stealth_Status::with_fingerprint( 'nginx', $lines ); // 3.12.6: the installed rules can be checked.
+	}
+
+	/**
+	 * 3.12.8: a stylesheet or script served at /<base>/<alias>/… that reaches a sibling folder with "../" (a child
+	 * theme's @import url("../parent/style.css"), a plugin's url(../../other-plugin/img.png)) makes the browser ask
+	 * for /<base>/<sibling>/…, one level above the aliases. One rule per parent folder of the map (themes, plugins,
+	 * wp-content) serves those siblings from their real folder; only the folders of the map, static types only.
+	 * None when the site has a real folder at the base address: its files must not be hidden.
+	 *
+	 * @param string               $server apache | nginx.
+	 * @param string               $prefix The start of the patterns (Apache: the base, quoted; Nginx: home path + base).
+	 * @param string               $base   Base folder.
+	 * @param array<string, mixed> $config build() result.
+	 * @return string[]
+	 */
+	private static function sibling_lines( $server, $prefix, $base, $config ) {
+		if ( ! function_exists( 'get_home_path' ) ) {
+			require_once ABSPATH . 'wp-admin/includes/file.php';
+		}
+		if ( file_exists( trailingslashit( get_home_path() ) . $base ) ) {
+			return array();
+		}
+		$groups = array();
+		$used   = array();
+		foreach ( (array) $config['map'] as $entry ) {
+			if ( in_array( (string) $entry['kind'], array( 'content', 'includes' ), true ) ) {
+				continue;
+			}
+			$name   = basename( (string) $entry['path'] );
+			$parent = dirname( (string) $entry['path'] );
+			if ( isset( $used[ $name ] ) || preg_match( '/^[0-9a-f]{6}$/', $name ) || isset( $config['ends'][ $name ] ) || ! preg_match( '/^[A-Za-z0-9._-]+$/', $name ) || '/' === $parent ) {
+				continue;
+			}
+			$used[ $name ]         = true;
+			$groups[ $parent ][] = preg_quote( $name, '#' );
+		}
+		$lines = array();
+		foreach ( $groups as $parent => $names ) {
+			if ( count( $names ) < 2 ) {
+				continue; // A folder's only sibling of the map is itself.
+			}
+			$pattern = '/(' . implode( '|', $names ) . ')/(.+\.(?:' . self::STATIC_EXT . '))$';
+			$lines[] = 'apache' === $server
+				? 'RewriteRule ^' . $prefix . $pattern . ' ' . $parent . '/$1/$2 [L,NC]'
+				: 'rewrite "(?i)^' . $prefix . $pattern . '" ' . $parent . '/$1/$2 last;';
+		}
+		return $lines;
 	}
 
 	/**
@@ -826,6 +895,18 @@ final class PNCP_Stealth {
 		$ok = insert_with_markers( $file, self::MARKER, $lines );
 		clearstatcache();
 		return (bool) $ok;
+	}
+
+	/**
+	 * 3.12.8: the fingerprint of the Stealth block in .htaccess ('' when there is none).
+	 *
+	 * @return string
+	 */
+	private static function htaccess_fingerprint() {
+		$file = self::htaccess_file();
+		$text = is_readable( $file ) ? (string) file_get_contents( $file ) : ''; // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Local file.
+		$at   = strpos( $text, '# BEGIN ' . self::MARKER );
+		return false === $at ? '' : PNCP_Stealth_Status::fingerprint_in( substr( $text, $at ), 'apache' );
 	}
 
 	/**
@@ -1436,6 +1517,13 @@ final class PNCP_Stealth {
 	 * Brings the map and the rules up to date after a change (plugins, theme, Monitor only). On Apache the new
 	 * rules are written and tested, and put back when the test fails; on other servers the new rules wait for
 	 * the administrator (the old ones keep working: a new plugin's files are served through the wp-content address).
+	 *
+	 * 3.12.8: on those servers the new map is tested here too, and used as soon as the server serves it. Before,
+	 * only "Test again" put it into use: rules copied by hand or with `wp scrapelock rules install` were reported
+	 * "installed and up to date" (their fingerprint is of build()), while the pages kept being rewritten with the
+	 * words of the stored map (rewrite() reads state['words']). After 3.12.6 that map lacked the inner words of
+	 * WP Rocket's files, so /assets/<alias>/cache/min/1/wp-content/… kept its inner wp-content on every fresh page.
+	 * Taking the new map up empties the page caches (WP Rocket, the Nginx fastcgi cache…, pncp_purge_page_cache()).
 	 */
 	public static function refresh() {
 		if ( ! self::active() || PNCP_Lockdown::is_locked() ) {
@@ -1447,10 +1535,14 @@ final class PNCP_Stealth {
 		$config = self::build();
 		$sig    = self::signature( $base, $config );
 		$files  = self::blocks_files( $s ) ? 1 : 0;
-		if ( $sig === $state['sig'] && (int) ( isset( $state['files'] ) ? $state['files'] : 0 ) === $files ) {
+		// 3.12.8: on Apache the rules ScrapeLock wrote into .htaccess are also written again when their text changed
+		// with an update of the plugin (the same map, other rules: the rules for sibling folders of 3.12.8).
+		$htaccess = 'apache' === $state['server'] && ! empty( $state['htaccess'] );
+		$rewrite  = $htaccess && self::sanitize_base( (string) $s['stealth_base'] ) === $base && self::htaccess_fingerprint() !== PNCP_Stealth_Status::current( 'apache' );
+		if ( $sig === $state['sig'] && (int) ( isset( $state['files'] ) ? $state['files'] : 0 ) === $files && ! $rewrite ) {
 			return;
 		}
-		if ( 'apache' === $state['server'] && ! empty( $state['htaccess'] ) ) {
+		if ( $htaccess ) {
 			$before = self::htaccess_backup();
 			if ( self::write_htaccess( self::rule_lines( 'apache', $base, $config ) ) && true === self::self_test( $base, $config ) ) {
 				$state['sig']     = $sig;
@@ -1464,6 +1556,17 @@ final class PNCP_Stealth {
 				self::htaccess_restore( $before );
 				$state['pending'] = 'failed';
 			}
+		} elseif ( self::sanitize_base( (string) $s['stealth_base'] ) === $base && 'current' === PNCP_Stealth_Status::status( true )['state'] && true === self::self_test( $base, $config ) ) {
+			// The server already has the rules of the new map: the check address answers their fingerprint (that of
+			// build()) and the self-test passes (its file carries the inner words). A new base folder still needs
+			// "Test again" (the old addresses would stop working).
+			$state['sig']     = $sig;
+			$state['map']     = $config['map'];
+			$state['words']   = $config['words'];
+			$state['ends']    = ! empty( $s['stealth_endpoints'] ) ? $config['ends'] : array();
+			$state['files']   = $files;
+			$state['pending'] = '';
+			$state['tested']  = time();
 		} else {
 			$state['pending'] = $sig;
 		}
@@ -1667,7 +1770,7 @@ final class PNCP_Stealth {
 	 * @return bool
 	 */
 	private static function rewrites_request() {
-		if ( is_admin() || wp_doing_ajax() || wp_doing_cron() || ( defined( 'XMLRPC_REQUEST' ) && XMLRPC_REQUEST ) || ( defined( 'WP_CLI' ) && WP_CLI ) ) {
+		if ( is_admin() || ( wp_doing_ajax() && ! self::wc_ajax() ) || wp_doing_cron() || ( defined( 'XMLRPC_REQUEST' ) && XMLRPC_REQUEST ) || ( defined( 'WP_CLI' ) && WP_CLI ) ) {
 			return false;
 		}
 		if ( is_user_logged_in() || is_customize_preview() || is_preview() || is_feed() || is_robots() || get_query_var( 'sitemap' ) || get_query_var( 'sitemap-stylesheet' ) ) {
@@ -1682,12 +1785,36 @@ final class PNCP_Stealth {
 	}
 
 	/**
+	 * 3.12.8: a front-end request of WooCommerce's own Ajax (/?wc-ajax=get_refreshed_fragments, …). WooCommerce
+	 * defines DOING_AJAX for it at init, but its answer is HTML of the page (the cart fragments) that guests get.
+	 *
+	 * @return bool
+	 */
+	private static function wc_ajax() {
+		return ! empty( $_GET['wc-ajax'] ) && ! is_admin(); // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Only the presence of the key.
+	}
+
+	/**
 	 * Starts the output buffer of the page.
 	 */
 	public static function start_buffer() {
-		if ( self::rewrites_request() ) {
+		$rewrites = self::rewrites_request();
+		if ( $rewrites ) {
 			ob_start( array( __CLASS__, 'end_buffer' ) );
 		}
+		if ( self::debugging() ) {
+			PNCP_Stealth_Debug::start( $rewrites );
+		}
+	}
+
+	/**
+	 * 3.12.8: is the debug log asked for (PNCP_Stealth_Debug: the constant or the filter)? Its class is only
+	 * loaded then.
+	 *
+	 * @return bool
+	 */
+	private static function debugging() {
+		return defined( 'SCRAPELOCK_STEALTH_DEBUG' ) || has_filter( 'pncp_stealth_debug' );
 	}
 
 	/**
@@ -1708,7 +1835,13 @@ final class PNCP_Stealth {
 			}
 		}
 		if ( preg_match( '#^text/html#', $type ) ) {
-			return self::clean_html( self::rewrite( $html ) );
+			// The last pass before the page cache stores the page (see PNCP_Stealth_Debug): rewrite() also gives
+			// the codes to new addresses an earlier pass left with a word in them.
+			$out = self::clean_html( self::rewrite( $html ) );
+			if ( self::debugging() ) {
+				PNCP_Stealth_Debug::stage( 'buffer', 'template_redirect:-9999', $html, $out );
+			}
+			return $out;
 		}
 		if ( preg_match( '#^(?:text/css|(?:text|application)/(?:x-)?javascript|application/(?:[a-z.+-]+\+)?json)#', $type ) ) {
 			return self::rewrite( $html );
@@ -1728,7 +1861,11 @@ final class PNCP_Stealth {
 		if ( ! is_string( $html ) || '' === $html || ! self::active() || ! self::rewrites_request() ) {
 			return $html;
 		}
-		return self::rewrite( $html );
+		$out = self::rewrite( $html );
+		if ( self::debugging() ) {
+			PNCP_Stealth_Debug::stage( current_filter(), 'PHP_INT_MAX', $html, $out );
+		}
+		return $out;
 	}
 
 	/**
@@ -1822,7 +1959,8 @@ final class PNCP_Stealth {
 			foreach ( $segments as $segment ) {
 				$path .= $sep . preg_quote( $segment, '~' );
 			}
-			$alts[]       = '(?:(?:https?:)?' . $sep . $sep . '(?:' . implode( '|', $hosts ) . ')|(?<=[\s"\'(=,]))' . $path . '(*MARK:' . $key . ')';
+			// 3.12.8: also after a quote escaped in an attribute (style="background:url(&quot;/wp-content/…&quot;)").
+			$alts[]       = '(?:(?:https?:)?' . $sep . $sep . '(?:' . implode( '|', $hosts ) . ')|(?<=[\s"\'(=,]|&quot;|&#039;|&#39;|&#34;|&apos;))' . $path . '(*MARK:' . $key . ')';
 			$repl[ $key ] = $item;
 		}
 		if ( ! $alts ) {
@@ -1841,6 +1979,9 @@ final class PNCP_Stealth {
 	 * @return string
 	 */
 	public static function rewrite( $text ) {
+		if ( is_string( $text ) && false !== stripos( $text, '%2F' ) ) {
+			$text = self::rewrite_encoded( $text );
+		}
 		if ( ! is_string( $text ) || ( false === strpos( $text, '/wp-' ) && false === strpos( $text, '\\/wp-' ) && false === strpos( $text, 'wp-comments-post' ) && ! self::custom_paths() ) ) {
 			return $text;
 		}
@@ -1874,6 +2015,9 @@ final class PNCP_Stealth {
 					if ( preg_match( '/\.php$/i', $plain ) ) {
 						return $whole; // PHP keeps its real address.
 					}
+					if ( ! self::served_type( $plain ) ) {
+						return $whole; // 3.12.8: a file the rules do not serve (.zip, .docx…) keeps its real address.
+					}
 					$new = $home . $base . '/' . $item['alias'] . self::encode_words( $plain, $words );
 				}
 				$origin = '';
@@ -1884,6 +2028,141 @@ final class PNCP_Stealth {
 					$new = str_replace( '/', '\\/', $new );
 				}
 				return $origin . $new . $query;
+			},
+			$text
+		);
+		$out = is_string( $out ) ? $out : $text;
+		return '' !== $base && false !== strpos( $out, $base ) ? self::code_new_addresses( $out, $state, $home ) : $out;
+	}
+
+	/**
+	 * 3.12.8: the new addresses already in a text (made by an earlier pass, or kept by a plugin from one) get the
+	 * codes of the words they still carry: /assets/<alias>/cache/min/1/wp-content/… becomes …/1/<code>/…, as the
+	 * first pass would have made it. The rest of the address only; the codes in it are left as they are, so a
+	 * second run changes nothing. The server rules turn every code back wherever it is in the address (at most
+	 * twice per word, as here).
+	 *
+	 * @param string               $text  Text.
+	 * @param array<string, mixed> $state State.
+	 * @param string               $home  Home path.
+	 * @return string
+	 */
+	private static function code_new_addresses( $text, $state, $home ) {
+		$words = (array) $state['words'];
+		$map   = (array) $state['map'];
+		if ( ! $words || ! $map ) {
+			return $text;
+		}
+		$sep  = '\\\\?/';
+		$path = '';
+		foreach ( array_filter( explode( '/', $home . (string) $state['base'] ), 'strlen' ) as $segment ) {
+			$path .= $sep . preg_quote( $segment, '~' );
+		}
+		$hosts = array_map(
+			function ( $h ) {
+				return preg_quote( $h, '~' );
+			},
+			self::hosts( true )
+		);
+		$regex = '~(?:(?:https?:)?' . $sep . $sep . '(?:' . implode( '|', $hosts ) . ')|(?<=[\s"\'(=,]))' . $path . $sep . '([0-9a-f]{6})((?:' . $sep . '(?:[^\s"\'<>(),\\\\?#&]|\\\\/)*)?)~';
+		$out   = preg_replace_callback(
+			$regex,
+			function ( $m ) use ( $words, $map ) {
+				if ( ! isset( $map[ $m[1] ] ) || '' === $m[2] ) {
+					return $m[0];
+				}
+				$plain = str_replace( '\\/', '/', $m[2] );
+				$new   = self::encode_left( $plain, $words );
+				if ( $new === $plain || preg_match( '/\.php$/i', $plain ) ) {
+					return $m[0];
+				}
+				if ( false !== strpos( $m[2], '\\/' ) ) {
+					$new = str_replace( '/', '\\/', $new );
+				}
+				return substr( $m[0], 0, strlen( $m[0] ) - strlen( $m[2] ) ) . $new;
+			},
+			$text
+		);
+		return is_string( $out ) ? $out : $text;
+	}
+
+	/**
+	 * 3.12.8: encode_words() for a path that may already hold codes: only the text between the codes changes, and
+	 * a word only while the path then holds it at most twice (coded or not), as the server rules turn it back.
+	 *
+	 * @param string                $path  Path.
+	 * @param array<string, string> $words Code => word.
+	 * @return string
+	 */
+	private static function encode_left( $path, $words ) {
+		$parts = preg_split( '~(' . implode( '|', array_map( 'preg_quote', array_keys( $words ) ) ) . ')~', $path, -1, PREG_SPLIT_DELIM_CAPTURE );
+		if ( ! is_array( $parts ) ) {
+			return $path;
+		}
+		$codes = array();
+		$plain = '';
+		foreach ( $parts as $i => $part ) {
+			if ( 1 === $i % 2 ) {
+				$codes[] = $part;
+			} else {
+				$plain .= $part . '/';
+			}
+		}
+		$counts = array_count_values( $codes );
+		$map    = array();
+		foreach ( $words as $token => $word ) {
+			$n = substr_count( $plain, $word );
+			if ( $n > 0 && $n + ( isset( $counts[ $token ] ) ? $counts[ $token ] : 0 ) <= 2 ) {
+				$map[ $word ] = $token;
+			}
+		}
+		if ( ! $map ) {
+			return $path;
+		}
+		foreach ( $parts as $i => $part ) {
+			if ( 0 === $i % 2 ) {
+				$parts[ $i ] = strtr( $part, $map );
+			}
+		}
+		return implode( '', $parts );
+	}
+
+	/**
+	 * 3.12.8: is the file of a path one of the types the rules serve (STATIC_EXT)? A path without a file type in
+	 * its last part is a folder a script adds file names to (true). An upload linked from a post (.zip, .docx,
+	 * .epub, .csv…) would answer 404 at a neutral address: it keeps its real one.
+	 *
+	 * @param string $path Path after the folder of the map.
+	 * @return bool
+	 */
+	private static function served_type( $path ) {
+		if ( ! preg_match( '~/[^/]*\.([a-z][a-z0-9]*)$~i', $path, $m ) ) {
+			return true;
+		}
+		return (bool) preg_match( '~^(?:' . self::STATIC_EXT . ')$~i', $m[1] );
+	}
+
+	/**
+	 * 3.12.8: addresses of this host URL-encoded inside another address (share links: …&media=https%3A%2F%2F<host>
+	 * %2Fwp-content%2Fuploads%2F…), rewritten like plain ones and encoded again the same way. A "+" stays a "+".
+	 *
+	 * @param string $text Text.
+	 * @return string
+	 */
+	private static function rewrite_encoded( $text ) {
+		$hosts = array();
+		foreach ( self::hosts( true ) as $host ) {
+			$hosts[] = preg_quote( str_replace( ':', '%3A', $host ), '~' );
+		}
+		if ( ! $hosts ) {
+			return $text;
+		}
+		$out = preg_replace_callback(
+			'~(?:https?%3A)?%2F%2F(?:' . implode( '|', $hosts ) . ')%2F(?:[A-Za-z0-9._\~+-]|%[0-9A-F]{2})*~i',
+			function ( $m ) {
+				$plain = rawurldecode( str_replace( '+', "\x01", $m[0] ) );
+				$new   = self::rewrite( $plain );
+				return $new === $plain ? $m[0] : str_replace( '%01', '+', rawurlencode( $new ) );
 			},
 			$text
 		);
@@ -3010,7 +3289,9 @@ final class PNCP_Stealth {
 			'tested'   => $state['tested'] ? gmdate( 'Y-m-d H:i:s', (int) $state['tested'] ) . ' UTC' : '-',
 			'folders'  => (string) count( (array) $state['map'] ),
 			'rules'    => null !== PNCP_Stealth_Status::kept_status() ? PNCP_Stealth_Status::kept_status()['state'] : '-', // 3.12.6.
+			'map'      => '' !== (string) $state['pending'] && 'failed' !== (string) $state['pending'] ? 'waiting' : 'in use', // 3.12.8.
 			'error'    => (string) $state['error'],
+			'next'     => '' !== PNCP_Stealth_Status::cli_next() ? PNCP_Stealth_Status::cli_next() : '-', // 3.12.8.
 		);
 	}
 
