@@ -13,6 +13,9 @@
  *    only "tested" by asking the home page and never reloaded. Now: the reload falls back to systemctl, and with
  *    neither the command stops (every file put back) and asks for --test-cmd / --reload-cmd. A .htaccess alone
  *    still needs neither.
+ * O. rules install as root (WP-CLI run with --allow-root, as on most servers; SKIP otherwise, or without WP_CLI):
+ *    the new file keeps the owner and group of the file it replaces. 3.12.6 left a root-owned .htaccess that
+ *    WordPress (the web server's user) could no longer write: permalinks, ScrapeLock's own .htaccess blocks.
  *
  * Only on a test WordPress.
  */
@@ -110,5 +113,30 @@ $p = $plan( 'nginx', false, array( 'test-cmd' => 'a', 'reload-cmd' => 'b' ), $al
 t( 'I --test-cmd and --reload-cmd as given, no fallback', is_array( $p ) && 'a' === $p['test'] && 'b' === $p['reload'] && '' === $p['alt'] && '' === $p['missing'], wp_json_encode( $p ) );
 $src = (string) file_get_contents( PNCP_DIR . 'includes/class-pncp-cli-server.php' );
 t( 'I install() takes its commands from install_commands() and stops on a missing one', false !== strpos( $src, 'self::install_commands( $server, $htaccess, $assoc_args, self::commands( $server, $htaccess ) )' ) && false !== strpos( $src, "'' !== \$plan['missing']" ) );
+
+/* ---------- O. rules install keeps the owner of the file it replaces ---------- */
+
+if ( '' === $wp_cli || ! function_exists( 'posix_geteuid' ) || 0 !== posix_geteuid() ) {
+	echo "SKIP O (needs WP_CLI and root)\n";
+} else {
+	$saved_paths = PNCP_Options::stored()['private_paths'];
+	update_option( PNCP_OPTION, array_merge( PNCP_Options::stored(), array( 'private_paths' => '' ) ) ); // No token needed.
+	PNCP_Options::flush();
+	$ht = $tmp . '/site/.htaccess';
+	wp_mkdir_p( dirname( $ht ) );
+	file_put_contents( $ht, "# BEGIN WordPress\nRewriteEngine On\n# END WordPress\n" );
+	chmod( $ht, 0664 );
+	chown( $ht, 65534 );
+	chgrp( $ht, 65534 );
+	clearstatcache();
+	exec( $wp_cli . ' scrapelock rules install --apache=' . escapeshellarg( $ht ) . ' --yes < /dev/null 2>&1', $out, $rc );
+	clearstatcache();
+	$text = (string) file_get_contents( $ht );
+	t( 'O installed into the .htaccess (above # BEGIN WordPress)', 0 === $rc && false !== strpos( $text, '# BEGIN ScrapeLock' ) && strpos( $text, '# BEGIN ScrapeLock' ) < strpos( $text, '# BEGIN WordPress' ), implode( "\n", $out ) );
+	t( 'O ...owned by the user and group of the file it replaced, not by root', 65534 === fileowner( $ht ) && 65534 === filegroup( $ht ), fileowner( $ht ) . ':' . filegroup( $ht ) );
+	t( 'O ...with its permissions', 0664 === ( fileperms( $ht ) & 0777 ), decoct( fileperms( $ht ) & 0777 ) );
+	update_option( PNCP_OPTION, array_merge( PNCP_Options::stored(), array( 'private_paths' => $saved_paths ) ) );
+	PNCP_Options::flush();
+}
 
 exit( $fails ? 1 : 0 );

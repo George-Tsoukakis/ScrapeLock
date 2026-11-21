@@ -646,6 +646,16 @@ final class PNCP_Cli_Server {
 			}
 			if ( is_file( $real ) ) {
 				@chmod( $real . '.new', fileperms( $real ) & 0777 ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged, WordPress.WP.AlternativeFunctions.file_system_operations_chmod -- The permissions of the file it replaces.
+				// 3.12.8: and its owner and group (WP-CLI often runs as root): a root-owned .htaccess could no longer
+				// be written by WordPress (permalinks, ScrapeLock's own blocks). Only possible as root; else no change.
+				$owner = fileowner( $real );
+				$group = filegroup( $real );
+				if ( false !== $owner && fileowner( $real . '.new' ) !== $owner ) {
+					@chown( $real . '.new', $owner ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged, WordPress.WP.AlternativeFunctions.file_system_operations_chown -- The owner of the file it replaces.
+				}
+				if ( false !== $group && filegroup( $real . '.new' ) !== $group ) {
+					@chgrp( $real . '.new', $group ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged, WordPress.WP.AlternativeFunctions.file_system_operations_chgrp -- The group of the file it replaces.
+				}
 			}
 			$diff = self::unified_diff( $old, $new, $f['path'] );
 			WP_CLI::log( '' !== $token ? str_replace( $token, '[token]', $diff ) : $diff );
