@@ -380,6 +380,26 @@ t( 'S a plugin\'s url() into another plugin (' . $b_path . ') is served (Nginx)'
 t( 'S a plugin\'s url() into another plugin is served (Apache)', file_of( apache_apply( $apache, $b_path ) ) === realpath( WP_PLUGIN_DIR . '/pncp-t3128-b/img/b.png' ), apache_apply( $apache, $b_path ) );
 $php = '/assets/pncp-t3128-a/download.php';
 t( 'S PHP is never served through a sibling address', file_of( nginx_apply( $nginx, $php ) ) === '' && file_of( apache_apply( $apache, $php ) ) === '', nginx_apply( $nginx, $php ) );
+// A real folder of the site at the base address (e.g. a static /assets/ with its own uploads/ or a theme's name):
+// the sibling rules would hide its files, so there are none then.
+if ( ! function_exists( 'get_home_path' ) ) {
+	require_once ABSPATH . 'wp-admin/includes/file.php';
+}
+$real_base = trailingslashit( get_home_path() ) . 'assets';
+if ( is_dir( $real_base ) ) {
+	echo "SKIP S a real folder at the base address (the test site has one already)\n";
+} else {
+	put( $real_base . '/uploads/pncp-t3128-real.png', 'pncp-t3128 real' );
+	put( $real_base . '/pncp-t3128-parent/real.css', 'pncp-t3128 real' );
+	PNCP_Stealth_Status::reset();
+	$rn = PNCP_Stealth::rules_text( 'nginx' );
+	$ra = PNCP_Stealth::rules_text( 'apache' );
+	foreach ( array( '/assets/uploads/pncp-t3128-real.png', '/assets/pncp-t3128-parent/real.css' ) as $p ) {
+		t( 'S a real file at ' . $p . ' is not hidden by the rules (Nginx)', nginx_apply( $rn, $p ) === $p, nginx_apply( $rn, $p ) );
+		t( 'S a real file at ' . $p . ' is not hidden by the rules (Apache)', apache_apply( $ra, $p ) === $p, apache_apply( $ra, $p ) );
+	}
+	rmtree( $real_base );
+}
 
 /* ---------- E. URL-encoded addresses ---------- */
 

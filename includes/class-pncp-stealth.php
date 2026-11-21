@@ -727,7 +727,7 @@ final class PNCP_Stealth {
 			foreach ( $config['map'] as $alias => $entry ) {
 				$lines[] = 'RewriteRule ^' . $q . '/' . $alias . '/(.+\.(?:' . $ext . '))$ ' . $entry['path'] . '/$1 [L,NC]';
 			}
-			$lines = array_merge( $lines, self::sibling_lines( 'apache', $q, $config ) );
+			$lines = array_merge( $lines, self::sibling_lines( 'apache', $q, $base, $config ) );
 			if ( ! empty( $s['stealth_endpoints'] ) ) {
 				foreach ( $config['ends'] as $name => $path ) {
 					$lines[] = 'RewriteRule ^' . $q . '/' . $name . '$ ' . $path . ' [L,QSA]';
@@ -754,7 +754,7 @@ final class PNCP_Stealth {
 		foreach ( $config['map'] as $alias => $entry ) {
 			$lines[] = 'rewrite "(?i)^' . $prefix . '/' . $alias . '/(.+\.(?:' . $ext . '))$" ' . $entry['path'] . '/$1 last;';
 		}
-		$lines = array_merge( $lines, self::sibling_lines( 'nginx', $prefix, $config ) );
+		$lines = array_merge( $lines, self::sibling_lines( 'nginx', $prefix, $base, $config ) );
 		if ( ! empty( $s['stealth_endpoints'] ) ) {
 			foreach ( $config['ends'] as $name => $path ) {
 				$lines[] = 'rewrite "^' . $prefix . '/' . $name . '$" ' . $path . ' last;';
@@ -771,13 +771,21 @@ final class PNCP_Stealth {
 	 * theme's @import url("../parent/style.css"), a plugin's url(../../other-plugin/img.png)) makes the browser ask
 	 * for /<base>/<sibling>/…, one level above the aliases. One rule per parent folder of the map (themes, plugins,
 	 * wp-content) serves those siblings from their real folder; only the folders of the map, static types only.
+	 * None when the site has a real folder at the base address: its files must not be hidden.
 	 *
 	 * @param string               $server apache | nginx.
 	 * @param string               $prefix The start of the patterns (Apache: the base, quoted; Nginx: home path + base).
+	 * @param string               $base   Base folder.
 	 * @param array<string, mixed> $config build() result.
 	 * @return string[]
 	 */
-	private static function sibling_lines( $server, $prefix, $config ) {
+	private static function sibling_lines( $server, $prefix, $base, $config ) {
+		if ( ! function_exists( 'get_home_path' ) ) {
+			require_once ABSPATH . 'wp-admin/includes/file.php';
+		}
+		if ( file_exists( trailingslashit( get_home_path() ) . $base ) ) {
+			return array();
+		}
 		$groups = array();
 		$used   = array();
 		foreach ( (array) $config['map'] as $entry ) {
