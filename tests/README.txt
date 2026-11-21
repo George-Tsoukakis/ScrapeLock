@@ -275,6 +275,14 @@ ScrapeLock — δοκιμές σε πραγματικό WordPress (όχι stubs)
                     else it stops and puts every file back), a .htaccess alone neither; as root (SKIP otherwise) the new
                     file keeps the owner, group and permissions of the one it replaces; wp scrapelock selfcheck --log:
                     the heading of the notes goes through the translation (a gettext hook marks the texts)
+  t_3128_release.php 3.12.8: how the parts of 3.12.8 work together: own_url() (cache purge / cdn purge <path>) with
+                    WordPress in a folder (/about/ → /blog/about/; a path already in the folder, the verification
+                    files and /.well-known/ at the root); each word's Stealth rule twice on purpose (a comment says it;
+                    a word twice in an address maps back with the Nginx and Apache rules, and would not with one
+                    rule); the fingerprint with the sibling-folder rules: rules as 3.12.7 wrote them are stale, the
+                    notice and WP-CLI (stealth status / check: rules, map, next) say to copy the Stealth rules again
+                    with the command, a waiting map is taken up only once the new rules are served; Apache: the same
+                    map with other rules written into .htaccess again by the refresh the upgrade schedules
   t_cli.php         wp scrapelock … μέσα από το πραγματικό wp (χρειάζεται WP_CLI, αλλιώς SKIP)
   t_bunny_rules.php Edge Rules στο Bunny μέσα στα όριά του (το πολύ 5 μοτίβα ανά συνθήκη) με ψεύτικο API που δίνει
                     HTTP 400 όπως το πραγματικό: χωρισμός, κλείδωμα/Remove, rollback, Monitor only, sync, προεπισκόπηση,

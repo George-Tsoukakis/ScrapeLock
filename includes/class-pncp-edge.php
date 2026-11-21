@@ -2023,6 +2023,11 @@ final class PNCP_Edge {
 	 * 3.12.6: an address of this site to purge: a full http(s) address on one of its hosts, or a path ("/x.txt",
 	 * on the home address). '' when it is not this site's (another host, credentials in it, not http(s)).
 	 *
+	 * 3.12.8: a path is a path of the home address, also where WordPress is in a folder (home https://host/blog:
+	 * "/about/" is https://host/blog/about/; before, https://host/about/). A path that already starts with that
+	 * folder is taken as it is, and so are the files that live at the root of the host: the verification files
+	 * of PNCP_Verify_Files and everything under /.well-known/.
+	 *
 	 * @param string $url Address or path.
 	 * @return string The full address, or ''.
 	 */
@@ -2036,6 +2041,11 @@ final class PNCP_Edge {
 			if ( ! is_array( $home ) || empty( $home['host'] ) ) {
 				return '';
 			}
+			$folder = isset( $home['path'] ) ? untrailingslashit( (string) $home['path'] ) : '';
+			$path   = explode( '?', $url, 2 )[0];
+			if ( '' !== $folder && 0 !== strpos( $path . '/', $folder . '/' ) && ! self::root_path( $path ) ) {
+				$url = $folder . $url;
+			}
 			$url = ( isset( $home['scheme'] ) ? $home['scheme'] : 'https' ) . '://' . $home['host'] . ( isset( $home['port'] ) ? ':' . $home['port'] : '' ) . $url;
 		}
 		$parts = wp_parse_url( $url );
@@ -2044,6 +2054,20 @@ final class PNCP_Edge {
 			return '';
 		}
 		return in_array( strtolower( $parts['host'] ), self::site_hosts(), true ) ? $url : '';
+	}
+
+	/**
+	 * 3.12.8: a path that is served at the root of the host even when WordPress is in a folder: a verification
+	 * file (PNCP_Verify_Files) or an address under /.well-known/.
+	 *
+	 * @param string $path Path, from "/".
+	 * @return bool
+	 */
+	private static function root_path( $path ) {
+		if ( 0 === strpos( $path, '/.well-known/' ) ) {
+			return true;
+		}
+		return class_exists( 'PNCP_Verify_Files' ) && isset( PNCP_Verify_Files::all()[ $path ] );
 	}
 
 	/**
