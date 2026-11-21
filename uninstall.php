@@ -121,7 +121,7 @@ function pncp_uninstall_site() {
 		delete_option( $pncp_option );
 	}
 	// Every event of each hook, whatever its arguments (wp_clear_scheduled_hook() only removes the ones without).
-	foreach ( array( 'pncp_refresh_ip_lists', 'pncp_log_cleanup', 'pncp_log_cleanup_more', 'pncp_wm_unmark', 'pncp_edge_sync', 'pncp_integrity_official', 'pncp_integrity_resume', 'pncp_surge_mail', 'pncp_surge_mail_alert', 'pncp_background_purge', 'pncp_upgrade_files', 'pncp_crowdsec_sync', 'pncp_attack_report_weekly', 'pncp_bunny_run', 'pncp_stealth_check', 'pncp_stealth_refresh', 'pncp_stealth_restart', 'pncp_server_ips_changed', 'pncp_traffic_run', 'pncp_verify_files_expire' ) as $pncp_hook ) {
+	foreach ( array( 'pncp_refresh_ip_lists', 'pncp_log_cleanup', 'pncp_log_cleanup_more', 'pncp_wm_unmark', 'pncp_edge_sync', 'pncp_integrity_official', 'pncp_integrity_resume', 'pncp_surge_mail', 'pncp_surge_mail_alert', 'pncp_defer_flush', 'pncp_background_purge', 'pncp_upgrade_files', 'pncp_crowdsec_sync', 'pncp_attack_report_weekly', 'pncp_bunny_run', 'pncp_stealth_check', 'pncp_stealth_refresh', 'pncp_stealth_restart', 'pncp_server_ips_changed', 'pncp_traffic_run', 'pncp_verify_files_expire' ) as $pncp_hook ) {
 		wp_unschedule_hook( $pncp_hook );
 	}
 	// The Lockdown guard (must-use plugin), only if it is ours.

@@ -34,7 +34,19 @@ final class PNCP_Surge {
 	public static function init() {
 		add_action( self::MAIL, array( __CLASS__, 'mail' ), 10, 3 );
 		add_action( self::MAIL_ALERT, array( __CLASS__, 'mail_alert' ), 10, 2 );
+		add_action( 'pncp_defer_flush', array( __CLASS__, 'persist' ) );
 	}
+
+	/**
+	 * 3.12.9: where a persistent object cache or APCu exists (PNCP_Defer), the state lives there: a visitor's
+	 * request never writes the option (update_option() in the request that closed a minute sat in the slow log of a
+	 * server whose disk stalled). The scheduled event writes it, and starts Emergency Mode or sends the alert that a
+	 * visitor's request decided on (PENDING). AUTO_UNTIL makes an automatic start effective at once, before that.
+	 */
+	const CACHED     = 'pncp_surge_state';
+	const DIRTY      = 'pncp_surge_dirty';
+	const PENDING    = 'pncp_surge_pending';
+	const AUTO_UNTIL = PNCP_Defer::EMERGENCY;
 
 	/**
 	 * How many times the usual rate counts as an attack, and for how many minutes in a row.
@@ -66,15 +78,91 @@ final class PNCP_Surge {
 		if ( $state['minute'] >= $minute - 1 ) {
 			return; // Already closed by another request.
 		}
+		// 3.12.9: one request closes the minute, where the store can say which (an atomic add, never a wait). The
+		// first count of a minute is unique already where the counter is atomic; a counter that was lost (the
+		// store was emptied) or a database without atomic counters could give two.
+		if ( '' !== PNCP_Defer::store() && ! PNCP_Defer::add( 'pncp_surge_close_' . (int) $minute, 1, 3 * MINUTE_IN_SECONDS ) ) {
+			return;
+		}
 		$closed = self::close( $state, $minute - 1, (int) $prev, $s );
 		self::save( $closed );
 		if ( $closed['streak'] >= (int) apply_filters( 'pncp_auto_emergency_minutes', self::MINUTES ) && ! empty( $s['auto_emergency'] ) && ! PNCP_Options::emergency_until() ) {
-			if ( isset( $s['auto_emergency_mode'] ) && 'start' === $s['auto_emergency_mode'] ) {
+			$start = isset( $s['auto_emergency_mode'] ) && 'start' === $s['auto_emergency_mode'];
+			if ( PNCP_Defer::active() ) {
+				self::defer( $start, (int) $prev, self::threshold( $closed, $s ) );
+			} elseif ( $start ) {
 				self::trigger( (int) $prev, self::threshold( $closed, $s ) );
 			} else {
 				self::alert( (int) $prev, self::threshold( $closed, $s ) );
 			}
 		}
+	}
+
+	/**
+	 * 3.12.9: a visitor's request crossed the threshold on a site with a persistent store: Emergency Mode is in
+	 * effect at once for every request that reaches PHP (AUTO_UNTIL, read by PNCP_Options::emergency_until()), and
+	 * the scheduled event starts it for good (the option, the pre-cache check, the email) or sends the alert. The
+	 * one-minute event is due anyway: WordPress starts it on the next request, as a separate request.
+	 *
+	 * @param bool $start     Start Emergency Mode ("start" mode), or only alert ("notify").
+	 * @param int  $count     Pages in the last minute.
+	 * @param int  $threshold The threshold it crossed.
+	 */
+	private static function defer( $start, $count, $threshold ) {
+		if ( $start ) {
+			PNCP_Defer::set( self::AUTO_UNTIL, time() + self::hours() * HOUR_IN_SECONDS, self::hours() * HOUR_IN_SECONDS );
+			PNCP_Options::flush();
+		}
+		PNCP_Defer::set(
+			self::PENDING,
+			array(
+				'start'     => (bool) $start,
+				'count'     => (int) $count,
+				'threshold' => (int) $threshold,
+			),
+			DAY_IN_SECONDS
+		);
+	}
+
+	/**
+	 * 3.12.9: the scheduled event (PNCP_Defer::flush()): the state the visitors' requests kept in the store is
+	 * written to the option, and an automatic start or alert they decided on is carried out.
+	 */
+	public static function persist() {
+		if ( PNCP_Defer::active() ) {
+			return;
+		}
+		if ( PNCP_Defer::get( self::DIRTY ) ) {
+			PNCP_Defer::delete( self::DIRTY );
+			$cached = PNCP_Defer::get( self::CACHED );
+			if ( is_array( $cached ) ) {
+				update_option( self::STATE, self::normalize( $cached ), false );
+			}
+		}
+		$pending = PNCP_Defer::get( self::PENDING );
+		if ( ! is_array( $pending ) ) {
+			return;
+		}
+		PNCP_Defer::delete( self::PENDING );
+		$count     = isset( $pending['count'] ) ? (int) $pending['count'] : 0;
+		$threshold = isset( $pending['threshold'] ) ? (int) $pending['threshold'] : 0;
+		if ( ! empty( $pending['start'] ) ) {
+			if ( (int) get_option( PNCP_Options::EMERGENCY_OPTION, 0 ) <= time() ) {
+				self::trigger( $count, $threshold );
+			}
+			PNCP_Defer::delete( self::AUTO_UNTIL );
+		} else {
+			self::alert( $count, $threshold );
+		}
+	}
+
+	/**
+	 * How long an automatic start lasts, in hours (filter `pncp_auto_emergency_hours`, 1 to 72).
+	 *
+	 * @return int
+	 */
+	private static function hours() {
+		return max( 1, min( 72, (int) apply_filters( 'pncp_auto_emergency_hours', 1 ) ) );
 	}
 
 	/**
@@ -130,7 +218,7 @@ final class PNCP_Surge {
 	 * @param int $threshold The threshold it crossed.
 	 */
 	private static function trigger( $count, $threshold ) {
-		$hours = max( 1, min( 72, (int) apply_filters( 'pncp_auto_emergency_hours', 1 ) ) );
+		$hours = self::hours();
 		// This runs inside a visitor's request, at the peak of the traffic. The page cache is NOT emptied: that
 		// would send every visitor to PHP and the database at once (a cache stampede) exactly when the site is
 		// under the most load. Cached pages are cheap to serve; the stricter checks apply to every request
@@ -297,8 +385,20 @@ final class PNCP_Surge {
 	 * @return array{minute:int, avg:float, samples:int, streak:int}
 	 */
 	public static function state() {
-		$state = get_option( self::STATE, array() );
-		$state = is_array( $state ) ? $state : array();
+		$state = '' !== PNCP_Defer::store() ? PNCP_Defer::get( self::CACHED ) : false;
+		if ( ! is_array( $state ) ) {
+			$state = get_option( self::STATE, array() );
+		}
+		return self::normalize( is_array( $state ) ? $state : array() );
+	}
+
+	/**
+	 * A stored state with every field.
+	 *
+	 * @param array<string, mixed> $state State.
+	 * @return array{minute:int, avg:float, samples:int, streak:int}
+	 */
+	private static function normalize( $state ) {
 		return array(
 			'minute'  => isset( $state['minute'] ) ? (int) $state['minute'] : 0,
 			'avg'     => isset( $state['avg'] ) ? (float) $state['avg'] : 0.0,
@@ -312,9 +412,19 @@ final class PNCP_Surge {
 	 * minute; autoloaded, every write also rewrote the whole "alloptions" entry of a persistent object cache
 	 * (and every page loaded it). A site that has it autoloaded switches with its next write.
 	 *
+	 * 3.12.9: where a persistent store exists the state is kept there; a visitor's request writes nothing else
+	 * (the scheduled event writes the option, persist()).
+	 *
 	 * @param array{minute:int, avg:float, samples:int, streak:int} $state State.
 	 */
 	private static function save( $state ) {
+		if ( '' !== PNCP_Defer::store() ) {
+			PNCP_Defer::set( self::CACHED, $state, 0 );
+			if ( PNCP_Defer::active() ) {
+				PNCP_Defer::set( self::DIRTY, 1, 0 );
+				return;
+			}
+		}
 		update_option( self::STATE, $state, false );
 	}
 

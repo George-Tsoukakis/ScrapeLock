@@ -293,6 +293,12 @@ ScrapeLock — δοκιμές σε πραγματικό WordPress (όχι stubs)
                     redis-server of the test on a Unix socket (the same, Redis stopped mid-run, back empty, a socket
                     that never answers); the Redis connection in the wp-config.php line (password masked). SKIP parts
                     without APCu / redis-server / strace
+  t_3129_requests.php 3.12.9: what a visitor's request costs (lib/probe-3129.php, copied into mu-plugins for the test,
+                    notes ScrapeLock's own queries and file access for requests with X-PNCP-Probe): without an object
+                    cache a known visitor's page views write only the counters of the limits (and the surge state at
+                    most once a minute); with one (REDIS_DROPIN, else lib/object-cache-stub.php) the automatic
+                    Emergency Mode starts at once without a query, closes a minute in < 5 ms and is stored by the
+                    scheduled event (PNCP_Defer::flush())
   t_cli.php         wp scrapelock … μέσα από το πραγματικό wp (χρειάζεται WP_CLI, αλλιώς SKIP)
   t_bunny_rules.php Edge Rules στο Bunny μέσα στα όριά του (το πολύ 5 μοτίβα ανά συνθήκη) με ψεύτικο API που δίνει
                     HTTP 400 όπως το πραγματικό: χωρισμός, κλείδωμα/Remove, rollback, Monitor only, sync, προεπισκόπηση,

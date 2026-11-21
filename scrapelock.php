@@ -46,6 +46,8 @@ if ( is_admin() ) {
 	PNCP_Rules_State::init(); // 3.12.3: the notice when the server rules on the server are out of date.
 }
 
+// 3.12.9: queues in the object cache or APCu, written by a scheduled event.
+PNCP_Defer::init();
 // 3.12.6: a verification file (/builtwith.txt, /google….html…) is answered before every check of the plugin.
 PNCP_Verify_Files::maybe_serve();
 PNCP_Verify_Files::init();
@@ -219,7 +221,7 @@ function pncp_deactivate_site() {
 	// wp_unschedule_hook() removes every event of a hook, whatever its arguments: some carry some (the missing
 	// IP lists, the image to clean up, the numbers in the surge email), which wp_clear_scheduled_hook() would
 	// only remove when given the same ones.
-	foreach ( array( PNCP_Ip::CRON, PNCP_Log::CRON, PNCP_Log::CRON . '_more', PNCP_Integrity::OFFICIAL, PNCP_Integrity::RESUME, PNCP_Surge::MAIL, PNCP_Surge::MAIL_ALERT, PNCP_Watermark::CRON_UNMARK, 'pncp_background_purge', 'pncp_upgrade_files', PNCP_Crowdsec::CRON, PNCP_Bunny::CRON, 'pncp_attack_report_weekly', PNCP_Traffic::CRON ) as $pncp_hook ) {
+	foreach ( array( PNCP_Ip::CRON, PNCP_Log::CRON, PNCP_Log::CRON . '_more', PNCP_Integrity::OFFICIAL, PNCP_Integrity::RESUME, PNCP_Surge::MAIL, PNCP_Surge::MAIL_ALERT, PNCP_Defer::CRON, PNCP_Watermark::CRON_UNMARK, 'pncp_background_purge', 'pncp_upgrade_files', PNCP_Crowdsec::CRON, PNCP_Bunny::CRON, 'pncp_attack_report_weekly', PNCP_Traffic::CRON ) as $pncp_hook ) {
 		wp_unschedule_hook( $pncp_hook );
 	}
 	// The blocks ScrapeLock made at the CDN go away with it (the bans themselves end with the plugin).

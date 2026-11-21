@@ -1781,6 +1781,10 @@ final class PNCP_Options {
 	 */
 	public static function emergency_until() {
 		$until = (int) get_option( self::EMERGENCY_OPTION, 0 );
+		if ( $until <= time() && '' !== PNCP_Defer::store() ) {
+			// 3.12.9: an automatic start decided in a visitor's request, until the scheduled event stores it (PNCP_Surge).
+			$until = max( $until, (int) PNCP_Defer::get( PNCP_Defer::EMERGENCY ) );
+		}
 		return $until > time() ? $until : 0;
 	}
 
@@ -1802,6 +1806,7 @@ final class PNCP_Options {
 		$hours  = max( 0, min( 72, (int) $hours ) );
 		$before = self::get();
 		update_option( self::EMERGENCY_OPTION, $hours ? time() + $hours * HOUR_IN_SECONDS : 0, true );
+		PNCP_Defer::delete( PNCP_Defer::EMERGENCY ); // 3.12.9: started or stopped for good: the stand-in goes.
 		self::flush();
 		// 3.4: the pre-cache check applies Emergency Mode too (its end time and limits are in its configuration).
 		PNCP_Precheck::refresh();
