@@ -349,6 +349,19 @@ t( 'Site Health: μετά από 24 ώρες good ξανά', 'good' === PNCP_Bre
 PNCP_Breaker::tidy();
 t( 'tidy(): η κατάσταση που έληξε πριν από > 1 ημέρα σβήνει (ο έλεγχος ξανά ένα stat χωρίς αρχείο)', ! is_file( $tmp . '/breaker/precheck_files.json' ) );
 
+/* ---------- DNS κάτω από τον breaker ---------- */
+PNCP_Breaker::trip( 'dns', 1500 );
+remove_all_filters( 'pncp_forward_dns' ); // The test harness answers forward lookups itself.
+$m       = new ReflectionMethod( 'PNCP_Bots', 'reverse_dns' );
+$m->setAccessible( true );
+$start   = hrtime( true );
+$rdns    = $m->invoke( null, '192.0.2.1' );
+$fm      = new ReflectionMethod( 'PNCP_Bots', 'forward_ips' );
+$fm->setAccessible( true );
+$forward = $fm->invoke( null, 'unknown.invalid' );
+t( 'DNS ανοιχτό: reverse_dns() = \'\' (χωρίς απόφαση), forward_ips() = null, χωρίς αναζήτηση', '' === $rdns && null === $forward && hrtime( true ) - $start < 5e6 );
+PNCP_Breaker::reset( 'dns' );
+
 /* ---------- Δικός του store (όπως η σύνδεση Redis των μετρητών) ---------- */
 $mem = array();
 PNCP_Breaker::use_store(
