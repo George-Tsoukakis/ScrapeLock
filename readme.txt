@@ -4,7 +4,7 @@ Tags: ai crawlers, anti-scraping, bot protection, rate limit, content protection
 Requires at least: 6.2
 Tested up to: 7.2
 Requires PHP: 7.4
-Stable tag: 3.12.7
+Stable tag: 3.12.8
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -88,7 +88,7 @@ Whatever a visitor sees has already reached their device, so nothing stops a det
 * Presets (Balanced, Strict, Maximum) with undo, settings export and import, and a block log with a 24-hour summary and automatic deletion.
 * **3.7:** visitors from AI assistants (ChatGPT, Perplexity, Claude, Gemini…) per assistant and page, counted on your server without personal data.
 * **Traffic (3.12):** every request, from the Bunny CDN logs, your web server's access log or WordPress itself: User-Agents by family, pages answering 404 or 5xx with the links that lead there, visitors, CSV and email alerts. Kept only in your database; off until you start it.
-* WP-CLI: `wp scrapelock status`, `block`, `unblock`, `blocked`, `emergency`, `log`, `check --ip=<ip>` (what ScrapeLock would answer, without side effects), `settings`, `lockdown status`, `reputation`, `crowdsec`, `ai-referrals`, in 3.8 `attacks`, `attack-report`, `login`, `harden`, `bunny` and `stealth`, in 3.12 `traffic`, in 3.12.6 `rules`, `cdn` and `verify-file`, and in 3.12.7 `cache`.
+* WP-CLI: `wp scrapelock status`, `block`, `unblock`, `blocked`, `emergency`, `log`, `check --ip=<ip>` (what ScrapeLock would answer, without side effects), `settings`, `lockdown status`, `reputation`, `crowdsec`, `ai-referrals`, in 3.8 `attacks`, `attack-report`, `login`, `harden`, `bunny` and `stealth`, in 3.12 `traffic`, in 3.12.6 `rules`, `cdn` and `verify-file`, in 3.12.7 `cache`, and in 3.12.8 `stealth check` and `stealth debug`.
 * Abilities API (WordPress 6.9+) for administrators: read the summary, block or unblock an IP and start Emergency Mode from an AI agent or MCP client. None of them unlocks Lockdown.
 
 = On the page and images =
@@ -407,6 +407,21 @@ No, on purpose: only an app code, a recovery code or the SCRAPELOCK_UNLOCK line 
 
 == Changelog ==
 
+= 3.12.8 =
+* Fix: with Stealth on Nginx, the pages kept the inner wp-content of WP Rocket's minified files (/assets/<alias>/cache/min/1/wp-content/themes/…) when Stealth had been tested before 3.12.6 or before WP Rocket was active. The pages were rewritten with the words of the last "Test again", while the rules shown and installed (and their "up to date" status) were made from the current map. ScrapeLock now tests a new map by itself and uses it as soon as the server serves its rules (the check address answers their fingerprint and the self-test passes), then empties the page caches. A new base folder still needs "Test again".
+* Fix: an address already made new by an earlier pass with fewer words gets the codes of the words it still carries, so every pass gives the same result.
+* New: `wp scrapelock stealth check [<url>]`: a page as a visitor gets it (through the caches), with the wp-content / wp-includes left, WP Rocket's minified addresses, the codes found, the cache headers, whether the Stealth rules are current and what to do next. `wp scrapelock stealth status` shows whether the address map is in use or waiting for its rules.
+* New: an opt-in Stealth debug log (`define( 'SCRAPELOCK_STEALTH_DEBUG', true );`, or 1 to 72 hours): one line per stage of a page with counts only, no visitor data, at most 256 KB, ends by itself; `wp scrapelock stealth debug [--clear]`.
+* New: `wp scrapelock cdn purge` first empties the page caches of the active cache plugins (WP Rocket, LiteSpeed Cache, W3 Total Cache, WP Super Cache, WP Fastest Cache, Nginx Helper, Cache Enabler, SiteGround Optimizer) and says which, then the fastcgi cache, then the CDN (`--no-plugin-cache` to skip). `--minify` (with `--all`) also empties WP Rocket's and Autoptimize's minified CSS / JS.
+* New: `wp scrapelock cache status` says whether SCRAPELOCK_FASTCGI_CACHE_PATH is defined and prints the ready-made line `wp config set SCRAPELOCK_FASTCGI_CACHE_PATH '<dir>' --type=constant --anchor="require_once ABSPATH . 'wp-settings.php';" --placement=before` (WP-CLI's default anchor is missing in some wp-config.php files); `--save-constant` adds it after a trial on a copy.
+* Fix: Stealth serves the sibling folders a stylesheet reaches with "../" (a child theme's @import of its parent theme, a plugin's url() into another plugin), unless the site has a real folder at the base address. These are new rules: copy the Stealth rules again.
+* Fix: Stealth leaves links to uploads it does not serve (.zip, .docx, .csv…) at their real address (they answered 404), rewrites root-relative addresses after an escaped quote (url(&quot;…&quot;)), this site's addresses URL-encoded in share links, and WooCommerce's cart fragments (wc-ajax) for guests. A plugin or theme folder with a space or another character the rules cannot carry gets no address of its own (nginx -t failed, Apache answered 500 until the self-test).
+* Fix: where ScrapeLock writes the Stealth rules into .htaccess, an update that changes the rules writes them again (they stayed "out of date").
+* Fix: `wp scrapelock cache purge <path>` and `cdn purge <path>` with WordPress in a folder of the host use the home address (/about/ was purged at the root); verification files and /.well-known/ stay at the root.
+* Fix: `wp scrapelock rules install` never says "installed" without reloading the server (systemctl as the fallback, otherwise it stops and puts every file back), and keeps the owner and group of the file it replaces. The Stealth rules say in a comment why each word's rule is there twice.
+* Fix: uninstall also removes the counts of the last fastcgi cache purge; the heading of `wp scrapelock selfcheck --log` is translated.
+* Greek translation of the new texts.
+
 = 3.12.7 =
 * New: ScrapeLock also empties this site's pages in the Nginx fastcgi cache wherever it empties the page caches (settings saved, Stealth turned on or off or its addresses changed, upgrades), when it knows the folder: the constant `SCRAPELOCK_FASTCGI_CACHE_PATH` in wp-config.php, or Nginx Helper's folder. Nginx Helper's own purge does nothing when its method or folder is not the server's. Only cache files whose key names this site's host are deleted; links are never followed and system, home and WordPress folders are refused.
 * New: `wp scrapelock cache status | purge` (finds the cache folder in the Nginx configuration with nginx -T or `--nginx-conf`, shows this site's cached pages, purges all of them or some addresses, `--dry-run`, and prints the wp-config.php line to add). `wp scrapelock cdn purge --all` now empties the server cache first, so the CDN does not fetch a stale page again (`--no-server-cache` to skip it; `--server-cache` for addresses).
@@ -606,6 +621,9 @@ No, on purpose: only an app code, a recovery code or the SCRAPELOCK_UNLOCK line 
 The changes of 3.5.0 and earlier versions are in changelog.txt in the plugin folder.
 
 == Upgrade Notice ==
+
+= 3.12.8 =
+After updating, copy the Stealth rules again (Server rules → Stealth, nginx -t, reload) or run `wp scrapelock rules install --stealth=<file>`, then `wp scrapelock stealth test` once, then `wp scrapelock cdn purge --all --minify --yes`. Until then the notice stays and pages keep their addresses. Server rules unchanged; settings kept.
 
 = 3.12.7 =
 If your server has an Nginx fastcgi cache, run `wp scrapelock cache status` on the server and add the line it prints to wp-config.php (or set Nginx Helper's folder), then `wp scrapelock cache purge --all`: a page stored before is otherwise served as it was. The server rules and the Stealth rules are unchanged. Settings are kept.
