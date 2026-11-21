@@ -2285,6 +2285,7 @@ final class PNCP_Bots {
 			}
 			$step = max( 1, $step );
 		}
+		// breaker: surge
 		$count = self::hit( '', 'surge', 'site', $step );
 		if ( $step === $count ) {
 			// The first count of this minute (3.4.3: the first sample): it closes the previous minute.

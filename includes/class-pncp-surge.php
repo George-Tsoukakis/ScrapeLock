@@ -425,6 +425,7 @@ final class PNCP_Surge {
 				return;
 			}
 		}
+		// breaker: surge
 		update_option( self::STATE, $state, false );
 	}
 
