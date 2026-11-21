@@ -161,6 +161,11 @@ final class PNCP_Stealth {
 		add_action( 'parse_request', array( __CLASS__, 'old_addresses' ), 1 );
 		add_action( 'init', array( __CLASS__, 'blocked_scripts' ), 1 );
 		add_action( 'template_redirect', array( __CLASS__, 'start_buffer' ), -9999 );
+		// 3.12.6: the final HTML of the optimization plugins, before they store it in their cache (WP Rocket's own
+		// buffer is inside this one, but another order or plugin must not bring their addresses back).
+		foreach ( array( 'rocket_buffer', 'autoptimize_html_after_minify', 'litespeed_buffer_after', 'w3tc_process_content' ) as $hook ) {
+			add_filter( $hook, array( __CLASS__, 'optimized_html' ), PHP_INT_MAX );
+		}
 		add_filter( 'rest_pre_echo_response', array( __CLASS__, 'rest_response' ), 99, 3 );
 		add_filter( 'robots_txt', array( __CLASS__, 'robots_txt' ), 9999 );
 		add_filter( 'body_class', array( __CLASS__, 'body_class' ), 99 );
@@ -455,7 +460,7 @@ final class PNCP_Stealth {
 		);
 
 		$words = array();
-		foreach ( array_unique( array_merge( self::$fixed_words, $slugs ) ) as $word ) {
+		foreach ( array_unique( array_merge( self::$fixed_words, $slugs, self::cache_words() ) ) as $word ) {
 			$words[ 'q' . substr( wp_hash( 'pncp-stealth-word|' . $word ), 0, 6 ) ] = $word;
 		}
 
@@ -475,6 +480,84 @@ final class PNCP_Stealth {
 			'map'   => $map,
 			'words' => $words,
 			'ends'  => $ends,
+		);
+	}
+
+	/**
+	 * 3.12.6: the optimization plugins whose files carry a second WordPress address inside their own address. WP
+	 * Rocket's minified copies keep the path of the original file (wp-content/cache/min/1/wp-content/themes/…,
+	 * cache/busting/1/wp-includes/…, cache/background-css/1/<host>/wp-content/…); Autoptimize (cache/autoptimize/),
+	 * LiteSpeed Cache (litespeed/css|js/) and W3 Total Cache (cache/minify/) write files with neutral names in
+	 * wp-content, which the general wp-content address already serves. Active plugin, its constant, or (WP Rocket)
+	 * its cache folders. Filter `pncp_stealth_optimizers`.
+	 *
+	 * @return string[] wp-rocket, autoptimize, litespeed, w3tc.
+	 */
+	public static function optimizers() {
+		$active = (array) get_option( 'active_plugins', array() );
+		$known  = array(
+			'wp-rocket'   => array( 'wp-rocket/wp-rocket.php', 'WP_ROCKET_VERSION' ),
+			'autoptimize' => array( 'autoptimize/autoptimize.php', 'AUTOPTIMIZE_PLUGIN_VERSION' ),
+			'litespeed'   => array( 'litespeed-cache/litespeed-cache.php', 'LSCWP_V' ),
+			'w3tc'        => array( 'w3-total-cache/w3-total-cache.php', 'W3TC_VERSION' ),
+		);
+		$out    = array();
+		foreach ( $known as $name => $how ) {
+			if ( in_array( $how[0], $active, true ) || defined( $how[1] ) ) {
+				$out[] = $name;
+			}
+		}
+		if ( ! in_array( 'wp-rocket', $out, true ) ) {
+			foreach ( array( 'min', 'busting', 'background-css' ) as $folder ) {
+				if ( is_dir( WP_CONTENT_DIR . '/cache/' . $folder ) ) {
+					$out[] = 'wp-rocket';
+					break;
+				}
+			}
+		}
+		/**
+		 * 3.12.6: the optimization plugins Stealth adapts its addresses to.
+		 *
+		 * @param string[] $out wp-rocket, autoptimize, litespeed, w3tc.
+		 */
+		return array_values( array_unique( array_map( 'strval', (array) apply_filters( 'pncp_stealth_optimizers', $out ) ) ) );
+	}
+
+	/**
+	 * 3.12.6: the words of the inner addresses of the optimization plugins' files: the last folder of the content
+	 * and core addresses (wp-content, wp-includes) and LiteSpeed Cache's folder. Like the other words they get a
+	 * code in the new addresses that the server rules turn back, so every file such a plugin writes later is
+	 * served by the same few rules (no list of files). Nothing without an optimization plugin: the rules of other
+	 * sites stay as they were.
+	 *
+	 * @return string[]
+	 */
+	public static function cache_words() {
+		$optimizers = self::optimizers();
+		if ( ! $optimizers ) {
+			return array();
+		}
+		$words = array();
+		foreach ( array( content_url(), includes_url() ) as $url ) {
+			$last = basename( (string) self::same_host_path( $url ) );
+			if ( false !== strpos( $last, 'wp-' ) ) {
+				$words[] = $last;
+			}
+		}
+		$words[] = 'wp-content'; // An optimization plugin's copy of a file of a site that moved its content folder.
+		$words[] = 'wp-includes';
+		if ( in_array( 'litespeed', $optimizers, true ) ) {
+			$words[] = 'litespeed';
+		}
+		return array_values(
+			array_unique(
+				array_filter(
+					$words,
+					function ( $w ) {
+						return (bool) preg_match( '/^[a-z0-9_.-]{4,}$/i', $w );
+					}
+				)
+			)
 		);
 	}
 
@@ -871,6 +954,7 @@ final class PNCP_Stealth {
 		self::save_state( $state );
 		if ( $was !== $state['sig'] . '|' . $state['rest'] . '|' . $state['sitemap'] ) {
 			self::reset_rewrite_rules();
+			self::purge_page_cache();
 		}
 		self::note( 'stealth_on' );
 		return true;
@@ -896,6 +980,7 @@ final class PNCP_Stealth {
 		self::save_state( $state );
 		if ( $was ) {
 			self::reset_rewrite_rules();
+			self::purge_page_cache();
 		}
 		self::note( 'auto' === $why ? 'stealth_auto_off' : 'stealth_off' );
 		return $removed ? true : new WP_Error( 'pncp_not_writable', __( 'The .htaccess file cannot be written: remove the ScrapeLock Stealth block yourself.', 'scrapelock' ) );
@@ -907,6 +992,17 @@ final class PNCP_Stealth {
 	 */
 	private static function reset_rewrite_rules() {
 		delete_option( 'rewrite_rules' );
+	}
+
+	/**
+	 * 3.12.6: the addresses of the pages changed (Stealth on, off, another map): the page cache plugins' stored
+	 * pages (WP Rocket, LiteSpeed Cache, W3 Total Cache and the others pncp_purge_page_cache() knows) are emptied,
+	 * so no stored page keeps addresses the server rules no longer serve. A CDN's cache is not: purge it there.
+	 */
+	private static function purge_page_cache() {
+		if ( function_exists( 'pncp_purge_page_cache' ) ) {
+			pncp_purge_page_cache();
+		}
 	}
 
 	/**
@@ -1091,7 +1187,9 @@ final class PNCP_Stealth {
 			$file = 'uploads' === $entry['kind'] ? '' : self::sample_file( $entry['dir'] );
 			if ( 'uploads' === $entry['kind'] ) {
 				// A file of our own with a word in its name: tests the uploads address and the word codes at once.
-				$name = 'pncp-wordpress-check-' . wp_generate_password( 8, false ) . '.css';
+				// 3.12.6: with the inner words of the optimization plugins too (wp-content, wp-includes).
+				$inner = array_intersect( self::cache_words(), array_values( (array) $config['words'] ) );
+				$name  = 'pncp-wordpress-' . ( $inner ? implode( '-', $inner ) . '-' : '' ) . 'check-' . wp_generate_password( 8, false ) . '.css';
 				$body = '/* ' . wp_generate_password( 32, false ) . ' */';
 				if ( wp_is_writable( $entry['dir'] ) && false !== file_put_contents( $entry['dir'] . '/' . $name, $body ) ) { // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_file_put_contents -- A temporary test file, deleted below.
 					$temp = $entry['dir'] . '/' . $name;
@@ -1363,6 +1461,9 @@ final class PNCP_Stealth {
 			$state['pending'] = $sig;
 		}
 		self::save_state( $state );
+		if ( $sig === $state['sig'] ) {
+			self::purge_page_cache(); // 3.12.6: the new map is in use.
+		}
 	}
 
 	/**
@@ -1606,6 +1707,21 @@ final class PNCP_Stealth {
 			return self::rewrite( $html );
 		}
 		return $html;
+	}
+
+	/**
+	 * 3.12.6: the HTML an optimization plugin gives its filter last (WP Rocket's rocket_buffer, Autoptimize,
+	 * LiteSpeed Cache, W3 Total Cache), rewritten like the page: their minified and combined files, preload links
+	 * and lazy-load attributes get the new addresses before the page is stored in their cache.
+	 *
+	 * @param mixed $html Page.
+	 * @return mixed
+	 */
+	public static function optimized_html( $html ) {
+		if ( ! is_string( $html ) || '' === $html || ! self::active() || ! self::rewrites_request() ) {
+			return $html;
+		}
+		return self::rewrite( $html );
 	}
 
 	/**
@@ -2721,6 +2837,7 @@ final class PNCP_Stealth {
 					<li><?php esc_html_e( 'Signed-in users get WordPress\'s cookies (wordpress_logged_in_…) and the real addresses; shoppers get WooCommerce\'s cart cookies.', 'scrapelock' ); ?></li>
 					<li><?php esc_html_e( 'Class names the styles depend on: the blocks (wp-block-…), WooCommerce (woocommerce, product, cart) and those of the theme and the page builders, and the data-wp-… attributes and @wordpress/ modules of interactive blocks.', 'scrapelock' ); ?></li>
 					<li><?php esc_html_e( 'Markup and script names a plugin prints itself (e.g. wc_add_to_cart_params), and addresses a script builds while the page runs.', 'scrapelock' ); ?></li>
+					<li><?php esc_html_e( 'What optimization plugins print for their own scripts: WP Rocket\'s data-rocket-… attributes, rocket-lazyload and rocketlazyloadscript (its lazy loading and delayed scripts need them), and the addresses inside the CSS and JavaScript files they minify or combine (a file is sent as it is stored). The addresses of those files themselves are neutral (WP Rocket, Autoptimize, LiteSpeed Cache, W3 Total Cache).', 'scrapelock' ); ?></li>
 					<li><?php esc_html_e( 'The real addresses of files still answer (/wp-content/…, /wp-includes/…, xmlrpc.php): the administration, feeds and emails need them, so a scanner that guesses them still finds WordPress. To refuse them, lock “XML-RPC” on the Vulnerable points tab, and block /wp-includes/ and /wp-content/ requests without a same-site Referer at your CDN or server if you need to (test it first: some feed readers and email clients load images that way). With a REST prefix of your own, /wp-json/ and ?rest_route= answer only requests that sign in.', 'scrapelock' ); ?></li>
 					<li><?php esc_html_e( 'Your hosting, DNS and IP addresses, and the TLS certificate. WHOIS shows who registered the domain, not what the site is built with: hide those details with the privacy option of your domain registrar.', 'scrapelock' ); ?></li>
 				</ul>
