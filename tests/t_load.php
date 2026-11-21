@@ -33,6 +33,17 @@ function redis_sync() {
 		shell_exec( 'redis-cli flushall >/dev/null 2>&1' );
 	}
 }
+/**
+ * 3.12.9: with Redis the server queues log rows and bans in the cache (PNCP_Defer) and a scheduled event writes them:
+ * written now, in a process that has the drop-in (this one loaded WordPress without it), before the database is read.
+ */
+function defer_flush() {
+	if ( ! file_exists( WP_CONTENT_DIR . '/object-cache.php' ) ) {
+		return;
+	}
+	$code = "define( 'DOING_CRON', true ); require " . var_export( ABSPATH . 'wp-load.php', true ) . "; add_filter( 'pncp_defer_ready', '__return_true' ); PNCP_Defer::flush();";
+	shell_exec( 'php -r ' . escapeshellarg( $code ) . ' >/dev/null 2>&1' );
+}
 function burst( $path, $n, $c, $ip, $ua = null ) {
 	global $base;
 	$cmd = 'php ' . escapeshellarg( __DIR__ . '/lib/burst.php' ) . ' ' . escapeshellarg( $base . $path ) . ' ' . (int) $n . ' ' . (int) $c . ' ' . escapeshellarg( $ip ) . ( $ua ? ' ' . escapeshellarg( $ua ) : '' );
@@ -82,6 +93,7 @@ function scenario( $label, $redis ) {
 	/* Πλημμύρα από bot: 3000 αιτήματα, 50 ταυτόχρονα. */
 	$ip = $redis ? '198.51.100.71' : '198.51.100.70';
 	$r  = burst( $page, 3000, 50, $ip, 'Mozilla/5.0 (compatible; GPTBot/1.2)' );
+	defer_flush();
 	$rows = (int) $wpdb->get_var( $wpdb->prepare( "SELECT COUNT(*) FROM {$wpdb->prefix}pncp_log WHERE ip = %s", $ip ) );
 	$hits = (int) $wpdb->get_var( $wpdb->prepare( "SELECT SUM(hits) FROM {$wpdb->prefix}pncp_log WHERE ip = %s", $ip ) );
 	t( "$label: πλημμύρα 3000 αιτημάτων bot → όλα 403", 3000 === code_count( $r, 403 ), sprintf( '%.0f/s p95 %sms', $r['rps'], $r['p95'] ) );
@@ -91,6 +103,7 @@ function scenario( $label, $redis ) {
 	settings( array( 'ban_strikes' => 3 ) );
 	$trap = wp_parse_url( home_url( PNCP_Bots::trap_path() ), PHP_URL_PATH );
 	burst( $trap, 1500, 50, 'random', 'python-requests/2.32' );
+	defer_flush();
 	wp_cache_flush(); PNCP_Log::reset_cache();
 	$bans = PNCP_Log::count_bans();
 	t( "$label: 1500 ταυτόχρονοι αποκλεισμοί → κανένας δεν χάνεται", $bans >= 1500, "$bans αποκλεισμοί" );
