@@ -14,6 +14,7 @@
  * K. What answered instead: the fingerprint (current / stale), WordPress's 404, Nginx's own 404, the CDN's cache,
  *    the CDN only (the server not reachable), nothing at all, something else.
  * X. The texts: one line + "More", in the Server rules tab, Site Health and wp scrapelock status / selfcheck.
+ * A. Apache: the header of the site's own answers, the server asked first; the .htaccess is never read.
  * R. Real Nginx (SKIP without nginx on PATH): an aaPanel-like server { } with location ~ \.well-known: the
  *    exact location of part 2 wins at server level and in the extension include at the top; nested in
  *    location / { } it still wins, but nginx -t fails there with a private feed (a named location); without
@@ -60,6 +61,7 @@ register_shutdown_function(
 			}
 		}
 		delete_transient( PNCP_Rules_Status::NGINX );
+		delete_transient( PNCP_Rules_Status::APACHE );
 		delete_transient( PNCP_Self_Check::ROUTE );
 	}
 );
@@ -433,6 +435,46 @@ if ( '' === $wp_cli ) {
 	$row = $row ? reset( $row ) : array();
 	t( 'X wp scrapelock status: the row "Nginx server rules" with the line', isset( $row['value'] ) && 0 === strpos( $row['value'], 'Not active: Nginx answered the check address itself' ), substr( $out, 0, 300 ) );
 }
+
+/* ---------- A. Apache ---------- */
+
+$afp       = PNCP_Rules::apache_fingerprint();
+$apache_st = static function ( $fn ) {
+	global $log, $route;
+	$log   = array();
+	$route = $fn;
+	$st    = PNCP_Rules_Status::apache( true );
+	$route = null;
+	return array( $st, $log );
+};
+list( $st, $l ) = $apache_st(
+	static function ( $where, $url, $args, $id ) use ( $own_page, $afp ) {
+		return '127.0.0.1' === $where ? $own_page( $id, $afp ) : null;
+	}
+);
+t( 'A the header of this WordPress\'s answer at the server: "current", by way of the server, one request', 'current' === $st['state'] && 'origin' === $st['via'] && 1 === count( $l ) && '/' === $l[0]['path'], wp_json_encode( $l ) );
+list( $st, $l ) = $apache_st(
+	static function ( $where, $url, $args, $id ) use ( $own_page ) {
+		return 'public' === $where ? $own_page( $id, 'abcdefabcdef' ) : null;
+	}
+);
+t( 'A the server unreachable: the public answer, "stale"', 'stale' === $st['state'] && 'public' === $st['via'] && 'public' === end( $l )['where'] );
+list( $st ) = $apache_st(
+	static function ( $where, $url, $args, $id ) use ( $own_page ) {
+		return '127.0.0.1' === $where ? $own_page( $id ) : null;
+	}
+);
+t( 'A no header: "missing" (no_header)', 'missing' === $st['state'] && 'no_header' === $st['kind'] );
+list( $st ) = $apache_st(
+	static function ( $where, $url, $args, $id ) use ( $own_page, $afp ) {
+		return 'public' === $where ? $own_page( 'deadbeef', $afp ) : null; // A cached copy.
+	}
+);
+t( 'A a cached copy only (another request\'s answer): "error", never "current"', 'error' === $st['state'] );
+t( 'A texts', 'Installed and up to date with the current settings.' === PNCP_Rules_Status::apache_text( array( 'state' => 'current', 'kind' => 'header', 'via' => 'origin', 'ip' => '127.0.0.1' ) )['line'] && false !== strpos( PNCP_Rules_Status::apache_text( array( 'state' => 'missing', 'kind' => 'no_header', 'via' => 'origin', 'ip' => '' ) )['line'], 'mod_headers' ) );
+t( 'A the Apache rules set the header with mod_headers, outside the RewriteRules (their order does not matter)', (bool) preg_match( '/<\/IfModule>\s*#[^\n]*\n<IfModule mod_headers\.c>\nHeader always set X-ScrapeLock-Rules "' . $afp . '"/', PNCP_Rules::apache() ) );
+$src = (string) file_get_contents( PNCP_DIR . 'includes/class-pncp-rules-status.php' );
+t( 'A the status never reads the .htaccess', false === strpos( $src, 'get_home_path' ) && false === strpos( $src, "'.htaccess'" ) && false === strpos( $src, 'file_get_contents' ) );
 
 /* ---------- R. Real Nginx ---------- */
 

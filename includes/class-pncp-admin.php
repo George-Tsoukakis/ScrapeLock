@@ -2684,6 +2684,7 @@ final class PNCP_Admin {
 
 		<section class="pncp-card pncp-rules-card" aria-labelledby="pncp-rules-apache">
 		<h2 id="pncp-rules-apache"><?php esc_html_e( 'Apache (.htaccess, above # BEGIN WordPress)', 'scrapelock' ); ?></h2>
+		<?php self::render_apache_status(); ?>
 		<?php self::code_block( 'pncp-apache', PNCP_Rules::apache(), 14 ); ?>
 		</section>
 
@@ -2754,6 +2755,20 @@ final class PNCP_Admin {
 			PNCP_Rules_State::from_status(); // 3.12.3: the site uses the Nginx rules; their fingerprint is noted.
 		}
 		self::render_rules_status( PNCP_Rules_Status::nginx_text( $status ), 'pncp_nginx_check', 'pncp-nginx-status' );
+	}
+
+	/**
+	 * 3.12.4: whether the Apache rules are installed (their header, the server asked directly first). Only where
+	 * Apache or LiteSpeed serves the site, or Apache rules were seen.
+	 */
+	private static function render_apache_status() {
+		global $is_apache;
+		if ( empty( $is_apache ) && 'apache' !== PNCP_Rules_State::state()['format'] ) {
+			return;
+		}
+		// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Only asks the site again; changes nothing.
+		$status = PNCP_Rules_Status::apache( isset( $_GET['pncp_apache_check'] ) );
+		self::render_rules_status( PNCP_Rules_Status::apache_text( $status ), 'pncp_apache_check', 'pncp-apache-status' );
 	}
 
 	/**

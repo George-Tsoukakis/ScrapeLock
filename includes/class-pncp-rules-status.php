@@ -35,6 +35,11 @@ final class PNCP_Rules_Status {
 	const NGINX = 'pncp_nginx_status';
 
 	/**
+	 * Transient of the Apache check (kept 5 minutes), the same shape.
+	 */
+	const APACHE = 'pncp_apache_status';
+
+	/**
 	 * The shape of the kept answers (3.12.3 kept want, body and error only: asked again).
 	 */
 	const VERSION = 2;
@@ -549,4 +554,73 @@ final class PNCP_Rules_Status {
 		return is_array( $status ) && 'missing' === $status['state'] && in_array( $status['kind'], array( 'wp', 'nginx', 'cdn', 'cached', 'other' ), true ) && PNCP_Rules_State::in_use();
 	}
 
+	/**
+	 * The Apache status for people.
+	 *
+	 * @param array{state:string, kind:string, via:string, ip:string} $status What apache() returned.
+	 * @return array{line:string, more:string, class:string}
+	 */
+	public static function apache_text( $status ) {
+		if ( 'current' === $status['state'] ) {
+			return array(
+				'line'  => __( 'Installed and up to date with the current settings.', 'scrapelock' ),
+				'more'  => self::via_text( $status ),
+				'class' => 'notice-success',
+			);
+		}
+		if ( 'stale' === $status['state'] ) {
+			return array(
+				'line'  => __( 'Installed, but out of date: the settings have changed since. Copy the rules again into the .htaccess.', 'scrapelock' ),
+				'more'  => self::via_text( $status ),
+				'class' => 'notice-warning',
+			);
+		}
+		if ( 'error' === $status['state'] ) {
+			return array(
+				'line'  => __( 'Could not check: WordPress did not answer the site\'s own request.', 'scrapelock' ),
+				'more'  => __( 'To let the check ask the server directly, add the server\'s address to SCRAPELOCK_SERVER_IPS in wp-config.php.', 'scrapelock' ),
+				'class' => 'notice-info',
+			);
+		}
+		return array(
+			'line'  => __( 'Not installed in this site\'s .htaccess (or mod_headers is off).', 'scrapelock' ),
+			'more'  => __( 'The rules send their fingerprint in a header (mod_headers) to the site\'s own requests; the site asks the server directly first. Put them above # BEGIN WordPress.', 'scrapelock' ),
+			'class' => 'notice-info',
+		);
+	}
+
+	/**
+	 * Whether the Apache rules are installed and match the current settings: their header (mod_headers), in the
+	 * answer of this WordPress to its own request, the server directly first. Apache has no check address: the
+	 * header is set on every answer, whatever the order of the RewriteRules, so the .htaccess is never read.
+	 *
+	 * @param bool $fresh Ask again now.
+	 * @return array{state:string, parts:string[], error:string, via:string, ip:string, kind:string, code:int}
+	 */
+	public static function apache( $fresh = false ) {
+		$want = PNCP_Rules::apache_fingerprint();
+		$got  = $fresh ? false : self::kept( self::APACHE, $want );
+		if ( ! is_array( $got ) ) {
+			$probe = self::header_probe();
+			$got   = array(
+				'want'  => $want,
+				'v'     => self::VERSION,
+				'body'  => 'apache' === PNCP_Rules_State::format_of( $probe['value'] ) ? $probe['value'] : '',
+				'error' => '',
+				'via'   => $probe['via'],
+				'ip'    => $probe['ip'],
+				'kind'  => $probe['reached'] ? ( '' === $probe['value'] ? 'no_header' : 'header' ) : 'error',
+				'code'  => 0,
+			);
+			set_transient( self::APACHE, $got, 5 * MINUTE_IN_SECONDS );
+		}
+		$out  = self::base( $got );
+		$body = trim( (string) ( $got['body'] ?? '' ) );
+		if ( '' !== $body ) {
+			$out['state'] = $body === $want ? 'current' : 'stale';
+		} elseif ( 'error' === $out['kind'] ) {
+			$out['state'] = 'error';
+		}
+		return $out;
+	}
 }
