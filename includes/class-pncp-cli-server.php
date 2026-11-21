@@ -178,15 +178,13 @@ final class PNCP_Cli_Server {
 			'current'   => PNCP_Rules_State::current( $server ),
 			'message'   => trim( $text['line'] . ' ' . $text['more'] ),
 		);
-		// 3.12.6: the Stealth rules' own status, where that class exists (PNCP_Stealth_Status).
-		$stealth_status = array( 'PNCP_Stealth_Status', 'status' );
-		if ( class_exists( $stealth_status[0] ) && is_callable( $stealth_status ) && ! empty( PNCP_Stealth::settings()['stealth_enabled'] ) ) {
-			$stealth = (array) call_user_func( $stealth_status, true );
-			foreach ( array( 'state', 'installed', 'want' ) as $key ) {
-				if ( isset( $stealth[ $key ] ) && is_scalar( $stealth[ $key ] ) ) {
-					$out[ 'stealth_' . ( 'want' === $key ? 'current' : $key ) ] = (string) $stealth[ $key ];
-				}
-			}
+		// 3.12.6: the Stealth rules' own status (PNCP_Stealth_Status, a fresh check), while Stealth is turned on:
+		// state (current, stale, unmarked, missing, error), the installed and the current fingerprint.
+		if ( ! empty( PNCP_Stealth::settings()['stealth_enabled'] ) ) {
+			$stealth                  = PNCP_Stealth_Status::status( true );
+			$out['stealth_state']     = $stealth['state'];
+			$out['stealth_installed'] = $stealth['installed'];
+			$out['stealth_current']   = $stealth['want'];
 		}
 		/**
 		 * 3.12.6: the fields of "wp scrapelock rules status" (and of the status "rules install" prints at its end).
