@@ -36,7 +36,7 @@ final class PNCP_Rules {
 	/**
 	 * 3.12.3: the key of the Nginx map $pncp_block_<site> ("<the block checks>:<open path>:<self><forwarded>") that
 	 * blocks: a check says so, the path is not open, and the request is not the server's own ("0x" = not one of its
-	 * addresses; "21" = a loopback or private one that a proxy passed on).
+	 * addresses; "21" = a loopback or private one that a proxy passed on). evaluate() matches the same key.
 	 */
 	const BLOCK_REGEX = '^[01]*1[01]*:0:(0[01]|21)$';
 
@@ -479,6 +479,313 @@ final class PNCP_Rules {
 	}
 
 	/**
+	 * 3.12.3: how Nginx reads a quoted (or bare) argument of its configuration: \" \' and \\ lose the backslash,
+	 * \t \r \n become the characters, any other backslash stays (ngx_conf_read_token()).
+	 *
+	 * @param string $token The argument as written.
+	 * @return string
+	 */
+	public static function nginx_unquote( $token ) {
+		$token = (string) $token;
+		if ( strlen( $token ) >= 2 && ( '"' === $token[0] || "'" === $token[0] ) && substr( $token, -1 ) === $token[0] ) {
+			$token = substr( $token, 1, -1 );
+		}
+		return (string) preg_replace_callback(
+			'/\\\\(["\'\\\\trn])/',
+			static function ( $m ) {
+				$map = array(
+					't' => "\t",
+					'r' => "\r",
+					'n' => "\n",
+				);
+				return isset( $map[ $m[1] ] ) ? $map[ $m[1] ] : $m[1];
+			},
+			$token
+		);
+	}
+
+	/**
+	 * 3.12.3: the value of one of nginx_maps() for a request, as Nginx finds it: an exact string first, then the
+	 * regular expressions in their order (~* without regard to case), else the default 0.
+	 *
+	 * @param array{key:string, fields:string[], entries:array<int, array{0:string, 1:string}>} $map    The map.
+	 * @param array<string, string>                                                          $fields The request's fields.
+	 * @return array{value:string, entry:int} The value and the entry that matched (-1 = the default).
+	 */
+	public static function nginx_map_value( $map, $fields ) {
+		$parts = array();
+		foreach ( $map['fields'] as $field ) {
+			$parts[] = isset( $fields[ $field ] ) ? (string) $fields[ $field ] : '';
+		}
+		$key = implode( '|', $parts );
+		foreach ( $map['entries'] as $i => $entry ) {
+			$pattern = self::nginx_unquote( $entry[0] );
+			if ( '~' !== substr( $pattern, 0, 1 ) && $pattern === $key ) {
+				return array(
+					'value' => (string) $entry[1],
+					'entry' => (int) $i,
+				);
+			}
+		}
+		foreach ( $map['entries'] as $i => $entry ) {
+			$pattern = self::nginx_unquote( $entry[0] );
+			if ( '~' !== substr( $pattern, 0, 1 ) ) {
+				continue;
+			}
+			$ci    = '~*' === substr( $pattern, 0, 2 );
+			$regex = substr( $pattern, $ci ? 2 : 1 );
+			if ( self::pcre_match( $regex, $key, $ci ) ) {
+				return array(
+					'value' => (string) $entry[1],
+					'entry' => (int) $i,
+				);
+			}
+		}
+		return array(
+			'value' => '0',
+			'entry' => -1,
+		);
+	}
+
+	/**
+	 * A regular expression of the server rules (PCRE, as Nginx and Apache read it) against a text.
+	 *
+	 * @param string $regex The expression, without delimiters.
+	 * @param string $text  Text.
+	 * @param bool   $ci    Without regard to case.
+	 * @return bool
+	 */
+	private static function pcre_match( $regex, $text, $ci ) {
+		// A delimiter that no expression of the rules holds (preg_quote() escapes only "#").
+		$ok = @preg_match( "\x01" . $regex . "\x01" . ( $ci ? 'i' : '' ), (string) $text ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged -- An invalid expression is no match (Nginx would refuse it at nginx -t).
+		return 1 === $ok;
+	}
+
+	/**
+	 * 3.12.3: is an address one of the server's own for the server rules (self_addresses())? A loopback or private
+	 * one only when no proxy passed the request on (none of FORWARD_HEADERS).
+	 *
+	 * @param string                $ip      Address the web server sees ('' = unknown: not the server).
+	 * @param array<string, string> $headers Lowercase request headers.
+	 * @return string "1" (public address), "2" (loopback / private) or "0", as the Nginx geo.
+	 */
+	public static function self_value( $ip, $headers ) {
+		$ip = PNCP_Ip::normalize( (string) $ip );
+		if ( '' === $ip ) {
+			return '0';
+		}
+		$self = self::self_addresses();
+		if ( PNCP_Ip::in_any( $ip, $self['public'] ) ) {
+			return '1';
+		}
+		return PNCP_Ip::in_any( $ip, $self['local'] ) ? '2' : '0';
+	}
+
+	/**
+	 * 3.12.3: what ScrapeLock's own generated server rules (the current settings) do with a request, before PHP:
+	 * the rule that refuses it, or null when they let it through to the site. The same maps and the same block
+	 * expression as the Nginx rules (nginx_maps(), BLOCK_REGEX), then the locations of part 2 in Nginx's order (the
+	 * folders that are never public, then the first regular expression that matches). The Apache rules check the
+	 * same.
+	 *
+	 * @param array<string, mixed> $request ua, headers (name => value), https (bool), method, path, remote (the
+	 *                                      address the web server sees; '' = unknown, not the server).
+	 * @return array{rule:string, code:int}|null
+	 */
+	public static function evaluate( $request ) {
+		$headers = array();
+		foreach ( isset( $request['headers'] ) && is_array( $request['headers'] ) ? $request['headers'] : array() as $name => $value ) {
+			$headers[ strtolower( (string) $name ) ] = is_array( $value ) ? implode( ', ', array_map( 'strval', $value ) ) : (string) $value;
+		}
+		$ua   = isset( $request['ua'] ) ? (string) $request['ua'] : ( isset( $headers['user-agent'] ) ? $headers['user-agent'] : '' );
+		$path = isset( $request['path'] ) && '' !== (string) $request['path'] ? (string) $request['path'] : '/';
+		$path = (string) rawurldecode( (string) wp_parse_url( $path, PHP_URL_PATH ) ); // Nginx's $uri: decoded, no query.
+		$path = '' === $path ? '/' : $path;
+		$fields = array(
+			'ua'             => $ua,
+			'uri'            => $path,
+			'https'          => ! empty( $request['https'] ) ? 'on' : '',
+			'sec_fetch_mode' => isset( $headers['sec-fetch-mode'] ) ? $headers['sec-fetch-mode'] : '',
+			'sec_ch_ua'      => isset( $headers['sec-ch-ua'] ) ? $headers['sec-ch-ua'] : '',
+		);
+		$values = array();
+		$which  = array();
+		foreach ( self::nginx_maps() as $name => $map ) {
+			$got             = self::nginx_map_value( $map, $fields );
+			$values[ $name ] = $got['value'];
+			$which[ $name ]  = $got['entry'];
+		}
+		$forward = '';
+		foreach ( self::FORWARD_HEADERS as $header ) {
+			$forward .= isset( $headers[ strtolower( $header ) ] ) ? $headers[ strtolower( $header ) ] : '';
+		}
+		$self   = self::self_value( isset( $request['remote'] ) ? (string) $request['remote'] : '', $headers );
+		$checks = '';
+		$names  = array();
+		foreach ( self::nginx_block_vars() as $var ) {
+			$name    = substr( $var, strlen( '$pncp_' ), - ( strlen( self::nginx_id() ) + 1 ) );
+			$checks .= isset( $values[ $name ] ) ? $values[ $name ] : '0';
+			$names[] = $name;
+		}
+		$open = isset( $values['open_path'] ) ? $values['open_path'] : '0';
+		if ( $names && self::pcre_match( self::BLOCK_REGEX, $checks . ':' . $open . ':' . $self . ( '' === $forward ? '0' : '1' ), false ) ) {
+			foreach ( $names as $name ) {
+				if ( '1' === $values[ $name ] ) {
+					$maps = self::nginx_maps();
+					$rule = $name;
+					// The empty User-Agent has an entry of its own in the bot map.
+					if ( 'bad_bot' === $name && '""' === $maps['bad_bot']['entries'][ $which['bad_bot'] ][0] ) {
+						$rule = 'empty_ua';
+					}
+					return array(
+						'rule' => $rule,
+						'code' => 403,
+					);
+				}
+			}
+		}
+		// Part 2: the folders that are never public (location ^~, before any regular expression).
+		foreach ( self::private_prefixes() as $prefix ) {
+			if ( 0 === strpos( $path, $prefix ) ) {
+				return array(
+					'rule' => 'private_folder',
+					'code' => 404,
+				);
+			}
+		}
+		// Then the first regular expression location that matches, in the order of part 2.
+		foreach ( self::regex_locations() as $location ) {
+			if ( ! self::pcre_match( $location['regex'], $path, true ) ) {
+				continue;
+			}
+			if ( 'hotlink' === $location['rule'] ) {
+				$referer = isset( $headers['referer'] ) ? $headers['referer'] : '';
+				if ( '' === $referer || self::referer_allowed( $referer ) ) {
+					return null;
+				}
+			}
+			return '' === $location['rule'] ? null : array(
+				'rule' => $location['rule'],
+				'code' => (int) $location['code'],
+			);
+		}
+		return null;
+	}
+
+	/**
+	 * 3.12.3: the folders that part 2 of the Nginx rules never serves (location ^~ … { deny all; return 404; }).
+	 *
+	 * @return string[] Path prefixes, with the trailing slash.
+	 */
+	private static function private_prefixes() {
+		$uploads = self::uploads_path();
+		$out     = array();
+		$backup  = (string) get_option( 'pncp_backup_dir' );
+		if ( '' !== $backup ) {
+			$out[] = $uploads . '/' . $backup . '/';
+		}
+		if ( '' !== (string) get_option( PNCP_Precheck::KEY, '' ) ) {
+			$out[] = $uploads . '/' . PNCP_Precheck::DIR . '/';
+		}
+		if ( is_dir( PNCP_Geo::dir() ) ) {
+			$out[] = $uploads . '/' . PNCP_Geo::DIR . '/';
+		}
+		return $out;
+	}
+
+	/**
+	 * 3.12.3: the regular expression locations of part 2, in their order: the rule each one is ('' = the request goes
+	 * on to WordPress, which decides) and the status of its refusal.
+	 *
+	 * @return array<int, array{regex:string, rule:string, code:int}>
+	 */
+	private static function regex_locations() {
+		$s   = PNCP_Options::get();
+		$out = array();
+		if ( $s['hide_versions'] || ! empty( $s['hide_fingerprint'] ) ) {
+			foreach ( self::version_regexes() as $regex ) {
+				$out[] = array(
+					'regex' => $regex,
+					'rule'  => 'version_file',
+					'code'  => 404,
+				);
+			}
+		}
+		foreach ( array( self::probe_regex(), self::probe_regex( 'server_missing' ) ) as $regex ) {
+			if ( '' !== $regex ) {
+				$out[] = array(
+					'regex' => $regex,
+					'rule'  => '',
+					'code'  => 0,
+				);
+			}
+		}
+		if ( $s['block_upload_php'] ) {
+			$out[] = array(
+				'regex' => self::upload_php_regex(),
+				'rule'  => 'upload_php',
+				'code'  => 403,
+			);
+		}
+		$out[] = array(
+			'regex' => self::hotlink_regex(),
+			'rule'  => 'hotlink',
+			'code'  => 403,
+		);
+		return $out;
+	}
+
+	/**
+	 * The path of the images of the hotlink rule.
+	 *
+	 * @return string
+	 */
+	private static function hotlink_regex() {
+		return '^' . preg_quote( self::uploads_path(), '#' ) . '/.*\.(jpe?g|png|webp|gif|avif)$';
+	}
+
+	/**
+	 * 3.12.3: is a Referer one the hotlink rule accepts (the site itself, or one of hotlink_allowed())?
+	 *
+	 * @param string $referer Referer.
+	 * @return bool
+	 */
+	private static function referer_allowed( $referer ) {
+		$rest = (string) preg_replace( '#^https?://#i', '', (string) $referer, 1, $count );
+		if ( 0 === $count ) {
+			return true; // "blocked": a Referer without a scheme (a proxy or firewall removed it).
+		}
+		if ( self::pcre_match( '^([^/]*\.)?' . self::nginx_referer( self::host() ) . '(:|/|$)', $rest, true ) ) {
+			return true;
+		}
+		foreach ( self::hotlink_allowed() as $domain ) {
+			if ( self::pcre_match( '^' . self::referer_host_regex( $domain ), $rest, true ) ) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	/**
+	 * 3.12.3: a rule of evaluate(), for people.
+	 *
+	 * @param string $rule Rule.
+	 * @return string
+	 */
+	public static function rule_label( $rule ) {
+		$labels = array(
+			'fake_browser'   => __( 'fake browser', 'scrapelock' ),
+			'bad_bot'        => __( 'bot list', 'scrapelock' ),
+			'empty_ua'       => __( 'empty User-Agent', 'scrapelock' ),
+			'private_folder' => __( 'folder that is never public', 'scrapelock' ),
+			'version_file'   => __( 'hide versions', 'scrapelock' ),
+			'upload_php'     => __( 'no PHP in the uploads folder', 'scrapelock' ),
+			'hotlink'        => __( 'image hotlinking', 'scrapelock' ),
+		);
+		return isset( $labels[ $rule ] ) ? $labels[ $rule ] : (string) $rule;
+	}
+
+	/**
 	 * Nginx rules: both parts together (for copying into a notes file).
 	 *
 	 * @return string
@@ -491,7 +798,7 @@ final class PNCP_Rules {
 	/**
 	 * Nginx, part 1: inside http { } (map for the bots, limit zone).
 	 *
-	 * 3.12.3: the maps come from nginx_maps(), and the server's own addresses
+	 * 3.12.3: the maps come from nginx_maps(), which evaluate() reads too, and the server's own addresses
 	 * (self_geo()) are exempt from every block and from the page limit.
 	 *
 	 * @return string
@@ -586,7 +893,8 @@ final class PNCP_Rules {
 	/**
 	 * 3.12.3: the maps of part 1 that decide on a request, in order: name (without the site suffix) => the Nginx
 	 * key, the request fields it is made of (joined by "|") and the entries (pattern as written in the
-	 * configuration, value), written by nginx_http().
+	 * configuration, value). nginx_http() writes them; evaluate() reads them with Nginx's own rules, so the
+	 * plugin's view of the rules cannot drift from what Nginx does.
 	 *
 	 * @return array<string, array{key:string, fields:string[], entries:array<int, array{0:string, 1:string}>}>
 	 */
@@ -756,7 +1064,7 @@ final class PNCP_Rules {
 		}
 		$lines[] = '# Hotlink: images load only from your site and from search engines / price comparison platforms.';
 		$lines[] = '# (If a location for images already exists, e.g. for expires, put the two lines inside it.)';
-		$lines[] = 'location ~* ' . self::nginx_arg( '^' . preg_quote( $uploads, '#' ) . '/.*\.(jpe?g|png|webp|gif|avif)$' ) . ' {';
+		$lines[] = 'location ~* ' . self::nginx_arg( self::hotlink_regex() ) . ' {';
 		// The domain as regex: as a plain name it would clash with server_names ("conflicting parameter" in nginx -t).
 		// Quoted: "google." becomes [a-z]{2,3}, and an unquoted { starts a block for Nginx (nginx -t fails).
 		$allowed = array();
@@ -987,7 +1295,7 @@ final class PNCP_Rules {
 		foreach ( self::hotlink_allowed() as $domain ) {
 			$lines[] = 'RewriteCond %{HTTP_REFERER} !^https?://' . self::referer_host_regex( $domain ) . ' [NC]';
 		}
-		$lines[] = 'RewriteRule ' . self::apache_regex( '^' . preg_quote( $uploads, '#' ) . '/.*\.(jpe?g|png|webp|gif|avif)$' ) . ' - [F,NC,L]';
+		$lines[] = 'RewriteRule ' . self::apache_regex( self::hotlink_regex() ) . ' - [F,NC,L]';
 		foreach ( self::private_regexes() as $regex ) {
 			$lines[] = '# Feed that is a static file: only with the token (put yours in place of YOUR_TOKEN).';
 			$lines[] = '# PHP feeds are checked by WordPress (token, Bearer, allowed IPs, administrator).';

@@ -19,6 +19,8 @@
  *    that never had rules is no nag; the rules of before 3.12.3 (check address only) are seen as installed.
  * N. The admin notice and Site Health (texts, manage_options, ScrapeLock pages, dismissed per fingerprint) and the
  *    diff view (nonce, manage_options; the text kept by the Server rules tab, or "not known").
+ * E. The evaluator: a fake-Chrome request is "ScrapeLock's own server rule (fake browser)" for the self-check, and it
+ *    agrees with the generated rules on a table of requests (with real Nginx when `nginx` is on PATH, else SKIP).
  *
  * Only on a test WordPress.
  */
@@ -564,6 +566,275 @@ $st   = PNCP_Rules_State::state();
 t( 'N Dismiss: an administrator with the nonce dismisses it for these fingerprints', 302 === $code && $st['installed'] . '|' . $st['current'] === $st['dismissed'], $code . ' ' . wp_json_encode( $st ) );
 wp_set_current_user( 0 );
 settings( array( 'block_empty_ua' => 1 ) );
+
+/* ---------- E. The evaluator and the self-check ---------- */
+
+$fake = array(
+	'ua'      => OLD_UA,
+	'headers' => array( 'Accept' => 'text/html' ),
+	'https'   => true,
+	'method'  => 'GET',
+	'path'    => '/',
+);
+$cases = array(
+	'a visitor'                                  => array( VISITOR, array(), 'fake_browser' ),
+	'127.0.0.1 straight'                         => array( '127.0.0.1', array(), null ),
+	'::1 straight'                               => array( '::1', array(), null ),
+	'the private address straight'               => array( PRIV, array(), null ),
+	'127.0.0.1 with X-Forwarded-For (a proxy)'   => array( '127.0.0.1', array( 'X-Forwarded-For' => VISITOR ), 'fake_browser' ),
+	'the private address with CF-Connecting-IP'  => array( PRIV, array( 'CF-Connecting-IP' => VISITOR ), 'fake_browser' ),
+	'the public address (real_ip behind a CDN)'  => array( SERVER, array( 'X-Forwarded-For' => SERVER ), null ),
+	'an address of the IPv6 range'               => array( '2a01:4f8:5::7', array(), null ),
+	'the CDN edge'                               => array( EDGE, array( 'X-Forwarded-For' => SERVER ), 'fake_browser' ),
+);
+foreach ( $cases as $label => $case ) {
+	$req           = $fake;
+	$req['remote'] = $case[0];
+	$req['headers'] = array_merge( $req['headers'], $case[1] );
+	$got           = PNCP_Rules::evaluate( $req );
+	t( "E fake Chrome from $label → " . ( null === $case[2] ? 'passes' : $case[2] ), ( null === $got ? null : $got['rule'] ) === $case[2], wp_json_encode( $got ) );
+}
+$got = PNCP_Rules::evaluate( $fake + array( 'remote' => '' ) );
+t( 'E a fake Chrome (HTTPS, no Sec-Fetch-Mode, no Sec-CH-UA): the fake browser rule', 'fake_browser' === ( $got['rule'] ?? '' ) && 403 === ( $got['code'] ?? 0 ), wp_json_encode( $got ) );
+t( 'E the new self-check User-Agent: no rule refuses it', null === PNCP_Rules::evaluate( array_merge( $fake, array( 'ua' => PNCP_Self_Check::user_agent() ) ) ) );
+// The self-check got a 403 of the web server that WordPress never saw.
+$nginx403 = static function ( $pre, $args, $url ) {
+	if ( false !== $pre || ! empty( $args['pncp_resolve'] ) ) {
+		return $pre;
+	}
+	return array(
+		'headers'  => array(
+			'server'       => 'nginx',
+			'content-type' => 'text/html',
+		),
+		'body'     => "<html>\r\n<head><title>403 Forbidden</title></head>\r\n<body>\r\n<center><h1>403 Forbidden</h1></center>\r\n<hr><center>nginx</center>\r\n</body>\r\n</html>",
+		'response' => array(
+			'code'    => 403,
+			'message' => 'Forbidden',
+		),
+		'cookies'  => array(),
+		'filename' => null,
+	);
+};
+$https = static function ( $url ) {
+	return set_url_scheme( $url, 'https' );
+};
+add_filter( 'pre_http_request', $nginx403, 1, 3 );
+$cls = PNCP_Self_Check::rules_class( PNCP_Self_Check::classify( 403, array( 'server' => 'nginx' ), '<center>nginx</center>' ), $nginx403( false, array(), '' ), 'https://example.test/', array( 'user-agent' => OLD_UA ), '' );
+t( 'E rules_class(): the old Chrome self-check → ScrapeLock\'s own server rule (fake browser)', 'rules' === $cls['who'] && 'fake_browser' === $cls['reason'] );
+t( 'E who_label(): "ScrapeLock\'s own server rule (fake browser)"', 'ScrapeLock\'s own server rule (fake browser)' === PNCP_Self_Check::who_label( $cls ) );
+t( 'E advice(): what to do, in one sentence', false !== strpos( PNCP_Self_Check::advice( $cls + array( 'sig' => '' ) ), 'Copy the server rules again' ) );
+$cls2 = PNCP_Self_Check::rules_class( PNCP_Self_Check::classify( 403, array( 'server' => 'nginx' ), '<center>nginx</center>' ), $nginx403( false, array(), '' ), 'https://example.test/', array( 'user-agent' => PNCP_Self_Check::user_agent() ), '' );
+t( 'E rules_class(): a 403 the rules would not give stays "web server"', 'server' === $cls2['who'] );
+$marked = $nginx403( false, array(), '' );
+$marked['headers']['x-scrapelock'] = 'refused';
+$cls3 = PNCP_Self_Check::rules_class( PNCP_Self_Check::answer_class( $marked ), $marked, 'https://example.test/', array( 'user-agent' => OLD_UA ), '' );
+t( 'E rules_class(): ScrapeLock\'s own PHP refusal (X-ScrapeLock) is never taken for a server rule', 'scrapelock' === $cls3['who'] );
+// A whole self-check through request(): the public way refused by the rules, the server answers straight.
+add_filter( 'home_url', $https, 99 );
+add_filter(
+	'pre_http_request',
+	$origin_ok = static function ( $pre, $args, $url ) {
+		if ( empty( $args['pncp_resolve'] ) ) {
+			return $pre;
+		}
+		$id = PNCP_Self_Check::request_id( (string) ( $args['headers']['X-ScrapeLock-Sig'] ?? '' ) );
+		return array(
+			'headers'  => array( 'x-scrapelock' => PNCP_Self_Check::ok_marker( $id ) ),
+			'body'     => 'page',
+			'response' => array(
+				'code'    => 200,
+				'message' => 'OK',
+			),
+			'cookies'  => array(),
+			'filename' => null,
+		);
+	},
+	0,
+	3
+);
+$old_args = array(
+	'user-agent' => OLD_UA,
+	'headers'    => array( 'Accept' => 'text/html' ),
+);
+// request() sends the new User-Agent whatever it is given; a 3.12.2 request (old User-Agent) is classified here.
+$public = PNCP_Self_Check::rules_class( PNCP_Self_Check::answer_class( $nginx403( false, array(), '' ) ), $nginx403( false, array(), '' ), home_url( '/' ), $old_args, '' );
+$trace  = array(
+	'public' => $public,
+	'ok'     => false,
+	'origin' => true,
+	'steps'  => array(
+		array(
+			'via'    => 'public',
+			'ip'     => '',
+			'path'   => '/',
+			'code'   => 403,
+			'error'  => '',
+			'server' => 'nginx',
+			'cdn'    => '',
+			'marker' => '',
+			'who'    => $public['who'],
+			'reason' => $public['reason'],
+			'id'     => '',
+		),
+	),
+);
+$lines = implode( "\n", PNCP_Self_Check::lines( $trace ) );
+t( 'E "Run a real self-check now": "Refused by ScrapeLock\'s own server rule (fake browser)" and what to do', false !== strpos( $lines, 'Refused by ScrapeLock\'s own server rule (fake browser)' ) && false !== strpos( $lines, 'Copy the server rules again' ), $lines );
+t( 'E the summary names the rule', false !== strpos( PNCP_Self_Check::summary( $trace ), 'refused by ScrapeLock\'s own server rule (fake browser) (HTTP 403)' ), PNCP_Self_Check::summary( $trace ) );
+$r = PNCP_Self_Check::request( home_url( '/' ), $old_args, 'page' );
+t( 'E request(): the new User-Agent is not refused by the rules: the 403 stays the web server\'s', 'server' === $r['public']['who'] && 'origin' === $r['via'], wp_json_encode( $r['public'] ) );
+settings( array( 'block_headless' => 1 ) );
+PNCP_Rules_State::record( 'eeeeeeeeeeee ffffffffffff' );
+$lines = implode( "\n", PNCP_Self_Check::lines( $trace ) );
+t( 'E the self-check also says when the installed rules are out of date', false !== strpos( $lines, 'The server rules are out of date (installed: eeeeeeeeeeee ffffffffffff' ), $lines );
+remove_filter( 'pre_http_request', $origin_ok, 0 );
+remove_filter( 'pre_http_request', $nginx403, 1 );
+remove_filter( 'home_url', $https, 99 );
+delete_option( PNCP_Rules_State::STATE );
+delete_transient( PNCP_Self_Check::ROUTE );
+
+// The table: what the rules do, by the evaluator; with real Nginx, the same answers from Nginx.
+$sec   = array(
+	'Sec-Fetch-Mode' => 'navigate',
+	'Sec-CH-UA'      => '"Chromium";v="141"',
+);
+$table = array(
+	array( 'fake Chrome over HTTPS', VISITOR, OLD_UA, array(), true, '/', 'fake_browser' ),
+	array( 'Chrome with browser headers', VISITOR, BROWSER, $sec, true, '/', null ),
+	array( 'fake Chrome over HTTP', VISITOR, OLD_UA, array(), false, '/', null ),
+	array( 'fake Chrome from 127.0.0.1', '127.0.0.1', OLD_UA, array(), true, '/', null ),
+	array( 'fake Chrome from 127.0.0.1 via a proxy', '127.0.0.1', OLD_UA, array( 'X-Real-IP' => VISITOR ), true, '/', 'fake_browser' ),
+	array( 'fake Chrome from the server\'s public address', SERVER, OLD_UA, array( 'X-Forwarded-For' => SERVER ), true, '/', null ),
+	array( 'fake Chrome from the edge', EDGE, OLD_UA, array(), true, '/', 'fake_browser' ),
+	array( 'HeadlessChrome (in the bot list too)', VISITOR, 'Mozilla/5.0 HeadlessChrome/120.0.0.0 Safari/537.36', $sec, true, '/', 'bad_bot' ),
+	array( 'Firefox without Sec-Fetch-Mode', VISITOR, 'Mozilla/5.0 (X11; Linux x86_64; rv:128.0) Gecko/20100101 Firefox/128.0', array(), true, '/', 'fake_browser' ),
+	array( 'Android in-app browser', VISITOR, 'Mozilla/5.0 (Linux; Android 14; wv) AppleWebKit/537.36 Chrome/141.0.0.0 Mobile Safari/537.36', array(), true, '/', null ),
+	array( 'Googlebot (Chrome in its User-Agent)', VISITOR, 'Mozilla/5.0 AppleWebKit/537.36 (KHTML, like Gecko; compatible; Googlebot/2.1; +http://www.google.com/bot.html) Chrome/141.0.0.0 Safari/537.36', array(), true, '/', null ),
+	array( 'GPTBot', VISITOR, 'Mozilla/5.0 (compatible; GPTBot/1.2; +https://openai.com/gptbot)', array(), true, '/', 'bad_bot' ),
+	array( 'GPTBot on robots.txt', VISITOR, 'Mozilla/5.0 (compatible; GPTBot/1.2)', array(), true, '/robots.txt', null ),
+	array( 'GPTBot from the server', SERVER, 'Mozilla/5.0 (compatible; GPTBot/1.2)', array(), true, '/', null ),
+	array( 'ChatGPT-User (AI search allowed)', VISITOR, CHATGPT, array(), true, '/', null ),
+	array( 'empty User-Agent', VISITOR, '', array(), true, '/', 'empty_ua' ),
+	array( 'empty User-Agent from ::1', '::1', '', array(), true, '/', null ),
+	array( 'Facebook preview (always allowed)', VISITOR, 'facebookexternalhit/1.1 (+http://www.facebook.com/externalhit_uatext.php)', array(), true, '/', null ),
+	array( 'the self-check User-Agent', VISITOR, PNCP_Self_Check::user_agent(), array(), true, '/', null ),
+	array( 'readme.html', VISITOR, BROWSER, $sec, true, '/readme.html', 'version_file' ),
+	array( 'PHP in uploads', VISITOR, BROWSER, $sec, true, wp_parse_url( wp_get_upload_dir()['baseurl'], PHP_URL_PATH ) . '/x.php', 'upload_php' ),
+	array( 'image from another site', VISITOR, BROWSER, $sec + array( 'Referer' => 'https://scraper.example/' ), true, wp_parse_url( wp_get_upload_dir()['baseurl'], PHP_URL_PATH ) . '/a.jpg', 'hotlink' ),
+	array( 'image from Google', VISITOR, BROWSER, $sec + array( 'Referer' => 'https://www.google.gr/' ), true, wp_parse_url( wp_get_upload_dir()['baseurl'], PHP_URL_PATH ) . '/a.jpg', null ),
+);
+$bad = array();
+foreach ( $table as $row ) {
+	$got = PNCP_Rules::evaluate(
+		array(
+			'ua'      => $row[2],
+			'headers' => $row[3],
+			'https'   => $row[4],
+			'path'    => $row[5],
+			'remote'  => $row[1],
+		)
+	);
+	if ( ( null === $got ? null : $got['rule'] ) !== $row[6] ) {
+		$bad[] = $row[0] . ': ' . wp_json_encode( $got );
+	}
+}
+t( 'E the evaluator on ' . count( $table ) . ' requests: the rule each one meets', ! $bad, implode( ' | ', $bad ) );
+
+// Real Nginx (local only: CI has none).
+$nginx_bin = trim( (string) shell_exec( 'command -v nginx 2>/dev/null' ) );
+$openssl   = trim( (string) shell_exec( 'command -v openssl 2>/dev/null' ) );
+if ( '' === $nginx_bin || '' === $openssl || ! function_exists( 'curl_init' ) ) {
+	echo "SKIP E real Nginx (nginx or openssl not on PATH)\n";
+} else {
+	$dir = sys_get_temp_dir() . '/pncp-t3123-nginx-' . getmypid();
+	$img = $dir . '/www' . wp_parse_url( wp_get_upload_dir()['baseurl'], PHP_URL_PATH );
+	wp_mkdir_p( $dir . '/tmp' );
+	wp_mkdir_p( $img );
+	file_put_contents( $img . '/a.jpg', 'jpeg' );
+	exec( 'openssl req -x509 -newkey rsa:2048 -nodes -subj /CN=pncp-test -keyout ' . escapeshellarg( $dir . '/k.pem' ) . ' -out ' . escapeshellarg( $dir . '/c.pem' ) . ' -days 1 2>/dev/null' );
+	$port = 18000 + ( getmypid() % 1000 );
+	file_put_contents( $dir . '/http.conf', PNCP_Rules::nginx_http() );
+	file_put_contents( $dir . '/server.conf', PNCP_Rules::nginx_server() );
+	$conf = 'worker_processes 1; error_log ' . $dir . '/error.log; pid ' . $dir . '/nginx.pid; events { worker_connections 64; }' . "\n"
+		. 'http { access_log off; client_body_temp_path ' . $dir . '/tmp; proxy_temp_path ' . $dir . '/tmp; fastcgi_temp_path ' . $dir . '/tmp; uwsgi_temp_path ' . $dir . '/tmp; scgi_temp_path ' . $dir . '/tmp;' . "\n"
+		. 'include ' . $dir . '/http.conf;' . "\n"
+		. 'server { listen 127.0.0.1:' . $port . ' ssl; listen 127.0.0.1:' . ( $port + 1 ) . '; ssl_certificate ' . $dir . '/c.pem; ssl_certificate_key ' . $dir . '/k.pem; server_name _; root ' . $dir . '/www;' . "\n"
+		// The address Nginx sees, set per request (as real_ip does behind a CDN).
+		. 'set_real_ip_from 127.0.0.1; real_ip_header X-Test-Remote;' . "\n"
+		. 'include ' . $dir . '/server.conf;' . "\n"
+		. 'location / { return 200 "ok\n"; }' . "\n"
+		. 'location /own-headers/ { add_header X-Own 1; return 200 "own\n"; } }' . "\n}\n";
+	file_put_contents( $dir . '/nginx.conf', $conf );
+	exec( escapeshellarg( $nginx_bin ) . ' -t -e ' . escapeshellarg( $dir . '/error.log' ) . ' -p ' . escapeshellarg( $dir ) . ' -c ' . escapeshellarg( $dir . '/nginx.conf' ) . ' 2>&1', $tout, $rc );
+	t( 'E real Nginx: nginx -t accepts both parts', 0 === $rc, implode( ' | ', $tout ) );
+	exec( escapeshellarg( $nginx_bin ) . ' -e ' . escapeshellarg( $dir . '/error.log' ) . ' -p ' . escapeshellarg( $dir ) . ' -c ' . escapeshellarg( $dir . '/nginx.conf' ) . ' 2>&1', $sout, $src );
+	usleep( 500000 );
+	$get = static function ( $https, $path, $remote, $ua, $headers ) use ( $port ) {
+		$ch = curl_init( ( $https ? 'https' : 'http' ) . '://127.0.0.1:' . ( $https ? $port : $port + 1 ) . $path );
+		$h  = array( 'User-Agent: ' . $ua, 'X-Test-Remote: ' . $remote );
+		foreach ( $headers as $k => $v ) {
+			$h[] = $k . ': ' . $v;
+		}
+		curl_setopt_array(
+			$ch,
+			array(
+				CURLOPT_RETURNTRANSFER => true,
+				CURLOPT_HEADER         => true,
+				CURLOPT_HTTPHEADER     => $h,
+				CURLOPT_SSL_VERIFYPEER => false,
+				CURLOPT_SSL_VERIFYHOST => 0,
+				CURLOPT_TIMEOUT        => 10,
+				CURLOPT_PROXY          => '',
+			)
+		);
+		$out  = (string) curl_exec( $ch );
+		$code = (int) curl_getinfo( $ch, CURLINFO_HTTP_CODE );
+		$hs   = (int) curl_getinfo( $ch, CURLINFO_HEADER_SIZE );
+		curl_close( $ch );
+		return array( $code, strtolower( substr( $out, 0, $hs ) ) );
+	};
+	if ( 0 === $src ) {
+		$codes = array(
+			'fake_browser' => 403,
+			'bad_bot'      => 403,
+			'empty_ua'     => 403,
+			'version_file' => 404,
+			'upload_php'   => 403,
+			'hotlink'      => 403,
+		);
+		$bad   = array();
+		foreach ( $table as $row ) {
+			list( $code ) = $get( $row[4], $row[5], $row[1], $row[2], $row[3] );
+			$want         = null === $row[6] ? 200 : $codes[ $row[6] ];
+			if ( $want !== $code ) {
+				$bad[] = $row[0] . ': nginx ' . $code . ', evaluator ' . $want;
+			}
+		}
+		t( 'E real Nginx agrees with the evaluator on ' . count( $table ) . ' requests', ! $bad, implode( ' | ', $bad ) );
+		list( , $h1 ) = $get( true, '/', '127.0.0.1', BROWSER, $sec );
+		list( , $h2 ) = $get( true, '/', '127.0.0.1', BROWSER, $sec + array( 'X-ScrapeLock-Sig' => 'x' ) );
+		list( , $h3 ) = $get( true, '/own-headers/', '127.0.0.1', BROWSER, $sec + array( 'X-ScrapeLock-Sig' => 'x' ) );
+		t( 'E real Nginx: no fingerprint header without X-ScrapeLock-Sig', false === strpos( $h1, 'x-scrapelock-rules' ) );
+		t( 'E real Nginx: with X-ScrapeLock-Sig, the header is the current fingerprint', false !== strpos( $h2, 'x-scrapelock-rules: ' . PNCP_Rules::nginx_fingerprint() . "\r\n" ), $h2 );
+		t( 'E real Nginx: a location with add_header of its own drops it (the documented limitation)', false === strpos( $h3, 'x-scrapelock-rules' ) && false !== strpos( $h3, 'x-own: 1' ) );
+	} else {
+		t( 'E real Nginx starts', false, implode( ' | ', $sout ) );
+	}
+	if ( is_file( $dir . '/nginx.pid' ) ) {
+		exec( 'kill ' . (int) file_get_contents( $dir . '/nginx.pid' ) );
+		usleep( 300000 );
+	}
+	@unlink( $img . '/a.jpg' );
+	for ( $d = $img; strlen( $d ) > strlen( $dir ); $d = dirname( $d ) ) {
+		@rmdir( $d );
+	}
+	foreach ( array( 'http.conf', 'server.conf', 'nginx.conf', 'c.pem', 'k.pem', 'error.log', 'nginx.pid' ) as $f ) {
+		@unlink( $dir . '/' . $f );
+	}
+	@rmdir( $dir . '/tmp' );
+	@rmdir( $dir );
+}
 
 wp_delete_user( $sub );
 exit( $fails ? 1 : 0 );

@@ -468,6 +468,9 @@ final class PNCP_Self_Check {
 			case 'scrapelock':
 				/* translators: %s: why ScrapeLock refused the request */
 				return '' !== $class['reason'] ? sprintf( __( 'ScrapeLock (%s)', 'scrapelock' ), PNCP_Log::reason_label( $class['reason'] ) ) : __( 'ScrapeLock', 'scrapelock' );
+			case 'rules':
+				/* translators: %s: the rule, e.g. "fake browser" */
+				return sprintf( __( 'ScrapeLock\'s own server rule (%s)', 'scrapelock' ), PNCP_Rules::rule_label( $class['reason'] ) );
 			case 'bunny':
 				return __( 'Bunny CDN edge', 'scrapelock' );
 			case 'cloudflare':
@@ -508,6 +511,8 @@ final class PNCP_Self_Check {
 				return __( 'The web server refused it before WordPress: check its deny rules and its own firewall for the server\'s address.', 'scrapelock' );
 			case 'scrapelock':
 				return self::sig_advice( $class['sig'] );
+			case 'rules':
+				return __( 'Copy the server rules again from the Server rules tab (since 3.12.3 they never refuse the server\'s own addresses), run nginx -t and reload; behind a CDN, Nginx needs real_ip so that the server\'s own requests keep its address.', 'scrapelock' );
 		}
 		return __( 'Something between the server and the site refused it: check the CDN, the hosting firewall and the security plugins.', 'scrapelock' );
 	}
@@ -571,6 +576,9 @@ final class PNCP_Self_Check {
 			// Vulnerable points' own refusals (harden_*) are the answer a locked point gives.
 			return 0 !== strpos( $class['reason'], 'harden_' );
 		}
+		if ( 'rules' === $class['who'] ) {
+			return true; // 3.12.3: ScrapeLock's own server rule refused the site's own request.
+		}
 		if ( 'wordfence' === $class['who'] ) {
 			return true;
 		}
@@ -611,7 +619,7 @@ final class PNCP_Self_Check {
 			$before                = PNCP_Server_Ips::last_sent();
 			$response              = wp_remote_request( $url, $public );
 			$sent                  = self::sent_since( $before );
-			$class                 = self::answer_class( $response );
+			$class                 = self::rules_class( self::answer_class( $response ), $response, $url, $args, $sent );
 			$steps[]               = self::step( 'public', $url, $sent, $response, $class, '' );
 			PNCP_Rules_State::observe( $response, self::request_id( $sent ) );
 			$out['response']       = $response;
@@ -632,7 +640,7 @@ final class PNCP_Self_Check {
 				break; // Not possible here (no cURL, an address that is not the site's).
 			}
 			$sent    = self::sent_since( $before );
-			$class   = self::answer_class( $response );
+			$class   = self::rules_class( self::answer_class( $response ), $response, $url, $args, $sent );
 			$steps[] = self::step( 'origin', $url, $sent, $response, $class, $ip );
 			PNCP_Rules_State::observe( $response, self::request_id( $sent ) );
 			if ( is_wp_error( $response ) ) {
@@ -656,6 +664,67 @@ final class PNCP_Self_Check {
 		$out['steps'] = $steps;
 		self::note_steps( $steps );
 		return $out;
+	}
+
+	/**
+	 * 3.12.3: a 403 of the web server that ScrapeLock's PHP never saw (no X-ScrapeLock header, nothing in the ring
+	 * buffer for its signature): when ScrapeLock's own generated server rules, with the current settings, refuse
+	 * the very request that was sent (PNCP_Rules::evaluate()), they did it: who "rules", the rule as the reason.
+	 *
+	 * @param array{who:string, reason:string, layer:string, sig:string} $class    What classify() returned.
+	 * @param array<string, mixed>|WP_Error                              $response The answer.
+	 * @param string                                                     $url      Address.
+	 * @param array<string, mixed>                                       $args     The request's arguments.
+	 * @param string                                                     $sent     Its signature ('' = none).
+	 * @return array{who:string, reason:string, layer:string, sig:string}
+	 */
+	public static function rules_class( $class, $response, $url, $args, $sent ) {
+		if ( is_wp_error( $response ) || 403 !== (int) wp_remote_retrieve_response_code( $response ) || ! in_array( $class['who'], array( 'server', 'unknown' ), true ) ) {
+			return $class;
+		}
+		if ( isset( self::headers_of( $response )[ strtolower( self::HEADER ) ] ) ) {
+			return $class;
+		}
+		$id = '' !== $sent ? self::request_id( $sent ) : '';
+		if ( '' !== $id ) {
+			foreach ( self::entries() as $entry ) {
+				if ( isset( $entry['side'], $entry['id'] ) && 'in' === $entry['side'] && $id === $entry['id'] ) {
+					return $class; // WordPress saw it.
+				}
+			}
+		}
+		$rule = PNCP_Rules::evaluate( self::sent_request( $url, $args ) );
+		if ( null === $rule || 403 !== $rule['code'] ) {
+			return $class;
+		}
+		return array(
+			'who'    => 'rules',
+			'reason' => $rule['rule'],
+			'layer'  => '',
+			'sig'    => '',
+		);
+	}
+
+	/**
+	 * 3.12.3: a request of the site to itself as the web server gets it, for PNCP_Rules::evaluate(): User-Agent,
+	 * headers, scheme, method and path. Its address is not known here: not one of the server's (the case in which
+	 * the rules refuse it).
+	 *
+	 * @param string               $url  Address.
+	 * @param array<string, mixed> $args The request's arguments.
+	 * @return array<string, mixed>
+	 */
+	public static function sent_request( $url, $args ) {
+		$parts   = wp_parse_url( (string) $url );
+		$headers = isset( $args['headers'] ) && is_array( $args['headers'] ) ? $args['headers'] : array();
+		return array(
+			'ua'      => isset( $args['user-agent'] ) ? (string) $args['user-agent'] : self::user_agent(),
+			'headers' => $headers,
+			'https'   => is_array( $parts ) && isset( $parts['scheme'] ) && 'https' === strtolower( (string) $parts['scheme'] ),
+			'method'  => isset( $args['method'] ) ? strtoupper( (string) $args['method'] ) : 'GET',
+			'path'    => is_array( $parts ) && isset( $parts['path'] ) ? (string) $parts['path'] : '/',
+			'remote'  => '',
+		);
 	}
 
 	/**
@@ -1048,6 +1117,9 @@ final class PNCP_Self_Check {
 			$in      = isset( $step['in'] ) && is_array( $step['in'] ) ? $step['in'] : null;
 			if ( $in ) {
 				$lines[] = '  ' . self::entry_line( $in );
+			} elseif ( 'rules' === $step['who'] ) {
+				/* translators: %s: the rule, e.g. "fake browser" */
+				$lines[] = '  ' . sprintf( __( 'Refused by ScrapeLock\'s own server rule (%s): the web server refused it before WordPress.', 'scrapelock' ), PNCP_Rules::rule_label( (string) $step['reason'] ) );
 			} elseif ( 'page' !== $step['who'] && 'scrapelock' !== $step['who'] && 'none' !== $step['who'] ) {
 				$lines[] = '  ' . __( 'WordPress on this server never saw this request: it was refused before it reached WordPress.', 'scrapelock' );
 			}
