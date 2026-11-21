@@ -178,6 +178,16 @@ t( 'T an unknown --server: an error', 0 !== $rc );
 
 /* ---------- I. rules install ---------- */
 
+// Without static private feeds (their rules need the owner's token, tested below); put back at the end.
+$saved_paths = PNCP_Options::stored()['private_paths'];
+register_shutdown_function(
+	static function () use ( $saved_paths ) {
+		update_option( PNCP_OPTION, array_merge( PNCP_Options::stored(), array( 'private_paths' => $saved_paths ) ) );
+	}
+);
+update_option( PNCP_OPTION, array_merge( PNCP_Options::stored(), array( 'private_paths' => '' ) ) );
+PNCP_Options::flush();
+
 $http = $tmp . '/0.scrapelock-site.conf';
 $srv  = $tmp . '/scrapelock.conf';
 $ls   = static function () use ( $tmp ) {
@@ -278,7 +288,6 @@ list( $rc, $out ) = cli( 'rules install --apache=' . escapeshellarg( $ht ) . ' -
 t( 'I .htaccess again: only the block replaced', 0 === $rc && $text === file_get_contents( $ht ) && false !== strpos( $out, '-# old line' ), $out );
 
 // The token of the static feeds: kept from the installed file, never printed.
-$paths = PNCP_Options::stored()['private_paths'];
 update_option( PNCP_OPTION, array_merge( PNCP_Options::stored(), array( 'private_paths' => '/private-feed/*.xml' ) ) );
 PNCP_Options::flush();
 file_put_contents( $http, "# nothing\n" );
@@ -287,7 +296,7 @@ t( 'I YOUR_TOKEN in the rules and no token to keep: refused, nothing changed', 0
 file_put_contents( $http, str_replace( 'YOUR_TOKEN', 'Secret3126Token', PNCP_Rules::nginx_http() ) . "# changed\n" );
 list( $rc, $out ) = cli( 'rules install --nginx-http=' . escapeshellarg( $http ) . ' --yes --test-cmd=true --reload-cmd=true' );
 t( 'I the installed token kept in the new file, and never printed', 0 === $rc && str_replace( 'YOUR_TOKEN', 'Secret3126Token', PNCP_Rules::nginx_http() ) === file_get_contents( $http ) && false === strpos( $out, 'Secret3126Token' ), $out );
-update_option( PNCP_OPTION, array_merge( PNCP_Options::stored(), array( 'private_paths' => $paths ) ) );
+update_option( PNCP_OPTION, array_merge( PNCP_Options::stored(), array( 'private_paths' => '' ) ) );
 PNCP_Options::flush();
 
 $code = (string) wp_remote_retrieve_response_code( wp_remote_get( $base . '/wp-content/plugins/scrapelock/includes/class-pncp-cli-server.php' ) );
