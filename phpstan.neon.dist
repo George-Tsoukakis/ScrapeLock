@@ -28,6 +28,7 @@ parameters:
 	dynamicConstantNames:
 		- WPINC
 		- COOKIEPATH
+		- SITECOOKIEPATH
 		- COOKIEHASH
 		- WPMU_PLUGIN_URL
 		- PNCP_URL

@@ -121,6 +121,7 @@ PNCP_Ai_Search_List::init(); // 3.11: "Remove from the list" for allowed AI sear
 PNCP_Site_Files::init(); // 3.10.1: apple-touch-icon.png and OneSignalSDKWorker.js in Site Health, Wordfence's address check.
 PNCP_Fluent_Community::init(); // 3.11: FluentCommunity's portal in the content addresses, its members' REST reads off the REST limit.
 PNCP_Traffic::init(); // 3.12: every request from the CDN logs, the access log and WordPress (off until turned on).
+PNCP_Signin_Hint::init(); // 3.12.5: the cookie that tells the page's script the browser is signed in (screenshot blur).
 // 3.11: the translations shipped in languages/ (Greek). WordPress 6.7+ finds them through "Domain Path" on its own;
 // 6.2 to 6.6 need this. A language pack in wp-content/languages/plugins/ is still read first.
 add_action( 'init', 'pncp_load_textdomain', 0 );

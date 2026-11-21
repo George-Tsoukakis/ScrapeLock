@@ -182,7 +182,9 @@ ScrapeLock — δοκιμές σε πραγματικό WordPress (όχι stubs)
                     signed in» (blur_on_capture_scope): default "all" (and on a new install), sanitize (anything else →
                     "all"), section, label, requires note, cache key; upgrade 3.12.4 → 3.12.5 (every value unchanged,
                     "all" added, a stored "guests" kept); export / import; the form (two radios under the blur, dimmed
-                    while it is off)
+                    while it is off); the hint cookie pncp_si=1 over HTTP (sign-in with / without «Remember me»,
+                    sign-out, an account signed in before 3.12.5 on a page and in wp-admin, a stale one removed, never
+                    with the protection off)
   t_cli.php         wp scrapelock … μέσα από το πραγματικό wp (χρειάζεται WP_CLI, αλλιώς SKIP)
   t_bunny_rules.php Edge Rules στο Bunny μέσα στα όριά του (το πολύ 5 μοτίβα ανά συνθήκη) με ψεύτικο API που δίνει
                     HTTP 400 όπως το πραγματικό: χωρισμός, κλείδωμα/Remove, rollback, Monitor only, sync, προεπισκόπηση,
