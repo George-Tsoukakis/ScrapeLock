@@ -2,7 +2,7 @@
 /**
  * Plugin Name:       ScrapeLock – Content & AI Bot Protection
  * Description:       Protects your content: makes copying text and images harder, hides the text in the REST API, GraphQL and RSS, blocks scrapers, AI bots and fake Googlebots, temporarily blocks persistent IPs, protects XML feeds with a token and adds an optional watermark. Lockdown freezes every change to the site until it is unlocked with an authenticator app. Forms, cart, checkout and search engines are not affected.
- * Version:           3.12.6
+ * Version:           3.12.7
  * Requires at least: 6.2
  * Requires PHP:      7.4
  * Author:            CodeBunny
@@ -19,7 +19,7 @@ if ( defined( 'PNCP_VERSION' ) ) {
 	return;
 }
 
-define( 'PNCP_VERSION', '3.12.6' );
+define( 'PNCP_VERSION', '3.12.7' );
 define( 'PNCP_FILE', __FILE__ );
 define( 'PNCP_DIR', plugin_dir_path( __FILE__ ) );
 define( 'PNCP_URL', plugin_dir_url( __FILE__ ) );
@@ -656,7 +656,8 @@ add_action( 'plugins_loaded', 'pncp_maybe_upgrade', -100 );
 /**
  * Clears the page cache so visitors see the new settings immediately.
  * Covers WP Rocket, WP Super Cache, W3 Total Cache, LiteSpeed Cache, Cache Enabler, WP Fastest Cache, SiteGround Optimizer,
- * Nginx Helper (FastCGI cache) and the Cloudflare plugin, whichever are present.
+ * Nginx Helper (FastCGI cache) and the Cloudflare plugin, whichever are present, and (3.12.7) the Nginx fastcgi
+ * cache folder itself when it is known (PNCP_Fastcgi_Cache::purge_known()).
  */
 function pncp_purge_page_cache() {
 	// Before init (the upgrade runs on plugins_loaded) the cache plugins have not finished loading: WP Rocket
@@ -682,6 +683,11 @@ function pncp_purge_page_cache() {
 	do_action( 'litespeed_purge_all' ); // LiteSpeed Cache.
 	do_action( 'cache_enabler_clear_complete_cache' ); // 3.4.3: Cache Enabler.
 	// phpcs:enable
+	// 3.12.7: this site's pages in the Nginx fastcgi cache, when its folder is known (SCRAPELOCK_FASTCGI_CACHE_PATH
+	// or Nginx Helper's): Nginx Helper's own purge above does nothing when its method or folder is not the server's.
+	if ( class_exists( 'PNCP_Fastcgi_Cache' ) ) {
+		PNCP_Fastcgi_Cache::purge_known();
+	}
 	if ( function_exists( 'wp_cache_clear_cache' ) ) {
 		wp_cache_clear_cache( is_multisite() ? get_current_blog_id() : 0 ); // WP Super Cache (on multisite, only this site).
 	}

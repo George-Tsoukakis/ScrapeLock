@@ -2,7 +2,7 @@
 /**
  * WP-CLI: wp scrapelock status | block | unblock | blocked | emergency | lockdown status | check | log | settings |
  * reputation | crowdsec | ai-referrals (3.7) | attacks | attack-report | login | harden | bunny | stealth (3.8) |
- * wizard (3.11) | traffic (3.12) | rules, cdn, verify-file (3.12.6).
+ * wizard (3.11) | traffic (3.12) | rules, cdn, verify-file (3.12.6) | cache (3.12.7).
  * Lockdown cannot be unlocked from here: it opens only with the authenticator app (or SCRAPELOCK_UNLOCK in
  * wp-config.php).
  *
@@ -1297,20 +1297,74 @@ final class PNCP_Cli {
 	 * [--all]
 	 * : Purge the whole cache instead.
 	 *
+	 * [--[no-]server-cache]
+	 * : 3.12.7: also this site's pages in the Nginx fastcgi cache of this server, first (as "wp scrapelock cache
+	 * purge"), so the CDN does not fetch a stale page again. On by default with --all, off for addresses.
+	 *
 	 * [--yes]
 	 * : With --all: do not ask for confirmation.
 	 *
 	 * ## EXAMPLES
 	 *
 	 *     wp scrapelock cdn purge https://example.com/builtwith.txt
-	 *     wp scrapelock cdn purge /builtwith.txt /robots.txt
+	 *     wp scrapelock cdn purge /builtwith.txt /robots.txt --server-cache
 	 *     wp scrapelock cdn purge --all --yes
+	 *     wp scrapelock cdn purge --all --no-server-cache --yes
 	 *
 	 * @param string[]              $args       Arguments.
 	 * @param array<string, string> $assoc_args Options.
 	 */
 	public function cdn( $args, $assoc_args ) {
 		PNCP_Cli_Server::cdn( $args, $assoc_args );
+	}
+
+	/**
+	 * 3.12.7: this site's pages in the Nginx fastcgi cache of this server: where it is (status) and purge.
+	 * The folder: SCRAPELOCK_FASTCGI_CACHE_PATH, else Nginx Helper's, else the fastcgi_cache_path of the zone
+	 * that this site's server { } block uses in the Nginx configuration (nginx -T, or --nginx-conf). Only cache
+	 * files whose key names this site's host are deleted; files of other sites stay.
+	 *
+	 * ## OPTIONS
+	 *
+	 * [<action>]
+	 * : status (default) or purge.
+	 * ---
+	 * default: status
+	 * options:
+	 *   - status
+	 *   - purge
+	 * ---
+	 *
+	 * [<url>...]
+	 * : For purge: addresses of this site, or paths such as / or /about/ (on the home address).
+	 *
+	 * [--all]
+	 * : For purge: every page of this site.
+	 *
+	 * [--cache-dir=<dir>]
+	 * : The cache folder (several separated by commas), instead of finding it.
+	 *
+	 * [--nginx-conf=<file>]
+	 * : Read this Nginx configuration file (and the files it includes) instead of running nginx -T.
+	 *
+	 * [--dry-run]
+	 * : For purge: count the files, delete nothing.
+	 *
+	 * [--yes]
+	 * : With --all: do not ask for confirmation.
+	 *
+	 * ## EXAMPLES
+	 *
+	 *     wp scrapelock cache status
+	 *     wp scrapelock cache purge --all --yes
+	 *     wp scrapelock cache purge / /about/
+	 *     wp scrapelock cache purge --all --dry-run --nginx-conf=/etc/nginx/nginx.conf
+	 *
+	 * @param string[]              $args       Arguments.
+	 * @param array<string, string> $assoc_args Options.
+	 */
+	public function cache( $args, $assoc_args ) {
+		PNCP_Cli_Server::cache( $args, $assoc_args );
 	}
 
 	/**

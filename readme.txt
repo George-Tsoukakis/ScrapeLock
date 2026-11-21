@@ -4,7 +4,7 @@ Tags: ai crawlers, anti-scraping, bot protection, rate limit, content protection
 Requires at least: 6.2
 Tested up to: 7.2
 Requires PHP: 7.4
-Stable tag: 3.12.6
+Stable tag: 3.12.7
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -88,7 +88,7 @@ Whatever a visitor sees has already reached their device, so nothing stops a det
 * Presets (Balanced, Strict, Maximum) with undo, settings export and import, and a block log with a 24-hour summary and automatic deletion.
 * **3.7:** visitors from AI assistants (ChatGPT, Perplexity, Claude, Gemini…) per assistant and page, counted on your server without personal data.
 * **Traffic (3.12):** every request, from the Bunny CDN logs, your web server's access log or WordPress itself: User-Agents by family, pages answering 404 or 5xx with the links that lead there, visitors, CSV and email alerts. Kept only in your database; off until you start it.
-* WP-CLI: `wp scrapelock status`, `block`, `unblock`, `blocked`, `emergency`, `log`, `check --ip=<ip>` (what ScrapeLock would answer, without side effects), `settings`, `lockdown status`, `reputation`, `crowdsec`, `ai-referrals`, in 3.8 `attacks`, `attack-report`, `login`, `harden`, `bunny` and `stealth`, in 3.12 `traffic`, and in 3.12.6 `rules`, `cdn` and `verify-file`.
+* WP-CLI: `wp scrapelock status`, `block`, `unblock`, `blocked`, `emergency`, `log`, `check --ip=<ip>` (what ScrapeLock would answer, without side effects), `settings`, `lockdown status`, `reputation`, `crowdsec`, `ai-referrals`, in 3.8 `attacks`, `attack-report`, `login`, `harden`, `bunny` and `stealth`, in 3.12 `traffic`, in 3.12.6 `rules`, `cdn` and `verify-file`, and in 3.12.7 `cache`.
 * Abilities API (WordPress 6.9+) for administrators: read the summary, block or unblock an IP and start Emergency Mode from an AI agent or MCP client. None of them unlocks Lockdown.
 
 = On the page and images =
@@ -236,6 +236,10 @@ Yes. Add it to "Always allowed User-Agents", pinned to its addresses so the name
 
 ScrapeLock tells WP Rocket not to serve cached pages to the bots in its list. Other page cache plugins serve stored pages before WordPress loads: turn on the pre-cache check (Bots and limits) to apply the bot list, the page limits and the blocks to them too. Site Health tells you when a page cache answers first. A cache in the web server (Nginx FastCGI cache, LiteSpeed, Varnish) answers before PHP: there use the "Server rules" tab or blocking at the CDN.
 
+= Does ScrapeLock empty the Nginx fastcgi cache? =
+
+Yes, where it empties the page caches (settings saved, Stealth turned on or off), when it knows the cache folder: set `define( 'SCRAPELOCK_FASTCGI_CACHE_PATH', '/path/to/fastcgi/cache' );` in wp-config.php, or Nginx Helper's `RT_WP_NGINX_HELPER_CACHE_PATH` (or its "Delete local server cache files" method). On the server, `wp scrapelock cache status` reads the Nginx configuration (nginx -T) to find the folder of the zone this site's server block uses with fastcgi_cache, and prints the line to add; `wp scrapelock cache purge --all` (and `wp scrapelock cdn purge --all`) empties it. Only cache files whose key names this site's host are deleted, never files of other sites, links or folders outside it.
+
 = What does the pre-cache check change on my server? =
 
 It adds two comment lines and one `include` line at the top of `wp-config.php`, which loads the check from the plugin's folder. Its data are plain files in a protected, randomly named folder in `uploads/scrapelock/` (counters in APCu if available). It runs before the page cache, without a database, and stops blocked IPs, the bot list and visitors over the page limits. Search engines, forms, wp-admin and the REST API are left to the normal check; a login cookie, which it cannot verify, gets four times the page limit. If `wp-config.php` is not writable, it shows the lines to add. Everything is removed when you turn it off or deactivate the plugin. Not on multisite.
@@ -334,7 +338,7 @@ Under Bots → Blocking at the CDN, the Bunny card reads the pull zone's logs (t
 
 = Can ScrapeLock hide that my site runs on WordPress? =
 
-Mostly. Turn on Stealth (Vulnerable points tab). Visitors then get neutral addresses for the theme, plugin, media and core files, served by rules that ScrapeLock writes into .htaccess on Apache or that you add to Nginx; the site tests them first and never turns them on if a file would not load. The REST API can get another prefix, the sitemap becomes /sitemap.xml, and readme.html and the like answer "page not found". Move the sign-in address too (Sign-in protection). What cannot be hidden: block and WooCommerce class names the styles depend on, cookies of signed-in users and shoppers, your hosting and DNS. WHOIS shows who registered the domain, not what the site is built with (use your registrar's privacy option for that). If the site ever loses its styles after moving host, add define( 'SCRAPELOCK_STEALTH_OFF', true ); to wp-config.php.
+Mostly. Turn on Stealth (Vulnerable points tab). Visitors then get neutral addresses for the theme, plugin, media and core files, served by rules that ScrapeLock writes into .htaccess on Apache or that you add to Nginx; the site tests them first and never turns them on if a file would not load. The REST API can get another prefix, the sitemap becomes /sitemap.xml, and readme.html and the like answer "page not found". The footer comments of WP Rocket and Redis Object Cache and the file paths in script translations go too. Move the sign-in address too (Sign-in protection). What cannot be hidden: block and WooCommerce class names the styles depend on, cookies of signed-in users and shoppers, your hosting and DNS. WHOIS shows who registered the domain, not what the site is built with (use your registrar's privacy option for that). If the site ever loses its styles after moving host, add define( 'SCRAPELOCK_STEALTH_OFF', true ); to wp-config.php.
 
 = Where do the Stealth rules go on Nginx and aaPanel, and how do I know they are current? =
 
@@ -398,6 +402,14 @@ No, on purpose: only an app code, a recovery code or the SCRAPELOCK_UNLOCK line 
 6. Dashboard widget with the protection status and the last 24 hours.
 
 == Changelog ==
+
+= 3.12.7 =
+* New: ScrapeLock also empties this site's pages in the Nginx fastcgi cache wherever it empties the page caches (settings saved, Stealth turned on or off or its addresses changed, upgrades), when it knows the folder: the constant `SCRAPELOCK_FASTCGI_CACHE_PATH` in wp-config.php, or Nginx Helper's folder. Nginx Helper's own purge does nothing when its method or folder is not the server's. Only cache files whose key names this site's host are deleted; links are never followed and system, home and WordPress folders are refused.
+* New: `wp scrapelock cache status | purge` (finds the cache folder in the Nginx configuration with nginx -T or `--nginx-conf`, shows this site's cached pages, purges all of them or some addresses, `--dry-run`, and prints the wp-config.php line to add). `wp scrapelock cdn purge --all` now empties the server cache first, so the CDN does not fetch a stale page again (`--no-server-cache` to skip it; `--server-cache` for addresses).
+* Fix: with Stealth or "Hide that the site runs on WordPress", WP Rocket's footer comment ("This website is like a Rocket … Performance optimized by WP Rocket") and Redis Object Cache's note are turned off (WP_ROCKET_WHITE_LABEL_FOOTPRINT and WP_REDIS_DISABLE_COMMENT, unless the site set them). Stealth also removes the footer comments of other performance and cache plugins that reach its buffer; conditional and other comments stay.
+* Fix: with Stealth, the translations of scripts no longer carry file paths (wp-includes/js/dist/…, a plugin's path) or the tool that made them; translations and text domain stay.
+* Change: "What can never be hidden" (Stealth) names the comments a page-cache plugin adds when it stores the page (turn them off in that plugin).
+* Greek translation of the new texts.
 
 = 3.12.6 =
 * New: Stealth with WP Rocket, Autoptimize, LiteSpeed Cache and W3 Total Cache: the inner wp-content / wp-includes of their minified and combined files (e.g. WP Rocket's cache/min/1/wp-content/themes/…) get neutral codes too, also in their stored pages. The rules map them back by pattern, so files written after "Clear cache" keep working. Copy the Stealth rules again.
@@ -590,6 +602,9 @@ No, on purpose: only an app code, a recovery code or the SCRAPELOCK_UNLOCK line 
 The changes of 3.5.0 and earlier versions are in changelog.txt in the plugin folder.
 
 == Upgrade Notice ==
+
+= 3.12.7 =
+If your server has an Nginx fastcgi cache, run `wp scrapelock cache status` on the server and add the line it prints to wp-config.php (or set Nginx Helper's folder), then `wp scrapelock cache purge --all`: a page stored before is otherwise served as it was. The server rules and the Stealth rules are unchanged. Settings are kept.
 
 = 3.12.6 =
 Copy the server rules and the Stealth rules again (Settings → ScrapeLock → Server rules, then nginx -t and reload), or use `wp scrapelock rules install`: the Stealth rules now carry a fingerprint and cover WP Rocket's minified files. "Block technology profilers" starts off. Settings are kept.

@@ -2,7 +2,9 @@
 /**
  * 3.12.6: WP-CLI for the server: "wp scrapelock rules show | status | install" (PNCP_Cli::rules()) and
  * "wp scrapelock cdn purge" (PNCP_Cli::cdn()) and "wp scrapelock verify-file add | list | remove"
- * (PNCP_Cli::verify_file()).
+ * (PNCP_Cli::verify_file()); 3.12.7: "wp scrapelock cache status | purge" (PNCP_Cli::cache(), the Nginx fastcgi
+ * cache, PNCP_Fastcgi_Cache), which runs "nginx -T" (the program's full path, escapeshellarg()) to read the
+ * configuration.
  *
  * Only from WP-CLI (cli_only()). The stored credentials (Bunny API key, Cloudflare token) are used, never printed.
  * "rules install" writes only the files named on the command line: <file>.new, a diff, <file>.old while the new
@@ -809,18 +811,25 @@ final class PNCP_Cli_Server {
 		if ( ! $all && ! $urls ) {
 			WP_CLI::error( __( 'Give the addresses to purge, or --all.', 'scrapelock' ) );
 		}
-		if ( null === PNCP_Bunny::credentials() && ! PNCP_Edge::cloudflare_connected() ) {
+		// 3.12.7: the server's fastcgi cache first (by default with --all), so the CDN fetches fresh pages.
+		$server = isset( $assoc_args['server-cache'] ) ? (bool) $assoc_args['server-cache'] : $all;
+		$cdn    = null !== PNCP_Bunny::credentials() || PNCP_Edge::cloudflare_connected();
+		if ( ! $cdn && ! $server ) {
 			WP_CLI::error( __( 'No CDN connection is set (Bunny CDN or Cloudflare under "Blocking at the CDN", or the Bunny card).', 'scrapelock' ) );
 		}
+		$good = self::own_urls( $urls );
 		if ( $all && empty( $assoc_args['yes'] ) ) {
-			WP_CLI::confirm( __( 'Purge the whole CDN cache of this site?', 'scrapelock' ) );
-		}
-		$result = PNCP_Edge::cdn_purge( $urls, $all );
-		if ( $result['refused'] ) {
-			/* translators: %s: addresses */
-			WP_CLI::error( sprintf( __( 'Not an address of this site (nothing was purged): %s', 'scrapelock' ), implode( ', ', $result['refused'] ) ) );
+			WP_CLI::confirm( $server ? __( 'Purge the whole CDN cache of this site, and its pages in the server\'s fastcgi cache?', 'scrapelock' ) : __( 'Purge the whole CDN cache of this site?', 'scrapelock' ) );
 		}
 		$failed = 0;
+		if ( $server && ! self::server_cache_purge( $all ? null : $good, $assoc_args, false ) ) {
+			++$failed;
+		}
+		if ( ! $cdn ) {
+			WP_CLI::warning( __( 'No CDN connection is set (Bunny CDN or Cloudflare under "Blocking at the CDN", or the Bunny card).', 'scrapelock' ) );
+			WP_CLI::halt( $failed ? 1 : 0 );
+		}
+		$result = PNCP_Edge::cdn_purge( $good, $all );
 		foreach ( $result['rows'] as $provider => $row ) {
 			if ( 'ok' === $row['status'] ) {
 				if ( $all ) {
@@ -839,5 +848,268 @@ final class PNCP_Cli_Server {
 		if ( $failed ) {
 			WP_CLI::halt( 1 );
 		}
+	}
+
+	/**
+	 * The full addresses of this site for the arguments; stops (nothing purged) when one is not this site's.
+	 *
+	 * @param string[] $urls Addresses or paths.
+	 * @return string[]
+	 */
+	private static function own_urls( $urls ) {
+		$good    = array();
+		$refused = array();
+		foreach ( $urls as $url ) {
+			$own = PNCP_Edge::own_url( (string) $url );
+			if ( '' === $own ) {
+				$refused[] = (string) $url;
+			} else {
+				$good[] = $own;
+			}
+		}
+		if ( $refused ) {
+			/* translators: %s: addresses */
+			WP_CLI::error( sprintf( __( 'Not an address of this site (nothing was purged): %s', 'scrapelock' ), implode( ', ', $refused ) ) );
+		}
+		return $good;
+	}
+
+	/* ---------- wp scrapelock cache (3.12.7) ---------- */
+
+	/**
+	 * Wp scrapelock cache status | purge <url>... | --all [--yes] [--dry-run] [--cache-dir=<dir>] [--nginx-conf=<file>].
+	 *
+	 * @param string[]              $args       Arguments.
+	 * @param array<string, string> $assoc_args Options.
+	 */
+	public static function cache( $args, $assoc_args ) {
+		self::cli_only();
+		$action = isset( $args[0] ) ? (string) $args[0] : 'status';
+		if ( 'status' === $action ) {
+			self::cache_status( $assoc_args );
+			return;
+		}
+		if ( 'purge' !== $action ) {
+			WP_CLI::error( __( 'Unknown action. Use: status or purge.', 'scrapelock' ) );
+		}
+		$urls = array_slice( $args, 1 );
+		$all  = ! empty( $assoc_args['all'] );
+		if ( $all && $urls ) {
+			WP_CLI::error( __( 'Give addresses or --all, not both.', 'scrapelock' ) );
+		}
+		if ( ! $all && ! $urls ) {
+			WP_CLI::error( __( 'Give the addresses to purge, or --all.', 'scrapelock' ) );
+		}
+		$good = self::own_urls( $urls );
+		$dry  = ! empty( $assoc_args['dry-run'] );
+		if ( $all && ! $dry && empty( $assoc_args['yes'] ) ) {
+			WP_CLI::confirm( __( 'Delete every page of this site from the server\'s fastcgi cache?', 'scrapelock' ) );
+		}
+		if ( ! self::server_cache_purge( $all ? null : $good, $assoc_args, $dry ) ) {
+			WP_CLI::halt( 1 );
+		}
+	}
+
+	/**
+	 * Where the fastcgi cache is: --cache-dir, else SCRAPELOCK_FASTCGI_CACHE_PATH / Nginx Helper, else the Nginx
+	 * configuration (--nginx-conf=<file>, else nginx -T).
+	 *
+	 * @param array<string, string> $assoc_args Options.
+	 * @return array{dirs:array<int, array{path:string, source:string}>, notes:string[], keys:array<string, string>}
+	 */
+	public static function cache_dirs( $assoc_args ) {
+		$out = array(
+			'dirs'  => array(),
+			'notes' => array(),
+			'keys'  => array(),
+		);
+		if ( isset( $assoc_args['cache-dir'] ) && '' !== trim( (string) $assoc_args['cache-dir'] ) ) {
+			foreach ( explode( ',', (string) $assoc_args['cache-dir'] ) as $path ) {
+				if ( '' !== trim( $path ) ) {
+					$out['dirs'][] = array(
+						'path'   => trim( $path ),
+						'source' => '--cache-dir',
+					);
+				}
+			}
+			return $out;
+		}
+		$out['dirs'] = PNCP_Fastcgi_Cache::known_dirs();
+		if ( $out['dirs'] ) {
+			return $out;
+		}
+		if ( isset( $assoc_args['nginx-conf'] ) && '' !== trim( (string) $assoc_args['nginx-conf'] ) ) {
+			$main   = trim( (string) $assoc_args['nginx-conf'] );
+			$source = $main;
+			if ( '/' !== $main[0] || ! is_file( $main ) || ! is_readable( $main ) ) {
+				/* translators: %s: file */
+				WP_CLI::error( sprintf( __( 'Cannot read the Nginx configuration file %s.', 'scrapelock' ), $main ) );
+			}
+			$tree = PNCP_Fastcgi_Cache::tree( $main, array( __CLASS__, 'conf_files' ), dirname( $main ) );
+		} else {
+			$bin = self::find_program( array( 'nginx' ), array( '/usr/sbin/nginx', '/usr/local/sbin/nginx', '/www/server/nginx/sbin/nginx' ) );
+			if ( '' === $bin ) {
+				$out['notes'][] = __( 'nginx was not found on PATH: give --nginx-conf=<file> or --cache-dir=<dir>, or set SCRAPELOCK_FASTCGI_CACHE_PATH.', 'scrapelock' );
+				return $out;
+			}
+			$source        = 'nginx -T';
+			list( , $dump ) = self::run( escapeshellarg( $bin ) . ' -T' );
+			$files         = PNCP_Fastcgi_Cache::dump_files( $dump );
+			if ( 1 === count( $files ) && isset( $files[''] ) ) {
+				/* translators: %s: output of nginx -T */
+				$out['notes'][] = sprintf( __( 'nginx -T printed no configuration (run WP-CLI as root?): %s', 'scrapelock' ), substr( trim( $dump ), 0, 300 ) );
+				return $out;
+			}
+			$main = (string) key( $files );
+			$tree = PNCP_Fastcgi_Cache::tree( $main, $files, dirname( $main ) );
+		}
+		$found        = PNCP_Fastcgi_Cache::find_caches( $tree, PNCP_Edge::site_hosts() );
+		$out['notes'] = $found['notes'];
+		if ( ! $found['servers'] ) {
+			/* translators: %s: host names */
+			$out['notes'][] = sprintf( __( 'No server { } block with server_name %s in the Nginx configuration.', 'scrapelock' ), implode( ' / ', PNCP_Edge::site_hosts() ) );
+		} elseif ( ! $found['caches'] ) {
+			$out['notes'][] = __( 'This site\'s server { } block uses no fastcgi_cache.', 'scrapelock' );
+		}
+		foreach ( $found['caches'] as $c ) {
+			$out['dirs'][]             = array(
+				'path'   => $c['path'],
+				/* translators: 1: where it was read, 2: cache zone */
+				'source' => sprintf( __( '%1$s, zone %2$s', 'scrapelock' ), $source, $c['zone'] ),
+			);
+			$out['keys'][ $c['path'] ] = $c['key'];
+		}
+		return $out;
+	}
+
+	/**
+	 * The configuration files an include pattern names (for --nginx-conf): path => text, readable regular
+	 * files of at most 1 MB, 100 at most.
+	 *
+	 * @param string $pattern Path or glob pattern.
+	 * @return array<string, string>
+	 */
+	public static function conf_files( $pattern ) {
+		$out   = array();
+		$paths = glob( $pattern );
+		foreach ( is_array( $paths ) ? array_slice( $paths, 0, 100 ) : array() as $path ) {
+			if ( is_file( $path ) && is_readable( $path ) && filesize( $path ) <= MB_IN_BYTES ) {
+				$out[ $path ] = (string) file_get_contents( $path ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- A local configuration file named by the person at the server.
+			}
+		}
+		return $out;
+	}
+
+	/**
+	 * Wp scrapelock cache status: where the cache is, how it was found, and this site's files in it.
+	 *
+	 * @param array<string, string> $assoc_args Options.
+	 */
+	private static function cache_status( $assoc_args ) {
+		$found = self::cache_dirs( $assoc_args );
+		foreach ( $found['notes'] as $note ) {
+			WP_CLI::log( $note );
+		}
+		if ( ! $found['dirs'] ) {
+			WP_CLI::log( __( 'No fastcgi cache folder is known for this site.', 'scrapelock' ) );
+			return;
+		}
+		$rows = PNCP_Fastcgi_Cache::purge( $found['dirs'], null, array( 'dry' => true ) );
+		foreach ( $rows as $row ) {
+			/* translators: 1: folder, 2: how it was found */
+			WP_CLI::log( sprintf( __( 'Folder: %1$s (from %2$s)', 'scrapelock' ), $row['path'], $row['source'] ) );
+			if ( isset( $found['keys'][ $row['path'] ] ) && '' !== $found['keys'][ $row['path'] ] ) {
+				/* translators: %s: fastcgi_cache_key */
+				WP_CLI::log( sprintf( __( 'Cache key: %s', 'scrapelock' ), $found['keys'][ $row['path'] ] ) );
+			}
+			if ( '' !== $row['error'] ) {
+				WP_CLI::warning( $row['error'] );
+				continue;
+			}
+			/* translators: 1: files of this site, 2: files looked at */
+			WP_CLI::log( sprintf( __( 'This site\'s cached pages: %1$d (of %2$d files).', 'scrapelock' ), $row['matched'], $row['files'] ) );
+			WP_CLI::log( wp_is_writable( $row['path'] ) ? __( 'Writable by this user: yes.', 'scrapelock' ) : __( 'Writable by this user: no (run WP-CLI as root or as the web server\'s user).', 'scrapelock' ) );
+		}
+		self::constant_hint( $found['dirs'] );
+		$last = get_option( PNCP_Fastcgi_Cache::LAST );
+		if ( is_array( $last ) && isset( $last['time'], $last['rows'] ) && is_array( $last['rows'] ) ) {
+			$removed = 0;
+			$failed  = 0;
+			foreach ( $last['rows'] as $r ) {
+				$removed += is_array( $r ) && isset( $r['removed'] ) ? (int) $r['removed'] : 0;
+				$failed  += is_array( $r ) && isset( $r['failed'] ) ? (int) $r['failed'] : 0;
+			}
+			/* translators: 1: date and time, 2: number of files, 3: number of files */
+			WP_CLI::log( sprintf( __( 'Last purge: %1$s, %2$d files removed, %3$d could not be deleted.', 'scrapelock' ), wp_date( 'Y-m-d H:i', (int) $last['time'] ), $removed, $failed ) );
+		}
+	}
+
+	/**
+	 * When the folder was found in the Nginx configuration: how to let the automatic purges use it too.
+	 *
+	 * @param array<int, array{path:string, source:string}> $dirs Folders.
+	 */
+	private static function constant_hint( $dirs ) {
+		if ( ! $dirs || PNCP_Fastcgi_Cache::known_dirs() ) {
+			return;
+		}
+		$paths = implode( ',', wp_list_pluck( $dirs, 'path' ) );
+		/* translators: %s: command */
+		WP_CLI::log( sprintf( __( 'So that ScrapeLock\'s automatic purges (settings, Stealth) empty it too: %s', 'scrapelock' ), 'wp config set SCRAPELOCK_FASTCGI_CACHE_PATH ' . escapeshellarg( $paths ) . ' --type=constant' ) );
+	}
+
+	/**
+	 * Purges this site's pages (or the addresses) in the fastcgi cache and prints the counts.
+	 *
+	 * @param string[]|null         $urls       Full addresses of this site, or null for every page.
+	 * @param array<string, string> $assoc_args Options (--cache-dir, --nginx-conf).
+	 * @param bool                  $dry        Count only.
+	 * @return bool False when files could not be deleted or a folder was refused.
+	 */
+	public static function server_cache_purge( $urls, $assoc_args, $dry ) {
+		$found = self::cache_dirs( $assoc_args );
+		foreach ( $found['notes'] as $note ) {
+			WP_CLI::log( $note );
+		}
+		if ( ! $found['dirs'] ) {
+			WP_CLI::log( __( 'Server cache: no fastcgi cache folder is known for this site (nothing purged there).', 'scrapelock' ) );
+			return true;
+		}
+		$rows = PNCP_Fastcgi_Cache::purge( $found['dirs'], $urls, array( 'dry' => $dry ) );
+		$ok   = true;
+		foreach ( $rows as $row ) {
+			if ( '' !== $row['error'] ) {
+				/* translators: %s: error */
+				WP_CLI::warning( sprintf( __( 'Server cache: %s', 'scrapelock' ), $row['error'] ) );
+				$ok = false;
+				continue;
+			}
+			if ( $dry ) {
+				/* translators: 1: folder, 2: number of files, 3: files of other sites or other pages */
+				WP_CLI::log( sprintf( __( 'Server cache (%1$s): %2$d files would be removed, %3$d other files kept.', 'scrapelock' ), $row['path'], $row['matched'], $row['other'] ) );
+			} else {
+				/* translators: 1: folder, 2: number of files, 3: files of other sites or other pages */
+				WP_CLI::success( sprintf( __( 'Server cache (%1$s): %2$d files removed, %3$d other files kept.', 'scrapelock' ), $row['path'], $row['removed'], $row['other'] ) );
+			}
+			if ( $row['failed'] ) {
+				$ok = false;
+				/* translators: %d: number of files */
+				WP_CLI::warning( sprintf( __( 'Server cache: %d files could not be deleted (no permission): run WP-CLI as root or as the web server\'s user.', 'scrapelock' ), $row['failed'] ) );
+			}
+			if ( $row['links'] ) {
+				/* translators: %d: number of links */
+				WP_CLI::log( sprintf( __( 'Server cache: %d symbolic links skipped (never followed).', 'scrapelock' ), $row['links'] ) );
+			}
+			if ( $row['capped'] ) {
+				$ok = false;
+				/* translators: %d: number of files */
+				WP_CLI::warning( sprintf( __( 'Server cache: stopped after %d files: run it again.', 'scrapelock' ), $row['files'] ) );
+			}
+		}
+		if ( ! $dry ) {
+			PNCP_Fastcgi_Cache::remember( $rows, 'cli' );
+			self::constant_hint( $found['dirs'] );
+		}
+		return $ok;
 	}
 }
