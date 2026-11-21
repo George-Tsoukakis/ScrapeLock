@@ -221,7 +221,9 @@ ScrapeLock — δοκιμές σε πραγματικό WordPress (όχι stubs)
                     WordPress folders refused; the cap; SCRAPELOCK_FASTCGI_CACHE_PATH, Nginx Helper's constant and
                     settings, the constant first, pncp_purge_page_cache() and Stealth's purge in another process;
                     the nginx -T parser (includes, comments, quotes, the zone of this site's server block, inherited
-                    from http, wildcards, a variable or undefined zone); a real Nginx with fastcgi_cache in a
+                    from http, wildcards, a variable or undefined zone);
+                    wp scrapelock cache status / purge (fake nginx -T on PATH, --nginx-conf, --cache-dir, --dry-run,
+                    --yes) and cdn purge --[no-]server-cache (WP_CLI); a real Nginx with fastcgi_cache in a
                     temporary prefix in front of lib/fcgi-stub.php (MISS, HIT, purge, MISS; SKIP without nginx)
   t_cli.php         wp scrapelock … μέσα από το πραγματικό wp (χρειάζεται WP_CLI, αλλιώς SKIP)
   t_bunny_rules.php Edge Rules στο Bunny μέσα στα όριά του (το πολύ 5 μοτίβα ανά συνθήκη) με ψεύτικο API που δίνει

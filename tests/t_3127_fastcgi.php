@@ -2,7 +2,7 @@
 /**
  * ScrapeLock 3.12.7 — the Nginx fastcgi cache: found, and only this site's pages deleted from it.
  *
- *   WP_DIR=/path/to/wordpress BASE=http://127.0.0.1:8099 php t_3127_fastcgi.php
+ *   WP_DIR=/path/to/wordpress BASE=http://127.0.0.1:8099 [WP_CLI="wp --path=…"] php t_3127_fastcgi.php
  *
  * F. Cache files: Nginx's header (version 5), "\nKEY: …\n", the name is the key's MD5 (or the key's MD5 is in
  *    the header: a Vary variant); anything else (another name, no header, a wrong MD5, a temporary file) is not one.
@@ -20,14 +20,18 @@
  * X. The Nginx configuration parser on sample "nginx -T" text: includes (globs, relative), comments, quotes, the
  *    zone of this site's server block (in a location, inherited from http { }), wildcards, a variable zone, an
  *    undefined zone, another site's zone never used.
+ * C. WP-CLI (SKIP without WP_CLI): cache status (nginx -T of a fake nginx on PATH, the hint line), cache purge
+ *    --all (asks; --yes), addresses, --dry-run, --cache-dir=/ refused, --nginx-conf, another host refused; cdn purge
+ *    --all also the server cache (none connected: a warning, exit 0), --no-server-cache, --server-cache.
  * R. Real Nginx with fastcgi_cache in a temporary prefix in front of a small FastCGI responder (SKIP without
- *    nginx): MISS, HIT, purge, MISS; another host sharing the zone stays HIT.
+ *    nginx): MISS, HIT, purge, MISS; another host sharing the zone stays HIT; cache purge <url> --nginx-conf.
  *
  * Only on a test WordPress.
  */
 
 $wp_dir = getenv( 'WP_DIR' );
 $base   = rtrim( (string) getenv( 'BASE' ), '/' );
+$wp_cli = (string) getenv( 'WP_CLI' );
 if ( ! $wp_dir || ! $base ) {
 	fwrite( STDERR, "WP_DIR and BASE are required\n" );
 	exit( 2 );
@@ -298,6 +302,105 @@ $loop = PNCP_Fastcgi_Cache::tree( '/a.conf', array( '/a.conf' => 'include /a.con
 t( 'X an include loop ends', is_array( $loop ) );
 t( 'X server_name forms', PNCP_Fastcgi_Cache::server_matches( array( '.example.test' ), array( 'example.test' ) ) && PNCP_Fastcgi_Cache::server_matches( array( 'example.*' ), array( 'example.org' ) ) && ! PNCP_Fastcgi_Cache::server_matches( array( '*.example.test' ), array( 'example.test' ) ) && ! PNCP_Fastcgi_Cache::server_matches( array( '~^(?<s>.+)\.test$' ), array( 'example.test' ) ) );
 
+/* ---------- C. WP-CLI ---------- */
+
+/** Runs "wp scrapelock …" with $env before it: [exit code, output]. */
+function cli( $args, $env = '' ) {
+	global $wp_cli;
+	exec( $env . ' ' . $wp_cli . ' scrapelock ' . $args . ' < /dev/null 2>&1', $out, $rc );
+	wp_cache_flush();
+	return array( $rc, implode( "\n", $out ) );
+}
+
+if ( '' === $wp_cli ) {
+	echo "note: C skipped without WP_CLI\n";
+} else {
+	// A fake nginx on PATH whose "nginx -T" prints a configuration with this site's server block.
+	$bin = $tmp . '/bin';
+	mkdir( $bin );
+	$dump_of          = static function ( $root ) use ( $host ) {
+		return "# configuration file /etc/nginx/nginx.conf:\nhttp {\n fastcgi_cache_path $root levels=1:2 keys_zone=zt:10m;\n include /etc/nginx/sites/*.conf;\n}\n# configuration file /etc/nginx/sites/site.conf:\nserver { server_name $host; location / { fastcgi_cache zt; fastcgi_cache_key \$scheme\$request_method\$host\$request_uri; } }\n";
+	};
+	list( $root, $f ) = build_tree( $tmp, $host, $other );
+	file_put_contents( $tmp . '/dump.txt', $dump_of( $root ) );
+	file_put_contents( $bin . '/nginx', "#!/bin/sh\n[ \"\$1\" = \"-T\" ] && cat " . escapeshellarg( $tmp . '/dump.txt' ) . " && exit 0\nexit 1\n" );
+	chmod( $bin . '/nginx', 0755 );
+	$env = 'PATH=' . escapeshellarg( $bin ) . ':"$PATH"';
+
+	list( $rc, $out ) = cli( 'cache status', $env );
+	t( 'C cache status: the folder from nginx -T (zone), this site\'s pages, the key, the hint line', 0 === $rc && false !== strpos( $out, 'Folder: ' . realpath( $root ) . ' (from nginx -T, zone zt)' ) && false !== strpos( $out, "This site's cached pages: 5 (of 10 files)." ) && false !== strpos( $out, 'Cache key: $scheme$request_method$host$request_uri' ) && false !== strpos( $out, 'wp config set SCRAPELOCK_FASTCGI_CACHE_PATH ' ) && file_exists( $f['p'] ), $out );
+	list( $rc, $out ) = cli( 'cache purge --all', $env );
+	t( 'C cache purge --all without --yes: asks, deletes nothing', false !== strpos( $out, 'fastcgi cache?' ) && file_exists( $f['p'] ), $out );
+	list( $rc, $out ) = cli( 'cache purge --all --dry-run', $env );
+	t( 'C --dry-run: counts, deletes nothing', 0 === $rc && false !== strpos( $out, '5 files would be removed' ) && file_exists( $f['p'] ), $out );
+	list( $rc, $out ) = cli( 'cache purge /p', $env );
+	t( 'C cache purge /p: that address only', 0 === $rc && false !== strpos( $out, '3 files removed' ) && ! file_exists( $f['p'] ) && file_exists( $f['p2'] ), $out );
+	list( $rc, $out ) = cli( 'cache purge https://' . $other . '/p', $env );
+	t( 'C another host\'s address: refused, nothing deleted', 0 !== $rc && false !== strpos( $out, 'Not an address of this site' ) && file_exists( $f['o2'] ), $out );
+	list( $rc, $out ) = cli( 'cache purge --all --yes', $env );
+	t( 'C cache purge --all --yes: this site\'s pages only', 0 === $rc && false !== strpos( $out, '2 files removed, 5 other files kept' ) && ! file_exists( $f['home'] ) && file_exists( $f['o1'] ) && file_exists( $f['outside'] ), $out );
+	list( $rc, $out ) = cli( 'cache purge --all --yes --cache-dir=/' );
+	t( 'C --cache-dir=/: refused, exit 1', 1 === $rc && false !== strpos( $out, 'Refused: / is a system folder' ), $out );
+	list( $rc, $out ) = cli( 'cache purge --all --yes --cache-dir=' . escapeshellarg( $tmp . '/missing' ) );
+	t( 'C --cache-dir of a missing folder: an error, exit 1', 1 === $rc && false !== strpos( $out, 'does not exist' ), $out );
+	list( $rc, $out ) = cli( 'cache purge bogus' );
+	t( 'C purge without --all or addresses of this site: an error', 0 !== $rc );
+
+	// --nginx-conf: the files on disk, includes resolved (relative to the main file's folder).
+	list( $root, $f ) = build_tree( $tmp, $host, $other );
+	mkdir( $tmp . '/etc/sites', 0700, true );
+	file_put_contents( $tmp . '/etc/nginx.conf', "http {\n fastcgi_cache_path $root levels=1:2 keys_zone=zd:10m;\n include sites/*.conf;\n}\n" );
+	file_put_contents( $tmp . '/etc/sites/site.conf', "server { server_name $host; fastcgi_cache zd; }\n" );
+	list( $rc, $out ) = cli( 'cache purge --all --yes --nginx-conf=' . escapeshellarg( $tmp . '/etc/nginx.conf' ) );
+	t( 'C --nginx-conf: read from the files, this site\'s pages deleted', 0 === $rc && false !== strpos( $out, '5 files removed' ) && ! file_exists( $f['p'] ) && file_exists( $f['o1'] ), $out );
+	file_put_contents( $tmp . '/etc/sites/site.conf', "server { server_name $other; fastcgi_cache zd; }\n" );
+	list( $rc, $out ) = cli( 'cache status --nginx-conf=' . escapeshellarg( $tmp . '/etc/nginx.conf' ) );
+	t( 'C no server block of this site: nothing found, says so', 0 === $rc && false !== strpos( $out, 'No server { } block with server_name' ) && false !== strpos( $out, 'No fastcgi cache folder is known' ), $out );
+
+	// cdn purge: the server cache first, by default with --all.
+	$saved = array();
+	foreach ( array( PNCP_Edge::CONFIG, PNCP_Bunny::CONFIG ) as $name ) {
+		$saved[ $name ] = get_option( $name, null );
+		delete_option( $name );
+	}
+	$cleanup[] = static function () use ( $saved ) {
+		foreach ( $saved as $name => $value ) {
+			if ( null !== $value ) {
+				update_option( $name, $value, false );
+			}
+		}
+	};
+	list( $root, $f ) = build_tree( $tmp, $host, $other );
+	file_put_contents( $tmp . '/dump.txt', $dump_of( $root ) );
+	list( $rc, $out ) = cli( 'cdn purge --all --no-server-cache --yes', $env );
+	t( 'C cdn purge --all --no-server-cache, no CDN: the error of 3.12.6, nothing deleted', 0 !== $rc && false !== strpos( $out, 'No CDN connection' ) && file_exists( $f['p'] ), $out );
+	list( $rc, $out ) = cli( 'cdn purge /p --server-cache', $env );
+	t( 'C cdn purge /p --server-cache, no CDN: the server cache, a warning, exit 0', 0 === $rc && false !== strpos( $out, '3 files removed' ) && false !== strpos( $out, 'No CDN connection' ) && ! file_exists( $f['p'] ) && file_exists( $f['home'] ), $out );
+	list( $rc, $out ) = cli( 'cdn purge --all', $env );
+	t( 'C cdn purge --all asks about both caches', false !== strpos( $out, 'and its pages in the server\'s fastcgi cache?' ) && file_exists( $f['home'] ), $out );
+	list( $rc, $out ) = cli( 'cdn purge --all --yes', $env );
+	t( 'C cdn purge --all --yes: the server cache too', 0 === $rc && false !== strpos( $out, '2 files removed' ) && ! file_exists( $f['home'] ) && file_exists( $f['o1'] ), $out );
+	$last = get_option( PNCP_Fastcgi_Cache::LAST );
+	t( 'C the counts kept for cache status', is_array( $last ) && 'cli' === $last['how'] && 2 === $last['rows'][0]['removed'] );
+	list( $rc, $out ) = cli( 'cache status', $env );
+	t( 'C cache status: the last purge', false !== strpos( $out, ', 2 files removed, 0 could not be deleted.' ), $out );
+	list( $rc, $out ) = cli( 'cdn --help' );
+	t( 'C cdn --help: --[no-]server-cache', false !== strpos( $out, '--[no-]server-cache' ), $out );
+	list( $rc, $out ) = cli( 'cache --help' );
+	t( 'C cache --help: status, purge, --cache-dir, --nginx-conf, --dry-run', false !== strpos( $out, '--nginx-conf=<file>' ) && false !== strpos( $out, '--dry-run' ) && false !== strpos( $out, '--cache-dir=<dir>' ), $out );
+
+	// A file that cannot be deleted (a folder without write permission), when not root.
+	if ( function_exists( 'posix_geteuid' ) && 0 !== posix_geteuid() ) {
+		list( $root, $f ) = build_tree( $tmp, $host, $other );
+		chmod( dirname( $f['p'] ), 0500 );
+		list( $rc, $out ) = cli( 'cache purge /p --cache-dir=' . escapeshellarg( $root ) );
+		chmod( dirname( $f['p'] ), 0700 );
+		t( 'C no permission: says so, exit 1', 1 === $rc && false !== strpos( $out, 'could not be deleted (no permission)' ), $out );
+	} else {
+		echo "note: the no-permission case is not checked as root\n";
+	}
+}
+
 /* ---------- R. Real Nginx ---------- */
 
 $nginx = '';
@@ -379,6 +482,12 @@ if ( '' === $nginx ) {
 		}
 		sort( $files );
 		t( 'R Nginx\'s own cache files are read: their keys', array( 'httpGET' . $host . '/r?x=1', 'httpGET' . $host . '/s', 'httpGET' . $other . '/r?x=1' ) === $files, wp_json_encode( $files ) );
+		if ( '' !== $wp_cli ) {
+			list( $rc, $out ) = cli( 'cache purge /r?x=1 --nginx-conf=' . escapeshellarg( $pre . '/nginx.conf' ) );
+			$a3               = $get( $host, '/r?x=1' );
+			$c2               = $get( $host, '/s' );
+			t( 'R cache purge <url> --nginx-conf (the real configuration): MISS for that page, the others still HIT', 0 === $rc && false !== strpos( $out, '1 files removed' ) && 'MISS' === $a3[0] && $a3[1] > $a2[1] && 'HIT' === $c2[0] && $c2[1] === $c1[1], $out . ' ' . wp_json_encode( array( $a3, $c2 ) ) );
+		}
 		$rows = PNCP_Fastcgi_Cache::purge( $dirs( $pre . '/cache' ) );
 		$a4   = $get( $host, '/r?x=1' );
 		$a5   = $get( $host, '/r?x=1' );
