@@ -1548,8 +1548,8 @@ final class PNCP_Cli {
 	 * : Also list the dismissed proposals, with a "state" column (proposed or dismissed).
 	 *
 	 * [--apply]
-	 * : Apply the proposals that block nothing more (the ones ticked by default on the settings page). Dismissed
-	 * proposals are never applied.
+	 * : Apply the proposals that block nothing more (the ones ticked by default on the settings page: not those
+	 * marked "you chose this"). Dismissed proposals are never applied.
 	 *
 	 * [--all]
 	 * : With --apply: also the proposals that block more (marked "more").
@@ -1651,7 +1651,8 @@ final class PNCP_Cli {
 			}
 		} else {
 			foreach ( $proposals as $key => $row ) {
-				if ( ! empty( $assoc_args['all'] ) || PNCP_Wizard::RISK_NONE === $row['risk'] ) {
+				// 3.12.6: as on the settings page, a value marked "you chose this" is not ticked by default.
+				if ( ! empty( $assoc_args['all'] ) || ( PNCP_Wizard::RISK_NONE === $row['risk'] && ! PNCP_Wizard::is_chosen( $key, $row, $state ) ) ) {
 					$keys[] = $key;
 				}
 			}

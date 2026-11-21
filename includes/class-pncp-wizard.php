@@ -1172,10 +1172,14 @@ final class PNCP_Wizard {
 						</tr></thead>
 						<tbody>
 							<?php foreach ( $proposals as $key => $row ) : ?>
-								<?php $more = self::RISK_MORE === $row['risk']; ?>
+								<?php
+								$more = self::RISK_MORE === $row['risk'];
+								// 3.12.6: a value the administrator chose against the proposal is not ticked either.
+								$tick = ! $more && ! self::is_chosen( $key, $row, $state );
+								?>
 								<tr class="pncp-wizard-row<?php echo $more ? ' is-risky' : ''; ?>">
 									<th scope="row" class="check-column">
-										<input type="checkbox" name="pncp_wizard_keys[]" value="<?php echo esc_attr( $key ); ?>" id="pncp-wizard-<?php echo esc_attr( $key ); ?>"<?php checked( ! $more ); ?>>
+										<input type="checkbox" name="pncp_wizard_keys[]" value="<?php echo esc_attr( $key ); ?>" id="pncp-wizard-<?php echo esc_attr( $key ); ?>"<?php checked( $tick ); ?>>
 									</th>
 									<td>
 										<label for="pncp-wizard-<?php echo esc_attr( $key ); ?>"><?php echo esc_html( self::label( $key ) ); ?></label>

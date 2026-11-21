@@ -19,10 +19,11 @@
  *    cut to STATE_MAX entries, removed by uninstall.php, nothing in the settings or their export.
  * P. The panel over HTTP: the count without the dismissed ones, a "Dismiss" button per row (in its own form, so
  *    "Apply selected" stays the form's default button), "Show dismissed (N)" with "Restore" and the labels only
- *    (keys in tooltips); "Dismiss" / "Restore" through admin-post: wrong nonce and a subscriber refused (403),
+ *    (keys in tooltips), a restored "you chose this" row not ticked; "Dismiss" / "Restore" through admin-post: wrong nonce and a subscriber refused (403),
  *    the notices; locked: dismiss() and restore() refuse.
  * L. wp scrapelock wizard (WP_CLI given): dismiss <id> / restore <id>, the "N dismissed" line, --include-dismissed
- *    with the state column, --apply never applies a dismissed one, --only=<dismissed> is refused.
+ *    with the state column, --apply never applies a dismissed one (nor, without --all, one marked "you chose
+ *    this"), --only=<dismissed> is refused.
  *
  * Settings, saved versions and the wizard state are put back at the end. Only on a test WordPress.
  */
@@ -359,6 +360,7 @@ list( , $body ) = http( $panel, null, $cookies );
 $p   = panel_of( $body );
 $row = preg_match( '#<tr class="pncp-wizard-row[^"]*">(?:(?!</tr>).)*value="rate_limit"(?:(?!</tr>).)*</tr>#s', $p, $rm ) ? $rm[0] : '';
 t( 'P: the restored row says "you chose this" next to the value now', false !== strpos( $row, '<td>30 <span class="pncp-tag pncp-tag--default pncp-wizard-chosen">you chose this</span></td>' ), $row );
+t( 'P: … and it is not ticked', false !== strpos( $row, 'value="rate_limit" id="pncp-wizard-rate_limit">' ), $row );
 $elsewhere = new ReflectionProperty( 'PNCP_Lockdown', 'elsewhere' );
 $elsewhere->setAccessible( true );
 $elsewhere->setValue( null, true );
@@ -382,6 +384,9 @@ if ( '' !== $wp_cli ) {
 	t( 'L: without it: the same columns as before (no state)', 0 === $rc && is_array( $rows ) && $rows && array( 'setting', 'now', 'proposed', 'risk', 'reason' ) === array_keys( $rows[0] ), $out );
 	list( $rc, $out ) = cli( 'wizard --apply --only=blur_on_capture --yes' );
 	t( 'L: --apply --only=<dismissed>: refused, nothing changes', 0 !== $rc && false !== strpos( $out, 'is dismissed' ) && 1 === (int) fresh()['blur_on_capture'], $out );
+	list( $rc, $out ) = cli( 'wizard --apply --yes' );
+	$s                = fresh();
+	t( 'L: --apply (ticked by default): not rate_limit, marked "you chose this"', 0 === $rc && 30 === (int) $s['rate_limit'], $out );
 	list( $rc, $out ) = cli( 'wizard dismiss rate_limit' );
 	t( 'L: wizard dismiss rate_limit', 0 === $rc && isset( PNCP_Wizard::state()['dismissed']['rate_limit'] ), $out );
 	list( $rc, $out ) = cli( 'wizard --apply --all --yes' );
