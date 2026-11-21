@@ -93,11 +93,11 @@ register_shutdown_function(
 
 $now     = array_keys( PNCP_Options::defaults() );
 $missing = array_values( array_diff( $keys['defaults'], $now ) );
-// 3.12 adds the Traffic keys (PNCP_Options::new_in_3120()), 3.12.5 blur_on_capture_scope (new_in_3125()); 3.11
-// itself added none.
-$added   = array_values( array_diff( $now, $keys['defaults'], array_keys( PNCP_Options::new_in_3120() ), array_keys( PNCP_Options::new_in_3125() ) ) );
+// 3.12 adds the Traffic keys (PNCP_Options::new_in_3120()), 3.12.5 blur_on_capture_scope (new_in_3125()), 3.12.6
+// block_tech_profilers (new_in_3126()); 3.11 itself added none.
+$added   = array_values( array_diff( $now, $keys['defaults'], array_keys( PNCP_Options::new_in_3120() ), array_keys( PNCP_Options::new_in_3125() ), array_keys( PNCP_Options::new_in_3126() ) ) );
 t( 'every settings key of 3.10.1 is still in PNCP_Options::defaults() (' . count( $keys['defaults'] ) . ' keys)', ! $missing, implode( ',', $missing ) );
-t( 'no new settings key in 3.11, only the 3.12 Traffic keys and the 3.12.5 blur scope (' . count( $now ) . ' keys)', ! $added, implode( ',', $added ) );
+t( 'no new settings key in 3.11, only the 3.12 Traffic keys, the 3.12.5 blur scope and the 3.12.6 profilers switch (' . count( $now ) . ' keys)', ! $added, implode( ',', $added ) );
 $public  = PNCP_Settings_Io::public_keys();
 $missing = array_values( array_diff( array_keys( $export['settings'] ), $public ) );
 t( 'every exported setting of 3.10.1 can still be imported (public_keys())', ! $missing, implode( ',', $missing ) );

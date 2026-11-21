@@ -24,6 +24,19 @@ if ( ! $wp_dir || ! $base ) {
 }
 define( 'WP_USE_THEMES', false );
 require $wp_dir . '/wp-load.php';
+// 3.12.6: start without dismissed proposals or "you chose this" notes left by other tests (PNCP_Wizard::state()),
+// and put them back at the end.
+$pncp_wizard_state = get_option( 'pncp_wizard_state', null );
+delete_option( 'pncp_wizard_state' );
+register_shutdown_function(
+	static function () use ( $pncp_wizard_state ) {
+		if ( null === $pncp_wizard_state ) {
+			delete_option( 'pncp_wizard_state' );
+		} else {
+			update_option( 'pncp_wizard_state', $pncp_wizard_state, false );
+		}
+	}
+);
 require_once ABSPATH . 'wp-admin/includes/plugin.php';
 require_once ABSPATH . 'wp-admin/includes/template.php';
 

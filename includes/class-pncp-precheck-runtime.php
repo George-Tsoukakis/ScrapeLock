@@ -632,6 +632,11 @@ final class PNCP_Precheck_Runtime {
 		if ( preg_match( '#^/(?:robots|llms|llms-full)\.txt$#i', $path ) || 0 === strcasecmp( $path, '/.well-known/tdmrep.json' ) ) {
 			return false;
 		}
+		// 3.12.6: a verification file (path from the root of the host => until), while it is there.
+		$raw = rawurldecode( (string) parse_url( $uri, PHP_URL_PATH ) );
+		if ( ! empty( $c['open'] ) && is_array( $c['open'] ) && isset( $c['open'][ $raw ] ) && (int) $c['open'][ $raw ] > time() ) {
+			return false;
+		}
 		return ! preg_match( '#^/(?:index\.php/)?(?:wp-admin|wp-login\.php|wp-cron\.php|xmlrpc\.php|wp-json|wp-signup\.php|wp-activate\.php|wp-trackback\.php|wp-comments-post\.php|cp-[0-9a-f]{10})(?:/|$)#i', $path );
 	}
 

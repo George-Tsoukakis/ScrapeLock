@@ -2,7 +2,7 @@
 /**
  * WP-CLI: wp scrapelock status | block | unblock | blocked | emergency | lockdown status | check | log | settings |
  * reputation | crowdsec | ai-referrals (3.7) | attacks | attack-report | login | harden | bunny | stealth (3.8) |
- * wizard (3.11) | traffic (3.12).
+ * wizard (3.11) | traffic (3.12) | rules, cdn, verify-file (3.12.6).
  * Lockdown cannot be unlocked from here: it opens only with the authenticator app (or SCRAPELOCK_UNLOCK in
  * wp-config.php).
  *
@@ -1161,6 +1161,159 @@ final class PNCP_Cli {
 	}
 
 	/**
+	 * 3.12.6: the server rules: print a part exactly as the Server rules tab shows it, check whether the installed
+	 * ones are current, or install them into the files you name (test, reload, put back on failure).
+	 *
+	 * "install" writes <file>.new, shows a unified diff, keeps the current file as <file>.old, puts the new one in
+	 * place, runs the test (nginx -t; for a .conf of Apache apachectl -t; for a .htaccess a request of the home
+	 * page) and the reload (nginx -s reload, else systemctl reload nginx; apachectl -k graceful), then removes the
+	 * .old files and prints the status. When the test or the reload fails, every file is put back from its .old and
+	 * the command exits with an error and the test's output. Nothing is guessed: only the files named are written,
+	 * Nginx files must end in .conf, Apache files be .htaccess or end in .conf, a symlink must point into its own
+	 * folder. An unchanged file is skipped. Only from WP-CLI; never while the site is locked.
+	 *
+	 * ## OPTIONS
+	 *
+	 * [<action>]
+	 * : status (default), show or install.
+	 *
+	 * [--part=<part>]
+	 * : For show: nginx-http, nginx-server, stealth-nginx, stealth-apache or apache.
+	 *
+	 * [--nginx-http=<file>]
+	 * : For install: the file of Nginx part 1 (inside http { }).
+	 *
+	 * [--nginx-server=<file>]
+	 * : For install: the file of Nginx part 2 (inside the site's server { }).
+	 *
+	 * [--stealth=<file>]
+	 * : For install: the file of the Stealth rules for Nginx (inside the site's server { }, after part 2).
+	 *
+	 * [--apache=<file>]
+	 * : For install: the .htaccess (only ScrapeLock's block is replaced, or added above # BEGIN WordPress) or a .conf.
+	 *
+	 * [--stealth-apache=<file>]
+	 * : For install: the .htaccess (or .conf) for the Stealth rules for Apache.
+	 *
+	 * [--dry-run]
+	 * : For install: show the diff only; nothing is changed.
+	 *
+	 * [--test-cmd=<command>]
+	 * : For install: the test command instead of the default (e.g. "/www/server/nginx/sbin/nginx -t"). Run through the shell exactly as given, as the user running wp: the only command text that comes from outside the plugin.
+	 *
+	 * [--reload-cmd=<command>]
+	 * : For install: the reload command instead of the default (e.g. "systemctl reload nginx"). Run through the shell exactly as given, like --test-cmd.
+	 *
+	 * [--yes]
+	 * : For install: do not ask for confirmation.
+	 *
+	 * [--server=<server>]
+	 * : For status: nginx or apache (default: the server the rules were seen on).
+	 *
+	 * [--format=<format>]
+	 * : For status: table (default), json, csv or yaml.
+	 *
+	 * ## EXAMPLES
+	 *
+	 *     wp scrapelock rules show --part=nginx-http > /etc/nginx/conf.d/scrapelock.conf.new
+	 *     wp scrapelock rules status
+	 *     wp scrapelock rules status --format=json
+	 *     wp scrapelock rules install --nginx-http=/etc/nginx/conf.d/scrapelock.conf --nginx-server=/etc/nginx/snippets/scrapelock-site.conf --dry-run
+	 *     wp scrapelock rules install --nginx-http=/www/server/panel/vhost/nginx/0.scrapelock-example_com.conf --nginx-server=/www/server/panel/vhost/nginx/extension/example.com/scrapelock.conf --stealth=/www/server/panel/vhost/nginx/extension/example.com/z-scrapelock-stealth.conf --yes
+	 *     wp scrapelock rules install --apache=/var/www/html/.htaccess
+	 *
+	 * @param string[]              $args       Arguments.
+	 * @param array<string, string> $assoc_args Options.
+	 */
+	public function rules( $args, $assoc_args ) {
+		PNCP_Cli_Server::rules( $args, $assoc_args );
+	}
+
+	/**
+	 * 3.12.6: a verification file for a service that asks for one to verify that the site is yours (BuiltWith's
+	 * /builtwith.txt, Google's /google<hex>.html, Bing's /BingSiteAuth.xml, Yandex, /.well-known/<name>): served by
+	 * WordPress to every bot, also to one the bot list blocks, for some hours, then removed; purged at the CDN when
+	 * added and when removed. With --write also written to the site's root folder (never over an existing file).
+	 *
+	 * ## OPTIONS
+	 *
+	 * [<action>]
+	 * : list (default), add or remove.
+	 *
+	 * [<path>]
+	 * : For add and remove: the address, e.g. /builtwith.txt or /.well-known/example.txt.
+	 *
+	 * [--content=<text>]
+	 * : For add: the content.
+	 *
+	 * [--from=<file>]
+	 * : For add: read the content from a local file (at most 64 KB).
+	 *
+	 * [--hours=<hours>]
+	 * : For add: removed after this many hours, 1 to 168.
+	 * ---
+	 * default: 24
+	 * ---
+	 *
+	 * [--write]
+	 * : For add: also write it to the site's root folder.
+	 *
+	 * [--format=<format>]
+	 * : For list: table, json, csv or yaml.
+	 *
+	 * ## EXAMPLES
+	 *
+	 *     wp scrapelock verify-file add /builtwith.txt --content=builtwith-verification-1234
+	 *     wp scrapelock verify-file add /google1234567890abcdef.html --from=google1234567890abcdef.html --hours=48
+	 *     wp scrapelock verify-file list
+	 *     wp scrapelock verify-file remove /builtwith.txt
+	 *
+	 * @subcommand verify-file
+	 *
+	 * @param string[]              $args       Arguments.
+	 * @param array<string, string> $assoc_args Options.
+	 */
+	public function verify_file( $args, $assoc_args ) {
+		PNCP_Cli_Server::verify_file( $args, $assoc_args );
+	}
+
+	/**
+	 * 3.12.6: purges addresses of this site (or the whole cache) at the CDN, with the plugin's stored credentials:
+	 * the Bunny CDN pull zone and / or the Cloudflare zone. Only addresses on this site's own hosts; the keys are
+	 * never printed. Bunny's and Cloudflare's rate limits are respected as for the other calls.
+	 *
+	 * ## OPTIONS
+	 *
+	 * <action>
+	 * : purge
+	 * ---
+	 * options:
+	 *   - purge
+	 * ---
+	 *
+	 * [<url>...]
+	 * : Addresses of this site, or paths such as /builtwith.txt (on the home address).
+	 *
+	 * [--all]
+	 * : Purge the whole cache instead.
+	 *
+	 * [--yes]
+	 * : With --all: do not ask for confirmation.
+	 *
+	 * ## EXAMPLES
+	 *
+	 *     wp scrapelock cdn purge https://example.com/builtwith.txt
+	 *     wp scrapelock cdn purge /builtwith.txt /robots.txt
+	 *     wp scrapelock cdn purge --all --yes
+	 *
+	 * @param string[]              $args       Arguments.
+	 * @param array<string, string> $assoc_args Options.
+	 */
+	public function cdn( $args, $assoc_args ) {
+		PNCP_Cli_Server::cdn( $args, $assoc_args );
+	}
+
+	/**
 	 * 3.12: Traffic: the sources, the figures, the requests, a CSV export, delete, run the job, test a log path.
 	 *
 	 * ## OPTIONS
@@ -1380,10 +1533,23 @@ final class PNCP_Cli {
 	 * first tab of the settings page. Nothing changes without --apply; the settings as they are now are saved
 	 * first ("wp scrapelock settings undo" puts them back).
 	 *
+	 * 3.12.6: "dismiss <setting>" hides a proposal as it is now (it is then not listed, counted or applied, until
+	 * its setting or the proposal changes); "restore <setting>" shows it again.
+	 *
 	 * ## OPTIONS
 	 *
+	 * [<action>]
+	 * : dismiss or restore (nothing = list the proposals, or apply them with --apply).
+	 *
+	 * [<setting>]
+	 * : With dismiss or restore: the proposal (its setting name, as listed).
+	 *
+	 * [--include-dismissed]
+	 * : Also list the dismissed proposals, with a "state" column (proposed or dismissed).
+	 *
 	 * [--apply]
-	 * : Apply the proposals that block nothing more (the ones ticked by default on the settings page).
+	 * : Apply the proposals that block nothing more (the ones ticked by default on the settings page: not those
+	 * marked "you chose this"). Dismissed proposals are never applied.
 	 *
 	 * [--all]
 	 * : With --apply: also the proposals that block more (marked "more").
@@ -1405,22 +1571,43 @@ final class PNCP_Cli {
 	 *     wp scrapelock wizard
 	 *     wp scrapelock wizard --apply --yes
 	 *     wp scrapelock wizard --apply --only=precheck
+	 *     wp scrapelock wizard dismiss block_devtools
+	 *     wp scrapelock wizard --include-dismissed
+	 *     wp scrapelock wizard restore block_devtools
 	 *
 	 * @param string[]              $args       Arguments.
 	 * @param array<string, string> $assoc_args Options.
 	 */
-	public function wizard( $args, $assoc_args ) { // phpcs:ignore Generic.CodeAnalysis.UnusedFunctionParameter.FoundBeforeLastUsed -- WP-CLI signature.
-		$format    = self::format( $assoc_args );
-		$env       = PNCP_Wizard::detect();
-		$proposals = PNCP_Wizard::proposals( null, $env );
-		$items     = array();
-		foreach ( $proposals as $key => $row ) {
+	public function wizard( $args, $assoc_args ) {
+		$format = self::format( $assoc_args );
+		$env    = PNCP_Wizard::detect();
+		$action = isset( $args[0] ) ? (string) $args[0] : '';
+		if ( '' !== $action ) {
+			if ( ! in_array( $action, array( 'dismiss', 'restore' ), true ) || ! isset( $args[1] ) ) {
+				WP_CLI::error( __( 'Use: wp scrapelock wizard dismiss <setting> or wp scrapelock wizard restore <setting>.', 'scrapelock' ) );
+			}
+			$done = 'dismiss' === $action ? PNCP_Wizard::dismiss( (string) $args[1], $env ) : PNCP_Wizard::restore( (string) $args[1] );
+			if ( is_wp_error( $done ) ) {
+				WP_CLI::error( $done->get_error_message() );
+			}
+			WP_CLI::success( 'dismiss' === $action ? __( 'Dismissed: it is no longer listed, counted or applied, until its setting or the proposal changes.', 'scrapelock' ) : __( 'Restored: the proposal is listed again.', 'scrapelock' ) );
+			return;
+		}
+		$state = PNCP_Wizard::state();
+		// 3.12.6: the dismissed proposals only with --include-dismissed, and never applied.
+		list( $proposals, $dismissed ) = PNCP_Wizard::split( PNCP_Wizard::proposals( null, $env ), $state );
+		$with_dismissed                = ! empty( $assoc_args['include-dismissed'] );
+		$fields                        = $with_dismissed ? array( 'setting', 'now', 'proposed', 'risk', 'state', 'reason' ) : array( 'setting', 'now', 'proposed', 'risk', 'reason' );
+		$items                         = array();
+		foreach ( $with_dismissed ? $proposals + $dismissed : $proposals as $key => $row ) {
 			$texts         = PNCP_Wizard::row_texts( $row ); // 3.12.1: a row may change two settings (ban_strikes, ban_minutes).
 			$items[ $key ] = array(
 				'setting'  => $key,
-				'now'      => $texts[0],
+				/* translators: %s: the value now */
+				'now'      => PNCP_Wizard::is_chosen( $key, $row, $state ) ? sprintf( __( '%s (you chose this)', 'scrapelock' ), $texts[0] ) : $texts[0],
 				'proposed' => $texts[1],
 				'risk'     => $row['risk'],
+				'state'    => isset( $dismissed[ $key ] ) ? 'dismissed' : 'proposed',
 				'reason'   => $row['reason'],
 			);
 		}
@@ -1432,14 +1619,18 @@ final class PNCP_Cli {
 				if ( ! $items ) {
 					WP_CLI::success( __( 'Nothing to change: the settings already suit what was found.', 'scrapelock' ) );
 				} else {
-					WP_CLI\Utils\format_items( 'table', array_values( $items ), array( 'setting', 'now', 'proposed', 'risk', 'reason' ) );
+					WP_CLI\Utils\format_items( 'table', array_values( $items ), $fields );
+				}
+				if ( $dismissed && ! $with_dismissed ) {
+					/* translators: %d: number of dismissed proposals */
+					WP_CLI::line( sprintf( _n( '%d dismissed proposal is not listed (--include-dismissed lists it).', '%d dismissed proposals are not listed (--include-dismissed lists them).', count( $dismissed ), 'scrapelock' ), count( $dismissed ) ) );
 				}
 				foreach ( PNCP_Wizard::notes( null, $env ) as $note ) {
 					WP_CLI::line( '- ' . $note['for'] . ': ' . $note['text'] );
 				}
 				return;
 			}
-			WP_CLI\Utils\format_items( $format, array_values( $items ), array( 'setting', 'now', 'proposed', 'risk', 'reason' ) );
+			WP_CLI\Utils\format_items( $format, array_values( $items ), $fields );
 			return;
 		}
 		if ( PNCP_Lockdown::is_locked() ) {
@@ -1448,6 +1639,10 @@ final class PNCP_Cli {
 		$keys = array();
 		if ( ! empty( $assoc_args['only'] ) ) {
 			foreach ( array_filter( array_map( 'trim', explode( ',', (string) $assoc_args['only'] ) ) ) as $key ) {
+				if ( isset( $dismissed[ $key ] ) ) {
+					/* translators: %1$s: setting name */
+					WP_CLI::error( sprintf( __( '"%1$s" is dismissed: "wp scrapelock wizard restore %1$s" lists it again.', 'scrapelock' ), $key ) );
+				}
 				if ( ! isset( $proposals[ $key ] ) ) {
 					/* translators: %s: setting name */
 					WP_CLI::error( sprintf( __( '"%s" is not one of the proposals.', 'scrapelock' ), $key ) );
@@ -1456,7 +1651,8 @@ final class PNCP_Cli {
 			}
 		} else {
 			foreach ( $proposals as $key => $row ) {
-				if ( ! empty( $assoc_args['all'] ) || PNCP_Wizard::RISK_NONE === $row['risk'] ) {
+				// 3.12.6: as on the settings page, a value marked "you chose this" is not ticked by default.
+				if ( ! empty( $assoc_args['all'] ) || ( PNCP_Wizard::RISK_NONE === $row['risk'] && ! PNCP_Wizard::is_chosen( $key, $row, $state ) ) ) {
 					$keys[] = $key;
 				}
 			}

@@ -391,7 +391,11 @@ t( 'S a setting the rules do not read: the current fingerprint stays', PNCP_Rule
 settings( array( 'block_headless' => 1 ) );
 t( 'S the setting back: fresh again', ! PNCP_Rules_State::is_stale() );
 PNCP_Rules_State::record( '' );
-t( 'S the header gone while the site uses rules: out of date ("not found")', PNCP_Rules_State::is_stale() && false !== strpos( PNCP_Rules_State::message(), 'installed: not found' ) );
+// 3.12.6: one answer without the header says nothing about the server: "installed" stays (t_3126_status.php).
+t( 'S the header missing from one answer: the installed rules stay as last seen (3.12.6)', ! PNCP_Rules_State::is_stale() && $fp === PNCP_Rules_State::state()['installed'] );
+PNCP_Rules_State::checked( 'nginx', '', true, time() - 10 );
+PNCP_Rules_State::checked( 'nginx', '', true );
+t( 'S two fresh checks a few seconds apart without the rules: out of date ("not found")', PNCP_Rules_State::is_stale() && false !== strpos( PNCP_Rules_State::message(), 'installed: not found' ) );
 PNCP_Rules_State::record( $fp );
 remove_filter( 'pre_http_request', $no_rules, 5 );
 

@@ -11,6 +11,11 @@
  * - The result is kept in a small option (STATE): the installed fingerprint, the current one, when it was seen.
  * - A site that never had rules installed (no fingerprint was ever seen) is never told anything.
  * - A settings change that changes the rules marks them out of date at once (settings_changed()).
+ * - 3.12.6: "installed" is what the server last reported, and stays so: a settings save only recomputes "current",
+ *   and one answer without the header (a location with add_header lines of its own, the moment of a reload, a
+ *   cached copy) says nothing about the server. "Not found" is told only when two fresh checks of the server, a few
+ *   seconds apart, found no rules (checked(); the second one runs from the admin page, recheck()). When only one
+ *   part of the Nginx rules differs, the message names it.
  * - Out of date: an admin notice (manage_options, ScrapeLock's pages and the dashboard, dismissible per
  *   fingerprint) and a Site Health "recommended" result, both with "See what changed": a line diff of the rules
  *   as they were when copied (the Server rules tab keeps the text of the last few, remember_texts()) and now.
@@ -27,7 +32,8 @@ final class PNCP_Rules_State {
 
 	/**
 	 * Option (not autoloaded): array{installed:string, format:string, current:string, time:int, seen:int,
-	 * dismissed:string}.
+	 * dismissed:string, miss:int, gone:int}. 3.12.6: miss = when a fresh check first found no rules since they
+	 * were last seen, gone = when a second one confirmed it.
 	 */
 	const STATE = 'pncp_rules_state';
 
@@ -53,6 +59,22 @@ final class PNCP_Rules_State {
 	const DIFF = 'pncp_rules_diff';
 
 	/**
+	 * 3.12.6: admin-ajax action (and nonce action) of the second check, a few seconds after a first one found no
+	 * rules.
+	 */
+	const RECHECK = 'pncp_rules_recheck';
+
+	/**
+	 * 3.12.6: seconds between the two fresh checks before "not found" is told.
+	 */
+	const RECHECK_GAP = 3;
+
+	/**
+	 * 3.12.6: a first failed check older than this is forgotten (the next failed one is a first one again).
+	 */
+	const MISS_WINDOW = 600;
+
+	/**
 	 * What this request already wrote (observe() is called for each answer of a run).
 	 *
 	 * @var string
@@ -65,12 +87,14 @@ final class PNCP_Rules_State {
 	public static function init() {
 		add_action( 'admin_notices', array( __CLASS__, 'notice' ) );
 		add_action( 'admin_post_' . self::DISMISS, array( __CLASS__, 'handle_dismiss' ) );
+		add_action( 'wp_ajax_' . self::RECHECK, array( __CLASS__, 'ajax_recheck' ) );
+		add_action( 'admin_footer', array( __CLASS__, 'recheck_script' ) );
 	}
 
 	/**
 	 * The stored state, cleaned.
 	 *
-	 * @return array{installed:string, format:string, current:string, time:int, seen:int, dismissed:string}
+	 * @return array{installed:string, format:string, current:string, time:int, seen:int, dismissed:string, miss:int, gone:int}
 	 */
 	public static function state() {
 		$raw = get_option( self::STATE, array() );
@@ -82,6 +106,8 @@ final class PNCP_Rules_State {
 			'time'      => 0,
 			'seen'      => 0,
 			'dismissed' => '',
+			'miss'      => 0,
+			'gone'      => 0,
 		);
 		foreach ( array( 'installed', 'current', 'dismissed' ) as $key ) {
 			$out[ $key ] = isset( $raw[ $key ] ) && is_string( $raw[ $key ] ) ? (string) preg_replace( '/[^0-9a-f |]/', '', $raw[ $key ] ) : '';
@@ -89,6 +115,8 @@ final class PNCP_Rules_State {
 		$out['format'] = isset( $raw['format'] ) && in_array( $raw['format'], array( 'nginx', 'apache' ), true ) ? $raw['format'] : '';
 		$out['time']   = isset( $raw['time'] ) ? (int) $raw['time'] : 0;
 		$out['seen']   = isset( $raw['seen'] ) ? (int) $raw['seen'] : 0;
+		$out['miss']   = isset( $raw['miss'] ) ? (int) $raw['miss'] : 0;
+		$out['gone']   = isset( $raw['gone'] ) ? (int) $raw['gone'] : 0;
 		return $out;
 	}
 
@@ -157,6 +185,7 @@ final class PNCP_Rules_State {
 		$value  = trim( (string) $value );
 		$format = self::format_of( $value );
 		if ( '' === $format ) {
+			// 3.12.6: an answer without the header leaves "installed" as last seen (see the class comment).
 			$value = '';
 			$got   = get_transient( 'pncp_nginx_status' );
 			$body  = self::nginx_body();
@@ -175,15 +204,121 @@ final class PNCP_Rules_State {
 		if ( $key === self::$noted ) {
 			return; // Already written in this run.
 		}
-		self::$noted        = $key;
-		$state['installed'] = $value;
-		$state['format']    = $format;
-		$state['current']   = $current;
-		$state['time']      = time();
+		self::$noted      = $key;
+		$state['format']  = $format;
+		$state['current'] = $current;
+		$state['time']    = time();
 		if ( '' !== $value ) {
-			$state['seen'] = time();
+			$state['installed'] = $value;
+			$state['seen']      = time();
+			$state['miss']      = 0;
+			$state['gone']      = 0;
 		}
 		self::save( $state );
+	}
+
+	/**
+	 * 3.12.6: the result of a fresh check of the server itself (PNCP_Rules_Status::nginx() / apache() asked it
+	 * now). A fingerprint is noted as installed. No fingerprint, from an answer that shows the server itself
+	 * answered without the rules ($definitive), counts as one failed check: the first is only remembered (the
+	 * admin page asks again a few seconds later, recheck()); a second one at least RECHECK_GAP seconds later
+	 * confirms that the rules are gone. An answer that could not reach the server changes nothing.
+	 *
+	 * @param string   $format     nginx or apache.
+	 * @param string   $value      The fingerprint found ('' = none).
+	 * @param bool     $definitive The server answered, without the rules.
+	 * @param int|null $now        The time (tests).
+	 */
+	public static function checked( $format, $value, $definitive, $now = null ) {
+		$value = trim( (string) $value );
+		if ( '' !== self::format_of( $value ) ) {
+			self::$noted = '';
+			self::record( $value );
+			return;
+		}
+		$state = self::state();
+		if ( ! $definitive || ! $state['seen'] || ( '' !== $state['format'] && $format !== $state['format'] ) ) {
+			return; // Nothing new, or a site that never had rules (never told anything).
+		}
+		$now = null === $now ? time() : (int) $now;
+		if ( $state['gone'] ) {
+			return;
+		}
+		if ( ! $state['miss'] || $state['miss'] < $now - self::MISS_WINDOW || $state['miss'] > $now ) {
+			$state['miss'] = $now;
+		} elseif ( $now - $state['miss'] >= self::RECHECK_GAP ) {
+			$state['gone'] = $now;
+		} else {
+			return; // Too soon: the same moment (a reload) says nothing more.
+		}
+		$state['current'] = self::current( '' !== $state['format'] ? $state['format'] : $format );
+		$state['time']    = $now;
+		self::save( $state );
+	}
+
+	/**
+	 * 3.12.6: is a second check due (a first one found no rules, not confirmed yet)?
+	 *
+	 * @param int|null $now The time (tests).
+	 * @return bool
+	 */
+	public static function recheck_due( $now = null ) {
+		$state = self::state();
+		$now   = null === $now ? time() : (int) $now;
+		return $state['seen'] > 0 && ! $state['gone'] && $state['miss'] > 0 && $state['miss'] >= $now - self::MISS_WINDOW;
+	}
+
+	/**
+	 * 3.12.6: the second check (admin-ajax, nonce, manage_options): the server is asked again now, and the
+	 * notice's HTML (empty when the rules are not out of date) goes back.
+	 */
+	public static function ajax_recheck() {
+		if ( ! current_user_can( 'manage_options' ) || ! check_ajax_referer( self::RECHECK, '_wpnonce', false ) ) {
+			wp_send_json_error( array(), 403 );
+		}
+		self::recheck();
+		ob_start();
+		self::notice_html();
+		wp_send_json_success(
+			array(
+				'stale'  => self::is_stale(),
+				'notice' => (string) ob_get_clean(),
+			)
+		);
+	}
+
+	/**
+	 * 3.12.6: asks the server again now (the second of the two checks), in the format the rules were seen in.
+	 */
+	public static function recheck() {
+		if ( 'apache' === self::state()['format'] ) {
+			PNCP_Rules_Status::apache( true );
+		} else {
+			PNCP_Rules_Status::nginx( true );
+		}
+	}
+
+	/**
+	 * 3.12.6: on ScrapeLock's pages and the dashboard, while a second check is due: asks for it a few seconds
+	 * after the page loaded (not in the request that saved the settings), and shows the notice it returns.
+	 */
+	public static function recheck_script() {
+		if ( ! current_user_can( 'manage_options' ) || ! PNCP_Status::notice_screen() || ! self::recheck_due() ) {
+			return;
+		}
+		$config = array(
+			'url'   => admin_url( 'admin-ajax.php' ),
+			'nonce' => wp_create_nonce( self::RECHECK ),
+			'delay' => 4000,
+		);
+		$js     = '(function(c){setTimeout(function(){var f=new FormData();f.append("action",' . wp_json_encode( self::RECHECK ) . ');f.append("_wpnonce",c.nonce);'
+			. 'fetch(c.url,{method:"POST",credentials:"same-origin",body:f}).then(function(r){return r.json();}).then(function(r){'
+			. 'if(!r||!r.success||!r.data.notice||document.querySelector(".pncp-rules-stale")){return;}'
+			. 'var w=document.querySelector("#wpbody-content .wrap")||document.getElementById("wpbody-content");if(!w){return;}'
+			. 'var d=document.createElement("div");d.innerHTML=r.data.notice;var h=w.querySelector("h1,h2");'
+			. 'while(d.firstChild){if(h&&h.parentNode===w){w.insertBefore(d.firstChild,h.nextSibling);}else{w.insertBefore(d.firstChild,w.firstChild);}}'
+			. '}).catch(function(){});},c.delay);})(' . wp_json_encode( $config ) . ');';
+		wp_print_inline_script_tag( $js, array( 'id' => 'pncp-rules-recheck' ) );
 	}
 
 	/**
@@ -249,7 +384,31 @@ final class PNCP_Rules_State {
 	 */
 	public static function is_stale() {
 		$state = self::state();
-		return $state['seen'] > 0 && '' !== $state['current'] && $state['installed'] !== $state['current'];
+		return $state['seen'] > 0 && '' !== $state['current'] && ( $state['gone'] > 0 || $state['installed'] !== $state['current'] );
+	}
+
+	/**
+	 * 3.12.6: the parts of the Nginx rules that differ between the installed and the current ones (http, server);
+	 * empty for Apache, for rules that are gone, or when both are the same.
+	 *
+	 * @param array<string, mixed>|null $state State (null = stored).
+	 * @return string[]
+	 */
+	public static function stale_parts( $state = null ) {
+		$state = null === $state ? self::state() : $state;
+		if ( $state['gone'] || 'nginx' !== self::format_of( (string) $state['installed'] ) || 'nginx' !== self::format_of( (string) $state['current'] ) ) {
+			return array();
+		}
+		$installed = explode( ' ', (string) $state['installed'] );
+		$current   = explode( ' ', (string) $state['current'] );
+		$parts     = array();
+		if ( $installed[0] !== $current[0] ) {
+			$parts[] = 'http';
+		}
+		if ( $installed[1] !== $current[1] ) {
+			$parts[] = 'server';
+		}
+		return $parts;
 	}
 
 	/**
@@ -270,10 +429,27 @@ final class PNCP_Rules_State {
 	 */
 	public static function message() {
 		$state = self::state();
+		$parts = self::stale_parts( $state );
+		if ( array( 'http' ) === $parts ) {
+			return sprintf(
+				/* translators: 1: fingerprint of the installed rules, 2: fingerprint of the current ones */
+				__( 'The server rules are installed, but part 1 (http { }) is out of date (installed: %1$s, current: %2$s). Copy part 1 again from Server rules.', 'scrapelock' ),
+				$state['installed'],
+				$state['current']
+			);
+		}
+		if ( array( 'server' ) === $parts ) {
+			return sprintf(
+				/* translators: 1: fingerprint of the installed rules, 2: fingerprint of the current ones */
+				__( 'The server rules are installed, but part 2 (server { }) is out of date (installed: %1$s, current: %2$s). Copy part 2 again from Server rules.', 'scrapelock' ),
+				$state['installed'],
+				$state['current']
+			);
+		}
 		return sprintf(
 			/* translators: 1: fingerprint of the installed rules, 2: fingerprint of the current ones */
 			__( 'The server rules are out of date (installed: %1$s, current: %2$s). Copy them again from Server rules.', 'scrapelock' ),
-			self::shown( $state['installed'] ),
+			self::shown( $state['gone'] ? '' : $state['installed'] ),
 			$state['current']
 		);
 	}
@@ -398,7 +574,17 @@ final class PNCP_Rules_State {
 	 * dashboard, until dismissed for these fingerprints.
 	 */
 	public static function notice() {
-		if ( ! current_user_can( 'manage_options' ) || ! PNCP_Status::notice_screen() || ! self::is_stale() ) {
+		if ( ! PNCP_Status::notice_screen() ) {
+			return;
+		}
+		self::notice_html();
+	}
+
+	/**
+	 * The notice itself, on any screen (3.12.6: also the answer of the second check).
+	 */
+	private static function notice_html() {
+		if ( ! current_user_can( 'manage_options' ) || ! self::is_stale() ) {
 			return;
 		}
 		$state = self::state();
@@ -420,7 +606,7 @@ final class PNCP_Rules_State {
 	 * @return string
 	 */
 	private static function pair( $state ) {
-		return (string) $state['installed'] . '|' . (string) $state['current'];
+		return (string) $state['installed'] . '|' . (string) $state['current'] . ( empty( $state['gone'] ) ? '' : '|gone' );
 	}
 
 	/**

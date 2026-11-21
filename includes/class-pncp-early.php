@@ -38,7 +38,7 @@ final class PNCP_Early {
 		// All the files first: a plugin folder that is only partly there (an update copying its files, an
 		// incomplete upload) must not stop the whole site with a fatal error. The normal check decides then.
 		$files = array();
-		foreach ( array( 'options', 'ip', 'log', 'private-urls', 'paths', 'bots', 'plugin-bots', 'server-ips', 'self-check' ) as $name ) {
+		foreach ( array( 'options', 'ip', 'log', 'private-urls', 'paths', 'bots', 'plugin-bots', 'server-ips', 'self-check', 'verify-files' ) as $name ) {
 			$file = $dir . 'includes/class-pncp-' . $name . '.php';
 			if ( ! is_readable( $file ) ) {
 				return;

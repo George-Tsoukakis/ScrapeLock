@@ -1497,6 +1497,8 @@ final class PNCP_Admin {
 				}
 				// 3.7.
 				self::checkbox( $s, 'block_seo_crawlers', __( 'Block SEO and marketing data crawlers (Ahrefs, Semrush, Majestic…)', 'scrapelock' ), PNCP_Admin_Fields::help( __( 'Backlink and competitor-research crawlers. Leave off if you use one.', 'scrapelock' ), sprintf( /* translators: %s: list of User-Agents */ __( 'They are not search engines: backlink indexes and competitor research tools crawl hard and sell what they collect, to your competitors too. Blocked and asked in robots.txt: %s. Leave it off if you use one of these tools for your own site, or add its audit bot to “Always allowed”.', 'scrapelock' ), implode( ', ', PNCP_Bots::seo_agents() ) ) ) );
+				// 3.12.6.
+				self::checkbox( $s, 'block_tech_profilers', __( 'Block technology profilers (BuiltWith, Wappalyzer, WhatCMS…)', 'scrapelock' ), PNCP_Admin_Fields::help( __( 'Services that list the CMS, theme and plugins a site runs.', 'scrapelock' ), sprintf( /* translators: %s: list of User-Agents */ __( 'They are not search engines and send no visitors: they read the site to list its software (CMS, theme, plugins, server) and sell or publish that list, which also tells attackers where a vulnerable plugin runs. Blocked and asked in robots.txt: %s. Leave it off if you use one of these services for your own site, or add it to “Always allowed”.', 'scrapelock' ), implode( ', ', PNCP_Bots::tech_profiler_agents() ) ) ) );
 				self::checkbox( $s, 'block_ip_host', __( 'Refuse requests that open the site by its IP address instead of its name', 'scrapelock' ), PNCP_Admin_Fields::help( __( 'Scanners sweep IP ranges; people and search engines use the domain name.', 'scrapelock' ), __( 'Scanners that sweep whole address ranges ask for http://203.0.113.5/ instead of your domain; people and search engines follow links, which carry the name. Requests for a private address (a load balancer\'s health check, a reverse proxy) and a site that is set up with its IP as its address are never refused. Always on in Emergency Mode.', 'scrapelock' ) ) );
 				printf(
 					'<p class="description">%s</p>',
@@ -2745,6 +2747,8 @@ final class PNCP_Admin {
 		<?php echo PNCP_Admin_Fields::more( __( '3) Run nginx -t: only if it says “test is successful”, reload Nginx (nginx -s reload or systemctl reload nginx). If it shows an error, nothing has changed yet: remove what you added. 4) Check the status above. After every change of the settings that changes the rules, it says “out of date”: copy the part it names again.', 'scrapelock' ) ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Escaped in PNCP_Admin_Fields. ?>
 		</section>
 
+		<?php PNCP_Stealth_Status::render_rules_card(); // 3.12.6: the Stealth rules, their status and where they go. ?>
+
 		<?php // 3.7: fail2ban (PNCP_Fail2ban). ?>
 		<section class="pncp-card pncp-card--wide pncp-rules-card" aria-labelledby="pncp-rules-fail2ban">
 		<h2 id="pncp-rules-fail2ban"><?php esc_html_e( 'fail2ban (VPS and dedicated servers)', 'scrapelock' ); ?></h2>
@@ -2768,6 +2772,7 @@ final class PNCP_Admin {
 		</div>
 		</div>
 		</section>
+		<?php PNCP_Verify_Files::render_card(); // 3.12.6: temporary verification files (/builtwith.txt…). ?>
 		</div>
 		<?php
 	}
@@ -2958,7 +2963,7 @@ final class PNCP_Admin {
 					<h4><?php esc_html_e( 'Addresses that do not exist', 'scrapelock' ); ?></h4>
 					<?php self::path_table( $top['unknown'] ); ?>
 					<?php if ( $top['unknown'] ) : ?>
-						<p class="description"><?php esc_html_e( 'A real page here? Pages of plugins that WordPress does not know (e.g. a community or forum) count as “Pages” when you add their prefix in “Content addresses” (“Log settings”, at the bottom of this tab).', 'scrapelock' ); ?></p>
+						<?php echo PNCP_Admin_Fields::para( __( 'A real page here? Add its prefix in “Content addresses” to count it as “Pages”.', 'scrapelock' ), __( 'Pages of plugins that WordPress does not know (e.g. a community or forum) count as “Pages” when you add their prefix in “Content addresses” (“Log settings”, at the bottom of this tab).', 'scrapelock' ) ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Escaped in PNCP_Admin_Fields. ?>
 					<?php endif; ?>
 				</section>
 				<section class="pncp-card">

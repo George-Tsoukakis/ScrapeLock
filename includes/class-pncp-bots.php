@@ -259,6 +259,10 @@ final class PNCP_Bots {
 		if ( in_array( strtolower( (string) $path ), self::open_paths(), true ) ) {
 			return true;
 		}
+		// 3.12.6: a verification file (PNCP_Verify_Files), as named, from the root of the host.
+		if ( class_exists( 'PNCP_Verify_Files' ) && isset( PNCP_Verify_Files::paths()[ $raw ] ) ) {
+			return true;
+		}
 		// Also match the raw request path directly (independent of the home path / subfolder handling), so a
 		// blocked bot can always read robots.txt, llms.txt and the TDM opt-out even if the relative path
 		// resolves oddly. These files are only ever served from the domain root.
@@ -3081,6 +3085,30 @@ final class PNCP_Bots {
 	}
 
 	/**
+	 * 3.12.6: technology profilers: services that read a site to list the software it runs (CMS, theme, plugins,
+	 * server, analytics) and sell or publish that list. They are not search engines and send no visitors; an
+	 * attacker can use the list to find a site that runs a vulnerable plugin. Blocked, and asked in robots.txt,
+	 * only with "Block technology profilers" (off by default, also on existing sites). One list, kept here; a
+	 * site adds or removes names with the filter `pncp_tech_profiler_agents`. Each name is matched anywhere in
+	 * the User-Agent, case-insensitively, as in the bot list ("Netcraft" also covers NetcraftSurveyAgent).
+	 *
+	 * @return string[]
+	 */
+	public static function tech_profiler_agents() {
+		/**
+		 * The User-Agents of the technology profilers ("Block technology profilers").
+		 *
+		 * @since 3.12.6
+		 * @param string[] $agents Names, matched anywhere in the User-Agent.
+		 */
+		$agents = apply_filters(
+			'pncp_tech_profiler_agents',
+			array( 'BuiltWith', 'Wappalyzer', 'WhatCMS', 'Netcraft', 'W3Techs', 'IsItWP', 'WPThemeDetector', 'WhatRuns', 'SimilarTech', 'Datanyze', 'WebTechSurvey' )
+		);
+		return array_values( array_filter( array_map( 'strval', is_array( $agents ) ? $agents : array() ), 'strlen' ) );
+	}
+
+	/**
 	 * 3.7: a User-Agent that carries an attack instead of a name: HTML or PHP tags (stored XSS in log viewers),
 	 * Shellshock "() {", Log4Shell "${jndi:", SQL injection, or control characters. No browser or crawler sends
 	 * one. The raw header is checked: user_agent() removes tags, so it would hide them. Filter
@@ -3315,6 +3343,14 @@ final class PNCP_Bots {
 			$star[] = 'Content-Signal: search=yes, ai-input=' . ( empty( $s['allow_ai_search'] ) ? 'no' : 'yes' ) . ', ai-train=no';
 		}
 		$output = $star ? self::add_to_star_group( $output, $star ) : $output;
+		// 3.12.6: each group below asks its bots to stay away from the whole site, but an open verification file
+		// (PNCP_Verify_Files) is for exactly such a bot (BuiltWith reads /builtwith.txt): an Allow line for it, the
+		// longer rule, which wins over "Disallow: /" (RFC 9309).
+		$disallow = '';
+		foreach ( array_keys( class_exists( 'PNCP_Verify_Files' ) ? PNCP_Verify_Files::paths() : array() ) as $open ) {
+			$disallow .= 'Allow: ' . $open . "\n";
+		}
+		$disallow .= "Disallow: /\n";
 
 		if ( ! empty( $s['robots_ai_block'] ) ) {
 			$block  = "\n# ScrapeLock: AI crawlers\n";
@@ -3325,14 +3361,14 @@ final class PNCP_Bots {
 				}
 				$block .= 'User-agent: ' . $agent . "\n";
 			}
-			$output = rtrim( $output ) . "\n" . $block . "Disallow: /\n";
+			$output = rtrim( $output ) . "\n" . $block . $disallow;
 		}
 		if ( ! empty( $s['block_archivers'] ) ) {
 			$block = "\n# ScrapeLock: web archives\n";
 			foreach ( self::archive_agents() as $agent ) {
 				$block .= 'User-agent: ' . $agent . "\n";
 			}
-			$output = rtrim( $output ) . "\n" . $block . "Disallow: /\n";
+			$output = rtrim( $output ) . "\n" . $block . $disallow;
 		}
 		// 3.7: SEO and marketing data crawlers, and the site rippers that read robots.txt at all.
 		if ( ! empty( $s['block_seo_crawlers'] ) ) {
@@ -3340,7 +3376,15 @@ final class PNCP_Bots {
 			foreach ( self::seo_agents() as $agent ) {
 				$block .= 'User-agent: ' . $agent . "\n";
 			}
-			$output = rtrim( $output ) . "\n" . $block . "Disallow: /\n";
+			$output = rtrim( $output ) . "\n" . $block . $disallow;
+		}
+		// 3.12.6: technology profilers, as the SEO data crawlers above.
+		if ( ! empty( $s['block_tech_profilers'] ) ) {
+			$block = "\n# ScrapeLock: technology profilers\n";
+			foreach ( self::tech_profiler_agents() as $agent ) {
+				$block .= 'User-agent: ' . $agent . "\n";
+			}
+			$output = rtrim( $output ) . "\n" . $block . $disallow;
 		}
 		return $output;
 	}

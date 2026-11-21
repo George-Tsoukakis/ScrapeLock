@@ -58,6 +58,7 @@ final class PNCP_Setting_Labels {
 			'block_referrers'         => __( 'Referrer domains that are always blocked (403), one per line, e.g. copy-site.example:', 'scrapelock' ),
 			'block_selection'         => __( 'Text selection with the mouse or finger', 'scrapelock' ),
 			'block_seo_crawlers'      => __( 'Block SEO and marketing data crawlers (Ahrefs, Semrush, Majestic…)', 'scrapelock' ),
+			'block_tech_profilers'    => __( 'Block technology profilers (BuiltWith, Wappalyzer, WhatCMS…)', 'scrapelock' ),
 			'block_shortcuts'         => __( 'Shortcuts Ctrl/Cmd + A, C, X, S, U', 'scrapelock' ),
 			'block_text_drag'         => __( 'Dragging selected text to another window', 'scrapelock' ),
 			'block_upload_php'        => __( 'No PHP in the uploads folder', 'scrapelock' ),

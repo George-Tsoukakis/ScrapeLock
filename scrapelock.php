@@ -2,7 +2,7 @@
 /**
  * Plugin Name:       ScrapeLock – Content & AI Bot Protection
  * Description:       Protects your content: makes copying text and images harder, hides the text in the REST API, GraphQL and RSS, blocks scrapers, AI bots and fake Googlebots, temporarily blocks persistent IPs, protects XML feeds with a token and adds an optional watermark. Lockdown freezes every change to the site until it is unlocked with an authenticator app. Forms, cart, checkout and search engines are not affected.
- * Version:           3.12.5
+ * Version:           3.12.6
  * Requires at least: 6.2
  * Requires PHP:      7.4
  * Author:            CodeBunny
@@ -19,7 +19,7 @@ if ( defined( 'PNCP_VERSION' ) ) {
 	return;
 }
 
-define( 'PNCP_VERSION', '3.12.5' );
+define( 'PNCP_VERSION', '3.12.6' );
 define( 'PNCP_FILE', __FILE__ );
 define( 'PNCP_DIR', plugin_dir_path( __FILE__ ) );
 define( 'PNCP_URL', plugin_dir_url( __FILE__ ) );
@@ -46,6 +46,9 @@ if ( is_admin() ) {
 	PNCP_Rules_State::init(); // 3.12.3: the notice when the server rules on the server are out of date.
 }
 
+// 3.12.6: a verification file (/builtwith.txt, /google….html…) is answered before every check of the plugin.
+PNCP_Verify_Files::maybe_serve();
+PNCP_Verify_Files::init();
 PNCP_Ip::init();
 PNCP_Log::init();
 PNCP_Frontend::init();
@@ -74,6 +77,7 @@ $pncp_backend = is_admin() || wp_doing_cron() || ( defined( 'WP_CLI' ) && WP_CLI
 if ( $pncp_backend ) {
 	PNCP_Integrity::init();
 	PNCP_Health::init();
+	PNCP_Wizard::watch(); // 3.12.6: "For my site" notes the settings chosen against its proposals.
 } else {
 	// The file check's hourly event is kept scheduled while the site is locked (PNCP_Integrity::ensure_cron()).
 	add_action(
@@ -228,6 +232,9 @@ function pncp_deactivate_site() {
 	PNCP_Attack_Report::deactivate();
 	// 3.12.2: the way straight to the server for the site's requests to itself (asked again after a reactivation).
 	delete_transient( PNCP_Self_Check::ROUTE );
+	// 3.12.6: the verification files are temporary: without the plugin nothing would remove them on time (a copy
+	// in the root folder would stay served for good), so they go now, with their event.
+	PNCP_Verify_Files::remove_all();
 	pncp_purge_page_cache();
 }
 
@@ -292,6 +299,11 @@ function pncp_upgrade() {
 		// settings list shows it.
 		if ( version_compare( $from_settings, '3.12.5', '<' ) ) {
 			$added += PNCP_Options::new_in_3125();
+		}
+		// 3.12.6: "Block technology profilers" starts off, as on new installs. Stored now, so an export or a
+		// settings list shows it.
+		if ( version_compare( $from_settings, '3.12.6', '<' ) ) {
+			$added += PNCP_Options::new_in_3126();
 		}
 		$added = array_diff_key( $added, $stored );
 		// 3.4: the automatic Emergency Mode only tells the administrator on new installs; a site that had it on

@@ -186,6 +186,25 @@ ScrapeLock — δοκιμές σε πραγματικό WordPress (όχι stubs)
                     sign-out, an account signed in before 3.12.5 on a page and in wp-admin, a stale one removed, never
                     with the protection off); the same pncpConfig (blurScope) for a guest and a member; protect.min.js
                     is the build of the current source; the pre-cache / early checks do not touch the blur
+  t_3126_profilers.php 3.12.6: «Block technology profilers» (block_tech_profilers): off by default (new install and
+                    new_in_3126()), Bots tab switch right after the SEO crawlers, cache key, label, export; the one list
+                    PNCP_Bots::tech_profiler_agents() with its filter; every layer of the SEO switch: blocked_agents(),
+                    HTTP 403 / 200, early check, pre-cache config, Nginx / Apache rules, robots.txt group, the log's
+                    «Matched … (technology profilers)», Traffic «Explain», Site Health info; «For my site» proposes the
+                    switch for profilers typed into the bot list (one unticked row, those lines removed, saved version)
+  t_3126_wizard.php 3.12.6: «For my site»: «Dismiss» per proposal (admin-post, nonce, manage_options, Lockdown), not
+                    counted and never applied (also when posted or with --apply / --only), «Show dismissed (N)» with
+                    «Restore»; the hash id + values now + proposed values (another value or proposal brings it back,
+                    the same value pair keeps it dismissed: the owner's blur_on_capture / block_devtools case); «you
+                    chose this» after a dismiss or a save of other values; one small option, not autoloaded;
+                    wp scrapelock wizard dismiss / restore / --include-dismissed
+  t_3126_integration.php 3.12.6: how the parts fit together: «Block technology profilers» on and a BuiltWith
+                    verification file (200 for BuiltWith in WordPress, early and pre-cache checks, 403 elsewhere;
+                    robots.txt «Allow: /builtwith.txt» before «Disallow: /»); uninstall.php and deactivation; wp scrapelock
+                    rules status with the real Stealth status (stealth_state / _installed / _current); the Server rules
+                    tab order (Apache, Nginx, Stealth, fail2ban, Verification files), each notice once (main rules,
+                    Stealth rules), the second check before «not found»; export / import of block_tech_profilers; static
+                    security checks (proc_open only in the CLI class, escapeshellarg, --test-cmd / --reload-cmd)
   t_cli.php         wp scrapelock … μέσα από το πραγματικό wp (χρειάζεται WP_CLI, αλλιώς SKIP)
   t_bunny_rules.php Edge Rules στο Bunny μέσα στα όριά του (το πολύ 5 μοτίβα ανά συνθήκη) με ψεύτικο API που δίνει
                     HTTP 400 όπως το πραγματικό: χωρισμός, κλείδωμα/Remove, rollback, Monitor only, sync, προεπισκόπηση,
