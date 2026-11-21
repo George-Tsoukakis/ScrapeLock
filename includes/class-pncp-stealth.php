@@ -719,6 +719,10 @@ final class PNCP_Stealth {
 			$lines[] = '<IfModule mod_rewrite.c>';
 			$lines[] = 'RewriteEngine On';
 			$lines[] = 'RewriteBase ' . $home;
+			if ( $config['words'] ) {
+				// 3.12.8: said in the rules, so the pairs are not taken for a mistake and "cleaned up" by hand.
+				$lines[] = '# Each code twice on purpose: a word can be in an address two times (folder and file name).';
+			}
 			foreach ( $config['words'] as $token => $word ) {
 				// Twice: a word can be in the address two times (folder and file name).
 				$lines[] = 'RewriteRule ^(' . $q . '/[0-9a-f]{6}/.*?)' . $token . '(.*)$ $1' . $word . '$2 [DPI]';
@@ -747,6 +751,9 @@ final class PNCP_Stealth {
 		}
 		$lines[] = '# Inside the site\'s server { }, above the location blocks. Then nginx -t and reload.';
 		$prefix  = $home . $base;
+		if ( $config['words'] ) {
+			$lines[] = '# Each code twice on purpose: a word can be in an address two times (folder and file name).';
+		}
 		foreach ( $config['words'] as $token => $word ) {
 			$lines[] = 'rewrite "^(' . $prefix . '/[0-9a-f]{6}/.*?)' . $token . '(.*)$" $1' . $word . '$2;';
 			$lines[] = 'rewrite "^(' . $prefix . '/[0-9a-f]{6}/.*?)' . $token . '(.*)$" $1' . $word . '$2;';

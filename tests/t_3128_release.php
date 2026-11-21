@@ -8,6 +8,9 @@
  *    host (home https://host/blog) a path is one of the home address ("/about/" → https://host/blog/about/;
  *    3.12.7 dropped the folder); a path that already starts with the folder, the verification files and
  *    /.well-known/ stay at the root; a site at the root of its host is unchanged.
+ * R. The Stealth rules write each word's rule twice on purpose (a word can be in an address two times, as in
+ *    WP Rocket's copy of woocommerce/assets/css/woocommerce.css): said in a comment of the rules; an address
+ *    with the word twice maps back with the Nginx and the Apache rules, and would not with one rule per word.
  *
  * Only on a test WordPress.
  */
@@ -155,5 +158,79 @@ t( 'S ... /.well-known/ stays at the root', $origin . '/.well-known/security.txt
 t( 'S ... a full address is taken as it is; other hosts still refused', $origin . '/x/' === PNCP_Edge::own_url( $origin . '/x/' ) && '' === PNCP_Edge::own_url( 'https://other.example/x' ) && '' === PNCP_Edge::own_url( '//other.example/x' ) );
 remove_filter( 'pre_option_home', $in_folder );
 update_option( PNCP_Verify_Files::INDEX, null === $saved[ PNCP_Verify_Files::INDEX ] ? array() : $saved[ PNCP_Verify_Files::INDEX ] );
+
+/* ---------- Stealth on (Nginx), with a plugin whose slug is a word ---------- */
+
+wp_mkdir_p( $demo . '/assets' );
+file_put_contents( $demo . '/pncpdemo.php', "<?php\n/*\nPlugin Name: PNCP demo (t_3128_release)\n*/\n" );
+file_put_contents( $demo . '/assets/pncpdemo.css', '/* pncpdemo ' . wp_generate_password( 12, false ) . ' */' );
+wp_mkdir_p( $copy_dir . '/assets' );
+copy( $demo . '/assets/pncpdemo.css', $copy_dir . '/assets/pncpdemo.css' ); // As WP Rocket's minified copy.
+$active = (array) get_option( 'active_plugins', array() );
+if ( ! in_array( 'pncpdemo/pncpdemo.php', $active, true ) ) {
+	$active[] = 'pncpdemo/pncpdemo.php';
+	update_option( 'active_plugins', $active );
+}
+delete_transient( PNCP_Stealth_Status::STATUS );
+delete_option( PNCP_Stealth_Status::SEEN );
+settings(
+	array(
+		'enabled'             => 1,
+		'monitor_mode'        => 0,
+		'stealth_enabled'     => 1,
+		'stealth_base'        => 'assets',
+		'stealth_rest_prefix' => '',
+		'stealth_sitemap'     => 0,
+		'stealth_endpoints'   => 1,
+		'stealth_block_files' => 1,
+	)
+);
+$server = 'nginx';
+add_filter(
+	'pncp_stealth_server',
+	static function () use ( &$server ) {
+		return $server;
+	}
+);
+add_filter( 'pncp_stealth_self_test', '__return_true' ); // The real self-test runs through Nginx in t_3126_stealth.
+$rocket = static function ( $list ) {
+	return array_values( array_unique( array_merge( (array) $list, array( 'wp-rocket' ) ) ) );
+};
+add_filter( 'pncp_stealth_optimizers', $rocket ); // WP Rocket's inner words.
+$on = PNCP_Stealth::activate( false );
+$st = PNCP_Stealth::state();
+t( 'Stealth on (Nginx), the plugin\'s slug and wp-content are words', true === $on && in_array( 'pncpdemo', $st['words'], true ) && in_array( 'wp-content', $st['words'], true ), is_wp_error( $on ) ? $on->get_error_message() : implode( ',', $st['words'] ) );
+
+/* ---------- R. Each word's rule twice, on purpose ---------- */
+
+$nginx  = PNCP_Stealth::rules_text( 'nginx' );
+$apache = PNCP_Stealth::rules_text( 'apache' );
+$code   = (string) array_search( 'pncpdemo', $st['words'], true );
+foreach ( array( 'nginx' => $nginx, 'apache' => $apache ) as $name => $rules ) {
+	$pairs = true;
+	foreach ( array_keys( $st['words'] ) as $token ) {
+		$lines = array_values( preg_grep( '/' . preg_quote( $token, '/' ) . '\(\.\*\)\$/', explode( "\n", $rules ) ) );
+		$pairs = $pairs && 2 === count( $lines ) && $lines[0] === $lines[1];
+	}
+	t( "R $name: each word's rule exactly twice, the comment says why", $pairs && 1 === substr_count( $rules, '# Each code twice on purpose: a word can be in an address two times' ) );
+}
+$html = PNCP_Stealth::rewrite( '<link rel="stylesheet" href="' . content_url( 'cache/min/1/wp-content/plugins/pncpdemo/assets/pncpdemo.css' ) . '?ver=1">' );
+preg_match( '#href="https?://[^/"]+(/[^"?]+)#', $html, $m );
+$new = isset( $m[1] ) ? $m[1] : '';
+t( 'R WP Rocket\'s copy of a plugin file named after the plugin: the word coded twice in its new address', 2 === substr_count( $new, '/' . $code ) && 0 === substr_count( $html, 'pncpdemo' ) && 0 === substr_count( $html, 'wp-content' ), $html );
+$real = '/' . ltrim( wp_make_link_relative( content_url( 'cache/min/1/wp-content/plugins/pncpdemo/assets/pncpdemo.css' ) ), '/' );
+t( 'R ... maps back to the real file with the Nginx and with the Apache rules', $real === nginx_apply( $nginx, $new ) && $real === apache_apply( $apache, $new ), nginx_apply( $nginx, $new ) . ' ' . apache_apply( $apache, $new ) );
+$single = static function ( $rules ) {
+	$out  = array();
+	$prev = null;
+	foreach ( explode( "\n", $rules ) as $line ) {
+		if ( $line !== $prev ) {
+			$out[] = $line;
+		}
+		$prev = $line;
+	}
+	return implode( "\n", $out );
+};
+t( 'R ... and would not with one rule per word (the pair is needed)', $real !== nginx_apply( $single( $nginx ), $new ) && $real !== apache_apply( $single( $apache ), $new ) );
 
 exit( $fails ? 1 : 0 );
