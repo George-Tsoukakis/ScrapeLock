@@ -149,6 +149,10 @@ foreach ( array( '', '/', '/../x.txt', '/a/b.txt', '/x..txt', '/x.php', '/x.php.
 }
 t( 'V content: text accepted', 'abc' === PNCP_Verify_Files::check_content( 'abc' ) );
 t( 'V content: empty, over 64 KB, a NUL, invalid UTF-8, PHP: refused', is_wp_error( PNCP_Verify_Files::check_content( '  ' ) ) && is_wp_error( PNCP_Verify_Files::check_content( str_repeat( 'a', 65537 ) ) ) && is_wp_error( PNCP_Verify_Files::check_content( "a\0b" ) ) && is_wp_error( PNCP_Verify_Files::check_content( "\xC3\x28" ) ) && is_wp_error( PNCP_Verify_Files::check_content( '<?php echo 1;' ) ) );
+foreach ( array( '<?= 1 ?>', '<? echo 1; ?>', '<?PHP echo 1;', 'a <% Response.Write(1) %>', "x\n<?\nphpinfo();" ) as $pncp_code ) {
+	t( 'V content: no PHP or ASP opening tag of any kind: ' . wp_json_encode( $pncp_code ), is_wp_error( PNCP_Verify_Files::check_content( $pncp_code ) ) );
+}
+t( 'V content: the XML declaration and an XML stylesheet line accepted', ! is_wp_error( PNCP_Verify_Files::check_content( '<?xml version="1.0"?><users><user>ABC</user></users>' ) ) && ! is_wp_error( PNCP_Verify_Files::check_content( "<?xml version=\"1.0\"?>\n<?xml-stylesheet type=\"text/xsl\" href=\"a.xsl\"?><a/>" ) ) );
 t( 'V content: exactly 64 KB accepted', ! is_wp_error( PNCP_Verify_Files::check_content( str_repeat( 'a', 65536 ) ) ) );
 t( 'V hours: 0 and 169 refused', is_wp_error( PNCP_Verify_Files::add( '/a.txt', 'x', 0 ) ) && is_wp_error( PNCP_Verify_Files::add( '/a.txt', 'x', 169 ) ) && ! PNCP_Verify_Files::all() );
 

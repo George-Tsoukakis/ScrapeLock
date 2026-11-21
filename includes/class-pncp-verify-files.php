@@ -202,7 +202,10 @@ final class PNCP_Verify_Files {
 			/* translators: %d: kilobytes */
 			return new WP_Error( 'pncp_verify_content', sprintf( __( 'The content is too long: at most %d KB.', 'scrapelock' ), (int) ( self::MAX_BYTES / 1024 ) ) );
 		}
-		if ( wp_check_invalid_utf8( $content ) !== $content || preg_match( '/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/', $content ) || false !== stripos( $content, '<?php' ) ) {
+		// No PHP opening tag of any kind (<?php, <?=, a short <? where short_open_tag is on) and no ASP-style <%: a
+		// copy written to the root folder must never be code for a server that runs .html through PHP. Only the
+		// XML declaration (<?xml) and processing instructions of XML (<?xml-stylesheet) may start with "<?".
+		if ( wp_check_invalid_utf8( $content ) !== $content || preg_match( '/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/', $content ) || preg_match( '/<\?(?!xml[\s?-])|<%/i', $content ) ) {
 			return new WP_Error( 'pncp_verify_content', __( 'Only text (UTF-8, no control characters, no PHP).', 'scrapelock' ) );
 		}
 		return $content;
