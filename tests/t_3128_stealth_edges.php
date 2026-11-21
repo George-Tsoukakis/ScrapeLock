@@ -19,6 +19,8 @@
  * F. A plugin folder whose name has a space or another character the rules cannot carry: the rules stay valid
  *    (real nginx -t when nginx is on PATH, else SKIP for that part) and its files are served through the plugins
  *    address.
+ * S. Stylesheets that reach a sibling folder with "../": a child theme's @import of its parent theme and a
+ *    plugin's url() into another plugin resolve, in the browser, to /<base>/<folder>/…; the rules serve them.
  *
  * Only on a test WordPress.
  */
@@ -353,5 +355,28 @@ if ( '' === $nginx_bin ) {
 	rmtree( $tmp );
 	t( 'F real nginx -t accepts the Stealth rules', 0 === $rc, implode( ' ', $o ) );
 }
+
+/* ---------- S. "../" into a sibling folder ---------- */
+
+$child_css = get_stylesheet_directory_uri() . '/style.css';
+$out       = PNCP_Stealth::rewrite( '<link rel="stylesheet" href="' . $child_css . '">' );
+preg_match( '#href="([^"]+)"#', $out, $sm );
+$child_new = isset( $sm[1] ) ? $sm[1] : '';
+t( 'S the child theme\'s stylesheet gets a neutral address', '' !== $child_new && false === strpos( $child_new, 'wp-content' ), $out );
+foreach ( array(
+	'@import of the parent theme'   => array( '../pncp-t3128-parent/style.css', get_theme_root() . '/pncp-t3128-parent/style.css' ),
+	'a font of the parent theme'    => array( '../pncp-t3128-parent/fonts/p.woff2', get_theme_root() . '/pncp-t3128-parent/fonts/p.woff2' ),
+) as $label => $how ) {
+	$path = resolve( $child_new, $how[0] );
+	t( 'S child theme: ' . $label . ' (' . $path . ') is served (Nginx)', file_of( nginx_apply( $nginx, $path ) ) === realpath( $how[1] ), nginx_apply( $nginx, $path ) );
+	t( 'S child theme: ' . $label . ' is served (Apache)', file_of( apache_apply( $apache, $path ) ) === realpath( $how[1] ), apache_apply( $apache, $path ) );
+}
+$a_out = PNCP_Stealth::rewrite( '<link rel="stylesheet" href="' . $pu . '/css/a.css">' );
+preg_match( '#href="([^"]+)"#', $a_out, $am );
+$b_path = resolve( isset( $am[1] ) ? $am[1] : '', '../../pncp-t3128-b/img/b.png' );
+t( 'S a plugin\'s url() into another plugin (' . $b_path . ') is served (Nginx)', file_of( nginx_apply( $nginx, $b_path ) ) === realpath( WP_PLUGIN_DIR . '/pncp-t3128-b/img/b.png' ), nginx_apply( $nginx, $b_path ) );
+t( 'S a plugin\'s url() into another plugin is served (Apache)', file_of( apache_apply( $apache, $b_path ) ) === realpath( WP_PLUGIN_DIR . '/pncp-t3128-b/img/b.png' ), apache_apply( $apache, $b_path ) );
+$php = '/assets/pncp-t3128-a/download.php';
+t( 'S PHP is never served through a sibling address', file_of( nginx_apply( $nginx, $php ) ) === '' && file_of( apache_apply( $apache, $php ) ) === '', nginx_apply( $nginx, $php ) );
 
 exit( $fails ? 1 : 0 );

@@ -727,6 +727,7 @@ final class PNCP_Stealth {
 			foreach ( $config['map'] as $alias => $entry ) {
 				$lines[] = 'RewriteRule ^' . $q . '/' . $alias . '/(.+\.(?:' . $ext . '))$ ' . $entry['path'] . '/$1 [L,NC]';
 			}
+			$lines = array_merge( $lines, self::sibling_lines( 'apache', $q, $config ) );
 			if ( ! empty( $s['stealth_endpoints'] ) ) {
 				foreach ( $config['ends'] as $name => $path ) {
 					$lines[] = 'RewriteRule ^' . $q . '/' . $name . '$ ' . $path . ' [L,QSA]';
@@ -753,6 +754,7 @@ final class PNCP_Stealth {
 		foreach ( $config['map'] as $alias => $entry ) {
 			$lines[] = 'rewrite "(?i)^' . $prefix . '/' . $alias . '/(.+\.(?:' . $ext . '))$" ' . $entry['path'] . '/$1 last;';
 		}
+		$lines = array_merge( $lines, self::sibling_lines( 'nginx', $prefix, $config ) );
 		if ( ! empty( $s['stealth_endpoints'] ) ) {
 			foreach ( $config['ends'] as $name => $path ) {
 				$lines[] = 'rewrite "^' . $prefix . '/' . $name . '$" ' . $path . ' last;';
@@ -762,6 +764,45 @@ final class PNCP_Stealth {
 			$lines[] = 'location ~* "^' . $home . '(?:' . implode( '|', array_map( 'preg_quote', self::blocked_files() ) ) . ')$" { return 404; }';
 		}
 		return PNCP_Stealth_Status::with_fingerprint( 'nginx', $lines ); // 3.12.6: the installed rules can be checked.
+	}
+
+	/**
+	 * 3.12.8: a stylesheet or script served at /<base>/<alias>/… that reaches a sibling folder with "../" (a child
+	 * theme's @import url("../parent/style.css"), a plugin's url(../../other-plugin/img.png)) makes the browser ask
+	 * for /<base>/<sibling>/…, one level above the aliases. One rule per parent folder of the map (themes, plugins,
+	 * wp-content) serves those siblings from their real folder; only the folders of the map, static types only.
+	 *
+	 * @param string               $server apache | nginx.
+	 * @param string               $prefix The start of the patterns (Apache: the base, quoted; Nginx: home path + base).
+	 * @param array<string, mixed> $config build() result.
+	 * @return string[]
+	 */
+	private static function sibling_lines( $server, $prefix, $config ) {
+		$groups = array();
+		$used   = array();
+		foreach ( (array) $config['map'] as $entry ) {
+			if ( in_array( (string) $entry['kind'], array( 'content', 'includes' ), true ) ) {
+				continue;
+			}
+			$name   = basename( (string) $entry['path'] );
+			$parent = dirname( (string) $entry['path'] );
+			if ( isset( $used[ $name ] ) || preg_match( '/^[0-9a-f]{6}$/', $name ) || isset( $config['ends'][ $name ] ) || ! preg_match( '/^[A-Za-z0-9._-]+$/', $name ) || '/' === $parent ) {
+				continue;
+			}
+			$used[ $name ]         = true;
+			$groups[ $parent ][] = preg_quote( $name, '#' );
+		}
+		$lines = array();
+		foreach ( $groups as $parent => $names ) {
+			if ( count( $names ) < 2 ) {
+				continue; // A folder's only sibling of the map is itself.
+			}
+			$pattern = '/(' . implode( '|', $names ) . ')/(.+\.(?:' . self::STATIC_EXT . '))$';
+			$lines[] = 'apache' === $server
+				? 'RewriteRule ^' . $prefix . $pattern . ' ' . $parent . '/$1/$2 [L,NC]'
+				: 'rewrite "(?i)^' . $prefix . $pattern . '" ' . $parent . '/$1/$2 last;';
+		}
+		return $lines;
 	}
 
 	/**
