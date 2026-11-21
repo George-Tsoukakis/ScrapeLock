@@ -13,3 +13,5 @@
 /phpcs.xml.dist export-ignore
 /phpstan.neon.dist export-ignore
 /CLAUDE.md export-ignore
+# 3.12.3: the report for the owner stays in the repository.
+/REPORT.md export-ignore

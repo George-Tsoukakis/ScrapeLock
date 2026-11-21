@@ -124,6 +124,11 @@ final class PNCP_Health {
 			'label' => __( 'ScrapeLock sign-in protection', 'scrapelock' ),
 			'test'  => array( 'PNCP_Login', 'health_test' ),
 		);
+		// 3.12.3: the server rules on the server against the current ones (seen by every self-check).
+		$tests['direct']['scrapelock_server_rules'] = array(
+			'label' => __( 'ScrapeLock server rules', 'scrapelock' ),
+			'test'  => array( 'PNCP_Rules_State', 'health_test' ),
+		);
 		$tests['direct']['pncp_bunny']           = array(
 			'label' => __( 'ScrapeLock and Bunny CDN logs', 'scrapelock' ),
 			'test'  => array( 'PNCP_Bunny', 'health_test' ),

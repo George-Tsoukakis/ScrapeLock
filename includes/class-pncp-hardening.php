@@ -1293,7 +1293,7 @@ final class PNCP_Hardening {
 			'redirection'         => 0,
 			'sslverify'           => (bool) apply_filters( 'https_local_ssl_verify', false ), // phpcs:ignore WordPress.NamingConventions.PrefixAllGlobals.NonPrefixedHooknameFound -- Core filter.
 			'limit_response_size' => 65536,
-			'user-agent'          => 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36 ScrapeLock-Selftest',
+			'user-agent'          => PNCP_Self_Check::user_agent(), // 3.12.3: not a browser's: the Nginx rules took that for a fake one.
 			'headers'             => array(
 				'Accept'          => 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
 				'Accept-Language' => 'en-US,en;q=0.9',

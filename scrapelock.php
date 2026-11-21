@@ -2,7 +2,7 @@
 /**
  * Plugin Name:       ScrapeLock – Content & AI Bot Protection
  * Description:       Protects your content: makes copying text and images harder, hides the text in the REST API, GraphQL and RSS, blocks scrapers, AI bots and fake Googlebots, temporarily blocks persistent IPs, protects XML feeds with a token and adds an optional watermark. Lockdown freezes every change to the site until it is unlocked with an authenticator app. Forms, cart, checkout and search engines are not affected.
- * Version:           3.12.2
+ * Version:           3.12.3
  * Requires at least: 6.2
  * Requires PHP:      7.4
  * Author:            CodeBunny
@@ -19,7 +19,7 @@ if ( defined( 'PNCP_VERSION' ) ) {
 	return;
 }
 
-define( 'PNCP_VERSION', '3.12.2' );
+define( 'PNCP_VERSION', '3.12.3' );
 define( 'PNCP_FILE', __FILE__ );
 define( 'PNCP_DIR', plugin_dir_path( __FILE__ ) );
 define( 'PNCP_URL', plugin_dir_url( __FILE__ ) );
@@ -43,6 +43,7 @@ spl_autoload_register(
 if ( is_admin() ) {
 	require_once PNCP_DIR . 'includes/class-pncp-admin.php';
 	PNCP_Admin::init();
+	PNCP_Rules_State::init(); // 3.12.3: the notice when the server rules on the server are out of date.
 }
 
 PNCP_Ip::init();
@@ -730,6 +731,8 @@ add_action( 'update_option_' . PNCP_OPTION, 'pncp_settings_changed', 0 );
 add_action( 'update_option_' . PNCP_OPTION, array( 'PNCP_Early', 'sync' ) );
 add_action( 'update_option_' . PNCP_OPTION, array( 'PNCP_Precheck', 'sync' ) );
 add_action( 'update_option_' . PNCP_OPTION, array( 'PNCP_Rules', 'settings_saved' ) );
+// 3.12.3: a setting that changes the server rules marks the installed ones out of date at once.
+add_action( 'update_option_' . PNCP_OPTION, array( 'PNCP_Rules_State', 'settings_changed' ), 20 );
 // The first-week "Monitor only" of a new install ends on its own: hourly, and on the next wp-admin page load.
 add_action( PNCP_Log::CRON, array( 'PNCP_Options', 'end_monitor_trial' ) );
 add_action( 'admin_init', array( 'PNCP_Options', 'end_monitor_trial' ) );

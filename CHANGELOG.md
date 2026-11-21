@@ -1,5 +1,18 @@
 # Αλλαγές
 
+## 3.12.3 — 2026-11-21
+
+Διορθώσεις: οι κανόνες server που φτιάχνει το ίδιο το ScrapeLock δεν αρνούνται πια τον ίδιο τον server, και το plugin βλέπει πότε οι εγκατεστημένοι κανόνες είναι παλιοί.
+
+- **Ο έλεγχος του site έμοιαζε με ψεύτικο browser**: οι έλεγχοι του site προς τον εαυτό του («Check again» στα Vulnerable points, Site Health, «Run a real self-check now», `wp scrapelock selfcheck`) έστελναν User-Agent του Chrome χωρίς Sec-Fetch-Mode και Sec-CH-UA πάνω από HTTPS, και ο κανόνας fake_browser των κανόνων Nginx του ίδιου του ScrapeLock τους έδινε 403 πριν φτάσουν στην PHP, όπου θα μετρούσε η υπογραφή. Τώρα κάθε έλεγχος στέλνει `ScrapeLock-Selftest/<έκδοση> (+<διεύθυνση του site>)`, που δεν είναι browser, μαζί με την υπογραφή· οι έλεγχοι της PHP τον αφήνουν να περάσει από την υπογραφή, ποτέ από το όνομα.
+- **Οι διευθύνσεις του server εξαιρούνται από τους κανόνες**: Nginx `geo $pncp_self_<site>` (127.0.0.1, ::1, η διεύθυνση του server, η διεύθυνση εξόδου που μαθαίνεται από τα υπογεγραμμένα αιτήματα, `SCRAPELOCK_SERVER_IPS`) που κερδίζει κάθε λόγο αποκλεισμού στο `$pncp_block_<site>`· Apache `RewriteCond %{REMOTE_ADDR}` πριν από κάθε ομάδα αποκλεισμού (ranges με εκφράσεις του Apache 2.4, όχι στο LiteSpeed). Το 127.0.0.1 και οι ιδιωτικές διευθύνσεις μετρούν μόνο όταν δεν τις πέρασε proxy (κανένα X-Forwarded-For, X-Real-IP, Forwarded, CF-Connecting-IP). Ποτέ edge CDN, ποτέ άκυρη τιμή, ποτέ ιδιωτικό range ευρύτερο από /24. Η καρτέλα Server rules τις γράφει· πίσω από CDN χρειάζεται `real_ip` (Nginx) ή `mod_remoteip` (Apache).
+- **Αποτύπωμα των κανόνων στο header `X-ScrapeLock-Rules`**, μόνο για τα υπογεγραμμένα αιτήματα του site (Nginx: `add_header … always` στο server { }, με τη γνωστή κληρονομικότητα των add_header· Apache: `Header always set … "expr=-n %{HTTP:X-ScrapeLock-Sig}"` με mod_headers). Κάθε έλεγχος το συγκρίνει με τους κανόνες των τρεχουσών ρυθμίσεων (option `pncp_rules_state`, όχι autoload).
+- **Ειδοποίηση για παλιούς κανόνες**: όταν διαφέρουν, και αμέσως μετά από αποθήκευση ρύθμισης που αλλάζει τους κανόνες, ειδοποίηση στις σελίδες του ScrapeLock και στον πίνακα ελέγχου (μόνο manage_options, κλείνει ανά αποτύπωμα) και αποτέλεσμα «recommended» στο Site Health: «The server rules are out of date (installed: X, current: Y)», με «See what changed» (διαφορές γραμμή προς γραμμή από το κείμενο που έδειξε η καρτέλα, option `pncp_rules_texts`). Site που δεν εγκατέστησε ποτέ κανόνες δεν ενοχλείται. Οι κανόνες Nginx πριν από την 3.12.3 αναγνωρίζονται από τη διεύθυνση ελέγχου τους.
+- **Ποιος κανόνας αρνήθηκε**: όταν ο web server αρνείται το αίτημα του site πριν από το WordPress, ο έλεγχος το περνά από τους κανόνες του ScrapeLock (ίδια maps με τους κανόνες Nginx) και λέει «Refused by ScrapeLock's own server rule (fake browser)» (ή τον κανόνα που ήταν) και τι να γίνει, αντί για «web server».
+- **«Allow AI search»** στους κανόνες: τα AI search bots δεν είναι στους αποκλεισμένους User-Agents όσο είναι ανοιχτό, και μπλοκάρονται από την ενσωματωμένη λίστα όσο είναι κλειστό (όπως στην PHP από την 3.12.1)· τώρα με δοκιμή.
+- **Όριο σελίδων Nginx**: με «Always allowed IPs» δεν μετρά ούτε τον server. Μια ζώνη χωρίς αυτές κρατά το κλειδί της, γιατί ο Nginx αρνείται reload όταν αλλάζει το κλειδί υπάρχουσας ζώνης.
+- **Ελληνική μετάφραση** των νέων κειμένων. Οι ρυθμίσεις και τα exports της 3.12.2 μένουν ίδια. Μετά την ενημέρωση: αντιγραφή των κανόνων ξανά από το Server rules.
+
 ## 3.12.2 — 2026-11-20
 
 Διορθώσεις: τα αιτήματα του site προς τον εαυτό του πίσω από Bunny CDN χωρίς «Forward Host Header», και ποιος τα αρνείται.

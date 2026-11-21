@@ -2654,10 +2654,17 @@ final class PNCP_Admin {
 	 * @param array<string, mixed> $s Settings.
 	 */
 	private static function tab_rules( $s ) { // phpcs:ignore Generic.CodeAnalysis.UnusedFunctionParameter.Found -- Same signature as the other tabs.
+		// 3.12.3: the text of the rules shown here is kept under their fingerprint, for "See what changed" later.
+		PNCP_Rules_State::remember_texts();
+		$pncp_self = PNCP_Rules::self_addresses();
+		echo PNCP_Rules_State::render_diff(); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Escaped in PNCP_Rules_State.
 		?>
 		<div class="pncp-intro">
 		<p><?php esc_html_e( 'Generated for this site: they cover cached pages and files PHP never sees. Test on staging first.', 'scrapelock' ); ?></p>
 		<?php echo PNCP_Admin_Fields::more( __( 'The plugin only checks requests that reach PHP. Pages from page cache, images and static files are served directly by the server or the CDN. The rules below are generated for your site, with the current settings. Test them on staging first.', 'scrapelock' ) ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Escaped in PNCP_Admin_Fields. ?>
+		<?php /* translators: %s: the server's addresses */ ?>
+		<p class="description pncp-rules-self"><?php echo esc_html( sprintf( __( 'The server\'s own addresses are never blocked by these rules: %s.', 'scrapelock' ), implode( ', ', array_merge( $pncp_self['public'], $pncp_self['local'] ) ) ) ); ?></p>
+		<?php echo PNCP_Admin_Fields::more( __( 'So the site\'s own requests (its self-checks, cron, cache preloads) always pass. 127.0.0.1, ::1 and private addresses count only when no proxy passed the request on. Behind a CDN (Bunny, Cloudflare) the server\'s own requests through the public address arrive from the CDN\'s edge: with real_ip in Nginx (real_ip_header and set_real_ip_from for the edges) or mod_remoteip in Apache, the web server sees the server\'s own address and they pass; without it they come from the edge, and only the plugin\'s signature (in PHP) lets them through. More addresses: SCRAPELOCK_SERVER_IPS in wp-config.php.', 'scrapelock' ) ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Escaped in PNCP_Admin_Fields. ?>
 		<p class="description"><?php esc_html_e( 'No Cloudflare token is stored: add the rules in your own Cloudflare account.', 'scrapelock' ); ?></p>
 		</div>
 
@@ -2742,6 +2749,9 @@ final class PNCP_Admin {
 	private static function render_nginx_status() {
 		// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Only asks the site again; changes nothing.
 		$status = PNCP_Rules::nginx_status( isset( $_GET['pncp_nginx_check'] ) );
+		if ( in_array( $status['state'], array( 'current', 'stale' ), true ) ) {
+			PNCP_Rules_State::from_status(); // 3.12.3: the site uses the Nginx rules; their fingerprint is noted.
+		}
 		$names  = array(
 			'http'   => __( '1) http { }', 'scrapelock' ),
 			'server' => __( '2) server { }', 'scrapelock' ),

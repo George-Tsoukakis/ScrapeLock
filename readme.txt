@@ -4,7 +4,7 @@ Tags: ai crawlers, anti-scraping, bot protection, rate limit, content protection
 Requires at least: 6.2
 Tested up to: 7.2
 Requires PHP: 7.4
-Stable tag: 3.12.2
+Stable tag: 3.12.3
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -383,6 +383,14 @@ No, on purpose: only an app code, a recovery code or the SCRAPELOCK_UNLOCK line 
 
 == Changelog ==
 
+= 3.12.3 =
+* Fix: ScrapeLock's own generated Nginx rules refused the site's own checks with 403 (Vulnerable points "Check again", Site Health, "Run a real self-check now", `wp scrapelock selfcheck`): they sent a Chrome User-Agent without Sec-Fetch-Mode and Sec-CH-UA over HTTPS, which the fake browser rule refuses before PHP can see the signature. Every self-check now sends `ScrapeLock-Selftest/<version> (+<site address>)`, which is no browser's, plus the signature; ScrapeLock's PHP checks let it through by the signature, never by the name.
+* New: the generated Nginx and Apache rules never block the server itself: its own addresses (127.0.0.1, ::1, the server address, the outbound address learned from the site's signed requests, `SCRAPELOCK_SERVER_IPS`) are exempt from every block, the loopback and private ones only when no proxy passed the request on. Never a CDN edge, never an invalid entry. The Server rules tab lists them; behind a CDN, `real_ip` (Nginx) or `mod_remoteip` (Apache) makes the server's own requests through the CDN keep its address.
+* New: the rules carry their fingerprint in the header `X-ScrapeLock-Rules`, sent only to the site's own signed requests. Every self-check compares it with the rules the current settings give; when they differ (also right after saving a setting that changes them), an admin notice on ScrapeLock's pages and the dashboard and a Site Health result say "The server rules are out of date (installed: X, current: Y)", with "See what changed" (a line diff). Sites that never installed the rules are not told anything. Nginx rules of before 3.12.3 are recognised by their check address.
+* New: when the web server refuses the site's own request before WordPress, the self-check checks it against ScrapeLock's own rules and says "Refused by ScrapeLock's own server rule (fake browser)" (or the rule it was) and what to do, instead of "web server".
+* Change: with "Always allowed IPs" the page limit of the Nginx rules does not count the server either. A zone without them keeps its key, so Nginx reloads the new rules.
+* Greek translation of the new texts.
+
 = 3.12.2 =
 * Fix: behind Bunny CDN without "Forward Host Header" (its default) the site's own requests still got a 403 (Vulnerable points "Check again", Site Health): the server gets the pull zone's origin name as Host, and the signature was bound to it. The signature now names the site host it was made for and is verified for that host, whatever Host header arrives; a path with "//" and a HEAD passed on as GET match too. Signatures of 3.12.1 are still accepted.
 * New: when something on the way refuses the site's own request, the note says who: ScrapeLock (with the check), Bunny's edge, Cloudflare, Wordfence, another plugin or the web server, and what to check there. ScrapeLock's refusals carry the header `X-ScrapeLock: refused` (the reason only for the site's own request).
@@ -541,6 +549,9 @@ No, on purpose: only an app code, a recovery code or the SCRAPELOCK_UNLOCK line 
 The changes of 3.5.0 and earlier versions are in changelog.txt in the plugin folder.
 
 == Upgrade Notice ==
+
+= 3.12.3 =
+After updating, copy the server rules again from Settings → ScrapeLock → Server rules (Nginx: both parts, then nginx -t and reload; Apache: the .htaccess block): the new rules never block the server's own requests. Settings are kept.
 
 = 3.12.2 =
 Fixes Vulnerable points "Check again" and Site Health behind Bunny CDN without "Forward Host Header", and says who refuses the site's own requests (Bunny, Cloudflare, Wordfence, the web server). Settings are kept.
