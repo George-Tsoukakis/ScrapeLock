@@ -14,6 +14,11 @@
  *    expiry, SameSite=Lax, not HttpOnly), removed at sign-out, set on an ordinary request (also wp-admin) of an
  *    account signed in without it, removed from a browser that is no longer signed in, never while the protection
  *    is off.
+ * H. The page: pncpConfig carries blurScope, the same HTML for a guest and a signed-in member (cache-safe), the
+ *    minified protect.js is the build of the current source and reads the cookie; the pre-cache / early checks
+ *    have nothing to do with the blur.
+ *
+ * The behaviour in a real browser (guest / member / cached page / editor): tests/browser/blur3125.mjs.
  *
  * Only on a test WordPress.
  */
@@ -140,6 +145,15 @@ function hints( $headers ) {
 function is_removal( $h ) {
 	$exp = isset( $h['attrs']['expires'] ) ? strtotime( (string) $h['attrs']['expires'] ) : false;
 	return in_array( $h['value'], array( '', 'deleted' ), true ) && false !== $exp && $exp < time();
+}
+
+/** The window.pncpConfig object printed in a page, or null. */
+function config_of( $body ) {
+	if ( ! preg_match( '#window\.pncpConfig = (\{.*?\});\s*\n?#', $body, $m ) ) {
+		return null;
+	}
+	$c = json_decode( $m[1], true );
+	return is_array( $c ) ? $c : null;
 }
 
 $saved     = get_option( PNCP_OPTION );
@@ -407,6 +421,35 @@ list( , $headers ) = http( $url, array( 'pncp_si' => '1' ), null, '192.0.2.243' 
 t( 'C: protection off: no cookie touched for a guest either', ! hints( $headers ) );
 settings( array( 'enabled' => 1 ) );
 t( 'C: the suggested privacy policy text names the cookie', false !== strpos( (string) file_get_contents( PNCP_DIR . 'includes/class-pncp-log.php' ), 'ScrapeLock sets a cookie named pncp_si with the value 1' ) );
+
+/* ---------- H. The page ---------- */
+
+settings( array( 'blur_on_capture' => 1, 'blur_on_capture_scope' => 'guests' ) );
+list( $code, , $guest ) = http( $url, array(), null, '192.0.2.244' );
+$cg = config_of( $guest );
+t( 'H: guest page: pncpConfig with blur and blurScope "guests"', 200 === $code && $cg && true === $cg['blur'] && 'guests' === $cg['blurScope'], $code . ' ' . wp_json_encode( $cg ) );
+list( , , $member ) = http( $url, $cookies + array( 'pncp_si' => '1' ), null, '192.0.2.245' );
+$cm = config_of( $member );
+t( 'H: signed-in member: the same pncpConfig (the browser decides: cache-safe)', $cm && $cg && $cm === $cg, wp_json_encode( $cm ) );
+t( 'H: the member\'s page carries the logged-in body class', 1 === preg_match( '#<body[^>]*class="[^"]*\blogged-in\b#', $member ) );
+settings( array( 'blur_on_capture_scope' => 'all' ) );
+list( , , $all ) = http( $url, array(), null, '192.0.2.246' );
+$ca = config_of( $all );
+t( 'H: "Everyone": blurScope "all"', $ca && 'all' === $ca['blurScope'] );
+settings( array( 'blur_on_capture' => 0 ) );
+list( , , $off ) = http( $url, array(), null, '192.0.2.247' );
+$co = config_of( $off );
+t( 'H: blur off: blur false (blurScope does nothing then)', $co && false === $co['blur'] );
+t( 'H: the minified protect.js is printed (the build of the current source) and reads pncp_si=1', false !== strpos( $guest, 'pncp_si=1' ) && false === strpos( $guest, 'assets/js/protect.js' ) );
+$src = (string) file_get_contents( PNCP_DIR . 'assets/js/protect.js' );
+$min = (string) file_get_contents( PNCP_DIR . 'assets/js/protect.min.js' );
+t( 'H: protect.min.js stamped with the source\'s SHA-1', 1 === preg_match( '#^/\*! src-sha1:([0-9a-f]{40}) \*/#', $min, $m ) && sha1( str_replace( "\r", '', $src ) ) === $m[1] );
+t( 'H: protect.js reads the cookie that PNCP_Signin_Hint sets', false !== strpos( $src, PNCP_Signin_Hint::COOKIE . '=1' ) && false !== strpos( $src, "cfg.blurScope === 'guests'" ) && false !== strpos( $src, "'logged-in'" ) );
+$checks = '';
+foreach ( array( 'class-pncp-precheck.php', 'class-pncp-precheck-runtime.php', 'class-pncp-early.php' ) as $f ) {
+	$checks .= (string) file_get_contents( PNCP_DIR . 'includes/' . $f );
+}
+t( 'H: the pre-cache and early checks do not touch the blur', false === stripos( $checks, 'blur' ) && false === strpos( $checks, 'pncp_si' ) );
 
 update_option( PNCP_OPTION, $saved );
 PNCP_Options::flush();
