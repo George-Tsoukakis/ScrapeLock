@@ -1,3 +1,44 @@
+# ScrapeLock 3.12.5 — θόλωμα μόνο για όσους δεν έχουν συνδεθεί
+
+Η αναφορά μένει στο αποθετήριο (`/REPORT.md export-ignore`): δεν μπαίνει στο zip του plugin.
+
+## 1. Τι ζητήθηκε / τι έγινε
+
+Κάτω από το «Blur the page on screenshot shortcuts» (On the page): «Applies to: ( ) Everyone ( ) Only visitors who are not signed in», κλειδί `blur_on_capture_scope` = `all` | `guests`. Προεπιλογή και τιμή αναβάθμισης `all` (`new_in_3125()`): κανένα υπάρχον site δεν αλλάζει. Θαμπό με τη σημείωση «Takes effect only when …» όσο το θόλωμα είναι κλειστό. Οι εξαιρεμένοι («Who is excluded», `should_protect()`) δεν παίρνουν καθόλου script, όπως πριν.
+
+## 2. Γιατί αποφασίζει ο browser
+
+Με WP Rocket / Bunny η ίδια σελίδα HTML πάει σε όλους, άρα η PHP δεν μπορεί να ξέρει ποιος τη βλέπει. Το `pncpConfig` έχει `blurScope`, ίδιο για όλους· το `protect.js` με `guests` δεν ενεργοποιεί το θόλωμα όταν:
+
+- υπάρχει το cookie **`pncp_si=1`** (το `wordpress_logged_in_*` είναι HttpOnly, αόρατο στη JavaScript), ή
+- το body έχει την κλάση `logged-in` του WordPress (σελίδα χωρίς cache). Το body δεν υπάρχει ακόμη στο `<head>`, οπότε ελέγχεται ξανά όταν φτιάχνεται το layer και σε κάθε θόλωμα.
+
+Το `mark.js` δεν χρησιμοποιήθηκε: υπάρχει μόνο όταν είναι ανοιχτό το υδατογράφημα αναγνώστη και θέλει επιπλέον αίτημα· το cookie δεν θέλει κανένα.
+
+## 3. Το cookie `pncp_si` (`PNCP_Signin_Hint`)
+
+- Μπαίνει μαζί με το `logged_in` (`set_logged_in_cookie`): ίδια paths (COOKIEPATH, SITECOOKIEPATH), domain (COOKIE_DOMAIN), Secure (https site μέσω https) και λήξη (0 χωρίς «Remember me»), SameSite=Lax, όχι HttpOnly. Τιμή μόνο `1`: κανένα όνομα, ID ή token.
+- Σβήνει στο `clear_auth_cookie` (αποσύνδεση).
+- Σε κανονικό αίτημα (`init`, και στο wp-admin) συνδεδεμένου browser χωρίς αυτό: μπαίνει ως cookie συνεδρίας (λογαριασμοί συνδεδεμένοι πριν την 3.12.5). Browser που δεν είναι πια συνδεδεμένος αλλά το στέλνει: σβήνει.
+- Μπαίνει όποια κι αν είναι η ρύθμιση (η αλλαγή σε `guests` ισχύει αμέσως), ποτέ όσο η προστασία είναι κλειστή.
+- Στο κείμενο της πολιτικής απορρήτου και στο readme.
+
+## 4. Όρια
+
+- Λογαριασμός συνδεδεμένος πριν την ενημέρωση, που βλέπει μόνο σελίδες από cache, θολώνει μέχρι την πρώτη σελίδα χωρίς cache (ή το wp-admin, ή νέα σύνδεση).
+- Αν η συνεδρία ακυρωθεί στον server (αλλαγή κωδικού, «Log out everywhere»), το cookie μένει μέχρι το επόμενο αίτημα που φτάνει στο WordPress.
+- Πλαστό `pncp_si=1` κλείνει το θόλωμα μόνο στον browser αυτού που το έβαλε· το θόλωμα είναι έτσι κι αλλιώς αποτρεπτικό στον browser.
+- Οι έλεγχοι pre-cache / early δεν αγγίζουν το θόλωμα (επιβεβαιώθηκε, και με δοκιμή).
+- Το `bin/build-min.sh` που αναφέρει το `PNCP_Frontend::asset()` δεν υπάρχει στο αποθετήριο· το `protect.min.js` ξαναχτίστηκε με `terser -c -m` και σφραγίδα `/*! src-sha1:<sha1> */` (το ίδιο εργαλείο ξαναφτιάχνει byte προς byte το min της 3.12.4).
+
+## 5. Δοκιμές
+
+- `tests/t_3125_blur.php` (61 PASS, MariaDB και SQLite): ρύθμιση, sanitize, αναβάθμιση 3.12.4 → 3.12.5, export / import, φόρμα, το cookie μέσω HTTP (σύνδεση με / χωρίς «Remember me», αποσύνδεση, παλιά συνεδρία σε σελίδα και wp-admin, ξεχασμένο cookie, προστασία κλειστή), ίδιο `pncpConfig` για επισκέπτη και μέλος, το min build σε χρήση.
+- `tests/browser/blur3125.mjs` (Chromium): ο επισκέπτης θολώνει με PrintScreen και Ctrl+Shift+S· ο συνδεδεμένος subscriber όχι, ούτε στο HTML του επισκέπτη από «cache» (page.route), ούτε χωρίς cookie σε σελίδα χωρίς cache (κλάση body)· έλεγχος: σελίδα από cache χωρίς cookie θολώνει· με «Everyone» θολώνουν και οι δύο· ο editor (εξαιρείται) δεν παίρνει script· μετά την αποσύνδεση ξανά θόλωμα.
+- Όλο το `tests/run-all.sh` σε MariaDB και σε SQLite (wp-sqlite-db, ένας php -S): μόνο οι γνωστές τοπικές αποτυχίες (t_http inline styles / data-cfasync / Applebot PTR ×2 / CF-Connecting-IP / αυτόματο Emergency ×2, t_metadata_paths «fake Applebot», t_lockdown «busy» ×2, t_site_files στο SQLite, t_traffic_ms skip). Το `t_311_compat` δέχεται πλέον το νέο κλειδί (κανένα δεν αφαιρέθηκε).
+- Αναβάθμιση 3.12.4 (zip) → 3.12.5 με ρυθμίσεις από export της 3.10.1: καμία τιμή δεν άλλαξε, προστέθηκε μόνο `blur_on_capture_scope` = `all`, ίδια cron / πίνακες, χωρίς PHP μηνύματα· μετά τη σύνδεση ο browser έχει `pncp_si=1`.
+- php -l, phpcs (phpcs.xml.dist) 0 σφάλματα, PHPStan level 5 χωρίς σφάλματα, `t_311_i18n` PASS.
+
 # ScrapeLock 3.12.4 — «Installed, up to date» στο aaPanel
 
 Η αναφορά μένει στο αποθετήριο (`/REPORT.md export-ignore`): δεν μπαίνει στο zip του plugin.

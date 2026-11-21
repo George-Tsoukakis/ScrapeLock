@@ -2063,6 +2063,8 @@ final class PNCP_Log {
 			. '<p>' . esc_html( PNCP_Bunny::privacy_policy() ) . '</p>'
 			// 3.12.1: Traffic, with this site's retention and IP addresses setting.
 			. '<p>' . esc_html( PNCP_Traffic::privacy_text() ) . '</p>'
+			// 3.12.5.
+			. '<p>' . esc_html__( 'When you are signed in, ScrapeLock sets a cookie named pncp_si with the value 1 in your browser, so that this site\'s pages can tell that you are signed in even when they come from a cache. It contains no personal data, is removed when you sign out and lasts no longer than your sign-in.', 'scrapelock' ) . '</p>'
 			. '<p>' . esc_html__( 'ScrapeLock Stealth changes the addresses of the theme, plugin and media files in the pages sent to visitors. It stores no data about visitors. Its self-test and scan only request this site\'s own public pages, from the site itself.', 'scrapelock' ) . '</p>'
 		);
 	}

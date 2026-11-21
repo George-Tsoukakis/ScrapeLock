@@ -2710,7 +2710,8 @@ fieldset + .pncp-field {
 	}
 
 	.pncp-field--toggle > .description,
-	.pncp-field--toggle > .pncp-requires-note {
+	.pncp-field--toggle > .pncp-requires-note,
+	.pncp-admin .pncp-field.pncp-field--sub {
 		padding-left: 0;
 	}
 
@@ -2977,4 +2978,16 @@ fieldset + .pncp-field {
 .pncp-wizard-done {
 	margin: 0 0 8px 1.5em;
 	list-style: disc;
+}
+
+/* 3.12.5: a choice that belongs to the toggle above it ("Applies to:" under the screenshot blur), indented under its label. */
+.pncp-admin .pncp-field.pncp-field--sub {
+	padding-top: 0;
+	padding-left: 52px;
+	border-top: 0;
+}
+
+.pncp-admin .pncp-field--sub > .pncp-field__label {
+	display: block;
+	margin-bottom: 4px;
 }

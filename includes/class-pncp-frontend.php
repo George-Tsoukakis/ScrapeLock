@@ -246,6 +246,9 @@ final class PNCP_Frontend {
 			'imageDrag'     => (bool) $s['block_image_drag'],
 			'textDrag'      => (bool) $s['block_text_drag'],
 			'blur'          => (bool) $s['blur_on_capture'],
+			// 3.12.5: "guests" = no blur in a signed-in browser. Decided by protect.js (the hint cookie of
+			// PNCP_Signin_Hint, or WordPress's logged-in body class), never here: the same HTML may be cached.
+			'blurScope'     => 'guests' === $s['blur_on_capture_scope'] ? 'guests' : 'all',
 			/**
 			 * Filters whether links keep the browser's right-click menu ("Open in new tab", "Copy link address")
 			 * while right-click is blocked. Off by default: the menu is blocked on links and buttons

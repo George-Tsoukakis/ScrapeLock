@@ -1,5 +1,14 @@
 # Αλλαγές
 
+## 3.12.5 — 2026-11-21
+
+Νέα ρύθμιση: το θόλωμα στα screenshots μπορεί να ισχύει μόνο για όσους δεν έχουν συνδεθεί.
+
+- **«Applies to: Everyone / Only visitors who are not signed in»** κάτω από το «Blur the page on screenshot shortcuts» (καρτέλα On the page), κλειδί `blur_on_capture_scope` = `all` | `guests`. Προεπιλογή `all`, όπως πριν· η αναβάθμιση το αποθηκεύει ως `all` (`new_in_3125()`) και δεν αλλάζει καμία άλλη ρύθμιση· κάθε άλλη τιμή γίνεται `all`. Θαμπό με τη σημείωση «Takes effect only when …» όσο το θόλωμα είναι κλειστό. Περνά από export / import και `wp scrapelock settings`. Οι εξαιρεμένοι («Who is excluded») δεν παίρνουν το script, όπως πριν.
+- **Το αποφασίζει η σελίδα, όχι η PHP**: το `pncpConfig` έχει `blurScope`, ίδιο για όλους (σωστό και από page cache, WP Rocket, Bunny). Με `guests` το `protect.js` δεν ενεργοποιεί το θόλωμα σε συνδεδεμένο browser: cookie `pncp_si=1`, ή η κλάση `logged-in` του body (σελίδα χωρίς cache· το body δεν υπάρχει ακόμη στο `<head>`, οπότε ελέγχεται ξανά στο layer και σε κάθε θόλωμα). Το `protect.min.js` ξαναχτίστηκε από την πηγή (terser -c -m, σφραγίδα SHA-1).
+- **Cookie `pncp_si`** (`PNCP_Signin_Hint`): το `logged_in` του WordPress είναι HttpOnly, άρα αόρατο στη JavaScript. Μπαίνει μαζί με το `logged_in` (ίδια paths COOKIEPATH / SITECOOKIEPATH, domain, Secure και λήξη, SameSite=Lax, όχι HttpOnly), σβήνει στην αποσύνδεση, μπαίνει σε κανονικό αίτημα (και στο wp-admin) συνδεδεμένου browser που δεν το έχει (λογαριασμοί συνδεδεμένοι πριν την 3.12.5· εκεί cookie συνεδρίας) και σβήνει από browser που δεν είναι πια συνδεδεμένος. Ποτέ όσο η προστασία είναι κλειστή. Χωρίς προσωπικά δεδομένα· το αναφέρει το κείμενο της πολιτικής απορρήτου. Όποιος το βάλει με το χέρι κλείνει το θόλωμα μόνο στον δικό του browser.
+- **Ελληνική μετάφραση** των νέων κειμένων. Οι ρυθμίσεις και τα exports της 3.12.4 μένουν ίδια.
+
 ## 3.12.4 — 2026-11-21
 
 Διόρθωση: η καρτέλα Server rules έλεγε «Not installed» στο aaPanel, ενώ το μέρος 2 των κανόνων Nginx ήταν στο server { } του site.

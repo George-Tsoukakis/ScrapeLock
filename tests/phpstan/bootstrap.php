@@ -12,6 +12,7 @@
 foreach ( array(
 	'WPINC'                 => 'wp-includes',
 	'COOKIEPATH'            => '/',
+	'SITECOOKIEPATH'        => '/',
 	'COOKIEHASH'            => '',
 	'WPMU_PLUGIN_URL'       => '',
 	'PNCP_URL'              => '',

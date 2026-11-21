@@ -2,7 +2,7 @@
 /**
  * Plugin Name:       ScrapeLock – Content & AI Bot Protection
  * Description:       Protects your content: makes copying text and images harder, hides the text in the REST API, GraphQL and RSS, blocks scrapers, AI bots and fake Googlebots, temporarily blocks persistent IPs, protects XML feeds with a token and adds an optional watermark. Lockdown freezes every change to the site until it is unlocked with an authenticator app. Forms, cart, checkout and search engines are not affected.
- * Version:           3.12.4
+ * Version:           3.12.5
  * Requires at least: 6.2
  * Requires PHP:      7.4
  * Author:            CodeBunny
@@ -19,7 +19,7 @@ if ( defined( 'PNCP_VERSION' ) ) {
 	return;
 }
 
-define( 'PNCP_VERSION', '3.12.4' );
+define( 'PNCP_VERSION', '3.12.5' );
 define( 'PNCP_FILE', __FILE__ );
 define( 'PNCP_DIR', plugin_dir_path( __FILE__ ) );
 define( 'PNCP_URL', plugin_dir_url( __FILE__ ) );
@@ -121,6 +121,7 @@ PNCP_Ai_Search_List::init(); // 3.11: "Remove from the list" for allowed AI sear
 PNCP_Site_Files::init(); // 3.10.1: apple-touch-icon.png and OneSignalSDKWorker.js in Site Health, Wordfence's address check.
 PNCP_Fluent_Community::init(); // 3.11: FluentCommunity's portal in the content addresses, its members' REST reads off the REST limit.
 PNCP_Traffic::init(); // 3.12: every request from the CDN logs, the access log and WordPress (off until turned on).
+PNCP_Signin_Hint::init(); // 3.12.5: the cookie that tells the page's script the browser is signed in (screenshot blur).
 // 3.11: the translations shipped in languages/ (Greek). WordPress 6.7+ finds them through "Domain Path" on its own;
 // 6.2 to 6.6 need this. A language pack in wp-content/languages/plugins/ is still read first.
 add_action( 'init', 'pncp_load_textdomain', 0 );
@@ -286,6 +287,11 @@ function pncp_upgrade() {
 		// settings list shows them.
 		if ( version_compare( $from_settings, '3.12.0', '<' ) ) {
 			$added += PNCP_Options::new_in_3120();
+		}
+		// 3.12.5: the screenshot blur keeps applying to everyone ("all"), as before. Stored now, so an export or a
+		// settings list shows it.
+		if ( version_compare( $from_settings, '3.12.5', '<' ) ) {
+			$added += PNCP_Options::new_in_3125();
 		}
 		$added = array_diff_key( $added, $stored );
 		// 3.4: the automatic Emergency Mode only tells the administrator on new installs; a site that had it on

@@ -140,7 +140,23 @@
 	//
 	// Registered before the shortcut and DevTools listeners below: those stop Ctrl/Cmd+S with
 	// stopImmediatePropagation, which would otherwise hide Ctrl+Shift+S / Win+Shift+S from this listener.
-	if ( cfg.blur ) {
+	//
+	// 3.12.5: with "Applies to: only visitors who are not signed in" (cfg.blurScope "guests") the blur is not armed
+	// in a signed-in browser. Decided here, not on the server, because a page cache serves the same HTML to everyone:
+	// signed in = the hint cookie pncp_si=1 (PNCP_Signin_Hint; WordPress's own cookie is HttpOnly), or WordPress's
+	// "logged-in" body class on a page made for this visitor. The body does not exist yet in <head>, so the class is
+	// checked again when the layer is made and at every blur.
+	var signedIn = function () {
+		if ( /(?:^|;\s*)pncp_si=1(?:;|$)/.test( document.cookie || '' ) ) {
+			return true;
+		}
+		var body = document.body;
+		return !! ( body && body.classList && body.classList.contains( 'logged-in' ) );
+	};
+	var blurSkipped = function () {
+		return cfg.blurScope === 'guests' && signedIn();
+	};
+	if ( cfg.blur && ! blurSkipped() ) {
 		var root = document.documentElement;
 		var timeouts = cfg.blurTimeouts || {};
 		// A known shortcut: blurred this long, or until the visitor clicks or types something else.
@@ -151,7 +167,7 @@
 
 		/** A full-viewport layer whose backdrop-filter blurs whatever is under it. Made once, shown by a class: no DOM work at the critical moment. */
 		var ensureShield = function () {
-			if ( ! shield && document.body ) {
+			if ( ! shield && document.body && ! blurSkipped() ) {
 				shield = document.createElement( 'div' );
 				shield.className = 'pncp-shield';
 				shield.setAttribute( 'aria-hidden', 'true' );
@@ -181,6 +197,9 @@
 		};
 		/** Blurs at once (a class on <html>: the CSS does the rest in the same frame), and always clears itself after ms. */
 		var blurOn = function ( ms ) {
+			if ( blurSkipped() ) {
+				return;
+			}
 			ensureShield();
 			if ( ! blurred() ) {
 				root.classList.add( 'pncp-blurred' );

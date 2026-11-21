@@ -93,6 +93,8 @@ final class PNCP_Admin_Fields {
 		// 3.6.
 		$add( array( 'user_mark_guests', 'user_mark_opacity' ), 'user_mark', 'on', __( 'Show who is reading over protected pages', 'scrapelock' ) );
 		$add( array( 'shared_ips', 'shared_logout' ), 'shared_alert', 'on', __( 'Email me when one account is used from several addresses at once', 'scrapelock' ) );
+		// 3.12.5.
+		$add( 'blur_on_capture_scope', 'blur_on_capture', 'on', __( 'Blur the page when Print Screen or a screenshot shortcut is pressed', 'scrapelock' ) );
 		// 3.7.
 		$add( 'rate_limit_lowrep', 'reputation', 'on', __( 'Remember how each IP behaves (reputation)', 'scrapelock' ) );
 		$add( 'rate_limit_crowdsec', 'crowdsec_action', 'choice', __( 'The stricter page limit below', 'scrapelock' ), 'limit' );
