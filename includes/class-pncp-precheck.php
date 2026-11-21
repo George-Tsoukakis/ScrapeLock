@@ -8,7 +8,9 @@
  * on, one line at the top of wp-config.php loads the check from the plugin folder (always-blocked IPs, bans,
  * page limit per IP), before the cache. Its configuration, counters and events are data files (no PHP) in
  * a folder of the uploads directory, uploads/scrapelock/precheck-RANDOM. Off by default; turned off, the
- * line and the files are removed.
+ * line and the files are removed. 3.12.9: with APCu or Redis the check keeps all of it in memory instead
+ * (PNCP_Precheck_Runtime::store()); this class puts the configuration there (push_config(), push_web()) and
+ * copies bans and events between memory, the files and the log (sync_store()).
  *
  * @package ScrapeLock
  */
@@ -37,6 +39,35 @@ final class PNCP_Precheck {
 	const FORMAT = 3;
 
 	/**
+	 * 3.12.9: the admin-ajax action of the signed request that runs sync_store() in the web server's PHP (fpm_sync()).
+	 */
+	const SYNC_ACTION = 'pncp_precheck_sync';
+
+	/**
+	 * 3.12.9: transient: when the last admin page copied the store (admin_sync()).
+	 */
+	const SYNC_SEEN = 'pncp_precheck_synced';
+
+	/**
+	 * 3.12.9: option: md5 of the wp-config.php line last written (maybe_sync() writes it again when it changes,
+	 * e.g. when the site gets a Redis object cache).
+	 */
+	const BLOCK_HASH = 'pncp_precheck_block';
+
+	/**
+	 * 3.12.9: option (autoloaded): the Redis connection of the line last written to wp-config.php, so that
+	 * WordPress uses the same store as the check (runtime_config()) without looking for it in a visitor's request.
+	 */
+	const REDIS_OPTION = 'pncp_precheck_redis_conn';
+
+	/**
+	 * 3.12.9: fpm_sync() is running (no second one from inside it).
+	 *
+	 * @var bool
+	 */
+	private static $in_fpm_sync = false;
+
+	/**
 	 * 3.6.1: transient set for an hour after maybe_sync() could not finish (see there).
 	 */
 	const RETRY = 'pncp_precheck_retry';
@@ -51,6 +82,12 @@ final class PNCP_Precheck {
 		// If the wp-config.php line could not be added during a front-end request (it is never edited there),
 		// finish it on the next admin page load, where editing the config file is safe.
 		add_action( 'admin_init', array( __CLASS__, 'maybe_sync' ), 1 );
+		// 3.12.9: APCu lives in the PHP-FPM (or Apache) processes only: WP-CLI and a system cron's `wp cron event
+		// run` cannot see it. Their changes reach it through a signed request to the site (fpm_sync()), and an admin
+		// page copies it every few minutes (admin_sync()).
+		add_action( 'wp_ajax_nopriv_' . self::SYNC_ACTION, array( __CLASS__, 'ajax_sync' ) );
+		add_action( 'wp_ajax_' . self::SYNC_ACTION, array( __CLASS__, 'ajax_sync' ) );
+		add_action( 'admin_init', array( __CLASS__, 'admin_sync' ), 20 );
 	}
 
 	/**
@@ -67,6 +104,10 @@ final class PNCP_Precheck {
 			return;
 		}
 		$status = get_option( self::STATUS );
+		// 3.12.9: a line that changed (the Redis connection of a new object cache) is written again.
+		if ( 'ok' === $status && md5( self::block() ) !== (string) get_option( self::BLOCK_HASH, '' ) && ! get_transient( self::RETRY ) ) {
+			$status = 'changed';
+		}
 		if ( 'ok' === $status || ( 'deferred' !== $status && get_transient( self::RETRY ) ) ) {
 			return;
 		}
@@ -80,11 +121,19 @@ final class PNCP_Precheck {
 	 */
 	public static function cleanup_hits() {
 		$dir = self::dir();
-		if ( '' !== $dir && is_dir( $dir . '/hits' ) ) {
-			if ( ! class_exists( 'PNCP_Precheck_Runtime' ) ) {
-				require_once self::runtime_file();
-			}
+		if ( '' === $dir || ! is_dir( $dir ) ) {
+			return;
+		}
+		self::load_runtime();
+		if ( is_dir( $dir . '/hits' ) ) {
 			PNCP_Precheck_Runtime::cleanup( $dir . '/hits', (int) floor( time() / 60 ), 0 );
+		} else {
+			@touch( $dir . '/.cleaned' ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged -- The mark of the hourly cleanup (PNCP_Precheck_Runtime::maybe_sweep()).
+		}
+		// 3.12.9: the bans between APCu / Redis and the files, the configuration into the store.
+		self::sync_store();
+		if ( defined( 'WP_CLI' ) && WP_CLI && self::wanted() && self::in_config() ) {
+			self::fpm_sync(); // A system cron's `wp cron event run`: APCu is only in the web server's PHP.
 		}
 	}
 
@@ -175,8 +224,11 @@ final class PNCP_Precheck {
 		// here, in wp-config.php, which the web server never shows: the data folder is in uploads, where a server
 		// without .htaccess (Nginx) serves any file whose name is known.
 		$key = var_export( PNCP_Server_Ips::sig_key( true ), true ); // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_var_export -- Writes the key as PHP code.
+		// 3.12.9: the Redis server of the object cache, when there is one (redis_settings()): the check runs before
+		// the rest of wp-config.php defines WP_REDIS_*, and must not read a file to find it.
+		$redis = self::php_array( self::redis_settings() );
 		return self::BEGIN . " (added and removed by the plugin's \"Pre-cache check\" setting)\n"
-			. 'if ( is_file( ' . $runtime . ' ) ) { include_once ' . $runtime . '; PNCP_Precheck_Runtime::boot( ' . $data . ', ' . $key . " ); }\n"
+			. 'if ( is_file( ' . $runtime . ' ) ) { include_once ' . $runtime . '; PNCP_Precheck_Runtime::boot( ' . $data . ', ' . $key . ( '' !== $redis ? ', ' . $redis : '' ) . " ); }\n"
 			. self::END . "\n";
 	}
 
@@ -217,6 +269,9 @@ final class PNCP_Precheck {
 		}
 		$status = self::write_files() ? self::add_to_config() : 'no_files';
 		update_option( self::STATUS, $status, false );
+		if ( 'ok' === $status ) {
+			self::push_web( true ); // 3.12.9: from WP-CLI, the web server's APCu gets this configuration now.
+		}
 		return $status;
 	}
 
@@ -676,10 +731,21 @@ final class PNCP_Precheck {
 			return false;
 		}
 		// The crawler lists first: a new config.json never points to lists that are not there yet.
-		if ( ! self::write_data_file( $filesystem, $dir . '/crawlers.json', self::crawlers_json() ) ) {
+		$crawlers = self::crawlers_json();
+		if ( ! self::write_data_file( $filesystem, $dir . '/crawlers.json', $crawlers ) ) {
 			return false;
 		}
-		return self::write_data_file( $filesystem, self::config_file(), $json );
+		$changed = ! is_readable( self::config_file() ) || (string) file_get_contents( self::config_file() ) !== $json; // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Local file.
+		if ( ! self::write_data_file( $filesystem, self::config_file(), $json ) ) {
+			return false;
+		}
+		// 3.12.9: the check reads its configuration from APCu or Redis, not from the file (PNCP_Precheck_Runtime::
+		// load()). WP-CLI cannot reach the web server's APCu: a signed request to the site puts it there.
+		self::push_config( $json, $crawlers );
+		if ( $changed ) {
+			self::push_web();
+		}
+		return true;
 	}
 
 	/**
@@ -719,8 +785,10 @@ final class PNCP_Precheck {
 		if ( preg_match( '/\A\s*(?:#[^\n]*\n|\/\/[^\n]*\n|\/\*.*?\*\/\s*)*\s*(?:declare|namespace)\b/s', $rest ) ) {
 			return 'not_writable';
 		}
-		$wanted = $m[0] . self::block() . $rest;
+		$block  = self::block();
+		$wanted = $m[0] . $block . $rest;
 		if ( $wanted === $original ) {
+			self::written( $block );
 			return 'ok';
 		}
 		// Never rewrite wp-config.php during a normal front-end request (the upgrade can run there): only in
@@ -729,7 +797,26 @@ final class PNCP_Precheck {
 		if ( ! is_admin() && ! ( defined( 'WP_CLI' ) && WP_CLI ) && ! wp_doing_cron() ) {
 			return 'deferred';
 		}
-		return self::write_config( $path, $wanted, $original ) ? 'ok' : 'not_writable';
+		if ( ! self::write_config( $path, $wanted, $original ) ) {
+			return 'not_writable';
+		}
+		self::written( $block );
+		return 'ok';
+	}
+
+	/**
+	 * 3.12.9: notes the line now in wp-config.php: its hash (maybe_sync()) and its Redis connection (runtime_config()).
+	 *
+	 * @param string $block The line (block()).
+	 */
+	private static function written( $block ) {
+		if ( md5( $block ) !== (string) get_option( self::BLOCK_HASH, '' ) ) {
+			update_option( self::BLOCK_HASH, md5( $block ), false );
+		}
+		$redis = self::redis_settings();
+		if ( get_option( self::REDIS_OPTION, null ) !== $redis ) {
+			update_option( self::REDIS_OPTION, $redis, true );
+		}
 	}
 
 	/**
@@ -814,39 +901,59 @@ final class PNCP_Precheck {
 	/**
 	 * A ban from the normal check also applies before the cache.
 	 *
+	 * 3.12.9: into APCu or Redis when the check keeps its bans there (PNCP_Precheck_Runtime::store()): in a visitor's
+	 * request only there (the hourly sync_store() copies it to the file); in wp-admin, WP-Cron and WP-CLI the file
+	 * too. From WP-CLI, which cannot see the web server's APCu, the ban waits in ops.log for fpm_sync().
+	 *
 	 * @param string $ip    IP.
 	 * @param int    $until Expiry.
 	 */
 	public static function mirror_ban( $ip, $until ) {
-		if ( ! self::has_dir() ) {
+		if ( '' === (string) get_option( self::KEY, '' ) ) {
 			return;
 		}
-		// Written directly, as the check itself writes its files: this runs inside the visitor's request that
-		// earned the ban, and starting WP_Filesystem (with its test file in uploads) there costs more than the write.
+		$c = self::runtime_config();
+		// 3.6.1: never shorter than the ban the check already holds (a trap hit of an IP banned for longer, or
+		// the import of a longer Emergency Mode ban with the normal duration); an unban deletes the file.
+		if ( self::mirrored_until( $ip ) >= (int) $until ) {
+			return;
+		}
+		$stored = '' !== PNCP_Precheck_Runtime::store( $c ) && PNCP_Precheck_Runtime::mem_set( $c, 'b:' . md5( (string) $ip ), (string) (int) $until, max( 60, (int) $until - time() + 60 ) );
+		if ( $stored && ! self::back_office() ) {
+			return;
+		}
+		self::queue_op( 'ban', md5( (string) $ip ), (int) $until );
+		self::push_web();
+		// Written directly, as the check itself writes its files: starting WP_Filesystem (with its test file in
+		// uploads) costs more than the write.
 		$dir = self::dir() . '/bans';
-		if ( is_dir( $dir ) || wp_mkdir_p( $dir ) ) {
-			// 3.6.1: never shorter than the ban the check already holds (a trap hit of an IP banned for longer, or
-			// the import of a longer Emergency Mode ban with the normal duration); an unban deletes the file.
-			$file = $dir . '/' . md5( $ip );
-			$old  = self::mirrored_until( $ip );
-			if ( $old < (int) $until ) {
-				@file_put_contents( $file, (string) (int) $until, LOCK_EX ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged, WordPress.WP.AlternativeFunctions.file_system_operations_file_put_contents -- A tiny data file in the plugin's own folder.
+		if ( is_dir( self::dir() ) && ( is_dir( $dir ) || wp_mkdir_p( $dir ) ) ) {
+			$file = $dir . '/' . md5( (string) $ip );
+			if ( ( is_file( $file ) ? (int) @file_get_contents( $file ) : 0 ) < (int) $until ) { // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged, WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- A tiny data file in the plugin's own folder.
+				PNCP_Precheck_Runtime::put_atomic( $file, (string) (int) $until );
 			}
 		}
 	}
 
 	/**
-	 * 3.6.1: the expiry of the check's ban file of a ban key (0 = none).
+	 * 3.6.1: the expiry of the check's ban of a ban key (0 = none). 3.12.9: from APCu or Redis when the check keeps
+	 * its bans there, else the file.
 	 *
 	 * @param string $ip Ban key.
 	 * @return int
 	 */
 	public static function mirrored_until( $ip ) {
-		if ( ! self::has_dir() ) {
+		if ( '' === (string) get_option( self::KEY, '' ) ) {
 			return 0;
 		}
+		$c      = self::runtime_config();
+		$stored = PNCP_Precheck_Runtime::mem_get( $c, 'b:' . md5( (string) $ip ) );
+		if ( null !== $stored && ! self::back_office() ) {
+			return (int) $stored;
+		}
 		$file = self::dir() . '/bans/' . md5( (string) $ip );
-		return is_file( $file ) ? (int) @file_get_contents( $file ) : 0; // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged, WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- A local file of the plugin's folder; removed in between = none.
+		$from = is_file( $file ) ? (int) @file_get_contents( $file ) : 0; // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged, WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- A local file of the plugin's folder; removed in between = none.
+		return max( $from, (int) $stored );
 	}
 
 	/**
@@ -855,20 +962,24 @@ final class PNCP_Precheck {
 	 * @param string $ip IP.
 	 */
 	public static function forget_ban( $ip ) {
-		if ( ! self::has_dir() ) {
+		if ( '' === (string) get_option( self::KEY, '' ) ) {
 			return;
 		}
+		$c = self::runtime_config();
 		// 3.5: the probe ban's 24-hour memory too: a lifted IP starts clean.
+		PNCP_Precheck_Runtime::mem_del( $c, array( 'b:' . md5( (string) $ip ), 'p:' . md5( (string) $ip ) ) );
+		self::queue_op( 'unban', md5( (string) $ip ) );
 		foreach ( array( 'bans', 'probes' ) as $folder ) {
-			$file = self::dir() . '/' . $folder . '/' . md5( $ip );
+			$file = self::dir() . '/' . $folder . '/' . md5( (string) $ip );
 			if ( file_exists( $file ) ) {
 				wp_delete_file( $file );
 			}
 		}
+		self::push_web();
 	}
 
 	/**
-	 * 3.5: the 24-hour probe memory of the check (PNCP_Precheck_Runtime::probe_seen(), same file and format), for
+	 * 3.5: the 24-hour probe memory of the check (PNCP_Precheck_Runtime::probe_seen(), same store and format), for
 	 * a probe WordPress bans: true when the check (or WordPress) remembers a probe of this IP key within 24
 	 * hours; otherwise the time of this probe is written. False without a data folder. Only called on a ban.
 	 *
@@ -876,32 +987,460 @@ final class PNCP_Precheck {
 	 * @return bool
 	 */
 	public static function probe_seen( $key ) {
-		if ( ! self::has_dir() ) {
+		if ( '' === (string) get_option( self::KEY, '' ) ) {
 			return false;
 		}
-		$folder = self::dir() . '/probes';
-		if ( ! is_dir( $folder ) && ! wp_mkdir_p( $folder ) ) {
+		$c = self::runtime_config();
+		if ( '' === PNCP_Precheck_Runtime::store( $c ) && ! self::has_dir() ) {
 			return false;
 		}
-		$file = $folder . '/' . md5( (string) $key );
-		$now  = time();
-		$time = is_file( $file ) ? (int) @file_get_contents( $file ) : 0; // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged, WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- A local file of the plugin's folder; removed in between = not seen.
-		if ( $time > $now - DAY_IN_SECONDS ) {
-			// 3.5: the time of the first probe is kept, and a probe within the burst of it is the same first probe
-			// (parallel requests, as PNCP_Precheck_Runtime::probe_seen()).
-			return $time <= $now - PNCP_Bots::FIRST_BAN_BURST;
-		}
-		@file_put_contents( $file, (string) $now, LOCK_EX ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged, WordPress.WP.AlternativeFunctions.file_system_operations_file_put_contents -- Same file the check writes.
-		return false;
+		return PNCP_Precheck_Runtime::probe_seen( $c, (string) $key, time() );
 	}
 
 	/**
 	 * Lifts every ban before the cache.
 	 */
 	public static function forget_all_bans() {
+		if ( '' === (string) get_option( self::KEY, '' ) ) {
+			return;
+		}
+		$c = self::runtime_config();
+		foreach ( array( 'b:', 'p:' ) as $prefix ) {
+			$names = array();
+			foreach ( array_keys( (array) PNCP_Precheck_Runtime::mem_list( $c, $prefix ) ) as $hash ) {
+				$names[] = $prefix . $hash;
+			}
+			if ( $names ) {
+				PNCP_Precheck_Runtime::mem_del( $c, $names );
+			}
+		}
+		self::queue_op( 'unban_all' );
 		if ( self::has_dir() ) {
 			self::delete_folder( self::dir() . '/bans', self::dir() );
 			self::delete_folder( self::dir() . '/probes', self::dir() ); // 3.5: the probe ban's memory.
+		}
+		self::push_web();
+	}
+
+	/* ---------- 3.12.9: APCu and Redis ---------- */
+
+	/**
+	 * Loads the check's class (it is only loaded by wp-config.php while the check is on).
+	 */
+	public static function load_runtime() {
+		if ( ! class_exists( 'PNCP_Precheck_Runtime' ) ) {
+			require_once self::runtime_file();
+		}
+	}
+
+	/**
+	 * The part of the check's configuration that says where it keeps its data: the folder, APCu and the Redis
+	 * connection, as the line in wp-config.php gives it to the check.
+	 *
+	 * @return array<string, mixed>
+	 */
+	public static function runtime_config() {
+		self::load_runtime();
+		$key = PNCP_Server_Ips::sig_key();
+		// The connection the check got with its line; WP-CLI, cron and wp-admin look for it themselves. A visitor's
+		// request never reads the object cache's drop-in for it.
+		$redis = self::back_office() ? self::redis_settings() : get_option( self::REDIS_OPTION, array() );
+		$redis = is_array( $redis ) ? $redis : array();
+		return array(
+			'dir'        => self::dir(),
+			'apcu'       => (bool) apply_filters( 'pncp_precheck_apcu', true ),
+			/** This filter is documented in includes/class-pncp-precheck.php */
+			'apcu_sapis' => array_values( array_map( 'strval', (array) apply_filters( 'pncp_precheck_apcu_sapis', array( 'fpm-fcgi', 'apache2handler' ) ) ) ),
+			'redis'      => $redis ? $redis + array( 'sk' => $key ) : array(),
+			'self_key'   => $key,
+		);
+	}
+
+	/**
+	 * Is this request wp-admin (not admin-ajax), WP-Cron or WP-CLI? There the files are written too; a visitor's
+	 * request only uses APCu or Redis when the check has one.
+	 *
+	 * @return bool
+	 */
+	private static function back_office() {
+		return ( defined( 'WP_CLI' ) && WP_CLI ) || 'cli' === PHP_SAPI || wp_doing_cron() || ( is_admin() && ! wp_doing_ajax() );
+	}
+
+	/**
+	 * The connection to the Redis server of the site's persistent object cache, for the line in wp-config.php ([]
+	 * = none). Setting: the constant SCRAPELOCK_PRECHECK_REDIS or the filter `pncp_precheck_redis`: 'auto' (the
+	 * default: when the PHP Redis extension is there and the site's object cache is Redis, from the WP_REDIS_*
+	 * constants of the Redis Object Cache plugin or WP_REDIS_CONFIG), false (never), or an array with host, port,
+	 * path (a Unix socket), scheme (tcp, tls, unix), db, user, password and prefix. Never with Redis Cluster,
+	 * Sentinel, shards or replication (WP_REDIS_CLUSTER, WP_REDIS_SENTINEL, WP_REDIS_SHARDS, WP_REDIS_SERVERS):
+	 * the check talks to one server. The password goes into the line masked (PNCP_Precheck_Runtime::mask()).
+	 *
+	 * @return array<string, mixed>
+	 */
+	public static function redis_settings() {
+		$want = defined( 'SCRAPELOCK_PRECHECK_REDIS' ) ? constant( 'SCRAPELOCK_PRECHECK_REDIS' ) : 'auto';
+		/**
+		 * Filters whether and how the pre-cache check uses Redis: 'auto', false, or the connection (array).
+		 *
+		 * @param mixed $want 'auto' (default), false or an array (host, port, path, scheme, db, user, password, prefix).
+		 */
+		$want = apply_filters( 'pncp_precheck_redis', $want );
+		if ( ! $want || 'off' === $want || ! class_exists( 'Redis' ) ) {
+			return array();
+		}
+		if ( is_array( $want ) ) {
+			$p = $want;
+		} else {
+			foreach ( array( 'WP_REDIS_CLUSTER', 'WP_REDIS_SENTINEL', 'WP_REDIS_SHARDS', 'WP_REDIS_SERVERS' ) as $name ) {
+				if ( defined( $name ) && constant( $name ) ) {
+					return array();
+				}
+			}
+			$cfg = defined( 'WP_REDIS_CONFIG' ) && is_array( constant( 'WP_REDIS_CONFIG' ) ) ? (array) constant( 'WP_REDIS_CONFIG' ) : array();
+			foreach ( array( 'cluster', 'servers', 'sentinels', 'shards' ) as $name ) {
+				if ( ! empty( $cfg[ $name ] ) ) {
+					return array();
+				}
+			}
+			$redis_cache = $cfg || defined( 'WP_REDIS_HOST' ) || defined( 'WP_REDIS_PATH' ) || defined( 'WP_REDIS_PORT' ) || defined( 'WP_REDIS_SCHEME' ) || defined( 'WP_REDIS_DATABASE' ) || defined( 'WP_REDIS_PASSWORD' );
+			if ( ! $redis_cache && wp_using_ext_object_cache() ) {
+				$dropin      = WP_CONTENT_DIR . '/object-cache.php';
+				$redis_cache = is_readable( $dropin ) && false !== stripos( (string) file_get_contents( $dropin, false, null, 0, 16384 ), 'redis' ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- The start of the local drop-in.
+			}
+			if ( ! wp_using_ext_object_cache() || ! $redis_cache ) {
+				return array();
+			}
+			$const = static function ( $name, $fallback ) {
+				return defined( $name ) ? constant( $name ) : $fallback;
+			};
+			$p = array(
+				'scheme'   => $const( 'WP_REDIS_SCHEME', isset( $cfg['scheme'] ) ? $cfg['scheme'] : 'tcp' ),
+				'host'     => $const( 'WP_REDIS_HOST', isset( $cfg['host'] ) ? $cfg['host'] : '127.0.0.1' ),
+				'port'     => $const( 'WP_REDIS_PORT', isset( $cfg['port'] ) ? $cfg['port'] : 6379 ),
+				'path'     => $const( 'WP_REDIS_PATH', '' ),
+				'db'       => $const( 'WP_REDIS_DATABASE', isset( $cfg['database'] ) ? $cfg['database'] : 0 ),
+				'password' => $const( 'WP_REDIS_PASSWORD', isset( $cfg['password'] ) ? $cfg['password'] : '' ),
+				'prefix'   => $const( 'WP_REDIS_PREFIX', isset( $cfg['prefix'] ) ? $cfg['prefix'] : $const( 'WP_CACHE_KEY_SALT', '' ) ),
+			);
+			if ( isset( $cfg['username'] ) && is_string( $cfg['username'] ) && ! is_array( $p['password'] ) ) {
+				$p['password'] = array( $cfg['username'], (string) $p['password'] );
+			}
+		}
+		$out    = array();
+		$scheme = isset( $p['scheme'] ) ? strtolower( (string) $p['scheme'] ) : 'tcp';
+		$host   = isset( $p['host'] ) ? trim( (string) $p['host'] ) : '';
+		$path   = isset( $p['path'] ) ? trim( (string) $p['path'] ) : '';
+		if ( 0 === strpos( $host, 'unix://' ) ) {
+			$path = substr( $host, 7 );
+		} elseif ( 'unix' === $scheme && '' === $path && '/' === substr( $host, 0, 1 ) ) {
+			$path = $host;
+		}
+		if ( '' !== $path ) {
+			$out['path'] = $path;
+		} else {
+			$out['host'] = '' !== $host ? $host : '127.0.0.1';
+			$out['port'] = isset( $p['port'] ) && (int) $p['port'] > 0 ? (int) $p['port'] : 6379;
+			if ( in_array( $scheme, array( 'tls', 'rediss', 'ssl' ), true ) ) {
+				$out['scheme'] = 'tls';
+			}
+		}
+		if ( isset( $p['db'] ) && (int) $p['db'] > 0 ) {
+			$out['db'] = (int) $p['db'];
+		}
+		$password = isset( $p['password'] ) ? $p['password'] : '';
+		if ( isset( $p['user'] ) && '' !== (string) $p['user'] ) {
+			$password = array( (string) $p['user'], is_array( $password ) ? (string) end( $password ) : (string) $password );
+		}
+		if ( is_array( $password ) ) {
+			$password = array_values( $password );
+			if ( isset( $password[1] ) && '' !== (string) $password[0] ) {
+				$out['user'] = (string) $password[0];
+			}
+			$password = (string) end( $password );
+		}
+		if ( '' !== (string) $password ) {
+			// phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.obfuscation_base64_encode -- The masked password (see the docblock).
+			$out['auth'] = base64_encode( PNCP_Precheck_Runtime::mask( (string) $password, PNCP_Server_Ips::sig_key( true ) ) );
+		}
+		if ( isset( $p['prefix'] ) && '' !== (string) $p['prefix'] ) {
+			$out['prefix'] = substr( (string) preg_replace( '/[^\x21-\x7e]/', '', (string) $p['prefix'] ), 0, 100 );
+		}
+		self::load_runtime();
+		return $out;
+	}
+
+	/**
+	 * A flat array of strings and integers as PHP code on one line ('' for an empty array).
+	 *
+	 * @param array<string, mixed> $values Values.
+	 * @return string
+	 */
+	private static function php_array( $values ) {
+		if ( ! $values ) {
+			return '';
+		}
+		$parts = array();
+		foreach ( $values as $name => $value ) {
+			// phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_var_export -- Writes the values as PHP code.
+			$parts[] = var_export( (string) $name, true ) . ' => ' . ( is_int( $value ) ? (string) $value : var_export( (string) $value, true ) );
+		}
+		return 'array( ' . implode( ', ', $parts ) . ' )';
+	}
+
+	/**
+	 * Puts the configuration where the check reads it without the disk (PNCP_Precheck_Runtime::load()): Redis from
+	 * any context, APCu only from the web server's PHP (WP-CLI has an APCu of its own, if any: fpm_sync()).
+	 *
+	 * @param string|null $json     config.json (null: read it).
+	 * @param string|null $crawlers crawlers.json (null: read it).
+	 * @return string Where it went: 'apcu', 'redis' or ''.
+	 */
+	public static function push_config( $json = null, $crawlers = null ) {
+		$c = self::runtime_config();
+		if ( '' === $c['dir'] ) {
+			return '';
+		}
+		if ( null === $json ) {
+			$json = is_readable( self::config_file() ) ? (string) file_get_contents( self::config_file() ) : ''; // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Local file.
+		}
+		$config = json_decode( (string) $json, true );
+		if ( ! PNCP_Precheck_Runtime::cfg_ok( $config ) || ( 'cli' === PHP_SAPI && ! $c['redis'] ) ) {
+			return '';
+		}
+		$redis = $c;
+		unset( $redis['apcu'] );
+		// WP-CLI (its APCu, with apc.enable_cli, is not the web server's): Redis only; push_web() does APCu.
+		$web   = 'cli' !== PHP_SAPI;
+		$where = PNCP_Precheck_Runtime::cache_config( $c, (array) $config, (string) $json, $crawlers, $web );
+		// The Redis copy too while APCu holds it: a check without APCu (another PHP) reads it there.
+		if ( 'apcu' === $where && $c['redis'] ) {
+			PNCP_Precheck_Runtime::cache_config( $redis, (array) $config, (string) $json, $crawlers, false );
+		}
+		return $where;
+	}
+
+	/**
+	 * Brings the store and the files in line (hourly, from fpm_sync(), from an admin page every few minutes): the
+	 * changes WP-CLI queued (ops.log), the bans both ways (PNCP_Precheck_Runtime::sync_bans()), the configuration,
+	 * the queued events into the log.
+	 *
+	 * @return array<string, mixed> What was done.
+	 */
+	public static function sync_store() {
+		$c   = self::runtime_config();
+		$out = array(
+			'backend' => '',
+			'ops'     => 0,
+			'bans'    => null,
+			'config'  => '',
+			'events'  => 0,
+		);
+		if ( '' === $c['dir'] || ! is_dir( $c['dir'] ) ) {
+			return $out;
+		}
+		$out['backend'] = PNCP_Precheck_Runtime::backend( $c );
+		$out['ops']     = self::apply_ops( $c );
+		$out['bans']    = PNCP_Precheck_Runtime::sync_bans( $c, time() );
+		$out['config']  = self::wanted() ? self::push_config() : '';
+		$out['events']  = self::import_events();
+		set_transient( self::SYNC_SEEN, time(), HOUR_IN_SECONDS );
+		return $out;
+	}
+
+	/**
+	 * From WP-CLI (whose PHP cannot see the web server's APCu): remembers a change of the bans in ops.log, which the
+	 * next sync_store() in the web server's PHP applies to APCu. Nothing elsewhere.
+	 *
+	 * @param string $op    ban, unban or unban_all.
+	 * @param string $hash  md5 of the ban key.
+	 * @param int    $until Expiry (ban).
+	 */
+	private static function queue_op( $op, $hash = '', $until = 0 ) {
+		if ( 'cli' !== PHP_SAPI || ! is_dir( self::dir() ) ) {
+			return;
+		}
+		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_file_put_contents, WordPress.PHP.NoSilencedErrors.Discouraged -- A small queue in the plugin's own folder, read by sync_store().
+		@file_put_contents( self::dir() . '/ops.log', $op . "\t" . $hash . "\t" . (int) $until . "\n", FILE_APPEND );
+	}
+
+	/**
+	 * Applies the queued changes (queue_op()) to APCu, in the web server's PHP. In WP-CLI they stay queued.
+	 *
+	 * @param array<string, mixed> $c Configuration (runtime_config()).
+	 * @return int Changes applied.
+	 */
+	private static function apply_ops( $c ) {
+		return 'cli' === PHP_SAPI ? 0 : PNCP_Precheck_Runtime::apply_ops( $c );
+	}
+
+	/**
+	 * From WP-CLI, after a change of the configuration or the bans: asks the web server's PHP, through the check
+	 * itself (PNCP_Precheck_Runtime::serve_sync(), before WordPress loads: no WP-Cron, a few milliseconds), to take
+	 * them into its APCu. Only while the line in wp-config.php is there. Its answer, or null.
+	 *
+	 * @param bool $wait The line was just added: when WordPress answers instead of the check (the web server's
+	 *                   OPcache has the previous wp-config.php for opcache.revalidate_freq seconds), ask again once.
+	 * @return array<string, mixed>|null
+	 */
+	public static function push_web( $wait = false ) {
+		if ( self::$in_fpm_sync || 'cli' !== PHP_SAPI || ! self::wanted() || ! self::in_config() ) {
+			return null;
+		}
+		self::$in_fpm_sync = true;
+		$body              = null;
+		$home              = home_url( '/' );
+		// The site's address, then over plain HTTP: a server without a certificate for its own name (a stage).
+		$args              = array(
+			'timeout'     => 5,
+			'redirection' => 0,
+			'sslverify'   => false, // The site itself, often by its local address or a certificate for another name.
+		);
+		foreach ( array_unique( array( $home, (string) set_url_scheme( $home, 'http' ) ) ) as $url ) {
+			$response = wp_remote_post( add_query_arg( 'pncp_precheck_sync', '1', $url ), $args );
+			if ( ! is_wp_error( $response ) && 200 === (int) wp_remote_retrieve_response_code( $response ) ) {
+				$body = json_decode( (string) wp_remote_retrieve_body( $response ), true );
+				if ( is_array( $body ) && isset( $body['sapi'] ) ) {
+					break;
+				}
+				// WordPress answered: the web server's OPcache still runs the wp-config.php without the new line.
+				if ( $wait ) {
+					$wait = false;
+					sleep( max( 1, (int) ini_get( 'opcache.revalidate_freq' ) ) + 1 );
+					$response = wp_remote_post( add_query_arg( 'pncp_precheck_sync', '1', $url ), $args );
+					$body     = is_wp_error( $response ) ? null : json_decode( (string) wp_remote_retrieve_body( $response ), true );
+					break;
+				}
+			}
+		}
+		self::$in_fpm_sync = false;
+		return is_array( $body ) && isset( $body['sapi'] ) ? $body : null;
+	}
+
+	/**
+	 * From WP-CLI: runs sync_store() in the web server's PHP, through a request to the site signed with the site's
+	 * key (PNCP_Server_Ips::sign(), checked by ajax_sync()). Its answer, or null when the request failed.
+	 *
+	 * @return array<string, mixed>|null
+	 */
+	public static function fpm_sync() {
+		if ( self::$in_fpm_sync || '' === (string) get_option( self::KEY, '' ) ) {
+			return null;
+		}
+		self::$in_fpm_sync = true;
+		$response          = wp_remote_post(
+			admin_url( 'admin-ajax.php' ),
+			array(
+				'timeout'   => 10,
+				'sslverify' => false, // The site itself, often by its local address or a certificate for another name.
+				'body'      => array( 'action' => self::SYNC_ACTION ),
+			)
+		);
+		self::$in_fpm_sync = false;
+		if ( is_wp_error( $response ) || 200 !== (int) wp_remote_retrieve_response_code( $response ) ) {
+			return null;
+		}
+		$body = json_decode( (string) wp_remote_retrieve_body( $response ), true );
+		return is_array( $body ) && isset( $body['data'] ) && is_array( $body['data'] ) ? $body['data'] : null;
+	}
+
+	/**
+	 * The admin-ajax answer to fpm_sync(): only for the site's own signed request.
+	 */
+	public static function ajax_sync() {
+		if ( ! PNCP_Server_Ips::sig_ok() ) {
+			wp_send_json_error( null, 403 );
+		}
+		$out          = self::sync_store();
+		$out['sapi']  = PHP_SAPI;
+		$out['seen']  = self::seen_backend();
+		$out['store'] = PNCP_Precheck_Runtime::backend( self::runtime_config() );
+		wp_send_json_success( $out );
+	}
+
+	/**
+	 * On admin pages (the web server's PHP), sync_store() every 5 minutes: the store reaches the files and the log
+	 * even when WP-Cron runs from WP-CLI only.
+	 */
+	public static function admin_sync() {
+		if ( wp_doing_ajax() || ! self::wanted() || ! current_user_can( 'manage_options' ) ) {
+			return;
+		}
+		if ( (int) get_transient( self::SYNC_SEEN ) > time() - 5 * MINUTE_IN_SECONDS ) {
+			return;
+		}
+		self::sync_store();
+	}
+
+	/**
+	 * Which store the check used in the last minutes ('apcu', 'redis'), from its note (PNCP_Precheck_Runtime::
+	 * note_backend()): '' when there is no note this PHP can see (the files, no request yet, or WP-CLI, which
+	 * cannot see the web server's APCu).
+	 *
+	 * @return string
+	 */
+	public static function seen_backend() {
+		$c      = self::runtime_config();
+		$minute = (int) floor( time() / 60 );
+		foreach ( array( $minute, $minute - 1, $minute - 2 ) as $m ) {
+			$note = (string) PNCP_Precheck_Runtime::mem_get( $c, 'bk:' . $m );
+			if ( '' !== $note ) {
+				return (string) strtok( $note, '|' );
+			}
+		}
+		return '';
+	}
+
+	/**
+	 * WP-CLI: `wp scrapelock precheck [status|sync|cleanup]`.
+	 *
+	 * @param string[]              $args       Arguments.
+	 * @param array<string, string> $assoc_args Options.
+	 */
+	public static function cli( $args, $assoc_args ) {
+		$action = isset( $args[0] ) ? (string) $args[0] : 'status';
+		if ( 'cleanup' === $action ) {
+			self::cleanup_hits();
+			WP_CLI::success( 'Old counters, strikes, nonces and expired bans removed; the bans copied between the store and the files.' );
+			return;
+		}
+		if ( 'sync' === $action ) {
+			$here = self::sync_store();
+			$web  = self::fpm_sync();
+			WP_CLI::log( 'Here (WP-CLI): ' . wp_json_encode( $here ) );
+			if ( null === $web ) {
+				WP_CLI::warning( 'The request to the site that syncs APCu failed: APCu is only visible to the web server\'s PHP. An admin page or WP-Cron through the web does the same within minutes.' );
+				return;
+			}
+			WP_CLI::success( 'Web server (' . ( isset( $web['sapi'] ) ? (string) $web['sapi'] : '?' ) . '): ' . wp_json_encode( $web ) );
+			return;
+		}
+		if ( 'status' !== $action ) {
+			WP_CLI::error( 'Unknown action: status, sync or cleanup.' );
+		}
+		$c     = self::runtime_config();
+		$redis = $c['redis'];
+		$rows  = array(
+			'pre-cache check' => self::wanted() ? ( self::in_config() ? 'on' : 'on, line not in wp-config.php yet' ) : 'off',
+			'APCu'            => function_exists( 'apcu_enabled' ) ? ( 'cli' === PHP_SAPI ? 'cannot be seen from WP-CLI (each PHP has its own; the web server\'s is used by the check when it has one)' : ( apcu_enabled() ? 'on' : 'off' ) ) : 'no extension here',
+			'Redis'           => $redis ? ( isset( $redis['path'] ) ? 'unix:' . $redis['path'] : $redis['host'] . ':' . $redis['port'] ) . ( isset( $redis['db'] ) ? ' db ' . $redis['db'] : '' ) . ( isset( $redis['auth'] ) ? ', password set' : '' ) : 'not used (no Redis object cache, or turned off)',
+		);
+		if ( $redis ) {
+			$t     = hrtime( true );
+			$probe = $c;
+			unset( $probe['apcu'] );
+			$ok                     = false !== PNCP_Precheck_Runtime::redis( $probe );
+			$rows['Redis answer'] = $ok ? sprintf( 'ok in %.1f ms', ( hrtime( true ) - $t ) / 1e6 ) : 'no connection (the check uses APCu or the files)';
+		}
+		$web = 'cli' === PHP_SAPI ? self::fpm_sync() : null;
+		if ( null !== $web ) {
+			$rows['web server store'] = isset( $web['store'] ) ? (string) $web['store'] : '?';
+			$rows['seen in requests'] = isset( $web['seen'] ) && '' !== $web['seen'] ? (string) $web['seen'] : 'no note yet (files, or no request in the last 3 minutes)';
+		} else {
+			$seen                     = self::seen_backend();
+			$rows['seen in requests'] = '' !== $seen ? $seen : 'unknown here';
+		}
+		foreach ( $rows as $name => $value ) {
+			WP_CLI::log( str_pad( $name . ':', 20 ) . $value );
 		}
 	}
 
@@ -922,18 +1461,21 @@ final class PNCP_Precheck {
 		if ( ! self::has_dir() ) {
 			return 0;
 		}
-		$file = self::dir() . '/events.log';
+		// 3.12.9: the events the check queued in APCu or Redis.
+		$queued = PNCP_Precheck_Runtime::mem_drain( self::runtime_config() );
+		$done   = $queued ? self::import_lines( $queued ) : 0;
+		$file   = self::dir() . '/events.log';
 		if ( ! is_file( $file ) ) {
-			return 0;
+			return $done;
 		}
 		// Renamed first: the check keeps writing to a new file meanwhile.
 		$work = self::dir() . '/events-' . wp_generate_password( 8, false ) . '.tmp';
 		if ( ! @rename( $file, $work ) ) { // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged, WordPress.WP.AlternativeFunctions.rename_rename -- Atomic move inside the plugin's folder in uploads.
-			return 0;
+			return $done;
 		}
 		$lines = (array) file( $work, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES );
 		wp_delete_file( $work );
-		return self::import_lines( $lines );
+		return $done + self::import_lines( $lines );
 	}
 
 	/**

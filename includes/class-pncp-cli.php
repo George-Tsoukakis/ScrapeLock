@@ -1391,6 +1391,32 @@ final class PNCP_Cli {
 	}
 
 	/**
+	 * 3.12.9: the pre-cache check's store: APCu, Redis or the files of its data folder.
+	 *
+	 * "status" shows which store the check uses (asked of the web server's PHP: WP-CLI cannot see its APCu), the
+	 * Redis connection (never the password) and its answer time. "sync" copies the bans between the store and the
+	 * files, puts the configuration into the store and imports the queued events, here and in the web server's PHP.
+	 * "cleanup" is the hourly cleanup of the data folder (for a system cron job when WP-Cron is off).
+	 *
+	 * ## OPTIONS
+	 *
+	 * [<action>]
+	 * : status (default), sync or cleanup.
+	 *
+	 * ## EXAMPLES
+	 *
+	 *     wp scrapelock precheck
+	 *     wp scrapelock precheck sync
+	 *     wp scrapelock precheck cleanup
+	 *
+	 * @param string[]              $args       Arguments.
+	 * @param array<string, string> $assoc_args Options.
+	 */
+	public function precheck( $args, $assoc_args ) {
+		PNCP_Precheck::cli( $args, $assoc_args );
+	}
+
+	/**
 	 * 3.12: Traffic: the sources, the figures, the requests, a CSV export, delete, run the job, test a log path.
 	 *
 	 * ## OPTIONS

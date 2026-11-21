@@ -9,6 +9,13 @@
  * when available, otherwise in small files in the plugin's data folder (uploads/scrapelock/precheck-RANDOM).
  * When in doubt, the request passes: any error here must never take the site down.
  *
+ * 3.12.9: with APCu or Redis (the object cache's server, see store()) everything the check keeps (counters, bans,
+ * strikes, probe memory, nonces, events, its configuration) is in memory, and a visitor's request reads and writes
+ * no file of the data folder: a stalled disk (the live slow logs of 3.12.8: ftruncate(), fclose(), scandir() and
+ * unlink() of this file in requests of more than 30 s) does not stall the check. The files remain for servers
+ * without either, written without waiting: counters appended (increment()), other files replaced whole
+ * (put_atomic()), no lock that waits, and the old minutes removed by the hourly cleanup, not by visitors.
+ *
  * The line in wp-config.php includes this file and calls PNCP_Precheck_Runtime::boot() with the data folder;
  * the configuration is read from config.json there, written by PNCP_Precheck (includes/class-pncp-precheck.php).
  * This file only defines the class: opened directly, it does nothing.
@@ -51,6 +58,60 @@ final class PNCP_Precheck_Runtime {
 	 * 3.6.1: see NET_FILES.
 	 */
 	const NET_FACTOR = 4;
+
+	/**
+	 * 3.12.9: seconds to connect to Redis, and to wait for each of its answers (redis()).
+	 */
+	const REDIS_TIMEOUT = 0.05;
+
+	/**
+	 * 3.12.9: milliseconds a request may spend on sweep() or sync_later() (at its end, after the page).
+	 */
+	const SWEEP_MS = 25;
+
+	/**
+	 * 3.12.9: seconds between two comparisons of the cached configuration with config.json (load()).
+	 */
+	const CFG_CHECK = 10;
+
+	/**
+	 * 3.12.9: a counter file stops growing at this many bytes (increment()).
+	 */
+	const MAX_COUNT = 100000;
+
+	/**
+	 * 3.12.9: most event lines queued in APCu or Redis between two imports (the oldest go first).
+	 */
+	const EVENTS_MAX = 10000;
+
+	/**
+	 * 3.12.9: whether the last hit() count came from APCu or Redis, which give each request its own number
+	 * (crossed()).
+	 *
+	 * @var bool
+	 */
+	public static $exact = true;
+
+	/**
+	 * 3.12.9: milliseconds spent on Redis in this request (connecting and every call), for the diagnostics.
+	 *
+	 * @var float
+	 */
+	public static $redis_ms = 0.0;
+
+	/**
+	 * 3.12.9: the Redis connections of this request (false: none or failed), see redis().
+	 *
+	 * @var array<string, mixed>
+	 */
+	private static $conns = array();
+
+	/**
+	 * 3.12.9: whether sync_later() has been queued in this request.
+	 *
+	 * @var bool
+	 */
+	private static $sync_queued = false;
 
 	/**
 	 * Whether this request was logged here as "would block" ("Monitor only"): WordPress's own log then does
@@ -111,12 +172,15 @@ final class PNCP_Precheck_Runtime {
 	/**
 	 * Called by the line in wp-config.php: reads the configuration from the data folder and runs the check.
 	 *
-	 * @param string $dir The data folder.
-	 * @param string $key 3.12.1: the key of the site's signed requests to itself (see self_signed()).
+	 * @param string               $dir   The data folder.
+	 * @param string               $key   3.12.1: the key of the site's signed requests to itself (see self_signed()).
+	 * @param array<string, mixed> $redis 3.12.9: the connection to the Redis server of the site's object cache
+	 *                                    (PNCP_Precheck::redis_settings()), [] = none.
 	 */
-	public static function boot( $dir, $key = '' ) {
+	public static function boot( $dir, $key = '', $redis = array() ) {
 		try {
-			$c = self::load( (string) $dir );
+			$redis = is_array( $redis ) && $redis ? $redis + array( 'sk' => (string) $key ) : array();
+			$c     = self::load( (string) $dir, $redis );
 		} catch ( Throwable $e ) {
 			return;
 		}
@@ -127,38 +191,125 @@ final class PNCP_Precheck_Runtime {
 	}
 
 	/**
-	 * The configuration in config.json, or null. With APCu it is decoded once per change of the file.
+	 * The configuration in config.json, or null.
 	 *
-	 * @param string $dir The data folder.
+	 * 3.12.9: from APCu, or else from Redis: WordPress puts every new configuration there itself (PNCP_Precheck::
+	 * push_config(), also from WP-CLI through PNCP_Precheck::push_web()), so a visitor's request reads nothing from
+	 * the disk. Before 3.12.9 APCu held it per change of the file, which cost a stat() of config.json in every
+	 * request. Now one request in CFG_CHECK seconds (the one that adds the "_chk" value) compares the file's stat()
+	 * with the copy, for a change WordPress could not push (the web server unreachable from WP-CLI): a metadata
+	 * look-up of a file the kernel has cached, never a read unless it changed. Only when the store holds no copy
+	 * (empty after a restart) is the file read, and put there for the next requests.
+	 *
+	 * @param string               $dir   The data folder.
+	 * @param array<string, mixed> $redis 3.12.9: the Redis connection (see boot()).
 	 * @return array<string, mixed>|null
 	 */
-	public static function load( $dir ) {
+	public static function load( $dir, $redis = array() ) {
 		if ( '' === $dir ) {
 			return null;
 		}
+		$base = array(
+			'dir'   => $dir,
+			'redis' => $redis,
+		);
 		$file = $dir . '/config.json';
-		$stat = @stat( $file );
-		if ( false === $stat ) {
-			return null;
-		}
-		$apcu    = function_exists( 'apcu_enabled' ) && apcu_enabled();
-		$name    = 'pncp_pc_cfg_' . md5( $file );
-		$version = $stat['mtime'] . '|' . $stat['size'] . '|' . $stat['ino'];
-		if ( $apcu ) {
+		$name = self::cfg_key( $dir );
+		if ( function_exists( 'apcu_enabled' ) && apcu_enabled() ) {
 			$cached = apcu_fetch( $name );
-			if ( is_array( $cached ) && isset( $cached[0], $cached[1] ) && $version === $cached[0] ) {
-				return $cached[1];
+			if ( is_array( $cached ) && isset( $cached[1], $cached[2] ) && is_array( $cached[1] ) && 'mem' === $cached[0] ) {
+				if ( ! apcu_add( $name . '_chk', 1, self::CFG_CHECK ) || in_array( self::file_version( $file ), array( '', $cached[2] ), true ) ) {
+					return array_merge( $cached[1], $base );
+				}
+			}
+		} elseif ( $redis ) {
+			$keys = array( self::mem_key( $base, 'redis', 'cfg' ), self::mem_key( $base, 'redis', 'cfgv' ), self::mem_key( $base, 'redis', 'cfgchk' ) );
+			$got  = self::redis_call(
+				$base,
+				static function ( $redis ) use ( $keys ) {
+					$out = $redis->multi( Redis::PIPELINE )->get( $keys[0] )->get( $keys[1] )->set( $keys[2], '1', self::set_options( true, self::CFG_CHECK ) )->exec();
+					return is_array( $out ) && 3 === count( $out ) ? $out : false;
+				}
+			);
+			$c = is_array( $got ) && is_string( $got[0] ) ? json_decode( $got[0], true ) : null;
+			if ( self::cfg_ok( $c ) && ( true !== $got[2] || in_array( self::file_version( $file ), array( '', (string) $got[1] ), true ) ) ) {
+				return array_merge( (array) $c, $base );
 			}
 		}
-		$c = json_decode( (string) @file_get_contents( $file ), true );
-		if ( ! is_array( $c ) || ! isset( $c['format'] ) || ! in_array( $c['format'], array( 2, 3 ), true ) ) {
+		$json = (string) @file_get_contents( $file );
+		$c    = json_decode( $json, true );
+		if ( ! self::cfg_ok( $c ) ) {
 			return null;
 		}
-		$c['dir'] = $dir;
-		if ( $apcu && ! empty( $c['apcu'] ) ) {
-			apcu_store( $name, array( $version, $c ), 3600 );
+		self::cache_config( $base, $c, $json );
+		return array_merge( $c, $base );
+	}
+
+	/**
+	 * 3.12.9: the version of config.json for the copy in APCu / Redis: modification time, size and inode ('' when
+	 * it cannot be read: the copy is then kept).
+	 *
+	 * @param string $file File.
+	 * @return string
+	 */
+	public static function file_version( $file ) {
+		clearstatcache( true, $file );
+		$stat = @stat( $file );
+		return false === $stat ? '' : $stat['mtime'] . '|' . $stat['size'] . '|' . $stat['ino'];
+	}
+
+	/**
+	 * 3.12.9: the APCu name of a data folder's configuration.
+	 *
+	 * @param string $dir The data folder.
+	 * @return string
+	 */
+	public static function cfg_key( $dir ) {
+		return 'pncp_pc_cfg_' . md5( $dir . '/config.json' );
+	}
+
+	/**
+	 * 3.12.9: is this a configuration of a format this file reads?
+	 *
+	 * @param mixed $c Decoded configuration.
+	 * @return bool
+	 */
+	public static function cfg_ok( $c ) {
+		return is_array( $c ) && isset( $c['format'] ) && in_array( $c['format'], array( 2, 3 ), true );
+	}
+
+	/**
+	 * 3.12.9: keeps a configuration in APCu (when it allows it) or else in Redis, with the crawler lists, until the
+	 * next one replaces it (no expiry: a stale copy is replaced by PNCP_Precheck::push_config()).
+	 *
+	 * @param array<string, mixed> $base     The data folder and Redis connection.
+	 * @param array<string, mixed> $c        Configuration.
+	 * @param string               $json     Its JSON.
+	 * @param string|null          $crawlers The crawler lists' JSON (null: read crawlers.json).
+	 * @param bool                 $apcu     Into APCu when it is there (false: Redis only).
+	 * @return string Where: 'apcu', 'redis' or ''.
+	 */
+	public static function cache_config( $base, $c, $json, $crawlers = null, $apcu = true ) {
+		$dir = (string) $base['dir'];
+		if ( null === $crawlers ) {
+			$crawlers = (string) @file_get_contents( $dir . '/crawlers.json' );
 		}
-		return $c;
+		if ( $apcu && function_exists( 'apcu_enabled' ) && apcu_enabled() ) {
+			if ( empty( $c['apcu'] ) ) {
+				return '';
+			}
+			$sets = json_decode( $crawlers, true );
+			apcu_store( self::cfg_key( $dir ), array( 'mem', $c, self::file_version( $dir . '/config.json' ) ) );
+			apcu_add( self::cfg_key( $dir ) . '_chk', 1, self::CFG_CHECK );
+			apcu_store( self::cfg_key( $dir ) . '_crawlers', is_array( $sets ) ? $sets : array() );
+			return 'apcu';
+		}
+		if ( ! empty( $base['redis'] ) && self::mem_set( $base, 'cfg', $json, 0 ) ) {
+			self::mem_set( $base, 'cfgv', self::file_version( $dir . '/config.json' ), 0 );
+			self::mem_set( $base, 'crawlers', $crawlers, 0 );
+			return 'redis';
+		}
+		return '';
 	}
 
 	/**
@@ -241,6 +392,7 @@ final class PNCP_Precheck_Runtime {
 		if ( 'cli' === PHP_SAPI || ! self::applies( $c ) ) {
 			return null;
 		}
+		self::note_backend( $c, $now );
 		if ( self::emergency( $c, $now ) ) {
 			// 3.4: Emergency Mode's stricter page limit and bans (never looser than the stored ones).
 			// 3.4.3: the stricter of the two also here, as in PNCP_Options::emergency_overlay(), so a configuration
@@ -268,6 +420,11 @@ final class PNCP_Precheck_Runtime {
 		// 3.12.1: the site's own request, signed by WordPress (PNCP_Server_Ips::sig_ok()): from any address, before
 		// "Only through the CDN" and every other check (Vulnerable points, Site Health, the Stealth test).
 		if ( self::self_signed( $c, $now ) ) {
+			// 3.12.9: WordPress (from WP-CLI) asks this PHP to take the new configuration and queued ban changes into
+			// its APCu (PNCP_Precheck::push_web()). Answered here, before WordPress loads.
+			if ( isset( $_GET['pncp_precheck_sync'] ) && 'POST' === self::method() ) {
+				self::serve_sync( $c );
+			}
 			if ( ! headers_sent() ) {
 				// 3.12.2: this server answered the site's own request, with the id of its signature
 				// (PNCP_Self_Check::ok_marker(), is_own_answer()).
@@ -324,7 +481,7 @@ final class PNCP_Precheck_Runtime {
 
 		$dir    = (string) $c['dir'];
 		$bankey = self::limit_key( $ip, (int) $c['v6_prefix'] ); // IPv6: the /64, so a ban is not dodged by rotating addresses.
-		if ( $per_ip && self::banned( $dir, $bankey, $now ) ) {
+		if ( $per_ip && self::banned( $c, $bankey, $now ) ) {
 			return array( 403, 'banned', $ip );
 		}
 		// 3.4.3: the bot list (and an empty User-Agent), as the normal check, unless "always allowed".
@@ -352,12 +509,13 @@ final class PNCP_Precheck_Runtime {
 		// crawler without a list, an allowed User-Agent, an IP that may be forged): those are left to WordPress.
 		if ( isset( $c['probe'] ) && is_array( $c['probe'] ) && self::probe( $c, $ua, $ip, $bankey, $reliable, $allowed, $unverified ) ) {
 			// 3.6: a new probe memory and ban only within the cap on new files (new_file_ok()); the 403 stays.
-			$known = is_file( $dir . '/probes/' . md5( $bankey ) ) || is_file( $dir . '/bans/' . md5( $bankey ) );
+			// 3.12.9: with APCu or Redis no file is created, so no cap.
+			$known = '' !== self::store( $c ) || is_file( $dir . '/probes/' . md5( $bankey ) ) || is_file( $dir . '/bans/' . md5( $bankey ) );
 			if ( ! self::monitoring( $c, $now ) && (int) $c['ban_strikes'] > 0 && ( $known || self::new_file_ok( $c, $now ) ) ) {
-				$full    = self::probe_seen( $dir, $bankey, $now );
+				$full    = self::probe_seen( $c, $bankey, $now );
 				$minutes = max( 1, (int) $c['ban_minutes'] );
 				$first   = isset( $c['probe']['first'] ) ? (int) $c['probe']['first'] : 10;
-				self::ban( $dir, $bankey, $now + ( $full || $first <= 0 ? $minutes : min( $first, $minutes ) ) * 60 );
+				self::ban( $c, $bankey, $now + ( $full || $first <= 0 ? $minutes : min( $first, $minutes ) ) * 60 );
 				if ( $full ) {
 					self::event( $c, 403, 'ban', $ip ); // The full ban, as for the page limit; the first one is the 'probe' event.
 				}
@@ -413,8 +571,9 @@ final class PNCP_Precheck_Runtime {
 			$unv = self::hit( $c, $bankey . '|unverified', $now, $ip );
 			if ( $unv > $human ) {
 				// 3.6.1: no violation for an IP that may be spoofed, or for a count shared by a network (as the normal check).
-				if ( $unv === $human + 1 && $reliable && ! self::$shared_hit && ! self::monitoring( $c, $now ) && self::strike( $c, $bankey, $now ) ) {
-					self::ban( $dir, $bankey, $now + max( 1, (int) $c['ban_minutes'] ) * 60 );
+				// 3.12.9: crossed() instead of `$unv === $human + 1` (a file count may skip that value).
+				if ( $reliable && ! self::$shared_hit && ! self::monitoring( $c, $now ) && self::crossed( $c, $bankey . '|unverified', $now, $unv, $human ) && self::strike( $c, $bankey, $now ) ) {
+					self::ban( $c, $bankey, $now + max( 1, (int) $c['ban_minutes'] ) * 60 );
 					self::event( $c, 403, 'ban', $ip );
 				}
 				return array( 429, 'rate_unverified', $ip );
@@ -428,8 +587,8 @@ final class PNCP_Precheck_Runtime {
 		// "Monitor only", which never bans. 3.6.1: never for an IP that may be spoofed (the normal check's
 		// PNCP_Ip::reliable(): a CDN edge without the CDN secret, "trust every proxy"), as the probe ban already
 		// did, and not for a count shared by a whole network (hit()).
-		if ( $count === $limit + 1 && $reliable && ! self::$shared_hit && ! self::monitoring( $c, $now ) && self::strike( $c, $bankey, $now ) ) {
-			self::ban( $dir, $bankey, $now + max( 1, (int) $c['ban_minutes'] ) * 60 );
+		if ( $reliable && ! self::$shared_hit && ! self::monitoring( $c, $now ) && self::crossed( $c, $bankey, $now, $count, $limit ) && self::strike( $c, $bankey, $now ) ) {
+			self::ban( $c, $bankey, $now + max( 1, (int) $c['ban_minutes'] ) * 60 );
 			self::event( $c, 403, 'ban', $ip ); // The event keeps the exact IP for the log.
 		}
 		return array( 429, 'rate_page', $ip );
@@ -518,26 +677,39 @@ final class PNCP_Precheck_Runtime {
 	/**
 	 * 3.5: the 24-hour memory of the probe ban: true when this IP key already probed within 24 hours (then the
 	 * full ban); otherwise the time of this probe is written and false is returned (the short first ban). Any
-	 * failure is false, never an error.
+	 * failure is false, never an error. 3.12.9: in APCu or Redis when the check has either; the file is written
+	 * whole (put_atomic()).
 	 *
-	 * @param string $dir Data folder.
-	 * @param string $key The IP's key (IPv6: the /64).
-	 * @param int    $now Time.
+	 * @param array<string, mixed>|string $c   Configuration (or, as before 3.12.9, the data folder).
+	 * @param string                      $key The IP's key (IPv6: the /64).
+	 * @param int                         $now Time.
 	 * @return bool
 	 */
-	public static function probe_seen( $dir, $key, $now ) {
-		$folder = $dir . '/probes';
+	public static function probe_seen( $c, $key, $now ) {
+		if ( is_array( $c ) ) {
+			$time = self::mem_get( $c, 'p:' . md5( $key ) );
+			if ( null !== $time ) {
+				if ( (int) $time > $now - 86400 ) {
+					// 3.5: a probe within BURST seconds of the first one is part of the same first burst (parallel
+					// requests that passed the ban check before the first ban was stored): the short ban too.
+					return (int) $time <= $now - self::BURST;
+				}
+				if ( self::mem_set( $c, 'p:' . md5( $key ), (string) (int) $now, 86400 ) ) {
+					return false;
+				}
+			}
+			$c = (string) $c['dir'];
+		}
+		$folder = $c . '/probes';
 		if ( ! is_dir( $folder ) ) {
 			@mkdir( $folder, 0755, true );
 		}
 		$file = $folder . '/' . md5( $key );
 		$time = is_file( $file ) ? (int) @file_get_contents( $file ) : 0;
 		if ( $time > $now - 86400 ) {
-			// 3.5: a probe within BURST seconds of the first one is part of the same first burst (parallel requests
-			// that passed the ban check before the first ban was stored): the short ban too.
 			return $time <= $now - self::BURST;
 		}
-		@file_put_contents( $file, (string) (int) $now, LOCK_EX );
+		self::put_atomic( $file, (string) (int) $now );
 		return false;
 	}
 
@@ -929,7 +1101,17 @@ final class PNCP_Precheck_Runtime {
 	public static function crawler_set( $c, $i ) {
 		static $sets = null;
 		if ( null === $sets ) {
-			$sets = json_decode( (string) @file_get_contents( $c['dir'] . '/crawlers.json' ), true );
+			// 3.12.9: from APCu or Redis, where load() / PNCP_Precheck::push_config() put them with the configuration.
+			$store = self::store( $c );
+			if ( 'apcu' === $store ) {
+				$sets = apcu_fetch( self::cfg_key( (string) $c['dir'] ) . '_crawlers' );
+			} elseif ( 'redis' === $store ) {
+				$json = (string) self::mem_get( $c, 'crawlers' );
+				$sets = '' !== $json ? json_decode( $json, true ) : null;
+			}
+			if ( ! is_array( $sets ) ) {
+				$sets = json_decode( (string) @file_get_contents( $c['dir'] . '/crawlers.json' ), true );
+			}
 			$sets = is_array( $sets ) ? $sets : array();
 		}
 		return isset( $sets[ $i ] ) && is_array( $sets[ $i ] ) ? $sets[ $i ] : null;
@@ -1116,18 +1298,25 @@ final class PNCP_Precheck_Runtime {
 			self::$self_result = 'bad_mac';
 			return false;
 		}
-		// Used once: the nonce's file is created only if it is not there yet.
-		$folder = (string) $c['dir'] . '/self';
-		if ( ! is_dir( $folder ) ) {
-			@mkdir( $folder, 0755, true );
+		// Used once: the nonce's file is created only if it is not there yet. 3.12.9: in APCu or Redis when the check
+		// has either (kept as long as the file, see cleanup()).
+		$added = self::mem_add( $c, 'n:' . $m[2], (string) $now, 300 );
+		if ( null === $added ) {
+			$folder = (string) $c['dir'] . '/self';
+			if ( ! is_dir( $folder ) ) {
+				@mkdir( $folder, 0755, true );
+			}
+			$handle = @fopen( $folder . '/' . $m[2], 'x' );
+			$added  = false !== $handle;
+			if ( false !== $handle ) {
+				fwrite( $handle, (string) $now );
+				fclose( $handle );
+			}
 		}
-		$handle = @fopen( $folder . '/' . $m[2], 'x' );
-		if ( false === $handle ) {
+		if ( ! $added ) {
 			self::$self_result = 'nonce_reused';
 			return false;
 		}
-		fwrite( $handle, (string) $now );
-		fclose( $handle );
 		self::$self_result        = 'ok';
 		self::$self_nonce         = $m[2];
 		self::$self_seen[ $memo ] = true;
@@ -1349,6 +1538,9 @@ final class PNCP_Precheck_Runtime {
 	 * once the cap is used up, are counted together under one file of their network, held to NET_FACTOR times
 	 * the limit (no violation: see $shared_hit). As PNCP_Bots::db_incr_capped().
 	 *
+	 * 3.12.9: APCu first (unchanged), then Redis (store()), and the files only without either. The files no longer
+	 * clean up the old minutes here (cleanup() runs from WP-Cron or WP-CLI; maybe_sweep() only without them).
+	 *
 	 * @param array<string, mixed> $c   Configuration.
 	 * @param string               $key Key.
 	 * @param int                  $now Time.
@@ -1357,7 +1549,8 @@ final class PNCP_Precheck_Runtime {
 	 */
 	public static function hit( $c, $key, $now, $ip = '' ) {
 		self::$shared_hit = false;
-		$minute = (int) floor( $now / 60 );
+		self::$exact      = true;
+		$minute           = (int) floor( $now / 60 );
 		if ( self::apcu_usable( $c ) ) {
 			$name = 'pncp_pc_' . md5( $c['dir'] . '|' . $key . '|' . $minute );
 			apcu_add( $name, 0, 120 );
@@ -1365,10 +1558,16 @@ final class PNCP_Precheck_Runtime {
 			if ( false !== $count ) {
 				return (int) $count;
 			}
+		} elseif ( 'redis' === self::store( $c ) ) {
+			$count = self::mem_incr( $c, 'h:' . md5( $key ) . ':' . $minute, 120 );
+			if ( false !== $count ) {
+				return $count;
+			}
 		}
-		$dir = $c['dir'] . '/hits/' . $minute;
+		self::$exact = false; // A file count may skip a value under contention (increment()): see crossed().
+		$dir         = $c['dir'] . '/hits/' . $minute;
 		if ( ! is_dir( $dir ) && @mkdir( $dir, 0755, true ) ) {
-			self::cleanup( $c['dir'] . '/hits', $minute );
+			self::maybe_sweep( $c, $now );
 		}
 		$file = $dir . '/' . md5( $key );
 		if ( is_file( $file ) ) {
@@ -1399,6 +1598,34 @@ final class PNCP_Precheck_Runtime {
 		return (int) ceil( $count / self::NET_FACTOR );
 	}
 
+	/**
+	 * 3.12.9: is this the request that took the key's count over the limit this minute (one violation per key and
+	 * minute, as `$count === $limit + 1` before)? APCu and Redis give every request its own number, so that test
+	 * stays. A count from the files (increment()) can give two requests the same number under contention, or skip
+	 * one: there the first request over the limit creates a marker next to the counter (fopen 'x', which only one
+	 * process can do) and only that one counts the violation.
+	 *
+	 * @param array<string, mixed> $c     Configuration.
+	 * @param string               $key   The key given to hit().
+	 * @param int                  $now   Time.
+	 * @param int                  $count What hit() returned.
+	 * @param int                  $limit The limit.
+	 * @return bool
+	 */
+	public static function crossed( $c, $key, $now, $count, $limit ) {
+		if ( self::$exact ) {
+			return $count === $limit + 1;
+		}
+		if ( $count <= $limit ) {
+			return false;
+		}
+		$handle = @fopen( $c['dir'] . '/hits/' . (int) floor( $now / 60 ) . '/' . md5( $key ) . '.over', 'x' );
+		if ( false === $handle ) {
+			return false;
+		}
+		fclose( $handle );
+		return true;
+	}
 	/**
 	 * 3.6.1: the network of an address (IPv4 /24, IPv6 /48), as PNCP_Ip::network_key().
 	 *
@@ -1462,40 +1689,51 @@ final class PNCP_Precheck_Runtime {
 	}
 
 	/**
-	 * Adds 1 to a counter file, under a lock.
+	 * Adds 1 to a counter file and returns the new value (0 if the file cannot be written: the request then passes).
+	 *
+	 * 3.12.9: one byte appended (O_APPEND), the count is the file's size. Before, the file was locked (flock()
+	 * without LOCK_NB), read, truncated and written again: a visitor waited for every other request on the same
+	 * counter, and on ext4 a file truncated to 0 and written again is flushed to the disk when it is closed
+	 * (auto_da_alloc), so ftruncate() and fclose() waited for the disk on every page (the live slow logs: ftruncate()
+	 * and fclose() of this function at the top of requests that took more than 30 s while the disk stalled).
+	 * Rewriting through a temporary file and rename() has the same flush on ext4. An append needs no lock, no
+	 * truncation and no rename: the kernel appends each write() under the inode's lock, so no count is lost and
+	 * the file is never empty or half written. The value returned is the size after this request's byte: under
+	 * contention two requests may read the same size (both bytes written, then both fstat()), so a value can repeat
+	 * or be skipped, never lost from the total; crossed() makes the violation exact anyway. On NFS, appends are
+	 * not atomic between machines: a count can be lost there (the limits are approximate anyway). Past MAX_COUNT
+	 * bytes (an attack of more than 100,000 requests a minute on one key) nothing more is written.
 	 *
 	 * @param string $file File.
-	 * @return int The new value (0 if the file cannot be written: the request then passes).
+	 * @return int
 	 */
 	public static function increment( $file ) {
-		$handle = @fopen( $file, 'c+' );
-		if ( ! $handle ) {
+		$size = @filesize( $file );
+		if ( false !== $size && $size >= self::MAX_COUNT ) {
+			return (int) $size + 1;
+		}
+		$handle = @fopen( $file, 'ab' );
+		if ( false === $handle ) {
 			return 0;
 		}
-		$count = 0;
-		if ( flock( $handle, LOCK_EX ) ) {
-			$count = (int) stream_get_contents( $handle ) + 1;
-			ftruncate( $handle, 0 );
-			rewind( $handle );
-			fwrite( $handle, (string) $count );
-			fflush( $handle );
-			flock( $handle, LOCK_UN );
-		}
+		$written = fwrite( $handle, '1' );
+		$stat    = fstat( $handle );
 		fclose( $handle );
-		return $count;
+		return 1 === $written && is_array( $stat ) ? max( 1, (int) $stat['size'] ) : 0;
 	}
 
 	/**
-	 * Removes the counters of past minutes (once a minute, by the first request of the new minute).
+	 * Removes the counters of past minutes. 3.12.9: only from the hourly cleanup (PNCP_Precheck::cleanup_hits(),
+	 * WP-Cron, `wp scrapelock precheck cleanup`): no longer by the first request of each minute, which read and
+	 * deleted up to 300 files of an old minute (scandir(), unlink()) in a visitor's request (the live slow logs:
+	 * scandir() and unlink() of this function). Without WP-Cron, maybe_sweep() does a little of it at the end of
+	 * one request a minute, within a time budget.
 	 *
 	 * @param string $base   The hits folder.
 	 * @param int    $minute Current minute.
-	 * @param int    $max    Most files removed in this call (0 = no limit).
+	 * @param int    $max    Most files removed in this call (0 = no limit, and the other folders too).
 	 */
 	public static function cleanup( $base, $minute, $max = 300 ) {
-		// At most $max files per call inside a visitor's request: after an attack spread over thousands of IPs,
-		// the old minutes hold thousands of files, and one visitor must not wait for all of them. What is left
-		// is removed by the next minutes' first requests and by the hourly cleanup (PNCP_Precheck::cleanup_hits).
 		$left = (int) $max > 0 ? (int) $max : PHP_INT_MAX;
 		foreach ( (array) @scandir( $base ) as $name ) {
 			if ( ctype_digit( (string) $name ) && (int) $name < $minute - 1 ) {
@@ -1515,38 +1753,140 @@ final class PNCP_Precheck_Runtime {
 		if ( (int) $max <= 0 ) {
 			$now  = (int) $minute * 60;
 			$data = dirname( $base );
-			foreach ( (array) @scandir( $data . '/strikes' ) as $file ) {
-				$path = $data . '/strikes/' . $file;
-				if ( '.' !== $file && '..' !== $file && is_file( $path ) && (int) @filemtime( $path ) < $now - 600 ) {
-					@unlink( $path );
-				}
-			}
 			// 3.12.1: the nonces of the site's signed requests (self_signed()), kept twice the signature's window.
-			foreach ( (array) @scandir( $data . '/self' ) as $file ) {
-				$path = $data . '/self/' . $file;
-				if ( '.' !== $file && '..' !== $file && is_file( $path ) && (int) @filemtime( $path ) < $now - 300 ) {
-					@unlink( $path );
-				}
-			}
 			// 3.5: the probe ban's 24-hour memory.
-			foreach ( (array) @scandir( $data . '/probes' ) as $file ) {
-				$path = $data . '/probes/' . $file;
-				if ( '.' !== $file && '..' !== $file && is_file( $path ) && (int) @filemtime( $path ) < $now - 86400 ) {
-					@unlink( $path );
+			foreach ( array(
+				'strikes' => 600,
+				'self'    => 300,
+				'probes'  => 86400,
+				'bans'    => 60,
+			) as $folder => $age ) {
+				foreach ( (array) @scandir( $data . '/' . $folder ) as $file ) {
+					$path = $data . '/' . $folder . '/' . $file;
+					if ( '.' === $file || '..' === $file || ! is_file( $path ) || (int) @filemtime( $path ) >= $now - $age ) {
+						continue;
+					}
+					// A ban only once it has expired (and not one written in the last minute: a new ban may have just
+					// replaced an expired one). 3.12.9: a temporary file left by put_atomic() goes after a minute.
+					if ( 'bans' !== $folder || '.tmp' === substr( $file, -4 ) || (int) @file_get_contents( $path ) <= $now ) {
+						@unlink( $path );
+					}
 				}
 			}
-			foreach ( (array) @scandir( $data . '/bans' ) as $file ) {
-				$path = $data . '/bans/' . $file;
-				// Not one written in the last minute: a new ban may have just replaced an expired one.
-				if ( '.' !== $file && '..' !== $file && is_file( $path ) && (int) @filemtime( $path ) < $now - 60 && (int) @file_get_contents( $path ) <= $now ) {
-					@unlink( $path );
-				}
-			}
+			@touch( $data . '/.cleaned' ); // 3.12.9: for maybe_sweep().
 		}
 	}
 
 	/**
+	 * 3.12.9: without the hourly cleanup (DISABLE_WP_CRON without a real cron job), the old minutes would pile up in
+	 * the hits folder. Then, once a minute (called by the request that creates the minute's folder), sweep() runs at
+	 * the end of that request: never while the hourly cleanup has run within 2 hours, and never with APCu or Redis
+	 * (they keep no files).
+	 *
+	 * @param array<string, mixed> $c   Configuration.
+	 * @param int                  $now Time.
+	 * @return bool Whether a sweep was scheduled.
+	 */
+	public static function maybe_sweep( $c, $now ) {
+		$cleaned = @filemtime( $c['dir'] . '/.cleaned' );
+		if ( false !== $cleaned && $cleaned > $now - 7200 ) {
+			return false;
+		}
+		register_shutdown_function( array( __CLASS__, 'sweep' ), (string) $c['dir'], (int) floor( $now / 60 ), self::SWEEP_MS );
+		return true;
+	}
+
+	/**
+	 * 3.12.9: removes the counters of past minutes, and strikes and nonces past their time, for at most $budget
+	 * milliseconds (hrtime()), one entry at a time (readdir(), never a whole listing), and only in the one request
+	 * that gets the lock of .sweep.lock (LOCK_NB: the others never wait for it).
+	 *
+	 * @param string $dir    Data folder.
+	 * @param int    $minute Current minute.
+	 * @param int    $budget Milliseconds.
+	 * @return int Files removed.
+	 */
+	public static function sweep( $dir, $minute, $budget = self::SWEEP_MS ) {
+		$lock = @fopen( $dir . '/.sweep.lock', 'c' );
+		if ( false === $lock ) {
+			return 0;
+		}
+		if ( ! flock( $lock, LOCK_EX | LOCK_NB ) ) {
+			fclose( $lock );
+			return 0;
+		}
+		$end     = hrtime( true ) + max( 1, (int) $budget ) * 1000000;
+		$removed = 0;
+		$base    = $dir . '/hits';
+		$top     = @opendir( $base );
+		if ( false !== $top ) {
+			$name = readdir( $top );
+			while ( false !== $name && hrtime( true ) < $end ) {
+				if ( ctype_digit( (string) $name ) && (int) $name < $minute - 1 ) {
+					$removed += self::sweep_folder( $base . '/' . $name, $end, 0, true );
+				}
+				$name = readdir( $top );
+			}
+			closedir( $top );
+		}
+		foreach ( array(
+			'strikes' => 600,
+			'self'    => 300,
+		) as $folder => $age ) {
+			if ( hrtime( true ) < $end ) {
+				$removed += self::sweep_folder( $dir . '/' . $folder, $end, $minute * 60 - $age, false );
+			}
+		}
+		flock( $lock, LOCK_UN );
+		fclose( $lock );
+		return $removed;
+	}
+
+	/**
+	 * 3.12.9: removes the files of a folder (older than $before when it is not 0) until hrtime() reaches $end; the
+	 * folder too when it is emptied and $rmdir.
+	 *
+	 * @param string $folder Folder.
+	 * @param int    $end    hrtime() limit.
+	 * @param int    $before Only files last changed before this time (0 = all).
+	 * @param bool   $rmdir  Remove the emptied folder.
+	 * @return int Files removed.
+	 */
+	private static function sweep_folder( $folder, $end, $before, $rmdir ) {
+		$handle = @opendir( $folder );
+		if ( false === $handle ) {
+			return 0;
+		}
+		$removed = 0;
+		$done    = true;
+		$file    = readdir( $handle );
+		while ( false !== $file ) {
+			if ( hrtime( true ) >= $end ) {
+				$done = false;
+				break;
+			}
+			if ( '.' !== $file && '..' !== $file ) {
+				$path = $folder . '/' . $file;
+				if ( ( 0 === $before || (int) @filemtime( $path ) < $before ) && @unlink( $path ) ) {
+					++$removed;
+				}
+			}
+			$file = readdir( $handle );
+		}
+		closedir( $handle );
+		if ( $done && $rmdir ) {
+			@rmdir( $folder );
+		}
+		return $removed;
+	}
+
+	/**
 	 * Records a violation; true when they reach the configured number within 10 minutes.
+	 *
+	 * 3.12.9: in APCu or Redis (a counter that lives 10 minutes from the first violation, as the file's window).
+	 * The file is read, then replaced whole (put_atomic()), without a lock: a reader never sees half of it, and
+	 * two violations of one key in the same instant (which crossed() makes very unlikely: one per key and minute)
+	 * may count as one.
 	 *
 	 * @param array<string, mixed> $c   Configuration.
 	 * @param string               $key Key.
@@ -1558,45 +1898,56 @@ final class PNCP_Precheck_Runtime {
 		if ( $needed < 1 ) {
 			return false;
 		}
+		if ( '' !== self::store( $c ) ) {
+			$count = self::mem_incr( $c, 's:' . md5( $key ), 600 );
+			if ( false !== $count ) {
+				if ( $count >= $needed ) {
+					self::mem_del( $c, 's:' . md5( $key ) );
+					return true;
+				}
+				return false;
+			}
+		}
 		$dir = $c['dir'] . '/strikes';
 		if ( ! is_dir( $dir ) ) {
 			@mkdir( $dir, 0755, true );
 		}
-		$file   = $dir . '/' . md5( $key );
-		$handle = @fopen( $file, 'c+' );
-		if ( ! $handle ) {
-			return false;
+		$file  = $dir . '/' . md5( $key );
+		$parts = explode( '|', is_file( $file ) ? (string) @file_get_contents( $file ) : '' );
+		$first = isset( $parts[1] ) ? (int) $parts[0] : 0;
+		$count = isset( $parts[1] ) ? (int) $parts[1] : 0;
+		if ( $now - $first > 600 ) {
+			$first = $now;
+			$count = 0;
 		}
-		$banned = false;
-		if ( flock( $handle, LOCK_EX ) ) {
-			$parts = explode( '|', (string) stream_get_contents( $handle ) );
-			$first = isset( $parts[1] ) ? (int) $parts[0] : 0;
-			$count = isset( $parts[1] ) ? (int) $parts[1] : 0;
-			if ( $now - $first > 600 ) {
-				$first = $now;
-				$count = 0;
-			}
-			++$count;
-			$banned = $count >= $needed;
-			ftruncate( $handle, 0 );
-			rewind( $handle );
-			fwrite( $handle, $banned ? '' : $first . '|' . $count );
-			flock( $handle, LOCK_UN );
-		}
-		fclose( $handle );
+		++$count;
+		$banned = $count >= $needed;
+		self::put_atomic( $file, $banned ? '' : $first . '|' . $count );
 		return $banned;
 	}
 
 	/**
-	 * Is the IP banned? (A file per IP with the expiry; written here and by the normal check.)
+	 * Is the IP banned? (A file per IP with the expiry; written here and by the normal check.) 3.12.9: in APCu or
+	 * Redis when the check has either: then no file is read (PNCP_Precheck::cleanup_hits() copies the bans between
+	 * the two every hour, and sync_later() copies the files' bans in once after Redis or APCu lost its data).
 	 *
-	 * @param string $dir Data folder.
-	 * @param string $ip  IP.
-	 * @param int    $now Time.
+	 * @param array<string, mixed>|string $c   Configuration (or, as before 3.12.9, the data folder).
+	 * @param string                      $ip  IP.
+	 * @param int                         $now Time.
 	 * @return bool
 	 */
-	public static function banned( $dir, $ip, $now ) {
-		$file = $dir . '/bans/' . md5( $ip );
+	public static function banned( $c, $ip, $now ) {
+		if ( is_array( $c ) ) {
+			$values = self::mem_get_many( $c, array( 'b:' . md5( $ip ), 'sync' ) );
+			if ( null !== $values ) {
+				if ( '' === $values[1] ) {
+					self::sync_later( $c );
+				}
+				return (int) $values[0] > $now;
+			}
+			$c = (string) $c['dir'];
+		}
+		$file = $c . '/bans/' . md5( $ip );
 		if ( ! is_file( $file ) ) {
 			return false;
 		}
@@ -1604,22 +1955,48 @@ final class PNCP_Precheck_Runtime {
 	}
 
 	/**
-	 * Bans an IP until a time.
+	 * Bans an IP until a time. 3.12.9: in APCu or Redis when the check has either, otherwise the file, written
+	 * whole through a temporary file (put_atomic()): a request reading it never sees it empty.
 	 *
-	 * @param string $dir   Data folder.
-	 * @param string $ip    IP.
-	 * @param int    $until Expiry.
+	 * @param array<string, mixed>|string $c     Configuration (or, as before 3.12.9, the data folder).
+	 * @param string                      $ip    IP.
+	 * @param int                         $until Expiry.
 	 */
-	public static function ban( $dir, $ip, $until ) {
-		if ( ! is_dir( $dir . '/bans' ) ) {
-			@mkdir( $dir . '/bans', 0755, true );
+	public static function ban( $c, $ip, $until ) {
+		if ( is_array( $c ) ) {
+			if ( self::mem_set( $c, 'b:' . md5( $ip ), (string) (int) $until, max( 60, (int) $until - time() + 60 ) ) ) {
+				return;
+			}
+			$c = (string) $c['dir'];
 		}
-		@file_put_contents( $dir . '/bans/' . md5( $ip ), (string) $until, LOCK_EX );
+		if ( ! is_dir( $c . '/bans' ) ) {
+			@mkdir( $c . '/bans', 0755, true );
+		}
+		self::put_atomic( $c . '/bans/' . md5( $ip ), (string) (int) $until );
+	}
+
+	/**
+	 * 3.12.9: writes a small file whole: into a temporary file in the same folder, then rename() over it (atomic on
+	 * a local file system), so a reader gets the old or the new contents, never an empty or half-written file.
+	 *
+	 * @param string $file     File.
+	 * @param string $contents Contents.
+	 * @return bool
+	 */
+	public static function put_atomic( $file, $contents ) {
+		$tmp = dirname( $file ) . '/.' . basename( $file ) . '.' . substr( md5( uniqid( (string) mt_rand(), true ) ), 0, 10 ) . '.tmp';
+		if ( strlen( $contents ) !== @file_put_contents( $tmp, $contents ) || ! @rename( $tmp, $file ) ) {
+			@unlink( $tmp );
+			return false;
+		}
+		return true;
 	}
 
 	/**
 	 * Appends an event for the plugin's log (imported into the database by WordPress later): one line of
-	 * tab-separated text in events.log. Capped at 2 MB.
+	 * tab-separated text in events.log. Capped at 2 MB. 3.12.9: in APCu or Redis when the check has either (the
+	 * hourly import drains them, PNCP_Precheck::import_events()); the file without LOCK_EX: one write() of a line
+	 * to a file opened for appending is not mixed with another's.
 	 *
 	 * @param array<string, mixed> $c      Configuration.
 	 * @param int                  $code   HTTP status code.
@@ -1627,17 +2004,659 @@ final class PNCP_Precheck_Runtime {
 	 * @param string               $ip     IP.
 	 */
 	public static function event( $c, $code, $reason, $ip ) {
+		$clean = static function ( $value, $max ) {
+			return substr( (string) preg_replace( '/[\x00-\x1F\x7F<>]+/', ' ', (string) $value ), 0, $max );
+		};
+		$uri  = isset( $_SERVER['REQUEST_URI'] ) ? (string) parse_url( (string) $_SERVER['REQUEST_URI'], PHP_URL_PATH ) : '';
+		$ua   = isset( $_SERVER['HTTP_USER_AGENT'] ) ? (string) $_SERVER['HTTP_USER_AGENT'] : '';
+		$line = implode( "\t", array( time(), (int) $code, $clean( $reason, 20 ), $clean( $ip, 45 ), $clean( $uri, 255 ), $clean( $ua, 255 ) ) );
+		if ( self::mem_push( $c, $line ) ) {
+			return;
+		}
 		$file = $c['dir'] . '/events.log';
 		// Silenced: WordPress may move the file away for its import (PNCP_Precheck) between the two calls.
 		if ( is_file( $file ) && @filesize( $file ) > 2 * 1024 * 1024 ) {
 			return;
 		}
-		$clean = static function ( $value, $max ) {
-			return substr( (string) preg_replace( '/[\x00-\x1F\x7F<>]+/', ' ', (string) $value ), 0, $max );
-		};
-		$uri   = isset( $_SERVER['REQUEST_URI'] ) ? (string) parse_url( (string) $_SERVER['REQUEST_URI'], PHP_URL_PATH ) : '';
-		$ua    = isset( $_SERVER['HTTP_USER_AGENT'] ) ? (string) $_SERVER['HTTP_USER_AGENT'] : '';
-		$line  = implode( "\t", array( time(), (int) $code, $clean( $reason, 20 ), $clean( $ip, 45 ), $clean( $uri, 255 ), $clean( $ua, 255 ) ) ) . "\n";
-		@file_put_contents( $file, $line, FILE_APPEND | LOCK_EX );
+		@file_put_contents( $file, $line . "\n", FILE_APPEND );
+	}
+
+	/* ---------- 3.12.9: APCu and Redis ---------- */
+
+	/**
+	 * 3.12.9: the answer to the site's own signed request of PNCP_Precheck::push_web(): reads config.json and
+	 * crawlers.json into APCu (or Redis), applies the ban changes WP-CLI queued in ops.log (apply_ops()), answers
+	 * JSON and ends the request. Only after self_signed() accepted the request.
+	 *
+	 * @param array<string, mixed> $c Configuration.
+	 */
+	public static function serve_sync( $c ) {
+		$base = array(
+			'dir'   => (string) $c['dir'],
+			'redis' => isset( $c['redis'] ) && is_array( $c['redis'] ) ? $c['redis'] : array(),
+		);
+		$json = (string) @file_get_contents( $base['dir'] . '/config.json' );
+		$new  = json_decode( $json, true );
+		$out  = array(
+			'sapi'   => PHP_SAPI,
+			'config' => self::cfg_ok( $new ) ? self::cache_config( $base, (array) $new, $json ) : '',
+		);
+		$c          = self::cfg_ok( $new ) ? array_merge( (array) $new, $base ) : $c;
+		$out['ops'] = self::apply_ops( $c );
+		$out['store'] = self::backend( $c );
+		if ( ! headers_sent() ) {
+			header( 'Content-Type: application/json' );
+			header( 'Cache-Control: no-store' );
+		}
+		echo json_encode( $out ); // phpcs:ignore WordPress.WP.AlternativeFunctions.json_encode_json_encode -- Before WordPress.
+		exit;
+	}
+
+	/**
+	 * 3.12.9: applies the ban changes that WP-CLI, which cannot reach the web server's APCu, queued in ops.log
+	 * (PNCP_Precheck::queue_op(): "ban <md5> <until>", "unban <md5>", "unban_all"). Only with a store.
+	 *
+	 * @param array<string, mixed> $c Configuration.
+	 * @return int Changes applied.
+	 */
+	public static function apply_ops( $c ) {
+		$file = (string) $c['dir'] . '/ops.log';
+		if ( '' === self::store( $c ) || ! is_file( $file ) ) {
+			return 0;
+		}
+		$work = $file . '.' . substr( md5( uniqid( (string) mt_rand(), true ) ), 0, 10 ) . '.tmp';
+		if ( ! @rename( $file, $work ) ) {
+			return 0;
+		}
+		$lines = (array) @file( $work, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES );
+		@unlink( $work );
+		$done = 0;
+		$now  = time();
+		foreach ( $lines as $line ) {
+			$parts = explode( "\t", (string) $line );
+			$hash  = isset( $parts[1] ) && preg_match( '/^[0-9a-f]{32}$/', $parts[1] ) ? $parts[1] : '';
+			if ( 'ban' === $parts[0] && '' !== $hash && isset( $parts[2] ) && (int) $parts[2] > $now ) {
+				if ( (int) self::mem_get( $c, 'b:' . $hash ) < (int) $parts[2] ) {
+					$done += (int) self::mem_set( $c, 'b:' . $hash, (string) (int) $parts[2], (int) $parts[2] - $now + 60 );
+				}
+			} elseif ( 'unban' === $parts[0] && '' !== $hash ) {
+				$done += (int) self::mem_del( $c, array( 'b:' . $hash, 'p:' . $hash ) );
+			} elseif ( 'unban_all' === $parts[0] ) {
+				foreach ( array( 'b:', 'p:' ) as $prefix ) {
+					$names = array();
+					foreach ( array_keys( (array) self::mem_list( $c, $prefix ) ) as $name ) {
+						$names[] = $prefix . $name;
+					}
+					if ( $names ) {
+						self::mem_del( $c, $names );
+					}
+				}
+				++$done;
+			}
+		}
+		return $done;
+	}
+
+	/**
+	 * Where the check keeps its counters, bans, strikes, probes, nonces and events in this request: 'apcu' (shared
+	 * by the site's PHP processes, apcu_usable()), 'redis' (the server of the site's persistent object cache, whose
+	 * connection the line in wp-config.php passes, see redis()) or '' (the files of the data folder). With APCu
+	 * or Redis, a visitor's request reads and writes no file of the plugin (the configuration too, see load()):
+	 * when the disk stalls, the check does not.
+	 *
+	 * @param array<string, mixed> $c Configuration.
+	 * @return string
+	 */
+	public static function store( $c ) {
+		if ( self::apcu_usable( $c ) ) {
+			return 'apcu';
+		}
+		return false !== self::redis( $c ) ? 'redis' : '';
+	}
+
+	/**
+	 * 3.12.9: the store of the check by its name for people: 'apcu', 'redis' or 'files' (Site Health, WP-CLI).
+	 *
+	 * @param array<string, mixed> $c Configuration.
+	 * @return string
+	 */
+	public static function backend( $c ) {
+		$store = self::store( $c );
+		return '' === $store ? 'files' : $store;
+	}
+
+	/**
+	 * 3.12.9: notes in APCu or Redis which store the check used this minute (one add per request, nothing when
+	 * the value is there already), for WordPress (PNCP_Precheck::seen_backend()). Nothing with the files: WordPress
+	 * then finds no note and knows the check had neither (or did not run).
+	 *
+	 * @param array<string, mixed> $c   Configuration.
+	 * @param int                  $now Time.
+	 */
+	public static function note_backend( $c, $now ) {
+		self::breaker_hooks( $c );
+		if ( '' !== self::store( $c ) ) {
+			self::mem_add( $c, 'bk:' . (int) floor( $now / 60 ), self::backend( $c ) . '|' . (int) $now, 180 );
+		}
+	}
+
+	/**
+	 * 3.12.9: tells the circuit breaker (PNCP_Breaker, when it is loaded) the store chosen: its own state goes into
+	 * the same Redis connection (use_redis()), and the backend is recorded for Site Health (record_backend(), which
+	 * writes only to a memory store, at most once a minute). Its timer's name for this store: breaker_name().
+	 *
+	 * @param array<string, mixed> $c Configuration.
+	 */
+	public static function breaker_hooks( $c ) {
+		if ( ! class_exists( 'PNCP_Breaker', false ) ) {
+			return;
+		}
+		$use_redis = array( 'PNCP_Breaker', 'use_redis' );
+		$record    = array( 'PNCP_Breaker', 'record_backend' );
+		if ( 'redis' === self::store( $c ) && is_callable( $use_redis ) ) {
+			call_user_func( $use_redis, self::redis( $c ) );
+		}
+		if ( is_callable( $record ) ) {
+			call_user_func( $record, self::backend( $c ) );
+		}
+	}
+
+	/**
+	 * 3.12.9: the circuit breaker's name for the store in use: precheck_apcu, precheck_redis or precheck_files.
+	 *
+	 * @param array<string, mixed> $c Configuration.
+	 * @return string
+	 */
+	public static function breaker_name( $c ) {
+		return 'precheck_' . self::backend( $c );
+	}
+
+	/**
+	 * The connection to Redis for this request (false: none). Connected once per request, with REDIS_TIMEOUT to
+	 * connect and to read; any error (refused, timeout, wrong password) is false for the rest of the request, and
+	 * the check uses the files then. The next request tries again: a refused connection fails at once, and a Redis
+	 * that does not answer costs at most twice REDIS_TIMEOUT. There is no "pause" flag: it would have to live on
+	 * the disk, which every request would read.
+	 *
+	 * @param array<string, mixed> $c Configuration.
+	 * @return mixed A Redis object or false.
+	 */
+	public static function redis( $c ) {
+		$r = isset( $c['redis'] ) && is_array( $c['redis'] ) ? $c['redis'] : array();
+		if ( ! $r || ! class_exists( 'Redis', false ) ) {
+			return false;
+		}
+		$id = md5( (string) $c['dir'] . '|' . serialize( $r ) ); // phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.serialize_serialize -- A cache key only.
+		if ( isset( self::$conns[ $id ] ) ) {
+			return self::$conns[ $id ];
+		}
+		self::$conns[ $id ] = false;
+		$timeout            = isset( $r['timeout'] ) ? min( self::REDIS_TIMEOUT, max( 0.005, (float) $r['timeout'] ) ) : self::REDIS_TIMEOUT;
+		$started            = hrtime( true );
+		try {
+			$redis = new Redis();
+			$path  = isset( $r['path'] ) ? (string) $r['path'] : '';
+			$host  = isset( $r['host'] ) && '' !== (string) $r['host'] ? (string) $r['host'] : '127.0.0.1';
+			if ( isset( $r['scheme'] ) && 'tls' === $r['scheme'] && false === strpos( $host, '://' ) ) {
+				$host = 'tls://' . $host;
+			}
+			$ok = '' !== $path
+				? $redis->connect( $path, 0, $timeout, null, 0, $timeout )
+				: $redis->connect( $host, isset( $r['port'] ) && (int) $r['port'] > 0 ? (int) $r['port'] : 6379, $timeout, null, 0, $timeout );
+			if ( ! $ok ) {
+				return false;
+			}
+			$auth = self::redis_password( $r );
+			if ( '' !== $auth ) {
+				$user = isset( $r['user'] ) ? (string) $r['user'] : '';
+				if ( ! $redis->auth( '' !== $user ? array( $user, $auth ) : $auth ) ) {
+					return false;
+				}
+			}
+			if ( isset( $r['db'] ) && (int) $r['db'] > 0 && ! $redis->select( (int) $r['db'] ) ) {
+				return false;
+			}
+		} catch ( Throwable $e ) {
+			return false;
+		} finally {
+			self::$redis_ms += ( hrtime( true ) - $started ) / 1e6;
+		}
+		self::$conns[ $id ] = $redis;
+		return $redis;
+	}
+
+	/**
+	 * The Redis password of the connection settings: kept masked in the line of wp-config.php (mask(), with the key
+	 * that line passes), so that the line shown on the settings page for a manual install does not show it.
+	 *
+	 * @param array<string, mixed> $r Connection settings.
+	 * @return string
+	 */
+	public static function redis_password( $r ) {
+		if ( empty( $r['auth'] ) ) {
+			return '';
+		}
+		$raw = base64_decode( (string) $r['auth'], true ); // phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.obfuscation_base64_decode -- The masked password (mask()).
+		return false === $raw ? '' : self::mask( $raw, isset( $r['sk'] ) ? (string) $r['sk'] : '' );
+	}
+
+	/**
+	 * XOR with a key stream from HMAC-SHA256 of the key: masks the Redis password in wp-config.php (which holds
+	 * WP_REDIS_PASSWORD in plain text already; this only keeps it off the screen). The same call unmasks it.
+	 *
+	 * @param string $text Text.
+	 * @param string $key  Key.
+	 * @return string
+	 */
+	public static function mask( $text, $key ) {
+		$stream = '';
+		$length = strlen( $text );
+		for ( $i = 0; $i * 32 < $length; $i++ ) {
+			$stream .= hash_hmac( 'sha256', 'pncp-redis-auth|' . $i, $key, true );
+		}
+		return (string) ( $text ^ (string) substr( $stream, 0, $length ) );
+	}
+
+	/**
+	 * The name of a value in the store: one namespace per data folder, after the object cache's own prefix in Redis.
+	 *
+	 * @param array<string, mixed> $c     Configuration.
+	 * @param string               $store 'apcu' or 'redis'.
+	 * @param string               $name  Name.
+	 * @return string
+	 */
+	public static function mem_key( $c, $store, $name ) {
+		if ( 'redis' === $store ) {
+			$prefix = isset( $c['redis']['prefix'] ) ? (string) $c['redis']['prefix'] : '';
+			return $prefix . 'pncp:pc:' . substr( md5( (string) $c['dir'] ), 0, 12 ) . ':' . $name;
+		}
+		return 'pncp_pc_' . md5( (string) $c['dir'] ) . '_' . $name;
+	}
+
+	/**
+	 * Runs a Redis call; false (and no Redis for the rest of the request) on any error.
+	 *
+	 * @param array<string, mixed> $c  Configuration.
+	 * @param callable             $fn Gets the connection.
+	 * @return mixed
+	 */
+	private static function redis_call( $c, $fn ) {
+		$redis = self::redis( $c );
+		if ( false === $redis ) {
+			return false;
+		}
+		$started = hrtime( true );
+		try {
+			$result = $fn( $redis );
+		} catch ( Throwable $e ) {
+			$result = false;
+		}
+		self::$redis_ms += ( hrtime( true ) - $started ) / 1e6;
+		if ( false === $result ) {
+			self::$conns[ md5( (string) $c['dir'] . '|' . serialize( $c['redis'] ) ) ] = false; // phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.serialize_serialize -- A cache key only.
+		}
+		return $result;
+	}
+
+	/**
+	 * The options of a Redis SET: only if not there yet (NX) and with an expiry (EX).
+	 *
+	 * @param bool $nx  NX.
+	 * @param int  $ttl Seconds.
+	 * @return array<int|string, mixed>
+	 */
+	private static function set_options( $nx, $ttl ) {
+		$options       = $nx ? array( 'nx' ) : array();
+		$options['ex'] = (int) $ttl;
+		return $options;
+	}
+
+	/**
+	 * Adds 1 to a counter that lives $ttl seconds from its first count. False when there is no store or it failed.
+	 *
+	 * @param array<string, mixed> $c    Configuration.
+	 * @param string               $name Name.
+	 * @param int                  $ttl  Seconds.
+	 * @return int|false
+	 */
+	public static function mem_incr( $c, $name, $ttl ) {
+		$store = self::store( $c );
+		if ( 'apcu' === $store ) {
+			$key = self::mem_key( $c, $store, $name );
+			apcu_add( $key, 0, $ttl );
+			$count = apcu_inc( $key );
+			return false === $count ? false : (int) $count;
+		}
+		if ( 'redis' !== $store ) {
+			return false;
+		}
+		$key = self::mem_key( $c, $store, $name );
+		$res = self::redis_call(
+			$c,
+			static function ( $redis ) use ( $key, $ttl ) {
+				$out = $redis->multi( Redis::PIPELINE )->set( $key, '0', self::set_options( true, $ttl ) )->incr( $key )->exec();
+				return is_array( $out ) && isset( $out[1] ) && is_int( $out[1] ) ? $out[1] : false;
+			}
+		);
+		return false === $res ? false : (int) $res;
+	}
+
+	/**
+	 * Reads values: '' for a value that is not there; null when there is no store or it failed.
+	 *
+	 * @param array<string, mixed> $c     Configuration.
+	 * @param string[]             $names Names.
+	 * @return string[]|null In the order of $names.
+	 */
+	public static function mem_get_many( $c, $names ) {
+		$store = self::store( $c );
+		if ( '' === $store ) {
+			return null;
+		}
+		$keys = array();
+		foreach ( $names as $name ) {
+			$keys[] = self::mem_key( $c, $store, $name );
+		}
+		if ( 'apcu' === $store ) {
+			$found = apcu_fetch( $keys );
+			$found = is_array( $found ) ? $found : array();
+			$out   = array();
+			foreach ( $keys as $key ) {
+				$out[] = isset( $found[ $key ] ) && is_scalar( $found[ $key ] ) ? (string) $found[ $key ] : '';
+			}
+			return $out;
+		}
+		$res = self::redis_call(
+			$c,
+			static function ( $redis ) use ( $keys ) {
+				$out = $redis->mget( $keys );
+				return is_array( $out ) && count( $out ) === count( $keys ) ? $out : false;
+			}
+		);
+		if ( false === $res ) {
+			return null;
+		}
+		$out = array();
+		foreach ( $res as $value ) {
+			$out[] = is_string( $value ) ? $value : '';
+		}
+		return $out;
+	}
+
+	/**
+	 * Reads one value ('' = not there; null = no store, or it failed).
+	 *
+	 * @param array<string, mixed> $c    Configuration.
+	 * @param string               $name Name.
+	 * @return string|null
+	 */
+	public static function mem_get( $c, $name ) {
+		$values = self::mem_get_many( $c, array( $name ) );
+		return null === $values ? null : $values[0];
+	}
+
+	/**
+	 * Writes a value for $ttl seconds (0 = no expiry). False when there is no store or it failed.
+	 *
+	 * @param array<string, mixed> $c     Configuration.
+	 * @param string               $name  Name.
+	 * @param string               $value Value.
+	 * @param int                  $ttl   Seconds.
+	 * @return bool
+	 */
+	public static function mem_set( $c, $name, $value, $ttl ) {
+		$store = self::store( $c );
+		if ( 'apcu' === $store ) {
+			return (bool) apcu_store( self::mem_key( $c, $store, $name ), (string) $value, max( 0, (int) $ttl ) );
+		}
+		if ( 'redis' !== $store ) {
+			return false;
+		}
+		$key = self::mem_key( $c, $store, $name );
+		return true === self::redis_call(
+			$c,
+			static function ( $redis ) use ( $key, $value, $ttl ) {
+				return $ttl > 0 ? $redis->set( $key, (string) $value, array( 'ex' => (int) $ttl ) ) : $redis->set( $key, (string) $value );
+			}
+		);
+	}
+
+	/**
+	 * Writes a value only if it is not there yet: true (written), false (it was there), null (no store, or failed).
+	 *
+	 * @param array<string, mixed> $c     Configuration.
+	 * @param string               $name  Name.
+	 * @param string               $value Value.
+	 * @param int                  $ttl   Seconds.
+	 * @return bool|null
+	 */
+	public static function mem_add( $c, $name, $value, $ttl ) {
+		$store = self::store( $c );
+		if ( 'apcu' === $store ) {
+			return (bool) apcu_add( self::mem_key( $c, $store, $name ), (string) $value, max( 1, (int) $ttl ) );
+		}
+		if ( 'redis' !== $store ) {
+			return null;
+		}
+		$key = self::mem_key( $c, $store, $name );
+		$res = self::redis_call(
+			$c,
+			static function ( $redis ) use ( $key, $value, $ttl ) {
+				// SET NX answers false when the value is there: kept apart from an error.
+				return array( $redis->set( $key, (string) $value, self::set_options( true, max( 1, (int) $ttl ) ) ) );
+			}
+		);
+		return is_array( $res ) ? true === $res[0] : null;
+	}
+
+	/**
+	 * Removes values.
+	 *
+	 * @param array<string, mixed> $c     Configuration.
+	 * @param string|string[]      $names Name(s).
+	 * @return bool
+	 */
+	public static function mem_del( $c, $names ) {
+		$store = self::store( $c );
+		$keys  = array();
+		foreach ( (array) $names as $name ) {
+			$keys[] = self::mem_key( $c, $store, (string) $name );
+		}
+		if ( 'apcu' === $store ) {
+			apcu_delete( $keys );
+			return true;
+		}
+		return 'redis' === $store && false !== self::redis_call(
+			$c,
+			static function ( $redis ) use ( $keys ) {
+				return $redis->del( $keys );
+			}
+		);
+	}
+
+	/**
+	 * The values whose name starts with $prefix: name (without the prefix) => value. For the hourly copy of the
+	 * bans (sync_bans()), never in a visitor's request.
+	 *
+	 * @param array<string, mixed> $c      Configuration.
+	 * @param string               $prefix Prefix of the names.
+	 * @return array<string, string>|null Null: no store, or it failed.
+	 */
+	public static function mem_list( $c, $prefix ) {
+		$store = self::store( $c );
+		if ( '' === $store ) {
+			return null;
+		}
+		$start = self::mem_key( $c, $store, $prefix );
+		$out   = array();
+		if ( 'apcu' === $store ) {
+			if ( ! class_exists( 'APCUIterator' ) ) {
+				return null;
+			}
+			foreach ( new APCUIterator( '/^' . preg_quote( $start, '/' ) . '/', APC_ITER_KEY | APC_ITER_VALUE ) as $item ) {
+				if ( is_array( $item ) && isset( $item['key'], $item['value'] ) && is_scalar( $item['value'] ) ) {
+					$out[ substr( (string) $item['key'], strlen( $start ) ) ] = (string) $item['value'];
+				}
+			}
+			return $out;
+		}
+		$res = self::redis_call(
+			$c,
+			static function ( Redis $redis ) use ( $start ) {
+				$found = array();
+				$it    = null;
+				do {
+					$keys = $redis->scan( $it, str_replace( array( '*', '?', '[' ), array( '\*', '\?', '\[' ), $start ) . '*', 1000 );
+					if ( is_array( $keys ) && $keys ) {
+						$values = $redis->mget( $keys );
+						foreach ( $keys as $i => $key ) {
+							if ( is_array( $values ) && isset( $values[ $i ] ) && is_string( $values[ $i ] ) ) {
+								$found[ substr( (string) $key, strlen( $start ) ) ] = $values[ $i ];
+							}
+						}
+					}
+				} while ( $it > 0 );
+				return $found;
+			}
+		);
+		return is_array( $res ) ? $res : null;
+	}
+
+	/**
+	 * Adds an event line to the store's queue (at most EVENTS_MAX, the oldest go first). False: no store / failed.
+	 *
+	 * @param array<string, mixed> $c    Configuration.
+	 * @param string               $line The line (no newline).
+	 * @return bool
+	 */
+	public static function mem_push( $c, $line ) {
+		$store = self::store( $c );
+		if ( 'apcu' === $store ) {
+			$seq = self::mem_key( $c, $store, 'ev:seq' );
+			apcu_add( $seq, 0 );
+			$n = apcu_inc( $seq );
+			return false !== $n && (bool) apcu_store( self::mem_key( $c, $store, 'ev:' . $n ), $line, 7 * 86400 );
+		}
+		if ( 'redis' !== $store ) {
+			return false;
+		}
+		$key = self::mem_key( $c, $store, 'ev' );
+		return false !== self::redis_call(
+			$c,
+			static function ( $redis ) use ( $key, $line ) {
+				$out = $redis->multi( Redis::PIPELINE )->rPush( $key, $line )->lTrim( $key, -self::EVENTS_MAX, -1 )->expire( $key, 7 * 86400 )->exec();
+				return is_array( $out ) && is_int( $out[0] ) ? true : false;
+			}
+		);
+	}
+
+	/**
+	 * Takes every queued event line out of the store (for PNCP_Precheck::import_events()).
+	 *
+	 * @param array<string, mixed> $c Configuration.
+	 * @return string[]
+	 */
+	public static function mem_drain( $c ) {
+		$store = self::store( $c );
+		if ( 'apcu' === $store ) {
+			$seq  = (int) apcu_fetch( self::mem_key( $c, $store, 'ev:seq' ) );
+			$done = (int) apcu_fetch( self::mem_key( $c, $store, 'ev:done' ) );
+			$out  = array();
+			for ( $n = max( $done + 1, $seq - self::EVENTS_MAX + 1 ); $n <= $seq; $n++ ) {
+				$key  = self::mem_key( $c, $store, 'ev:' . $n );
+				$line = apcu_fetch( $key );
+				if ( is_string( $line ) ) {
+					$out[] = $line;
+				}
+				apcu_delete( $key );
+			}
+			apcu_store( self::mem_key( $c, $store, 'ev:done' ), $seq );
+			return $out;
+		}
+		if ( 'redis' !== $store ) {
+			return array();
+		}
+		$key = self::mem_key( $c, $store, 'ev' );
+		$res = self::redis_call(
+			$c,
+			static function ( $redis ) use ( $key ) {
+				$out = $redis->multi()->lRange( $key, 0, -1 )->del( $key )->exec();
+				return is_array( $out ) && is_array( $out[0] ) ? $out[0] : false;
+			}
+		);
+		return is_array( $res ) ? array_values( array_map( 'strval', $res ) ) : array();
+	}
+
+	/**
+	 * Copies the bans between the files and the store: each side gets the other's bans that last longer than its
+	 * own. With $files_only, only the files into the store (sync_later()). Marks the store as filled ('sync').
+	 *
+	 * @param array<string, mixed> $c          Configuration.
+	 * @param int                  $now        Time.
+	 * @param bool                 $files_only Only from the files to the store.
+	 * @param int                  $budget     Milliseconds (0 = no limit); past it the store is not marked.
+	 * @return int|null Bans copied; null without a store.
+	 */
+	public static function sync_bans( $c, $now, $files_only = false, $budget = 0 ) {
+		if ( '' === self::store( $c ) ) {
+			return null;
+		}
+		$end    = $budget > 0 ? hrtime( true ) + $budget * 1000000 : 0;
+		$folder = (string) $c['dir'] . '/bans';
+		$copied = 0;
+		$stored = $files_only ? array() : self::mem_list( $c, 'b:' );
+		if ( is_array( $stored ) && $stored ) {
+			if ( ! is_dir( $folder ) ) {
+				@mkdir( $folder, 0755, true );
+			}
+			foreach ( $stored as $hash => $until ) {
+				$file = $folder . '/' . $hash;
+				if ( preg_match( '/^[0-9a-f]{32}$/', (string) $hash ) && (int) $until > $now && ( is_file( $file ) ? (int) @file_get_contents( $file ) : 0 ) < (int) $until ) {
+					$copied += (int) self::put_atomic( $file, (string) (int) $until );
+				}
+			}
+		}
+		$handle   = @opendir( $folder );
+		$complete = true;
+		if ( false !== $handle ) {
+			$name = readdir( $handle );
+			while ( false !== $name ) {
+				if ( $end && hrtime( true ) >= $end ) {
+					$complete = false;
+					break;
+				}
+				if ( preg_match( '/^[0-9a-f]{32}$/', $name ) ) {
+					$until = (int) @file_get_contents( $folder . '/' . $name );
+					if ( $until > $now && ( isset( $stored[ $name ] ) ? (int) $stored[ $name ] : (int) self::mem_get( $c, 'b:' . $name ) ) < $until ) {
+						$copied += (int) self::mem_set( $c, 'b:' . $name, (string) $until, $until - $now + 60 );
+					}
+				}
+				$name = readdir( $handle );
+			}
+			closedir( $handle );
+		}
+		if ( $complete ) {
+			self::mem_set( $c, 'sync', (string) $now, 0 );
+		}
+		return $copied;
+	}
+
+	/**
+	 * The store has no 'sync' mark: it is new, or lost its data (Redis restarted or flushed, PHP-FPM restarted for
+	 * APCu), so the bans of the files are not in it. One request (the 'syncing' value, 60 seconds) copies them in at
+	 * its end, within SWEEP_MS: the only reading of the disk in a request with a store, once after such a loss.
+	 *
+	 * @param array<string, mixed> $c Configuration.
+	 */
+	public static function sync_later( $c ) {
+		if ( self::$sync_queued || true !== self::mem_add( $c, 'syncing', '1', 60 ) ) {
+			return;
+		}
+		self::$sync_queued = true;
+		register_shutdown_function(
+			static function () use ( $c ) {
+				self::sync_bans( $c, time(), true, self::SWEEP_MS );
+			}
+		);
 	}
 }

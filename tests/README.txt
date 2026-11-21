@@ -283,6 +283,16 @@ ScrapeLock — δοκιμές σε πραγματικό WordPress (όχι stubs)
                     notice and WP-CLI (stealth status / check: rules, map, next) say to copy the Stealth rules again
                     with the command, a waiting map is taken up only once the new rules are served; Apache: the same
                     map with other rules written into .htaccess again by the refresh the upgrade schedules
+  t_3129_precheck_io.php 3.12.9: the pre-cache check never waits for the disk (its own php -S servers on free ports,
+                    no request to BASE): a counter / .new / events.log locked by another process (answered at once, still
+                    counted); 50 processes on one counter (no call that slept took 100 ms, exact count, one violation,
+                    a ban file never read empty); no cleanup in the request, the sweep without WP-Cron within its
+                    budget and LOCK_NB; 5,000 old minute files; APCu (counter names as before, bans, events, nonces and
+                    the configuration in APCu, no file of the data folder touched under strace, the folder renamed away
+                    and the limits still work, WP-CLI's ops.log through the signed sync request); Redis with a
+                    redis-server of the test on a Unix socket (the same, Redis stopped mid-run, back empty, a socket
+                    that never answers); the Redis connection in the wp-config.php line (password masked). SKIP parts
+                    without APCu / redis-server / strace
   t_cli.php         wp scrapelock … μέσα από το πραγματικό wp (χρειάζεται WP_CLI, αλλιώς SKIP)
   t_bunny_rules.php Edge Rules στο Bunny μέσα στα όριά του (το πολύ 5 μοτίβα ανά συνθήκη) με ψεύτικο API που δίνει
                     HTTP 400 όπως το πραγματικό: χωρισμός, κλείδωμα/Remove, rollback, Monitor only, sync, προεπισκόπηση,
