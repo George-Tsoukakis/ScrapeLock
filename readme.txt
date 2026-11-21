@@ -4,7 +4,7 @@ Tags: ai crawlers, anti-scraping, bot protection, rate limit, content protection
 Requires at least: 6.2
 Tested up to: 7.2
 Requires PHP: 7.4
-Stable tag: 3.12.4
+Stable tag: 3.12.5
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -94,7 +94,7 @@ Whatever a visitor sees has already reached their device, so nothing stops a det
 = On the page and images =
 
 * Block right click, copy, drag and common shortcuts, or allow copying with the source link appended. Text selection stays allowed by default, because blocking it also stops screen readers' "read selection" and translation tools.
-* Printing with the page link at the bottom, or no printing; optional page blur on screenshot shortcuts; no framing by other sites.
+* Printing with the page link at the bottom, or no printing; optional page blur on screenshot shortcuts (for everyone, or only for visitors who are not signed in); no framing by other sites.
 * AI opt-out declaration (TDM): header, meta, `/.well-known/tdmrep.json`, `noai`.
 * Watermark in a corner, the centre or repeated diagonally, optionally on the full-size image too; otherwise visitors get the largest watermarked size, also in the WooCommerce zoom, lightbox and Store API. The clean original is kept, so the watermark can always be removed. Product images are not watermarked by default, because Google Merchant Center rejects them.
 
@@ -383,6 +383,11 @@ No, on purpose: only an app code, a recovery code or the SCRAPELOCK_UNLOCK line 
 
 == Changelog ==
 
+= 3.12.5 =
+* New: "Blur the page on screenshot shortcuts" (On the page) has "Applies to: Everyone / Only visitors who are not signed in". Everyone is the default and what every existing site keeps. With the second choice signed-in members can take screenshots; staff in "Who is excluded" never get the blur, as before.
+* New: the choice is made by the page itself, so it works with page caches (WP Rocket, Bunny CDN): ScrapeLock sets a small cookie, `pncp_si=1`, in signed-in browsers (no personal data; the logged_in cookie's paths, domain, Secure flag and expiry, SameSite=Lax, readable by the page) and removes it at sign-out. The page also reads WordPress's `logged-in` body class. Accounts signed in before the update get the cookie on their next page that is not served from a cache, or when they sign in again. Not set while the protection is off. The suggested privacy policy text names it. Someone who adds the cookie by hand only turns the blur off in their own browser: like the blur itself, it is a deterrent.
+* Greek translation of the new texts.
+
 = 3.12.4 =
 * Fix: on aaPanel (and BT Panel, CloudPanel) the Server rules tab read "Not installed" with part 2 of the Nginx rules in the site's server { }: the panel's WordPress rewrite is a server-level `if (!-e $request_filename) { rewrite ... /index.php last; }`, which runs before Nginx chooses a location, so the check address went to WordPress (404). Part 2 now also answers its check address at server level, above every other line (not part of the fingerprint: installed rules stay current). Copy part 2 again.
 * Fix: the "installed / up to date" status asks the server itself first (the site's host pinned to 127.0.0.1, the server address or `SCRAPELOCK_SERVER_IPS`, signed), then the public address. Behind Bunny CDN without "Forward Host Header", or with a cached 404, the CDN answered instead of the server. Without an answer at the check address the `X-ScrapeLock-Rules` header of the site's own page counts, so the tab and the out-of-date notice agree; an http:// site address sent to https:// is followed.
@@ -557,6 +562,9 @@ No, on purpose: only an app code, a recovery code or the SCRAPELOCK_UNLOCK line 
 The changes of 3.5.0 and earlier versions are in changelog.txt in the plugin folder.
 
 == Upgrade Notice ==
+
+= 3.12.5 =
+The screenshot blur can now apply only to visitors who are not signed in (On the page → Applies to). Existing sites keep "Everyone". Settings are kept.
 
 = 3.12.4 =
 Nginx: copy part 2 of the server rules again (Settings → ScrapeLock → Server rules), then nginx -t and reload: it now answers the status check before aaPanel's server-level WordPress rewrite. The fingerprint is unchanged. Settings are kept.
