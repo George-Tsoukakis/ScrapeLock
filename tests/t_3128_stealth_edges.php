@@ -358,7 +358,7 @@ if ( '' === $nginx_bin ) {
 } else {
 	$tmp = sys_get_temp_dir() . '/pncp-t3128-' . getmypid();
 	mkdir( $tmp );
-	file_put_contents( $tmp . '/nginx.conf', "events {}\nhttp {\n server {\n  listen 127.0.0.1:1;\n  root " . $tmp . ";\n" . $nginx . "\n }\n}\n" );
+	file_put_contents( $tmp . '/nginx.conf', "events {}\nhttp {\n access_log off;\n client_body_temp_path " . $tmp . "/cb;\n proxy_temp_path " . $tmp . "/px;\n fastcgi_temp_path " . $tmp . "/fc;\n uwsgi_temp_path " . $tmp . "/uw;\n scgi_temp_path " . $tmp . "/sc;\n server {\n  listen 127.0.0.1:65531;\n  root " . $tmp . ";\n" . $nginx . "\n }\n}\n" );
 	$cmd = escapeshellarg( $nginx_bin ) . ' -t -q -p ' . escapeshellarg( $tmp ) . ' -c ' . escapeshellarg( $tmp . '/nginx.conf' ) . ' -g ' . escapeshellarg( 'pid ' . $tmp . '/n.pid; error_log ' . $tmp . '/e.log;' ) . ' 2>&1';
 	exec( $cmd, $o, $rc ); // phpcs:ignore -- Test.
 	rmtree( $tmp );
