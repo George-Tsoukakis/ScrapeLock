@@ -21,6 +21,8 @@
  *    address.
  * S. Stylesheets that reach a sibling folder with "../": a child theme's @import of its parent theme and a
  *    plugin's url() into another plugin resolve, in the browser, to /<base>/<folder>/…; the rules serve them.
+ * E. Addresses URL-encoded inside another address (a share link's media=https%3A%2F%2F<host>%2Fwp-content%2F…)
+ *    get the neutral address, encoded the same way; "+" and the other parameters stay; other hosts stay.
  *
  * Only on a test WordPress.
  */
@@ -378,5 +380,26 @@ t( 'S a plugin\'s url() into another plugin (' . $b_path . ') is served (Nginx)'
 t( 'S a plugin\'s url() into another plugin is served (Apache)', file_of( apache_apply( $apache, $b_path ) ) === realpath( WP_PLUGIN_DIR . '/pncp-t3128-b/img/b.png' ), apache_apply( $apache, $b_path ) );
 $php = '/assets/pncp-t3128-a/download.php';
 t( 'S PHP is never served through a sibling address', file_of( nginx_apply( $nginx, $php ) ) === '' && file_of( apache_apply( $apache, $php ) ) === '', nginx_apply( $nginx, $php ) );
+
+/* ---------- E. URL-encoded addresses ---------- */
+
+$enc   = rawurlencode( $u . '/a.jpg' );
+$share = '<a href="https://share.example/pin/create/?url=' . rawurlencode( $h . '/a-post/' ) . '&amp;media=' . $enc . '&amp;description=Two+words">Pin</a>';
+$out   = PNCP_Stealth::rewrite( $share );
+preg_match( '#media=([^&"]+)#', $out, $em );
+$media = isset( $em[1] ) ? rawurldecode( $em[1] ) : '';
+t( 'E an encoded address of this host inside a share link gets the neutral address', false === stripos( $out, 'wp-content' ) && false !== strpos( $media, '/assets/' ), $out );
+t( 'E it maps back to its file', array() === unmapped( $media, $nginx, $apache ) && array() !== own_addresses( $media ), $media );
+t( 'E it stays encoded and the other parameters stay as they were', isset( $em[1] ) && rawurlencode( $media ) === $em[1] && false !== strpos( $out, '?url=' . rawurlencode( $h . '/a-post/' ) . '&amp;media=' ) && false !== strpos( $out, '&amp;description=Two+words"' ), $out );
+t( 'E rewriting twice changes nothing', PNCP_Stealth::rewrite( $out ) === $out );
+$plus = 'x?u=' . rawurlencode( $pu . '/js/a.js' ) . '%3Fa%3D1+2';
+t( 'E a "+" right after the encoded address stays', 1 === preg_match( '#^x\?u=[^+]*%2Fassets%2F[0-9a-f]{6}%2Fjs%2Fa\.js%3Fa%3D1\+2$#', PNCP_Stealth::rewrite( $plus ) ), PNCP_Stealth::rewrite( $plus ) );
+$keep_enc = array(
+	'another host'     => '<a href="https://share.example/?media=' . rawurlencode( 'https://other.example/wp-content/uploads/a.jpg' ) . '">x</a>',
+	'a type not served' => '<a href="https://share.example/?file=' . rawurlencode( $u . '/f.zip' ) . '">x</a>',
+);
+foreach ( $keep_enc as $label => $in ) {
+	t( 'E encoded: ' . $label . ' keeps its address', PNCP_Stealth::rewrite( $in ) === $in, PNCP_Stealth::rewrite( $in ) );
+}
 
 exit( $fails ? 1 : 0 );

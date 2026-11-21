@@ -1938,6 +1938,9 @@ final class PNCP_Stealth {
 	 * @return string
 	 */
 	public static function rewrite( $text ) {
+		if ( is_string( $text ) && false !== stripos( $text, '%2F' ) ) {
+			$text = self::rewrite_encoded( $text );
+		}
 		if ( ! is_string( $text ) || ( false === strpos( $text, '/wp-' ) && false === strpos( $text, '\\/wp-' ) && false === strpos( $text, 'wp-comments-post' ) && ! self::custom_paths() ) ) {
 			return $text;
 		}
@@ -2096,6 +2099,33 @@ final class PNCP_Stealth {
 			return true;
 		}
 		return (bool) preg_match( '~^(?:' . self::STATIC_EXT . ')$~i', $m[1] );
+	}
+
+	/**
+	 * 3.12.8: addresses of this host URL-encoded inside another address (share links: …&media=https%3A%2F%2F<host>
+	 * %2Fwp-content%2Fuploads%2F…), rewritten like plain ones and encoded again the same way. A "+" stays a "+".
+	 *
+	 * @param string $text Text.
+	 * @return string
+	 */
+	private static function rewrite_encoded( $text ) {
+		$hosts = array();
+		foreach ( self::hosts( true ) as $host ) {
+			$hosts[] = preg_quote( str_replace( ':', '%3A', $host ), '~' );
+		}
+		if ( ! $hosts ) {
+			return $text;
+		}
+		$out = preg_replace_callback(
+			'~(?:https?%3A)?%2F%2F(?:' . implode( '|', $hosts ) . ')%2F(?:[A-Za-z0-9._\~+-]|%[0-9A-F]{2})*~i',
+			function ( $m ) {
+				$plain = rawurldecode( str_replace( '+', "\x01", $m[0] ) );
+				$new   = self::rewrite( $plain );
+				return $new === $plain ? $m[0] : str_replace( '%01', '+', rawurlencode( $new ) );
+			},
+			$text
+		);
+		return is_string( $out ) ? $out : $text;
 	}
 
 	/**

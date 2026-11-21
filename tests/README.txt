@@ -257,6 +257,7 @@ ScrapeLock — δοκιμές σε πραγματικό WordPress (όχι stubs)
                     escaped quote in an attribute (url(&quot;…&quot;), &#039;) rewritten; a plugin folder with a space in
                     its name: valid rules (real nginx -t, SKIP without nginx on PATH), its files served; "../" into a
                     sibling folder (a child theme's @import of its parent, a plugin's url() into another plugin) served
+                    ; addresses URL-encoded in share links (media=https%3A%2F%2F…) rewritten, encoded the same way
   t_cli.php         wp scrapelock … μέσα από το πραγματικό wp (χρειάζεται WP_CLI, αλλιώς SKIP)
   t_bunny_rules.php Edge Rules στο Bunny μέσα στα όριά του (το πολύ 5 μοτίβα ανά συνθήκη) με ψεύτικο API που δίνει
                     HTTP 400 όπως το πραγματικό: χωρισμός, κλείδωμα/Remove, rollback, Monitor only, sync, προεπισκόπηση,
