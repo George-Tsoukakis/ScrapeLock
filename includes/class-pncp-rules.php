@@ -566,6 +566,10 @@ final class PNCP_Rules {
 		$path = isset( $request['path'] ) && '' !== (string) $request['path'] ? (string) $request['path'] : '/';
 		$path = (string) rawurldecode( (string) wp_parse_url( $path, PHP_URL_PATH ) ); // Nginx's $uri: decoded, no query.
 		$path = '' === $path ? '/' : $path;
+		// 3.12.4: part 2 answers its check address at server level, before every other line.
+		if ( self::nginx_check_path() === $path ) {
+			return null;
+		}
 		$fields = array(
 			'ua'             => $ua,
 			'uri'            => $path,
@@ -962,6 +966,13 @@ final class PNCP_Rules {
 		$lines[] = 'set $' . self::nv( 'rules_hdr' ) . ' "";';
 		$lines[] = 'if ($http_x_scrapelock_sig) { set $' . self::nv( 'rules_hdr' ) . ' "$' . self::nv( 'rules' ) . ' ' . self::HASH_SLOT . '"; }';
 		$lines[] = 'add_header ' . self::HASH_HEADER . ' $' . self::nv( 'rules_hdr' ) . ' always;';
+		$lines[] = '';
+		// 3.12.4: the check address answered at server level too. Panels (aaPanel, BT Panel, CloudPanel) often put the
+		// WordPress rewrite at server level (if (!-e $request_filename) { rewrite ... /index.php last; }): it runs
+		// before any location is chosen, and the location = below never sees the request. These lines come first.
+		$lines[] = '# The check address, answered here too: a WordPress rewrite at server level (if (!-e $request_filename)';
+		$lines[] = '# { rewrite ... }, common on aaPanel, BT Panel and CloudPanel) runs before any location. Keep these lines ABOVE it.';
+		$lines[] = 'if ($uri = ' . self::nginx_arg( self::nginx_check_path() ) . ') { return 200 "$' . self::nv( 'rules' ) . ' ' . self::HASH_SLOT . '\\n"; }';
 		$lines[] = '';
 		if ( self::nginx_block_vars() ) {
 			$lines[] = '# Blocks bots' . ( $s['block_headless'] ? ' and fake browsers' : '' ) . ' BEFORE the page cache (FastCGI cache, WP Rocket, WP Super Cache), also';

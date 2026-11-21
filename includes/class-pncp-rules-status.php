@@ -254,11 +254,13 @@ final class PNCP_Rules_Status {
 			return self::found( $origin_fp, 'origin', $origin_ip, $origin, 'fingerprint' );
 		}
 		// No fingerprint at the check address: the header of the site's own pages (3.12.3), as a self-check sees it.
+		$kind   = self::nginx_kind( $origin, $public );
 		$header = self::header_probe();
 		if ( 'nginx' === PNCP_Rules_State::format_of( $header['value'] ) ) {
-			return self::found( $header['value'], $header['via'], $header['ip'], null, 'header' );
+			// header_wp: the rules are active, but the check address reached WordPress (a rewrite at server level
+			// before the location = of part 2 of before 3.12.4).
+			return self::found( $header['value'], $header['via'], $header['ip'], null, 'wp' === $kind['kind'] ? 'header_wp' : 'header' );
 		}
-		$kind = self::nginx_kind( $origin, $public );
 		$code = 0;
 		if ( 'origin' === $kind['via'] && null !== $origin ) {
 			$code = (int) wp_remote_retrieve_response_code( $origin );
@@ -490,7 +492,7 @@ final class PNCP_Rules_Status {
 			case 'wp':
 				$cls  = 'notice-warning';
 				$line = __( 'Not active: the check address reached WordPress, so part 2 is not in this site\'s server { }.', 'scrapelock' );
-				$more = $top;
+				$more = __( 'If part 2 is there, a WordPress rewrite at server level (if (!-e $request_filename) { rewrite … }, common on aaPanel, BT Panel and CloudPanel) runs first: copy part 2 again (since 3.12.4 it answers above that rewrite) and keep it above the rewrite include.', 'scrapelock' ) . ' ' . $top;
 				break;
 			case 'nginx':
 				$cls  = 'notice-warning';
@@ -533,6 +535,9 @@ final class PNCP_Rules_Status {
 	 * @return string
 	 */
 	public static function via_text( $status ) {
+		if ( 'header_wp' === $status['kind'] ) {
+			return __( 'Seen in the X-ScrapeLock-Rules header of the site\'s own pages; the check address itself reached WordPress, because a WordPress rewrite at server level runs first. Copy part 2 again: since 3.12.4 it answers the check address above that rewrite.', 'scrapelock' );
+		}
 		if ( 'header' === $status['kind'] ) {
 			return __( 'Seen in the X-ScrapeLock-Rules header of the site\'s own pages.', 'scrapelock' );
 		}

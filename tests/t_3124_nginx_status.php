@@ -15,6 +15,8 @@
  *    the CDN only (the server not reachable), nothing at all, something else.
  * X. The texts: one line + "More", in the Server rules tab, Site Health and wp scrapelock status / selfcheck.
  * A. Apache: the header of the site's own answers, the server asked first; the .htaccess is never read.
+ * W. A WordPress rewrite at server level (aaPanel, BT Panel, CloudPanel) runs before any location: part 2
+ *    answers its check address at server level too, outside the fingerprint; the evaluator agrees.
  * R. Real Nginx (SKIP without nginx on PATH): an aaPanel-like server { } with location ~ \.well-known: the
  *    exact location of part 2 wins at server level and in the extension include at the top; nested in
  *    location / { } it still wins, but nginx -t fails there with a private feed (a named location); without
@@ -347,7 +349,7 @@ t( 'X stale: names the part', false !== strpos( $x['line'], 'Copy again: 2) serv
 $x = $text( 'header', 'current', array( 'via' => 'public', 'ip' => '' ) );
 t( 'X seen in the header: says so', false !== strpos( $x['more'], 'X-ScrapeLock-Rules header' ) );
 $x = $text( 'wp' );
-t( 'X WordPress answered: part 2 not in this server { }; top level, not in location / { }; nginx -t and reload', 'Not active: the check address reached WordPress, so part 2 is not in this site\'s server { }.' === $x['line'] && false !== strpos( $x['more'], 'top level of the site\'s server { }' ) && false !== strpos( $x['more'], 'location / { }' ) && false !== strpos( $x['more'], 'nginx -t' ) && false === strpos( $x['more'], 'aaPanel' ) );
+t( 'X WordPress answered: part 2 not in this server { }; top level, not in location / { }; nginx -t and reload', 'Not active: the check address reached WordPress, so part 2 is not in this site\'s server { }.' === $x['line'] && false !== strpos( $x['more'], 'top level of the site\'s server { }' ) && false !== strpos( $x['more'], 'location / { }' ) && false !== strpos( $x['more'], 'nginx -t' ) && false === strpos( $x['more'], 'aaPanel: Website' ) );
 add_filter( 'pncp_is_aapanel', '__return_true' );
 $x = $text( 'wp' );
 t( 'X ...on aaPanel: where (Website → the site → Config, below #SSL-END)', false !== strpos( $x['more'], 'aaPanel: Website → the site → Config, right below #SSL-END' ) );
@@ -476,6 +478,62 @@ t( 'A the Apache rules set the header with mod_headers, outside the RewriteRules
 $src = (string) file_get_contents( PNCP_DIR . 'includes/class-pncp-rules-status.php' );
 t( 'A the status never reads the .htaccess', false === strpos( $src, 'get_home_path' ) && false === strpos( $src, "'.htaccess'" ) && false === strpos( $src, 'file_get_contents' ) );
 
+/* ---------- W. A WordPress rewrite at server level ---------- */
+
+$srv   = PNCP_Rules::nginx_server();
+$id    = PNCP_Rules::nginx_id();
+$if    = 'if ($uri = ' . $check . ') { return 200 "$pncp_rules_' . $id . ' ' . $fp_server . '\n"; }';
+$lines = explode( "\n", $srv );
+$at    = array_search( $if, $lines, true );
+t( 'W part 2 answers the check address at server level too: if ($uri = …) { return 200 "<http> <server>\n"; }', false !== $at, $if );
+$first_loc = 0;
+foreach ( $lines as $i => $line ) {
+	if ( 0 === strpos( $line, 'location ' ) || 0 === strpos( $line, 'if ($pncp_block' ) ) {
+		$first_loc = $i;
+		break;
+	}
+}
+t( 'W ...before the block line and every location (it runs before the panel\'s rewrite)', false !== $at && $at < $first_loc );
+t( 'W ...the location = stays, for servers without such a rewrite', false !== strpos( $srv, 'location = ' . $check . ' {' ) );
+$hash = new ReflectionMethod( 'PNCP_Rules', 'nginx_hash' );
+$hash->setAccessible( true );
+$without = array_values( array_filter( $lines, static function ( $line ) use ( $if ) {
+	return $line !== $if && false === strpos( $line, $GLOBALS['fp_server'] );
+} ) );
+t( 'W ...not part of the fingerprint (as the lines that carry it): installed 3.12.3 rules stay "current"', $hash->invoke( null, $without ) === $fp_server );
+$sub = static function ( $url, $path ) use ( $host ) {
+	return 'https://' . $host . '/blog/' . ltrim( (string) $path, '/' );
+};
+add_filter( 'home_url', $sub, 99, 2 );
+$sub_srv = PNCP_Rules::nginx_server();
+remove_filter( 'home_url', $sub, 99 );
+t( 'W ...WordPress in a sub-folder: its own check address', false !== strpos( $sub_srv, 'if ($uri = /blog/.well-known/scrapelock-nginx) {' ) );
+$ev = PNCP_Rules::evaluate(
+	array(
+		'ua'      => 'GPTBot/1.2',
+		'path'    => $check . '?t=1',
+		'https'   => true,
+		'headers' => array(),
+		'remote'  => '198.51.100.81',
+	)
+);
+t( 'W the evaluator agrees: the check address is answered (never blocked), even for a blocked bot', null === $ev, wp_json_encode( $ev ) );
+
+// The plugin of 3.12.4 with part 2 of 3.12.3 behind such a rewrite: the check reaches WordPress, its header counts.
+list( $st ) = status_with(
+	static function ( $where, $url, $args, $id ) use ( $is_check, $own_page, $fp ) {
+		if ( '127.0.0.1' !== $where ) {
+			return null;
+		}
+		return $is_check( $url ) ? resp( 404, array( 'x-scrapelock' => PNCP_Self_Check::ok_marker( $id ), 'x-scrapelock-rules' => $fp ), WP_404 ) : $own_page( $id, $fp );
+	}
+);
+t( 'W old part 2 behind a server-level rewrite: "current", seen in the header, the check address reached WordPress', 'current' === $st['state'] && 'header_wp' === $st['kind'], wp_json_encode( $st ) );
+$x = PNCP_Rules_Status::nginx_text( $st );
+t( 'W ...and "More" says why and to copy part 2 again', false !== strpos( $x['more'], 'rewrite at server level' ) && false !== strpos( $x['more'], 'Copy part 2 again' ) );
+$x = PNCP_Rules_Status::nginx_text( array( 'state' => 'missing', 'parts' => array(), 'error' => '', 'via' => 'origin', 'ip' => '127.0.0.1', 'kind' => 'wp', 'code' => 404 ) );
+t( 'W the WordPress answer names a server-level rewrite as the likely cause', false !== strpos( $x['more'], 'if (!-e $request_filename)' ) && false !== strpos( $x['more'], 'above the rewrite include' ) );
+
 /* ---------- R. Real Nginx ---------- */
 
 $nginx_bin = trim( (string) shell_exec( 'command -v nginx 2>/dev/null' ) );
@@ -585,6 +643,41 @@ if ( '' === $nginx_bin || '' === $openssl || ! function_exists( 'curl_init' ) ) 
 	delete_transient( PNCP_Rules_Status::NGINX );
 	$st = PNCP_Rules::nginx_status( true );
 	t( 'R the status through the real Nginx: "current", by way of the server (127.0.0.1)', 'current' === $st['state'] && 'origin' === $st['via'], wp_json_encode( $st ) );
+	// aaPanel's stock WordPress rewrite at server level (its include below part 2), and PHP standing in for WordPress.
+	$rewrite = static function ( $old ) use ( $dir, $write ) {
+		$write( 'top' );
+		$conf = (string) file_get_contents( $dir . '/nginx.conf' );
+		$rw   = 'if (!-e $request_filename) { rewrite ^(.*)$ /index.php last; }' . "\n" . 'rewrite /wp-admin$ $scheme://$host$uri/ permanent;' . "\n"
+			. 'location ~ [^/]\.php(/|$) { return 404 "<body class=\\"error404\\">WordPress</body>"; }' . "\n";
+		$conf = str_replace( 'location = /xmlrpc.php', $rw . 'location = /xmlrpc.php', $conf );
+		if ( $old ) {
+			// Part 2 as 3.12.3 wrote it: without the server-level answer.
+			file_put_contents( $dir . '/server-old.conf', (string) preg_replace( '/^if \(\$uri = .*\n/m', '', (string) file_get_contents( $dir . '/server.conf' ) ) );
+			$conf = str_replace( 'include ' . $dir . '/server.conf;', 'include ' . $dir . '/server-old.conf;', $conf );
+		}
+		file_put_contents( $dir . '/nginx.conf', $conf );
+	};
+	$files[] = 'server-old.conf';
+	$rewrite( true );
+	list( $rc, $msg ) = $nginx( '-t' );
+	$nginx( '-s reload' );
+	usleep( 600000 );
+	list( $code, $body ) = $get();
+	t( 'R a WordPress rewrite at server level, part 2 of 3.12.3: the check address reaches "WordPress" (404)', 0 === $rc && 404 === $code && false !== strpos( $body, 'error404' ), $msg . ' ' . $code . ' ' . $body );
+	$rewrite( false );
+	list( $rc, $msg ) = $nginx( '-t' );
+	$nginx( '-s reload' );
+	usleep( 600000 );
+	list( $code, $body ) = $get();
+	t( 'R ...part 2 of 3.12.4: nginx -t passes, 200 with both fingerprints', 0 === $rc && 200 === $code && $want === $body, $msg . ' ' . $code . ' ' . $body );
+	$ch = curl_init( 'https://127.0.0.1:' . $port . '/.well-known/scrapelock-nginx' );
+	curl_setopt_array( $ch, array( CURLOPT_RETURNTRANSFER => true, CURLOPT_HEADER => true, CURLOPT_NOBODY => false, CURLOPT_SSL_VERIFYPEER => false, CURLOPT_SSL_VERIFYHOST => 0, CURLOPT_PROXY => '', CURLOPT_HTTPHEADER => array( 'X-ScrapeLock-Sig: x' ) ) );
+	$raw = strtolower( (string) curl_exec( $ch ) );
+	curl_close( $ch );
+	t( 'R ...and the server-level X-ScrapeLock-Rules header applies to that answer', false !== strpos( $raw, 'x-scrapelock-rules: ' . $want . "\r\n" ), substr( $raw, 0, 300 ) );
+	delete_transient( PNCP_Rules_Status::NGINX );
+	$st = PNCP_Rules::nginx_status( true );
+	t( 'R ...the status: "current", by way of the server', 'current' === $st['state'] && 'origin' === $st['via'], wp_json_encode( $st ) );
 	foreach ( array( 'http' => 'in http { }', 'twice' => 'twice (Config and the extension folder)' ) as $where => $label ) {
 		$write( $where );
 		list( $rc, $msg ) = $nginx( '-t' );
