@@ -781,6 +781,9 @@ final class PNCP_Rules {
 			$lines[] = 'map ' . $map['key'] . ' $' . self::nv( $name ) . ' {';
 			$lines[] = '    default 0;';
 			foreach ( $map['entries'] as $entry ) {
+				if ( ! empty( $entry[2] ) ) {
+					$volatile[ count( $lines ) ] = true; // 3.12.6: a verification file (see nginx_maps()).
+				}
 				$lines[] = '    ' . $entry[0] . ' ' . $entry[1] . ';';
 			}
 			$lines[] = '}';
@@ -896,6 +899,11 @@ final class PNCP_Rules {
 					array( self::nginx_check_path(), '1' ),
 				),
 			);
+			// 3.12.6: the verification files (PNCP_Verify_Files), while they are there. Left out of the fingerprint
+			// (a third value, "volatile"): a file that stays a day must not make the rules "out of date" twice.
+			foreach ( array_keys( PNCP_Verify_Files::paths() ) as $path ) {
+				$maps['open_path']['entries'][] = array( self::nginx_arg( $path ), '1', 'volatile' );
+			}
 		}
 		if ( $s['block_headless'] ) {
 			// Chrome / Edge / Opera 90+ always send Sec-Fetch-Mode and Sec-CH-UA over HTTPS, Firefox 90+ Sec-Fetch-Mode:
@@ -1206,10 +1214,23 @@ final class PNCP_Rules {
 			$lines[] = '</IfModule>';
 		}
 		$not_self = 'RewriteCond %{ENV:PNCP_SELF} !^1$';
+		// 3.12.6: the verification files, after each condition of the open paths, outside the fingerprint.
+		$verify = array();
+		foreach ( array_keys( PNCP_Verify_Files::paths() ) as $path ) {
+			$verify[] = preg_quote( $path, '#' );
+		}
+		$open_more = $verify ? 'RewriteCond %{REQUEST_URI} !^(?:' . implode( '|', $verify ) . ')$' : '';
+		$add_open  = static function () use ( &$lines, &$volatile, $open, $open_more ) {
+			$lines[] = $open;
+			if ( '' !== $open_more ) {
+				$volatile[ count( $lines ) ] = true;
+				$lines[]                     = $open_more;
+			}
+		};
 		if ( $s['block_bots'] && self::bots() ) {
 			$lines[] = '# Bots in the list: 403 before the page cache. robots.txt / llms.txt stay open for every bot.';
 			$lines[] = $not_self;
-			$lines[] = $open;
+			$add_open();
 			if ( self::allowed() ) {
 				$lines[] = 'RewriteCond %{HTTP_USER_AGENT} !' . self::alternation( self::allowed() ) . ' [NC]';
 			}
@@ -1217,7 +1238,7 @@ final class PNCP_Rules {
 			$lines[] = 'RewriteRule .* - [F,L]';
 			if ( $s['block_empty_ua'] ) {
 				$lines[] = $not_self;
-				$lines[] = $open;
+				$add_open();
 				$lines[] = 'RewriteCond %{HTTP_USER_AGENT} ^-?$';
 				$lines[] = 'RewriteRule .* - [F,L]';
 			}
@@ -1227,7 +1248,7 @@ final class PNCP_Rules {
 			$lines[] = '# Search engines and other bots that write "Chrome/" in their User-Agent are not affected.';
 			foreach ( array( 'chrome', 'firefox' ) as $browser ) {
 				$lines[] = $not_self;
-				$lines[] = $open;
+				$add_open();
 				$lines[] = 'RewriteCond %{HTTPS} =on';
 				$lines[] = 'RewriteCond %{HTTP:Sec-Fetch-Mode} ^$';
 				if ( 'chrome' === $browser ) {

@@ -394,6 +394,12 @@ final class PNCP_Precheck {
 			// 3.4.3: the stricter limit of visitors who have not passed the human check (see human()).
 			'human'           => self::human( $s ),
 		);
+		// 3.12.6: the verification files (PNCP_Verify_Files), path => until: every bot may read them. Absent when
+		// there is none, so config.json stays as it was.
+		$open = PNCP_Verify_Files::paths();
+		if ( $open ) {
+			$config['open'] = $open;
+		}
 		// 3.5: "Ban scanners on their first probe": only the entries that can never be a WordPress page (see
 		// PNCP_Probe::RUNTIME_KEYS). Absent when the setting is off, so config.json stays exactly as in 3.4.3.
 		if ( ! empty( $s['enabled'] ) && ! empty( $s['probe_ban'] ) ) {

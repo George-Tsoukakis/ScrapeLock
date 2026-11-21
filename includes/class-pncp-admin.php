@@ -2770,6 +2770,7 @@ final class PNCP_Admin {
 		</div>
 		</div>
 		</section>
+		<?php PNCP_Verify_Files::render_card(); // 3.12.6: temporary verification files (/builtwith.txt…). ?>
 		</div>
 		<?php
 	}

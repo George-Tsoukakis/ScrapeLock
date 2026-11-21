@@ -46,6 +46,9 @@ if ( is_admin() ) {
 	PNCP_Rules_State::init(); // 3.12.3: the notice when the server rules on the server are out of date.
 }
 
+// 3.12.6: a verification file (/builtwith.txt, /google….html…) is answered before every check of the plugin.
+PNCP_Verify_Files::maybe_serve();
+PNCP_Verify_Files::init();
 PNCP_Ip::init();
 PNCP_Log::init();
 PNCP_Frontend::init();

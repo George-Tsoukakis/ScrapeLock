@@ -259,6 +259,10 @@ final class PNCP_Bots {
 		if ( in_array( strtolower( (string) $path ), self::open_paths(), true ) ) {
 			return true;
 		}
+		// 3.12.6: a verification file (PNCP_Verify_Files), as named, from the root of the host.
+		if ( class_exists( 'PNCP_Verify_Files' ) && isset( PNCP_Verify_Files::paths()[ $raw ] ) ) {
+			return true;
+		}
 		// Also match the raw request path directly (independent of the home path / subfolder handling), so a
 		// blocked bot can always read robots.txt, llms.txt and the TDM opt-out even if the relative path
 		// resolves oddly. These files are only ever served from the domain root.

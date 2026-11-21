@@ -2,7 +2,7 @@
 /**
  * WP-CLI: wp scrapelock status | block | unblock | blocked | emergency | lockdown status | check | log | settings |
  * reputation | crowdsec | ai-referrals (3.7) | attacks | attack-report | login | harden | bunny | stealth (3.8) |
- * wizard (3.11) | traffic (3.12) | rules, cdn (3.12.6).
+ * wizard (3.11) | traffic (3.12) | rules, cdn, verify-file (3.12.6).
  * Lockdown cannot be unlocked from here: it opens only with the authenticator app (or SCRAPELOCK_UNLOCK in
  * wp-config.php).
  *
@@ -1227,6 +1227,54 @@ final class PNCP_Cli {
 	 */
 	public function rules( $args, $assoc_args ) {
 		PNCP_Cli_Server::rules( $args, $assoc_args );
+	}
+
+	/**
+	 * 3.12.6: a verification file for a service that asks for one to verify that the site is yours (BuiltWith's
+	 * /builtwith.txt, Google's /google<hex>.html, Bing's /BingSiteAuth.xml, Yandex, /.well-known/<name>): served by
+	 * WordPress to every bot, also to one the bot list blocks, for some hours, then removed; purged at the CDN when
+	 * added and when removed. With --write also written to the site's root folder (never over an existing file).
+	 *
+	 * ## OPTIONS
+	 *
+	 * [<action>]
+	 * : list (default), add or remove.
+	 *
+	 * [<path>]
+	 * : For add and remove: the address, e.g. /builtwith.txt or /.well-known/example.txt.
+	 *
+	 * [--content=<text>]
+	 * : For add: the content.
+	 *
+	 * [--from=<file>]
+	 * : For add: read the content from a local file (at most 64 KB).
+	 *
+	 * [--hours=<hours>]
+	 * : For add: removed after this many hours, 1 to 168.
+	 * ---
+	 * default: 24
+	 * ---
+	 *
+	 * [--write]
+	 * : For add: also write it to the site's root folder.
+	 *
+	 * [--format=<format>]
+	 * : For list: table, json, csv or yaml.
+	 *
+	 * ## EXAMPLES
+	 *
+	 *     wp scrapelock verify-file add /builtwith.txt --content=builtwith-verification-1234
+	 *     wp scrapelock verify-file add /google1234567890abcdef.html --from=google1234567890abcdef.html --hours=48
+	 *     wp scrapelock verify-file list
+	 *     wp scrapelock verify-file remove /builtwith.txt
+	 *
+	 * @subcommand verify-file
+	 *
+	 * @param string[]              $args       Arguments.
+	 * @param array<string, string> $assoc_args Options.
+	 */
+	public function verify_file( $args, $assoc_args ) {
+		PNCP_Cli_Server::verify_file( $args, $assoc_args );
 	}
 
 	/**

@@ -1,7 +1,8 @@
 <?php
 /**
  * 3.12.6: WP-CLI for the server: "wp scrapelock rules show | status | install" (PNCP_Cli::rules()) and
- * "wp scrapelock cdn purge" (PNCP_Cli::cdn()).
+ * "wp scrapelock cdn purge" (PNCP_Cli::cdn()) and "wp scrapelock verify-file add | list | remove"
+ * (PNCP_Cli::verify_file()).
  *
  * Only from WP-CLI (cli_only()). The stored credentials (Bunny API key, Cloudflare token) are used, never printed.
  * "rules install" writes only the files named on the command line: <file>.new, a diff, <file>.old while the new
@@ -701,6 +702,88 @@ final class PNCP_Cli_Server {
 		WP_CLI::success( sprintf( _n( '%d file installed.', '%d files installed.', count( $done ), 'scrapelock' ), count( $done ) ) );
 		sleep( 1 ); // The workers of the reloaded server.
 		self::print_status( self::status( (string) array_key_first( $servers ) ), 'table' );
+	}
+
+	/* ---------- wp scrapelock verify-file ---------- */
+
+	/**
+	 * Wp scrapelock verify-file add <path> --content=<text>|--from=<file> [--hours=24] [--write] | list | remove <path>.
+	 *
+	 * @param string[]              $args       Arguments.
+	 * @param array<string, string> $assoc_args Options.
+	 */
+	public static function verify_file( $args, $assoc_args ) {
+		self::cli_only();
+		$action = isset( $args[0] ) ? (string) $args[0] : 'list';
+		$path   = isset( $args[1] ) ? (string) $args[1] : '';
+		if ( 'list' === $action ) {
+			$rows = array();
+			foreach ( PNCP_Verify_Files::all() as $p => $f ) {
+				$rows[] = array(
+					'path'  => $p,
+					'url'   => PNCP_Verify_Files::url_of( $p ),
+					'until' => gmdate( 'Y-m-d H:i:s', $f['until'] ) . ' UTC',
+					'bytes' => strlen( $f['content'] ),
+					'disk'  => $f['disk'] ? 'yes' : 'no',
+				);
+			}
+			WP_CLI\Utils\format_items( self::format( $assoc_args ), $rows, array( 'path', 'url', 'until', 'bytes', 'disk' ) );
+			return;
+		}
+		if ( 'add' === $action ) {
+			if ( isset( $assoc_args['content'] ) === isset( $assoc_args['from'] ) ) {
+				WP_CLI::error( __( 'Give the content with --content=<text> or --from=<file> (one of the two).', 'scrapelock' ) );
+			}
+			$content = isset( $assoc_args['content'] ) ? (string) $assoc_args['content'] : '';
+			if ( isset( $assoc_args['from'] ) ) {
+				$from = (string) $assoc_args['from'];
+				if ( ! is_file( $from ) || ! is_readable( $from ) || filesize( $from ) > PNCP_Verify_Files::MAX_BYTES ) {
+					/* translators: 1: file, 2: kilobytes */
+					WP_CLI::error( sprintf( __( 'Cannot read %1$s (a readable file of at most %2$d KB).', 'scrapelock' ), $from, (int) ( PNCP_Verify_Files::MAX_BYTES / 1024 ) ) );
+				}
+				$content = (string) file_get_contents( $from ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- A local file named on the command line.
+			}
+			$result = PNCP_Verify_Files::add( $path, $content, isset( $assoc_args['hours'] ) ? (int) $assoc_args['hours'] : 24, ! empty( $assoc_args['write'] ) );
+			if ( is_wp_error( $result ) ) {
+				WP_CLI::error( $result->get_error_message() );
+			}
+			self::print_lines( PNCP_Verify_Files::result_lines( $result ) );
+			return;
+		}
+		if ( 'remove' === $action ) {
+			if ( PNCP_Lockdown::is_locked() ) {
+				WP_CLI::error( __( 'The site is locked: nothing can be changed until it is unlocked (with the authenticator app).', 'scrapelock' ) );
+			}
+			$result = PNCP_Verify_Files::remove( '' !== $path && '/' !== $path[0] ? '/' . $path : $path );
+			if ( ! $result['removed'] ) {
+				WP_CLI::error( __( 'There is no such verification file.', 'scrapelock' ) );
+			}
+			if ( 'kept' === $result['disk'] ) {
+				WP_CLI::warning( __( 'The file in the root folder was changed since ScrapeLock wrote it, so it was left there.', 'scrapelock' ) );
+			}
+			self::print_lines( PNCP_Verify_Files::purge_lines( $result['purge'] ) );
+			/* translators: %s: path */
+			WP_CLI::success( sprintf( __( '%s was removed.', 'scrapelock' ), $path ) );
+			return;
+		}
+		WP_CLI::error( __( 'Unknown action. Use: add, list or remove.', 'scrapelock' ) );
+	}
+
+	/**
+	 * Prints [class, text] lines: success, warning, or a plain line.
+	 *
+	 * @param array<int, array{0:string, 1:string}> $lines Lines.
+	 */
+	private static function print_lines( $lines ) {
+		foreach ( $lines as $line ) {
+			if ( 'success' === $line[0] ) {
+				WP_CLI::success( $line[1] );
+			} elseif ( 'warning' === $line[0] || 'error' === $line[0] ) {
+				WP_CLI::warning( $line[1] );
+			} else {
+				WP_CLI::log( $line[1] );
+			}
+		}
 	}
 
 	/* ---------- wp scrapelock cdn ---------- */

@@ -82,6 +82,14 @@ function pncp_uninstall_site() {
 	}
 	delete_option( 'pncp_site_files' );
 	delete_transient( 'pncp_health_site_files' );
+	// 3.12.6: the verification files (and only their own files in the root folder).
+	try {
+		PNCP_Verify_Files::remove_all();
+	} catch ( Throwable $pncp_error ) {
+		unset( $pncp_error );
+	}
+	delete_option( 'pncp_verify_files' );
+	delete_option( 'pncp_verify_files_data' );
 
 	foreach ( array( 'pncp_settings', 'pncp_version', 'pncp_db_version', 'pncp_emergency_until', 'pncp_ip_lists', 'pncp_ip_lists_cloudflare', 'pncp_ip_lists_bunny', 'pncp_ip_lists_bunny_sum', 'pncp_ip_lists_google', 'pncp_ip_lists_bing', 'pncp_ip_lists_openai_search', 'pncp_ip_lists_openai_user', 'pncp_ip_lists_perplexity_bot', 'pncp_ip_lists_perplexity_user', 'pncp_ip_lists_anthropic', 'pncp_ip_lists_apple', 'pncp_ip_lists_duckduckgo', 'pncp_ip_lists_updated', 'pncp_bans', 'pncp_feed_token', 'pncp_feed_stats', 'pncp_legacy_token_notice', 'pncp_legacy_token_migrated', 'pncp_wm_cursor_apply', 'pncp_wm_cursor_remove', 'pncp_upgrade_lock', 'pncp_geo', 'pncp_origin_proxy', 'pncp_proxy_peer', 'pncp_precheck_status', 'pncp_precheck_key', 'pncp_log_uas', 'pncp_log_account', 'pncp_lockdown', 'pncp_lockdown_log', 'pncp_integrity', 'pncp_integrity_report', 'pncp_integrity_alerted', 'pncp_integrity_dbcode', 'pncp_surge', 'pncp_surge_last', 'pncp_surge_alert', 'pncp_edge', 'pncp_edge_state', 'pncp_edge_retire', 'pncp_edge_staff', 'pncp_edge_lock', 'pncp_edge_dirty', 'pncp_edge_not_before', 'pncp_edge_calls', 'pncp_edge_send_notice', 'pncp_lockdown_snap', 'pncp_lockdown_digests', 'pncp_lockdown_window', 'pncp_lockdown_mutex', 'pncp_lockdown_mutex_pri', 'pncp_lockdown_fails', 'pncp_lockdown_dblock', 'pncp_integrity_stat', 'pncp_integrity_scan', 'pncp_upgrade_files', 'pncp_log_cleaned', 'pncp_bans_until', 'pncp_monitor_ended', 'pncp_settings_backups', 'pncp_lockdown_updates_mailed', 'pncp_bans_stamp', 'pncp_dc_stamp', 'pncp_precheck_hv_key', 'pncp_crowdsec_ranges', 'pncp_crowdsec_state', 'pncp_attacks_db', 'pncp_attacks_gen', 'pncp_attack_report_last', 'pncp_hardening', 'pncp_hardening_history', 'pncp_login_locks', 'pncp_bunny_config', 'pncp_bunny_state', 'pncp_bunny_rules', 'pncp_bunny_calls', 'pncp_stealth' ) as $pncp_option ) {
 		delete_option( $pncp_option );
