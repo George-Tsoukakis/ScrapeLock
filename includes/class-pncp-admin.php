@@ -2705,7 +2705,8 @@ final class PNCP_Admin {
 		<p class="description"><?php esc_html_e( '2) Inside the site\'s server { } (HTTPS, and HTTP if it serves pages), before other location blocks:', 'scrapelock' ); ?></p>
 		<ul class="ul-disc description">
 			<li><?php esc_html_e( 'Your own server: the site\'s file, e.g. /etc/nginx/sites-available/, or a file it includes.', 'scrapelock' ); ?></li>
-			<li><?php esc_html_e( 'aaPanel: Website → the site → Config, or a file in the site\'s folder under /www/server/panel/vhost/nginx/extension/ when the site\'s configuration includes it.', 'scrapelock' ); ?></li>
+			<li><?php esc_html_e( 'aaPanel: Website → the site → Config, right below #SSL-END, or a file in /www/server/panel/vhost/nginx/extension/<site>/ when Config includes that folder above its location lines; only one of the two (twice, nginx -t fails).', 'scrapelock' ); ?></li>
+			<li><?php esc_html_e( 'aaPanel, BT Panel and CloudPanel often put the WordPress rewrite at server level: part 2 goes above its include (aaPanel\'s extension include at the top already is).', 'scrapelock' ); ?></li>
 			<li><?php esc_html_e( 'Plesk: Websites & Domains → Apache & nginx Settings → Additional nginx directives.', 'scrapelock' ); ?></li>
 			<li><?php esc_html_e( 'Other panels: the place they give for custom server { } directives.', 'scrapelock' ); ?></li>
 		</ul>

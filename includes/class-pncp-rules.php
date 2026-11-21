@@ -956,6 +956,8 @@ final class PNCP_Rules {
 		$uploads = self::uploads_path();
 		$backup  = (string) get_option( 'pncp_backup_dir' );
 		$lines   = array();
+		// 3.12.4: where these lines go (a comment: the fingerprint stays the same).
+		$lines[] = '# Put these lines directly inside server { }, not inside a location { }.';
 		// 3.12.3: the fingerprint of the installed rules, only in the answers to the site's own signed requests (the
 		// header X-ScrapeLock-Sig; Nginx cannot verify it, but the fingerprint says nothing about the site), so every
 		// self-check sees whether the rules on the server are the current ones. An empty value sends no header.

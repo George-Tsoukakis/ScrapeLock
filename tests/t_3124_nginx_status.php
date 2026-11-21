@@ -15,6 +15,7 @@
  *    the CDN only (the server not reachable), nothing at all, something else.
  * X. The texts: one line + "More", in the Server rules tab, Site Health and wp scrapelock status / selfcheck.
  * A. Apache: the header of the site's own answers, the server asked first; the .htaccess is never read.
+ * N. Part 2 says where it goes (a comment: the fingerprint stays); the aaPanel / panel instructions.
  * W. A WordPress rewrite at server level (aaPanel, BT Panel, CloudPanel) runs before any location: part 2
  *    answers its check address at server level too, outside the fingerprint; the evaluator agrees.
  * R. Real Nginx (SKIP without nginx on PATH): an aaPanel-like server { } with location ~ \.well-known: the
@@ -533,6 +534,25 @@ $x = PNCP_Rules_Status::nginx_text( $st );
 t( 'W ...and "More" says why and to copy part 2 again', false !== strpos( $x['more'], 'rewrite at server level' ) && false !== strpos( $x['more'], 'Copy part 2 again' ) );
 $x = PNCP_Rules_Status::nginx_text( array( 'state' => 'missing', 'parts' => array(), 'error' => '', 'via' => 'origin', 'ip' => '127.0.0.1', 'kind' => 'wp', 'code' => 404 ) );
 t( 'W the WordPress answer names a server-level rewrite as the likely cause', false !== strpos( $x['more'], 'if (!-e $request_filename)' ) && false !== strpos( $x['more'], 'above the rewrite include' ) );
+
+/* ---------- N. Part 2 and the instructions ---------- */
+
+$srv   = PNCP_Rules::nginx_server();
+$lines = explode( "\n", $srv );
+t( 'N part 2 starts with where it goes', 0 === strpos( $srv, "# Put these lines directly inside server { }, not inside a location { }.\n" ) );
+t( 'N ...a comment: the fingerprint is the same without it (no "out of date" after the update)', $hash->invoke( null, $lines ) === $hash->invoke( null, array_slice( $lines, 1 ) ) && $fp === PNCP_Rules::nginx_fingerprint() );
+t( 'N part 2 has no exact location of its own but the check address (none to clash with a panel\'s location = /xmlrpc.php)', 1 === preg_match_all( '/^\s*location = /m', $srv ) );
+$tab = new ReflectionMethod( 'PNCP_Admin', 'tab_rules' );
+$tab->setAccessible( true );
+$route = static function ( $where, $url ) use ( $is_check, $fp_answer, $fp ) {
+	return '127.0.0.1' === $where && $is_check( $url ) ? $fp_answer( $fp ) : null;
+};
+ob_start();
+$tab->invoke( null, PNCP_Options::get() );
+$tab_html = (string) ob_get_clean();
+$route    = null;
+t( 'N the aaPanel instructions: Config below #SSL-END, or the extension folder when included above the locations; only once', false !== strpos( $tab_html, 'aaPanel: Website → the site → Config, right below #SSL-END, or a file in /www/server/panel/vhost/nginx/extension/&lt;site&gt;/ when Config includes that folder above its location lines; only one of the two (twice, nginx -t fails).' ) );
+t( 'N ...and above a WordPress rewrite at server level (aaPanel, BT Panel, CloudPanel)', false !== strpos( $tab_html, 'aaPanel, BT Panel and CloudPanel often put the WordPress rewrite at server level: part 2 goes above its include' ) );
 
 /* ---------- R. Real Nginx ---------- */
 
