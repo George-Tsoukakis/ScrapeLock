@@ -814,14 +814,20 @@ final class PNCP_Cli_Server {
 		// 3.12.7: the server's fastcgi cache first (by default with --all), so the CDN fetches fresh pages.
 		$server = isset( $assoc_args['server-cache'] ) ? (bool) $assoc_args['server-cache'] : $all;
 		$cdn    = null !== PNCP_Bunny::credentials() || PNCP_Edge::cloudflare_connected();
-		if ( ! $cdn && ! $server ) {
+		// 3.12.8: before both, the page caches of the WordPress cache plugins (WP Rocket and the others).
+		$plugin = self::plugin_cache_wanted( $assoc_args, $all );
+		if ( ! $cdn && ! $server && ! $plugin ) { // Nothing to empty: as in 3.12.6.
 			WP_CLI::error( __( 'No CDN connection is set (Bunny CDN or Cloudflare under "Blocking at the CDN", or the Bunny card).', 'scrapelock' ) );
 		}
 		$good = self::own_urls( $urls );
 		if ( $all && empty( $assoc_args['yes'] ) ) {
+			self::plugin_cache_announce( (array) $plugin );
 			WP_CLI::confirm( $server ? __( 'Purge the whole CDN cache of this site, and its pages in the server\'s fastcgi cache?', 'scrapelock' ) : __( 'Purge the whole CDN cache of this site?', 'scrapelock' ) );
 		}
 		$failed = 0;
+		if ( null !== $plugin ) {
+			self::plugin_cache_purge( $all ? null : $good, ! empty( $assoc_args['minify'] ) );
+		}
 		if ( $server && ! self::server_cache_purge( $all ? null : $good, $assoc_args, false ) ) {
 			++$failed;
 		}
@@ -847,6 +853,65 @@ final class PNCP_Cli_Server {
 		}
 		if ( $failed ) {
 			WP_CLI::halt( 1 );
+		}
+	}
+
+	/**
+	 * 3.12.8: whether "cdn purge" empties the cache plugins' page caches: on unless --no-plugin-cache.
+	 * --minify needs --all (the CDN would keep the old minified files that other pages still link).
+	 *
+	 * @param array<string, string> $assoc_args Options.
+	 * @param bool                  $all        --all.
+	 * @return string[]|null Names of the active cache plugins; null with --no-plugin-cache.
+	 */
+	private static function plugin_cache_wanted( $assoc_args, $all ) {
+		if ( ! empty( $assoc_args['minify'] ) && ! $all ) {
+			WP_CLI::error( __( '--minify needs --all: the CDN would keep the old minified files.', 'scrapelock' ) );
+		}
+		if ( isset( $assoc_args['plugin-cache'] ) && ! $assoc_args['plugin-cache'] ) {
+			if ( ! empty( $assoc_args['minify'] ) ) {
+				WP_CLI::error( __( '--minify empties the cache plugins\' files: not with --no-plugin-cache.', 'scrapelock' ) );
+			}
+			return null;
+		}
+		return array_keys( array_filter( pncp_cache_plugins() ) );
+	}
+
+	/**
+	 * Before the confirmation of --all: the cache plugins whose page caches are emptied first.
+	 *
+	 * @param string[] $names Active cache plugins.
+	 */
+	private static function plugin_cache_announce( $names ) {
+		if ( $names ) {
+			/* translators: %s: names of cache plugins */
+			WP_CLI::log( sprintf( __( 'First the page caches of: %s.', 'scrapelock' ), implode( ', ', $names ) ) );
+		}
+	}
+
+	/**
+	 * Empties the cache plugins' page caches (pncp_purge_plugin_caches()) and prints one line for each.
+	 *
+	 * @param string[]|null $urls   Full addresses of this site, or null for every page.
+	 * @param bool          $minify Also the minified CSS / JS files (--minify).
+	 */
+	private static function plugin_cache_purge( $urls, $minify ) {
+		foreach ( pncp_purge_plugin_caches( $urls, $minify ) as $row ) {
+			$page = 'page' === $row['kind'];
+			if ( 'cleaned' === $row['status'] ) {
+				/* translators: %s: name of a cache plugin */
+				$text = sprintf( $page ? __( '%s page cache: cleaned', 'scrapelock' ) : __( '%s: cleaned', 'scrapelock' ), $row['name'] );
+			} elseif ( 'skipped' === $row['status'] ) {
+				/* translators: %s: name of a cache plugin */
+				$text = sprintf( __( '%s page cache: not cleaned (it cannot empty single addresses; use --all)', 'scrapelock' ), $row['name'] );
+			} elseif ( 'kept' === $row['status'] ) {
+				/* translators: %s: name of a cache plugin */
+				$text = sprintf( __( '%s: kept (--minify empties them)', 'scrapelock' ), $row['name'] );
+			} else {
+				/* translators: %s: name of a cache plugin */
+				$text = sprintf( $page ? __( '%s page cache: not active', 'scrapelock' ) : __( '%s: not active', 'scrapelock' ), $row['name'] );
+			}
+			WP_CLI::log( $text );
 		}
 	}
 

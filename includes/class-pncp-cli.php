@@ -1301,6 +1301,16 @@ final class PNCP_Cli {
 	 * : 3.12.7: also this site's pages in the Nginx fastcgi cache of this server, first (as "wp scrapelock cache
 	 * purge"), so the CDN does not fetch a stale page again. On by default with --all, off for addresses.
 	 *
+	 * [--[no-]plugin-cache]
+	 * : 3.12.8: before the fastcgi cache and the CDN, the page caches of the WordPress cache plugins that are
+	 * active (WP Rocket, LiteSpeed Cache, W3 Total Cache, WP Super Cache, WP Fastest Cache, Nginx Helper, Cache
+	 * Enabler, SiteGround Optimizer), each reported as "cleaned" or "not active". On by default.
+	 *
+	 * [--minify]
+	 * : 3.12.8, with --all: also the minified and combined CSS / JS files of WP Rocket (wp-content/cache/min and its
+	 * cache-busting copies) and of Autoptimize, first. They hold the addresses as they were when they were made:
+	 * use it after Stealth's words or addresses change. Not by default: every first visit rebuilds them.
+	 *
 	 * [--yes]
 	 * : With --all: do not ask for confirmation.
 	 *
@@ -1309,7 +1319,8 @@ final class PNCP_Cli {
 	 *     wp scrapelock cdn purge https://example.com/builtwith.txt
 	 *     wp scrapelock cdn purge /builtwith.txt /robots.txt --server-cache
 	 *     wp scrapelock cdn purge --all --yes
-	 *     wp scrapelock cdn purge --all --no-server-cache --yes
+	 *     wp scrapelock cdn purge --all --minify --yes
+	 *     wp scrapelock cdn purge --all --no-server-cache --no-plugin-cache --yes
 	 *
 	 * @param string[]              $args       Arguments.
 	 * @param array<string, string> $assoc_args Options.

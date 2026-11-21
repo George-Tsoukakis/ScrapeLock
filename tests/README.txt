@@ -260,6 +260,13 @@ ScrapeLock — δοκιμές σε πραγματικό WordPress (όχι stubs)
                     but no such rule over a real folder at the base address; addresses URL-encoded in share links
                     (media=https%3A%2F%2F…) rewritten, encoded the same way;
                     WooCommerce cart fragments (/?wc-ajax=…, a stand-in mu-plugin in WooCommerce's order) rewritten
+  t_3128_purge.php  3.12.8: wp scrapelock cdn purge also empties the cache plugins' page caches: stand-ins for WP
+                    Rocket, LiteSpeed Cache, W3 Total Cache, WP Super Cache, WP Fastest Cache, Nginx Helper, Cache
+                    Enabler, SiteGround Optimizer and Autoptimize in a temporary mu-plugin that records each call;
+                    pncp_purge_plugin_caches() (--all, addresses, $minify) and pncp_purge_page_cache()'s rows and
+                    callers; the CLI lines ("… page cache: cleaned" / "not active"), the order plugin caches → fastcgi →
+                    CDN (fake Bunny API), --no-plugin-cache, --minify (WP Rocket's minified files first; refused for
+                    addresses), the question, cdn --help (WP_CLI)
   t_cli.php         wp scrapelock … μέσα από το πραγματικό wp (χρειάζεται WP_CLI, αλλιώς SKIP)
   t_bunny_rules.php Edge Rules στο Bunny μέσα στα όριά του (το πολύ 5 μοτίβα ανά συνθήκη) με ψεύτικο API που δίνει
                     HTTP 400 όπως το πραγματικό: χωρισμός, κλείδωμα/Remove, rollback, Monitor only, sync, προεπισκόπηση,
