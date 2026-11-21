@@ -296,6 +296,11 @@ function pncp_upgrade() {
 		if ( version_compare( $from_settings, '3.12.5', '<' ) ) {
 			$added += PNCP_Options::new_in_3125();
 		}
+		// 3.12.6: "Block technology profilers" starts off, as on new installs. Stored now, so an export or a
+		// settings list shows it.
+		if ( version_compare( $from_settings, '3.12.6', '<' ) ) {
+			$added += PNCP_Options::new_in_3126();
+		}
 		$added = array_diff_key( $added, $stored );
 		// 3.4: the automatic Emergency Mode only tells the administrator on new installs; a site that had it on
 		// keeps starting it on its own, as before.

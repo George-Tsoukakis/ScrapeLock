@@ -1928,6 +1928,7 @@ final class PNCP_Health {
 			'upload_php'     => array( __( 'No PHP in the uploads folder', 'scrapelock' ), $flag( 'block_upload_php' ) ),
 			// 3.7.
 			'seo_crawlers'   => array( __( 'SEO and marketing data crawlers blocked', 'scrapelock' ), $flag( 'block_seo_crawlers' ) ),
+			'tech_profilers' => array( __( 'Technology profilers blocked', 'scrapelock' ), $flag( 'block_tech_profilers' ) ), // 3.12.6.
 			'ip_host'        => array( __( 'Site opened by IP address refused', 'scrapelock' ), $flag( 'block_ip_host' ) ),
 			'reputation'     => array( __( 'IP reputation', 'scrapelock' ), empty( $s['reputation'] ) ? $no : $per_min( 'rate_limit_lowrep' ) ),
 			'api_only'       => array( __( 'Limit for IPs that never opened a page', 'scrapelock' ), $per_min( 'rate_limit_apionly' ) ),

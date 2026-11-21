@@ -186,6 +186,11 @@ ScrapeLock — δοκιμές σε πραγματικό WordPress (όχι stubs)
                     sign-out, an account signed in before 3.12.5 on a page and in wp-admin, a stale one removed, never
                     with the protection off); the same pncpConfig (blurScope) for a guest and a member; protect.min.js
                     is the build of the current source; the pre-cache / early checks do not touch the blur
+  t_3126_profilers.php 3.12.6: «Block technology profilers» (block_tech_profilers): off by default (new install and
+                    new_in_3126()), Bots tab switch right after the SEO crawlers, cache key, label, export; the one list
+                    PNCP_Bots::tech_profiler_agents() with its filter; every layer of the SEO switch: blocked_agents(),
+                    HTTP 403 / 200, early check, pre-cache config, Nginx / Apache rules, robots.txt group, the log's
+                    «Matched … (technology profilers)», Traffic «Explain», Site Health info
   t_cli.php         wp scrapelock … μέσα από το πραγματικό wp (χρειάζεται WP_CLI, αλλιώς SKIP)
   t_bunny_rules.php Edge Rules στο Bunny μέσα στα όριά του (το πολύ 5 μοτίβα ανά συνθήκη) με ψεύτικο API που δίνει
                     HTTP 400 όπως το πραγματικό: χωρισμός, κλείδωμα/Remove, rollback, Monitor only, sync, προεπισκόπηση,

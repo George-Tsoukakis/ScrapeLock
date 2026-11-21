@@ -157,6 +157,7 @@ final class PNCP_Options {
 			'text_trace',
 			// 3.7.
 			'block_seo_crawlers',
+			'block_tech_profilers', // 3.12.6.
 			'block_ip_host',
 			'reputation',
 			'syslog_bans',
@@ -257,7 +258,7 @@ final class PNCP_Options {
 	public static function sections() {
 		return array(
 			'general' => array( 'enabled', 'scope_posts', 'scope_pages', 'scope_home', 'scope_products', 'skip_woo_pages', 'excluded_ids', 'block_selection', 'block_context_menu', 'block_shortcuts', 'block_devtools', 'block_image_drag', 'block_text_drag', 'blur_on_capture', 'blur_on_capture_scope', 'copy_mode', 'attribution_min_chars', 'print_mode', 'exempt_cap', 'show_message', 'message', 'block_framing', 'tdm_reservation', 'tdm_policy_url', 'user_mark', 'user_mark_guests', 'user_mark_opacity', 'text_trace', 'rate_limit_account', 'shared_alert', 'shared_ips', 'shared_logout' ),
-			'bots'    => array( 'monitor_mode', 'block_bots', 'block_empty_ua', 'block_fake_crawlers', 'require_browser_headers', 'block_headless', 'trap_enabled', 'probe_ban', 'block_http_libs', 'block_archivers', 'block_seo_crawlers', 'block_ip_host', 'ipv6_wide', 'bot_list', 'allow_list', 'allow_ips', 'allow_ai_search', 'verify_ai_bots', 'robots_ai_block', 'content_signal', 'block_ips', 'block_referrers', 'block_user_enum', 'rate_limit', 'rate_limit_search', 'rate_limit_rest', 'rate_limit_404', 'rate_limit_sitemap', 'human_check', 'rate_limit_unverified', 'geo_db', 'countries_block', 'countries_strict', 'rate_limit_country', 'rate_limit_datacenter', 'rate_limit_cart', 'rate_limit_coupon', 'reputation', 'rate_limit_lowrep', 'rate_limit_apionly', 'crowdsec_mode', 'crowdsec_url', 'crowdsec_key', 'crowdsec_action', 'rate_limit_crowdsec', 'ban_strikes', 'ban_minutes', 'syslog_bans', 'auto_emergency', 'auto_emergency_mode', 'auto_emergency_min', 'early_mode', 'precheck', 'ip_header', 'trust_cloudflare', 'trust_bunny', 'trust_any_proxy', 'trusted_proxies', 'cdn_secret', 'cdn_only', 'login_limit', 'login_max', 'login_window', 'login_ban_minutes', 'login_user_max', 'login_user_minutes', 'login_user_email', 'login_generic_errors', 'login_slug', 'bunny_import', 'bunny_all_lines', 'bunny_flood_4xx', 'bunny_strikes', 'bunny_rate', 'bunny_login_allow' ),
+			'bots'    => array( 'monitor_mode', 'block_bots', 'block_empty_ua', 'block_fake_crawlers', 'require_browser_headers', 'block_headless', 'trap_enabled', 'probe_ban', 'block_http_libs', 'block_archivers', 'block_seo_crawlers', 'block_tech_profilers', 'block_ip_host', 'ipv6_wide', 'bot_list', 'allow_list', 'allow_ips', 'allow_ai_search', 'verify_ai_bots', 'robots_ai_block', 'content_signal', 'block_ips', 'block_referrers', 'block_user_enum', 'rate_limit', 'rate_limit_search', 'rate_limit_rest', 'rate_limit_404', 'rate_limit_sitemap', 'human_check', 'rate_limit_unverified', 'geo_db', 'countries_block', 'countries_strict', 'rate_limit_country', 'rate_limit_datacenter', 'rate_limit_cart', 'rate_limit_coupon', 'reputation', 'rate_limit_lowrep', 'rate_limit_apionly', 'crowdsec_mode', 'crowdsec_url', 'crowdsec_key', 'crowdsec_action', 'rate_limit_crowdsec', 'ban_strikes', 'ban_minutes', 'syslog_bans', 'auto_emergency', 'auto_emergency_mode', 'auto_emergency_min', 'early_mode', 'precheck', 'ip_header', 'trust_cloudflare', 'trust_bunny', 'trust_any_proxy', 'trusted_proxies', 'cdn_secret', 'cdn_only', 'login_limit', 'login_max', 'login_window', 'login_ban_minutes', 'login_user_max', 'login_user_minutes', 'login_user_email', 'login_generic_errors', 'login_slug', 'bunny_import', 'bunny_all_lines', 'bunny_flood_4xx', 'bunny_strikes', 'bunny_rate', 'bunny_login_allow' ),
 			'content' => array( 'rest_hide_content', 'hide_rest_discovery', 'graphql_hide_content', 'feed_mode', 'feed_source_link', 'list_excerpts', 'private_paths', 'private_ips', 'disable_pingback', 'hide_versions', 'hide_fingerprint', 'block_upload_php' ),
 			'images'  => array( 'watermark_enabled', 'watermark_full', 'watermark_products', 'watermark_image_id', 'watermark_opacity', 'watermark_size', 'watermark_position', 'watermark_min_width' ),
 			// Log tab: how long the log is kept, and the addresses that count as "Pages" in it (until 3.3 on the
@@ -540,7 +541,7 @@ final class PNCP_Options {
 	public static function blocked_agents( $s ) {
 		// 3.6.1: built once per request for the same settings (about 200 names, each lowercased).
 		// 3.11: "Allow AI search" is part of the key too: its bots are left out of the list (below).
-		$memo = is_string( $s['bot_list'] ) ? $s['bot_list'] . "\0" . ( empty( $s['block_archivers'] ) ? '0' : '1' ) . ( empty( $s['block_http_libs'] ) ? '0' : '1' ) . ( empty( $s['block_seo_crawlers'] ) ? '0' : '1' ) . ( empty( $s['allow_ai_search'] ) ? '0' : '1' ) : null;
+		$memo = is_string( $s['bot_list'] ) ? $s['bot_list'] . "\0" . ( empty( $s['block_archivers'] ) ? '0' : '1' ) . ( empty( $s['block_http_libs'] ) ? '0' : '1' ) . ( empty( $s['block_seo_crawlers'] ) ? '0' : '1' ) . ( empty( $s['block_tech_profilers'] ) ? '0' : '1' ) . ( empty( $s['allow_ai_search'] ) ? '0' : '1' ) : null;
 		if ( null !== $memo && null !== self::$agents && $memo === self::$agents[0] ) {
 			return self::$agents[1];
 		}
@@ -553,7 +554,7 @@ final class PNCP_Options {
 		// 3.7: the site rippers always (with the bot list), the SEO data crawlers with their option.
 		// 3.12.1: with the option off, its bots are blocked from the built-in list, also when the stored list no longer
 		// names them (the 3.11 upgrade took them out); nothing is written back into the stored list.
-		foreach ( array_merge( self::parse_list( $s['bot_list'] ), PNCP_Bots::known_ai_agents(), self::ai_search_blocked( $s ), PNCP_Bots::ripper_agents(), empty( $s['block_archivers'] ) ? array() : PNCP_Bots::archive_agents(), empty( $s['block_seo_crawlers'] ) ? array() : PNCP_Bots::seo_agents(), empty( $s['block_http_libs'] ) ? array() : self::http_library_agents() ) as $agent ) {
+		foreach ( array_merge( self::parse_list( $s['bot_list'] ), PNCP_Bots::known_ai_agents(), self::ai_search_blocked( $s ), PNCP_Bots::ripper_agents(), empty( $s['block_archivers'] ) ? array() : PNCP_Bots::archive_agents(), empty( $s['block_seo_crawlers'] ) ? array() : PNCP_Bots::seo_agents(), empty( $s['block_tech_profilers'] ) ? array() : PNCP_Bots::tech_profiler_agents(), empty( $s['block_http_libs'] ) ? array() : self::http_library_agents() ) as $agent ) {
 			$agent = trim( (string) $agent );
 			if ( '' !== $agent && '=' !== $agent && ! isset( $skip[ strtolower( $agent ) ] ) ) {
 				$out[ strtolower( $agent ) ] = $agent;
@@ -792,6 +793,8 @@ final class PNCP_Options {
 			// 3.7. Off on new and existing sites unless said otherwise.
 			// Block the crawlers of SEO and marketing data tools (PNCP_Bots::seo_agents()): many owners use them.
 			'block_seo_crawlers'      => 0,
+			// 3.12.6: block the technology profilers (PNCP_Bots::tech_profiler_agents()). Off on new and existing sites.
+			'block_tech_profilers'    => 0,
 			// 403 for a request whose Host header is a bare IP address instead of the site's name (scanners).
 			'block_ip_host'           => 0,
 			// The reputation of each IP (PNCP_Reputation): good IPs are never banned for a limit, bad ones get the
@@ -1066,6 +1069,16 @@ final class PNCP_Options {
 	 */
 	public static function new_in_3125() {
 		return array_intersect_key( self::defaults(), array_flip( array( 'blur_on_capture_scope' ) ) );
+	}
+
+	/**
+	 * The setting added in 3.12.6, with the value existing sites get on upgrade: off, as on new installs (nothing
+	 * changes on upgrade). Stored on upgrade, so an export or a settings list shows it.
+	 *
+	 * @return array<string, int>
+	 */
+	public static function new_in_3126() {
+		return array_intersect_key( self::defaults(), array_flip( array( 'block_tech_profilers' ) ) );
 	}
 
 	/**
@@ -1728,6 +1741,7 @@ final class PNCP_Options {
 			'block_http_libs',
 			'block_archivers',
 			'block_seo_crawlers', // 3.7: robots.txt and the blocked User-Agents.
+			'block_tech_profilers', // 3.12.6: likewise.
 			'precheck',
 			// 3.8: Stealth rewrites the addresses in every page sent to visitors; the sign-in address changes the
 			// links to wp-login.php in pages (comment forms, "Log in" links).

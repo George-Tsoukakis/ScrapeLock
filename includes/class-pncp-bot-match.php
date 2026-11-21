@@ -43,7 +43,7 @@ final class PNCP_Bot_Match {
 	 *
 	 * @param string               $ua User-Agent.
 	 * @param array<string, mixed> $s  Settings.
-	 * @return array{token:string, source:string, http_lib:bool}|null source: bot_list | ai | ai_search | ripper | archive | seo | http_libs.
+	 * @return array{token:string, source:string, http_lib:bool}|null source: bot_list | ai | ai_search | ripper | archive | seo | tech | http_libs.
 	 */
 	public static function entry( $ua, $s ) {
 		$ua = (string) $ua;
@@ -59,6 +59,7 @@ final class PNCP_Bot_Match {
 			'ripper'    => PNCP_Bots::ripper_agents(),
 			'archive'   => empty( $s['block_archivers'] ) ? array() : PNCP_Bots::archive_agents(),
 			'seo'       => empty( $s['block_seo_crawlers'] ) ? array() : PNCP_Bots::seo_agents(),
+			'tech'      => empty( $s['block_tech_profilers'] ) ? array() : PNCP_Bots::tech_profiler_agents(), // 3.12.6.
 			'http_libs' => empty( $s['block_http_libs'] ) ? array() : PNCP_Options::http_library_agents(),
 		);
 		foreach ( $sources as $source => $agents ) {
@@ -111,6 +112,7 @@ final class PNCP_Bot_Match {
 			'ripper'    => __( 'the built-in site rippers', 'scrapelock' ),
 			'archive'   => __( 'web archives', 'scrapelock' ),
 			'seo'       => __( 'SEO and marketing data crawlers', 'scrapelock' ),
+			'tech'      => __( 'technology profilers', 'scrapelock' ),
 			'http_libs' => __( '“Also block generic HTTP libraries”', 'scrapelock' ),
 		);
 		$text = $entry['http_lib']
