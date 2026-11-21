@@ -430,4 +430,123 @@ final class PNCP_Rules_Status {
 		return $out;
 	}
 
+	/**
+	 * Is the site on aaPanel (its sites live in /www/wwwroot/)? Only the path: aaPanel's open_basedir would refuse
+	 * a look at /www/server.
+	 *
+	 * @return bool
+	 */
+	public static function is_aapanel() {
+		/**
+		 * 3.12.4: is the site on aaPanel (the Server rules status then names aaPanel's places)?
+		 *
+		 * @param bool $aapanel ABSPATH is under /www/wwwroot/.
+		 */
+		return (bool) apply_filters( 'pncp_is_aapanel', 0 === strpos( wp_normalize_path( ABSPATH ), '/www/wwwroot/' ) );
+	}
+
+	/**
+	 * The Nginx status for people: one line, what to do (details) and the notice class.
+	 *
+	 * @param array{state:string, parts:string[], error:string, via:string, ip:string, kind:string, code:int} $status What nginx() returned.
+	 * @return array{line:string, more:string, class:string}
+	 */
+	public static function nginx_text( $status ) {
+		$names = array(
+			'http'   => __( '1) http { }', 'scrapelock' ),
+			'server' => __( '2) server { }', 'scrapelock' ),
+		);
+		$top   = __( 'Put part 2 at the top level of the site\'s server { } (not inside another location such as location / { }, and not in http { }), then run nginx -t and reload Nginx.', 'scrapelock' );
+		if ( self::is_aapanel() ) {
+			$top .= ' ' . __( 'aaPanel: Website → the site → Config, right below #SSL-END, then Save.', 'scrapelock' );
+		}
+		$ips  = __( 'To let the check ask the server directly, add the server\'s address to SCRAPELOCK_SERVER_IPS in wp-config.php.', 'scrapelock' );
+		$line = '';
+		$more = '';
+		$cls  = 'notice-info';
+		switch ( 'current' === $status['state'] || 'stale' === $status['state'] || 'error' === $status['state'] ? $status['state'] : $status['kind'] ) {
+			case 'current':
+				$cls  = 'notice-success';
+				$line = __( 'Installed and up to date with the current settings.', 'scrapelock' );
+				break;
+			case 'stale':
+				$cls  = 'notice-warning';
+				$line = sprintf(
+					/* translators: %s: the parts, e.g. "1) http { }, 2) server { }" */
+					__( 'Installed, but out of date: the settings have changed since. Copy again: %s. Then nginx -t and reload.', 'scrapelock' ),
+					implode( ', ', array_intersect_key( $names, array_flip( $status['parts'] ) ) )
+				);
+				break;
+			case 'error':
+				/* translators: %s: error message */
+				$line = sprintf( __( 'Could not check: the site could not reach itself (%s).', 'scrapelock' ), $status['error'] );
+				$more = $ips;
+				break;
+			case 'wp':
+				$cls  = 'notice-warning';
+				$line = __( 'Not active: the check address reached WordPress, so part 2 is not in this site\'s server { }.', 'scrapelock' );
+				$more = $top;
+				break;
+			case 'nginx':
+				$cls  = 'notice-warning';
+				/* translators: %d: HTTP status, e.g. 404 */
+				$line = sprintf( __( 'Not active: Nginx answered the check address itself (HTTP %d), so another location took it.', 'scrapelock' ), $status['code'] );
+				$more = __( 'Part 2 is missing from this site\'s server { }, or sits inside another location { }: then a regex location (on aaPanel location ~ \.well-known) answers instead.', 'scrapelock' ) . ' ' . $top;
+				break;
+			case 'cdn':
+				$cls  = 'notice-warning';
+				$line = __( 'Not seen: the server could not be asked directly, and through the CDN the check address did not answer with the rules.', 'scrapelock' );
+				$more = __( 'Through the CDN another site may answer: in Bunny CDN turn on Forward Host Header (Pull zone → General → Origin).', 'scrapelock' ) . ' ' . $ips;
+				break;
+			case 'cached':
+				$cls  = 'notice-warning';
+				$line = __( 'Not seen: the CDN answered the check address from its cache. Purge it there, then Check again.', 'scrapelock' );
+				$more = __( 'Purge /.well-known/scrapelock-nginx (or the whole cache) in the CDN, and do not let it cache 404 answers or ignore the query string.', 'scrapelock' ) . ' ' . $ips;
+				break;
+			case 'other':
+				/* translators: %d: HTTP status, e.g. 403 */
+				$line = sprintf( __( 'Not seen: the check address answered HTTP %d, not the rules\' fingerprint.', 'scrapelock' ), $status['code'] );
+				$more = __( 'Something else answered (another web server, a firewall or a proxy). Check that Nginx serves the site and that part 2 is at the top level of its server { }.', 'scrapelock' );
+				break;
+			default:
+				$line = __( 'Not installed on this site\'s Nginx (or the site is not served by Nginx).', 'scrapelock' );
+		}
+		if ( in_array( $status['state'], array( 'current', 'stale' ), true ) ) {
+			$more = self::via_text( $status );
+		}
+		return array(
+			'line'  => $line,
+			'more'  => $more,
+			'class' => $cls,
+		);
+	}
+
+	/**
+	 * Which way the rules answered, for people.
+	 *
+	 * @param array{via:string, ip:string, kind:string} $status Status.
+	 * @return string
+	 */
+	public static function via_text( $status ) {
+		if ( 'header' === $status['kind'] ) {
+			return __( 'Seen in the X-ScrapeLock-Rules header of the site\'s own pages.', 'scrapelock' );
+		}
+		if ( 'origin' === $status['via'] ) {
+			/* translators: %s: the server address, e.g. 127.0.0.1 */
+			return sprintf( __( 'Checked on the server directly (%s).', 'scrapelock' ), $status['ip'] );
+		}
+		return 'public' === $status['via'] ? __( 'Checked through the public address.', 'scrapelock' ) : '';
+	}
+
+	/**
+	 * Should the Nginx status be told outside the Server rules tab (Site Health, the self-check)? Only on a site
+	 * that uses the rules (a fingerprint was seen) and only when the check names what is wrong.
+	 *
+	 * @param array{state:string, kind:string}|null $status What nginx_kept() returned.
+	 * @return bool
+	 */
+	public static function worth_telling( $status ) {
+		return is_array( $status ) && 'missing' === $status['state'] && in_array( $status['kind'], array( 'wp', 'nginx', 'cdn', 'cached', 'other' ), true ) && PNCP_Rules_State::in_use();
+	}
+
 }

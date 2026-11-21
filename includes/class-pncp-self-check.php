@@ -1138,6 +1138,12 @@ final class PNCP_Self_Check {
 		if ( PNCP_Rules_State::is_stale() ) {
 			$lines[] = PNCP_Rules_State::message();
 		}
+		// 3.12.4: the check address of the Nginx rules names what is wrong (run() asked it).
+		$nginx = PNCP_Rules_Status::nginx_kept();
+		if ( null !== $nginx && PNCP_Rules_Status::worth_telling( $nginx ) ) {
+			$text    = PNCP_Rules_Status::nginx_text( $nginx );
+			$lines[] = trim( 'Nginx: ' . $text['line'] . ' ' . $text['more'] );
+		}
 		return $lines;
 	}
 

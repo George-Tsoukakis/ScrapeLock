@@ -452,6 +452,25 @@ final class PNCP_Rules_State {
 			),
 			'test'  => 'scrapelock_server_rules',
 		);
+		// 3.12.4: the rules were in use and the check address now names what is wrong (the answer of the last
+		// 5 minutes; Site Health asks nothing more).
+		$nginx = PNCP_Rules_Status::nginx_kept();
+		if ( ! self::is_stale() && null !== $nginx && PNCP_Rules_Status::worth_telling( $nginx ) ) {
+			$text                   = PNCP_Rules_Status::nginx_text( $nginx );
+			$again                  = PNCP_Status::settings_url(
+				array(
+					'tab'              => 'rules',
+					'pncp_nginx_check' => 1,
+				)
+			);
+			$base['badge']['color'] = 'orange';
+			return $base + array(
+				'label'       => __( 'The ScrapeLock Nginx rules were not seen on this server', 'scrapelock' ),
+				'status'      => 'recommended',
+				'description' => '<p>' . esc_html( $text['line'] ) . '</p>' . ( '' !== $text['more'] ? '<p>' . esc_html( $text['more'] ) . '</p>' : '' ),
+				'actions'     => current_user_can( 'manage_options' ) ? '<p><a class="button" href="' . esc_url( $again ) . '">' . esc_html__( 'Check again', 'scrapelock' ) . '</a></p>' : '',
+			);
+		}
 		if ( ! self::is_stale() ) {
 			return $base + array(
 				'label'       => self::in_use() ? __( 'The ScrapeLock server rules are up to date', 'scrapelock' ) : __( 'No ScrapeLock server rules were seen on this server', 'scrapelock' ),
@@ -464,7 +483,7 @@ final class PNCP_Rules_State {
 		return $base + array(
 			'label'       => __( 'The ScrapeLock server rules are out of date', 'scrapelock' ),
 			'status'      => 'recommended',
-			'description' => '<p>' . esc_html( self::message() ) . '</p>',
+			'description' => '<p>' . esc_html( self::message() ) . '</p>' . ( null !== $nginx && PNCP_Rules_Status::worth_telling( $nginx ) ? '<p>' . esc_html( PNCP_Rules_Status::nginx_text( $nginx )['line'] ) . '</p>' : '' ),
 			'actions'     => current_user_can( 'manage_options' ) ? '<p><a class="button" href="' . esc_url( self::diff_url() ) . '">' . esc_html__( 'See what changed', 'scrapelock' ) . '</a></p>' : '',
 		);
 	}

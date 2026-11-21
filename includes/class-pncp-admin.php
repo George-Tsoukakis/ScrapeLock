@@ -2744,7 +2744,8 @@ final class PNCP_Admin {
 	}
 
 	/**
-	 * Whether the Nginx rules are installed and match the current settings (the site asks itself).
+	 * Whether the Nginx rules are installed and match the current settings. 3.12.4: the server is asked directly
+	 * first; an answer that is not the rules' fingerprint is named, with what to do (PNCP_Rules_Status).
 	 */
 	private static function render_nginx_status() {
 		// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Only asks the site again; changes nothing.
@@ -2752,40 +2753,27 @@ final class PNCP_Admin {
 		if ( in_array( $status['state'], array( 'current', 'stale' ), true ) ) {
 			PNCP_Rules_State::from_status(); // 3.12.3: the site uses the Nginx rules; their fingerprint is noted.
 		}
-		$names  = array(
-			'http'   => __( '1) http { }', 'scrapelock' ),
-			'server' => __( '2) server { }', 'scrapelock' ),
-		);
-		if ( 'current' === $status['state'] ) {
-			$class   = 'notice-success';
-			$message = __( 'Installed and up to date with the current settings.', 'scrapelock' );
-		} elseif ( 'stale' === $status['state'] ) {
-			$class   = 'notice-warning';
-			$message = sprintf(
-				/* translators: %s: the parts, e.g. "1) http { }, 2) server { }" */
-				__( 'Installed, but out of date: the settings have changed since. Copy again: %s. Then nginx -t and reload.', 'scrapelock' ),
-				implode( ', ', array_intersect_key( $names, array_flip( $status['parts'] ) ) )
-			);
-		} elseif ( 'error' === $status['state'] ) {
-			$class   = 'notice-info';
-			$message = sprintf(
-				/* translators: %s: error message */
-				__( 'Could not check: the site could not reach itself (%s).', 'scrapelock' ),
-				$status['error']
-			);
-		} else {
-			$class   = 'notice-info';
-			$message = __( 'Not installed on this site\'s Nginx (or the site is not served by Nginx).', 'scrapelock' );
-		}
+		self::render_rules_status( PNCP_Rules_Status::nginx_text( $status ), 'pncp_nginx_check', 'pncp-nginx-status' );
+	}
+
+	/**
+	 * The status line of a server's rules: one line, "Check again", the details under "More".
+	 *
+	 * @param array{line:string, more:string, class:string} $text  What PNCP_Rules_Status says.
+	 * @param string                                        $query The query argument of "Check again".
+	 * @param string                                        $id    The id of the notice.
+	 */
+	private static function render_rules_status( $text, $query, $id ) {
 		$again = PNCP_Status::settings_url(
 			array(
-				'tab'              => 'rules',
-				'pncp_nginx_check' => 1,
+				'tab'  => 'rules',
+				$query => 1,
 			)
 		);
 		?>
-		<div class="notice <?php echo esc_attr( $class ); ?> inline"><p><strong><?php esc_html_e( 'Status:', 'scrapelock' ); ?></strong> <?php echo esc_html( $message ); ?>
-			<a href="<?php echo esc_url( $again ); ?>"><?php esc_html_e( 'Check again', 'scrapelock' ); ?></a></p></div>
+		<div class="notice <?php echo esc_attr( $text['class'] ); ?> inline" id="<?php echo esc_attr( $id ); ?>"><p><strong><?php esc_html_e( 'Status:', 'scrapelock' ); ?></strong> <?php echo esc_html( $text['line'] ); ?>
+			<a href="<?php echo esc_url( $again ); ?>"><?php esc_html_e( 'Check again', 'scrapelock' ); ?></a></p>
+			<?php echo PNCP_Admin_Fields::more( $text['more'] ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Escaped in PNCP_Admin_Fields. ?></div>
 		<?php
 	}
 

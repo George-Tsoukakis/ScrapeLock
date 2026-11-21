@@ -13,10 +13,12 @@
  *    pages when the check address has none; kept 5 minutes, asked again for a 3.12.3 answer; http:// → https://.
  * K. What answered instead: the fingerprint (current / stale), WordPress's 404, Nginx's own 404, the CDN's cache,
  *    the CDN only (the server not reachable), nothing at all, something else.
+ * X. The texts: one line + "More", in the Server rules tab, Site Health and wp scrapelock status / selfcheck.
  * R. Real Nginx (SKIP without nginx on PATH): an aaPanel-like server { } with location ~ \.well-known: the
- *    exact location of part 2 wins at server level, in the extension include at the top, and nested in
- *    location / { }; without part 2 Nginx's own 404 answers; part 2 in http { } or twice fails nginx -t; the
- *    status reads "current" through the real Nginx.
+ *    exact location of part 2 wins at server level and in the extension include at the top; nested in
+ *    location / { } it still wins, but nginx -t fails there with a private feed (a named location); without
+ *    part 2 Nginx's own 404 answers; part 2 in http { } or twice fails nginx -t; the status reads "current"
+ *    through the real Nginx.
  *
  * Only on a test WordPress.
  */
@@ -318,6 +320,120 @@ list( $st ) = status_with(
 t( 'K an old part 1: "stale" with the part http', 'stale' === $st['state'] && array( 'http' ) === $st['parts'] );
 t( 'K is_cached: Bunny, Cloudflare, X-Cache, Age; not MISS / BYPASS', PNCP_Rules_Status::is_cached( array( 'cdn-cache' => 'HIT' ) ) && PNCP_Rules_Status::is_cached( array( 'cf-cache-status' => 'HIT' ) ) && PNCP_Rules_Status::is_cached( array( 'x-cache' => 'Hit from cloudfront' ) ) && PNCP_Rules_Status::is_cached( array( 'age' => '120' ) ) && ! PNCP_Rules_Status::is_cached( array( 'cdn-cache' => 'MISS' ) ) && ! PNCP_Rules_Status::is_cached( array( 'cf-cache-status' => 'BYPASS', 'age' => '0' ) ) );
 
+/* ---------- X. The texts ---------- */
+
+$text = static function ( $kind, $state = 'missing', $extra = array() ) {
+	return PNCP_Rules_Status::nginx_text(
+		array_merge(
+			array(
+				'state' => $state,
+				'parts' => array(),
+				'error' => '',
+				'via'   => 'origin',
+				'ip'    => '127.0.0.1',
+				'kind'  => $kind,
+				'code'  => 404,
+			),
+			$extra
+		)
+	);
+};
+$x = $text( 'fingerprint', 'current' );
+t( 'X current: "Installed and up to date", the way in "More"', 'Installed and up to date with the current settings.' === $x['line'] && 'Checked on the server directly (127.0.0.1).' === $x['more'] && 'notice-success' === $x['class'] );
+$x = $text( 'fingerprint', 'stale', array( 'parts' => array( 'server' ) ) );
+t( 'X stale: names the part', false !== strpos( $x['line'], 'Copy again: 2) server { }.' ) && 'notice-warning' === $x['class'] );
+$x = $text( 'header', 'current', array( 'via' => 'public', 'ip' => '' ) );
+t( 'X seen in the header: says so', false !== strpos( $x['more'], 'X-ScrapeLock-Rules header' ) );
+$x = $text( 'wp' );
+t( 'X WordPress answered: part 2 not in this server { }; top level, not in location / { }; nginx -t and reload', 'Not active: the check address reached WordPress, so part 2 is not in this site\'s server { }.' === $x['line'] && false !== strpos( $x['more'], 'top level of the site\'s server { }' ) && false !== strpos( $x['more'], 'location / { }' ) && false !== strpos( $x['more'], 'nginx -t' ) && false === strpos( $x['more'], 'aaPanel' ) );
+add_filter( 'pncp_is_aapanel', '__return_true' );
+$x = $text( 'wp' );
+t( 'X ...on aaPanel: where (Website → the site → Config, below #SSL-END)', false !== strpos( $x['more'], 'aaPanel: Website → the site → Config, right below #SSL-END' ) );
+remove_filter( 'pncp_is_aapanel', '__return_true' );
+$x = $text( 'nginx' );
+t( 'X Nginx answered: another location (regex, location ~ \.well-known), with the status', false !== strpos( $x['line'], 'Nginx answered the check address itself (HTTP 404)' ) && false !== strpos( $x['more'], 'location ~ \.well-known' ) );
+$x = $text( 'cdn', 'missing', array( 'via' => 'public' ) );
+t( 'X only the CDN: Forward Host Header, SCRAPELOCK_SERVER_IPS', false !== strpos( $x['more'], 'Forward Host Header' ) && false !== strpos( $x['more'], 'SCRAPELOCK_SERVER_IPS' ) );
+$x = $text( 'cached', 'missing', array( 'via' => 'public' ) );
+t( 'X the CDN\'s cache: purge, then Check again', false !== strpos( $x['line'], 'from its cache' ) && false !== strpos( $x['line'], 'Purge' ) );
+$x = $text( 'other', 'missing', array( 'code' => 403 ) );
+t( 'X something else: the status', false !== strpos( $x['line'], 'HTTP 403' ) );
+$x = $text( 'error', 'error', array( 'error' => 'timed out' ) );
+t( 'X nothing: "Could not check" with the error', false !== strpos( $x['line'], 'Could not check' ) && false !== strpos( $x['line'], 'timed out' ) );
+$long = array();
+foreach ( array( 'wp', 'nginx', 'cdn', 'cached', 'other' ) as $k ) {
+	$line = $text( $k )['line'];
+	if ( str_word_count( $line ) > 22 ) {
+		$long[] = $k . ': ' . str_word_count( $line );
+	}
+}
+t( 'X every line is short (the details go to "More")', ! $long, implode( ', ', $long ) );
+
+// The Server rules tab: the line, "Check again", the details in details.pncp-more.
+wp_set_current_user( 1 );
+list( $st ) = status_with( $kinds['Nginx\'s own 404 at the server'][1] );
+$render = new ReflectionMethod( 'PNCP_Admin', 'render_nginx_status' );
+$render->setAccessible( true );
+$route = $kinds['Nginx\'s own 404 at the server'][1];
+ob_start();
+$render->invoke( null );
+$html  = (string) ob_get_clean();
+$route = null;
+t( 'X the tab: the line, "Check again", and the details under "More"', false !== strpos( $html, 'id="pncp-nginx-status"' ) && false !== strpos( $html, 'Nginx answered the check address itself' ) && false !== strpos( $html, 'Check again' ) && preg_match( '#<details class="pncp-more">.*location ~ \\\\\.well-known#s', $html ), substr( wp_strip_all_tags( $html ), 0, 300 ) );
+
+// Site Health and the self-check: only on a site that uses the rules.
+delete_option( PNCP_Rules_State::STATE );
+$h = PNCP_Rules_State::health_test();
+t( 'X Site Health: a site that never had rules is not told (good)', 'good' === $h['status'] );
+// The rules were seen once (as a self-check notes them).
+update_option(
+	PNCP_Rules_State::STATE,
+	array(
+		'installed' => $fp,
+		'format'    => 'nginx',
+		'current'   => $fp,
+		'time'      => time(),
+		'seen'      => time(),
+		'dismissed' => '',
+	),
+	false
+);
+list( $st ) = status_with( $kinds['WordPress 404 at the server'][1] );
+$h = PNCP_Rules_State::health_test();
+t( 'X Site Health: the rules were in use, WordPress answers now: "recommended" with the line and what to do', 'recommended' === $h['status'] && false !== strpos( $h['description'], 'reached WordPress' ) && false !== strpos( $h['description'], 'top level' ) && false !== strpos( $h['actions'], 'pncp_nginx_check' ), wp_json_encode( $h ) );
+$lines = PNCP_Self_Check::lines( array( 'steps' => array() ) );
+t( 'X wp scrapelock selfcheck: the Nginx line', (bool) preg_grep( '/^Nginx: Not active: the check address reached WordPress/', $lines ), implode( ' | ', $lines ) );
+list( $st ) = status_with(
+	static function ( $where, $url ) use ( $is_check, $fp_answer, $fp ) {
+		return '127.0.0.1' === $where && $is_check( $url ) ? $fp_answer( $fp ) : null;
+	}
+);
+$h = PNCP_Rules_State::health_test();
+t( 'X Site Health: up to date again: good', 'good' === $h['status'] && ! preg_grep( '/^Nginx:/', PNCP_Self_Check::lines( array( 'steps' => array() ) ) ) );
+$wp_cli = (string) getenv( 'WP_CLI' );
+if ( '' === $wp_cli ) {
+	echo "SKIP X wp scrapelock status (no WP_CLI)\n";
+} else {
+	set_transient(
+		PNCP_Rules_Status::NGINX,
+		array(
+			'want'  => $fp,
+			'v'     => PNCP_Rules_Status::VERSION,
+			'body'  => '',
+			'error' => '',
+			'via'   => 'origin',
+			'ip'    => '127.0.0.1',
+			'kind'  => 'nginx',
+			'code'  => 404,
+		),
+		300
+	);
+	$out = (string) shell_exec( $wp_cli . ' scrapelock status --format=json 2>&1' );
+	$row = wp_list_filter( (array) json_decode( $out, true ), array( 'setting' => 'Nginx server rules' ) );
+	$row = $row ? reset( $row ) : array();
+	t( 'X wp scrapelock status: the row "Nginx server rules" with the line', isset( $row['value'] ) && 0 === strpos( $row['value'], 'Not active: Nginx answered the check address itself' ), substr( $out, 0, 300 ) );
+}
+
 /* ---------- R. Real Nginx ---------- */
 
 $nginx_bin = trim( (string) shell_exec( 'command -v nginx 2>/dev/null' ) );
@@ -336,9 +452,17 @@ if ( '' === $nginx_bin || '' === $openssl || ! function_exists( 'curl_init' ) ) 
 		return 'https://127.0.0.1:' . $port . '/' . ltrim( (string) $path, '/' );
 	};
 	add_filter( 'home_url', $home, 99, 2 );
-	$want = PNCP_Rules::nginx_fingerprint();
-	file_put_contents( $dir . '/http.conf', PNCP_Rules::nginx_http() );
-	file_put_contents( $dir . '/server.conf', PNCP_Rules::nginx_server() );
+	// The rules with a private feed (its named location @pncp_static_feed), or without.
+	$saved_paths = PNCP_Options::stored()['private_paths'];
+	$want        = '';
+	$rules       = static function ( $paths ) use ( $dir, &$want ) {
+		update_option( PNCP_OPTION, array_merge( PNCP_Options::stored(), array( 'private_paths' => $paths ) ) );
+		PNCP_Options::flush();
+		$want = PNCP_Rules::nginx_fingerprint();
+		file_put_contents( $dir . '/http.conf', PNCP_Rules::nginx_http() );
+		file_put_contents( $dir . '/server.conf', PNCP_Rules::nginx_server() );
+	};
+	$rules( '/private-feed/*.xml' );
 	$files = array( 'http.conf', 'server.conf', 'nginx.conf', 'c.pem', 'k.pem', 'error.log', 'nginx.pid', 'ext/part2.conf' );
 	/**
 	 * Writes an aaPanel-like nginx.conf: $where = top (server level, below the SSL lines), ext (the extension
@@ -394,7 +518,7 @@ if ( '' === $nginx_bin || '' === $openssl || ! function_exists( 'curl_init' ) ) 
 	t( 'R real Nginx starts (aaPanel-like server { }, no part 2)', 0 === $rc, $msg );
 	list( $code, $body ) = $get();
 	t( 'R no part 2: location ~ \.well-known answers, Nginx\'s own 404', 404 === $code && false !== strpos( $body, '<center>nginx' ), $code . ' ' . substr( $body, 0, 80 ) );
-	foreach ( array( 'top' => 'at the top level of server { } (before the regex locations)', 'ext' => 'in the extension include at the top of server { }', 'nested' => 'nested in location / { }' ) as $where => $label ) {
+	foreach ( array( 'top' => 'at the top level of server { } (before the regex locations)', 'ext' => 'in the extension include at the top of server { }' ) as $where => $label ) {
 		$write( $where );
 		list( $rc, $msg ) = $nginx( '-t' );
 		$nginx( '-s reload' );
@@ -402,6 +526,17 @@ if ( '' === $nginx_bin || '' === $openssl || ! function_exists( 'curl_init' ) ) 
 		list( $code, $body ) = $get();
 		t( "R part 2 $label: nginx -t passes, the exact location beats location ~ \\.well-known (the fingerprint)", 0 === $rc && 200 === $code && $want === $body, $msg . ' ' . $code . ' ' . $body );
 	}
+	$write( 'nested' );
+	list( $rc, $msg ) = $nginx( '-t' );
+	t( 'R part 2 nested in location / { } with a private feed: nginx -t fails (a named location only at server level)', 0 !== $rc && false !== strpos( $msg, 'can be on the server level only' ), $msg );
+	$rules( '' );
+	$write( 'nested' );
+	list( $rc, $msg ) = $nginx( '-t' );
+	$nginx( '-s reload' );
+	usleep( 600000 );
+	list( $code, $body ) = $get();
+	t( 'R part 2 nested in location / { } without one: nginx -t passes, and the nested exact location still wins', 0 === $rc && 200 === $code && $want === $body, $msg . ' ' . $code . ' ' . $body );
+	$rules( '/private-feed/*.xml' );
 	$write( 'top' );
 	$nginx( '-s reload' );
 	usleep( 600000 );
@@ -414,6 +549,8 @@ if ( '' === $nginx_bin || '' === $openssl || ! function_exists( 'curl_init' ) ) 
 		t( "R part 2 $label: nginx -t fails (the running rules stay)", 0 !== $rc, $msg );
 	}
 	$write( 'top' );
+	update_option( PNCP_OPTION, array_merge( PNCP_Options::stored(), array( 'private_paths' => $saved_paths ) ) );
+	PNCP_Options::flush();
 	remove_filter( 'home_url', $home, 99 );
 	if ( is_file( $dir . '/nginx.pid' ) ) {
 		exec( 'kill ' . (int) file_get_contents( $dir . '/nginx.pid' ) );

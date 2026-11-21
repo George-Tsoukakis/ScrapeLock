@@ -99,6 +99,12 @@ final class PNCP_Cli {
 				'value'   => $field['value'],
 			);
 		}
+		// 3.12.4: the server rules on this server (the server asked directly first; kept 5 minutes).
+		$nginx   = PNCP_Rules::nginx_status();
+		$items[] = array(
+			'setting' => __( 'Nginx server rules', 'scrapelock' ),
+			'value'   => PNCP_Rules_Status::nginx_text( $nginx )['line'],
+		);
 		$summary = PNCP_Log::summary( 24 );
 		$items[] = array(
 			'setting' => __( 'IPs blocked now', 'scrapelock' ),
