@@ -324,6 +324,7 @@ final class PNCP_Rules {
 					'timeout'     => 5,
 					'redirection' => 0,
 					'sslverify'   => apply_filters( 'https_local_ssl_verify', false ), // phpcs:ignore WordPress.NamingConventions.PrefixAllGlobals.NonPrefixedHooknameFound -- Core filter for requests to the site itself.
+					'user-agent'  => PNCP_Self_Check::user_agent(), // 3.12.3: like every self-check.
 				)
 			);
 			$got      = array(

@@ -1251,7 +1251,7 @@ final class PNCP_Stealth {
 				'timeout'     => 8,
 				'redirection' => 0,
 				'sslverify'   => apply_filters( 'https_local_ssl_verify', false ), // phpcs:ignore WordPress.NamingConventions.PrefixAllGlobals.NonPrefixedHooknameFound -- Core filter for requests to the site itself.
-				'user-agent'  => 'Mozilla/5.0 (compatible; ScrapeLock self-test)',
+				'user-agent'  => PNCP_Self_Check::user_agent(), // 3.12.3: the one User-Agent of every self-check.
 				'headers'     => array( 'Cache-Control' => 'no-cache' ),
 			),
 			'self'

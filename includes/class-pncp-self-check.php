@@ -390,6 +390,18 @@ final class PNCP_Self_Check {
 	/* ---------- Sending side ---------- */
 
 	/**
+	 * 3.12.3: the User-Agent of every self-check: "ScrapeLock-Selftest/<version> (+<home address>)". Not a browser's
+	 * (before 3.12.3 it was a Chrome User-Agent, which ScrapeLock's own generated Nginx rules refused as a fake
+	 * browser before PHP could see the signature): it names itself and the site, so no server rule takes it for a
+	 * browser, and ScrapeLock's PHP checks let it through by its signature (X-ScrapeLock-Sig), never by its name.
+	 *
+	 * @return string
+	 */
+	public static function user_agent() {
+		return 'ScrapeLock-Selftest/' . PNCP_VERSION . ' (+' . home_url() . ')';
+	}
+
+	/**
 	 * Who answered, from an answer's status, headers and body.
 	 *
 	 * @param int                   $code    Status (0 = no answer).
@@ -578,8 +590,9 @@ final class PNCP_Self_Check {
 	 * @return array{response:array<string, mixed>|WP_Error, via:string, public:array{who:string, reason:string, layer:string, sig:string}, origin_ip:string, steps:array<int, array<string, mixed>>}
 	 */
 	public static function request( $url, $args = array(), $mode = 'page' ) {
-		$args  = is_array( $args ) ? $args : array();
-		$steps = array();
+		$args               = is_array( $args ) ? $args : array();
+		$args['user-agent'] = self::user_agent(); // 3.12.3: every self-check, whatever the caller set.
+		$steps              = array();
 		$out   = array(
 			'response'  => new WP_Error( 'pncp_selfcheck', __( 'not requested', 'scrapelock' ) ),
 			'via'       => 'public',
@@ -938,7 +951,7 @@ final class PNCP_Self_Check {
 				'redirection'         => 3,
 				'sslverify'           => (bool) apply_filters( 'https_local_ssl_verify', false ), // phpcs:ignore WordPress.NamingConventions.PrefixAllGlobals.NonPrefixedHooknameFound -- Core filter.
 				'limit_response_size' => 65536,
-				'user-agent'          => 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36 ScrapeLock-Selftest',
+				'user-agent'          => self::user_agent(), // 3.12.3: not a browser's (see user_agent()).
 				'headers'             => array(
 					'Accept'          => 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
 					'Accept-Language' => 'en-US,en;q=0.9',
