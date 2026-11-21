@@ -213,6 +213,16 @@ ScrapeLock — δοκιμές σε πραγματικό WordPress (όχι stubs)
                     and Apache rules; "?nocache=" is not optimized; a page stored with the words of before 3.12.6 (the
                     live leftover), the new map, Stealth off and on empty the page cache; real Nginx with a page cache
                     in front (SKIP without nginx): MISS / HIT clean, every asset 200, a stale Nginx cache until emptied
+  t_3127_fastcgi.php 3.12.7: the Nginx fastcgi cache: real-format cache files (header, KEY line, the key's MD5 as
+                    the name or in the header of a Vary variant) in a fake tree under /tmp; only keys with this site's
+                    host at their start (after scheme and method, a port) deleted, never another host ending with it
+                    or named in the query string; purge of the site (a site in a folder: only its folder) and of
+                    addresses (path and query strings); symbolic links never followed; "/", system, home and
+                    WordPress folders refused; the cap; SCRAPELOCK_FASTCGI_CACHE_PATH, Nginx Helper's constant and
+                    settings, the constant first, pncp_purge_page_cache() and Stealth's purge in another process;
+                    the nginx -T parser (includes, comments, quotes, the zone of this site's server block, inherited
+                    from http, wildcards, a variable or undefined zone); a real Nginx with fastcgi_cache in a
+                    temporary prefix in front of lib/fcgi-stub.php (MISS, HIT, purge, MISS; SKIP without nginx)
   t_cli.php         wp scrapelock … μέσα από το πραγματικό wp (χρειάζεται WP_CLI, αλλιώς SKIP)
   t_bunny_rules.php Edge Rules στο Bunny μέσα στα όριά του (το πολύ 5 μοτίβα ανά συνθήκη) με ψεύτικο API που δίνει
                     HTTP 400 όπως το πραγματικό: χωρισμός, κλείδωμα/Remove, rollback, Monitor only, sync, προεπισκόπηση,

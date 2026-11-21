@@ -10,14 +10,16 @@
  */
 
 foreach ( array(
-	'WPINC'                 => 'wp-includes',
-	'COOKIEPATH'            => '/',
-	'SITECOOKIEPATH'        => '/',
-	'COOKIEHASH'            => '',
-	'WPMU_PLUGIN_URL'       => '',
-	'PNCP_URL'              => '',
-	'SCRAPELOCK_BUNNY_KEY'  => '',
-	'SCRAPELOCK_EDGE_TOKEN' => '',
+	'WPINC'                         => 'wp-includes',
+	'COOKIEPATH'                    => '/',
+	'SITECOOKIEPATH'                => '/',
+	'COOKIEHASH'                    => '',
+	'WPMU_PLUGIN_URL'               => '',
+	'PNCP_URL'                      => '',
+	'SCRAPELOCK_BUNNY_KEY'          => '',
+	'SCRAPELOCK_EDGE_TOKEN'         => '',
+	'SCRAPELOCK_FASTCGI_CACHE_PATH' => '',
+	'RT_WP_NGINX_HELPER_CACHE_PATH' => '',
 ) as $pncp_name => $pncp_value ) {
 	if ( ! defined( $pncp_name ) ) {
 		define( $pncp_name, $pncp_value );
