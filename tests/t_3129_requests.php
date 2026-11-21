@@ -275,6 +275,29 @@ $ours_oc = true;
 echo "     (B: $kind)\n";
 wp_run( 'PNCP_Defer::flush(); return true;' ); // The scheduled event's first run (it puts the bans into the cache).
 
+$trap    = (string) wp_run( 'return PNCP_Bots::trap_path();' );
+$t_start = time();
+$bot     = null; // No User-Agent: refused by "Block empty User-Agent" whatever the bot list holds.
+// Warm-up: WordPress fills the cache (options, the visitor's counters).
+visit( $page, '198.51.100.91' );
+visit( $page, '198.51.100.91' );
+visit( $page, '198.51.100.95' );
+visit( $page, '198.51.100.94', $bot );
+for ( $i = 0; $i < 3; $i++ ) {
+	visit( $trap, '198.51.100.96' ); // A ban (3 violations): the official crawler lists are read into the cache.
+}
+
+$clean = static function ( $label, $rec, $status = null, $code = null ) {
+	$ok = array() === $rec['db'] && array() === $rec['io'] && true === $rec['ext'];
+	if ( null !== $status ) {
+		$ok = $ok && $status === $code;
+	}
+	t( $label, $ok, ( null !== $code ? 'HTTP ' . $code . ' ' : '' ) . implode( ' | ', array_merge( $rec['db'], $rec['io'] ) ) . ( true !== $rec['ext'] ? ' (no object cache in the request)' : '' ) );
+};
+for ( $i = 1; $i <= 3; $i++ ) {
+	list( $code, $rec ) = visit( $page, '198.51.100.91' );
+	$clean( "B page view $i of a known visitor: no query (read or write) and no file access of ScrapeLock", $rec, 200, $code );
+}
 
 $r = wp_run( $surge_code( true ) );
 t( 'S with an object cache, in a visitor\'s request: 3 minutes over the threshold, Emergency Mode in effect at once', is_array( $r ) && $r['until'] > time() && 3 === $r['streak'], wp_json_encode_safe( $r ) );

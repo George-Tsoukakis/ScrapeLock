@@ -312,6 +312,29 @@ final class PNCP_Frontend {
 	 * @return string
 	 */
 	private static function asset( $rel ) {
+		// 3.12.9: where a persistent object cache or APCu exists, read from the disk once an hour (per version), not
+		// on every page: a request must not wait for a disk that stalls.
+		$key = 'pncp_asset_' . md5( PNCP_VERSION . '|' . PNCP_DIR . $rel );
+		if ( '' !== PNCP_Defer::store() ) {
+			$kept = PNCP_Defer::get( $key );
+			if ( is_string( $kept ) ) {
+				return $kept;
+			}
+		}
+		$text = self::read_asset( $rel );
+		if ( '' !== PNCP_Defer::store() ) {
+			PNCP_Defer::set( $key, $text, HOUR_IN_SECONDS );
+		}
+		return $text;
+	}
+
+	/**
+	 * The contents of one of the plugin's own minified files, from the disk (see asset()).
+	 *
+	 * @param string $rel Path inside the plugin.
+	 * @return string
+	 */
+	private static function read_asset( $rel ) {
 		$file = PNCP_DIR . $rel;
 		if ( ! is_readable( $file ) ) {
 			return '';

@@ -58,6 +58,21 @@ final class PNCP_Defer {
 	 * Registers the hooks.
 	 */
 	public static function init() {
+		if ( 'apcu' === self::store() ) {
+			// Without a persistent object cache WordPress asks the database again on every request for an option
+			// that is not autoloaded, or not there at all (an unlocked site has no Lockdown state): see pre_option().
+			if ( self::active() ) {
+				add_filter( 'pre_option', array( __CLASS__, 'pre_option' ), 10, 3 );
+				foreach ( self::TRANSIENTS as $transient ) {
+					add_filter( 'pre_transient_' . $transient, array( __CLASS__, 'pre_transient' ), 10, 2 );
+				}
+			}
+			foreach ( array( 'added_option', 'updated_option', 'deleted_option' ) as $hook ) {
+				add_action( $hook, array( __CLASS__, 'forget_option' ) );
+			}
+			add_action( 'setted_transient', array( __CLASS__, 'forget_transient' ) );
+			add_action( 'deleted_transient', array( __CLASS__, 'forget_transient' ) );
+		}
 		add_filter( 'cron_schedules', array( __CLASS__, 'schedules' ) ); // phpcs:ignore WordPress.WP.CronInterval.CronSchedulesInterval -- One minute, only where a persistent store holds the queues.
 		add_action( self::CRON, array( __CLASS__, 'flush' ) );
 		add_action( PNCP_Log::CRON, array( __CLASS__, 'flush' ), 5 ); // The hourly task as a safety net.
@@ -131,6 +146,117 @@ final class PNCP_Defer {
 	 */
 	public static function handle( $queue, $handler, $ready = null ) {
 		self::$handlers[ (string) $queue ] = array( $handler, $ready );
+	}
+
+	/* ---------- APCu without an object cache: ScrapeLock's options and transients ---------- */
+
+	/**
+	 * The transients ScrapeLock reads on (nearly) every request.
+	 */
+	const TRANSIENTS = array( 'pncp_server_outbound', 'pncp_selfcheck_route' );
+
+	/**
+	 * How long APCu keeps a copy of an option or transient (a change made in this server's PHP-FPM replaces it at
+	 * once; one made from WP-CLI, whose APCu is another, is seen after this).
+	 */
+	const OPTION_TTL = 300;
+
+	/**
+	 * Filter pre_option, in a visitor's request with APCu and no persistent object cache: one of ScrapeLock's
+	 * options that is not autoloaded (or not there) comes from a copy in APCu. A missing one is noted as missing
+	 * for WordPress (its "notoptions"), so get_option() answers with its default without a query.
+	 *
+	 * @param mixed  $pre     Value from an earlier filter (false: none).
+	 * @param string $option  Option.
+	 * @param mixed  $default Default.
+	 * @return mixed
+	 */
+	public static function pre_option( $pre, $option, $default = false ) {
+		if ( false !== $pre || 0 !== strpos( (string) $option, 'pncp_' ) ) {
+			return $pre;
+		}
+		$all = wp_load_alloptions();
+		if ( isset( $all[ $option ] ) ) {
+			return $pre; // Autoloaded: WordPress has it without a query.
+		}
+		$key  = 'pncp_opt_' . md5( (string) $option );
+		$kept = apcu_fetch( PNCP_Log::apcu_key( $key ) );
+		if ( ! is_array( $kept ) ) {
+			remove_filter( 'pre_option', array( __CLASS__, 'pre_option' ), 10 );
+			$none  = new stdClass();
+			$value = get_option( $option, $none );
+			add_filter( 'pre_option', array( __CLASS__, 'pre_option' ), 10, 3 );
+			$kept = $value === $none ? array( 'missing' => true ) : array( 'value' => $value );
+			apcu_store( PNCP_Log::apcu_key( $key ), $kept, self::OPTION_TTL );
+		}
+		if ( ! empty( $kept['missing'] ) ) {
+			self::not_there( array( (string) $option ) );
+			return false !== $default ? $default : $pre;
+		}
+		return false === $kept['value'] ? $pre : $kept['value'];
+	}
+
+	/**
+	 * Filter pre_transient_{name}: the same for the transients ScrapeLock reads on every request (TRANSIENTS).
+	 *
+	 * @param mixed  $pre       Value from an earlier filter (false: none).
+	 * @param string $transient Transient.
+	 * @return mixed
+	 */
+	public static function pre_transient( $pre, $transient ) {
+		if ( false !== $pre ) {
+			return $pre;
+		}
+		$key  = 'pncp_tr_' . md5( (string) $transient );
+		$kept = apcu_fetch( PNCP_Log::apcu_key( $key ) );
+		if ( ! is_array( $kept ) ) {
+			remove_filter( 'pre_transient_' . $transient, array( __CLASS__, 'pre_transient' ), 10 );
+			$value = get_transient( $transient );
+			add_filter( 'pre_transient_' . $transient, array( __CLASS__, 'pre_transient' ), 10, 2 );
+			$kept = array( 'value' => $value );
+			apcu_store( PNCP_Log::apcu_key( $key ), $kept, MINUTE_IN_SECONDS );
+		}
+		if ( false === $kept['value'] ) {
+			self::not_there( array( '_transient_' . $transient, '_transient_timeout_' . $transient ) );
+			return $pre;
+		}
+		return $kept['value'];
+	}
+
+	/**
+	 * Notes options as missing for this request (WordPress's "notoptions"): get_option() then needs no query.
+	 *
+	 * @param string[] $names Options.
+	 */
+	private static function not_there( $names ) {
+		$not = wp_cache_get( 'notoptions', 'options' );
+		$not = is_array( $not ) ? $not : array();
+		foreach ( $names as $name ) {
+			$not[ $name ] = true;
+		}
+		wp_cache_set( 'notoptions', $not, 'options' );
+	}
+
+	/**
+	 * An option was added, changed or deleted: its copy in APCu goes.
+	 *
+	 * @param string $option Option.
+	 */
+	public static function forget_option( $option ) {
+		if ( 0 === strpos( (string) $option, 'pncp_' ) ) {
+			apcu_delete( PNCP_Log::apcu_key( 'pncp_opt_' . md5( (string) $option ) ) );
+		}
+	}
+
+	/**
+	 * A transient was set or deleted: its copy in APCu goes.
+	 *
+	 * @param string $transient Transient.
+	 */
+	public static function forget_transient( $transient ) {
+		if ( in_array( (string) $transient, self::TRANSIENTS, true ) ) {
+			apcu_delete( PNCP_Log::apcu_key( 'pncp_tr_' . md5( (string) $transient ) ) );
+		}
 	}
 
 	/* ---------- The store: the object cache (group "pncp") or APCu ---------- */

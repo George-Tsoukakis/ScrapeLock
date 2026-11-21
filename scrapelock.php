@@ -34,7 +34,8 @@ spl_autoload_register(
 			return;
 		}
 		$file = PNCP_DIR . 'includes/class-' . str_replace( '_', '-', strtolower( $class ) ) . '.php';
-		if ( is_readable( $file ) ) {
+		// 3.12.9: a class opcache already holds is loaded without asking the disk first.
+		if ( ( function_exists( 'opcache_is_script_cached' ) && @opcache_is_script_cached( $file ) ) || is_readable( $file ) ) { // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged -- opcache.restrict_api may refuse it: then the disk is asked.
 			require_once $file;
 		}
 	}
@@ -46,7 +47,8 @@ if ( is_admin() ) {
 	PNCP_Rules_State::init(); // 3.12.3: the notice when the server rules on the server are out of date.
 }
 
-// 3.12.9: queues in the object cache or APCu, written by a scheduled event.
+// 3.12.9: queues in the object cache or APCu, written by a scheduled event (first: it also answers ScrapeLock's
+// options from APCu where there is no object cache).
 PNCP_Defer::init();
 // 3.12.6: a verification file (/builtwith.txt, /google….html…) is answered before every check of the plugin.
 PNCP_Verify_Files::maybe_serve();

@@ -312,12 +312,27 @@ final class PNCP_Probe {
 			$candidates[] = dirname( $script ) . $path;
 		}
 		$candidates[] = untrailingslashit( ABSPATH ) . $path;
-		foreach ( array_unique( $candidates ) as $file ) {
-			if ( @file_exists( $file ) ) { // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged -- open_basedir may refuse the look-up: then "does not exist".
-				return true;
+		$candidates   = array_unique( $candidates );
+		// 3.12.9: in a visitor's request with a persistent object cache or APCu the answer is kept there for an
+		// hour: a scanner asking for the same addresses again and again does not make the request ask the disk.
+		$key = 'pncp_pf_' . md5( implode( "\n", $candidates ) );
+		if ( PNCP_Defer::active() ) {
+			$kept = PNCP_Defer::get( $key );
+			if ( false !== $kept ) {
+				return 1 === (int) $kept;
 			}
 		}
-		return false;
+		$found = false;
+		foreach ( $candidates as $file ) {
+			if ( @file_exists( $file ) ) { // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged -- open_basedir may refuse the look-up: then "does not exist".
+				$found = true;
+				break;
+			}
+		}
+		if ( PNCP_Defer::active() ) {
+			PNCP_Defer::set( $key, $found ? 1 : 0, HOUR_IN_SECONDS );
+		}
+		return $found;
 	}
 
 	/**
