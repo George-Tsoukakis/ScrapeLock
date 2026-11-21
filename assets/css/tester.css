@@ -253,6 +253,32 @@
 	gap: 6px 16px;
 }
 
+/* 3.12.2: "The site itself (loopback)" layer by layer, and "Run a real self-check now". */
+.pncp-admin .pncp-tester .pncp-tester__layers {
+	margin-left: 0;
+	list-style: none;
+}
+
+.pncp-admin .pncp-tester .pncp-tester__layer {
+	padding-left: 8px;
+	border-left: 3px solid #c3c4c7;
+}
+
+.pncp-admin .pncp-tester .pncp-tester__layer--pass {
+	border-left-color: #00a32a;
+}
+
+.pncp-admin .pncp-tester .pncp-tester__layer--refuse {
+	border-left-color: #d63638;
+}
+
+.pncp-admin .pncp-tester .pncp-tester__selfcheck {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 6px 12px;
+}
+
 @media screen and (max-width: 782px) {
 	.pncp-admin .pncp-tester .pncp-tester-form {
 		padding: 12px;

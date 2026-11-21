@@ -52,6 +52,10 @@ final class PNCP_Tester_View {
 						<button type="button" class="button pncp-tester-preset" data-preset="<?php echo esc_attr( $key ); ?>"><?php echo esc_html( $preset['label'] ); ?></button>
 					<?php endforeach; ?>
 				</div>
+				<p class="pncp-tester__selfcheck">
+					<button type="button" class="button" id="pncp-tester-selfcheck"><?php esc_html_e( 'Run a real self-check now', 'scrapelock' ); ?></button>
+					<span class="description"><?php esc_html_e( 'The site requests its own home page now and shows who answered.', 'scrapelock' ); ?></span>
+				</p>
 
 				<form id="pncp-tester-form" class="pncp-tester-form" data-pncp-nodirty novalidate>
 					<p class="pncp-tester__field">

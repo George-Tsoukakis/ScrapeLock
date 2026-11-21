@@ -257,7 +257,7 @@ t( 'S before: the self-test through the edge, unsigned: 403 fake_browser (the bu
 
 $args = PNCP_Server_Ips::sign( array( 'headers' => array() ), home_url( '/' ) );
 $tok  = isset( $args['headers'][ PNCP_Server_Ips::SIG_HEADER ] ) ? $args['headers'][ PNCP_Server_Ips::SIG_HEADER ] : '';
-t( 'S: requests to the site\'s own address carry X-ScrapeLock-Sig (time.nonce.hmac)', 1 === preg_match( '/^\d{10}\.[0-9a-f]{24}\.[0-9a-f]{64}$/', $tok ), $tok );
+t( 'S: requests to the site\'s own address carry X-ScrapeLock-Sig (time.nonce.hmac; 3.12.2: .hint)', 1 === preg_match( '/^\d{10}\.[0-9a-f]{24}\.[0-9a-f]{64}(?:\.[0-9a-f]{16})?$/', $tok ), $tok );
 t( 'S: ... and still the 3.11 header', isset( $args['headers'][ PNCP_Server_Ips::HEADER ] ) );
 $other = PNCP_Server_Ips::sign( array( 'headers' => array() ), 'https://example.com/' );
 t( 'S: requests to other sites are not signed', ! isset( $other['headers'][ PNCP_Server_Ips::SIG_HEADER ] ) && ! isset( $other['headers'][ PNCP_Server_Ips::HEADER ] ) );
@@ -306,7 +306,7 @@ $bad = array(
 	'from the future (2 minutes ahead)' => array( sig( '/', 'GET', $now + 120 ), $home_path, 'GET', $http_host ),
 	'made for another path'             => array( sig( '/other/' ), $home_path, 'GET', $http_host ),
 	'made for another method'           => array( sig( '/', 'POST' ), $home_path, 'GET', $http_host ),
-	'sent to another host'              => array( sig( '/' ), $home_path, 'GET', 'evil.example' ),
+	// 3.12.2: "sent to another host" (a Host header the CDN wrote) is the site's request: t_3122_loopback.php.
 	'made for another host'             => array( PNCP_Server_Ips::sig_token( 'GET', 'https://evil.example/' ), '/', 'GET', 'evil.example' ),
 	'forged (another key)'              => array( $now . '.' . str_repeat( 'a', 24 ) . '.' . hash_hmac( 'sha256', 'pncp-sig|v1|GET|' . $own_host . '|/|' . $now . '|' . str_repeat( 'a', 24 ), 'not-the-key' ), $home_path, 'GET', $http_host ),
 	'a 3.11 token in the new header'    => array( $args['headers'][ PNCP_Server_Ips::HEADER ], $home_path, 'GET', $http_host ),
@@ -460,7 +460,7 @@ foreach (
 	array(
 		'expired'               => array( sig( '/cached-page/', 'GET', $now - 120 ), '/cached-page/', $http_host ),
 		'for another path'      => array( sig( '/other/' ), '/cached-page/', $http_host ),
-		'sent to another host'  => array( sig( '/cached-page/' ), '/cached-page/', 'evil.example' ),
+		// 3.12.2: "sent to another host" passes now (t_3122_loopback.php).
 		'forged'                => array( $now . '.' . str_repeat( 'b', 24 ) . '.' . str_repeat( 'c', 64 ), '/cached-page/', $http_host ),
 	) as $label => $case
 ) {

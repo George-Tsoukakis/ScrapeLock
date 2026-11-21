@@ -1236,22 +1236,26 @@ final class PNCP_Stealth {
 	}
 
 	/**
-	 * GET without cookies and without following redirects; the site asks itself.
+	 * GET without cookies and without following redirects; the site asks itself. 3.12.2: straight to the server
+	 * when ScrapeLock's checks for bots or a firewall refuse the site's own request on the public way
+	 * (PNCP_Self_Check::request()).
 	 *
 	 * @param string $url Address.
 	 * @return array{code:int, body:string, headers:array<string, string|string[]>}|WP_Error
 	 */
 	private static function fetch( $url ) {
-		$r = wp_remote_get(
+		$r = PNCP_Self_Check::request(
 			add_query_arg( 'pncp_st', wp_generate_password( 6, false ), $url ),
 			array(
+				'method'      => 'GET',
 				'timeout'     => 8,
 				'redirection' => 0,
 				'sslverify'   => apply_filters( 'https_local_ssl_verify', false ), // phpcs:ignore WordPress.NamingConventions.PrefixAllGlobals.NonPrefixedHooknameFound -- Core filter for requests to the site itself.
 				'user-agent'  => 'Mozilla/5.0 (compatible; ScrapeLock self-test)',
 				'headers'     => array( 'Cache-Control' => 'no-cache' ),
-			)
-		);
+			),
+			'self'
+		)['response'];
 		if ( is_wp_error( $r ) ) {
 			return $r;
 		}

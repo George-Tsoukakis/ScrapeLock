@@ -2,7 +2,7 @@
 /**
  * Plugin Name:       ScrapeLock – Content & AI Bot Protection
  * Description:       Protects your content: makes copying text and images harder, hides the text in the REST API, GraphQL and RSS, blocks scrapers, AI bots and fake Googlebots, temporarily blocks persistent IPs, protects XML feeds with a token and adds an optional watermark. Lockdown freezes every change to the site until it is unlocked with an authenticator app. Forms, cart, checkout and search engines are not affected.
- * Version:           3.12.1
+ * Version:           3.12.2
  * Requires at least: 6.2
  * Requires PHP:      7.4
  * Author:            CodeBunny
@@ -19,7 +19,7 @@ if ( defined( 'PNCP_VERSION' ) ) {
 	return;
 }
 
-define( 'PNCP_VERSION', '3.12.1' );
+define( 'PNCP_VERSION', '3.12.2' );
 define( 'PNCP_FILE', __FILE__ );
 define( 'PNCP_DIR', plugin_dir_path( __FILE__ ) );
 define( 'PNCP_URL', plugin_dir_url( __FILE__ ) );
@@ -114,6 +114,7 @@ PNCP_Attack_Report::init(); // The Attacks tab, the weekly email and the dashboa
 PNCP_Hardening::init(); // Vulnerable points.
 PNCP_Plugin_Bots::init(); // 3.10: the service bots of active plugins (WP Rocket and others) are allowed.
 PNCP_Server_Ips::init(); // 3.11: the server's own addresses (the site's requests to itself through the CDN).
+PNCP_Self_Check::init(); // 3.12.2: diagnostics of the site's requests to itself, the way straight to the server.
 PNCP_Bot_Match::init(); // 3.11: the Log names the bot list entry that matched, "Allow this service".
 PNCP_Ai_Search_List::init(); // 3.11: "Remove from the list" for allowed AI search bots still in the bot list.
 PNCP_Site_Files::init(); // 3.10.1: apple-touch-icon.png and OneSignalSDKWorker.js in Site Health, Wordfence's address check.
@@ -223,6 +224,8 @@ function pncp_deactivate_site() {
 	PNCP_Hardening::deactivate();
 	PNCP_Stealth::plugin_deactivated();
 	PNCP_Attack_Report::deactivate();
+	// 3.12.2: the way straight to the server for the site's requests to itself (asked again after a reactivation).
+	delete_transient( PNCP_Self_Check::ROUTE );
 	pncp_purge_page_cache();
 }
 

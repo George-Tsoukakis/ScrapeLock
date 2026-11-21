@@ -302,7 +302,8 @@ foreach ( $new_rows as $key ) {
 	$ticked = $ticked && 1 === preg_match( '/value="' . $key . '" id="pncp-wizard-' . $key . '" checked/', $body );
 }
 t( 'panel: one row each, all ticked', $ticked );
-t( 'panel: the block row shows both settings and the diff', false !== strpos( $body, '<code>ban_strikes, ban_minutes</code>' ) && false !== strpos( $body, '<td>after 3 violations, for 600 min</td>' ) && false !== strpos( $body, '<td>after 3 violations, for 120 min</td>' ) );
+// 3.12.2: both internal names in the tooltip of the row ("?"), no longer as visible text (t_3122_wizard.php).
+t( 'panel: the block row shows both settings and the diff', false !== strpos( $body, 'title="ban_strikes, ban_minutes"' ) && false === strpos( $body, '<code>ban_strikes' ) && false !== strpos( $body, '<td>after 3 violations, for 600 min</td>' ) && false !== strpos( $body, '<td>after 3 violations, for 120 min</td>' ) );
 t( 'panel: the OneSignal row shows only the line', false !== strpos( $body, '<td>without OneSignal</td>' ) && false !== strpos( $body, '<td>+ OneSignal</td>' ) );
 t( 'panel: "Found on this site" names FluentCommunity and OneSignal', 1 === preg_match( '/Found on this site:.*FluentCommunity.*OneSignal/s', $body ) );
 t( 'panel: no row marked "Blocks more"', false === strpos( $body, 'pncp-wizard-row is-risky' ) );

@@ -155,6 +155,20 @@
 			nodes.push( ul );
 		}
 
+		// 3.12.2: "The site itself (loopback)": the verdict of each layer.
+		if ( Array.isArray( data.layers ) && data.layers.length ) {
+			nodes.push( el( 'h4', '', text( 'layers', 'Layer by layer' ) ) );
+			var layers = el( 'ul', 'pncp-tester__layers' );
+			data.layers.forEach( function ( layer ) {
+				var verdictClass = /^(pass|refuse|off)$/.test( layer.verdict ) ? layer.verdict : 'off';
+				var li = el( 'li', 'pncp-tester__layer pncp-tester__layer--' + verdictClass );
+				li.appendChild( el( 'strong', '', ( layer.label || '' ) + ': ' ) );
+				li.appendChild( document.createTextNode( layer.text || '' ) );
+				layers.appendChild( li );
+			} );
+			nodes.push( layers );
+		}
+
 		var table = el( 'table', 'widefat striped pncp-tester__request' );
 		var body = el( 'tbody' );
 		table.appendChild( body );
@@ -195,10 +209,10 @@
 		var body = new URLSearchParams();
 		body.append( 'action', cfg.action || 'pncp_check_request' );
 		body.append( 'nonce', cfg.nonce || '' );
-		body.append( 'mode', 'self' === mode ? 'self' : 'custom' );
+		body.append( 'mode', 'self' === mode || 'loopback' === mode ? mode : 'custom' );
 		body.append( 'address', value( fields.address ) );
 		var dns = false;
-		if ( 'self' !== mode ) {
+		if ( 'self' !== mode && 'loopback' !== mode ) {
 			var ua = value( fields.ua );
 			body.append( 'ip', value( fields.ip ).trim() );
 			body.append( 'ua', ua );
@@ -234,6 +248,56 @@
 			} );
 	}
 
+	// 3.12.2: "Run a real self-check now": the site requests its own home page (public address, then the server).
+	var runButton = document.getElementById( 'pncp-tester-selfcheck' );
+	if ( runButton && cfg.selfcheck ) {
+		runButton.addEventListener( 'click', function ( e ) {
+			e.preventDefault();
+			if ( busy ) {
+				return;
+			}
+			var body = new URLSearchParams();
+			body.append( 'action', cfg.selfcheck.action || 'pncp_selfcheck' );
+			body.append( 'nonce', cfg.selfcheck.nonce || '' );
+			setBusy( true );
+			runButton.disabled = true;
+			show( [ el( 'p', 'pncp-tester__checking', text( 'running', 'Sending the site\'s request to itself…' ) ) ] );
+			fetch( cfg.ajaxUrl, { method: 'POST', credentials: 'same-origin', body: body } )
+				.then( function ( r ) {
+					return r.json();
+				} )
+				.then( function ( json ) {
+					setBusy( false );
+					runButton.disabled = false;
+					var data = json && json.data && 'object' === typeof json.data ? json.data : {};
+					if ( ! json || ! json.success ) {
+						failed( 'string' === typeof data.message ? data.message : '', '' );
+						return;
+					}
+					var verdict = data.ok ? 'allowed' : ( data.origin ? 'monitor' : 'blocked' );
+					var head = el( 'p', 'pncp-tester__headline' );
+					head.appendChild( el( 'span', 'pncp-tester-verdict pncp-tester-verdict--' + verdict, data.ok ? 'OK' : '!' ) );
+					head.appendChild( document.createTextNode( ' ' ) );
+					head.appendChild( el( 'strong', '', data.headline || '' ) );
+					var nodes = [ head ];
+					if ( Array.isArray( data.lines ) && data.lines.length ) {
+						var ul = el( 'ul', 'pncp-tester__notes pncp-tester__trace' );
+						data.lines.forEach( function ( line ) {
+							ul.appendChild( el( 'li', '', line ) );
+						} );
+						nodes.push( ul );
+					}
+					show( nodes );
+					result.focus();
+				} )
+				.catch( function () {
+					setBusy( false );
+					runButton.disabled = false;
+					failed( '', '' );
+				} );
+		} );
+	}
+
 	form.addEventListener( 'submit', function ( e ) {
 		e.preventDefault();
 		check( 'custom' );
@@ -250,8 +314,8 @@
 			return;
 		}
 		e.preventDefault();
-		if ( 'self' === preset.mode ) {
-			check( 'self' );
+		if ( 'self' === preset.mode || 'loopback' === preset.mode ) {
+			check( preset.mode );
 			return;
 		}
 		if ( fields.ua ) {

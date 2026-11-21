@@ -918,8 +918,10 @@ final class PNCP_Bots {
 		// browser (a Viber user got "Pages per minute" for 18 requests to one .webp) is not scraping pages. The
 		// link previews of the "Always allowed" list (link_preview_agents()) are not counted at all on media.
 		if ( $count && $media ) {
-			if ( $allowed_ua && self::ua_in_list( $ua, self::link_preview_agents() ) && self::allow_list_match( $ua, $ip, $s ) ) {
-				return self::pass( 'media' );
+			// 3.12.2: a pass of its own ("media_preview"), so "Check a request" and "wp scrapelock check" can say that
+			// nothing was counted instead of showing the media counter.
+			if ( $allowed_ua && self::is_allowed_link_preview( $ua, $ip, $s ) ) {
+				return self::pass( 'media_preview' );
 			}
 			$limit = self::MEDIA_FACTOR * (int) $s['rate_limit'];
 			if ( $limit > 0 && self::hit( $ip, 'rate_media' ) > $limit ) {
@@ -1693,7 +1695,7 @@ final class PNCP_Bots {
 	 */
 	public static function allow_list_match( $ua, $ip, $s ) {
 		foreach ( self::allow_entries( $s ) as $entry ) {
-			if ( '' === $entry['ua'] || false === stripos( $ua, $entry['ua'] ) ) {
+			if ( ! self::allow_ua_matches( $ua, $entry['ua'] ) ) {
 				continue;
 			}
 			if ( ! $entry['pinned'] || ( PNCP_Ip::reliable() && PNCP_Ip::in_any( $ip, $entry['ips'] ) ) ) {
@@ -1701,6 +1703,40 @@ final class PNCP_Bots {
 			}
 		}
 		return false;
+	}
+
+	/**
+	 * 3.12.2: does the User-Agent part of an "always allowed" entry match? Part of the User-Agent, case-insensitive;
+	 * an entry that starts with "=" must be the whole User-Agent ("=Viber/22.4.0.0 (Android 14)"), as in the bot
+	 * list (ua_in_list()) and the server rules (PNCP_Rules). Until 3.12.1 such an entry matched nothing here.
+	 *
+	 * @param string $ua     User-Agent.
+	 * @param string $needle The entry's User-Agent part (before "@").
+	 * @return bool
+	 */
+	private static function allow_ua_matches( $ua, $needle ) {
+		$needle = (string) $needle;
+		if ( '' === $needle || '=' === $needle ) {
+			return false;
+		}
+		if ( '=' === $needle[0] ) {
+			return 0 === strcasecmp( trim( (string) $ua ), trim( substr( $needle, 1 ) ) );
+		}
+		return false !== stripos( (string) $ua, $needle );
+	}
+
+	/**
+	 * 3.12.2: a link preview (link_preview_agents()) that the "Always allowed" list lets through (any entry form:
+	 * part of the User-Agent, "=" the whole User-Agent, "@" pinned to addresses): on a static file it is not
+	 * counted at all, in WordPress and in the pre-cache check.
+	 *
+	 * @param string               $ua User-Agent.
+	 * @param string               $ip IP.
+	 * @param array<string, mixed> $s  Settings.
+	 * @return bool
+	 */
+	public static function is_allowed_link_preview( $ua, $ip, $s ) {
+		return '' !== trim( (string) $ua ) && self::ua_in_list( $ua, self::link_preview_agents() ) && self::allow_list_match( $ua, $ip, $s );
 	}
 
 	/**
@@ -1738,7 +1774,7 @@ final class PNCP_Bots {
 	 */
 	public static function allow_list_match_pinned( $ua, $ip, $s ) {
 		foreach ( self::allow_entries( $s ) as $entry ) {
-			if ( '' === $entry['ua'] || false === stripos( $ua, $entry['ua'] ) ) {
+			if ( ! self::allow_ua_matches( $ua, $entry['ua'] ) ) {
 				continue;
 			}
 			if ( $entry['pinned'] && PNCP_Ip::reliable() && PNCP_Ip::in_any( $ip, $entry['ips'] ) ) {

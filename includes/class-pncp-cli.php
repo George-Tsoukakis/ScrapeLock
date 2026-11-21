@@ -24,6 +24,55 @@ final class PNCP_Cli {
 	}
 
 	/**
+	 * 3.12.2: makes a real request of the site to itself now (its home page, as "Check again" in Vulnerable points
+	 * asks for it) and prints what came back: who answered, the signature's result on the receiving side and the
+	 * layer that passed or refused it; straight to the server when the public address refuses it. Then the latest
+	 * notes of the site's own requests (--log).
+	 *
+	 * ## OPTIONS
+	 *
+	 * [--log]
+	 * : Also print the last notes of the site's own requests (both sides).
+	 *
+	 * [--format=<format>]
+	 * : text or json.
+	 * ---
+	 * default: text
+	 * ---
+	 *
+	 * ## EXAMPLES
+	 *
+	 *     wp scrapelock selfcheck
+	 *     wp scrapelock selfcheck --log
+	 *
+	 * @param string[]              $args       Arguments.
+	 * @param array<string, string> $assoc_args Options.
+	 */
+	public function selfcheck( $args, $assoc_args ) {
+		unset( $args );
+		$trace = PNCP_Self_Check::run();
+		if ( isset( $assoc_args['format'] ) && 'json' === $assoc_args['format'] ) {
+			WP_CLI::line( (string) wp_json_encode( isset( $assoc_args['log'] ) ? array_merge( $trace, array( 'log' => PNCP_Self_Check::entries() ) ) : $trace ) );
+			return;
+		}
+		WP_CLI::line( PNCP_Self_Check::summary( $trace ) );
+		foreach ( PNCP_Self_Check::lines( $trace ) as $line ) {
+			WP_CLI::line( '  ' . $line );
+		}
+		if ( isset( $assoc_args['log'] ) ) {
+			WP_CLI::line( '' );
+			WP_CLI::line( 'Notes of the site\'s own requests (newest first):' );
+			foreach ( PNCP_Self_Check::entries() as $entry ) {
+				$when = gmdate( 'H:i:s', (int) $entry['time'] );
+				WP_CLI::line( '  ' . $when . ' ' . ( 'out' === $entry['side'] ? PNCP_Self_Check::step_line( $entry ) : $entry['method'] . ' ' . $entry['path'] . ': ' . PNCP_Self_Check::entry_line( $entry ) ) );
+			}
+		}
+		if ( empty( $trace['ok'] ) && empty( $trace['origin'] ) ) {
+			WP_CLI::halt( 1 );
+		}
+	}
+
+	/**
 	 * Shows what is on and off (the same list as the ScrapeLock section in Site Health → Info).
 	 *
 	 * ## OPTIONS
@@ -472,6 +521,7 @@ final class PNCP_Cli {
 			'ai_search'     => __( 'a verified AI search bot (never blocked or limited)', 'scrapelock' ),
 			'prefetch'      => __( 'a prefetch within its own limit', 'scrapelock' ),
 			'media'         => __( 'image or file; counted in the media limit, not as a page', 'scrapelock' ), // 3.12.1: as on the card.
+			'media_preview' => __( 'a link preview in the “Always allowed” list; its images and files are not counted', 'scrapelock' ), // 3.12.2: as on the card.
 			'passed'        => __( 'it passes every check, and is within the limits this minute', 'scrapelock' ),
 		);
 	}

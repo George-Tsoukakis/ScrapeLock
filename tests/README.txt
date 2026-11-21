@@ -122,6 +122,24 @@ ScrapeLock — δοκιμές σε πραγματικό WordPress (όχι stubs)
                     (24-hour transient) and SCRAPELOCK_SERVER_IPS (a test mu-plugin for the web server), in
                     WordPress, the early check and the pre-cache check; ScrapeLock's rules at the CDN never block
                     the server (temporary blocks, Bunny log lines, the wp-login.php lock with a stand-in Bunny API)
+  t_3122_loopback.php 3.12.2: the site's own requests when the CDN does not forward the Host header (Bunny's
+                    default) or something on the way refuses them: the signature verified for the host it was signed
+                    for whatever Host arrives, each failure reason (expired, host_mismatch, path_mismatch, bad_mac,
+                    bad_format, no_key, nonce_reused), "//" / encoded paths, HEAD as GET, the 3.12.1 format, the
+                    pre-cache check the same; one nonce per request across the pre-cache check, the early check and
+                    WordPress (also with a persistent object cache); the diagnostics ring buffer (contents, privacy,
+                    not autoloaded, allowance, a hash of the nonce and no address); "X-ScrapeLock: refused …" (just
+                    "refused" for a stranger's forged signature) / "ok id=…" (unit and over HTTP); who answered
+                    (ScrapeLock, Bunny's edge, Cloudflare, Wordfence, WordPress, the web server); the way straight to
+                    the server (mocked with pre_http_request, and over real HTTP with CURLOPT_RESOLVE and a host name
+                    that does not resolve) and the route for the site's other requests (only after this WordPress
+                    answered with the request's id, only the site's own host:port and addresses, the TLS check kept,
+                    clears itself; a forged CURLOPT_RESOLVE entry not applied); Vulnerable points' note and
+                    details; a block of the server at the CDN removed at once; "Only through the CDN" without a
+                    secret; "Check a request" loopback preset and "Run a real self-check now" (POST, its own nonce,
+                    capability); Site Health "ScrapeLock self-request test"; wp scrapelock selfcheck (with WP_CLI);
+                    uninstall and deactivation remove the self-check's options and route. Self-requests
+                    are made from the test process only (the single-process server would wait for itself).
   t_3121_tester.php 3.12.1: "Check a request": an image, video, font, CSS or JS is "Checked as: Media", allowed as "image
                     or file; counted in the media limit, not as a page", with the media counter "N of M this minute"
                     (MEDIA_FACTOR × the page limit, pncp_static_extensions) and its 429; a page, a feed, a REST call and
@@ -143,6 +161,16 @@ ScrapeLock — δοκιμές σε πραγματικό WordPress (όχι stubs)
   t_3121_integration.php 3.12.1: how the parts of 3.12.1 fit together: rate_member (per account) is no reputation
                     event of the IP and every log reason has a label; the attack record keeps nothing of the site's
                     own requests (signed, or a CDN log line of SCRAPELOCK_SERVER_IPS)
+  t_3122_previews.php 3.12.2: link previews of "Always allowed" (the real User-Agents of Viber, WhatsApp, Facebook,
+                    Telegram, Slack, X, LinkedIn, Discord) on .webp / .jpg 30 times a minute with page limit 1: never 429
+                    in WordPress, the early check or the pre-cache check; a browser, a preview not in the list and
+                    Pinterest still count; the entry forms (part, "=" whole User-Agent, "@" pinned); "Check a request"
+                    and wp scrapelock check say "Not counted: link preview in the “Always allowed” list", not "N of M"
+  t_3122_wizard.php 3.12.2: «For my site» shows each setting by its label only: no setting key in the text of the panel
+                    (3.11 plugin rows and 3.12.1 sensible values, the two-setting row too), each key in the title and
+                    aria-label of a "?" button of its row (keyboard-reachable); the notice of "Apply selected" lists
+                    the changes by label, before → after in words; no key in the text of any tab; wp scrapelock wizard
+                    still prints the keys
   t_cli.php         wp scrapelock … μέσα από το πραγματικό wp (χρειάζεται WP_CLI, αλλιώς SKIP)
   t_bunny_rules.php Edge Rules στο Bunny μέσα στα όριά του (το πολύ 5 μοτίβα ανά συνθήκη) με ψεύτικο API που δίνει
                     HTTP 400 όπως το πραγματικό: χωρισμός, κλείδωμα/Remove, rollback, Monitor only, sync, προεπισκόπηση,

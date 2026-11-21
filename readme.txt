@@ -4,7 +4,7 @@ Tags: ai crawlers, anti-scraping, bot protection, rate limit, content protection
 Requires at least: 6.2
 Tested up to: 7.2
 Requires PHP: 7.4
-Stable tag: 3.12.1
+Stable tag: 3.12.2
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -264,6 +264,18 @@ If they find your server's own address, yes. "Only through the CDN" (Real visito
 
 No. WordPress signs every request to the site's own address with an `X-ScrapeLock-Sig` header (an HMAC of the method, host and path, valid for 60 seconds and once), so it passes every check, also behind a CDN and in the pre-cache check. ScrapeLock also learns the address the server's requests leave from and never blocks it, at the CDN either. If your server's own requests leave from an address ScrapeLock cannot learn (a NAT gateway, an outbound proxy, another server of a cluster), list it in wp-config.php: `define( 'SCRAPELOCK_SERVER_IPS', '203.0.113.50, 2001:db8::/64' );` (addresses or ranges, separated by commas). List only your own servers, never a proxy or load balancer in front of the site: every visitor comes through it.
 
+= Vulnerable points says "Checked at the server: … refused by …". What does it mean? =
+
+The site asked for its own home page through its public address, and something on the way refused it. ScrapeLock then asked your server directly, so the result is still real, and the note names who refused. What to check:
+
+* **Bunny CDN edge:** "Forward Host Header" is not needed any more (3.12.2). In the pull zone, check Bunny Shield or the WAF, bot protection, blocked IPs and countries, and Edge Rules that block: one of them refuses your server's own address. ScrapeLock removes its own CDN blocks of that address at once.
+* **Cloudflare:** Security → Events for your server's address, then allow it.
+* **Wordfence:** Firewall → Blocking and Live Traffic; add your server's address to its allowlisted IPs.
+* **Another plugin or the web server:** its deny rules or firewall.
+* **ScrapeLock:** the note names the check that refused it.
+
+To see both sides of the request, use "Run a real self-check now" in Log → Check a request (or the preset "The site itself (loopback)", which shows each layer without sending anything), the Site Health test "ScrapeLock self-request test", or `wp scrapelock selfcheck --log`.
+
 = What does "Ban scanners on their first probe" do? =
 
 Off by default. When an IP asks for a file only attack scanners look for (.env, .git, wp-config.php backups, database dumps and backup archives at the top of the site) and the file does not exist, it is refused and blocked for 10 minutes (or your block time, if shorter; nothing is blocked when "Block after this many violations" is 0); a second probe within 24 hours gets the full block. Staff, verified search engines and the always-allowed IPs and User-Agents are never banned. On Nginx, add the updated server rules. With the rules, .env, .git, wp-config.php copies and SSH keys are never served even if they exist; a real database dump or archive of the same name is still served.
@@ -370,6 +382,17 @@ No, on purpose: only an app code, a recovery code or the SCRAPELOCK_UNLOCK line 
 6. Dashboard widget with the protection status and the last 24 hours.
 
 == Changelog ==
+
+= 3.12.2 =
+* Fix: behind Bunny CDN without "Forward Host Header" (its default) the site's own requests still got a 403 (Vulnerable points "Check again", Site Health): the server gets the pull zone's origin name as Host, and the signature was bound to it. The signature now names the site host it was made for and is verified for that host, whatever Host header arrives; a path with "//" and a HEAD passed on as GET match too. Signatures of 3.12.1 are still accepted.
+* New: when something on the way refuses the site's own request, the note says who: ScrapeLock (with the check), Bunny's edge, Cloudflare, Wordfence, another plugin or the web server, and what to check there. ScrapeLock's refusals carry the header `X-ScrapeLock: refused` (the reason only for the site's own request).
+* New: the request is then made once more straight to the server (the site's own host and port pinned to 127.0.0.1, the server's address or `SCRAPELOCK_SERVER_IPS`, TLS checked as before). Vulnerable points give a real result marked "Checked at the server", and for 6 hours the site's other requests to itself (Site Health, WP cron) take that way, only once this WordPress itself answered there, until the public address answers again.
+* New: "Run a real self-check now" and the preset "The site itself (loopback)" in Log → Check a request, the Site Health test "ScrapeLock self-request test" and `wp scrapelock selfcheck [--log]`. The last 30 self-requests are noted without IP addresses, User-Agents, query strings or cookies.
+* Fix: a block of the server's own address sent to the CDN earlier is removed at once.
+* Fix: "=" entries (the whole User-Agent) in "Always allowed User-Agents" work in WordPress and in the pre-cache check; they matched nothing before.
+* Fix: "Check a request" and `wp scrapelock check` say "Not counted" for a link preview of "Always allowed" on an image or file, instead of a counter.
+* Change: "For my site" shows each setting by its label, with its internal name in a "?" tooltip.
+* Greek translation of the new texts.
 
 = 3.12.1 =
 * Fix: the site's own requests (Vulnerable points "Check again", Site Health, the Stealth test, cron) got a 403 behind Bunny CDN without the CDN secret. WordPress now signs each of them (`X-ScrapeLock-Sig`, valid for 60 seconds and once) and a signed request passes every check, also the pre-cache check, whose line in wp-config.php is rewritten with the key on the next wp-admin page.
@@ -518,6 +541,9 @@ No, on purpose: only an app code, a recovery code or the SCRAPELOCK_UNLOCK line 
 The changes of 3.5.0 and earlier versions are in changelog.txt in the plugin folder.
 
 == Upgrade Notice ==
+
+= 3.12.2 =
+Fixes Vulnerable points "Check again" and Site Health behind Bunny CDN without "Forward Host Header", and says who refuses the site's own requests (Bunny, Cloudflare, Wordfence, the web server). Settings are kept.
 
 = 3.12.1 =
 Fixes the site's own requests getting a 403 behind a CDN (Vulnerable points, Site Health), FluentCommunity members' limits and AI search blocking. The pre-cache check's line in wp-config.php is rewritten on the next wp-admin page. Settings are kept.

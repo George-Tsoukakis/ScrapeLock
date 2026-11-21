@@ -249,10 +249,14 @@ foreach ( array( 'general', 'bots', 'content', 'images', 'rules', 'log', 'attack
 	$hits = preg_match_all( $raw, $text, $m ) ? array_unique( $m[0] ) : array();
 	t( "A8: tab $tab: no «setting_key: 0/1» in the page", 200 === $code && ! $hits && ! php_errors( $body ), $code . ' ' . implode( ', ', $hits ) );
 	if ( 'general' === $tab ) {
-		// 3.12.1: "For my site" may propose block_ip_host here; its rows name each setting next to its label on
-		// purpose (<code>key</code>), so its panel is left out of this check (t_3121_wizard.php covers it).
-		$outside = html_entity_decode( wp_strip_all_tags( preg_replace( '#<(script|style|textarea)\b.*?</\1>|<details class="pncp-card pncp-wizard".*?</form>#is', '', $body ) ) );
-		t( 'A8: Emergency Mode box on the page: the IP-address line in words', false !== strpos( $text, 'Requests that open the site by its IP address instead of its name are refused' ) && false === strpos( $outside, 'block_ip_host' ) );
+		// 3.12.2: the "For my site" panel is no longer left out: its rows show the label only, the internal name is in
+		// a tooltip (title / aria-label), so block_ip_host must not be anywhere in the text of the page.
+		t( 'A8: Emergency Mode box on the page: the IP-address line in words', false !== strpos( $text, 'Requests that open the site by its IP address instead of its name are refused' ) && false === strpos( $text, 'block_ip_host' ) );
+		if ( preg_match( '#<details class="pncp-card pncp-wizard".*?</details>#is', $body, $wm ) ) {
+			$wtext = html_entity_decode( wp_strip_all_tags( $wm[0] ) );
+			$whits = preg_match_all( '/\b[a-z]+(?:_[a-z0-9]+)+\b/', $wtext, $m2 ) ? array_unique( $m2[0] ) : array();
+			t( 'A8: "For my site" panel: no setting key in its text', ! $whits, implode( ', ', $whits ) );
+		}
 	}
 }
 list( , $body ) = http( '/wp-admin/index.php', $admin_cookies );

@@ -223,3 +223,32 @@ function pncp_test_cdn( $args, $url ) {
 	}
 	return $reply( 404, array( 'success' => false, 'errors' => array( array( 'code' => 7003, 'message' => 'Could not route' ) ), 'Message' => 'Not found' ) );
 }
+
+// 3.12.2: no official list (Google, Apple, Bing, OpenAI, Bunny, data centers…) is downloaded in the tests. With
+// internet (CI), WP cron — which now reaches the site through the self-request signature — used to fetch the
+// real lists over the test lists a test had just stored. A test that mocks a list URL itself still wins: this
+// runs last and only when nobody answered the request.
+add_filter(
+	'pre_http_request',
+	static function ( $pre, $args, $url ) {
+		if ( false !== $pre || ! class_exists( 'PNCP_Ip' ) || ! is_callable( array( 'PNCP_Ip', 'sources' ) ) ) {
+			return $pre;
+		}
+		static $urls = null;
+		if ( null === $urls ) {
+			$urls    = array();
+			$sources = PNCP_Ip::sources();
+			array_walk_recursive(
+				$sources,
+				static function ( $value ) use ( &$urls ) {
+					if ( is_string( $value ) && 0 === strpos( $value, 'http' ) ) {
+						$urls[ $value ] = true;
+					}
+				}
+			);
+		}
+		return isset( $urls[ (string) $url ] ) ? new WP_Error( 'test', 'official lists are not downloaded in tests' ) : $pre;
+	},
+	1000,
+	3
+);

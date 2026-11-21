@@ -200,15 +200,18 @@ final class PNCP_Site_Files {
 	 * @return string
 	 */
 	private static function fetch( $url, $type ) {
-		$response = wp_remote_get(
+		// 3.12.2: straight to the server when a firewall or ScrapeLock's checks for bots refuse the site's own request.
+		$response = PNCP_Self_Check::request(
 			$url,
 			array(
+				'method'              => 'GET',
 				'timeout'             => 5,
 				'redirection'         => 2,
 				'sslverify'           => apply_filters( 'https_local_ssl_verify', false ), // phpcs:ignore WordPress.NamingConventions.PrefixAllGlobals.NonPrefixedHooknameFound -- Core filter for requests to the site itself.
 				'limit_response_size' => 65536,
-			)
-		);
+			),
+			'self'
+		)['response'];
 		if ( is_wp_error( $response ) ) {
 			return 'error';
 		}

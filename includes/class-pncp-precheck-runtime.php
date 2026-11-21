@@ -92,6 +92,23 @@ final class PNCP_Precheck_Runtime {
 	public static $self_seen = array();
 
 	/**
+	 * 3.12.2: the result of the last check of the site's signature in this request (self_signed()): '' (none sent),
+	 * ok, bad_format, no_key, expired, host_mismatch, path_mismatch, bad_mac or nonce_reused. Read by WordPress
+	 * (PNCP_Self_Check) for the diagnostics of the site's own requests.
+	 *
+	 * @var string
+	 */
+	public static $self_result = '';
+
+	/**
+	 * 3.12.2: the nonce of the site's signature that self_signed() accepted in this request ('' = none): its id
+	 * (as PNCP_Self_Check::request_id()) goes into the answer's "X-ScrapeLock: ok id=…".
+	 *
+	 * @var string
+	 */
+	public static $self_nonce = '';
+
+	/**
 	 * Called by the line in wp-config.php: reads the configuration from the data folder and runs the check.
 	 *
 	 * @param string $dir The data folder.
@@ -177,6 +194,10 @@ final class PNCP_Precheck_Runtime {
 			header( 'Content-Type: text/html; charset=utf-8' );
 			header( 'Cache-Control: no-store, no-cache, must-revalidate, max-age=0' );
 			header( 'X-Robots-Tag: noindex' );
+			$from_server = false;
+			$server_ip   = self::client_ip( $c, $from_server );
+			$from_server = self::is_server_request( $c, $server_ip, $from_server );
+			header( 'X-ScrapeLock: ' . self::refusal_marker( $reason, $from_server ) ); // 3.12.2: who refused (PNCP_Self_Check).
 			if ( 429 === $code ) {
 				header( 'Retry-After: 60' );
 			}
@@ -185,6 +206,28 @@ final class PNCP_Precheck_Runtime {
 			echo 429 === $code ? 'Too many requests.' : 'Access denied.';
 		}
 		exit;
+	}
+
+	/**
+	 * 3.12.2: the value of the X-ScrapeLock header of this check's 403 / 429, as PNCP_Self_Check::marker() makes it
+	 * in WordPress: "refused"; for a request that carries the site's signature also the layer and the signature's
+	 * result, and the reason only when the signature is the site's own (its MAC matched). No address or other data
+	 * of the visitor. The layer and the signature's result only for the site's own signature or a request from the
+	 * server's addresses: anyone can send the header, and a stranger gets just "refused".
+	 *
+	 * @param string $reason      The reason of the refusal.
+	 * @param bool   $from_server Whether the request came from one of the server's addresses (is_server_request()).
+	 * @return string
+	 */
+	public static function refusal_marker( $reason, $from_server = false ) {
+		if ( '' === self::$self_result ) {
+			return 'refused';
+		}
+		$own = in_array( self::$self_result, array( 'ok', 'nonce_reused' ), true );
+		if ( ! $own && ! $from_server ) {
+			return 'refused';
+		}
+		return 'refused' . ( $own && preg_match( '/^[a-z0-9_]{1,40}$/', (string) $reason ) ? ' ' . $reason : '' ) . ' layer=pre-cache sig=' . self::$self_result;
 	}
 
 	/**
@@ -225,6 +268,11 @@ final class PNCP_Precheck_Runtime {
 		// 3.12.1: the site's own request, signed by WordPress (PNCP_Server_Ips::sig_ok()): from any address, before
 		// "Only through the CDN" and every other check (Vulnerable points, Site Health, the Stealth test).
 		if ( self::self_signed( $c, $now ) ) {
+			if ( ! headers_sent() ) {
+				// 3.12.2: this server answered the site's own request, with the id of its signature
+				// (PNCP_Self_Check::ok_marker(), is_own_answer()).
+				header( 'X-ScrapeLock: ok id=' . substr( md5( 'id|' . self::$self_nonce ), 0, 8 ) );
+			}
 			return null;
 		}
 		$direct = self::not_via_cdn( $c );
@@ -992,9 +1040,14 @@ final class PNCP_Precheck_Runtime {
 	 * 3.12.1: does the request carry a valid signature of the site (header X-ScrapeLock-Sig, as
 	 * PNCP_Server_Ips::sig_ok() checks it in WordPress)? The HMAC-SHA256 of method, host, path, time and nonce, with
 	 * the key the line in wp-config.php passes to boot() ("self_key"; never in the data folder, which is in uploads).
-	 * The host must be one of the site's ("self_sig" in the configuration), the time within its window, and the
-	 * nonce new: it is kept as a file in the folder "self" (created with "x", so two requests with the same nonce
-	 * cannot both pass). Anything missing or unreadable: not signed.
+	 * The time must be within its window, and the nonce new: it is kept as a file in the folder "self" (created
+	 * with "x", so two requests with the same nonce cannot both pass). Anything missing or unreadable: not signed.
+	 *
+	 * 3.12.2: signed for one of the site's hosts ("self_sig" in the configuration), whatever Host header reached
+	 * the server (a CDN that does not forward it sends its origin's name): the hint at the end of the header names
+	 * the host and path it was made for (PNCP_Server_Ips::verify(), the same steps). The result and its reason are
+	 * kept in $self_result for WordPress's diagnostics and the refusal header. The nonce file of this check is its
+	 * own: WordPress keeps its nonces apart (PNCP_Log::cache_add()), so the request is not refused there as a replay.
 	 *
 	 * @param array<string, mixed> $c   Configuration.
 	 * @param int                  $now Time.
@@ -1002,31 +1055,60 @@ final class PNCP_Precheck_Runtime {
 	 */
 	public static function self_signed( $c, $now ) {
 		$sent = isset( $_SERVER['HTTP_X_SCRAPELOCK_SIG'] ) ? trim( (string) $_SERVER['HTTP_X_SCRAPELOCK_SIG'] ) : '';
-		if ( '' === $sent || empty( $c['self_sig'] ) || ! is_array( $c['self_sig'] ) || ! preg_match( '/^(\d{9,11})\.([0-9a-f]{24})\.([0-9a-f]{64})$/', $sent, $m ) ) {
+		if ( '' === $sent ) {
 			return false;
 		}
 		$method = self::method();
 		$host   = isset( $_SERVER['HTTP_HOST'] ) ? (string) preg_replace( '/:\d+$/', '', strtolower( trim( (string) $_SERVER['HTTP_HOST'] ) ) ) : '';
 		$uri    = isset( $_SERVER['REQUEST_URI'] ) ? (string) $_SERVER['REQUEST_URI'] : '/';
-		$path   = rawurldecode( (string) parse_url( $uri, PHP_URL_PATH ) );
+		$path   = (string) preg_replace( '#/{2,}#', '/', rawurldecode( (string) parse_url( $uri, PHP_URL_PATH ) ) );
 		$path   = '' === $path ? '/' : $path;
 		$memo   = $sent . '|' . $method . '|' . $host . '|' . $path;
 		if ( isset( self::$self_seen[ $memo ] ) ) {
 			return self::$self_seen[ $memo ];
 		}
 		self::$self_seen[ $memo ] = false;
-		$hosts                    = isset( $c['self_sig']['hosts'] ) ? array_map( 'strval', (array) $c['self_sig']['hosts'] ) : array();
-		$window                   = isset( $c['self_sig']['window'] ) ? max( 1, (int) $c['self_sig']['window'] ) : 60;
-		$time                     = (int) $m[1];
-		if ( '' === $host || ! in_array( $host, $hosts, true ) || abs( $now - $time ) > $window ) {
+		self::$self_result        = 'bad_format';
+		if ( empty( $c['self_sig'] ) || ! is_array( $c['self_sig'] ) || ! preg_match( '/^(\d{9,11})\.([0-9a-f]{24})\.([0-9a-f]{64})(?:\.([0-9a-f]{8})([0-9a-f]{8}))?$/', $sent, $m ) ) {
 			return false;
 		}
-		$key = isset( $c['self_key'] ) ? (string) $c['self_key'] : '';
+		$hosts  = isset( $c['self_sig']['hosts'] ) ? array_values( array_filter( array_map( 'strval', (array) $c['self_sig']['hosts'] ) ) ) : array();
+		$window = isset( $c['self_sig']['window'] ) ? max( 1, (int) $c['self_sig']['window'] ) : 60;
+		$time   = (int) $m[1];
+		$key    = isset( $c['self_key'] ) ? (string) $c['self_key'] : '';
 		if ( ! preg_match( '/^[0-9a-f]{64}$/', $key ) ) {
+			self::$self_result = 'no_key';
 			return false;
 		}
-		$mac = hash_hmac( 'sha256', 'pncp-sig|v1|' . $method . '|' . $host . '|' . $path . '|' . $time . '|' . $m[2], $key );
-		if ( ! hash_equals( $mac, $m[3] ) ) {
+		if ( abs( $now - $time ) > $window ) {
+			self::$self_result = 'expired';
+			return false;
+		}
+		if ( isset( $m[4] ) && '' !== $m[4] ) {
+			$found = array();
+			foreach ( $hosts as $one ) {
+				if ( substr( md5( 'h|' . $one ), 0, 8 ) === $m[4] ) {
+					$found[] = $one;
+				}
+			}
+			if ( ! $found ) {
+				self::$self_result = 'host_mismatch';
+				return false;
+			}
+			if ( substr( md5( 'p|' . $path ), 0, 8 ) !== $m[5] ) {
+				self::$self_result = 'path_mismatch';
+				return false;
+			}
+			$hosts = $found;
+		}
+		$valid = false;
+		foreach ( $hosts as $one ) {
+			foreach ( 'GET' === $method ? array( 'GET', 'HEAD' ) : array( $method ) as $verb ) {
+				$valid = $valid || hash_equals( hash_hmac( 'sha256', 'pncp-sig|v1|' . $verb . '|' . $one . '|' . $path . '|' . $time . '|' . $m[2], $key ), $m[3] );
+			}
+		}
+		if ( ! $valid ) {
+			self::$self_result = 'bad_mac';
 			return false;
 		}
 		// Used once: the nonce's file is created only if it is not there yet.
@@ -1036,10 +1118,13 @@ final class PNCP_Precheck_Runtime {
 		}
 		$handle = @fopen( $folder . '/' . $m[2], 'x' );
 		if ( false === $handle ) {
+			self::$self_result = 'nonce_reused';
 			return false;
 		}
 		fwrite( $handle, (string) $now );
 		fclose( $handle );
+		self::$self_result        = 'ok';
+		self::$self_nonce         = $m[2];
 		self::$self_seen[ $memo ] = true;
 		return true;
 	}
@@ -1169,7 +1254,12 @@ final class PNCP_Precheck_Runtime {
 			return false;
 		}
 		foreach ( $c['allow_ua'] as $entry ) {
-			if ( ! is_array( $entry ) || ! isset( $entry[0] ) || '' === (string) $entry[0] || false === strpos( $ua, (string) $entry[0] ) ) {
+			if ( ! is_array( $entry ) || ! isset( $entry[0] ) || '' === (string) $entry[0] || '=' === (string) $entry[0] ) {
+				continue;
+			}
+			// 3.12.2: "=name" = the whole User-Agent, as PNCP_Bots::allow_list_match() (it matched nothing before).
+			$needle = (string) $entry[0];
+			if ( '=' === $needle[0] ? trim( $ua ) !== trim( substr( $needle, 1 ) ) : false === strpos( $ua, $needle ) ) {
 				continue;
 			}
 			if ( ! isset( $entry[1] ) || ( $reliable && is_array( $entry[1] ) && self::in_any( $ip, $entry[1] ) ) ) {
