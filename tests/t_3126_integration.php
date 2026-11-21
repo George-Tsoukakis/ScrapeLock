@@ -10,6 +10,11 @@
  *    asks BuiltWith to stay away from everything but that file (Allow: /builtwith.txt before Disallow: /).
  * U. uninstall.php deletes every option and event of 3.12.6; deactivation removes the verification files (a copy
  *    in the root folder would otherwise stay served after its time).
+ * C. wp scrapelock rules status: the Stealth rules' fields from the real PNCP_Stealth_Status::status(true) (keys
+ *    state, installed, want), only while Stealth is turned on.
+ * A. The admin pages: the Server rules tab (Apache, Nginx, Stealth, fail2ban, Verification files, no PHP warnings),
+ *    the main rules notice and the Stealth rules notice each once (dashboard, tab), the second check before "not
+ *    found", a dismissed Stealth notice; the export and import carry block_tech_profilers.
  *
  * Only on a test WordPress.
  */
@@ -200,5 +205,124 @@ $pncp_disk = $tmp . '/root/BingSiteAuth.xml';
 t( 'U a file written to the root folder, with its event', is_array( $added ) && 'written' === $added['disk'] && is_file( $pncp_disk ) && false !== wp_next_scheduled( PNCP_Verify_Files::CRON ), wp_json_encode( $added ) );
 PNCP_Verify_Files::remove_all();
 t( 'U remove_all() (deactivation, uninstall): the file in the root folder, both options and the event go', ! is_file( $pncp_disk ) && false === get_option( PNCP_Verify_Files::INDEX ) && false === get_option( PNCP_Verify_Files::DATA ) && false === wp_next_scheduled( PNCP_Verify_Files::CRON ) );
+
+/* ---------- C. wp scrapelock rules status and the Stealth rules' own status ---------- */
+
+$pncp_status_keys = array( 'state', 'installed', 'want' );
+$pncp_st          = PNCP_Stealth_Status::status( true );
+t( 'C PNCP_Stealth_Status::status(true) has the keys "rules status" reads (state, installed, want), as strings', array() === array_diff( $pncp_status_keys, array_keys( $pncp_st ) ) && is_string( $pncp_st['state'] ) && is_string( $pncp_st['installed'] ) && is_string( $pncp_st['want'] ) && in_array( $pncp_st['state'], array( 'current', 'stale', 'unmarked', 'missing', 'error' ), true ), wp_json_encode( $pncp_st ) );
+if ( '' === $wp_cli ) {
+	echo "SKIP C wp scrapelock rules status (no WP_CLI)\n";
+} else {
+	$pncp_cli = static function ( $args ) use ( $wp_cli ) {
+		exec( $wp_cli . ' scrapelock ' . $args . ' < /dev/null 2>/dev/null', $out, $rc );
+		wp_cache_flush();
+		return array( $rc, implode( "\n", $out ) );
+	};
+	settings( array( 'stealth_enabled' => 0 ) );
+	list( $rc, $out ) = $pncp_cli( 'rules status --format=json' );
+	$pncp_json        = json_decode( $out, true );
+	t( 'C Stealth off: rules status has no stealth_ fields', 0 === $rc && is_array( $pncp_json ) && ! preg_grep( '/^stealth_/', array_keys( $pncp_json ) ), $out );
+	settings( array( 'stealth_enabled' => 1 ) );
+	PNCP_Stealth_Status::reset();
+	$pncp_want        = PNCP_Stealth_Status::current( PNCP_Stealth_Status::format() );
+	list( $rc, $out ) = $pncp_cli( 'rules status --format=json' );
+	$pncp_json        = json_decode( $out, true );
+	t( 'C Stealth on: stealth_state, stealth_installed and stealth_current from the real PNCP_Stealth_Status::status(true)', 0 === $rc && is_array( $pncp_json ) && isset( $pncp_json['stealth_state'], $pncp_json['stealth_installed'], $pncp_json['stealth_current'] ) && in_array( $pncp_json['stealth_state'], array( 'current', 'stale', 'unmarked', 'missing', 'error' ), true ) && $pncp_want === $pncp_json['stealth_current'] && (bool) preg_match( '/^[0-9a-f]{12}$/', $pncp_json['stealth_current'] ), $out . ' want ' . $pncp_want );
+	t( 'C ...a fresh check: the kept Stealth status is the one the command just made', null !== PNCP_Stealth_Status::kept_status() && PNCP_Stealth_Status::kept_status()['state'] === $pncp_json['stealth_state'] );
+	list( $rc, $out ) = $pncp_cli( 'rules status' );
+	t( 'C the table has the same three rows', 0 === $rc && (bool) preg_match( '/stealth_state\s+\S+/', $out ) && (bool) preg_match( '/stealth_current\s+' . preg_quote( $pncp_want, '/' ) . '/', $out ), $out );
+	settings( array( 'stealth_enabled' => 0 ) );
+}
+
+/* ---------- A. The admin pages: the Server rules tab, the notices, export ---------- */
+
+$pncp_admin   = get_user_by( 'id', 1 );
+$pncp_expire  = time() + DAY_IN_SECONDS;
+$pncp_token   = WP_Session_Tokens::get_instance( $pncp_admin->ID )->create( $pncp_expire );
+$pncp_cookies = 'wordpress_' . COOKIEHASH . '=' . rawurlencode( wp_generate_auth_cookie( $pncp_admin->ID, $pncp_expire, 'auth', $pncp_token ) ) . '; ' . LOGGED_IN_COOKIE . '=' . rawurlencode( wp_generate_auth_cookie( $pncp_admin->ID, $pncp_expire, 'logged_in', $pncp_token ) );
+$pncp_page    = static function ( $path ) use ( $pncp_cookies ) {
+	return req( $path, BROWSER, 'GET', $pncp_cookies );
+};
+$pncp_errors  = static function ( $body ) {
+	return (bool) preg_match( '/(Warning|Notice|Deprecated|Fatal error)<\/b>:|PHP (Warning|Notice|Deprecated)/', $body );
+};
+// Each notice once: the main rules out of date (E4) and the Stealth rules to copy again (E5), both at once.
+$pncp_saved_state = get_option( PNCP_Rules_State::STATE, null );
+settings( array( 'stealth_enabled' => 1 ) );
+PNCP_Stealth_Status::reset();
+$pncp_now = PNCP_Rules::nginx_fingerprint();
+update_option(
+	PNCP_Rules_State::STATE,
+	array(
+		'installed' => 'aaaaaaaaaaaa bbbbbbbbbbbb',
+		'format'    => 'nginx',
+		'current'   => $pncp_now,
+		'time'      => time(),
+		'seen'      => time(),
+		'dismissed' => '',
+	),
+	false
+);
+update_option(
+	PNCP_Stealth_Status::SEEN,
+	array(
+		'installed' => 'cccccccccccc',
+		'time'      => time(),
+		'base'      => (string) PNCP_Stealth::settings()['stealth_base'],
+		'folders'   => PNCP_Stealth_Status::folders(),
+		'dismissed' => '',
+	),
+	false
+);
+t( 'A set up: main rules out of date and Stealth rules to copy again', PNCP_Rules_State::is_stale() && 'changed' === PNCP_Stealth_Status::needs_copy(), PNCP_Stealth_Status::needs_copy() );
+list( $code, $h, $body ) = $pncp_page( '/wp-admin/index.php' );
+t( 'A dashboard: 200, no PHP warnings', 200 === $code && ! $pncp_errors( $body ), (string) $code );
+t( 'A dashboard: the main rules notice once, the Stealth rules notice once (two different files, two notices)', 1 === substr_count( $body, 'notice notice-warning pncp-rules-stale' ) && 1 === substr_count( $body, 'pncp-stealth-rules-stale' ), substr_count( $body, 'pncp-rules-stale' ) . ' ' . substr_count( $body, 'pncp-stealth-rules-stale' ) );
+t( 'A dashboard: no second check due, so no recheck script', false === strpos( $body, 'pncp-rules-recheck' ) );
+list( $code, $h, $body ) = $pncp_page( '/wp-admin/options-general.php?page=scrapelock&tab=hardening' );
+t( 'A Vulnerable points → Stealth: one line about the Stealth server rules, not two', 200 === $code && ! $pncp_errors( $body ) && substr_count( $body, 'id="pncp-stealth-card-rules"' ) + substr_count( $body, 'A plugin or theme changed: copy the new server rules below' ) <= 1, (string) $code );
+list( $code, $h, $body ) = $pncp_page( '/wp-admin/options-general.php?page=scrapelock&tab=rules' );
+t( 'A Server rules tab: 200, no PHP warnings', 200 === $code && ! $pncp_errors( $body ), (string) $code );
+$pncp_pos = array();
+foreach ( array( 'id="pncp-rules-apache"', 'id="pncp-rules-nginx"', 'id="pncp-rules-stealth"', 'id="pncp-rules-fail2ban"', 'id="pncp-verify-files"' ) as $pncp_id ) {
+	$pncp_pos[ $pncp_id ] = strpos( $body, $pncp_id );
+}
+$pncp_sorted = $pncp_pos;
+asort( $pncp_sorted );
+t( 'A Server rules tab: Apache, Nginx (parts 1 and 2), Stealth, fail2ban, Verification files, in that order', ! in_array( false, $pncp_pos, true ) && array_keys( $pncp_pos ) === array_keys( $pncp_sorted ), wp_json_encode( $pncp_pos ) );
+t( 'A ...the Stealth card: its status, the aaPanel place and both rule sets', false !== strpos( $body, 'id="pncp-stealth-rules-status"' ) && false !== strpos( $body, 'z-scrapelock-stealth.conf' ) && false !== strpos( $body, 'id="pncp-stealth-nginx"' ) && false !== strpos( $body, 'id="pncp-stealth-apache"' ) );
+t( 'A ...the Verification files card: the form with its nonce', false !== strpos( $body, 'name="op" value="add"' ) && (bool) preg_match( '/name="_wpnonce" value="[0-9a-f]{10}"/', $body ) );
+t( 'A ...each notice once on the tab too', 1 === substr_count( $body, 'notice notice-warning pncp-rules-stale' ) && 1 === substr_count( $body, 'pncp-stealth-rules-stale' ) );
+// "Not found" only after a second check: the first miss makes the page ask again, and only once.
+$pncp_state         = PNCP_Rules_State::state();
+$pncp_state['installed'] = $pncp_now;
+$pncp_state['miss'] = time();
+$pncp_state['gone'] = 0;
+update_option( PNCP_Rules_State::STATE, $pncp_state, false );
+delete_transient( 'pncp_nginx_status' );
+list( $code, $h, $body ) = $pncp_page( '/wp-admin/index.php' );
+t( 'A a first miss: no notice yet, the page asks again a few seconds later (one script)', 200 === $code && 0 === substr_count( $body, 'notice notice-warning pncp-rules-stale' ) && 1 === substr_count( $body, 'id="pncp-rules-recheck"' ), substr_count( $body, 'pncp-rules-stale' ) . ' ' . substr_count( $body, 'pncp-rules-recheck' ) );
+// Dismissed Stealth notice: gone until the rules change again; the main one stays.
+update_option( PNCP_Rules_State::STATE, array_merge( $pncp_state, array( 'installed' => 'aaaaaaaaaaaa bbbbbbbbbbbb', 'miss' => 0 ) ), false );
+$pncp_seen              = PNCP_Stealth_Status::seen();
+$pncp_seen['dismissed'] = 'changed|cccccccccccc|' . PNCP_Stealth_Status::current( PNCP_Stealth_Status::format() );
+update_option( PNCP_Stealth_Status::SEEN, $pncp_seen, false );
+list( $code, $h, $body ) = $pncp_page( '/wp-admin/index.php' );
+t( 'A the Stealth notice dismissed: only the main rules notice is left', 1 === substr_count( $body, 'notice notice-warning pncp-rules-stale' ) && 0 === substr_count( $body, 'pncp-stealth-rules-stale' ) );
+if ( null === $pncp_saved_state ) {
+	delete_option( PNCP_Rules_State::STATE );
+} else {
+	update_option( PNCP_Rules_State::STATE, $pncp_saved_state, false );
+}
+delete_option( PNCP_Stealth_Status::SEEN );
+settings( array( 'stealth_enabled' => 0 ) );
+
+// The settings export and import carry the new switch; nothing of the new options goes into the export.
+settings( array( 'block_tech_profilers' => 1 ) );
+$pncp_export = PNCP_Settings_Io::export();
+t( 'A export: block_tech_profilers is in it (1), and no option of the new parts (verification files, wizard state, Stealth status)', isset( $pncp_export['settings']['block_tech_profilers'] ) && 1 === (int) $pncp_export['settings']['block_tech_profilers'] && false === strpos( (string) wp_json_encode( $pncp_export ), 'pncp_verify_files' ) && false === strpos( (string) wp_json_encode( $pncp_export ), 'pncp_wizard_state' ), wp_json_encode( array_keys( $pncp_export ) ) );
+t( 'A import: block_tech_profilers is a public key', in_array( 'block_tech_profilers', PNCP_Settings_Io::public_keys(), true ) );
+settings( array( 'block_tech_profilers' => 0 ) );
 
 exit( $fails ? 1 : 0 );
