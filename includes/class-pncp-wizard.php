@@ -51,6 +51,13 @@ final class PNCP_Wizard {
 	const STATE_MAX = 60;
 
 	/**
+	 * 3.12.6: the settings saves made before init, looked at on init (settings_saved()).
+	 *
+	 * @var array<int, array{0: array<string, mixed>, 1: array<string, mixed>}>
+	 */
+	private static $early = array();
+
+	/**
 	 * Risk of a proposal: it blocks nothing more (ticked by default).
 	 */
 	const RISK_NONE = 'none';
@@ -885,6 +892,15 @@ final class PNCP_Wizard {
 		if ( ! is_array( $old ) || ! is_array( $new ) ) {
 			return;
 		}
+		// A save before init (the upgrade on plugins_loaded, another plugin's early code): the proposals carry
+		// translated texts, which WordPress must not load yet. The pair is looked at once init has run.
+		if ( ! did_action( 'init' ) ) {
+			if ( ! self::$early ) {
+				add_action( 'init', array( __CLASS__, 'early_saves' ), 99 );
+			}
+			self::$early[] = array( $old, $new );
+			return;
+		}
 		$defaults = PNCP_Options::defaults();
 		$old      = array_merge( $defaults, $old );
 		$new      = array_merge( $defaults, $new );
@@ -930,6 +946,17 @@ final class PNCP_Wizard {
 		}
 		if ( $state !== $before ) {
 			self::save_state( $state );
+		}
+	}
+
+	/**
+	 * 3.12.6: the saves made before init, in their order (settings_saved()).
+	 */
+	public static function early_saves() {
+		$saves       = self::$early;
+		self::$early = array();
+		foreach ( $saves as $pair ) {
+			self::settings_saved( $pair[0], $pair[1] );
 		}
 	}
 

@@ -1,3 +1,125 @@
+# ScrapeLock 3.12.6 — Stealth με WP Rocket, κατάσταση κανόνων Stealth, WP-CLI για κανόνες και CDN, αρχεία επαλήθευσης, technology profilers
+
+Η αναφορά μένει στο αποθετήριο (`/REPORT.md export-ignore`): δεν μπαίνει στο zip του plugin. Στις εντολές, `<site>` είναι το όνομα φακέλου του ιστότοπου στο aaPanel και `<id>` το όνομα του αρχείου του μέρους 1· τίποτα από τον live server δεν είναι στον κώδικα ή στις δοκιμές.
+
+## E1. Stealth και WP Rocket (και Autoptimize, LiteSpeed Cache, W3 Total Cache)
+
+**Τι άλλαξε.** Με ενεργό plugin βελτιστοποίησης (το plugin, η σταθερά του, ή οι φάκελοι `cache/min`, `cache/busting`, `cache/background-css` του WP Rocket· φίλτρο `pncp_stealth_optimizers`) τα εσωτερικά `wp-content` / `wp-includes` (και `litespeed`) μέσα στις διευθύνσεις των minified / combined αρχείων παίρνουν ουδέτερους κωδικούς `q……`, όπως τα ονόματα plugins / themes. Οι κανόνες Nginx / Apache τα γυρίζουν πίσω **με μοτίβο**, όχι με λίστα αρχείων: ένα αρχείο που φτιάχνει το WP Rocket μετά το «Clear cache» σερβίρεται χωρίς νέους κανόνες. Το HTML που αποθηκεύουν τα plugins (`rocket_buffer`, `autoptimize_html_after_minify`, `litespeed_buffer_after`, `w3tc_process_content`) ξαναγράφεται τελευταίο (PHP_INT_MAX), άρα και οι σελίδες της cache τους είναι καθαρές· η page cache αδειάζει όταν το Stealth ανοίγει, κλείνει ή αλλάζει χάρτη (το CDN όχι: `wp scrapelock cdn purge --all --yes`). Χωρίς τέτοιο plugin οι κανόνες μένουν ίδιοι.
+
+**Τι δεν κρύβεται** (γράφεται στο «What can never be hidden»): τα `data-rocket-…`, `rocket-lazyload`, `rocketlazyloadscript` (το lazy loading και τα delayed scripts τα χρειάζονται), και οι διευθύνσεις μέσα στα ίδια τα CSS / JS (ένα αρχείο στέλνεται όπως είναι αποθηκευμένο).
+
+**aaPanel.** Αντιγραφή των κανόνων Stealth ξανά (βλ. E3/E5), μετά «Clear cache» + preload στο WP Rocket και purge στο Bunny.
+
+**Δοκιμές.** `t_3126_stealth` (O, W, B): τα σχήματα URL του WP Rocket (cache/min/<blog>/<path>?ver=, combined <md5>.js, cache/busting, cache/background-css/<host>/…), Autoptimize, LiteSpeed, W3TC σε tags, preload, data-lazy-src, srcset, url(), JSON: 0 `wp-content` / `wp-includes`, και οι κανόνες (εφαρμοσμένοι με PCRE όπως ο server) φτάνουν στο πραγματικό αρχείο, και σε αρχείο που φτιάχτηκε μετά. Stand-in τύπου WP Rocket (mu-plugin: buffer, `rocket_buffer`, page cache πριν από το WordPress): 0 wp-content στο HTML, και από την cache του, και μετά από clear + regenerate. Πραγματικός Nginx με διάταξη aaPanel (include extension στην αρχή, rewrite σε επίπεδο server): κάθε CSS/JS/εικόνα της σελίδας 200.
+
+**Δεν δοκιμάστηκε.** Πραγματικό WP Rocket με άδεια (minify/combine, preload, lazyload) — μόνο ο stand-in. Τα σχήματα URL των Autoptimize, LiteSpeed Cache και W3TC είναι **υποθέσεις** από την τεκμηρίωση / τον κώδικά τους, όχι από εγκατεστημένα plugins. Πραγματικός Apache με .htaccess δεν έτρεξε (χωρίς apache2: SKIP).
+
+## E2. «For my site»: Dismiss / Restore / «you chose this»
+
+**Τι άλλαξε.** «Dismiss» ανά πρόταση (option `pncp_wizard_state`, όχι autoload, μία για όλο το site). Η πρόταση μένει κρυφή όσο ο συνδυασμός (id, τιμές τώρα, προτεινόμενες τιμές) είναι ίδιος· δεν μετρά στο badge και δεν εφαρμόζεται ποτέ (ούτε με `--apply`/`--only`). «Show dismissed (N)» με «Restore». Όταν η τιμή είναι επιλογή του διαχειριστή μετά από πρόταση, η γραμμή λέει «you chose this» και δεν είναι τσεκαρισμένη.
+
+**aaPanel (WP-CLI).**
+```
+wp --allow-root --skip-themes scrapelock wizard
+wp --allow-root --skip-themes scrapelock wizard dismiss blur_on_capture
+wp --allow-root --skip-themes scrapelock wizard dismiss block_devtools
+wp --allow-root --skip-themes scrapelock wizard --include-dismissed
+```
+Ή στην πρώτη καρτέλα «Dismiss» στις δύο γραμμές (blur, devtools) που θέλετε ανοιχτές.
+
+**Δοκιμές.** `t_3126_wizard` (66 PASS): η περίπτωση του owner (blur / devtools), το hash, «you chose this», αποθήκευση, panel μέσω HTTP με nonce / δικαιώματα / Lockdown, WP-CLI.
+
+## E3. WP-CLI: `rules show | status | install`, `cdn purge`
+
+**Τι άλλαξε.** `PNCP_Cli_Server`: μόνο από WP-CLI (σε web αίτημα `wp_die` 403), ποτέ όσο το site είναι κλειδωμένο. Το `install` γράφει μόνο τα αρχεία που δίνονται: `<file>.new`, diff, `<file>.old`, `nginx -t`, reload (`nginx -s reload`, αλλιώς `systemctl reload nginx`), σβήνει τα `.old`, τυπώνει την κατάσταση· αν αποτύχει το test ή το reload, **όλα** τα αρχεία επανέρχονται byte προς byte. Κανένα backup δεν μένει. Μόνο `.conf` (Nginx) / `.htaccess` ή `.conf` (Apache), χωρίς `..`, symlink μόνο μέσα στον φάκελό του, ένα ξεχασμένο `.old` σταματά την εντολή. Το token των στατικών feeds κρατιέται από το εγκατεστημένο αρχείο και δεν τυπώνεται. `cdn purge` με τα αποθηκευμένα κλειδιά Bunny / Cloudflare (δημόσιες `PNCP_Bunny::purge_urls()/purge_all()`, `PNCP_Edge::purge_urls()/purge_all()/cdn_purge()`): μόνο διευθύνσεις των hosts του site, τα κλειδιά ποτέ στην έξοδο.
+
+**Ασφάλεια.** Το `proc_open()` είναι η μόνη κλήση διεργασίας του plugin. Οι προεπιλεγμένες εντολές χτίζονται από πλήρη paths με `escapeshellarg()`· το μόνο κείμενο εντολής απ' έξω είναι τα `--test-cmd` / `--reload-cmd`, που τρέχουν μέσω shell όπως τα γράφει αυτός που είναι στον server (γράφεται στο `--help`).
+
+**aaPanel.**
+```
+wp --allow-root --skip-themes scrapelock rules status
+wp --allow-root --skip-themes scrapelock rules install \
+  --nginx-http=/www/server/panel/vhost/nginx/0.scrapelock-<id>.conf \
+  --nginx-server=/www/server/panel/vhost/nginx/extension/<site>/scrapelock.conf \
+  --stealth=/www/server/panel/vhost/nginx/extension/<site>/z-scrapelock-stealth.conf --dry-run
+# το ίδιο χωρίς --dry-run (με --yes χωρίς ερώτηση). Αν το nginx δεν είναι στο PATH:
+#   --test-cmd="/www/server/nginx/sbin/nginx -t" --reload-cmd="/www/server/nginx/sbin/nginx -s reload"
+wp --allow-root --skip-themes scrapelock rules status --format=json
+wp --allow-root --skip-themes scrapelock cdn purge /builtwith.txt
+wp --allow-root --skip-themes scrapelock cdn purge --all --yes
+```
+
+**Δοκιμές.** `t_3126_cli` (54 PASS): show ίδιο με την καρτέλα, status/JSON, install με όλες τις αρνήσεις, dry-run, αποτυχία test / reload (όλα πίσω), ψεύτικα nginx/systemctl στο PATH, symlink, .htaccess, token, πραγματικός Nginx σε προσωρινό prefix (με nginx στο PATH· αλλιώς SKIP), cdn purge με ψεύτικα API (429, άρνηση token, άλλος host). `t_3126_integration` C/S: τα πεδία `stealth_state` / `stealth_installed` / `stealth_current` από την πραγματική `PNCP_Stealth_Status::status(true)`, και οι στατικοί έλεγχοι ασφαλείας.
+
+**Δεν δοκιμάστηκε.** `rules install` σε πραγματικό aaPanel (μόνο σε προσωρινό Nginx)· purge στο πραγματικό Bunny / Cloudflare.
+
+## E4. Όχι πια ψεύτικο «installed: not found»
+
+**Τι άλλαξε.** Το «installed» είναι ό,τι ανέφερε τελευταία ο server· η αποθήκευση ρυθμίσεων ξαναϋπολογίζει μόνο το «current». Μια απάντηση χωρίς header (location με δικά του add_header, η στιγμή του reload, cache) δεν σβήνει τίποτα. «Not found» μόνο μετά από δύο φρέσκους ελέγχους του server με απόσταση ≥ 3 s: τον δεύτερο τον ζητά η σελίδα με admin-ajax 4 s μετά τη φόρτωση (nonce, manage_options) και βάζει την ειδοποίηση μόνο αν δεν υπάρχει ήδη. Όταν διαφέρει μόνο το μέρος 1 ή μόνο το 2, το μήνυμα το λέει.
+
+**Δοκιμές.** `t_3126_status` (30 PASS): το σενάριο του live (save Bots → part 1), part 2, τα δύο checks, mocked απαντήσεις, HTTP. `t_3126_integration` A: κάθε ειδοποίηση μία φορά, το script του δεύτερου ελέγχου μόνο όταν χρειάζεται.
+
+## E5. Κατάσταση των κανόνων Stealth
+
+**Τι άλλαξε.** Οι κανόνες Stealth έχουν δικό τους αποτύπωμα: Nginx `if ($uri = /.well-known/scrapelock-stealth) { return 200 "<fp>\n"; }` σε επίπεδο server (πάνω από το rewrite του aaPanel) και `location =` εφεδρικά· Apache header `X-ScrapeLock-Stealth` μόνο στα υπογεγραμμένα αιτήματα. Κάρτα «Stealth» στο Server rules (μετά τα Apache / Nginx, πριν από fail2ban και «Verification files»), γραμμή στην κάρτα Stealth των Vulnerable points (ή η παλιά σημείωση «A plugin or theme changed», ποτέ και οι δύο), Site Health, ειδοποίηση «copy the Stealth rules again» όταν άλλαξε το base ή φάκελος plugin / theme (Dismiss ανά αλλαγή). Κανόνες από πριν την 3.12.6 που δουλεύουν: «Installed and working, but without a fingerprint» (πληροφορία, όχι ειδοποίηση). Η ειδοποίηση των κύριων κανόνων και αυτή του Stealth είναι για διαφορετικά αρχεία· καθεμία εμφανίζεται μία φορά.
+
+**aaPanel.** Αρχείο `/www/server/panel/vhost/nginx/extension/<site>/z-scrapelock-stealth.conf` (μετά το `scrapelock.conf`, αλφαβητικά), που γίνεται include στην αρχή του server { }, πριν από το include του rewrite. Με `rules install --stealth=…` (E3) ή:
+```
+wp --allow-root --skip-themes scrapelock rules show --part=stealth-nginx > /www/server/panel/vhost/nginx/extension/<site>/z-scrapelock-stealth.conf.new
+```
+μετά swap, `nginx -t`, reload, «Test again» στο Stealth, «Check again» στην κάρτα.
+
+**Δοκιμές.** `t_3126_stealth` F, S, R (αποτύπωμα, καταστάσεις, ειδοποίηση, πραγματικός Nginx: «current», κάτω από το rewrite → φτάνει στο WordPress). Αναβάθμιση 3.12.5 → 3.12.6 με Stealth ενεργό: «unmarked», χωρίς ειδοποίηση.
+
+## E6. Αρχεία επαλήθευσης
+
+**Τι άλλαξε.** `PNCP_Verify_Files`: ένα όνομα στη ρίζα ή κάτω από `/.well-known/`, μόνο txt/html/htm/xml/json (στο well-known και χωρίς κατάληξη), ποτέ wp-*, ονόματα του ScrapeLock, robots/llms/sitemap. Περιεχόμενο κείμενο ≤ 64 KB, χωρίς χαρακτήρες ελέγχου, χωρίς **κανένα** άνοιγμα PHP / ASP (`<?`, `<%`) εκτός από `<?xml` (διόρθωση αυτού του ελέγχου). Σερβίρεται από το WordPress πριν από κάθε έλεγχο, με τον τύπο του, `no-store`, `nosniff`, `X-Robots-Tag: noindex`, `Content-Security-Policy: sandbox`· HTML / XML με markup θέλει `unfiltered_html`. Ανοιχτό για κάθε bot: PHP, early check, pre-cache check (`open` στο config.json), Nginx `$pncp_open_path`, Apache συνθήκες — έξω από το αποτύπωμα. Purge στο CDN όταν μπαίνει και φεύγει. Λήγει μόνο του (1–168 ώρες, cron + ο έλεγχος της ώρας σε κάθε αίτημα). Στο robots.txt κάθε ομάδα «Disallow: /» του ScrapeLock παίρνει `Allow: <path>` (διόρθωση: με «Block technology profilers» το BuiltWith είχε «Disallow: /» και για το `/builtwith.txt`). Η απενεργοποίηση σβήνει τα αρχεία (και το αντίγραφο στη ρίζα), η απεγκατάσταση επίσης.
+
+**aaPanel.**
+```
+wp --allow-root --skip-themes scrapelock verify-file add /builtwith.txt --content='<κωδικός του BuiltWith>' --hours=24
+wp --allow-root --skip-themes scrapelock rules install --nginx-http=/www/server/panel/vhost/nginx/0.scrapelock-<id>.conf --yes
+wp --allow-root --skip-themes scrapelock verify-file list
+# μετά την επαλήθευση:
+wp --allow-root --skip-themes scrapelock verify-file remove /builtwith.txt
+```
+Το `rules install` χρειάζεται επειδή το μέρος 1 μπλοκάρει το BuiltWith πριν από την PHP· το αποτύπωμα δεν αλλάζει, οπότε καμία ειδοποίηση δεν το ζητά. Το robots.txt αλλάζει όσο υπάρχει το αρχείο: αν το Bunny το κρατά στην cache, `cdn purge /robots.txt`.
+
+**Δοκιμές.** `t_3126_verify` (97 PASS): paths, περιεχόμενο, HTTP (τύποι, HEAD, POST, πεζά/κεφαλαία, early, pre-cache, λήξη), κανόνες και evaluator, cron/sweep, purge με ψεύτικο Bunny, αρχείο στη ρίζα, admin-post (nonce, manage_options) και WP-CLI. `t_3126_integration` P/U: BuiltWith μπλοκαρισμένο **μόνο** από το «Block technology profilers» διαβάζει το `/builtwith.txt` (WordPress, early, pre-cache) ενώ το υπόλοιπο site είναι 403, robots.txt με `Allow`, απεγκατάσταση / απενεργοποίηση.
+
+**Δεν δοκιμάστηκε.** Πραγματική επαλήθευση BuiltWith / Google / Bing· αν το BuiltWith ακολουθεί το robots.txt δεν είναι γνωστό. Το robots.txt δεν γίνεται purge αυτόματα.
+
+## E7. «Block technology profilers»
+
+**Τι άλλαξε.** Νέο κλειδί `block_tech_profilers` (0 σε νέες εγκαταστάσεις και στην αναβάθμιση, `new_in_3126()`), διακόπτης στο Bots μετά τους SEO crawlers, σε κάθε επίπεδο όπως εκείνοι (PHP, early, pre-cache, Nginx / Apache, robots.txt, log «Matched … (technology profilers)», Traffic, Site Health, export / import). Λίστα `PNCP_Bots::tech_profiler_agents()`: BuiltWith, Wappalyzer, WhatCMS, Netcraft, W3Techs, IsItWP, WPThemeDetector, WhatRuns, SimilarTech, Datanyze, WebTechSurvey· φίλτρο `pncp_tech_profiler_agents`. Το «For my site» προτείνει (χωρίς τσεκ, «more») τον διακόπτη όταν τέτοια ονόματα είναι στο bot list και αφαιρεί αυτές τις γραμμές.
+
+**Αβέβαια tokens.** **Datanyze** και **WebTechSurvey**: δεν βρέθηκε δημοσιευμένο User-Agent τους· μπήκαν ως ονόματα που ταιριάζουν οπουδήποτε στο UA (όπως όλη η λίστα). Αν στέλνουν UA browser, δεν πιάνονται· αν κάποιο όνομα αποδειχτεί λάθος, αφαιρείται με το φίλτρο. Επίσης το «Netcraft» πιάνει όλα τα bots της Netcraft (και το NetcraftSurveyAgent), όχι μόνο το site report.
+
+**aaPanel.** Bots → «Block technology profilers» ή «For my site» → η γραμμή «Turn on, and remove the 9 matching lines from the bot list» → Apply selected. Μετά αντιγραφή του μέρους 1 (`rules install --nginx-http=…`).
+
+**Δοκιμές.** `t_3126_profilers` (52 PASS).
+
+## Έλεγχος ενοποίησης και ασφαλείας (διορθώσεις)
+
+- `rules status`: η σύνδεση με το Stealth (γραμμένη πριν ενωθούν τα κομμάτια με `class_exists`/`is_callable`) καλεί τώρα κατευθείαν το `PNCP_Stealth_Status::status(true)` (τα κλειδιά state / installed / want επιβεβαιώθηκαν· το PHPStan έβγαζε σφάλμα).
+- robots.txt: `Allow` για τα ανοιχτά αρχεία επαλήθευσης.
+- Αρχεία επαλήθευσης: κάθε άνοιγμα PHP / ASP απορρίπτεται.
+- Απεγκατάσταση: `pncp_stealth_rules_seen` και το event `pncp_verify_files_expire`· απενεργοποίηση: τα αρχεία επαλήθευσης.
+- `--test-cmd` / `--reload-cmd` τεκμηριωμένα ως εντολές shell.
+- Το κείμενο «A real page here?» της καρτέλας Log σε μία γραμμή (το `t_311_texts` αποτύγχανε με παλιές γραμμές log· τώρα βάζει μια γραμμή μόνο του, άρα ελέγχει πάντα).
+- Ελέγχθηκαν χωρίς αλλαγή: κάθε νέα ενέργεια admin με nonce + manage_options (+ Lockdown όπου αλλάζει κάτι), έλεγχος host στο purge, κανένα κλειδί στην έξοδο, τα symlinks / `..` / καταλήξεις στο install, η εγγραφή των νέων subcommands (`t_cli`), τα νέα κλειδιά στο `t_311_compat`.
+- Όριο που μένει: το option `pncp_verify_files` δεν είναι στη λίστα των options που «παγώνει» το Lockdown (όσο είναι κλειδωμένο το `add()` / `remove()` αρνούνται, αλλά άμεση εγγραφή στη βάση δεν επαναφέρεται).
+
+## Δοκιμές της έκδοσης
+
+- **php -l** σε κάθε αρχείο PHP, **phpcs** (phpcs.xml.dist) 0 σφάλματα, **PHPStan level 5** όπως στο CI χωρίς σφάλματα.
+- **Όλο το `tests/run-all.sh` σε φρέσκο MariaDB**: μόνο οι γνωστές τοπικές αποτυχίες (t_http inline styles / data-cfasync / Applebot PTR ×2 / CF-Connecting-IP / αυτόματο Emergency ×2, t_metadata_paths «fake Applebot», t_lockdown «busy» ×2, t_traffic_ms skip). Τα t_3126_* / t_311_* του οδηγού ξανά με τον τελικό κώδικα: όλα PASS.
+- **SQLite όπως στο CI** (wp-sqlite-db, ένας php -S, WP_DEBUG): μόνο t_http (inline styles, data-cfasync), t_site_files στο SQLite, t_traffic_ms skip. t_3126_stealth 73, status 30, cli 54, verify 97, profilers 52, wizard 66, integration 54 PASS· t_cli, t_311_texts, t_311_compat, t_311_i18n PASS.
+- **Χωρίς nginx στο PATH** (`/usr/sbin`, `/sbin`, `/usr/local/sbin` έξω): t_3123_rules, t_3124_nginx_status, t_3126_stealth / cli / verify κάνουν SKIP μόνο το τμήμα «real Nginx» και περνούν τα υπόλοιπα· t_3126_status και t_3126_integration ίδια. Καμία νέα δοκιμή δεν γράφει έξω από τα προσωρινά της φακέλους ή το WordPress δοκιμών.
+- **Αναβάθμιση 3.12.5 (zip) → 3.12.6** με ρυθμίσεις όπως του live (probe_ban, block_ip_host, reputation, ban 3/120, όρια 45/60/60, OneSignal στα πάντα επιτρεπόμενα, blur guests, devtools, hide_fingerprint, 9 profilers στο bot list, Stealth ενεργό με base «assets», early, precheck…· όχι `cdn_only`, που θα απέρριπτε τα τοπικά αιτήματα): κάθε τιμή ίδια, προστέθηκε μόνο `block_tech_profilers` = 0, ίδια cron· το «For my site» δείχνει «Turn on, and remove the 9 matching lines from the bot list» **χωρίς τσεκ**· Stealth «Installed and working, but without a fingerprint», καμία ειδοποίηση «copy again» ούτε «out of date». Η αναβάθμιση έβγαζε όμως PHP Notice «_load_textdomain_just_in_time … too early» (ο οδηγός έφτιαχνε προτάσεις στην αποθήκευση της αναβάθμισης, πριν από το init)· διορθώθηκε (commit `fix(wizard)`, μετά το f4efd0a) και η αναβάθμιση ξανά: χωρίς κανένα PHP μήνυμα.
+- **Playwright (Chromium)** στο αναβαθμισμένο site: Server rules (κάρτες Nginx, Stealth, Verification files), πρόσθεση / αφαίρεση `/builtwith.txt` από την κάρτα (το BuiltWith παίρνει 200), οδηγός με Dismiss → «Show dismissed (1)» → Restore, η πρόταση profilers χωρίς τσεκ, ο διακόπτης στο Bots ανενεργός· κανένα σφάλμα console εκτός από το gravatar (εξωτερικός host, μπλοκαρισμένος εδώ).
+- **Zip** `git archive`: Version 3.12.6, `languages/scrapelock-el.mo` μέσα, χωρίς tests/, .po, REPORT.md· κάθε PHP χωρίς σφάλμα σύνταξης.
+
 # ScrapeLock 3.12.5 — θόλωμα μόνο για όσους δεν έχουν συνδεθεί
 
 Η αναφορά μένει στο αποθετήριο (`/REPORT.md export-ignore`): δεν μπαίνει στο zip του plugin.

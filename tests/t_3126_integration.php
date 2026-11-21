@@ -15,6 +15,8 @@
  * A. The admin pages: the Server rules tab (Apache, Nginx, Stealth, fail2ban, Verification files, no PHP warnings),
  *    the main rules notice and the Stealth rules notice each once (dashboard, tab), the second check before "not
  *    found", a dismissed Stealth notice; the export and import carry block_tech_profilers.
+ * W. A settings save before init (as pncp_upgrade() on plugins_loaded): the wizard's watcher loads no translation
+ *    then (no "_load_textdomain_just_in_time" notice) and still notes the choice on init.
  * S. Security (static): proc_open() only in the CLI class, its entry points stop outside WP-CLI, the commands are
  *    built with escapeshellarg() or are --test-cmd / --reload-cmd (documented as run through the shell).
  *
@@ -326,6 +328,53 @@ $pncp_export = PNCP_Settings_Io::export();
 t( 'A export: block_tech_profilers is in it (1), and no option of the new parts (verification files, wizard state, Stealth status)', isset( $pncp_export['settings']['block_tech_profilers'] ) && 1 === (int) $pncp_export['settings']['block_tech_profilers'] && false === strpos( (string) wp_json_encode( $pncp_export ), 'pncp_verify_files' ) && false === strpos( (string) wp_json_encode( $pncp_export ), 'pncp_wizard_state' ), wp_json_encode( array_keys( $pncp_export ) ) );
 t( 'A import: block_tech_profilers is a public key', in_array( 'block_tech_profilers', PNCP_Settings_Io::public_keys(), true ) );
 settings( array( 'block_tech_profilers' => 0 ) );
+
+/* ---------- W. A settings save before init (the upgrade on plugins_loaded) ---------- */
+
+if ( '' === $wp_cli ) {
+	echo "SKIP W a save before init (no WP_CLI)\n";
+} else {
+	// A temporary must-use plugin saves the settings on plugins_loaded, as pncp_upgrade() does on the first
+	// request after an update (it adds block_tech_profilers): the wizard's watcher must not load translations
+	// before init, and must still note a choice against a proposal once init has run.
+	$pncp_mu = WP_CONTENT_DIR . '/mu-plugins/pncp-test-3126-early-save.php';
+	file_put_contents(
+		$pncp_mu,
+		"<?php\n// TESTS ONLY: written and removed by tests/t_3126_integration.php.\n"
+		. "add_action( 'plugins_loaded', static function () { if ( get_option( 'pncp_test_3126_early_save' ) ) { delete_option( 'pncp_test_3126_early_save' ); \$s = get_option( PNCP_OPTION ); \$s['bot_list'] = (string) \$s['bot_list'] . \"\\nEarlySave3126Bot\"; update_option( PNCP_OPTION, \$s ); } }, 99 );\n"
+	);
+	register_shutdown_function(
+		static function () use ( $pncp_mu ) {
+			if ( is_file( $pncp_mu ) ) {
+				unlink( $pncp_mu );
+			}
+			delete_option( 'pncp_test_3126_early_save' );
+		}
+	);
+	$pncp_wstate = get_option( PNCP_Wizard::STATE, null );
+	delete_option( PNCP_Wizard::STATE );
+	settings(
+		array(
+			'block_tech_profilers' => 0,
+			'bot_list'             => $pncp_bots . "\nBuiltWith",
+		)
+	);
+	t( 'W set up: the profilers proposal is there (BuiltWith in the bot list, the switch off)', isset( PNCP_Wizard::proposals()['block_tech_profilers'] ) );
+	update_option( 'pncp_test_3126_early_save', 1, false );
+	exec( $wp_cli . ' eval ' . escapeshellarg( 'echo did_action( "init" ) ? "init-done" : "no-init";' ) . ' < /dev/null 2>&1', $pncp_out, $pncp_rc );
+	$pncp_out = implode( "\n", $pncp_out );
+	wp_cache_flush();
+	PNCP_Options::flush();
+	t( 'W the save on plugins_loaded happened', false !== strpos( (string) PNCP_Options::stored()['bot_list'], 'EarlySave3126Bot' ) && false === get_option( 'pncp_test_3126_early_save' ), $pncp_out );
+	t( 'W ...without "_load_textdomain_just_in_time was called incorrectly" (no translation before init)', 0 === $pncp_rc && false === strpos( $pncp_out, '_load_textdomain_just_in_time' ) && false !== strpos( $pncp_out, 'init-done' ), $pncp_out );
+	t( 'W ...and the choice against the proposal is noted once init has run ("you chose this")', isset( PNCP_Wizard::state()['chosen']['block_tech_profilers'] ), wp_json_encode( PNCP_Wizard::state() ) );
+	if ( null === $pncp_wstate ) {
+		delete_option( PNCP_Wizard::STATE );
+	} else {
+		update_option( PNCP_Wizard::STATE, $pncp_wstate, false );
+	}
+	settings( array( 'bot_list' => $pncp_bots ) );
+}
 
 /* ---------- S. Security of the new code (static) ---------- */
 
