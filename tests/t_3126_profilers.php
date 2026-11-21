@@ -13,6 +13,11 @@
  *    pre-cache check's configuration, the generated Nginx and Apache rules, robots.txt (its own group), the log's
  *    "Matched … (technology profilers)" line, the Traffic "Explain" check, Site Health's summary.
  * A. The Bots tab: the switch right after the SEO crawlers one, its help line and the list in "More".
+ * W. "For my site": profilers typed into the bot list (the live site's nine lines) → one row "Turn on, and remove
+ *    the 9 matching lines from the bot list", not ticked; nothing changes until it is applied; applied: the switch
+ *    on, exactly those lines gone (others and their order kept), the old list under "Earlier versions", nothing
+ *    blocked less; with the switch already on only the lines; without such lines no row; never applied by
+ *    "wp scrapelock wizard --apply" without --all.
  *
  * Only on a test WordPress. The settings are put back at the end.
  */
@@ -213,6 +218,79 @@ t( 'A: right after “Block SEO and marketing data crawlers”', false !== $seo 
 t( 'A: its label and help line', false !== strpos( $tab, 'Block technology profilers (BuiltWith, Wappalyzer, WhatCMS…)' ) && false !== strpos( $tab, 'Services that list the CMS, theme and plugins a site runs.' ) );
 t( 'A: the whole list in “More”', false !== strpos( $tab, implode( ', ', PNCP_Bots::tech_profiler_agents() ) ) );
 t( 'A: no PHP warnings', ! preg_match( '/(Warning|Notice|Deprecated|Fatal error)<\/b>:/', $tab ) );
+
+/* ---------- W. "For my site" ---------- */
+
+$saved_backups = get_option( PNCP_Settings_Io::BACKUPS, null );
+$saved_state   = get_option( PNCP_Wizard::STATE, null );
+delete_option( PNCP_Wizard::STATE );
+$default_list = (string) PNCP_Options::defaults()['bot_list'];
+$typed        = array_merge( array( 'MyOwnScraper' ), $names );
+$typed[]      = '=BuiltWith/2.0 Exact';
+$live_list    = $default_list . "\n" . implode( "\n", $typed );
+settings(
+	array(
+		'block_tech_profilers' => 0,
+		'bot_list'             => $live_list,
+	)
+);
+$lines = PNCP_Wizard::profiler_lines( $live_list );
+t( 'W: the profiler lines of the bot list: the nine and the exact one, not MyOwnScraper', 10 === count( $lines ) && ! in_array( 'MyOwnScraper', $lines, true ) && in_array( '=BuiltWith/2.0 Exact', $lines, true ), implode( ',', $lines ) );
+t( 'W: the default list alone has none', array() === PNCP_Wizard::profiler_lines( $default_list ) );
+$rows = PNCP_Wizard::proposals();
+$row  = isset( $rows['block_tech_profilers'] ) ? $rows['block_tech_profilers'] : null;
+$want = PNCP_Options::parse_list( $default_list . "\nMyOwnScraper" );
+t( 'W: one row: the switch on and the bot list without those lines', is_array( $row ) && 1 === (int) $row['proposed'] && isset( $row['also']['bot_list'] ) && PNCP_Options::parse_list( $row['also']['bot_list'] ) === $want, wp_json_encode( $row ) );
+t( 'W: not ticked (blocks more), the texts', is_array( $row ) && PNCP_Wizard::RISK_MORE === $row['risk'] && array( 'Off, 10 lines in the bot list', 'Turn on, and remove the 10 matching lines from the bot list' ) === PNCP_Wizard::row_texts( $row ), is_array( $row ) ? wp_json_encode( PNCP_Wizard::row_texts( $row ) ) : '' );
+t( 'W: proposing changes nothing', $live_list === (string) PNCP_Options::stored()['bot_list'] && 0 === (int) PNCP_Options::stored()['block_tech_profilers'] );
+list( $code, $page ) = http( '/wp-admin/options-general.php?page=' . PNCP_Admin::PAGE . '&tab=general', $browser, '192.0.2.32', $cookies );
+t( 'W: the panel shows the row unticked, with both keys in its tooltip', 200 === $code && 1 === preg_match( '#value="block_tech_profilers" id="pncp-wizard-block_tech_profilers">#', $page ) && false !== strpos( $page, 'title="block_tech_profilers, bot_list"' ) && false !== strpos( $page, 'Turn on, and remove the 10 matching lines from the bot list' ) );
+t( 'W: still nothing changed after the panel was shown', $live_list === (string) get_option( PNCP_OPTION )['bot_list'] );
+$none = array();
+foreach ( $rows as $key => $r ) {
+	if ( PNCP_Wizard::RISK_NONE === $r['risk'] ) {
+		$none[] = $key;
+	}
+}
+PNCP_Wizard::apply( $none ); // What "wp scrapelock wizard --apply" applies without --all.
+$s = PNCP_Options::stored();
+t( 'W: the ticked-by-default rows leave it alone', 0 === (int) $s['block_tech_profilers'] && $live_list === (string) $s['bot_list'] );
+$r      = PNCP_Wizard::apply( array( 'block_tech_profilers' ) );
+$s      = PNCP_Options::stored();
+$back   = PNCP_Settings_Io::backups();
+t( 'W: applied: the switch on, exactly those lines gone, the others in their order', is_array( $r ) && '' !== $r['id'] && 1 === (int) $s['block_tech_profilers'] && PNCP_Options::parse_list( $s['bot_list'] ) === $want, wp_json_encode( $r ) );
+t( 'W: the old list is under "Earlier versions" first', is_array( $r ) && $r['id'] === $back[0]['id'] && 'wizard' === $back[0]['reason'] && $live_list === (string) $back[0]['settings']['bot_list'] && 0 === (int) $back[0]['settings']['block_tech_profilers'] );
+PNCP_Options::flush();
+$agents = PNCP_Options::blocked_agents( $s );
+$less   = array();
+foreach ( $lines as $line ) {
+	$probe = '=' === $line[0] ? substr( $line, 1 ) : 'Mozilla/5.0 (compatible; ' . $line . ')';
+	if ( ! PNCP_Bots::ua_in_list( $probe, $agents ) ) {
+		$less[] = $line;
+	}
+}
+t( 'W: nothing is blocked less than before', ! $less, implode( ',', $less ) );
+t( 'W: afterwards no row', ! isset( PNCP_Wizard::proposals()['block_tech_profilers'] ) );
+settings( array( 'bot_list' => $s['bot_list'] . "\nWappalyzer" ) );
+$rows = PNCP_Wizard::proposals();
+t( 'W: switch already on, one line typed again: only the line is proposed away', isset( $rows['block_tech_profilers'] ) && array( 'On, and 1 line in the bot list', 'Remove the 1 matching line from the bot list' ) === PNCP_Wizard::row_texts( $rows['block_tech_profilers'] ) );
+settings(
+	array(
+		'block_tech_profilers' => 0,
+		'bot_list'             => $default_list,
+	)
+);
+t( 'W: no profiler lines: no row, also with the switch off', ! isset( PNCP_Wizard::proposals()['block_tech_profilers'] ) );
+if ( null === $saved_backups ) {
+	delete_option( PNCP_Settings_Io::BACKUPS );
+} else {
+	update_option( PNCP_Settings_Io::BACKUPS, $saved_backups, false );
+}
+if ( null === $saved_state ) {
+	delete_option( PNCP_Wizard::STATE );
+} else {
+	update_option( PNCP_Wizard::STATE, $saved_state, false );
+}
 
 update_option( PNCP_OPTION, $saved );
 PNCP_Options::flush();

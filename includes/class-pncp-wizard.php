@@ -306,6 +306,7 @@ final class PNCP_Wizard {
 			$add( 'edge_send_blocks', 1, sprintf( __( '%s is connected under “Blocking at the CDN”: temporary blocks could be sent to it, so blocked IPs stop at the CDN, also on cached pages.', 'scrapelock' ), $provider ), self::RISK_MORE, $provider );
 		}
 
+		self::profilers( $s, $add ); // 3.12.6: technology profilers typed into the bot list.
 		self::sensible( $s, $env, $add ); // 3.12.1: values that suit (almost) every site.
 
 		/**
@@ -379,6 +380,76 @@ final class PNCP_Wizard {
 			}
 		}
 		return $clean;
+	}
+
+	/**
+	 * 3.12.6: the lines of the bot list that "Block technology profilers" covers: a line that contains a name of
+	 * PNCP_Bots::tech_profiler_agents() blocks no User-Agent that the name does not block too, so removing it
+	 * with the switch on blocks nothing less.
+	 *
+	 * @param string $list The bot list.
+	 * @return string[] The lines, as written.
+	 */
+	public static function profiler_lines( $list ) {
+		$agents = array_map( 'strtolower', PNCP_Bots::tech_profiler_agents() );
+		$out    = array();
+		foreach ( PNCP_Options::parse_list( $list ) as $line ) {
+			$entry = strtolower( ltrim( $line, '=' ) );
+			foreach ( $agents as $agent ) {
+				if ( '' !== $entry && false !== strpos( $entry, $agent ) ) {
+					$out[] = $line;
+					break;
+				}
+			}
+		}
+		return $out;
+	}
+
+	/**
+	 * 3.12.6: technology profilers added to the bot list by hand: turn on "Block technology profilers" (its list is
+	 * kept up to date) and take those lines out of the bot list, in one row. It blocks more than the lines (the
+	 * whole built-in list, and robots.txt), so it is not ticked: applied only when chosen, after the settings
+	 * are saved under "Earlier versions" like every other row.
+	 *
+	 * @param array<string, mixed> $s   Settings.
+	 * @param callable             $add The proposals()'s adder: key, proposed, reason, risk, for, extra.
+	 */
+	private static function profilers( $s, $add ) {
+		$found = self::profiler_lines( (string) $s['bot_list'] );
+		$count = count( $found );
+		if ( ! $count ) {
+			return;
+		}
+		$drop = array_flip( array_map( 'strtolower', $found ) );
+		$keep = array();
+		foreach ( preg_split( '/\r\n|\r|\n/', (string) $s['bot_list'] ) as $line ) {
+			$clean = trim( (string) preg_replace( '/[\x00-\x1F\x7F]+/', '', sanitize_text_field( (string) $line ) ) );
+			if ( '' !== $clean && ! isset( $drop[ strtolower( $clean ) ] ) ) {
+				$keep[] = $clean;
+			}
+		}
+		$on = ! empty( $s['block_tech_profilers'] );
+		$add(
+			'block_tech_profilers',
+			1,
+			/* translators: %d: number of lines */
+			sprintf( _n( '%d bot list line is a technology profiler: the built-in list blocks it and stays up to date.', '%d bot list lines are technology profilers: the built-in list blocks them and stays up to date.', $count, 'scrapelock' ), $count ),
+			self::RISK_MORE,
+			__( 'Bot list', 'scrapelock' ),
+			array(
+				'also'          => array( 'bot_list' => implode( "\n", $keep ) ),
+				'now_text'      => $on
+					/* translators: %d: number of lines */
+					? sprintf( _n( 'On, and %d line in the bot list', 'On, and %d lines in the bot list', $count, 'scrapelock' ), $count )
+					/* translators: %d: number of lines */
+					: sprintf( _n( 'Off, %d line in the bot list', 'Off, %d lines in the bot list', $count, 'scrapelock' ), $count ),
+				'proposed_text' => $on
+					/* translators: %d: number of lines */
+					? sprintf( _n( 'Remove the %d matching line from the bot list', 'Remove the %d matching lines from the bot list', $count, 'scrapelock' ), $count )
+					/* translators: %d: number of lines */
+					: sprintf( _n( 'Turn on, and remove the %d matching line from the bot list', 'Turn on, and remove the %d matching lines from the bot list', $count, 'scrapelock' ), $count ),
+			)
+		);
 	}
 
 	/**
@@ -1023,6 +1094,8 @@ final class PNCP_Wizard {
 			'block_devtools'     => __( 'Block the developer tools shortcuts', 'scrapelock' ),
 			'user_mark_guests'   => __( 'Reader watermark also for visitors', 'scrapelock' ),
 			'allow_list'         => __( 'Always allowed User-Agents', 'scrapelock' ),
+			// 3.12.6.
+			'block_tech_profilers' => __( 'Block technology profilers', 'scrapelock' ),
 		);
 		return isset( $labels[ $key ] ) ? $labels[ $key ] : PNCP_Setting_Labels::label( $key ); // Never the bare key.
 	}

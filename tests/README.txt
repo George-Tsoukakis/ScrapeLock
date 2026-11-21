@@ -190,7 +190,8 @@ ScrapeLock — δοκιμές σε πραγματικό WordPress (όχι stubs)
                     new_in_3126()), Bots tab switch right after the SEO crawlers, cache key, label, export; the one list
                     PNCP_Bots::tech_profiler_agents() with its filter; every layer of the SEO switch: blocked_agents(),
                     HTTP 403 / 200, early check, pre-cache config, Nginx / Apache rules, robots.txt group, the log's
-                    «Matched … (technology profilers)», Traffic «Explain», Site Health info
+                    «Matched … (technology profilers)», Traffic «Explain», Site Health info; «For my site» proposes the
+                    switch for profilers typed into the bot list (one unticked row, those lines removed, saved version)
   t_3126_wizard.php 3.12.6: «For my site»: «Dismiss» per proposal (admin-post, nonce, manage_options, Lockdown), not
                     counted and never applied (also when posted or with --apply / --only), «Show dismissed (N)» with
                     «Restore»; the hash id + values now + proposed values (another value or proposal brings it back,
