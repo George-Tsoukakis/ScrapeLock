@@ -131,6 +131,10 @@ settings(
 		'bot_list'     => $bots,
 		'early_mode'   => 0,
 		'precheck'     => 0,
+		// The visitor's address from X-Forwarded-For of the test server itself (else every request is "local").
+		'ip_header'       => 'x_forwarded_for',
+		'trusted_proxies' => '127.0.0.1',
+		'allow_ips'       => '',
 	)
 );
 

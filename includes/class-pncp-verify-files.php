@@ -621,7 +621,7 @@ final class PNCP_Verify_Files {
 			delete_transient( 'pncp_verify_msg_' . get_current_user_id() );
 		}
 		echo '<section class="pncp-card pncp-card--wide pncp-rules-card" id="pncp-verify-files" aria-labelledby="pncp-verify-files-h"><h2 id="pncp-verify-files-h">' . esc_html__( 'Verification files', 'scrapelock' ) . '</h2>';
-		echo '<p class="description">' . esc_html__( 'A file a service asks for to verify that the site is yours (e.g. /builtwith.txt, /google…html, /BingSiteAuth.xml, /.well-known/…): served to every bot, also to one the bot list blocks, for a few hours, then removed.', 'scrapelock' ) . '</p>';
+		echo PNCP_Admin_Fields::para( __( 'A file a service asks for to verify the site, open to every bot for a few hours.', 'scrapelock' ), __( 'For example /builtwith.txt, /google…html, /BingSiteAuth.xml or /.well-known/…: served to every bot, also to one the bot list blocks, for a few hours, then removed and purged at the CDN.', 'scrapelock' ) ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Escaped in PNCP_Admin_Fields.
 		foreach ( is_array( $msgs ) ? $msgs : array() as $msg ) {
 			if ( is_array( $msg ) && isset( $msg[0], $msg[1] ) ) {
 				echo '<div class="notice notice-' . esc_attr( (string) $msg[0] ) . ' inline"><p>' . esc_html( (string) $msg[1] ) . '</p></div>';
@@ -652,8 +652,8 @@ final class PNCP_Verify_Files {
 		echo '<p><label for="pncp-verify-content">' . esc_html( sprintf( __( 'Content (text, at most %d KB)', 'scrapelock' ), (int) ( self::MAX_BYTES / 1024 ) ) ) . '</label><br><textarea class="large-text code" rows="4" id="pncp-verify-content" name="content" required maxlength="' . esc_attr( (string) self::MAX_BYTES ) . '"></textarea></p>';
 		/* translators: %d: most hours */
 		echo '<p><label for="pncp-verify-hours">' . esc_html( sprintf( __( 'Remove after (hours, 1 to %d)', 'scrapelock' ), self::MAX_HOURS ) ) . '</label><br><input type="number" class="small-text" id="pncp-verify-hours" name="hours" value="24" min="1" max="' . esc_attr( (string) self::MAX_HOURS ) . '"></p>';
-		echo '<p><label><input type="checkbox" name="disk" value="1"> ' . esc_html__( 'Also write the file to the site\'s root folder (never over an existing file; removed with it). Only needed when the server answers that address itself, without WordPress.', 'scrapelock' ) . '</label></p>';
-		echo '<p class="description">' . esc_html( self::rules_hint() ) . '</p>';
+		echo '<p><label><input type="checkbox" name="disk" value="1"> ' . esc_html__( 'Also write it to the site\'s root folder (never over an existing file).', 'scrapelock' ) . '</label></p>';
+		echo PNCP_Admin_Fields::more( __( 'The file in the root folder is removed with it, only while unchanged. Only needed when the server answers that address itself, without WordPress.', 'scrapelock' ) . ' ' . self::rules_hint() ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Escaped in PNCP_Admin_Fields.
 		echo '<p><button type="submit" class="button button-primary">' . esc_html__( 'Add the file', 'scrapelock' ) . '</button></p></form></section>';
 	}
 }
