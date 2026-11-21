@@ -16,6 +16,9 @@
  *    used to get a neutral one that answered 404); the types the rules serve still get the neutral one.
  * Q. Root-relative addresses inside an attribute after an HTML-escaped quote (url(&quot;/wp-content/…&quot;),
  *    url(&#039;…&#039;)) are rewritten like those after a plain quote.
+ * F. A plugin folder whose name has a space or another character the rules cannot carry: the rules stay valid
+ *    (real nginx -t when nginx is on PATH, else SKIP for that part) and its files are served through the plugins
+ *    address.
  *
  * Only on a test WordPress.
  */
@@ -311,5 +314,44 @@ foreach ( array( '&quot;', '&#039;', '&#39;' ) as $quote ) {
 }
 $text = '<p>Copy it to my-folder/wp-content/uploads or to x&amp;/wp-content/ please.</p>';
 t( 'Q a path glued to other text is not rewritten', PNCP_Stealth::rewrite( $text ) === $text, PNCP_Stealth::rewrite( $text ) );
+
+/* ---------- F. A folder name the rules cannot carry ---------- */
+
+$bad_lines = array();
+foreach ( explode( "\n", $nginx ) as $line ) {
+	if ( 0 === strpos( $line, 'rewrite ' ) && ! preg_match( '/^rewrite "[^"]+" [^\s";{}]+( last)?;$/', $line ) ) {
+		$bad_lines[] = $line;
+	}
+}
+foreach ( explode( "\n", $apache ) as $line ) {
+	if ( 0 === strpos( $line, 'RewriteRule ' ) && ! preg_match( '/^RewriteRule \S+ \S+ \[[A-Z,=0-9]+\]$/', $line ) ) {
+		$bad_lines[] = $line;
+	}
+}
+t( 'F every rewrite line has one pattern and one target (a plugin folder with a space in its name)', array() === $bad_lines, implode( ' | ', $bad_lines ) );
+$c_url = plugins_url( 'c.css', WP_PLUGIN_DIR . '/pncp t3128 (c)/c.php' );
+$c_out = PNCP_Stealth::rewrite( '<link rel="stylesheet" href="' . $c_url . '">' );
+preg_match( '#href="([^"]+)"#', $c_out, $cm );
+$c_path = isset( $cm[1] ) ? rawurldecode( (string) wp_parse_url( $cm[1], PHP_URL_PATH ) ) : '';
+t( 'F that folder\'s file is served by the rules (Nginx)', '' !== $c_path && file_of( nginx_apply( $nginx, $c_path ) ) === realpath( WP_PLUGIN_DIR . '/pncp t3128 (c)/c.css' ), $c_out . ' → ' . nginx_apply( $nginx, $c_path ) );
+t( 'F that folder\'s file is served by the rules (Apache)', '' !== $c_path && file_of( apache_apply( $apache, $c_path ) ) === realpath( WP_PLUGIN_DIR . '/pncp t3128 (c)/c.css' ), $c_out . ' → ' . apache_apply( $apache, $c_path ) );
+$nginx_bin = '';
+foreach ( explode( PATH_SEPARATOR, (string) getenv( 'PATH' ) ) as $p ) {
+	if ( '' !== $p && is_executable( $p . '/nginx' ) ) {
+		$nginx_bin = $p . '/nginx';
+		break;
+	}
+}
+if ( '' === $nginx_bin ) {
+	echo "SKIP F real nginx -t (no nginx on PATH)\n";
+} else {
+	$tmp = sys_get_temp_dir() . '/pncp-t3128-' . getmypid();
+	mkdir( $tmp );
+	file_put_contents( $tmp . '/nginx.conf', "events {}\nhttp {\n server {\n  listen 127.0.0.1:1;\n  root " . $tmp . ";\n" . $nginx . "\n }\n}\n" );
+	$cmd = escapeshellarg( $nginx_bin ) . ' -t -q -p ' . escapeshellarg( $tmp ) . ' -c ' . escapeshellarg( $tmp . '/nginx.conf' ) . ' -g ' . escapeshellarg( 'pid ' . $tmp . '/n.pid; error_log ' . $tmp . '/e.log;' ) . ' 2>&1';
+	exec( $cmd, $o, $rc ); // phpcs:ignore -- Test.
+	rmtree( $tmp );
+	t( 'F real nginx -t accepts the Stealth rules', 0 === $rc, implode( ' ', $o ) );
+}
 
 exit( $fails ? 1 : 0 );

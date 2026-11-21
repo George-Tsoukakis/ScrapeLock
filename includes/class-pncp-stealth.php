@@ -407,7 +407,7 @@ final class PNCP_Stealth {
 		$slugs = array();
 		$add   = function ( $kind, $url, $dir, $slug = '' ) use ( &$dirs, &$slugs ) {
 			$path = self::same_host_path( $url );
-			if ( '' === $path || ! is_dir( $dir ) ) {
+			if ( '' === $path || ! is_dir( $dir ) || ! self::rule_safe_path( $path ) ) {
 				return;
 			}
 			$dirs[ $kind . '|' . $path ] = array(
@@ -488,6 +488,19 @@ final class PNCP_Stealth {
 			'words' => $words,
 			'ends'  => $ends,
 		);
+	}
+
+	/**
+	 * 3.12.8: can a folder's path be written as the target of a rule? A space (a plugin uploaded as "my plugin (2)"),
+	 * a quote, ";", "{", "$" or "%" would break the Nginx rules (nginx -t fails) or the .htaccess (every page answers
+	 * 500 until the self-test puts it back). Such a folder gets no address of its own: its files are served through
+	 * the address of the folder above it (plugins, themes, wp-content).
+	 *
+	 * @param string $path Path.
+	 * @return bool
+	 */
+	private static function rule_safe_path( $path ) {
+		return (bool) preg_match( '#^[A-Za-z0-9._~@+/-]+$#', (string) $path );
 	}
 
 	/**
