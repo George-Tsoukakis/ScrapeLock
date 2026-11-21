@@ -491,6 +491,51 @@ final class PNCP_Cli_Server {
 	}
 
 	/**
+	 * 3.12.8: the test and reload commands "rules install" runs for a server: --test-cmd and --reload-cmd as given,
+	 * else the defaults (commands()); the reload falls back to the alternative (systemctl reload nginx) when the
+	 * server's own program was not found. A configuration that is read only at a reload (Nginx, an Apache .conf)
+	 * needs both: "missing" names the one that is not there (the install then stops and puts every file back). A
+	 * .htaccess alone needs neither: the home page is asked instead, and Apache reads it on every request.
+	 *
+	 * @param string                                        $server     nginx or apache.
+	 * @param bool                                          $htaccess   Only .htaccess files.
+	 * @param array<string, string>                         $assoc_args Options.
+	 * @param array{test:string, reload:string, alt:string} $cmds       commands().
+	 * @return array{test:string, reload:string, alt:string, missing:string, message:string}
+	 */
+	public static function install_commands( $server, $htaccess, $assoc_args, $cmds ) {
+		$given  = isset( $assoc_args['reload-cmd'] );
+		$test   = isset( $assoc_args['test-cmd'] ) ? (string) $assoc_args['test-cmd'] : (string) $cmds['test'];
+		$reload = $given ? (string) $assoc_args['reload-cmd'] : (string) $cmds['reload'];
+		$alt    = $given ? '' : (string) $cmds['alt'];
+		if ( '' === $reload && '' !== $alt ) {
+			$reload = $alt;
+			$alt    = '';
+		}
+		$out = array(
+			'test'    => $test,
+			'reload'  => $reload,
+			'alt'     => $alt,
+			'missing' => '',
+			'message' => '',
+		);
+		if ( $htaccess ) {
+			return $out;
+		}
+		if ( '' === $test ) {
+			$out['missing'] = 'test';
+			$out['message'] = 'nginx' === $server
+				? __( 'nginx was not found on PATH: give --test-cmd and --reload-cmd.', 'scrapelock' )
+				: __( 'apachectl was not found on PATH: give --test-cmd and --reload-cmd.', 'scrapelock' );
+		} elseif ( '' === $reload ) {
+			$out['missing'] = 'reload';
+			/* translators: %s: nginx or apache */
+			$out['message'] = sprintf( __( 'No command to reload %s was found: give --reload-cmd.', 'scrapelock' ), $server );
+		}
+		return $out;
+	}
+
+	/**
 	 * The site's home page answers (not 5xx) after a .htaccess change, which Apache reads on the next request.
 	 *
 	 * @return array{0:int, 1:string}
@@ -665,11 +710,12 @@ final class PNCP_Cli_Server {
 		};
 		$reloads = array();
 		foreach ( $servers as $server => $htaccess ) {
-			$cmds = self::commands( $server, $htaccess );
-			$test = isset( $assoc_args['test-cmd'] ) ? (string) $assoc_args['test-cmd'] : $cmds['test'];
-			if ( '' === $test && 'nginx' === $server ) {
-				$fail( __( 'The test', 'scrapelock' ), __( 'nginx was not found on PATH: give --test-cmd and --reload-cmd.', 'scrapelock' ) );
+			// 3.12.8: a configuration read only at a reload needs a test and a reload command (install_commands()).
+			$plan = self::install_commands( $server, $htaccess, $assoc_args, self::commands( $server, $htaccess ) );
+			if ( '' !== $plan['missing'] ) {
+				$fail( 'test' === $plan['missing'] ? __( 'The test', 'scrapelock' ) : __( 'The reload', 'scrapelock' ), $plan['message'] );
 			}
+			$test                = $plan['test'];
 			list( $rc, $output ) = '' === $test ? self::http_test() : self::run( $test );
 			if ( 0 !== $rc ) {
 				/* translators: %s: command */
@@ -677,15 +723,15 @@ final class PNCP_Cli_Server {
 			}
 			/* translators: %s: command */
 			WP_CLI::log( sprintf( __( 'Test passed: %s', 'scrapelock' ), '' === $test ? 'HTTP' : $test ) );
-			$reloads[ $server ] = $cmds;
+			$reloads[ $server ] = $plan;
 		}
 		foreach ( $reloads as $server => $cmds ) {
-			$reload = isset( $assoc_args['reload-cmd'] ) ? (string) $assoc_args['reload-cmd'] : $cmds['reload'];
+			$reload = $cmds['reload'];
 			if ( '' === $reload ) {
 				continue; // A .htaccess: read on every request.
 			}
 			list( $rc, $output ) = self::run( $reload );
-			if ( 0 !== $rc && ! isset( $assoc_args['reload-cmd'] ) && '' !== $cmds['alt'] ) {
+			if ( 0 !== $rc && '' !== $cmds['alt'] ) {
 				list( $rc, $output ) = self::run( $cmds['alt'] );
 				$reload              = $cmds['alt'];
 			}

@@ -270,7 +270,9 @@ ScrapeLock — δοκιμές σε πραγματικό WordPress (όχι stubs)
                     defined / matching / different; --save-constant on a copy of wp-config.php (WP_CONFIG_PATH): asks,
                     the trial, the line before wp-settings.php, refusals leave the file unchanged (WP_CLI)
   t_3128_bugs_d.php 3.12.8: fixes of the 3.12.0–3.12.7 code, each with its test: uninstall.php deletes every
-                    option the plugin writes (pncp_fastcgi_last was left)
+                    option the plugin writes (pncp_fastcgi_last was left); rules install: a configuration read only
+                    at a reload (Nginx, an Apache .conf) needs a test and a reload command (systemctl as the fallback,
+                    else it stops and puts every file back), a .htaccess alone neither
   t_cli.php         wp scrapelock … μέσα από το πραγματικό wp (χρειάζεται WP_CLI, αλλιώς SKIP)
   t_bunny_rules.php Edge Rules στο Bunny μέσα στα όριά του (το πολύ 5 μοτίβα ανά συνθήκη) με ψεύτικο API που δίνει
                     HTTP 400 όπως το πραγματικό: χωρισμός, κλείδωμα/Remove, rollback, Monitor only, sync, προεπισκόπηση,
