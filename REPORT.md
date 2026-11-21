@@ -1,3 +1,67 @@
+# ScrapeLock 3.12.4 — «Installed, up to date» στο aaPanel
+
+Η αναφορά μένει στο αποθετήριο (`/REPORT.md export-ignore`): δεν μπαίνει στο zip του plugin.
+
+## 1. Η υπόθεση και τι ισχύει
+
+Υπόθεση: το `location ~ \.well-known { allow all; }` του aaPanel (regex) κερδίζει το δικό μας `location /.well-known/scrapelock-nginx` (prefix), το αίτημα φτάνει στο WordPress → 404· λύση ένα `location =`.
+
+Το μέρος 2 βγάζει **ήδη** `location = <nginx_check_path()>` από την 2.x, και το exact match κερδίζει κάθε regex. Αποδείχτηκε σε πραγματικό Nginx 1.24 + PHP-FPM 8.3 με διάταξη aaPanel και με το ακριβές server { } του live site (`extension/<site>/*.conf` στην αρχή, `location ~ \.well-known` 60 γραμμές πιο κάτω): η διεύθυνση ελέγχου απαντά 200 με τα δύο αποτυπώματα. Η υπόθεση δεν ήταν η αιτία.
+
+## 2. Η πραγματική αιτία (επιβεβαιώθηκε στον live server)
+
+1. **Rewrite του WordPress σε επίπεδο server.** Το `/www/server/panel/vhost/rewrite/<site>.conf` του aaPanel έχει `if (!-e $request_filename) { rewrite ^(.*)$ /index.php last; }` μέσα στο server { } (όχι σε location). Οι εντολές rewrite του server τρέχουν **πριν** ο Nginx διαλέξει location: το `/.well-known/scrapelock-nginx` γινόταν `/index.php` και απαντούσε το WordPress με 404, **και απευθείας στο 127.0.0.1**, όχι μόνο μέσω Bunny. Το ίδιο κάνουν συχνά BT Panel και CloudPanel.
+2. **Ο έλεγχος ρωτούσε το CDN, όχι τον server.** Η 3.12.3 ρωτούσε `home_url(...)`, δηλαδή το Bunny. Χωρίς «Forward Host Header» απαντά άλλο server { } (το default του aaPanel) → 404· ένα 404 στην cache του Bunny (αν αγνοεί το query string) μένει και μετά την εγκατάσταση. Και τα δύο έδειχναν «Not installed» με σωστούς κανόνες.
+3. Δευτερεύον: διεύθυνση site `http://` με «Force HTTPS» → 301 πριν από κάθε location, και η 3.12.3 δεν ακολουθεί redirects.
+
+## 3. Τι έδειξε το stage (Nginx 1.24, PHP-FPM, CDN stand-in στη θέση του Bunny)
+
+| Διάταξη / παραλλαγή | Η διεύθυνση ελέγχου απαντά | 3.12.3 | 3.12.4 |
+|---|---|---|---|
+| a) μέρος 2 στην αρχή του server { } | 200 αποτυπώματα | Installed, up to date | Installed, up to date (απευθείας στον server) |
+| b) φάκελος extension (include στην αρχή, όπως στο live) | 200 | Installed | Installed |
+| b′) φάκελος extension στο τέλος (παλιά διάταξη) | 200 — αλλά το PHP στα uploads εκτελείται και το hotlink jpg/png/gif δεν πιάνει (κερδίζουν τα regex του aaPanel) | Installed | Installed |
+| c) μέσα στο `location / { }` του rewrite | 200 (το nested exact κερδίζει)· με private feed το `nginx -t` αποτυγχάνει (named location μόνο σε server)· τα bots σε `.php` δεν κόβονται | Installed | Installed |
+| d) χωρίς μέρος 2 | 404 του Nginx (το `location ~ \.well-known`) | Not installed | «Not active: Nginx answered the check address itself (HTTP 404)…» |
+| h) χωρίς μέρος 2, χωρίς `\.well-known` | 404 του WordPress | Not installed | «Not active: the check address reached WordPress…» |
+| e) μέρος 2 στο `0.scrapelock-*.conf` (http { }) | `nginx -t`: "set" directive is not allowed here — μένει η παλιά ρύθμιση | ό,τι πριν | ό,τι πριν (+ οδηγία «not in http { }») |
+| μέρος 2 δύο φορές (Config + extension) | `nginx -t`: "limit_req_status" directive is duplicate | ό,τι πριν | ό,τι πριν (+ οδηγία «only one of the two») |
+| f) Bunny χωρίς Forward Host Header | απευθείας 200· μέσω CDN 404 (default site) | **Not installed** | **Installed, up to date** (απευθείας) |
+| f2) ίδιο, ο server δεν απαντά απευθείας | μέσω CDN 404 | Not installed | «Not seen: … through the CDN …» + Forward Host Header / SCRAPELOCK_SERVER_IPS |
+| g) 404 στην cache του CDN (query αγνοείται) | απευθείας 200· CDN: HIT 404 | **Not installed** | **Installed, up to date** |
+| g3) ίδιο, ο server δεν απαντά απευθείας, και οι σελίδες στην cache | CDN: HIT | Not installed | «Not seen: the CDN answered … from its cache. Purge …» |
+| **live server { } + rewrite σε επίπεδο server, μέρος 2 της 3.12.3** | **404 του WordPress** (`curl --resolve <site>:443:127.0.0.1`) | **Not installed** | Installed, up to date (από το header `X-ScrapeLock-Rules`) + «copy part 2 again» |
+| **ίδιο, μέρος 2 της 3.12.4** | **200 `<http> <server>`** + header `X-ScrapeLock-Rules` | — | **Installed, up to date** (απευθείας) |
+
+Τα αποτυπώματα δεν αλλάζουν από την 3.12.3 στην 3.12.4 για τις ίδιες ρυθμίσεις.
+
+## 4. Τι άλλαξε
+
+- **Μέρος 2**: ξεκινά με `# Put these lines directly inside server { }, not inside a location { }.` και, αμέσως μετά τις γραμμές του header, απαντά τη διεύθυνση ελέγχου σε επίπεδο server, πριν από κάθε rewrite από κάτω:
+  `if ($uri = /.well-known/scrapelock-nginx) { return 200 "$pncp_rules_<site> <server hash>\n"; }` (υποφάκελος: η δική του διαδρομή). Δεν μπαίνει στο αποτύπωμα· ισχύει το `add_header X-ScrapeLock-Rules … always` του server { }· το `location =` μένει. Το `PNCP_Rules::evaluate()` απαντά το ίδιο. Κανένα άλλο `location =` στο μέρος 2: τίποτα δεν συγκρούεται με τα `location = /xmlrpc.php`, `= /wp-config.php` του panel.
+- **Ο έλεγχος** (`PNCP_Rules_Status`): πρώτα απευθείας στον server (CURLOPT_RESOLVE σε 127.0.0.1 / SERVER_ADDR / `SCRAPELOCK_SERVER_IPS`, υπογραφή, User-Agent αυτοελέγχου, 3 s), μετά η δημόσια διεύθυνση· κρατά από πού. Χωρίς αποτύπωμα: το header `X-ScrapeLock-Rules` της απάντησης του WordPress (όπως κάθε αυτοέλεγχος: καρτέλα και ειδοποίηση συμφωνούν). http:// → https:// ακολουθείται μία φορά.
+- **Τι απάντησε**: WordPress / Nginx / μόνο το CDN / cache του CDN / κάτι άλλο / τίποτα, μία γραμμή + «More», στην καρτέλα, στο Site Health, στα `wp scrapelock status` και `selfcheck`.
+- **Apache**: δεν έχει διεύθυνση ελέγχου· το αποτύπωμα είναι header (mod_headers, έξω από τα RewriteRules, άρα η σειρά δεν παίζει ρόλο), το .htaccess δεν διαβάζεται. Η κάρτα Apache δείχνει τώρα την κατάσταση, ρωτώντας πρώτα τον server.
+- **Οδηγίες aaPanel**: Config ακριβώς κάτω από `#SSL-END`, ή ο φάκελος extension όταν το Config τον κάνει include πάνω από τα location (όπως στο live)· μόνο το ένα· σε aaPanel / BT Panel / CloudPanel το μέρος 2 πάνω από το include του rewrite.
+
+## 5. Βήματα στο aaPanel για «Installed, up to date»
+
+1. Ενημέρωση του plugin σε 3.12.4.
+2. Settings → ScrapeLock → Server rules → Nginx → μέρος 2 → Copy.
+3. Αντικατάσταση **όλου** του περιεχομένου του `/www/server/panel/vhost/nginx/extension/pharmacyneeds.gr/scrapelock.conf` (το include είναι ήδη στην αρχή του server { }, πάνω από το include του rewrite). Όχι και στο Config: δύο φορές, το `nginx -t` αποτυγχάνει.
+4. `nginx -t` → «test is successful» → `nginx -s reload` (ή App Store → Nginx → Reload).
+5. Έλεγχος από τον server: `curl -sk --resolve pharmacyneeds.gr:443:127.0.0.1 https://pharmacyneeds.gr/.well-known/scrapelock-nginx` → `200` με δύο αποτυπώματα των 12 χαρακτήρων.
+6. Server rules → «Check again»: «Status: Installed and up to date with the current settings.», «More» → «Checked on the server directly (127.0.0.1).»
+7. Προαιρετικά στο Bunny: Pull zone → General → Origin → «Forward Host Header» ON· purge του `/.well-known/scrapelock-nginx`.
+
+## 6. Τι δοκιμάστηκε / τι όχι
+
+- Stage: Nginx 1.24 + PHP-FPM 8.3, διάταξη aaPanel, το server { } του live site, CDN stand-in (Host, cache που αγνοεί το query string), 3.12.3 και 3.12.4 δίπλα-δίπλα, μέσω της σελίδας διαχείρισης (PHP-FPM).
+- `tests/t_3124_nginx_status.php`: σειρά server → δημόσια διεύθυνση (pre_http_request), κατάταξη απαντήσεων, κείμενα, Apache, μέρος 2, και με πραγματικό Nginx (SKIP χωρίς nginx, όπως στο CI).
+- Δεν δοκιμάστηκε: το πραγματικό Bunny και το πραγματικό aaPanel (Save του Config).
+
+---
+
 # ScrapeLock 3.12.3 — αναφορά για τον server (aaPanel, Nginx, Bunny CDN)
 
 Η αναφορά μένει στο αποθετήριο (`/REPORT.md export-ignore`): δεν μπαίνει στο zip του plugin.

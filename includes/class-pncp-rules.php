@@ -409,52 +409,17 @@ final class PNCP_Rules {
 	}
 
 	/**
-	 * Whether the Nginx rules are installed and match the current settings. The site asks itself; the answer is
-	 * kept for 5 minutes and is asked again as soon as the settings change the rules.
+	 * Whether the Nginx rules are installed and match the current settings. 3.12.4: the server is asked directly
+	 * first, then the public address (PNCP_Rules_Status::nginx()). The answer is kept for 5 minutes and is asked
+	 * again as soon as the settings change the rules.
 	 *
 	 * @param bool $fresh Ask again now.
-	 * @return array{state: string, parts: string[], error: string} state: current, stale, missing or error; parts:
-	 *                                                               the out-of-date parts (http, server).
+	 * @return array{state:string, parts:string[], error:string, via:string, ip:string, kind:string, code:int}
+	 *         state: current, stale, missing or error; parts: the out-of-date parts (http, server); via and kind:
+	 *         see PNCP_Rules_Status::nginx().
 	 */
 	public static function nginx_status( $fresh = false ) {
-		$want = self::nginx_fingerprint();
-		$key  = 'pncp_nginx_status';
-		$got  = $fresh ? false : get_transient( $key );
-		if ( ! is_array( $got ) || ( $got['want'] ?? '' ) !== $want ) {
-			$response = wp_remote_get(
-				add_query_arg( 't', time(), home_url( '/.well-known/scrapelock-nginx' ) ), // Past any CDN cache.
-				array(
-					'timeout'     => 5,
-					'redirection' => 0,
-					'sslverify'   => apply_filters( 'https_local_ssl_verify', false ), // phpcs:ignore WordPress.NamingConventions.PrefixAllGlobals.NonPrefixedHooknameFound -- Core filter for requests to the site itself.
-					'user-agent'  => PNCP_Self_Check::user_agent(), // 3.12.3: like every self-check.
-				)
-			);
-			$got      = array(
-				'want'  => $want,
-				'body'  => is_wp_error( $response ) || 200 !== (int) wp_remote_retrieve_response_code( $response ) ? '' : trim( (string) wp_remote_retrieve_body( $response ) ),
-				'error' => is_wp_error( $response ) ? $response->get_error_message() : '',
-			);
-			set_transient( $key, $got, 5 * MINUTE_IN_SECONDS );
-		}
-		$out = array(
-			'state' => 'missing',
-			'parts' => array(),
-			'error' => $got['error'],
-		);
-		if ( '' !== $got['error'] ) {
-			$out['state'] = 'error';
-		} elseif ( preg_match( '/^([0-9a-f]+) ([0-9a-f]+)$/', $got['body'], $m ) ) {
-			list( $want_http, $want_server ) = explode( ' ', $want );
-			if ( $m[1] !== $want_http ) {
-				$out['parts'][] = 'http';
-			}
-			if ( $m[2] !== $want_server ) {
-				$out['parts'][] = 'server';
-			}
-			$out['state'] = $out['parts'] ? 'stale' : 'current';
-		}
-		return $out;
+		return PNCP_Rules_Status::nginx( $fresh );
 	}
 
 	/**
@@ -601,6 +566,10 @@ final class PNCP_Rules {
 		$path = isset( $request['path'] ) && '' !== (string) $request['path'] ? (string) $request['path'] : '/';
 		$path = (string) rawurldecode( (string) wp_parse_url( $path, PHP_URL_PATH ) ); // Nginx's $uri: decoded, no query.
 		$path = '' === $path ? '/' : $path;
+		// 3.12.4: part 2 answers its check address at server level, before every other line.
+		if ( self::nginx_check_path() === $path ) {
+			return null;
+		}
 		$fields = array(
 			'ua'             => $ua,
 			'uri'            => $path,
@@ -987,6 +956,8 @@ final class PNCP_Rules {
 		$uploads = self::uploads_path();
 		$backup  = (string) get_option( 'pncp_backup_dir' );
 		$lines   = array();
+		// 3.12.4: where these lines go (a comment: the fingerprint stays the same).
+		$lines[] = '# Put these lines directly inside server { }, not inside a location { }.';
 		// 3.12.3: the fingerprint of the installed rules, only in the answers to the site's own signed requests (the
 		// header X-ScrapeLock-Sig; Nginx cannot verify it, but the fingerprint says nothing about the site), so every
 		// self-check sees whether the rules on the server are the current ones. An empty value sends no header.
@@ -997,6 +968,13 @@ final class PNCP_Rules {
 		$lines[] = 'set $' . self::nv( 'rules_hdr' ) . ' "";';
 		$lines[] = 'if ($http_x_scrapelock_sig) { set $' . self::nv( 'rules_hdr' ) . ' "$' . self::nv( 'rules' ) . ' ' . self::HASH_SLOT . '"; }';
 		$lines[] = 'add_header ' . self::HASH_HEADER . ' $' . self::nv( 'rules_hdr' ) . ' always;';
+		$lines[] = '';
+		// 3.12.4: the check address answered at server level too. Panels (aaPanel, BT Panel, CloudPanel) often put the
+		// WordPress rewrite at server level (if (!-e $request_filename) { rewrite ... /index.php last; }): it runs
+		// before any location is chosen, and the location = below never sees the request. These lines come first.
+		$lines[] = '# The check address, answered here too: a WordPress rewrite at server level (if (!-e $request_filename)';
+		$lines[] = '# { rewrite ... }, common on aaPanel, BT Panel and CloudPanel) runs before any location. Keep these lines ABOVE it.';
+		$lines[] = 'if ($uri = ' . self::nginx_arg( self::nginx_check_path() ) . ') { return 200 "$' . self::nv( 'rules' ) . ' ' . self::HASH_SLOT . '\\n"; }';
 		$lines[] = '';
 		if ( self::nginx_block_vars() ) {
 			$lines[] = '# Blocks bots' . ( $s['block_headless'] ? ' and fake browsers' : '' ) . ' BEFORE the page cache (FastCGI cache, WP Rocket, WP Super Cache), also';

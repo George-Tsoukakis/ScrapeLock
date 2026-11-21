@@ -4,7 +4,7 @@ Tags: ai crawlers, anti-scraping, bot protection, rate limit, content protection
 Requires at least: 6.2
 Tested up to: 7.2
 Requires PHP: 7.4
-Stable tag: 3.12.3
+Stable tag: 3.12.4
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -383,6 +383,14 @@ No, on purpose: only an app code, a recovery code or the SCRAPELOCK_UNLOCK line 
 
 == Changelog ==
 
+= 3.12.4 =
+* Fix: on aaPanel (and BT Panel, CloudPanel) the Server rules tab read "Not installed" with part 2 of the Nginx rules in the site's server { }: the panel's WordPress rewrite is a server-level `if (!-e $request_filename) { rewrite ... /index.php last; }`, which runs before Nginx chooses a location, so the check address went to WordPress (404). Part 2 now also answers its check address at server level, above every other line (not part of the fingerprint: installed rules stay current). Copy part 2 again.
+* Fix: the "installed / up to date" status asks the server itself first (the site's host pinned to 127.0.0.1, the server address or `SCRAPELOCK_SERVER_IPS`, signed), then the public address. Behind Bunny CDN without "Forward Host Header", or with a cached 404, the CDN answered instead of the server. Without an answer at the check address the `X-ScrapeLock-Rules` header of the site's own page counts, so the tab and the out-of-date notice agree; an http:// site address sent to https:// is followed.
+* New: when the rules are not seen, the tab, Site Health and `wp scrapelock status` / `selfcheck` say in one line what answered and what to do: WordPress (part 2 not active, or behind a server-level rewrite), Nginx itself (another location took the address), only the CDN (Forward Host Header), the CDN's cache (purge), something else.
+* New: the Apache card shows whether the Apache rules are installed (their header, the server asked first; the .htaccess is never read).
+* Change: part 2 says where it goes ("directly inside server { }, not inside a location { }"), and the aaPanel instructions name both places that work (Config below #SSL-END, or the extension folder included at the top), once only.
+* Greek translation of the new texts.
+
 = 3.12.3 =
 * Fix: ScrapeLock's own generated Nginx rules refused the site's own checks with 403 (Vulnerable points "Check again", Site Health, "Run a real self-check now", `wp scrapelock selfcheck`): they sent a Chrome User-Agent without Sec-Fetch-Mode and Sec-CH-UA over HTTPS, which the fake browser rule refuses before PHP can see the signature. Every self-check now sends `ScrapeLock-Selftest/<version> (+<site address>)`, which is no browser's, plus the signature; ScrapeLock's PHP checks let it through by the signature, never by the name.
 * New: the generated Nginx and Apache rules never block the server itself: its own addresses (127.0.0.1, ::1, the server address, the outbound address learned from the site's signed requests, `SCRAPELOCK_SERVER_IPS`) are exempt from every block, the loopback and private ones only when no proxy passed the request on. Never a CDN edge, never an invalid entry. The Server rules tab lists them; behind a CDN, `real_ip` (Nginx) or `mod_remoteip` (Apache) makes the server's own requests through the CDN keep its address.
@@ -549,6 +557,9 @@ No, on purpose: only an app code, a recovery code or the SCRAPELOCK_UNLOCK line 
 The changes of 3.5.0 and earlier versions are in changelog.txt in the plugin folder.
 
 == Upgrade Notice ==
+
+= 3.12.4 =
+Nginx: copy part 2 of the server rules again (Settings → ScrapeLock → Server rules), then nginx -t and reload: it now answers the status check before aaPanel's server-level WordPress rewrite. The fingerprint is unchanged. Settings are kept.
 
 = 3.12.3 =
 After updating, copy the server rules again from Settings → ScrapeLock → Server rules (Nginx: both parts, then nginx -t and reload; Apache: the .htaccess block): the new rules never block the server's own requests. Settings are kept.
