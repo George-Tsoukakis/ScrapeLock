@@ -11,6 +11,13 @@
  * R. The Stealth rules write each word's rule twice on purpose (a word can be in an address two times, as in
  *    WP Rocket's copy of woocommerce/assets/css/woocommerce.css): said in a comment of the rules; an address
  *    with the word twice maps back with the Nginx and the Apache rules, and would not with one rule per word.
+ * F. The fingerprint of the rules includes the rules for sibling folders (3.12.8): rules without them (as
+ *    3.12.7 wrote them) are "stale", a map waiting for its rules is not taken up while the server has them,
+ *    is taken up once it has the new ones; the notice and WP-CLI (stealth status, stealth check) say to copy
+ *    the Stealth rules again with the command, and, once they are current, that the map is put into use.
+ * H. Apache with the rules in .htaccess (written by ScrapeLock): the same map with other rules (an update of
+ *    the plugin) is written into .htaccess again by the refresh the upgrade schedules; a .htaccess already
+ *    current is not touched.
  *
  * Only on a test WordPress.
  */
@@ -232,5 +239,118 @@ $single = static function ( $rules ) {
 	return implode( "\n", $out );
 };
 t( 'R ... and would not with one rule per word (the pair is needed)', $real !== nginx_apply( $single( $nginx ), $new ) && $real !== apache_apply( $single( $apache ), $new ) );
+
+/* ---------- F. The fingerprint with the rules for sibling folders ---------- */
+
+$lines   = PNCP_Stealth::rule_lines( 'nginx', 'assets', PNCP_Stealth::build() );
+$sibling = preg_grep( '#^rewrite "\(\?i\)\^/?[^"]*assets/\((?:[A-Za-z0-9._-]+\|)+[A-Za-z0-9._-]+\)/#', $lines );
+$body    = array_values(
+	array_filter(
+		$lines,
+		static function ( $line ) use ( $sibling ) {
+			return ! in_array( $line, $sibling, true ) && false === strpos( $line, PNCP_Stealth_Status::check_path() ) && 0 !== strpos( $line, '# Lets ScrapeLock' ) && 0 !== strpos( $line, '    ' ) && '}' !== $line;
+		}
+	)
+);
+$old_fp  = PNCP_Stealth_Status::fingerprint_in( implode( "\n", PNCP_Stealth_Status::with_fingerprint( 'nginx', $body ) ), 'nginx' );
+$want    = PNCP_Stealth_Status::current( 'nginx' );
+t( 'F the rules have sibling-folder rules (wp-content: uploads, plugins, themes), and the fingerprint changes with them', count( $sibling ) >= 1 && '' !== $old_fp && $old_fp !== $want, $old_fp . ' ' . $want . ' ' . implode( ' | ', $sibling ) );
+$installed = $old_fp;
+add_filter(
+	'pre_http_request',
+	static function ( $pre, $args, $url ) use ( &$installed ) {
+		if ( false === strpos( (string) $url, PNCP_Stealth_Status::check_path() ) ) {
+			return $pre;
+		}
+		return array(
+			'headers'  => array( 'content-type' => 'text/plain' ),
+			'body'     => $installed . "\n",
+			'response' => array(
+				'code'    => 200,
+				'message' => 'OK',
+			),
+			'cookies'  => array(),
+			'filename' => null,
+		);
+	},
+	10,
+	3
+);
+$fresh = static function () {
+	PNCP_Stealth_Status::reset();
+	delete_transient( PNCP_Stealth_Status::STATUS );
+	wp_clear_scheduled_hook( PNCP_Stealth::REFRESH );
+};
+$fresh();
+$status = PNCP_Stealth_Status::status( true );
+t( 'F the server has the rules as 3.12.7 wrote them (no sibling rules): stale, the notice says to copy the Stealth rules again', 'stale' === $status['state'] && 'changed' === PNCP_Stealth_Status::needs_copy() && false !== strpos( PNCP_Stealth_Status::message( 'changed' ), 'copy the Stealth rules again' ), $status['state'] . ' ' . PNCP_Stealth_Status::needs_copy() );
+$next = PNCP_Stealth_Status::cli_next();
+t( 'F ... WP-CLI says it with the commands (rules install --stealth=<file>, then stealth test)', false !== strpos( $next, 'copy the Stealth rules again' ) && false !== strpos( $next, 'wp scrapelock rules install --stealth=<file>' ) && false !== strpos( $next, 'wp scrapelock stealth test' ), $next );
+$cli = PNCP_Stealth::cli_status();
+t( 'F ... wp scrapelock stealth status: rules stale, the map in use, next = the same text', 'stale' === $cli['rules'] && 'in use' === $cli['map'] && $next === $cli['next'], wp_json_encode( $cli ) );
+// A map that waits for its rules: the words of before (no WP Rocket), the new ones lack in the pages.
+remove_filter( 'pncp_stealth_optimizers', $rocket );
+add_filter( 'pncp_stealth_optimizers', '__return_empty_array' ); // As before WP Rocket was seen.
+PNCP_Stealth::activate( false );
+remove_filter( 'pncp_stealth_optimizers', '__return_empty_array' );
+add_filter( 'pncp_stealth_optimizers', $rocket );
+$fresh();
+PNCP_Stealth::refresh();
+$st = PNCP_Stealth::state();
+t( 'F a new map (WP Rocket\'s inner words) while the server has the rules without sibling rules: waiting, the old words kept', '' !== (string) $st['pending'] && ! in_array( 'wp-content', $st['words'], true ) && 'waiting' === PNCP_Stealth::cli_status()['map'], wp_json_encode( array( $st['pending'], $st['words'], PNCP_Stealth::cli_status()['map'] ) ) );
+t( 'F ... WP-CLI: copy the Stealth rules again', false !== strpos( PNCP_Stealth_Status::cli_next(), 'copy the Stealth rules again' ), PNCP_Stealth_Status::cli_next() );
+if ( class_exists( 'PNCP_Stealth_Debug' ) ) {
+	$check = PNCP_Stealth_Debug::check( home_url( '/' ) );
+	t( 'F ... wp scrapelock stealth check: rules stale, "words not used" asks to copy the rules first, next', is_array( $check ) && 'stale' === $check['rules'] && false !== strpos( $check['words not used'], 'copy the Stealth rules again, then run wp scrapelock stealth test' ) && false !== strpos( $check['next'], 'copy the Stealth rules again' ), wp_json_encode( $check ) );
+}
+// The owner installs the new rules: the check address answers the current fingerprint.
+$installed = PNCP_Stealth_Status::current( 'nginx' );
+$fresh();
+$status = PNCP_Stealth_Status::status( true );
+t( 'F the new rules installed: current, nothing to copy, the refresh scheduled; WP-CLI says the map is put into use', 'current' === $status['state'] && '' === PNCP_Stealth_Status::needs_copy() && false !== wp_next_scheduled( PNCP_Stealth::REFRESH ) && false !== strpos( PNCP_Stealth_Status::cli_next(), 'within a minute' ), PNCP_Stealth_Status::cli_next() );
+$fresh();
+PNCP_Stealth::refresh(); // What the scheduled refresh (or the twice-daily check) runs.
+$st = PNCP_Stealth::state();
+t( 'F ... the refresh takes the new map up: the inner words in use, nothing waiting, nothing left to do', '' === (string) $st['pending'] && in_array( 'wp-content', $st['words'], true ) && '' === PNCP_Stealth_Status::cli_next() && 'in use' === PNCP_Stealth::cli_status()['map'] );
+
+/* ---------- H. Apache: .htaccess written again for the same map with other rules ---------- */
+
+if ( ! is_writable( ABSPATH ) && ! is_writable( $htaccess ) ) {
+	echo "SKIP H .htaccess not writable\n";
+} else {
+	$server = 'apache';
+	if ( ! is_file( $htaccess ) ) {
+		file_put_contents( $htaccess, "# BEGIN WordPress\n# END WordPress\n" );
+	}
+	$on = PNCP_Stealth::activate( false );
+	$st = PNCP_Stealth::state();
+	$fp = static function () use ( $htaccess ) {
+		$text = (string) file_get_contents( $htaccess );
+		$at   = strpos( $text, '# BEGIN ScrapeLock Stealth' );
+		return false === $at ? '' : PNCP_Stealth_Status::fingerprint_in( substr( $text, $at ), 'apache' );
+	};
+	t( 'H Apache: the rules written into .htaccess, current', true === $on && ! empty( $st['htaccess'] ) && $fp() === PNCP_Stealth_Status::current( 'apache' ), is_wp_error( $on ) ? $on->get_error_message() : $fp() );
+	// As after an update: the same map, the .htaccess with the rules of before (another fingerprint, no sibling rules).
+	$text = (string) file_get_contents( $htaccess );
+	$text = (string) preg_replace( '/^RewriteRule \^assets\/\((?:[A-Za-z0-9._-]+\|)+[A-Za-z0-9._-]+\)\/.*\R/m', '', $text );
+	$text = str_replace( '"' . PNCP_Stealth_Status::current( 'apache' ) . '"', '"aaaaaaaaaaaa"', $text );
+	file_put_contents( $htaccess, $text );
+	$sig = $st['sig'];
+	$fresh();
+	PNCP_Stealth::refresh();
+	$st = PNCP_Stealth::state();
+	t( 'H ... the same map, older rules in .htaccess: the refresh writes the current rules (sibling rules too), map unchanged', $fp() === PNCP_Stealth_Status::current( 'apache' ) && 1 === preg_match( '/^RewriteRule \^assets\/\(/m', (string) file_get_contents( $htaccess ) ) && $sig === $st['sig'] && '' === (string) $st['pending'] && PNCP_Stealth::active(), $fp() );
+	$mtime = filemtime( $htaccess );
+	$size  = md5( (string) file_get_contents( $htaccess ) );
+	sleep( 1 );
+	clearstatcache();
+	PNCP_Stealth::refresh();
+	clearstatcache();
+	t( 'H ... a current .htaccess is not written again', md5( (string) file_get_contents( $htaccess ) ) === $size && filemtime( $htaccess ) === $mtime );
+	$src = (string) file_get_contents( PNCP_DIR . 'scrapelock.php' );
+	t( 'H ... the upgrade schedules that refresh (pncp_upgrade_files)', 1 === preg_match( '/function pncp_upgrade_files\(\).*?PNCP_Stealth::schedule_refresh\(\);.*?\n}/s', $src ) );
+	$server = 'nginx';
+	PNCP_Stealth::remove_htaccess();
+}
 
 exit( $fails ? 1 : 0 );

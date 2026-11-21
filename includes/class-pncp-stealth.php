@@ -898,6 +898,18 @@ final class PNCP_Stealth {
 	}
 
 	/**
+	 * 3.12.8: the fingerprint of the Stealth block in .htaccess ('' when there is none).
+	 *
+	 * @return string
+	 */
+	private static function htaccess_fingerprint() {
+		$file = self::htaccess_file();
+		$text = is_readable( $file ) ? (string) file_get_contents( $file ) : ''; // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Local file.
+		$at   = strpos( $text, '# BEGIN ' . self::MARKER );
+		return false === $at ? '' : PNCP_Stealth_Status::fingerprint_in( substr( $text, $at ), 'apache' );
+	}
+
+	/**
 	 * Removes the block from .htaccess; the rest of the file stays byte for byte as it was.
 	 *
 	 * @return bool
@@ -1523,10 +1535,14 @@ final class PNCP_Stealth {
 		$config = self::build();
 		$sig    = self::signature( $base, $config );
 		$files  = self::blocks_files( $s ) ? 1 : 0;
-		if ( $sig === $state['sig'] && (int) ( isset( $state['files'] ) ? $state['files'] : 0 ) === $files ) {
+		// 3.12.8: on Apache the rules ScrapeLock wrote into .htaccess are also written again when their text changed
+		// with an update of the plugin (the same map, other rules: the rules for sibling folders of 3.12.8).
+		$htaccess = 'apache' === $state['server'] && ! empty( $state['htaccess'] );
+		$rewrite  = $htaccess && self::sanitize_base( (string) $s['stealth_base'] ) === $base && self::htaccess_fingerprint() !== PNCP_Stealth_Status::current( 'apache' );
+		if ( $sig === $state['sig'] && (int) ( isset( $state['files'] ) ? $state['files'] : 0 ) === $files && ! $rewrite ) {
 			return;
 		}
-		if ( 'apache' === $state['server'] && ! empty( $state['htaccess'] ) ) {
+		if ( $htaccess ) {
 			$before = self::htaccess_backup();
 			if ( self::write_htaccess( self::rule_lines( 'apache', $base, $config ) ) && true === self::self_test( $base, $config ) ) {
 				$state['sig']     = $sig;
@@ -3273,7 +3289,9 @@ final class PNCP_Stealth {
 			'tested'   => $state['tested'] ? gmdate( 'Y-m-d H:i:s', (int) $state['tested'] ) . ' UTC' : '-',
 			'folders'  => (string) count( (array) $state['map'] ),
 			'rules'    => null !== PNCP_Stealth_Status::kept_status() ? PNCP_Stealth_Status::kept_status()['state'] : '-', // 3.12.6.
+			'map'      => '' !== (string) $state['pending'] && 'failed' !== (string) $state['pending'] ? 'waiting' : 'in use', // 3.12.8.
 			'error'    => (string) $state['error'],
+			'next'     => '' !== PNCP_Stealth_Status::cli_next() ? PNCP_Stealth_Status::cli_next() : '-', // 3.12.8.
 		);
 	}
 

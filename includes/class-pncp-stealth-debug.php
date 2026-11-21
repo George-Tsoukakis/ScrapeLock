@@ -319,6 +319,8 @@ class PNCP_Stealth_Debug {
 				$cache[] = $name . ': ' . $value;
 			}
 		}
+		$rules   = PNCP_Stealth::active() ? PNCP_Stealth_Status::status( true )['state'] : '-';
+		$next    = PNCP_Stealth_Status::cli_next();
 		$state   = PNCP_Stealth::state();
 		$codes   = array();
 		$plain   = str_replace( '\\/', '/', $body );
@@ -342,8 +344,10 @@ class PNCP_Stealth_Debug {
 			'inner'          => (string) $c['inner'],
 			'new addresses'  => '' !== $base ? (string) preg_match_all( '~/' . preg_quote( $base, '~' ) . '/[0-9a-f]{6}/~', $plain ) : '0',
 			'codes'          => $codes ? implode( ', ', $codes ) : '-',
-			'words not used' => $missing ? implode( ', ', $missing ) . ' (' . __( 'run wp scrapelock stealth test', 'scrapelock' ) . ')' : '-',
+			'words not used' => $missing ? implode( ', ', $missing ) . ' (' . ( 'current' === $rules ? __( 'run wp scrapelock stealth test', 'scrapelock' ) : __( 'copy the Stealth rules again, then run wp scrapelock stealth test', 'scrapelock' ) ) . ')' : '-',
 			'examples'       => $leaks ? implode( ' ', array_map( array( __CLASS__, 'short' ), $leaks ) ) : '-',
+			'rules'          => $rules,
+			'next'           => '' !== $next ? $next : '-',
 			'verdict'        => 0 === $c['wp_content'] + $c['wp_includes'] ? 'clean' : 'leaks',
 			'debug log'      => self::on() ? self::file() : 'off',
 		);

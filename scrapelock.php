@@ -500,6 +500,12 @@ function pncp_upgrade_files() {
 	// A list that is new in this version (e.g. Anthropic in 2.6.2) is downloaded now, not with the daily refresh.
 	PNCP_Ip::forget_missing_try();
 	PNCP_Ip::fetch_missing();
+	// 3.12.8: an update can change the Stealth rules with the same address map (the rules for sibling folders):
+	// where ScrapeLock wrote them into .htaccess they are written and tested again; on Nginx a map waiting for
+	// its rules is taken up once the server serves them (PNCP_Stealth::refresh()).
+	if ( class_exists( 'PNCP_Stealth' ) ) {
+		PNCP_Stealth::schedule_refresh();
+	}
 	// Cache plugins (e.g. LiteSpeed, WP Rocket) finish loading later: before init the purge waits for init.
 	pncp_purge_page_cache();
 }

@@ -546,6 +546,29 @@ final class PNCP_Stealth_Status {
 	}
 
 	/**
+	 * 3.12.8: what the administrator has to do next about the Stealth rules, for WP-CLI ('' = nothing): the
+	 * notice's text with the commands, or, while the new map waits for its rules, how to put it into use.
+	 *
+	 * @return string
+	 */
+	public static function cli_next() {
+		$reason = self::needs_copy();
+		if ( '' !== $reason ) {
+			return self::message( $reason ) . ' ' . ( 'apache' === self::format()
+				? __( 'With WP-CLI: wp scrapelock rules install --stealth-apache=<file>, then wp scrapelock stealth test.', 'scrapelock' )
+				: __( 'With WP-CLI: wp scrapelock rules install --stealth=<file>, then wp scrapelock stealth test.', 'scrapelock' ) );
+		}
+		$state = PNCP_Stealth::state();
+		if ( empty( $state['active'] ) || '' === (string) $state['pending'] || 'failed' === (string) $state['pending'] ) {
+			return '';
+		}
+		$kept = self::kept_status();
+		return null !== $kept && 'current' === $kept['state']
+			? __( 'The server has the Stealth rules of a new address map: ScrapeLock tests it and puts it into use within a minute (or now: wp scrapelock stealth test).', 'scrapelock' )
+			: __( 'A new address map waits for its Stealth rules: copy the Stealth rules again (wp scrapelock rules install), then run wp scrapelock stealth test.', 'scrapelock' );
+	}
+
+	/**
 	 * The text of the notice.
 	 *
 	 * @param string $reason What needs_copy() returned.
