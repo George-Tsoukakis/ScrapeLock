@@ -203,7 +203,8 @@ ScrapeLock — δοκιμές σε πραγματικό WordPress (όχι stubs)
                     robots.txt «Allow: /builtwith.txt» before «Disallow: /»); uninstall.php and deactivation; wp scrapelock
                     rules status with the real Stealth status (stealth_state / _installed / _current); the Server rules
                     tab order (Apache, Nginx, Stealth, fail2ban, Verification files), each notice once (main rules,
-                    Stealth rules), the second check before «not found»; export / import of block_tech_profilers
+                    Stealth rules), the second check before «not found»; export / import of block_tech_profilers; static
+                    security checks (proc_open only in the CLI class, escapeshellarg, --test-cmd / --reload-cmd)
   t_cli.php         wp scrapelock … μέσα από το πραγματικό wp (χρειάζεται WP_CLI, αλλιώς SKIP)
   t_bunny_rules.php Edge Rules στο Bunny μέσα στα όριά του (το πολύ 5 μοτίβα ανά συνθήκη) με ψεύτικο API που δίνει
                     HTTP 400 όπως το πραγματικό: χωρισμός, κλείδωμα/Remove, rollback, Monitor only, sync, προεπισκόπηση,

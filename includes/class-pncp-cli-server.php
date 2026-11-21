@@ -7,7 +7,10 @@
  * Only from WP-CLI (cli_only()). The stored credentials (Bunny API key, Cloudflare token) are used, never printed.
  * "rules install" writes only the files named on the command line: <file>.new, a diff, <file>.old while the new
  * one is tested, the test command (nginx -t), the reload, and every file back from its .old when the test or the
- * reload fails. This is the only class that runs commands of the system.
+ * reload fails. This is the only class that runs commands of the system: the defaults are built here from the
+ * program's full path with escapeshellarg(); the only command text from outside are --test-cmd and --reload-cmd,
+ * which the person at the server types and which run through the shell as given. Nothing of a request, a setting
+ * or a stored option ever becomes part of a command.
  *
  * @package ScrapeLock
  */

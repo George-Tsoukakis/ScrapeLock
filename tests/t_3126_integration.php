@@ -15,6 +15,8 @@
  * A. The admin pages: the Server rules tab (Apache, Nginx, Stealth, fail2ban, Verification files, no PHP warnings),
  *    the main rules notice and the Stealth rules notice each once (dashboard, tab), the second check before "not
  *    found", a dismissed Stealth notice; the export and import carry block_tech_profilers.
+ * S. Security (static): proc_open() only in the CLI class, its entry points stop outside WP-CLI, the commands are
+ *    built with escapeshellarg() or are --test-cmd / --reload-cmd (documented as run through the shell).
  *
  * Only on a test WordPress.
  */
@@ -324,5 +326,34 @@ $pncp_export = PNCP_Settings_Io::export();
 t( 'A export: block_tech_profilers is in it (1), and no option of the new parts (verification files, wizard state, Stealth status)', isset( $pncp_export['settings']['block_tech_profilers'] ) && 1 === (int) $pncp_export['settings']['block_tech_profilers'] && false === strpos( (string) wp_json_encode( $pncp_export ), 'pncp_verify_files' ) && false === strpos( (string) wp_json_encode( $pncp_export ), 'pncp_wizard_state' ), wp_json_encode( array_keys( $pncp_export ) ) );
 t( 'A import: block_tech_profilers is a public key', in_array( 'block_tech_profilers', PNCP_Settings_Io::public_keys(), true ) );
 settings( array( 'block_tech_profilers' => 0 ) );
+
+/* ---------- S. Security of the new code (static) ---------- */
+
+$pncp_runs = array();
+foreach ( array_merge( glob( PNCP_DIR . 'includes/*.php' ), array( PNCP_DIR . 'scrapelock.php', PNCP_DIR . 'uninstall.php' ) ) as $pncp_file ) {
+	// The code only (no comments), each call of a function that starts a process.
+	$pncp_tokens = token_get_all( (string) file_get_contents( $pncp_file ) );
+	foreach ( $pncp_tokens as $pncp_i => $pncp_tok ) {
+		if ( is_array( $pncp_tok ) && T_STRING === $pncp_tok[0] && in_array( strtolower( $pncp_tok[1] ), array( 'proc_open', 'shell_exec', 'passthru', 'popen', 'pcntl_exec', 'exec', 'system' ), true ) ) {
+			$pncp_prev = $pncp_tokens[ $pncp_i - 1 ] ?? '';
+			$pncp_prev = is_array( $pncp_prev ) && T_WHITESPACE === $pncp_prev[0] ? ( $pncp_tokens[ $pncp_i - 2 ] ?? '' ) : $pncp_prev;
+			$pncp_next = $pncp_tokens[ $pncp_i + 1 ] ?? '';
+			$pncp_next = is_array( $pncp_next ) && T_WHITESPACE === $pncp_next[0] ? ( $pncp_tokens[ $pncp_i + 2 ] ?? '' ) : $pncp_next;
+			$pncp_meth = is_array( $pncp_prev ) && in_array( $pncp_prev[0], array( T_OBJECT_OPERATOR, T_DOUBLE_COLON, T_FUNCTION ), true );
+			if ( '(' === $pncp_next && ! $pncp_meth ) {
+				$pncp_runs[ basename( $pncp_file ) ][] = strtolower( $pncp_tok[1] );
+			}
+		}
+	}
+}
+t( 'S the only process call of the plugin: proc_open() in class-pncp-cli-server.php', array( 'class-pncp-cli-server.php' => array( 'proc_open' ) ) === $pncp_runs, wp_json_encode( $pncp_runs ) );
+$pncp_srv = (string) file_get_contents( PNCP_DIR . 'includes/class-pncp-cli-server.php' );
+t( 'S every command entry point stops outside WP-CLI first (rules, verify_file, cdn)', 3 === preg_match_all( '/public static function (?:rules|verify_file|cdn)\( \$args, \$assoc_args \) \{\n\t\tself::cli_only\(\);/', $pncp_srv ) );
+preg_match( '/private static function commands\(.*?\n\t\}\n/s', $pncp_srv, $pncp_cmds );
+t( 'S run() is called only with $test, $reload and the built-in alternative', 3 === substr_count( $pncp_srv, 'self::run( ' ) && 1 === substr_count( $pncp_srv, 'self::run( $test )' ) && 1 === substr_count( $pncp_srv, 'self::run( $reload )' ) && 1 === substr_count( $pncp_srv, "self::run( \$cmds['alt'] )" ) );
+t( 'S ...the built-in commands: full paths through escapeshellarg(), nothing of the options', isset( $pncp_cmds[0] ) && 5 === substr_count( $pncp_cmds[0], 'escapeshellarg( $' ) && false === strpos( $pncp_cmds[0], '$assoc_args' ) && false === strpos( $pncp_cmds[0], '$_' ) );
+t( 'S ...and $test / $reload are a built-in command unless --test-cmd / --reload-cmd was typed', 1 === substr_count( $pncp_srv, "\$test = isset( \$assoc_args['test-cmd'] ) ? (string) \$assoc_args['test-cmd'] : \$cmds['test'];" ) && 1 === substr_count( $pncp_srv, "\$reload = isset( \$assoc_args['reload-cmd'] ) ? (string) \$assoc_args['reload-cmd'] : \$cmds['reload'];" ) );
+$pncp_help = (string) file_get_contents( PNCP_DIR . 'includes/class-pncp-cli.php' );
+t( 'S --test-cmd and --reload-cmd say that they run through the shell as given', 2 === substr_count( $pncp_help, 'Run through the shell exactly as given' ) );
 
 exit( $fails ? 1 : 0 );

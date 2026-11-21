@@ -1199,10 +1199,10 @@ final class PNCP_Cli {
 	 * : For install: show the diff only; nothing is changed.
 	 *
 	 * [--test-cmd=<command>]
-	 * : For install: the test command instead of the default (e.g. "/www/server/nginx/sbin/nginx -t").
+	 * : For install: the test command instead of the default (e.g. "/www/server/nginx/sbin/nginx -t"). Run through the shell exactly as given, as the user running wp: the only command text that comes from outside the plugin.
 	 *
 	 * [--reload-cmd=<command>]
-	 * : For install: the reload command instead of the default (e.g. "systemctl reload nginx").
+	 * : For install: the reload command instead of the default (e.g. "systemctl reload nginx"). Run through the shell exactly as given, like --test-cmd.
 	 *
 	 * [--yes]
 	 * : For install: do not ask for confirmation.
