@@ -164,6 +164,10 @@ final class PNCP_Stealth {
 		add_action( 'template_redirect', array( __CLASS__, 'start_buffer' ), -9999 );
 		// 3.12.6: the final HTML of the optimization plugins, before they store it in their cache (WP Rocket's own
 		// buffer is inside this one, but another order or plugin must not bring their addresses back).
+		// 3.12.7: WP Rocket writes its page cache in the buffer advanced-cache.php starts before the plugins, from
+		// the output of this buffer and of its optimization buffer (template_redirect 2, rocket_buffer); its last
+		// stage that adds addresses runs at 110000. Not on rocket_css_url / rocket_js_url: its later stages (delay
+		// JS exclusions, background CSS) need the real address of the minified file.
 		foreach ( array( 'rocket_buffer', 'autoptimize_html_after_minify', 'litespeed_buffer_after', 'w3tc_process_content' ) as $hook ) {
 			add_filter( $hook, array( __CLASS__, 'optimized_html' ), PHP_INT_MAX );
 		}

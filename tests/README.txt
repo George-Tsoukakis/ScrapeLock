@@ -206,6 +206,13 @@ ScrapeLock — δοκιμές σε πραγματικό WordPress (όχι stubs)
                     Stealth rules), the second check before «not found»; export / import of block_tech_profilers; a settings save before init
                     (no translation loaded early, the wizard's note on init); static
                     security checks (proc_open only in the CLI class, escapeshellarg, --test-cmd / --reload-cmd)
+  t_3127_stealth_cache.php 3.12.7: Stealth and cached pages: a WP Rocket-like stand-in (page cache buffer started
+                    before the plugins and served before WordPress, optimization buffer at template_redirect 2 with
+                    rocket_buffer at WP Rocket's priorities, rocket_css_url / rocket_js_url): MISS, the stored file and
+                    its _gzip copy, HIT: 0 wp-content / wp-includes in the asset addresses, each maps back with the Nginx
+                    and Apache rules; "?nocache=" is not optimized; a page stored with the words of before 3.12.6 (the
+                    live leftover), the new map, Stealth off and on empty the page cache; real Nginx with a page cache
+                    in front (SKIP without nginx): MISS / HIT clean, every asset 200, a stale Nginx cache until emptied
   t_cli.php         wp scrapelock … μέσα από το πραγματικό wp (χρειάζεται WP_CLI, αλλιώς SKIP)
   t_bunny_rules.php Edge Rules στο Bunny μέσα στα όριά του (το πολύ 5 μοτίβα ανά συνθήκη) με ψεύτικο API που δίνει
                     HTTP 400 όπως το πραγματικό: χωρισμός, κλείδωμα/Remove, rollback, Monitor only, sync, προεπισκόπηση,
