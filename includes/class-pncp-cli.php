@@ -1454,12 +1454,20 @@ final class PNCP_Cli {
 	}
 
 	/**
-	 * 3.8: Stealth (do not show that the site runs on WordPress): status, on, off, test, scan, rules.
+	 * 3.8: Stealth (do not show that the site runs on WordPress): status, on, off, test, scan, rules; 3.12.8:
+	 * check (a page as a visitor gets it: wp-content / wp-includes left, the codes found) and debug (the opt-in
+	 * debug log: SCRAPELOCK_STEALTH_DEBUG in wp-config.php).
 	 *
 	 * ## OPTIONS
 	 *
 	 * [<action>]
-	 * : status (default), on, off, test, scan or rules.
+	 * : status (default), on, off, test, scan, rules, check or debug.
+	 *
+	 * [<url>]
+	 * : For check: the page of this site (default: the home page).
+	 *
+	 * [--clear]
+	 * : For debug: delete the log (the next one starts a new period).
 	 *
 	 * [--base=<folder>]
 	 * : For on: the folder of the new addresses (default assets).
@@ -1483,6 +1491,8 @@ final class PNCP_Cli {
 	 *     wp scrapelock stealth on --base=static --rest=api
 	 *     wp scrapelock stealth rules --server=nginx
 	 *     wp scrapelock stealth scan --page=https://example.com/blog/
+	 *     wp scrapelock stealth check https://example.com/blog/
+	 *     wp scrapelock stealth debug
 	 *
 	 * @param string[]              $args       Arguments.
 	 * @param array<string, string> $assoc_args Options.
@@ -1523,8 +1533,32 @@ final class PNCP_Cli {
 				$server = isset( $assoc_args['server'] ) ? sanitize_key( (string) $assoc_args['server'] ) : PNCP_Stealth::server();
 				WP_CLI::line( PNCP_Stealth::rules_text( $server ) );
 				return;
+			case 'check':
+				$check = PNCP_Stealth_Debug::check( isset( $args[1] ) ? esc_url_raw( (string) $args[1] ) : '' );
+				if ( is_wp_error( $check ) ) {
+					WP_CLI::error( $check->get_error_message() );
+				}
+				$items = array();
+				foreach ( $check as $key => $value ) {
+					$items[] = array(
+						'field' => $key,
+						'value' => $value,
+					);
+				}
+				WP_CLI\Utils\format_items( self::format( $assoc_args ), $items, array( 'field', 'value' ) );
+				return;
+			case 'debug':
+				if ( isset( $assoc_args['clear'] ) ) {
+					$done( PNCP_Stealth_Debug::clear() ? true : new WP_Error( 'pncp_stealth_debug', __( 'The log could not be deleted.', 'scrapelock' ) ), __( 'The Stealth debug log was deleted.', 'scrapelock' ) );
+					return;
+				}
+				WP_CLI::line( PNCP_Stealth_Debug::hours() > 0 ? ( PNCP_Stealth_Debug::on() ? 'on: ' : 'over (delete it with --clear for a new period): ' ) . PNCP_Stealth_Debug::file() : 'off (define SCRAPELOCK_STEALTH_DEBUG in wp-config.php)' );
+				foreach ( PNCP_Stealth_Debug::tail( 50 ) as $line ) {
+					WP_CLI::line( $line );
+				}
+				return;
 		}
-		WP_CLI::error( __( 'Unknown action. Use: status, on, off, test, scan or rules.', 'scrapelock' ) );
+		WP_CLI::error( __( 'Unknown action. Use: status, on, off, test, scan, rules, check or debug.', 'scrapelock' ) );
 	}
 
 	/**

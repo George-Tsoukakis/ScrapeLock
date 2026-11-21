@@ -245,7 +245,10 @@ ScrapeLock — δοκιμές σε πραγματικό WordPress (όχι stubs)
                     rules and uses the new map once it serves them; the rules status seeing the current rules
                     schedules that. The page through a WP Rocket-like stand-in (rocket_buffer: minify 16, delay JS 26
                     with data-rocket-src, MISS), the plain Stealth buffer and a stage after Stealth's rocket_buffer
-                    pass: 0 wp-content, the inner code; real Nginx (SKIP without it): every asset 200
+                    pass: 0 wp-content, the inner code; real Nginx (SKIP without it): every asset 200. The opt-in
+                    debug log (pncp_stealth_debug / SCRAPELOCK_STEALTH_DEBUG): off by default, a line per stage, no IP /
+                    User-Agent / query string, 256 KB cap, ends by itself, --clear; wp scrapelock stealth check
+                    (in-process and, with WP_CLI, through wp)
   t_cli.php         wp scrapelock … μέσα από το πραγματικό wp (χρειάζεται WP_CLI, αλλιώς SKIP)
   t_bunny_rules.php Edge Rules στο Bunny μέσα στα όριά του (το πολύ 5 μοτίβα ανά συνθήκη) με ψεύτικο API που δίνει
                     HTTP 400 όπως το πραγματικό: χωρισμός, κλείδωμα/Remove, rollback, Monitor only, sync, προεπισκόπηση,

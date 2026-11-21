@@ -27,6 +27,9 @@
  *    minify CSS 16, delay JS 26 with data-rocket-src) on a MISS, the plain Stealth buffer (the shapes printed
  *    by the theme), and a stage after Stealth's rocket_buffer pass (raw and half-new addresses): 0 wp-content
  *    in the page, the code of wp-content there, every asset address maps back with the Nginx and Apache rules.
+ * E. The debug log: off by default; on: one line per stage (start, rocket_buffer PHP_INT_MIN and PHP_INT_MAX,
+ *    buffer) with the counts, no visitor data and no query string, size cap, ends by itself, --clear.
+ * F. `wp scrapelock stealth check`: the counts of a page as a visitor gets it; another host refused.
  * N. Real Nginx (SKIP without nginx on PATH): the Stealth rules, every asset of the page 200 with the real file.
  *
  * Only on a test WordPress.
@@ -481,6 +484,66 @@ foreach ( array( 'rocket' => 'through the WP Rocket-like buffer (MISS)', 'plain'
 	t( "D $label: 0 wp-content in the whole page", 0 === substr_count( $page, 'wp-content' ), around( $page ) );
 	$bad = unmapped( $page );
 	t( "D $label: every CSS / JS address maps back to a real file (Nginx and Apache rules)", ! $bad, implode( ' | ', $bad ) );
+}
+
+/* ---------- E. The debug log ---------- */
+
+$has_debug = class_exists( 'PNCP_Stealth_Debug' );
+t( 'E the debug log exists (PNCP_Stealth_Debug)', $has_debug );
+if ( $has_debug ) {
+	PNCP_Stealth_Debug::clear();
+	$log = PNCP_Stealth_Debug::file();
+	update_option( 'pncp_t3128_mode', 'rocket', false );
+	http( $base . '/?pncp_q=secret-query' );
+	t( 'E off by default: no log after a page', 0 === PNCP_Stealth_Debug::hours() && ! is_file( $log ) );
+	update_option( 'pncp_t3128_debug', 1, false );
+	http( $base . '/?pncp_q=secret-query' );
+	$text = is_file( $log ) ? (string) file_get_contents( $log ) : '';
+	t( 'E on: a line per stage (start, rocket_buffer PHP_INT_MIN and PHP_INT_MAX, buffer)', 1 === preg_match( '/stage=start prio=template_redirect:-9999 .*rewrites=yes active=yes .*inner_words=wp-content/', $text ) && 1 === preg_match( '/stage=rocket_buffer prio=PHP_INT_MIN /', $text ) && 1 === preg_match( '/stage=rocket_buffer prio=PHP_INT_MAX .* inner=(\d+)>0 wp_content=\d+>0 /', $text, $m1 ) && (int) $m1[1] >= 2 && 1 === preg_match( '/stage=buffer prio=template_redirect:-9999 .* wp_content=0>0 .* codes=(\d+)>\1/', $text ), $text );
+	t( 'E ... the first look sees WP Rocket\'s input (no minified address yet), the last pass the finished page', 1 === preg_match( '/stage=rocket_buffer prio=PHP_INT_MIN .* cache_min=0 /', $text ) );
+	t( 'E ... no visitor data (IP, User-Agent) and no query string', false === strpos( $text, '192.0.2.238' ) && false === stripos( $text, 'Mozilla' ) && false === strpos( $text, 'secret-query' ) && false !== strpos( $text, 'page=/ ' ) );
+	t( 'E ... not reachable by a guessable name, an empty index in its folder', 1 === preg_match( '#/scrapelock/stealth-debug-[0-9a-f]{12}\.log$#', $log ) && is_file( dirname( $log ) . '/index.html' ) );
+	clearstatcache();
+	file_put_contents( $log, str_repeat( 'x', PNCP_Stealth_Debug::MAX_BYTES - 10 - (int) filesize( $log ) ) . "\n", FILE_APPEND );
+	clearstatcache();
+	$size = filesize( $log );
+	http( $base . '/' );
+	clearstatcache();
+	t( 'E ... at most 256 KB: nothing added at the cap', filesize( $log ) === $size && $size <= PNCP_Stealth_Debug::MAX_BYTES );
+	file_put_contents( $log, '# ScrapeLock Stealth debug log, started ' . ( time() - 25 * HOUR_IN_SECONDS ) . " (…), for 24 hours.\n" );
+	http( $base . '/' );
+	clearstatcache();
+	t( 'E ... ends by itself after its hours (the line stays in wp-config.php)', 1 === count( file( $log ) ) );
+	t( 'E ... --clear deletes it (a new period)', PNCP_Stealth_Debug::clear() && ! is_file( $log ) );
+	delete_option( 'pncp_t3128_debug' );
+}
+
+/* ---------- F. wp scrapelock stealth check ---------- */
+
+if ( $has_debug ) {
+	update_option( 'pncp_t3128_mode', 'rocket', false );
+	$check = PNCP_Stealth_Debug::check( $base . '/' );
+	t( 'F check: the page as a visitor gets it, 0 wp-content, the code of wp-content found, clean', is_array( $check ) && '200' === $check['code'] && '0' === $check['wp-content'] && 1 === preg_match( '/wp-content=([1-9]\d*)/', $check['codes'] ) && 'clean' === $check['verdict'] && '-' === $check['words not used'], wp_json_encode( $check ) );
+	add_filter( 'pncp_stealth_optimizers', $old_words );
+	PNCP_Stealth::activate( false );
+	remove_filter( 'pncp_stealth_optimizers', $old_words );
+	$check = PNCP_Stealth_Debug::check( $base . '/' );
+	t( 'F ... with the old words: leaks, the examples, and the words the pages do not use yet', is_array( $check ) && 'leaks' === $check['verdict'] && (int) $check['wp-content'] > 0 && false !== strpos( $check['words not used'], 'wp-content' ) && false !== strpos( $check['examples'], '/cache/min/1/wp-content/' ), wp_json_encode( $check ) );
+	PNCP_Stealth::activate( false );
+	t( 'F another host refused', is_wp_error( PNCP_Stealth_Debug::check( 'https://other.example/' ) ) );
+	$cli = (string) getenv( 'WP_CLI' );
+	if ( '' !== $cli ) {
+		$out = (string) shell_exec( $cli . ' scrapelock stealth check ' . escapeshellarg( $base . '/' ) . ' --format=json 2>/dev/null' );
+		$row = array();
+		foreach ( (array) json_decode( $out, true ) as $r ) {
+			if ( isset( $r['field'], $r['value'] ) ) {
+				$row[ $r['field'] ] = $r['value'];
+			}
+		}
+		t( 'F wp scrapelock stealth check <url> --format=json', isset( $row['verdict'] ) && 'clean' === $row['verdict'] && '0' === $row['wp-content'], substr( $out, 0, 300 ) );
+		$dbg = (string) shell_exec( $cli . ' scrapelock stealth debug 2>/dev/null' );
+		t( 'F wp scrapelock stealth debug: off without the constant', 0 === strpos( trim( $dbg ), 'off' ), $dbg );
+	}
 }
 
 /* ---------- N. Real Nginx ---------- */

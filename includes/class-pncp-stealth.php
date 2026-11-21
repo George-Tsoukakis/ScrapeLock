@@ -1703,9 +1703,23 @@ final class PNCP_Stealth {
 	 * Starts the output buffer of the page.
 	 */
 	public static function start_buffer() {
-		if ( self::rewrites_request() ) {
+		$rewrites = self::rewrites_request();
+		if ( $rewrites ) {
 			ob_start( array( __CLASS__, 'end_buffer' ) );
 		}
+		if ( self::debugging() ) {
+			PNCP_Stealth_Debug::start( $rewrites );
+		}
+	}
+
+	/**
+	 * 3.12.8: is the debug log asked for (PNCP_Stealth_Debug: the constant or the filter)? Its class is only
+	 * loaded then.
+	 *
+	 * @return bool
+	 */
+	private static function debugging() {
+		return defined( 'SCRAPELOCK_STEALTH_DEBUG' ) || has_filter( 'pncp_stealth_debug' );
 	}
 
 	/**
@@ -1726,7 +1740,13 @@ final class PNCP_Stealth {
 			}
 		}
 		if ( preg_match( '#^text/html#', $type ) ) {
-			return self::clean_html( self::rewrite( $html ) );
+			// The last pass before the page cache stores the page (see PNCP_Stealth_Debug): rewrite() also gives
+			// the codes to new addresses an earlier pass left with a word in them.
+			$out = self::clean_html( self::rewrite( $html ) );
+			if ( self::debugging() ) {
+				PNCP_Stealth_Debug::stage( 'buffer', 'template_redirect:-9999', $html, $out );
+			}
+			return $out;
 		}
 		if ( preg_match( '#^(?:text/css|(?:text|application)/(?:x-)?javascript|application/(?:[a-z.+-]+\+)?json)#', $type ) ) {
 			return self::rewrite( $html );
@@ -1746,7 +1766,11 @@ final class PNCP_Stealth {
 		if ( ! is_string( $html ) || '' === $html || ! self::active() || ! self::rewrites_request() ) {
 			return $html;
 		}
-		return self::rewrite( $html );
+		$out = self::rewrite( $html );
+		if ( self::debugging() ) {
+			PNCP_Stealth_Debug::stage( current_filter(), 'PHP_INT_MAX', $html, $out );
+		}
+		return $out;
 	}
 
 	/**
