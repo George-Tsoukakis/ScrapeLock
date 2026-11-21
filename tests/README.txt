@@ -249,6 +249,11 @@ ScrapeLock — δοκιμές σε πραγματικό WordPress (όχι stubs)
                     debug log (pncp_stealth_debug / SCRAPELOCK_STEALTH_DEBUG): off by default, a line per stage, no IP /
                     User-Agent / query string, 256 KB cap, ends by itself, --clear; wp scrapelock stealth check
                     (in-process and, with WP_CLI, through wp)
+  t_3128_stealth_edges.php 3.12.8: Stealth edge cases, in-process, every new address mapped back to its file with
+                    the generated Nginx and Apache rules (PCRE): srcset/sizes, data-src/-srcset/-bg/-rocket-src, style
+                    url(), <style> @import, preload/modulepreload, import map and JSON with \/, protocol-relative,
+                    query and fragment, rewriting twice, other hosts and PHP unchanged; links to uploads of types the
+                    rules do not serve (.zip, .docx, .csv…) keep their real address
   t_cli.php         wp scrapelock … μέσα από το πραγματικό wp (χρειάζεται WP_CLI, αλλιώς SKIP)
   t_bunny_rules.php Edge Rules στο Bunny μέσα στα όριά του (το πολύ 5 μοτίβα ανά συνθήκη) με ψεύτικο API που δίνει
                     HTTP 400 όπως το πραγματικό: χωρισμός, κλείδωμα/Remove, rollback, Monitor only, sync, προεπισκόπηση,

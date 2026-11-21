@@ -1916,6 +1916,9 @@ final class PNCP_Stealth {
 					if ( preg_match( '/\.php$/i', $plain ) ) {
 						return $whole; // PHP keeps its real address.
 					}
+					if ( ! self::served_type( $plain ) ) {
+						return $whole; // 3.12.8: a file the rules do not serve (.zip, .docx…) keeps its real address.
+					}
 					$new = $home . $base . '/' . $item['alias'] . self::encode_words( $plain, $words );
 				}
 				$origin = '';
@@ -2023,6 +2026,21 @@ final class PNCP_Stealth {
 			}
 		}
 		return implode( '', $parts );
+	}
+
+	/**
+	 * 3.12.8: is the file of a path one of the types the rules serve (STATIC_EXT)? A path without a file type in
+	 * its last part is a folder a script adds file names to (true). An upload linked from a post (.zip, .docx,
+	 * .epub, .csv…) would answer 404 at a neutral address: it keeps its real one.
+	 *
+	 * @param string $path Path after the folder of the map.
+	 * @return bool
+	 */
+	private static function served_type( $path ) {
+		if ( ! preg_match( '~/[^/]*\.([a-z][a-z0-9]*)$~i', $path, $m ) ) {
+			return true;
+		}
+		return (bool) preg_match( '~^(?:' . self::STATIC_EXT . ')$~i', $m[1] );
 	}
 
 	/**
