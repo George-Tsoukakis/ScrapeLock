@@ -1917,7 +1917,13 @@ final class PNCP_Admin {
 		}
 		if ( PNCP_Precheck::active() ) {
 			echo '<p class="description pncp-precheck-status">' . esc_html__( 'Running: wp-config.php loads the check before the page cache.', 'scrapelock' ) . ' ';
-			echo esc_html( function_exists( 'apcu_enabled' ) && apcu_enabled() ? __( 'Counters: APCu.', 'scrapelock' ) : __( 'Counters: files in uploads/scrapelock.', 'scrapelock' ) );
+			// 3.12.9: the store the check noted in the last minutes (APCu or Redis), else what this PHP has.
+			$seen = PNCP_Precheck::seen_backend();
+			if ( 'redis' === $seen ) {
+				echo esc_html__( 'Counters: Redis.', 'scrapelock' );
+			} else {
+				echo esc_html( 'apcu' === $seen || ( function_exists( 'apcu_enabled' ) && apcu_enabled() ) ? __( 'Counters: APCu.', 'scrapelock' ) : __( 'Counters: files in uploads/scrapelock.', 'scrapelock' ) );
+			}
 			echo '</p>';
 			return;
 		}
@@ -1925,6 +1931,14 @@ final class PNCP_Admin {
 		echo '<div class="pncp-inline-warning pncp-precheck-status"><p>';
 		if ( 'no_files' === $status ) {
 			esc_html_e( 'Not running: the folder uploads/scrapelock could not be created (the server does not allow direct file writes). The normal check works as before.', 'scrapelock' );
+		} elseif ( PNCP_Precheck::line_outdated() ) {
+			// 3.12.9: the lines of an earlier version are still there and run (without the newer parts, such as
+			// the Redis connection): they are replaced, never added a second time.
+			esc_html_e( 'The pre-cache check runs with the lines of an earlier version: wp-config.php could not be changed. Replace the ScrapeLock lines (from “// BEGIN ScrapeLock pre-cache check” to “// END ScrapeLock pre-cache check”) at the top of wp-config.php with these, then reload this page:', 'scrapelock' );
+			echo '</p>';
+			self::code_block( 'pncp-precheck-lines', PNCP_Precheck::block(), 3 );
+			echo '<p>';
+			esc_html_e( 'If you remove the setting later, remove the lines too: without the plugin they do nothing.', 'scrapelock' );
 		} else {
 			esc_html_e( 'Not running yet: wp-config.php could not be changed (not writable, or it does not start with “<?php” on its own line). Add these lines right after the first line (<?php) of wp-config.php, then reload this page:', 'scrapelock' );
 			echo '</p>';

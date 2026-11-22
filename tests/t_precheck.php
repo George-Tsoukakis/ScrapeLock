@@ -322,6 +322,20 @@ if ( ! is_writable( $config_file ) ) {
 chmod( $config_file, 0644 );
 clearstatcache();
 
+/* ---------- 3.12.9: οι γραμμές μιας παλαιότερης έκδοσης που δεν αντικαταστάθηκαν ---------- */
+settings( array( 'precheck' => 1 ) );
+PNCP_Precheck::sync(); // wp-config.php is writable again (the read-only case above left the line out).
+$pncp_now = (string) file_get_contents( $config_file );
+file_put_contents( $config_file, str_replace( PNCP_Precheck::block(), str_replace( '); }', '); } // older', PNCP_Precheck::block() ), $pncp_now ) );
+$pncp_rs = new ReflectionMethod( 'PNCP_Admin', 'render_precheck_status' );
+$pncp_rs->setAccessible( true );
+ob_start();
+$pncp_rs->invoke( null, PNCP_Options::stored() );
+$pncp_html = (string) ob_get_clean();
+t( 'παλιές γραμμές (wp-config.php δεν άλλαξε): line_outdated(), «Replace the ScrapeLock lines» με τις νέες (όχι «Add»)', PNCP_Precheck::line_outdated() && ! PNCP_Precheck::in_config() && false !== strpos( $pncp_html, 'Replace the ScrapeLock lines' ) && false !== strpos( $pncp_html, esc_textarea( PNCP_Precheck::block() ) ) && false === strpos( $pncp_html, 'Add these lines' ), wp_strip_all_tags( $pncp_html ) );
+file_put_contents( $config_file, $pncp_now );
+t( 'τρέχουσες γραμμές: όχι line_outdated()', ! PNCP_Precheck::line_outdated() && PNCP_Precheck::in_config() );
+
 /* ---------- Απενεργοποίηση ---------- */
 settings( array( 'precheck' => 1 ) );
 settings( array( 'precheck' => 0 ) );

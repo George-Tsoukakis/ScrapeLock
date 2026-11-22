@@ -246,6 +246,21 @@ final class PNCP_Precheck {
 	}
 
 	/**
+	 * 3.12.9: wp-config.php has the check's lines, but not the current ones (an earlier version's, e.g. without
+	 * the Redis connection), and they could not be replaced.
+	 *
+	 * @return bool
+	 */
+	public static function line_outdated() {
+		$path = self::config_path();
+		if ( '' === $path || ! is_readable( $path ) ) {
+			return false;
+		}
+		$text = (string) file_get_contents( $path ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Local file.
+		return false !== strpos( $text, self::BEGIN ) && false === strpos( $text, self::block() );
+	}
+
+	/**
 	 * Is the check running, i.e. its configuration is current and wp-config.php includes it?
 	 *
 	 * @return bool
@@ -1427,7 +1442,7 @@ final class PNCP_Precheck {
 		$c     = self::runtime_config();
 		$redis = $c['redis'];
 		$rows  = array(
-			'pre-cache check' => self::wanted() ? ( self::in_config() ? 'on' : 'on, line not in wp-config.php yet' ) : 'off',
+			'pre-cache check' => self::wanted() ? ( self::in_config() ? 'on' : ( self::line_outdated() ? 'on, with the line of an earlier version (wp-config.php could not be changed: see the settings page)' : 'on, line not in wp-config.php yet' ) ) : 'off',
 			'APCu'            => function_exists( 'apcu_enabled' ) ? ( 'cli' === PHP_SAPI ? 'cannot be seen from WP-CLI (each PHP has its own; the web server\'s is used by the check when it has one)' : ( apcu_enabled() ? 'on' : 'off' ) ) : 'no extension here',
 			'Redis'           => $redis ? ( isset( $redis['path'] ) ? 'unix:' . $redis['path'] : $redis['host'] . ':' . $redis['port'] ) . ( isset( $redis['db'] ) ? ' db ' . $redis['db'] : '' ) . ( isset( $redis['auth'] ) ? ', password set' : '' ) : 'not used (no Redis object cache, or turned off)',
 		);
