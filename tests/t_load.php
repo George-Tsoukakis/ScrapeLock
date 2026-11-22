@@ -3,7 +3,12 @@
  * ScrapeLock — δοκιμή φόρτου: επιβάρυνση ανά αίτημα, ακρίβεια ορίου υπό ταυτόχρονα αιτήματα,
  * πλημμύρα από bots, «καταιγίδα» αποκλεισμών, με και χωρίς Redis object cache.
  *
- *   WP_DIR=/srv/wpt BASE=http://127.0.0.1:8080 [REDIS_DROPIN=/path/object-cache.php] php t_load.php
+ *   WP_DIR=/srv/wpt BASE=http://127.0.0.1:8080 [REDIS_DROPIN=/path/object-cache.php] [FREEZE_MOUNT=/mnt/x] php t_load.php
+ *
+ * 3.12.9: FREEZE_MOUNT = ξεχωριστό σύστημα αρχείων (π.χ. loop ext4) προσαρτημένο στο wp-content/uploads· ως root η
+ * δοκιμή το «παγώνει» (fsfreeze) για λίγα δευτερόλεπτα όσο 20 επισκέπτες ζητούν σελίδες, όπως ο δίσκος που κόλλησε
+ * στο live (iowait 99%). Με object cache: κανένα αίτημα δεν περιμένει τον δίσκο εξαιτίας του plugin.
+ * LOAD_ONLY=freeze: μόνο αυτό το σενάριο.
  *
  * Χρειάζεται server με πολλούς PHP workers (π.χ. Nginx + PHP-FPM, pm.max_children ≥ 8): με τον built-in
  * server της PHP τα αιτήματα εκτελούνται ένα-ένα και η δοκιμή δεν σημαίνει τίποτα.
@@ -119,6 +124,60 @@ function scenario( $label, $redis ) {
 	return $fails;
 }
 
+/**
+ * 3.12.9: παγωμένος δίσκος. 20 ταυτόχρονοι επισκέπτες (διαφορετικές IP, μέσω X-Forwarded-For από το 127.0.0.1 ώστε να
+ * τις δει και ο έλεγχος πριν από την cache) για ~8 δευτ.· στο 1ο δευτ. το uploads παγώνει για 5 δευτ. Ό,τι γράφει
+ * ο έλεγχος (μετρητές, αποκλεισμοί, συμβάντα) ή το plugin στο uploads μπλοκάρει όσο κρατά το πάγωμα.
+ */
+function freeze_scenario( $label, $redis ) {
+	global $page, $base;
+	$mount = getenv( 'FREEZE_MOUNT' );
+	$up = wp_upload_dir()['basedir'];
+	if ( ! $mount || ! is_dir( $mount ) || ! is_dir( $up ) || @stat( $mount )['dev'] !== @stat( $up )['dev'] || ! trim( (string) shell_exec( 'command -v fsfreeze' ) ) || 0 !== posix_geteuid() ) {
+		echo "SKIP $label: πάγωμα δίσκου (FREEZE_MOUNT, fsfreeze, root)\n";
+		return;
+	}
+	$old = PNCP_Options::stored();
+	settings( array( 'ip_header' => 'x_forwarded_for', 'trusted_proxies' => '127.0.0.1', 'precheck' => 1, 'rate_limit' => 45, 'ban_strikes' => 3 ) );
+	PNCP_Precheck::sync();
+	burst( $page, 40, 10, 'random2' ); // ζέσταμα (opcache, φάκελοι του λεπτού)
+	// Επισκέπτες από πολλές IP, και μία IP που ξεπερνά το όριο (429, παράβαση, συμβάν: ό,τι γράφει ο έλεγχος).
+	$run  = static function ( $args ) use ( $base, $page ) {
+		$cmd = 'BURST_XFF=1 php ' . escapeshellarg( __DIR__ . '/lib/burst.php' ) . ' ' . escapeshellarg( $base . $page ) . ' ' . $args;
+		$proc = proc_open( $cmd, array( 1 => array( 'pipe', 'w' ) ), $pipes );
+		return array( $pipes[1], $proc ); // The process handle too: dropped, it would close the pipe.
+	};
+	$crowd = $run( '400 20 random2' );
+	$one   = $run( '120 4 ' . ( $redis ? '203.0.113.91' : '203.0.113.90' ) );
+	register_shutdown_function( 'shell_exec', 'fsfreeze -u ' . escapeshellarg( $mount ) . ' 2>/dev/null' );
+	sleep( 1 );
+	shell_exec( 'fsfreeze -f ' . escapeshellarg( $mount ) );
+	sleep( 5 );
+	shell_exec( 'fsfreeze -u ' . escapeshellarg( $mount ) );
+	$r = json_decode( (string) stream_get_contents( $crowd[0] ), true );
+	$o = json_decode( (string) stream_get_contents( $one[0] ), true );
+	proc_close( $crowd[1] );
+	proc_close( $one[1] );
+	$bad = 0;
+	foreach ( array( $r, $o ) as $x ) {
+		foreach ( (array) $x['codes'] as $code => $n ) {
+			$bad += ( $code >= 500 || 0 === (int) $code ) ? $n : 0;
+		}
+	}
+	$info = sprintf( 'επισκέπτες p95 %sms max %sms %s · μία IP max %sms %s', $r['p95'], $r['max'], wp_json_encode( $r['codes'] ), $o['max'], wp_json_encode( $o['codes'] ) );
+	if ( $redis ) {
+		t( "$label: δίσκος παγωμένος 5 δευτ. → κανένα 5xx, κανένα αίτημα πάνω από 1 δευτ.", 0 === $bad && max( $r['max'], $o['max'] ) < 1000, $info );
+		t( "$label: δίσκος παγωμένος → το όριο ανά IP ισχύει (429)", code_count( $o, 429 ) > 0, $info );
+	} else {
+		// Χωρίς Redis και APCu τα αρχεία είναι η μόνη αποθήκη: εδώ μόνο καταγράφεται.
+		echo "INFO $label: δίσκος παγωμένος 5 δευτ. (χωρίς object cache): $info, 5xx $bad\n";
+	}
+	update_option( PNCP_OPTION, $old );
+	PNCP_Options::flush();
+	redis_sync();
+	PNCP_Precheck::sync();
+}
+
 // Η δοκιμή μετρά την PHP: ένα plugin page cache (WP Super Cache) θα σέρβιρε τις σελίδες χωρίς να φτάσουν στο plugin.
 $wpsc_was = function_exists( 'wp_cache_setting' ) ? (bool) $GLOBALS['cache_enabled'] : null;
 if ( null !== $wpsc_was ) {
@@ -127,12 +186,15 @@ if ( null !== $wpsc_was ) {
 
 $dropin = getenv( 'REDIS_DROPIN' );
 @unlink( WP_CONTENT_DIR . '/object-cache.php' );
-scenario( 'χωρίς object cache', false );
+$only_freeze = 'freeze' === getenv( 'LOAD_ONLY' ); // LOAD_ONLY=freeze: μόνο το πάγωμα του δίσκου.
+$only_freeze || scenario( 'χωρίς object cache', false );
+freeze_scenario( 'χωρίς object cache', false );
 if ( $dropin && is_readable( $dropin ) && class_exists( 'Redis' ) ) {
 	copy( $dropin, WP_CONTENT_DIR . '/object-cache.php' );
 	usleep( 300000 );
 	// Το CLI έχει ήδη φορτώσει το WordPress χωρίς Redis: οι ρυθμίσεις γράφονται στη βάση, οι μετρητές στο Redis.
-	scenario( 'με Redis object cache', true );
+	$only_freeze || scenario( 'με Redis object cache', true );
+	freeze_scenario( 'με Redis object cache', true );
 	unlink( WP_CONTENT_DIR . '/object-cache.php' );
 } else {
 	echo "SKIP Redis (REDIS_DROPIN ή phpredis λείπει)\n";

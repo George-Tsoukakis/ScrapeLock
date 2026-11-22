@@ -367,4 +367,6 @@ Ubuntu 24.04 (ως root, ΜΟΝΟ σε μηχάνημα δοκιμών):
   t_cache.php         WP Super Cache: κανόνες server πριν από την cache, 403 / feeds εκτός cache, purge
   t_security.php      CSRF, δικαιώματα, open redirect, XSS / SQLi, header injection, παρακάμψεις feeds, άμεσα αρχεία
   t_load.php          επιβάρυνση, ακρίβεια ορίου (200 ταυτόχρονα), 3000 αιτήματα bot, 1500 ταυτόχρονοι αποκλεισμοί,
-                      με και χωρίς Redis (lib/burst.php: curl_multi)
+                      με και χωρίς Redis (lib/burst.php: curl_multi)· 3.12.9: με FREEZE_MOUNT (το uploads σε δικό του
+                      σύστημα αρχείων, π.χ. loop ext4, ως root) «παγωμένος δίσκος» (fsfreeze 5 δευτ.) κατά τη διάρκεια
+                      20 ταυτόχρονων επισκεπτών: με Redis κανένα 5xx και κανένα αίτημα πάνω από 1 δευτ.
