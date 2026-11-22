@@ -311,6 +311,13 @@ ScrapeLock — δοκιμές σε πραγματικό WordPress (όχι stubs)
                     no wait); stores: files, APCu (stub when the extension is missing), use_store(), Redis when
                     phpredis and redis-server exist (a private one on port 16391), Redis down = never the disk; the
                     site-wide page count and its state (automatic Emergency Mode) under the breaker "surge"
+  t_3129_strace.php 3.12.9: a guest's request on Nginx + PHP-FPM (its own, on a free port, as the user that runs it)
+                    with the pre-cache and the early check on: with APCu, and with a Redis object cache
+                    (lib/object-cache-redis.php on a redis-server of the test, no APCu), page views of new and known
+                    visitors, one over the limit (429, the ban, 403): no system call on uploads/scrapelock (strace of
+                    the worker) and no query of ScrapeLock (lib/probe-3129.php), also a minute later after the
+                    scheduled event; without either store the same requests use both (control). SKIP without
+                    php-fpm / nginx / a working strace, parts without APCu / phpredis + redis-server
   t_cli.php         wp scrapelock … μέσα από το πραγματικό wp (χρειάζεται WP_CLI, αλλιώς SKIP)
   t_bunny_rules.php Edge Rules στο Bunny μέσα στα όριά του (το πολύ 5 μοτίβα ανά συνθήκη) με ψεύτικο API που δίνει
                     HTTP 400 όπως το πραγματικό: χωρισμός, κλείδωμα/Remove, rollback, Monitor only, sync, προεπισκόπηση,
