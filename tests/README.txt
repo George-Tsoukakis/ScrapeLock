@@ -333,6 +333,19 @@ ScrapeLock — δοκιμές σε πραγματικό WordPress (όχι stubs)
                     _reset.json/_snapshot.json, geo database, Stealth debug log, uploads/.htaccess, watermark backups,
                     Verify files: every file and folder created or replaced belongs to 4242:4243 with 0755 / 0644 (a
                     replaced file keeps its mode), no .tmp left
+  t_3130_root_wpcli.php 3.13.0: WP-CLI as root (--allow-root) never takes the site down: as root, a site of its own
+                    (WP_DIR's WordPress and SQLite drop-in, the plugin of this checkout) owned by www-data (else nobody),
+                    wp-config.php 0640, its own PHP-FPM (pool of that user) and Nginx on a free port, opcache off; then
+                    as root: settings set precheck / early_mode, precheck sync / cleanup, breaker reset, both off and on
+                    through wp option update pncp_settings, plugin deactivate / activate. After each: a guest gets 200
+                    (not 500 "Failed opening required wp-config.php"), wp-config.php keeps owner, group and 0640, the
+                    early check's mu-plugin and all of uploads/scrapelock belong to the site's user, no .tmp left,
+                    ScrapeLock's root warning once in stderr (not for plugin activate: not loaded yet); none with
+                    --quiet, --format=json, another option or as the site's user. SKIP when not root, without nginx,
+                    php-fpm, WP_CLI or wp-content/db.php in WP_DIR
+  t_3130_owner_static.php 3.13.0: in includes/*.php every rename(), file_put_contents() and mkdir() is followed in
+                    its function by PNCP_File_Owner, the pre-cache check's own copy (a self:: method with "owner" in its
+                    name, class-pncp-precheck-runtime.php) or a "// owner: <reason>" note; lists the ones that are not
   t_cli.php         wp scrapelock … μέσα από το πραγματικό wp (χρειάζεται WP_CLI, αλλιώς SKIP)
   t_bunny_rules.php Edge Rules στο Bunny μέσα στα όριά του (το πολύ 5 μοτίβα ανά συνθήκη) με ψεύτικο API που δίνει
                     HTTP 400 όπως το πραγματικό: χωρισμός, κλείδωμα/Remove, rollback, Monitor only, sync, προεπισκόπηση,
