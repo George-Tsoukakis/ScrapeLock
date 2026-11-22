@@ -566,6 +566,7 @@ final class PNCP_Cli_Server {
 		foreach ( array_reverse( $done ) as $f ) {
 			$real = (string) $f['real'];
 			// phpcs:disable WordPress.WP.AlternativeFunctions.rename_rename, WordPress.WP.AlternativeFunctions.unlink_unlink -- WP-CLI only: the web server's own files, named on the command line.
+			// owner: the .old file is the original itself (renamed, same inode), so it comes back with its owner and mode.
 			$ok = $f['existed'] ? @rename( $real . '.old', $real ) : ( ! file_exists( $real ) || @unlink( $real ) ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged -- Reported below.
 			// phpcs:enable
 			if ( ! $ok ) {
@@ -644,18 +645,18 @@ final class PNCP_Cli_Server {
 				/* translators: %s: path */
 				WP_CLI::error( sprintf( __( 'Could not write %s.', 'scrapelock' ), $real . '.new' ) );
 			}
-			if ( is_file( $real ) ) {
-				@chmod( $real . '.new', fileperms( $real ) & 0777 ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged, WordPress.WP.AlternativeFunctions.file_system_operations_chmod -- The permissions of the file it replaces.
-				// 3.12.8: and its owner and group (WP-CLI often runs as root): a root-owned .htaccess could no longer
-				// be written by WordPress (permalinks, ScrapeLock's own blocks). Only possible as root; else no change.
-				$owner = fileowner( $real );
-				$group = filegroup( $real );
-				if ( false !== $owner && fileowner( $real . '.new' ) !== $owner ) {
-					@chown( $real . '.new', $owner ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged, WordPress.WP.AlternativeFunctions.file_system_operations_chown -- The owner of the file it replaces.
-				}
-				if ( false !== $group && filegroup( $real . '.new' ) !== $group ) {
-					@chgrp( $real . '.new', $group ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged, WordPress.WP.AlternativeFunctions.file_system_operations_chgrp -- The group of the file it replaces.
-				}
+			// 3.12.10: the .new file gets the owner, group and exact mode of the file it replaces before the swap
+			// (WP-CLI often runs as root; a root-owned .htaccess could no longer be read or written by the web
+			// server). A new .htaccess is 0644 and, as root, belongs to the owner of the WordPress folder, as
+			// WordPress's own .htaccess does. A new .conf stays root's (the server reads it as root; handing it to
+			// the web server's user would let that user change the server's configuration). A chown that fails
+			// (not root) changes nothing.
+			$meta = PNCP_File_Owner::capture( $real );
+			if ( null !== $meta ) {
+				PNCP_File_Owner::restore( $real . '.new', $meta );
+			} elseif ( $f['htaccess'] ) {
+				@chmod( $real . '.new', 0644 ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged, WordPress.WP.AlternativeFunctions.file_system_operations_chmod -- A new .htaccess, readable by the web server.
+				PNCP_File_Owner::restore( $real . '.new', null );
 			}
 			$diff = self::unified_diff( $old, $new, $f['path'] );
 			WP_CLI::log( '' !== $token ? str_replace( $token, '[token]', $diff ) : $diff );
@@ -683,9 +684,12 @@ final class PNCP_Cli_Server {
 		foreach ( $changed as $f ) {
 			$real = $f['real'];
 			// phpcs:disable WordPress.WP.AlternativeFunctions.rename_rename -- WP-CLI only: the web server's files named on the command line.
+			// owner: the installed file moves to .old and back as the same inode, so with its own owner and mode; the
+			// .new one got the installed file's owner and mode (PNCP_File_Owner::restore()) when it was written.
 			$ok = ( ! $f['existed'] || @rename( $real, $real . '.old' ) ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged -- Reported below.
 			if ( $ok && ! @rename( $real . '.new', $real ) ) { // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged -- Reported below.
 				if ( $f['existed'] ) {
+					// owner: the installed file back from .old, the same inode with its own owner and mode.
 					@rename( $real . '.old', $real ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged -- Best effort, reported below.
 				}
 				$ok = false;
@@ -1346,11 +1350,17 @@ final class PNCP_Cli_Server {
 		if ( empty( $assoc_args['yes'] ) ) {
 			WP_CLI::confirm( __( 'Add it to wp-config.php now?', 'scrapelock' ) );
 		}
-		$res   = self::config_set( $value, $file );
+		// 3.12.10: WP-CLI's config transformer writes the file in place today, but whatever it does (a later version
+		// may write a new file), wp-config.php keeps its owner, group and exact mode (run as root, a root:root 0640
+		// wp-config.php takes the site down for PHP-FPM).
+		$meta = PNCP_File_Owner::capture( $file );
+		$res  = self::config_set( $value, $file );
+		PNCP_File_Owner::restore( $file, $meta );
 		clearstatcache( true, $file );
 		$error = 0 === $res['code'] ? self::config_check( (string) file_get_contents( $file ), $value ) : trim( $res['stderr'] . ' ' . $res['stdout'] ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- wp-config.php, a local file.
 		if ( '' !== $error ) {
 			file_put_contents( $file, $before ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_file_put_contents -- wp-config.php put back as it was.
+			PNCP_File_Owner::restore( $file, $meta );
 			/* translators: %s: error */
 			WP_CLI::error( sprintf( __( 'Not saved (wp-config.php put back as it was): %s', 'scrapelock' ), $error ) );
 		}

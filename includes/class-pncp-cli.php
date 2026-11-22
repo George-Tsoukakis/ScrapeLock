@@ -21,6 +21,99 @@ final class PNCP_Cli {
 	 */
 	public static function init() {
 		WP_CLI::add_command( 'scrapelock', __CLASS__ );
+		// 3.12.10: a warning before each "wp scrapelock …" command when WP-CLI runs as root, and before the other
+		// commands that make ScrapeLock rewrite its files (its settings, activating or deactivating it).
+		WP_CLI::add_hook( 'before_invoke:scrapelock', array( __CLASS__, 'root_warning' ) );
+		foreach ( array( 'option add', 'option update', 'option patch', 'option delete', 'plugin activate', 'plugin deactivate', 'plugin toggle', 'plugin uninstall' ) as $command ) {
+			WP_CLI::add_hook( 'before_invoke:' . $command, array( __CLASS__, 'root_warning_core' ) );
+		}
+	}
+
+	/**
+	 * 3.12.10: once per command, when WP-CLI runs as root (--allow-root): ScrapeLock keeps the owner and
+	 * permissions of the files it rewrites (wp-config.php, the early check's mu-plugin, its data folder) and gives
+	 * new ones to the owner of the WordPress folder, but running WP-CLI as that user is safer. Not with --quiet,
+	 * not with a machine-readable --format (json, csv, yaml, count, ids), not when the WordPress folder belongs to
+	 * root itself (nothing to hand the files to).
+	 *
+	 * Hooked to before_invoke:scrapelock (WP-CLI passes the command's name, unused).
+	 */
+	public static function root_warning() {
+		self::warn_root( true );
+	}
+
+	/**
+	 * The root warning itself.
+	 *
+	 * @param bool $check_format Whether --format chooses this command's output (false for core commands, where
+	 *                           "wp option update … --format=json" is the format of the value given).
+	 */
+	private static function warn_root( $check_format ) {
+		static $done = false;
+		if ( $done || ! function_exists( 'posix_geteuid' ) || 0 !== posix_geteuid() || WP_CLI::get_config( 'quiet' ) ) {
+			return;
+		}
+		$assoc = (array) WP_CLI::get_runner()->assoc_args;
+		if ( $check_format && isset( $assoc['format'] ) && ! in_array( (string) $assoc['format'], array( 'table', 'text' ), true ) ) {
+			return;
+		}
+		$owner = self::site_owner();
+		if ( null === $owner || 0 === $owner['uid'] ) {
+			return;
+		}
+		$done = true;
+		WP_CLI::warning(
+			sprintf(
+				/* translators: 1: user:group that owns the WordPress folder, 2: that user's name */
+				__( 'WP-CLI runs as root. ScrapeLock keeps the owner and permissions of the files it rewrites, and gives the files it creates to the owner of the WordPress folder (%1$s). Running WP-CLI as that user is safer, e.g. sudo -u %2$s wp …', 'scrapelock' ),
+				$owner['user'] . ':' . $owner['group'],
+				$owner['user']
+			)
+		);
+	}
+
+	/**
+	 * 3.12.10: the root warning for the core commands that make ScrapeLock rewrite files: an option of
+	 * ScrapeLock's (pncp_…) added, changed or deleted, ScrapeLock activated, deactivated or uninstalled.
+	 */
+	public static function root_warning_core() {
+		if ( ! function_exists( 'posix_geteuid' ) || 0 !== posix_geteuid() ) {
+			return; // The common case first: nothing else is read.
+		}
+		$runner = WP_CLI::get_runner();
+		$args   = array_map( 'strval', (array) $runner->arguments );
+		$assoc  = (array) $runner->assoc_args;
+		if ( 'option' === ( $args[0] ?? '' ) ) {
+			$hit = 0 === strpos( $args[2] ?? '', 'pncp_' );
+		} else {
+			$hit = ! empty( $assoc['all'] ) || in_array( 'scrapelock', array_slice( $args, 2 ), true ) || in_array( 'scrapelock/scrapelock.php', array_slice( $args, 2 ), true );
+		}
+		if ( $hit ) {
+			self::warn_root( false );
+		}
+	}
+
+	/**
+	 * The owner and group of the WordPress folder (ABSPATH): ids, and names when the posix functions give them.
+	 *
+	 * @return array{uid:int,gid:int,user:string,group:string}|null Null when the folder cannot be read.
+	 */
+	private static function site_owner() {
+		$dir = rtrim( (string) ABSPATH, '/' );
+		clearstatcache( true, $dir );
+		$uid = @fileowner( $dir ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged -- false is an answer.
+		$gid = @filegroup( $dir ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged
+		if ( false === $uid || false === $gid ) {
+			return null;
+		}
+		$user  = function_exists( 'posix_getpwuid' ) ? posix_getpwuid( $uid ) : false;
+		$group = function_exists( 'posix_getgrgid' ) ? posix_getgrgid( $gid ) : false;
+		return array(
+			'uid'   => (int) $uid,
+			'gid'   => (int) $gid,
+			'user'  => is_array( $user ) && '' !== (string) $user['name'] ? (string) $user['name'] : '#' . $uid,
+			'group' => is_array( $group ) && '' !== (string) $group['name'] ? (string) $group['name'] : '#' . $gid,
+		);
 	}
 
 	/**
@@ -695,6 +788,7 @@ final class PNCP_Cli {
 				$file = (string) $assoc_args['file'];
 				// A folder that does not exist or cannot be written to gets the error below only, not PHP's warning.
 				$dir = dirname( $file );
+				// owner: a file named by whoever runs the command, wherever they chose: it stays theirs.
 				// phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_file_put_contents -- A file named by whoever runs the command.
 				if ( ! is_dir( $dir ) || ! wp_is_writable( file_exists( $file ) ? $file : $dir ) || false === file_put_contents( $file, $json . "\n" ) ) {
 					WP_CLI::error( __( 'The file could not be written.', 'scrapelock' ) );

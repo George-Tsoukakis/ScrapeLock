@@ -479,8 +479,8 @@ final class PNCP_Watermark {
 			}
 			if ( ! is_file( $path ) ) {
 				// The file is missing (e.g. offload plugin): the backup is never deleted in this case.
-				if ( '' !== $hash ) {
-					copy( $backup, $path );
+				if ( '' !== $hash && copy( $backup, $path ) ) {
+					self::keep_owner( $path );
 				}
 			} elseif ( $ours ) {
 				if ( ! copy( $backup, $path ) ) {
@@ -1141,6 +1141,7 @@ final class PNCP_Watermark {
 				return false;
 			}
 		}
+		$new   = ! file_exists( $target );
 		$saved = $editor->save( $target, $mime ? $mime : null );
 		if ( is_wp_error( $saved ) || empty( $saved['path'] ) ) {
 			return false;
@@ -1149,6 +1150,9 @@ final class PNCP_Watermark {
 		if ( $saved['path'] !== $target && is_file( $saved['path'] ) ) {
 			copy( $saved['path'], $target );
 			wp_delete_file( $saved['path'] );
+		}
+		if ( $new ) {
+			self::keep_owner( $target );
 		}
 		return true;
 	}
@@ -1172,7 +1176,7 @@ final class PNCP_Watermark {
 			update_option( 'pncp_backup_dir', $name, false );
 		}
 		$dir = trailingslashit( $uploads['basedir'] ) . $name . '/';
-		if ( ! is_dir( $dir ) && ! wp_mkdir_p( $dir ) ) {
+		if ( ! is_dir( $dir ) && ! self::mkdir_owner( $dir ) ) {
 			return '';
 		}
 		if ( ! is_file( $dir . '.htaccess' ) ) {
@@ -1180,6 +1184,8 @@ final class PNCP_Watermark {
 			file_put_contents( $dir . '.htaccess', "Require all denied\n<IfModule !mod_authz_core.c>\nDeny from all\n</IfModule>\n" );
 			// phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_file_put_contents
 			file_put_contents( $dir . 'index.html', '' );
+			self::keep_owner( $dir . '.htaccess' );
+			self::keep_owner( $dir . 'index.html' );
 		}
 		return $dir;
 	}
@@ -1229,10 +1235,41 @@ final class PNCP_Watermark {
 	 */
 	private static function ensure_backup( $path ) {
 		$backup = self::backup_path( $path );
-		if ( '' === $backup || ! wp_mkdir_p( dirname( $backup ) ) ) {
+		if ( '' === $backup || ! self::mkdir_owner( dirname( $backup ) ) ) {
 			return false;
 		}
-		return copy( $path, $backup );
+		$new = ! file_exists( $backup );
+		if ( ! copy( $path, $backup ) ) {
+			return false;
+		}
+		if ( $new ) {
+			self::keep_owner( $backup );
+		}
+		return true;
+	}
+
+	/**
+	 * 3.12.10: wp_mkdir_p(); as root (WP-CLI --allow-root, e.g. `wp media regenerate`), each new folder goes to the
+	 * owner of the WordPress folder with 0755 (PNCP_File_Owner).
+	 *
+	 * @param string $dir Folder.
+	 * @return bool
+	 */
+	private static function mkdir_owner( $dir ) {
+		return PNCP_File_Owner::is_root() ? PNCP_File_Owner::mkdir( $dir, 0755 ) : wp_mkdir_p( $dir );
+	}
+
+	/**
+	 * 3.12.10: as root, a file this class created goes to the owner of the WordPress folder, readable by all (0644,
+	 * root's umask may be 077), so the web server can serve it and WordPress can later replace it. Nothing otherwise.
+	 *
+	 * @param string $file New file.
+	 */
+	private static function keep_owner( $file ) {
+		if ( PNCP_File_Owner::is_root() && is_file( $file ) ) {
+			@chmod( $file, 0644 ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged, WordPress.WP.AlternativeFunctions.file_system_operations_chmod
+			PNCP_File_Owner::restore( $file );
+		}
 	}
 
 	/**
@@ -1448,11 +1485,15 @@ final class PNCP_Watermark {
 			imagecopy( $image, $layer, $x, $y, 0, 0, $dst_w, $dst_h );
 		}
 
+		$new = ! file_exists( $dest );
 		if ( ! self::save( $image, $dest, $mime ) ) {
 			return false;
 		}
 		if ( '' !== $icc ) {
 			self::jpeg_put_icc( $dest, $icc );
+		}
+		if ( $new ) {
+			self::keep_owner( $dest ); // 3.12.10: a size file that was missing, made now as root.
 		}
 		self::drop_stale_copies( $dest );
 		return true;
@@ -1522,6 +1563,7 @@ final class PNCP_Watermark {
 		if ( "\xFF\xE0" === substr( $data, 2, 2 ) ) {
 			$at = 4 + unpack( 'n', substr( $data, 4, 2 ) )[1]; // After APP0 (JFIF), where readers expect it.
 		}
+		// owner: an in-place rewrite of the file apply_to_file() has just written (same inode), whose owner it keeps.
 		file_put_contents( $file, substr( $data, 0, $at ) . $icc . substr( $data, $at ), LOCK_EX ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_file_put_contents -- The file just written.
 	}
 

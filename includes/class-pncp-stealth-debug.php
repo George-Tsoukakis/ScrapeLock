@@ -110,11 +110,18 @@ class PNCP_Stealth_Debug {
 	 */
 	private static function write( $line ) {
 		$file = self::file();
-		if ( '' === $file || ! wp_mkdir_p( dirname( $file ) ) ) {
+		// 3.12.10: as root (a WP-CLI run), the folder, its index and a new log go to the owner of the WordPress folder
+		// (PNCP_File_Owner), or PHP-FPM could no longer add to the log nor create the pre-cache check's data there.
+		$root = PNCP_File_Owner::is_root();
+		if ( '' === $file || ! ( $root ? PNCP_File_Owner::mkdir( dirname( $file ), 0755 ) : wp_mkdir_p( dirname( $file ) ) ) ) {
 			return;
 		}
 		if ( ! is_file( dirname( $file ) . '/index.html' ) ) {
-			file_put_contents( dirname( $file ) . '/index.html', '' ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_file_put_contents -- An empty index, no listing of the folder.
+			if ( $root ) {
+				PNCP_File_Owner::put( dirname( $file ) . '/index.html', '', 0644 );
+			} else {
+				file_put_contents( dirname( $file ) . '/index.html', '' ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_file_put_contents -- An empty index, no listing of the folder.
+			}
 		}
 		clearstatcache( true, $file );
 		$size = is_file( $file ) ? (int) filesize( $file ) : 0;
@@ -124,7 +131,12 @@ class PNCP_Stealth_Debug {
 		} elseif ( $size + strlen( $line ) > self::MAX_BYTES ) {
 			return;
 		}
+		$new = $root && ! is_file( $file );
 		file_put_contents( $file, $line, FILE_APPEND | LOCK_EX ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_file_put_contents -- The debug log the administrator turned on.
+		if ( $new ) {
+			@chmod( $file, 0644 ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged, WordPress.WP.AlternativeFunctions.file_system_operations_chmod -- root's umask may be 077.
+			PNCP_File_Owner::restore( $file );
+		}
 	}
 
 	/**

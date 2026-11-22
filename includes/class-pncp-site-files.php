@@ -408,6 +408,9 @@ final class PNCP_Site_Files {
 			if ( ! $fs->put_contents( $path, $content, FS_CHMOD_FILE ) ) {
 				return $written ? 'partial' : 'notwritable';
 			}
+			if ( PNCP_File_Owner::is_root() ) {
+				PNCP_File_Owner::restore( $path ); // 3.12.10: created by WP-CLI as root: to the WordPress folder's owner.
+			}
 			$record[ $name ] = sha1( $content );
 			++$written;
 		}

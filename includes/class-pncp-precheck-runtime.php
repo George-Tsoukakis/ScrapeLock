@@ -192,6 +192,22 @@ final class PNCP_Precheck_Runtime {
 	public static $count_off = false;
 
 	/**
+	 * 3.12.10: does this process run as root (WP-CLI with --allow-root, a cron job of root)? Null until root_owner()
+	 * first asks (once per process).
+	 *
+	 * @var bool|null
+	 */
+	private static $root = null;
+
+	/**
+	 * 3.12.10: as root, the owner (uid, gid) new files of a data folder get, per data folder (owner_for()); false
+	 * when there is none (a WordPress whose folders all belong to root).
+	 *
+	 * @var array<string, array{0:int,1:int}|false>
+	 */
+	private static $owners = array();
+
+	/**
 	 * Called by the line in wp-config.php: reads the configuration from the data folder and runs the check.
 	 *
 	 * @param string               $dir   The data folder.
@@ -781,14 +797,14 @@ final class PNCP_Precheck_Runtime {
 		}
 		$folder = $c . '/probes';
 		if ( ! is_dir( $folder ) ) {
-			@mkdir( $folder, 0755, true );
+			self::mkdir_owner( $folder, $c );
 		}
 		$file = $folder . '/' . md5( $key );
 		$time = is_file( $file ) ? (int) @file_get_contents( $file ) : 0;
 		if ( $time > $now - 86400 ) {
 			return $time <= $now - self::BURST;
 		}
-		self::put_atomic( $file, (string) (int) $now );
+		self::put_atomic( $file, (string) (int) $now, $c );
 		return false;
 	}
 
@@ -1383,13 +1399,14 @@ final class PNCP_Precheck_Runtime {
 		if ( null === $added ) {
 			$folder = (string) $c['dir'] . '/self';
 			if ( ! is_dir( $folder ) ) {
-				@mkdir( $folder, 0755, true );
+				self::mkdir_owner( $folder, (string) $c['dir'] );
 			}
 			$handle = @fopen( $folder . '/' . $m[2], 'x' );
 			$added  = false !== $handle;
 			if ( false !== $handle ) {
 				fwrite( $handle, (string) $now );
 				fclose( $handle );
+				self::keep_owner( $folder . '/' . $m[2], (string) $c['dir'] ); // 3.12.10: only as root.
 			}
 		}
 		if ( ! $added ) {
@@ -1648,7 +1665,7 @@ final class PNCP_Precheck_Runtime {
 		}
 		self::$exact = false; // A file count may skip a value under contention (increment()): see crossed().
 		$dir         = $c['dir'] . '/hits/' . $minute;
-		if ( ! is_dir( $dir ) && @mkdir( $dir, 0755, true ) ) {
+		if ( ! is_dir( $dir ) && self::mkdir_owner( $dir, (string) $c['dir'] ) ) {
 			self::maybe_sweep( $c, $now );
 		}
 		$file = $dir . '/' . md5( $key );
@@ -1701,11 +1718,13 @@ final class PNCP_Precheck_Runtime {
 		if ( $count <= $limit ) {
 			return false;
 		}
-		$handle = @fopen( $c['dir'] . '/hits/' . (int) floor( $now / 60 ) . '/' . md5( $key ) . '.over', 'x' );
+		$over   = $c['dir'] . '/hits/' . (int) floor( $now / 60 ) . '/' . md5( $key ) . '.over';
+		$handle = @fopen( $over, 'x' );
 		if ( false === $handle ) {
 			return false;
 		}
 		fclose( $handle );
+		self::keep_owner( $over, (string) $c['dir'] ); // 3.12.10: only as root.
 		return true;
 	}
 	/**
@@ -1767,7 +1786,7 @@ final class PNCP_Precheck_Runtime {
 		}
 		$dir = $c['dir'] . '/hits/' . (int) floor( $now / 60 );
 		if ( ! is_dir( $dir ) ) {
-			@mkdir( $dir, 0755, true );
+			self::mkdir_owner( $dir, (string) $c['dir'] );
 		}
 		$count = self::increment( $dir . '/.new' );
 		return 0 === $count || $count <= $cap * max( 1, (int) $times );
@@ -1789,10 +1808,13 @@ final class PNCP_Precheck_Runtime {
 	 * not atomic between machines: a count can be lost there (the limits are approximate anyway). Past MAX_COUNT
 	 * bytes (an attack of more than 100,000 requests a minute on one key) nothing more is written.
 	 *
+	 * 3.12.10: a counter file root creates (fopen() 'ab' of a missing file) goes to the data folder's owner.
+	 *
 	 * @param string $file File.
+	 * @param string $data 3.12.10: the data folder ('' = three folders above the file: hits/<minute>/<file>).
 	 * @return int
 	 */
-	public static function increment( $file ) {
+	public static function increment( $file, $data = '' ) {
 		$size = @filesize( $file );
 		if ( false !== $size && $size >= self::MAX_COUNT ) {
 			return (int) $size + 1;
@@ -1804,6 +1826,9 @@ final class PNCP_Precheck_Runtime {
 		$written = fwrite( $handle, '1' );
 		$stat    = fstat( $handle );
 		fclose( $handle );
+		if ( false === $size && self::root_owner() ) {
+			self::keep_owner( $file, '' !== $data ? $data : dirname( $file, 3 ) );
+		}
 		return 1 === $written && is_array( $stat ) ? max( 1, (int) $stat['size'] ) : 0;
 	}
 
@@ -1858,7 +1883,13 @@ final class PNCP_Precheck_Runtime {
 					}
 				}
 			}
+			$root = self::root_owner();
+			$meta = $root ? self::owner_meta( $data . '/.cleaned' ) : null;
 			@touch( $data . '/.cleaned' ); // 3.12.9: for maybe_sweep().
+			if ( $root ) {
+				self::keep_owner( $data . '/.cleaned', $data, $meta );
+				self::repair_owner( $data );
+			}
 		}
 	}
 
@@ -1892,9 +1923,14 @@ final class PNCP_Precheck_Runtime {
 	 * @return int Files removed.
 	 */
 	public static function sweep( $dir, $minute, $budget = self::SWEEP_MS ) {
+		$root = self::root_owner();
+		$meta = $root ? self::owner_meta( $dir . '/.sweep.lock' ) : null;
 		$lock = @fopen( $dir . '/.sweep.lock', 'c' );
 		if ( false === $lock ) {
 			return 0;
+		}
+		if ( $root && null === $meta ) {
+			self::keep_owner( $dir . '/.sweep.lock', $dir ); // 3.12.10.
 		}
 		if ( ! flock( $lock, LOCK_EX | LOCK_NB ) ) {
 			fclose( $lock );
@@ -1995,7 +2031,7 @@ final class PNCP_Precheck_Runtime {
 		}
 		$dir = $c['dir'] . '/strikes';
 		if ( ! is_dir( $dir ) ) {
-			@mkdir( $dir, 0755, true );
+			self::mkdir_owner( $dir, (string) $c['dir'] );
 		}
 		$file  = $dir . '/' . md5( $key );
 		$parts = explode( '|', is_file( $file ) ? (string) @file_get_contents( $file ) : '' );
@@ -2007,7 +2043,7 @@ final class PNCP_Precheck_Runtime {
 		}
 		++$count;
 		$banned = $count >= $needed;
-		self::put_atomic( $file, $banned ? '' : $first . '|' . $count );
+		self::put_atomic( $file, $banned ? '' : $first . '|' . $count, (string) $c['dir'] );
 		return $banned;
 	}
 
@@ -2055,26 +2091,168 @@ final class PNCP_Precheck_Runtime {
 			$c = (string) $c['dir'];
 		}
 		if ( ! is_dir( $c . '/bans' ) ) {
-			@mkdir( $c . '/bans', 0755, true );
+			self::mkdir_owner( $c . '/bans', $c );
 		}
-		self::put_atomic( $c . '/bans/' . md5( $ip ), (string) (int) $until );
+		self::put_atomic( $c . '/bans/' . md5( $ip ), (string) (int) $until, $c );
 	}
 
 	/**
 	 * 3.12.9: writes a small file whole: into a temporary file in the same folder, then rename() over it (atomic on
 	 * a local file system), so a reader gets the old or the new contents, never an empty or half-written file.
 	 *
+	 * 3.12.10: as root, the file keeps the owner and mode of the one it replaces (a new one: keep_owner()).
+	 *
 	 * @param string $file     File.
 	 * @param string $contents Contents.
+	 * @param string $data     3.12.10: the data folder ('' = the folder above the file's: bans/, strikes/, probes/).
 	 * @return bool
 	 */
-	public static function put_atomic( $file, $contents ) {
-		$tmp = dirname( $file ) . '/.' . basename( $file ) . '.' . substr( md5( uniqid( (string) mt_rand(), true ) ), 0, 10 ) . '.tmp';
-		if ( strlen( $contents ) !== @file_put_contents( $tmp, $contents ) || ! @rename( $tmp, $file ) ) {
+	public static function put_atomic( $file, $contents, $data = '' ) {
+		$tmp  = dirname( $file ) . '/.' . basename( $file ) . '.' . substr( md5( uniqid( (string) mt_rand(), true ) ), 0, 10 ) . '.tmp';
+		$root = self::root_owner();
+		$meta = $root ? self::owner_meta( $file ) : null;
+		if ( strlen( $contents ) !== @file_put_contents( $tmp, $contents ) ) {
+			@unlink( $tmp );
+			return false;
+		}
+		// 3.12.10: the temporary file gets its final owner and mode before the rename, so no reader sees it wrong.
+		if ( $root ) {
+			self::keep_owner( $tmp, '' !== $data ? $data : dirname( $file, 2 ), $meta );
+		}
+		if ( ! @rename( $tmp, $file ) ) {
 			@unlink( $tmp );
 			return false;
 		}
 		return true;
+	}
+
+	/* ---------- 3.12.10: owner and mode of the files written as root ---------- */
+
+	/**
+	 * 3.12.10: does this process run as root? Asked once per process (posix_geteuid(), no file look-up). As any other
+	 * user nothing of this section runs: the files get that user, as before.
+	 *
+	 * @return bool
+	 */
+	public static function root_owner() {
+		if ( null === self::$root ) {
+			self::$root = function_exists( 'posix_geteuid' ) && 0 === posix_geteuid();
+		}
+		return self::$root;
+	}
+
+	/**
+	 * 3.12.10: the owner, group and mode of an existing file or folder, or null.
+	 *
+	 * @param string $path File or folder.
+	 * @return array{0:int,1:int,2:int}|null uid, gid, mode.
+	 */
+	public static function owner_meta( $path ) {
+		clearstatcache( true, $path );
+		$stat = @stat( $path );
+		return is_array( $stat ) ? array( (int) $stat['uid'], (int) $stat['gid'], (int) $stat['mode'] & 07777 ) : null;
+	}
+
+	/**
+	 * 3.12.10: as root, the owner new files and folders of a data folder get: that of the data folder's parent
+	 * (uploads/scrapelock), or when root owns it, of the next folder up that root does not own (uploads, then
+	 * wp-content). That is the user WordPress runs as (PHP-FPM's); root's folders there are a WP-CLI run's.
+	 *
+	 * @param string $data Data folder.
+	 * @return array{0:int,1:int}|null uid, gid; null when root owns all of them.
+	 */
+	private static function owner_for( $data ) {
+		$data = rtrim( (string) $data, '/' );
+		if ( ! isset( self::$owners[ $data ] ) ) {
+			self::$owners[ $data ] = false;
+			$dir                   = $data;
+			for ( $i = 0; $i < 3; $i++ ) {
+				$dir  = dirname( $dir );
+				$meta = self::owner_meta( $dir );
+				if ( null !== $meta && 0 !== $meta[0] ) {
+					self::$owners[ $data ] = array( $meta[0], $meta[1] );
+					break;
+				}
+			}
+		}
+		return false === self::$owners[ $data ] ? null : self::$owners[ $data ];
+	}
+
+	/**
+	 * 3.12.10: root only. Gives a file or folder this check created or replaced as root the owner and mode the web
+	 * server's PHP needs to read and rewrite it: those of the file it replaced ($meta), or for a new one (or one root
+	 * owned already) the data folder's owner (owner_for()), and 0644 for a new file, 0755 for a new folder (root's
+	 * umask may be 077). Never fails loudly.
+	 *
+	 * @param string                        $path File or folder.
+	 * @param string                        $data Data folder.
+	 * @param array{0:int,1:int,2:int}|null $meta owner_meta() of the file before it was written or replaced.
+	 */
+	public static function keep_owner( $path, $data, $meta = null ) {
+		if ( ! self::root_owner() ) {
+			return;
+		}
+		$owner = null !== $meta && 0 !== $meta[0] ? array( $meta[0], $meta[1] ) : self::owner_for( $data );
+		$mode  = null !== $meta ? $meta[2] : ( is_dir( $path ) ? 0755 : 0644 );
+		@chmod( $path, $mode );
+		if ( null !== $owner ) {
+			@chown( $path, $owner[0] );
+			@chgrp( $path, $owner[1] );
+		}
+		clearstatcache( true, $path );
+	}
+
+	/**
+	 * 3.12.10: mkdir( $dir, 0755, true ); as root, each folder it created then goes to the data folder's owner
+	 * (keep_owner()). Returns what mkdir() returned (true only when this call created the folder).
+	 *
+	 * @param string $dir  Folder.
+	 * @param string $data Data folder.
+	 * @return bool
+	 */
+	public static function mkdir_owner( $dir, $data ) {
+		if ( ! self::root_owner() ) {
+			return @mkdir( $dir, 0755, true );
+		}
+		$missing = array();
+		for ( $up = rtrim( $dir, '/' ); '' !== $up && dirname( $up ) !== $up && ! is_dir( $up ); $up = dirname( $up ) ) {
+			$missing[] = $up;
+		}
+		$made = @mkdir( $dir, 0755, true );
+		foreach ( $missing as $one ) {
+			if ( is_dir( $one ) ) {
+				self::keep_owner( $one, $data );
+			}
+		}
+		return $made;
+	}
+
+	/**
+	 * 3.12.10: root only, from the hourly cleanup: what a run as root of 3.12.9 left to root in the data folder (PHP-FPM
+	 * could then no longer write the counters, bans or strikes there, nor remove them) goes to the data folder's
+	 * owner: the folder, what is directly in it, and the files of its small folders. A file keeps its mode, made
+	 * readable by all (0644 at least) as before.
+	 *
+	 * @param string $data Data folder.
+	 */
+	private static function repair_owner( $data ) {
+		if ( null === self::owner_for( $data ) ) {
+			return;
+		}
+		$paths = array( $data );
+		foreach ( array( '', '/bans', '/strikes', '/probes', '/self', '/breaker' ) as $folder ) {
+			foreach ( (array) @scandir( $data . $folder ) as $name ) {
+				if ( '.' !== $name && '..' !== $name && '' !== (string) $name ) {
+					$paths[] = $data . $folder . '/' . $name;
+				}
+			}
+		}
+		foreach ( $paths as $path ) {
+			$meta = self::owner_meta( $path );
+			if ( null !== $meta && 0 === $meta[0] ) {
+				self::keep_owner( $path, $data, is_dir( $path ) ? null : array( 0, 0, $meta[2] | 0644 ) );
+			}
+		}
 	}
 
 	/**
@@ -2103,7 +2281,12 @@ final class PNCP_Precheck_Runtime {
 		if ( is_file( $file ) && @filesize( $file ) > 2 * 1024 * 1024 ) {
 			return;
 		}
+		// 3.12.10: as root, a first line (a new events.log) gives the file to the data folder's owner.
+		$new = self::root_owner() && ! is_file( $file );
 		@file_put_contents( $file, $line . "\n", FILE_APPEND );
+		if ( $new ) {
+			self::keep_owner( $file, (string) $c['dir'] );
+		}
 	}
 
 	/* ---------- 3.12.9: APCu and Redis ---------- */
@@ -2150,6 +2333,7 @@ final class PNCP_Precheck_Runtime {
 			return 0;
 		}
 		$work = $file . '.' . substr( md5( uniqid( (string) mt_rand(), true ) ), 0, 10 ) . '.tmp';
+		// owner: ops.log is moved away to be read and deleted at once, nothing is written.
 		if ( ! @rename( $file, $work ) ) {
 			return 0;
 		}
@@ -2692,12 +2876,12 @@ final class PNCP_Precheck_Runtime {
 		$stored = $files_only ? array() : self::mem_list( $c, 'b:' );
 		if ( is_array( $stored ) && $stored ) {
 			if ( ! is_dir( $folder ) ) {
-				@mkdir( $folder, 0755, true );
+				self::mkdir_owner( $folder, (string) $c['dir'] );
 			}
 			foreach ( $stored as $hash => $until ) {
 				$file = $folder . '/' . $hash;
 				if ( preg_match( '/^[0-9a-f]{32}$/', (string) $hash ) && (int) $until > $now && ( is_file( $file ) ? (int) @file_get_contents( $file ) : 0 ) < (int) $until ) {
-					$copied += (int) self::put_atomic( $file, (string) (int) $until );
+					$copied += (int) self::put_atomic( $file, (string) (int) $until, (string) $c['dir'] );
 				}
 			}
 		}

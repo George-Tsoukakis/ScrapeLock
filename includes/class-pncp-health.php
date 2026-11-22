@@ -1569,6 +1569,7 @@ final class PNCP_Health {
 		}
 		$name  = 'pncp-probe-' . strtolower( wp_generate_password( 20, false, false ) ) . '.txt';
 		$token = wp_generate_password( 32, false, false );
+		// owner: a throwaway file, deleted in the same run.
 		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_file_put_contents -- A 32-byte throwaway file, removed in the same run.
 		if ( false === file_put_contents( $dir . '/' . $name, $token, LOCK_EX ) ) {
 			return null;

@@ -292,19 +292,26 @@ final class PNCP_Early {
 		// Written next to it first (not ending in .php, so WordPress never loads it), then renamed over it: a
 		// request loading the must-use plugins meanwhile, or a write cut short (disk full, quota), never leaves
 		// a half-written file there, which would stop every page of the site, wp-admin included, with a fatal error.
+		// 3.12.10: an existing file keeps its owner, group and mode; a new one gets WordPress's file mode and, when
+		// run as root (wp --allow-root), the owner of the WordPress folder, so PHP-FPM can still read it. Applied to
+		// the temporary file before the rename, so the live file never has the wrong owner.
+		$meta = PNCP_File_Owner::capture( $path );
+		$mode = null !== $meta ? $meta['mode'] : FS_CHMOD_FILE;
 		$code = self::code();
 		$tmp  = $path . '.' . wp_generate_password( 8, false ) . '.tmp';
-		if ( ! $filesystem->put_contents( $tmp, $code, FS_CHMOD_FILE ) || (string) file_get_contents( $tmp ) !== $code ) { // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Local file.
+		if ( ! $filesystem->put_contents( $tmp, $code, $mode ) || (string) file_get_contents( $tmp ) !== $code ) { // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Local file.
 			$filesystem->delete( $tmp );
 			return false;
 		}
+		PNCP_File_Owner::restore( $tmp, $meta );
 		if ( ! @rename( $tmp, $path ) ) { // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged, WordPress.WP.AlternativeFunctions.rename_rename -- Atomic replace in the same folder; WP_Filesystem has no atomic move.
 			$filesystem->delete( $tmp );
 			// Where the rename is refused (e.g. a file in use on Windows), written in place, as before.
-			if ( ! $filesystem->put_contents( $path, $code, FS_CHMOD_FILE ) ) {
+			if ( ! $filesystem->put_contents( $path, $code, $mode ) ) {
 				return false;
 			}
 		}
+		PNCP_File_Owner::restore( $path, $meta );
 		// OPcache would keep running the previous file (e.g. one that points to the plugin's former folder).
 		if ( function_exists( 'opcache_invalidate' ) ) {
 			opcache_invalidate( $path, true );
@@ -338,6 +345,8 @@ final class PNCP_Early {
 		if ( ! wp_mkdir_p( $dir ) ) {
 			return false;
 		}
+		// 3.12.10: created as root (wp --allow-root), the folder goes to the owner of the WordPress folder.
+		PNCP_File_Owner::restore( $dir, null );
 		update_site_option( self::DIR_OPTION, $dir ); // On a single site: update_option() with autoload off.
 		return true;
 	}
