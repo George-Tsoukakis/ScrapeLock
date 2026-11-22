@@ -170,7 +170,14 @@ final class PNCP_Rules {
 			'	</IfModule>',
 			'</FilesMatch>',
 		);
+		$new = ! file_exists( $file );
 		insert_with_markers( $file, 'ScrapeLock', $lines );
+		if ( $new && PNCP_File_Owner::is_root() ) {
+			// 3.12.10: a new uploads/.htaccess written as root (WP-CLI) goes to the WordPress folder's owner, readable
+			// by the web server.
+			@chmod( $file, 0644 ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged, WordPress.WP.AlternativeFunctions.file_system_operations_chmod -- root's umask may be 077.
+			PNCP_File_Owner::restore( $file );
+		}
 	}
 
 	/**

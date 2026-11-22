@@ -159,6 +159,10 @@ final class PNCP_File_Owner {
 		if ( ! @mkdir( $dir, $mode ) && ! is_dir( $dir ) ) { // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged, WordPress.WP.AlternativeFunctions.file_system_operations_mkdir
 			return false;
 		}
+		if ( self::is_root() ) {
+			// root's umask may be 077: the folder would be 0700 whatever $mode asked, closed to the web server's group.
+			@chmod( $dir, $mode ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged, WordPress.WP.AlternativeFunctions.file_system_operations_chmod
+		}
 		self::restore( $dir, null );
 		return true;
 	}

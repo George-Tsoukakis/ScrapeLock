@@ -326,6 +326,13 @@ ScrapeLock — δοκιμές σε πραγματικό WordPress (όχι stubs)
                     counters and lock file, .htaccess (hardening, rules install), a new server .conf file
                     (stays root's), cache status --save-constant: owner, group and mode unchanged, new files to the
                     folder's owner (0644), no *.tmp / .new / .old left. Not as root: only the modes (owner checks SKIP)
+  t_3130_owner_data.php 3.12.10: files written as root (WP-CLI --allow-root, root's cron; as root, else SKIP): a fake
+                    ABSPATH owned by 4242:4243 (links to WP_DIR's files, its own UPLOADS), writers run as root with umask
+                    077: the pre-cache check (hit/crossed/strike/ban/probe/event/sync_bans with APCu/sweep/cleanup, and
+                    the repair of the root folders 3.12.9 left), the circuit breaker in files mode and its
+                    _reset.json/_snapshot.json, geo database, Stealth debug log, uploads/.htaccess, watermark backups,
+                    Verify files: every file and folder created or replaced belongs to 4242:4243 with 0755 / 0644 (a
+                    replaced file keeps its mode), no .tmp left
   t_cli.php         wp scrapelock … μέσα από το πραγματικό wp (χρειάζεται WP_CLI, αλλιώς SKIP)
   t_bunny_rules.php Edge Rules στο Bunny μέσα στα όριά του (το πολύ 5 μοτίβα ανά συνθήκη) με ψεύτικο API που δίνει
                     HTTP 400 όπως το πραγματικό: χωρισμός, κλείδωμα/Remove, rollback, Monitor only, sync, προεπισκόπηση,

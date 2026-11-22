@@ -880,7 +880,8 @@ final class PNCP_Stealth {
 		if ( ! self::htaccess_writable() ) {
 			return false;
 		}
-		$text = file_exists( $file ) ? (string) file_get_contents( $file ) : ''; // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Local file.
+		$new  = ! file_exists( $file );
+		$text = $new ? '' : (string) file_get_contents( $file ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Local file.
 		if ( false === strpos( $text, '# BEGIN ' . self::MARKER ) ) {
 			$empty = '# BEGIN ' . self::MARKER . "\n# END " . self::MARKER . "\n\n";
 			$pos   = strpos( $text, '# BEGIN WordPress' );
@@ -893,6 +894,11 @@ final class PNCP_Stealth {
 			require_once ABSPATH . 'wp-admin/includes/misc.php';
 		}
 		$ok = insert_with_markers( $file, self::MARKER, $lines );
+		if ( $new && PNCP_File_Owner::is_root() ) {
+			// 3.12.10: a new .htaccess written as root goes to the WordPress folder's owner, readable by the web server.
+			@chmod( $file, 0644 ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged, WordPress.WP.AlternativeFunctions.file_system_operations_chmod -- root's umask may be 077.
+			PNCP_File_Owner::restore( $file );
+		}
 		clearstatcache();
 		return (bool) $ok;
 	}

@@ -164,13 +164,12 @@ final class PNCP_Breaker_Status {
 	 * @param array<string, mixed> $value  Value.
 	 */
 	private static function write( $folder, $name, $value ) {
-		if ( ! is_dir( $folder ) && ! wp_mkdir_p( $folder ) ) {
+		// 3.12.10: written by WP-CLI as root too (_reset.json): the folder and the file then go to the owner of the
+		// WordPress folder and a replaced file keeps its owner and mode (PNCP_File_Owner), for PHP-FPM to read them.
+		if ( ! is_dir( $folder ) && ! ( PNCP_File_Owner::is_root() ? PNCP_File_Owner::mkdir( $folder, 0755 ) : wp_mkdir_p( $folder ) ) ) {
 			return;
 		}
-		$tmp = $folder . '/' . $name . '.' . wp_generate_password( 8, false, false ) . '.tmp';
-		if ( false !== file_put_contents( $tmp, (string) wp_json_encode( $value ) ) && ! rename( $tmp, $folder . '/' . $name ) ) { // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_file_put_contents, WordPress.WP.AlternativeFunctions.rename_rename -- Atomic write of a tiny file, outside WP_Filesystem as the pre-cache check's other files.
-			wp_delete_file( $tmp );
-		}
+		PNCP_File_Owner::put( $folder . '/' . $name, (string) wp_json_encode( $value ), 0644 );
 	}
 
 	/**

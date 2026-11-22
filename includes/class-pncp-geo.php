@@ -450,19 +450,31 @@ final class PNCP_Geo {
 			require_once ABSPATH . 'wp-admin/includes/file.php';
 		}
 		$dir = self::dir();
-		if ( ! wp_mkdir_p( $dir ) || 'direct' !== get_filesystem_method( array(), $dir ) || ! WP_Filesystem() ) {
+		// 3.12.10: the monthly refresh and `wp scrapelock geo` may run as root (WP-CLI --allow-root, root's cron): the
+		// folder and the files then go to the owner of the WordPress folder, and a replaced file keeps its owner and
+		// mode (PNCP_File_Owner), or PHP-FPM could no longer read the database nor refresh it.
+		$root = PNCP_File_Owner::is_root();
+		if ( ! ( $root ? PNCP_File_Owner::mkdir( $dir, 0755 ) : wp_mkdir_p( $dir ) ) || 'direct' !== get_filesystem_method( array(), $dir ) || ! WP_Filesystem() ) {
 			return false;
 		}
 		global $wp_filesystem;
 		if ( ! $wp_filesystem->exists( $dir . '/index.html' ) ) {
 			$wp_filesystem->put_contents( $dir . '/index.html', '', FS_CHMOD_FILE );
 			$wp_filesystem->put_contents( $dir . '/.htaccess', "Require all denied\n<IfModule !mod_authz_core.c>\nDeny from all\n</IfModule>\n", FS_CHMOD_FILE );
+			if ( $root ) {
+				PNCP_File_Owner::restore( $dir . '/index.html' );
+				PNCP_File_Owner::restore( $dir . '/.htaccess' );
+			}
 		}
 		// Written next to it, then renamed over it: a lookup during the monthly refresh reads the whole old or the
 		// whole new file, never a half-written one (which could give a visitor the wrong country).
-		$tmp = $dir . '/' . $name . '.' . wp_generate_password( 8, false ) . '.tmp';
+		$meta = $root ? PNCP_File_Owner::capture( $dir . '/' . $name ) : null;
+		$tmp  = $dir . '/' . $name . '.' . wp_generate_password( 8, false ) . '.tmp';
 		if ( ! $wp_filesystem->put_contents( $tmp, $contents, FS_CHMOD_FILE ) ) {
 			return false;
+		}
+		if ( $root ) {
+			PNCP_File_Owner::restore( $tmp, $meta );
 		}
 		if ( ! @rename( $tmp, $dir . '/' . $name ) ) { // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged, WordPress.WP.AlternativeFunctions.rename_rename -- Atomic replace in the same folder.
 			$wp_filesystem->delete( $tmp );

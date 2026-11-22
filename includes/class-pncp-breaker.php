@@ -685,13 +685,21 @@ final class PNCP_Breaker {
 				case 'files':
 					$file   = self::file( $key );
 					$folder = dirname( $file );
-					if ( ! is_dir( $folder ) && ! @mkdir( $folder, 0755, true ) && ! is_dir( $folder ) ) {
+					// 3.12.10: as root (`wp scrapelock breaker reset`, a trip in WP-CLI or a cron job of root), the
+					// folder and the file go to the data folder's owner and keep their mode, through the pre-cache
+					// check's own copy of that logic (PNCP_Precheck_Runtime::keep_owner(): no WordPress needed).
+					$root = function_exists( 'posix_geteuid' ) && 0 === posix_geteuid() && class_exists( 'PNCP_Precheck_Runtime' );
+					if ( ! is_dir( $folder ) && ! ( $root ? PNCP_Precheck_Runtime::mkdir_owner( $folder, self::dir() ) : @mkdir( $folder, 0755, true ) ) && ! is_dir( $folder ) ) {
 						return;
 					}
-					$tmp = $file . '.' . getmypid() . '-' . mt_rand() . '.tmp';
+					$meta = $root ? PNCP_Precheck_Runtime::owner_meta( $file ) : null;
+					$tmp  = $file . '.' . getmypid() . '-' . mt_rand() . '.tmp';
 					if ( false === @file_put_contents( $tmp, (string) json_encode( $value ) ) ) {
 						@unlink( $tmp );
 						return;
+					}
+					if ( $root ) {
+						PNCP_Precheck_Runtime::keep_owner( $tmp, self::dir(), $meta );
 					}
 					// A state's file carries the end of its suspension as its modification time: open() reads
 					// only that (one stat()), never the file.

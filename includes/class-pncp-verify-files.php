@@ -420,7 +420,13 @@ final class PNCP_Verify_Files {
 		if ( ! $fs || ! is_dir( $dir ) ) {
 			return 'notwritable';
 		}
-		return $fs->put_contents( $file, $content, FS_CHMOD_FILE ) ? 'written' : 'notwritable';
+		if ( ! $fs->put_contents( $file, $content, FS_CHMOD_FILE ) ) {
+			return 'notwritable';
+		}
+		if ( PNCP_File_Owner::is_root() ) {
+			PNCP_File_Owner::restore( $file ); // 3.12.10: created by WP-CLI as root: to the WordPress folder's owner.
+		}
+		return 'written';
 	}
 
 	/**
