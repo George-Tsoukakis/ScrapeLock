@@ -1122,13 +1122,25 @@ final class PNCP_Seal {
 		// plugins meanwhile never includes half a file (a fatal error for that request). The temporary name does
 		// not end in .php, so WordPress never loads it. Where that cannot be done (a folder PHP cannot create
 		// files in), the guard is written in place, as before.
-		$tmp = dirname( $path ) . '/.' . self::FILE . '.' . wp_generate_password( 12, false ) . '.tmp';
-		$ok  = $filesystem->put_contents( $tmp, $code, FS_CHMOD_FILE ) && @rename( $tmp, $path ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged, WordPress.WP.AlternativeFunctions.rename_rename -- Direct access only (see filesystem()); a failure falls back to writing in place.
+		// 3.12.10: an existing guard keeps its owner, group and mode; a new one gets WordPress's file mode and, when
+		// run as root (wp --allow-root), the owner of the WordPress folder (set on the temporary file before the
+		// rename), so PHP-FPM can still load it.
+		$meta = PNCP_File_Owner::capture( $path );
+		$mode = null !== $meta ? $meta['mode'] : FS_CHMOD_FILE;
+		$tmp  = dirname( $path ) . '/.' . self::FILE . '.' . wp_generate_password( 12, false ) . '.tmp';
+		$ok   = $filesystem->put_contents( $tmp, $code, $mode );
+		if ( $ok ) {
+			PNCP_File_Owner::restore( $tmp, $meta );
+			$ok = @rename( $tmp, $path ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged, WordPress.WP.AlternativeFunctions.rename_rename -- Direct access only (see filesystem()); a failure falls back to writing in place.
+		}
 		if ( $filesystem->exists( $tmp ) ) {
 			$filesystem->delete( $tmp );
 		}
 		if ( ! $ok ) {
-			$ok = $filesystem->put_contents( $path, $code, FS_CHMOD_FILE );
+			$ok = $filesystem->put_contents( $path, $code, $mode );
+		}
+		if ( $ok ) {
+			PNCP_File_Owner::restore( $path, $meta );
 		}
 		clearstatcache( true, $path );
 		if ( function_exists( 'opcache_invalidate' ) ) {
@@ -1623,6 +1635,9 @@ final class PNCP_Seal {
 			if ( ! is_dir( $parent ) || ! wp_is_writable( $parent ) || ! @mkdir( $dir, 0755 ) ) {
 				return false;
 			}
+			// 3.12.10: 0755 whatever the umask (root's 077 gave 0700), and created as root, the WordPress folder's owner.
+			@chmod( $dir, 0755 );
+			PNCP_File_Owner::restore( $dir, null );
 		}
 		if ( ! wp_is_writable( $dir ) ) {
 			return false;
@@ -1635,20 +1650,26 @@ final class PNCP_Seal {
 			'index.php' => self::BEACON_INDEX,
 			'.htaccess' => self::BEACON_HTACCESS,
 		) as $file => $content ) {
-			if ( ! file_exists( $dir . '/' . $file ) ) {
-				@file_put_contents( $dir . '/' . $file, $content );
+			if ( ! file_exists( $dir . '/' . $file ) && false !== @file_put_contents( $dir . '/' . $file, $content ) ) {
+				@chmod( $dir . '/' . $file, 0644 ); // 3.12.10: see below.
+				PNCP_File_Owner::restore( $dir . '/' . $file, null );
 			}
 		}
-		$tmp = $dir . '/.' . $name . '.' . wp_generate_password( 12, false ) . '.tmp';
+		// 3.12.10: the lock file keeps its owner and mode; a new one is 0644 and, written as root, belongs to the
+		// owner of the WordPress folder. Set on the temporary file, before the rename.
+		$meta = PNCP_File_Owner::capture( $path );
+		$tmp  = $dir . '/.' . $name . '.' . wp_generate_password( 12, false ) . '.tmp';
 		if ( strlen( $text ) !== @file_put_contents( $tmp, $text, LOCK_EX ) ) {
 			@unlink( $tmp );
 			return false;
 		}
-		@chmod( $tmp, 0644 );
+		@chmod( $tmp, null !== $meta ? $meta['mode'] : 0644 );
+		PNCP_File_Owner::restore( $tmp, $meta );
 		if ( ! @rename( $tmp, $path ) ) {
 			@unlink( $tmp );
 			return false;
 		}
+		PNCP_File_Owner::restore( $path, $meta );
 		// phpcs:enable
 		clearstatcache( true, $path );
 		return (string) @file_get_contents( $path ) === $text; // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged, WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Local file.

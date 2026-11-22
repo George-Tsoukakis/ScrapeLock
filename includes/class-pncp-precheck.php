@@ -128,7 +128,11 @@ final class PNCP_Precheck {
 		if ( is_dir( $dir . '/hits' ) ) {
 			PNCP_Precheck_Runtime::cleanup( $dir . '/hits', (int) floor( time() / 60 ), 0 );
 		} else {
-			@touch( $dir . '/.cleaned' ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged -- The mark of the hourly cleanup (PNCP_Precheck_Runtime::maybe_sweep()).
+			$new = ! file_exists( $dir . '/.cleaned' );
+			if ( @touch( $dir . '/.cleaned' ) && $new ) { // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged, WordPress.WP.AlternativeFunctions.file_system_operations_touch -- The mark of the hourly cleanup (PNCP_Precheck_Runtime::maybe_sweep()).
+				@chmod( $dir . '/.cleaned', 0644 ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged, WordPress.WP.AlternativeFunctions.file_system_operations_chmod -- 3.12.10: not root's umask (077 makes it 0600).
+				PNCP_File_Owner::restore( $dir . '/.cleaned', null ); // 3.12.10: the web server's check touches it too.
+			}
 		}
 		// 3.12.9: the bans between APCu / Redis and the files, the configuration into the store.
 		self::sync_store();
@@ -714,15 +718,21 @@ final class PNCP_Precheck {
 		if ( is_readable( $file ) && (string) file_get_contents( $file ) === $contents ) { // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Local file.
 			return true;
 		}
-		$tmp = $file . '.' . wp_generate_password( 8, false ) . '.tmp';
-		if ( ! $filesystem->put_contents( $tmp, $contents, FS_CHMOD_FILE ) ) {
+		// 3.12.10: the owner and mode of the file it replaces, set on the temporary file before the rename; a new one
+		// gets WordPress's file mode and, written as root (wp --allow-root), the owner of the WordPress folder, so the
+		// web server can still read and rewrite it.
+		$meta = PNCP_File_Owner::capture( $file );
+		$tmp  = $file . '.' . wp_generate_password( 8, false ) . '.tmp';
+		if ( ! $filesystem->put_contents( $tmp, $contents, null !== $meta ? $meta['mode'] : FS_CHMOD_FILE ) ) {
 			$filesystem->delete( $tmp ); // A write cut short (disk full, quota) may have left part of it.
 			return false;
 		}
+		PNCP_File_Owner::restore( $tmp, $meta );
 		if ( ! @rename( $tmp, $file ) ) { // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged, WordPress.WP.AlternativeFunctions.rename_rename -- Atomic replace in the same folder.
 			$filesystem->delete( $tmp );
 			return false;
 		}
+		PNCP_File_Owner::restore( $file, $meta );
 		return true;
 	}
 
@@ -735,17 +745,28 @@ final class PNCP_Precheck {
 	private static function write_files() {
 		$filesystem = self::filesystem();
 		$dir        = self::dir();
+		$new_dirs   = array();
+		foreach ( '' === $dir ? array() : array( dirname( $dir ), $dir ) as $folder ) {
+			if ( ! is_dir( $folder ) ) {
+				$new_dirs[] = $folder;
+			}
+		}
 		if ( ! $filesystem || '' === $dir || ( ! is_dir( $dir ) && ! wp_mkdir_p( $dir ) ) ) {
 			return false;
+		}
+		// 3.12.10: folders and files created here as root (wp --allow-root) go to the owner of the WordPress folder,
+		// so the check (run by the web server's user) can still write its counters and bans there.
+		foreach ( $new_dirs as $folder ) {
+			PNCP_File_Owner::restore( $folder, null );
 		}
 		// Apache: no access at all. Elsewhere the random folder name and the empty index keep it hidden.
 		$deny = "Require all denied\n<IfModule !mod_authz_core.c>\nDeny from all\n</IfModule>\n";
 		foreach ( array( dirname( $dir ), $dir ) as $folder ) {
-			if ( ! $filesystem->exists( $folder . '/index.html' ) ) {
-				$filesystem->put_contents( $folder . '/index.html', '', FS_CHMOD_FILE );
+			if ( ! $filesystem->exists( $folder . '/index.html' ) && $filesystem->put_contents( $folder . '/index.html', '', FS_CHMOD_FILE ) ) {
+				PNCP_File_Owner::restore( $folder . '/index.html', null );
 			}
-			if ( ! $filesystem->exists( $folder . '/.htaccess' ) ) {
-				$filesystem->put_contents( $folder . '/.htaccess', $deny, FS_CHMOD_FILE );
+			if ( ! $filesystem->exists( $folder . '/.htaccess' ) && $filesystem->put_contents( $folder . '/.htaccess', $deny, FS_CHMOD_FILE ) ) {
+				PNCP_File_Owner::restore( $folder . '/.htaccess', null );
 			}
 		}
 		$json = self::config_json();
@@ -889,7 +910,10 @@ final class PNCP_Precheck {
 		if ( ! $filesystem || ! $filesystem->is_writable( $path ) || ! $filesystem->is_writable( dirname( $path ) ) ) {
 			return false;
 		}
-		$mode = fileperms( $path ) & 0777;
+		// 3.12.10: the owner, group and exact mode of wp-config.php (even 0400 / 0440) go to the new file. Run as
+		// root (wp --allow-root), the renamed copy was root:root 0640 and PHP-FPM could no longer read it.
+		$meta = PNCP_File_Owner::capture( $path );
+		$mode = null !== $meta ? $meta['mode'] : 0;
 		if ( ! $mode ) {
 			$mode = FS_CHMOD_FILE;
 		}
@@ -910,10 +934,14 @@ final class PNCP_Precheck {
 			$filesystem->delete( $tmp );
 			return false;
 		}
+		// 3.12.10: the copy gets the owner and mode of wp-config.php before the rename, so the live file never has
+		// the wrong ones, not even for a moment. A chown that fails (not root) changes nothing: written as before.
+		PNCP_File_Owner::restore( $tmp, $meta );
 		if ( ! @rename( $tmp, $path ) ) { // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged, WordPress.WP.AlternativeFunctions.rename_rename -- Atomic replace in the same folder; WP_Filesystem has no atomic move.
 			$filesystem->delete( $tmp );
 			return false;
 		}
+		PNCP_File_Owner::restore( $path, $meta );
 		self::opcache_forget( $path );
 		return (string) file_get_contents( $path ) === $wanted; // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Local file.
 	}
@@ -948,8 +976,12 @@ final class PNCP_Precheck {
 		self::push_web();
 		// Written directly, as the check itself writes its files: starting WP_Filesystem (with its test file in
 		// uploads) costs more than the write.
-		$dir = self::dir() . '/bans';
+		$dir     = self::dir() . '/bans';
+		$new_dir = ! is_dir( $dir );
 		if ( is_dir( self::dir() ) && ( is_dir( $dir ) || wp_mkdir_p( $dir ) ) ) {
+			if ( $new_dir ) {
+				PNCP_File_Owner::restore( $dir, null ); // 3.12.10: created as root, it goes to the WordPress folder's owner.
+			}
 			$file = $dir . '/' . md5( (string) $ip );
 			if ( ( is_file( $file ) ? (int) @file_get_contents( $file ) : 0 ) < (int) $until ) { // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged, WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- A tiny data file in the plugin's own folder.
 				PNCP_Precheck_Runtime::put_atomic( $file, (string) (int) $until );
@@ -1281,8 +1313,14 @@ final class PNCP_Precheck {
 		if ( 'cli' !== PHP_SAPI || ! is_dir( self::dir() ) ) {
 			return;
 		}
+		$file = self::dir() . '/ops.log';
+		$new  = ! file_exists( $file );
 		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_file_put_contents, WordPress.PHP.NoSilencedErrors.Discouraged -- A small queue in the plugin's own folder, read by sync_store().
-		@file_put_contents( self::dir() . '/ops.log', $op . "\t" . $hash . "\t" . (int) $until . "\n", FILE_APPEND );
+		if ( false !== @file_put_contents( $file, $op . "\t" . $hash . "\t" . (int) $until . "\n", FILE_APPEND ) && $new ) {
+			// 3.12.10: created by WP-CLI as root: the web server's PHP must still be able to empty it (sync_store()).
+			@chmod( $file, 0644 ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged, WordPress.WP.AlternativeFunctions.file_system_operations_chmod -- Not root's umask (077 makes it 0600).
+			PNCP_File_Owner::restore( $file, null );
+		}
 	}
 
 	/**
@@ -1492,6 +1530,7 @@ final class PNCP_Precheck {
 		}
 		// Renamed first: the check keeps writing to a new file meanwhile.
 		$work = self::dir() . '/events-' . wp_generate_password( 8, false ) . '.tmp';
+		// owner: a rename of the same file inside its folder keeps its owner and mode, and the work file is deleted below.
 		if ( ! @rename( $file, $work ) ) { // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged, WordPress.WP.AlternativeFunctions.rename_rename -- Atomic move inside the plugin's folder in uploads.
 			return $done;
 		}

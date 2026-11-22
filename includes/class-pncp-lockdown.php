@@ -2789,9 +2789,11 @@ final class PNCP_Lockdown {
 				if ( ! wp_is_writable( dirname( $dir ) ) || ! wp_mkdir_p( $dir ) ) {
 					return false;
 				}
+				PNCP_File_Owner::restore( $dir, null ); // 3.12.10: see new_file_mode().
 			}
-			if ( ! file_exists( $dir . '/index.php' ) ) {
-				@file_put_contents( $dir . '/index.php', self::FAILS_INDEX ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged -- Only keeps folder listings away.
+			if ( ! file_exists( $dir . '/index.php' ) && false !== @file_put_contents( $dir . '/index.php', self::FAILS_INDEX ) ) { // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged -- Only keeps folder listings away.
+				self::new_file_mode( $dir . '/index.php' );
+				PNCP_File_Owner::restore( $dir . '/index.php', null );
 			}
 		} elseif ( ! is_dir( $dir ) ) {
 			return false;
@@ -2800,9 +2802,14 @@ final class PNCP_Lockdown {
 		if ( ! is_string( $json ) ) {
 			return false;
 		}
-		$handle = @fopen( $path, 'c+' ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged -- Not writable: no copy.
+		$existed = file_exists( $path );
+		$handle  = @fopen( $path, 'c+' ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged -- Not writable: no copy.
 		if ( false === $handle ) {
 			return false;
+		}
+		if ( ! $existed ) {
+			self::new_file_mode( $path );
+			PNCP_File_Owner::restore( $path, null );
 		}
 		$ok = false;
 		if ( flock( $handle, LOCK_EX ) ) {
@@ -2819,6 +2826,20 @@ final class PNCP_Lockdown {
 		fclose( $handle );
 		// phpcs:enable WordPress.WP.AlternativeFunctions
 		return $ok;
+	}
+
+	/**
+	 * 3.12.10: a file this class has just created in wp-content (the guard's counters and lock file). Created as root
+	 * (wp --allow-root), it belonged to root with root's umask, and the web server could neither open the lock file
+	 * nor update the counters (fopen 'c+' refused). As root it gets 0644 here, and PNCP_File_Owner::restore() right
+	 * after gives it to the owner of the WordPress folder. Files written in place (fopen 'c+') keep their owner.
+	 *
+	 * @param string $path File.
+	 */
+	private static function new_file_mode( $path ) {
+		if ( PNCP_File_Owner::is_root() ) {
+			@chmod( $path, 0644 ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged, WordPress.WP.AlternativeFunctions.file_system_operations_chmod -- A new data file of the guard.
+		}
 	}
 
 	/**
@@ -3777,9 +3798,13 @@ final class PNCP_Lockdown {
 		self::local_unlock();
 		$path = self::local_lock_file();
 		// phpcs:disable WordPress.WP.AlternativeFunctions -- A lock file: flock() needs a handle from fopen().
-		$handle = @fopen( $path, 'c+' ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged -- Not writable: try read only, then no file lock.
+		$existed = file_exists( $path );
+		$handle  = @fopen( $path, 'c+' ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged -- Not writable: try read only, then no file lock.
 		if ( false === $handle ) {
 			$handle = @fopen( $path, 'r' ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged -- Missing and not creatable: no file lock.
+		} elseif ( ! $existed ) {
+			self::new_file_mode( $path );
+			PNCP_File_Owner::restore( $path, null );
 		}
 		if ( false === $handle ) {
 			return true;

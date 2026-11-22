@@ -1734,6 +1734,10 @@ final class PNCP_Hardening {
 				'note'  => '',
 			);
 		}
+		// 3.12.10: written as root with umask 027 it was 0640 root:root, which the web server could not read, so the
+		// test said nothing about PHP in uploads. Readable as any upload, and the WordPress folder's owner when root.
+		@chmod( $file, 0644 ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged, WordPress.WP.AlternativeFunctions.file_system_operations_chmod -- A test file, deleted right after.
+		PNCP_File_Owner::restore( $file, null );
 		$r = self::fetch( trailingslashit( $dir['baseurl'] ) . $name );
 		wp_delete_file( $file );
 		if ( is_wp_error( $r ) ) {
@@ -2014,7 +2018,7 @@ final class PNCP_Hardening {
 		$block   = '# BEGIN ' . self::MARKER . "\n" . $rules . '# END ' . self::MARKER . "\n";
 		$pos     = strpos( $rest, '# BEGIN WordPress' );
 		$after   = false === $pos ? rtrim( $rest ) . ( '' === trim( $rest ) ? '' : "\n\n" ) . $block : substr( $rest, 0, $pos ) . $block . "\n" . substr( $rest, $pos );
-		if ( false === file_put_contents( $file, $after, LOCK_EX ) ) { // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_file_put_contents -- The site's own .htaccess, put back below if the site breaks.
+		if ( ! self::put_htaccess( $file, $after ) ) { // The site's own .htaccess, put back below if the site breaks.
 			return new WP_Error( 'pncp_not_writable', __( 'The .htaccess file could not be written.', 'scrapelock' ) );
 		}
 		clearstatcache();
@@ -2031,6 +2035,33 @@ final class PNCP_Hardening {
 	}
 
 	/**
+	 * 3.12.10: writes the site's .htaccess whole (temporary file, then rename) with the owner, group and mode it
+	 * had. Written as root (wp --allow-root), a new .htaccess was root:root with root's umask (0640 with umask 027),
+	 * which Apache could not read: every page answered 403. A new one is 0644 and, as root, belongs to the owner
+	 * of the WordPress folder. Where the folder does not let a file be created next to it (only .htaccess itself
+	 * is writable) or .htaccess is a link, it is written in place as before, and the owner and mode are put back.
+	 *
+	 * @param string $file File.
+	 * @param string $text Contents.
+	 * @return bool
+	 */
+	private static function put_htaccess( $file, $text ) {
+		// A symlinked .htaccess is written where the link points (a rename would replace the link itself).
+		if ( ! is_link( $file ) && PNCP_File_Owner::put( $file, $text, 0644 ) ) {
+			return true;
+		}
+		$meta = PNCP_File_Owner::capture( $file );
+		if ( false === file_put_contents( $file, $text, LOCK_EX ) ) { // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_file_put_contents -- The site's own .htaccess, in place where rename() cannot be used.
+			return false;
+		}
+		if ( null === $meta ) {
+			@chmod( $file, 0644 ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged, WordPress.WP.AlternativeFunctions.file_system_operations_chmod -- A new .htaccess, readable by the web server.
+		}
+		PNCP_File_Owner::restore( $file, $meta );
+		return true;
+	}
+
+	/**
 	 * Puts the .htaccess back as it was.
 	 *
 	 * @param string $file    File.
@@ -2039,7 +2070,7 @@ final class PNCP_Hardening {
 	 */
 	private static function restore_htaccess( $file, $existed, $before ) {
 		if ( $existed ) {
-			file_put_contents( $file, $before, LOCK_EX ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_file_put_contents -- Puts back the site's own file.
+			self::put_htaccess( $file, $before ); // Puts back the site's own file.
 		} else {
 			wp_delete_file( $file );
 		}
@@ -2065,7 +2096,7 @@ final class PNCP_Hardening {
 				return new WP_Error( 'pncp_not_writable', __( 'The .htaccess file cannot be written: remove the ScrapeLock Hardening block yourself.', 'scrapelock' ) );
 			}
 			$text = (string) file_get_contents( $file ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Local file.
-			file_put_contents( $file, self::without_block( $text ), LOCK_EX ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_file_put_contents -- The site's own file, only our block goes.
+			self::put_htaccess( $file, self::without_block( $text ) ); // The site's own file, only our block goes.
 			clearstatcache();
 		}
 		$state             = self::state( true );
