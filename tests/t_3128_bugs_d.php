@@ -152,6 +152,12 @@ if ( '' === $wp_cli ) {
 	file_put_contents( $req, "<?php\nWP_CLI::add_wp_hook( 'gettext', static function ( \$t, \$x, \$d ) { return 'scrapelock' === \$d ? '[tr]' . \$t : \$t; }, 10, 3 );\n" );
 	$out = array();
 	exec( $wp_cli . ' --require=' . escapeshellarg( $req ) . ' scrapelock selfcheck --log < /dev/null 2>&1', $out, $rc );
+	// 3.12.10: as root, WP-CLI's root warning comes first (translated as well); the summary line follows it.
+	$warn = preg_grep( '/WP-CLI runs as root/', $out );
+	if ( $warn ) {
+		t( 'L the root warning of WP-CLI goes through the translation', 1 === preg_match( '/^Warning: \[tr\]/', (string) reset( $warn ) ), (string) reset( $warn ) );
+		$out = array_values( array_diff_key( $out, $warn ) );
+	}
 	t( 'L the marking works (the summary line is translated)', isset( $out[0] ) && 0 === strpos( $out[0], '[tr]' ), implode( "\n", array_slice( $out, 0, 4 ) ) );
 	$heading = '';
 	foreach ( $out as $line ) {
