@@ -1,6 +1,6 @@
 <?php
 /**
- * 3.13.0: keeps the owner, group and permissions of the files the plugin writes.
+ * 3.12.10: keeps the owner, group and permissions of the files the plugin writes.
  *
  * A file written into a temporary file and renamed over the original belongs to the user who wrote it, with
  * that user's umask. When WP-CLI runs as root (--allow-root), a rewritten wp-config.php became root:root 0640

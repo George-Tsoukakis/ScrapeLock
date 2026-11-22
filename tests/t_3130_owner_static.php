@@ -1,6 +1,6 @@
 <?php
 /**
- * ScrapeLock 3.13.0 — every file the plugin writes keeps its owner (static check, no WordPress needed).
+ * ScrapeLock 3.12.10 — every file the plugin writes keeps its owner (static check, no WordPress needed).
  *
  *   php t_3130_owner_static.php
  *

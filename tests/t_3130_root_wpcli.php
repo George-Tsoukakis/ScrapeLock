@@ -1,6 +1,6 @@
 <?php
 /**
- * ScrapeLock 3.13.0 — WP-CLI as root (--allow-root) never takes the site down.
+ * ScrapeLock 3.12.10 — WP-CLI as root (--allow-root) never takes the site down.
  *
  * In 3.12.9 a settings change made as root rewrote wp-config.php (temp file + rename): it became root:root 0640,
  * PHP-FPM (the site's user) failed with "Failed opening required wp-config.php" and the site answered 500. The

@@ -333,7 +333,7 @@ ScrapeLock — δοκιμές σε πραγματικό WordPress (όχι stubs)
                     _reset.json/_snapshot.json, geo database, Stealth debug log, uploads/.htaccess, watermark backups,
                     Verify files: every file and folder created or replaced belongs to 4242:4243 with 0755 / 0644 (a
                     replaced file keeps its mode), no .tmp left
-  t_3130_root_wpcli.php 3.13.0: WP-CLI as root (--allow-root) never takes the site down: as root, a site of its own
+  t_3130_root_wpcli.php 3.12.10: WP-CLI as root (--allow-root) never takes the site down: as root, a site of its own
                     (WP_DIR's WordPress and SQLite drop-in, the plugin of this checkout) owned by www-data (else nobody),
                     wp-config.php 0640, its own PHP-FPM (pool of that user) and Nginx on a free port, opcache off; then
                     as root: settings set precheck / early_mode, precheck sync / cleanup, breaker reset, both off and on
@@ -343,7 +343,7 @@ ScrapeLock — δοκιμές σε πραγματικό WordPress (όχι stubs)
                     ScrapeLock's root warning once in stderr (not for plugin activate: not loaded yet); none with
                     --quiet, --format=json, another option or as the site's user. SKIP when not root, without nginx,
                     php-fpm, WP_CLI or wp-content/db.php in WP_DIR
-  t_3130_owner_static.php 3.13.0: in includes/*.php every rename(), file_put_contents() and mkdir() is followed in
+  t_3130_owner_static.php 3.12.10: in includes/*.php every rename(), file_put_contents() and mkdir() is followed in
                     its function by PNCP_File_Owner, the pre-cache check's own copy (a self:: method with "owner" in its
                     name, class-pncp-precheck-runtime.php) or a "// owner: <reason>" note; lists the ones that are not
   t_cli.php         wp scrapelock … μέσα από το πραγματικό wp (χρειάζεται WP_CLI, αλλιώς SKIP)

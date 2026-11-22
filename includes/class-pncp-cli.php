@@ -21,7 +21,7 @@ final class PNCP_Cli {
 	 */
 	public static function init() {
 		WP_CLI::add_command( 'scrapelock', __CLASS__ );
-		// 3.13.0: a warning before each "wp scrapelock …" command when WP-CLI runs as root, and before the other
+		// 3.12.10: a warning before each "wp scrapelock …" command when WP-CLI runs as root, and before the other
 		// commands that make ScrapeLock rewrite its files (its settings, activating or deactivating it).
 		WP_CLI::add_hook( 'before_invoke:scrapelock', array( __CLASS__, 'root_warning' ) );
 		foreach ( array( 'option add', 'option update', 'option patch', 'option delete', 'plugin activate', 'plugin deactivate', 'plugin toggle', 'plugin uninstall' ) as $command ) {
@@ -30,7 +30,7 @@ final class PNCP_Cli {
 	}
 
 	/**
-	 * 3.13.0: once per command, when WP-CLI runs as root (--allow-root): ScrapeLock keeps the owner and
+	 * 3.12.10: once per command, when WP-CLI runs as root (--allow-root): ScrapeLock keeps the owner and
 	 * permissions of the files it rewrites (wp-config.php, the early check's mu-plugin, its data folder) and gives
 	 * new ones to the owner of the WordPress folder, but running WP-CLI as that user is safer. Not with --quiet,
 	 * not with a machine-readable --format (json, csv, yaml, count, ids), not when the WordPress folder belongs to
@@ -73,7 +73,7 @@ final class PNCP_Cli {
 	}
 
 	/**
-	 * 3.13.0: the root warning for the core commands that make ScrapeLock rewrite files: an option of
+	 * 3.12.10: the root warning for the core commands that make ScrapeLock rewrite files: an option of
 	 * ScrapeLock's (pncp_…) added, changed or deleted, ScrapeLock activated, deactivated or uninstalled.
 	 */
 	public static function root_warning_core() {

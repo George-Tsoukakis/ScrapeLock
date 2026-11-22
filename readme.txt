@@ -4,7 +4,7 @@ Tags: ai crawlers, anti-scraping, bot protection, rate limit, content protection
 Requires at least: 6.2
 Tested up to: 7.2
 Requires PHP: 7.4
-Stable tag: 3.12.9
+Stable tag: 3.12.10
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -411,6 +411,11 @@ No, on purpose: only an app code, a recovery code or the SCRAPELOCK_UNLOCK line 
 
 == Changelog ==
 
+= 3.12.10 =
+* Fix: when WP-CLI ran as root (`--allow-root`) and a change turned on the pre-cache check or the early check, ScrapeLock rewrote wp-config.php (new file, then rename) as root:root with root's mode; PHP-FPM could no longer read it ("Failed opening required wp-config.php") and the site went down. Every file ScrapeLock rewrites now keeps its owner, group and permissions (wp-config.php, the mu-plugin, .htaccess, the Seal and Lockdown files, the server rules), and a file or folder it creates as root (mu-plugins/scrapelock-early.php, uploads/scrapelock/*, logs, caches) is given to the owner of the WordPress folder (0644 files, 0755 folders). The pre-cache check's cleanup, run as root, also hands back the data files 3.12.9 left to root.
+* WP-CLI: a warning when it runs as root, before every `wp scrapelock` command and `wp option update pncp_*` / `wp plugin deactivate scrapelock` (not with --quiet or a machine-readable --format), naming the user to run it as (`sudo -u <user> wp …`).
+* A visitor's request is unchanged: with APCu or Redis still no file access and no query of ScrapeLock.
+
 = 3.12.9 =
 * Fix: on a server whose disk stalls (iowait), requests waited in ScrapeLock's own file and database work (the pre-cache check's counter files, the cleanup of old minutes, the site-wide page count written with update_option) until PHP-FPM ran out of workers and the web server answered 504. With APCu or a Redis object cache, a visitor's request now makes no file access and no database query of ScrapeLock at all: the pre-cache check keeps its counters, bans, strikes, probe memory, nonces, events and its configuration in APCu or Redis; in WordPress the log rows, new bans, attack records, Traffic rows, AI referrals and the automatic Emergency Mode wait in the object cache or APCu and a scheduled event writes them to the database once a minute, and ScrapeLock's options and bans are read from there. Checked with strace on Nginx + PHP-FPM: 0 system calls on uploads/scrapelock and 0 queries of ScrapeLock per guest request. In a load test with the disk frozen for 20 seconds (30 requests a second, 20 PHP workers) no response took more than 1 second and none was a 504 (3.12.8: 69).
 * Fix: without APCu or Redis, the pre-cache check never waits for a lock: counters are appended to their files, bans and strikes are replaced whole (written to a new file, then renamed), events are appended without a lock, and the old minutes are removed by the hourly event (without WP-Cron by one request a minute, at most 25 ms and never waiting).
@@ -634,6 +639,9 @@ No, on purpose: only an app code, a recovery code or the SCRAPELOCK_UNLOCK line 
 The changes of 3.5.0 and earlier versions are in changelog.txt in the plugin folder.
 
 == Upgrade Notice ==
+
+= 3.12.10 =
+Fixes the site going down after a WP-CLI command run as root changed ScrapeLock's settings (wp-config.php became root's). Files keep their owner and permissions; run WP-CLI as the site's user when you can. Settings and server rules unchanged.
 
 = 3.12.9 =
 Recommended: APCu for PHP-FPM, or a Redis object cache (Redis Object Cache with the PHP Redis extension): then ScrapeLock never touches the disk or the database in a visitor's request. The pre-cache check's line in wp-config.php gets the Redis connection: ScrapeLock rewrites it itself after the update (scheduled event or next admin page; `wp scrapelock precheck` shows the store in use). If wp-config.php is not writable, copy the new line from Settings → Pre-cache check. New: `wp scrapelock precheck status|sync|cleanup`, `wp scrapelock breaker`. Settings kept; server and Stealth rules unchanged.

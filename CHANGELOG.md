@@ -1,5 +1,15 @@
 # Αλλαγές
 
+## 3.12.10 — 2026-11-22
+
+Τα αρχεία που γράφει το ScrapeLock κρατούν ιδιοκτήτη και δικαιώματα, ακόμα κι όταν το WP-CLI τρέχει ως root, και προειδοποίηση στο WP-CLI ως root.
+
+- **Αιτία**: με `wp … --allow-root` μια αλλαγή που άναβε τον έλεγχο πριν από την cache ή τον πρώιμο έλεγχο ξανάγραφε το wp-config.php (προσωρινό αρχείο + rename) ως `root:root 0640`· η PHP-FPM δεν μπορούσε να το διαβάσει («Failed opening required wp-config.php») και το site έπεφτε. Το ίδιο για το `mu-plugins/scrapelock-early.php` και το `uploads/scrapelock/*`.
+- **`PNCP_File_Owner`**: πριν από κάθε εγγραφή κρατά ιδιοκτήτη, ομάδα και δικαιώματα και τα επαναφέρει στο προσωρινό αρχείο πριν από το rename (το αρχείο δεν εμφανίζεται ποτέ με λάθος ιδιοκτήτη). Νέα αρχεία και φάκελοι ως root παίρνουν τον ιδιοκτήτη του φακέλου του WordPress (αρχεία 0644, φάκελοι 0755, ακόμα και με umask 077). Χρησιμοποιείται για wp-config.php, mu-plugin, Seal, Lockdown, .htaccess, κανόνες server (`rules install`, `cache status --save-constant`), δεδομένα της precheck, breaker, geo, Stealth debug log, watermark και αρχεία του site. Ένα `.conf` του server που δημιουργείται μένει του root.
+- **Έλεγχος πριν από την cache**: δικό του αντίγραφο της λογικής (δεν φορτώνει άλλο αρχείο του plugin)· όταν δεν τρέχει ως root κάνει μόνο έναν έλεγχο ανά διεργασία, οπότε με APCu ή Redis ένα αίτημα επισκέπτη μένει χωρίς καμία πρόσβαση σε αρχείο (strace). Το καθάρισμα ως root επιστρέφει στον ιδιοκτήτη του site τα αρχεία που άφησε του root η 3.12.9.
+- **WP-CLI**: προειδοποίηση όταν τρέχει ως root (`wp scrapelock …`, `wp option update pncp_*`, `wp plugin deactivate scrapelock`), με τον χρήστη για `sudo -u <χρήστης> wp …`· όχι με `--quiet` ή `--format=json`.
+- **Δοκιμές**: `t_3130_root_wpcli` (πραγματικός Nginx + PHP-FPM ως απλός χρήστης, WP-CLI ως root: το site απαντά 200 και τα αρχεία κρατούν ιδιοκτήτη μετά από κάθε εντολή· στην 3.12.9 αποτυγχάνει με «Failed opening required»), `t_3130_owner_files`, `t_3130_owner_data`, `t_3130_owner_static` (κάθε εγγραφή στον κώδικα έχει χειρισμό ιδιοκτήτη ή τεκμηριωμένη εξαίρεση).
+
 ## 3.12.9 — 2026-11-22
 
 Με APCu ή Redis object cache, ένα αίτημα επισκέπτη δεν αγγίζει πια ούτε τον δίσκο ούτε τη βάση για λογαριασμό του ScrapeLock (η αιτία των 504 όταν ο δίσκος «παγώνει»), διακόπτης κυκλώματος (circuit breaker) για ό,τι αργεί, και `wp scrapelock precheck` / `breaker`.
