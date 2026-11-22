@@ -76,6 +76,19 @@ final class PNCP_Precheck_Runtime {
 	const CFG_CHECK = 10;
 
 	/**
+	 * 3.12.9: how long one comparison (load()) holds off the others: while its stat() waits for a stalled disk, no
+	 * other request starts one (at most one PHP worker waits, once in this many seconds).
+	 */
+	const CFG_HOLD = 300;
+
+	/**
+	 * 3.12.9: a copy of the configuration WordPress put in the store this recently is not compared with config.json
+	 * at all (load()): every change of the file is pushed (PNCP_Precheck::push_config(), push_web()), and WordPress
+	 * pushes it again every hour (PNCP_Precheck::sync_store()), so a visitor's request does not even stat() it.
+	 */
+	const CFG_FRESH = 7200;
+
+	/**
 	 * 3.12.9: a counter file stops growing at this many bytes (increment()).
 	 */
 	const MAX_COUNT = 100000;
@@ -205,10 +218,13 @@ final class PNCP_Precheck_Runtime {
 	 * 3.12.9: from APCu, or else from Redis: WordPress puts every new configuration there itself (PNCP_Precheck::
 	 * push_config(), also from WP-CLI through PNCP_Precheck::push_web()), so a visitor's request reads nothing from
 	 * the disk. Before 3.12.9 APCu held it per change of the file, which cost a stat() of config.json in every
-	 * request. Now one request in CFG_CHECK seconds (the one that adds the "_chk" value) compares the file's stat()
-	 * with the copy, for a change WordPress could not push (the web server unreachable from WP-CLI): a metadata
-	 * look-up of a file the kernel has cached, never a read unless it changed. Only when the store holds no copy
-	 * (empty after a restart) is the file read, and put there for the next requests.
+	 * request. Now a copy WordPress pushed in the last CFG_FRESH seconds is used as it is (no stat() at all). An
+	 * older one (WordPress's hourly push missing, e.g. WP-Cron run from WP-CLI with APCu) is compared with the
+	 * file's stat() by one request in CFG_CHECK seconds (the one that adds the "_chk" value), for a change
+	 * WordPress could not push (the web server unreachable from WP-CLI): a metadata look-up of a file the kernel
+	 * has cached, never a read unless it changed; no other request starts one before it returns (CFG_HOLD), so a
+	 * stalled disk holds at most that one PHP worker. Only when the store holds no copy (empty after a restart) is
+	 * the file read, and put there for the next requests.
 	 *
 	 * @param string               $dir   The data folder.
 	 * @param array<string, mixed> $redis 3.12.9: the Redis connection (see boot()).
@@ -227,22 +243,34 @@ final class PNCP_Precheck_Runtime {
 		if ( function_exists( 'apcu_enabled' ) && apcu_enabled() ) {
 			$cached = apcu_fetch( $name );
 			if ( is_array( $cached ) && isset( $cached[1], $cached[2] ) && is_array( $cached[1] ) && 'mem' === $cached[0] ) {
-				if ( ! apcu_add( $name . '_chk', 1, self::CFG_CHECK ) || in_array( self::file_version( $file ), array( '', $cached[2] ), true ) ) {
+				if ( ( isset( $cached[3] ) && (int) $cached[3] > time() - self::CFG_FRESH ) || ! apcu_add( $name . '_chk', 1, self::CFG_HOLD ) ) {
+					return array_merge( $cached[1], $base );
+				}
+				$version = self::file_version( $file );
+				apcu_store( $name . '_chk', 1, self::CFG_CHECK ); // The stat() returned: the next one in CFG_CHECK.
+				if ( in_array( $version, array( '', $cached[2] ), true ) ) {
 					return array_merge( $cached[1], $base );
 				}
 			}
 		} elseif ( $redis ) {
-			$keys = array( self::mem_key( $base, 'redis', 'cfg' ), self::mem_key( $base, 'redis', 'cfgv' ), self::mem_key( $base, 'redis', 'cfgchk' ) );
+			$keys = array( self::mem_key( $base, 'redis', 'cfg' ), self::mem_key( $base, 'redis', 'cfgv' ), self::mem_key( $base, 'redis', 'cfgchk' ), self::mem_key( $base, 'redis', 'cfgt' ) );
 			$got  = self::redis_call(
 				$base,
 				static function ( $redis ) use ( $keys ) {
-					$out = $redis->multi( Redis::PIPELINE )->get( $keys[0] )->get( $keys[1] )->set( $keys[2], '1', self::set_options( true, self::CFG_CHECK ) )->exec();
+					$out = $redis->multi( Redis::PIPELINE )->get( $keys[0] )->get( $keys[1] )->get( $keys[3] )->exec();
 					return is_array( $out ) && 3 === count( $out ) ? $out : false;
 				}
 			);
 			$c = is_array( $got ) && is_string( $got[0] ) ? json_decode( $got[0], true ) : null;
-			if ( self::cfg_ok( $c ) && ( true !== $got[2] || in_array( self::file_version( $file ), array( '', (string) $got[1] ), true ) ) ) {
+			if ( self::cfg_ok( $c ) && ( (int) $got[2] > time() - self::CFG_FRESH || true !== self::mem_add( $base, 'cfgchk', '1', self::CFG_HOLD ) ) ) {
 				return array_merge( (array) $c, $base );
+			}
+			if ( self::cfg_ok( $c ) ) {
+				$version = self::file_version( $file );
+				self::mem_set( $base, 'cfgchk', '1', self::CFG_CHECK ); // The stat() returned: the next one in CFG_CHECK.
+				if ( in_array( $version, array( '', (string) $got[1] ), true ) ) {
+					return array_merge( (array) $c, $base );
+				}
 			}
 		}
 		$json = (string) @file_get_contents( $file );
@@ -308,13 +336,14 @@ final class PNCP_Precheck_Runtime {
 				return '';
 			}
 			$sets = json_decode( $crawlers, true );
-			apcu_store( self::cfg_key( $dir ), array( 'mem', $c, self::file_version( $dir . '/config.json' ) ) );
+			apcu_store( self::cfg_key( $dir ), array( 'mem', $c, self::file_version( $dir . '/config.json' ), time() ) );
 			apcu_add( self::cfg_key( $dir ) . '_chk', 1, self::CFG_CHECK );
 			apcu_store( self::cfg_key( $dir ) . '_crawlers', is_array( $sets ) ? $sets : array() );
 			return 'apcu';
 		}
 		if ( ! empty( $base['redis'] ) && self::mem_set( $base, 'cfg', $json, 0 ) ) {
 			self::mem_set( $base, 'cfgv', self::file_version( $dir . '/config.json' ), 0 );
+			self::mem_set( $base, 'cfgt', (string) time(), 0 );
 			self::mem_set( $base, 'crawlers', $crawlers, 0 );
 			return 'redis';
 		}
