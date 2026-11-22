@@ -378,8 +378,8 @@ final class PNCP_Precheck_Runtime {
 	/**
 	 * 3.12.9: loads the circuit breaker (includes/class-pncp-breaker.php, the one other file this check reads: when
 	 * it is missing or broken, e.g. halfway through a plugin update, the check runs without it) and sets
-	 * $count_off. Returns the breaker's name for the counters' store ("precheck_files", "precheck_apcu"), or ''
-	 * when there is nothing to time: no breaker, or already suspended.
+	 * $count_off. Returns the breaker's name for the counters' store (breaker_name(): "precheck_apcu",
+	 * "precheck_redis" or "precheck_files"), or '' when there is nothing to time: no breaker, or already suspended.
 	 *
 	 * @param array<string, mixed> $c Configuration.
 	 * @return string
@@ -398,7 +398,10 @@ final class PNCP_Precheck_Runtime {
 				}
 			}
 			PNCP_Breaker::setup( (string) $c['dir'], isset( $c['breaker'] ) && is_array( $c['breaker'] ) ? $c['breaker'] : array() );
-			$name            = 'precheck_' . ( self::apcu_usable( $c ) ? 'apcu' : 'files' );
+			// Before the state is read: with the Redis store the breaker keeps it in the counters' connection, so
+			// it never looks for a file of the data folder (breaker_hooks()).
+			self::breaker_hooks( $c );
+			$name            = self::breaker_name( $c );
 			self::$count_off = PNCP_Breaker::open( $name );
 			return self::$count_off ? '' : $name;
 		} catch ( Throwable $e ) {

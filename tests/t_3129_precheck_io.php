@@ -574,6 +574,79 @@ if ( null === $redis ) {
 	t( 'g) events queued in Redis are taken out once (for the hourly import)', 1 === count( $lines ) && false !== strpos( $lines[0], "\t198.51.100.60\t" ) && array() === PNCP_Precheck_Runtime::mem_drain( $c_q ) );
 }
 
+/* ---------- k) the circuit breaker (PNCP_Breaker) in the store of the counters ---------- */
+$brk_ns   = substr( md5( (string) realpath( dirname( $runtime ) ) ), 0, 12 );
+$brk_slow = array(
+	'ms'      => 0.001,
+	'minutes' => 10,
+	'redis'   => '',
+);
+if ( is_array( $redis ) && file_exists( $redis['sock'] ) && is_file( dirname( $runtime ) . '/class-pncp-breaker.php' ) ) {
+	same_minute( 30 );
+	$cli   = redis_client( $redis['sock'] );
+	$dir_k = data_dir( 'redis-k', array( 'apcu' => false, 'breaker' => $brk_slow ) );
+	$log_k = $has_strace ? $tmp . '/strace-breaker-redis.log' : '';
+	$srv_k = start_server( $dir_k, $files_ini, $conf, $log_k );
+	visit( $srv_k, '198.51.100.70' ); // Warm-up (the configuration into Redis); a check slower than 0.001 ms trips.
+	usleep( 200000 );
+	$offset = $log_k ? (int) @filesize( $log_k ) : 0;
+	list( $codes ) = visits( $srv_k, '198.51.100.71', 7 );
+	$state = json_decode( (string) $cli->get( 'pncp:breaker:' . $brk_ns . ':state_precheck_redis' ), true );
+	t( 'k) Redis: the slow check tripped "precheck_redis", its state in the counters\' Redis; 7 pages pass uncounted', array_fill( 0, 7, 200 ) === $codes && is_array( $state ) && (int) $state['until'] > time() + 500 && 'redis' === $state['store'], implode( ',', $codes ) . ' ' . wp_json_encode( $state ) );
+	t( 'k) Redis: no breaker/ folder in the data folder', ! file_exists( $dir_k . '/breaker' ) );
+	if ( $log_k ) {
+		usleep( 300000 );
+		$touched = traced( $log_k, $offset, $dir_k );
+		t( 'k) Redis: with the breaker open, 7 requests touched no file of the data folder (strace)', array() === $touched, implode( ' | ', array_slice( $touched, 0, 4 ) ) );
+	}
+	$cli->del( 'pncp:breaker:' . $brk_ns . ':state_precheck_redis' );
+	stop_server( $srv_k );
+} else {
+	skip( 'k) Redis: no redis-server running' );
+}
+if ( $has_strace && is_file( dirname( $runtime ) . '/class-pncp-breaker.php' ) ) {
+	// Files: a state whose suspension has ended is never opened by a request (one stat()); one that is still on is
+	// known from the file's time alone, too.
+	same_minute( 30 );
+	$dir_l = data_dir( 'files-l', array( 'apcu' => false ) );
+	wp_mkdir_p( $dir_l . '/breaker' );
+	$state_l = $dir_l . '/breaker/precheck_files.json';
+	file_put_contents( $state_l, wp_json_encode( array( 'until' => time() - 60 ) ) );
+	touch( $state_l, time() - 60 );
+	$log_l  = $tmp . '/strace-breaker-files.log';
+	$srv_l  = start_server( $dir_l, $files_ini, array(), $log_l );
+	visit( $srv_l, '198.51.100.80' );
+	usleep( 200000 );
+	$offset = (int) @filesize( $log_l );
+	list( $codes ) = visits( $srv_l, '198.51.100.81', 7 );
+	usleep( 300000 );
+	$opened = array_values(
+		array_filter(
+			traced( $log_l, $offset, $dir_l . '/breaker' ),
+			static function ( $line ) {
+				return ! preg_match( '/^\d+\s+(newfstatat|stat|lstat|statx|fstatat64|stat64|lstat64)\(/', $line );
+			}
+		)
+	);
+	t( 'k) files: an ended suspension is not opened by the requests (stat only), and the limit counts again', array() === $opened && array( 200, 200, 200, 200, 200, 429, 403 ) === $codes, implode( ',', $codes ) . ' ' . implode( ' | ', array_slice( $opened, 0, 3 ) ) );
+	touch( $state_l, time() + 600 );
+	$offset = (int) @filesize( $log_l );
+	list( $codes ) = visits( $srv_l, '198.51.100.82', 7 );
+	usleep( 300000 );
+	$opened = array_values(
+		array_filter(
+			traced( $log_l, $offset, $dir_l . '/breaker' ),
+			static function ( $line ) {
+				return ! preg_match( '/^\d+\s+(newfstatat|stat|lstat|statx|fstatat64|stat64|lstat64)\(/', $line );
+			}
+		)
+	);
+	t( 'k) files: a suspension still on is known from the file\'s time (stat only): 7 pages pass uncounted', array() === $opened && array_fill( 0, 7, 200 ) === $codes, implode( ',', $codes ) . ' ' . implode( ' | ', array_slice( $opened, 0, 3 ) ) );
+	stop_server( $srv_l );
+} else {
+	skip( 'k) files: strace is not available for the syscall check' );
+}
+
 printf( "timings: lock held %.1f ms max\n", $timing_a );
 echo $fails ? "$fails FAIL\n" : "OK\n";
 exit( $fails ? 1 : 0 );

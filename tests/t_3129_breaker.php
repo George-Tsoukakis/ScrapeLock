@@ -263,6 +263,7 @@ t( 'χαλασμένη κατάσταση: κλειστό (η μέτρηση σ�
 PNCP_Breaker::trip( 'unit_bad', 300 );
 t( 'χαλασμένη κατάσταση: ένα νέο trip τη γράφει από την αρχή', PNCP_Breaker::open( 'unit_bad' ) && isset( PNCP_Breaker::states()['unit_bad'] ) );
 file_put_contents( $tmp . '/breaker/precheck_files.json', wp_json_encode( array( 'until' => $now + 600 ) ) );
+touch( $tmp . '/breaker/precheck_files.json', $now + 600 ); // 3.12.9: its time is the end (PNCP_Breaker::open()).
 // Another process holds an exclusive lock on the state files for 3 seconds.
 $locker = proc_open(
 	array( PHP_BINARY, '-r', '$a = fopen( $argv[1], "c+" ); $b = fopen( $argv[2], "c+" ); flock( $a, LOCK_EX ); flock( $b, LOCK_EX ); echo "locked\n"; sleep( 3 );', $tmp . '/breaker/precheck_files.json', $tmp . '/breaker/_history.json' ),
@@ -639,7 +640,9 @@ $sh      = site_health();
 $brk     = $sh['scrapelock_breaker'] ?? array();
 t( 'HTTP → Site Health του server: critical, τι, πόσο, μέχρι πότε, 24ωρο, συμβουλή', 'critical' === ( $brk['status'] ?? '' ) && false !== strpos( (string) $brk['description'], PNCP_Breaker_Status::label( $feature ) ) && false !== strpos( (string) $brk['description'], 'Suspended until' ) && false !== strpos( (string) $brk['description'], 'Tripped 1 time in the last 24 hours' ) && false !== strpos( (string) $brk['description'], 'iowait' ), wp_json_encode( $brk ) );
 $cnt = $sh['scrapelock_counters'] ?? array();
-t( 'HTTP → Site Health «ScrapeLock counters»: files (cli-server) → recommended, με τη γραμμή του breaker', 'recommended' === ( $cnt['status'] ?? '' ) && false !== strpos( (string) $cnt['description'], 'files (inferred)' ) && false !== strpos( (string) $cnt['description'], 'Circuit breaker: ' . $feature . ' suspended until' ), wp_json_encode( $cnt ) );
+// 3.12.9: the check records the store it used (PNCP_Precheck_Runtime::breaker_hooks()) where the breaker has a memory
+// store, so "files" may be recorded rather than inferred.
+t( 'HTTP → Site Health «ScrapeLock counters»: files (cli-server) → recommended, με τη γραμμή του breaker', 'recommended' === ( $cnt['status'] ?? '' ) && preg_match( '/Counters: files[. ]/', (string) $cnt['description'] ) && false !== strpos( (string) $cnt['description'], 'Circuit breaker: ' . $feature . ' suspended until' ), wp_json_encode( $cnt ) );
 if ( '' !== $wp_cli ) {
 	list( $rc, $out ) = cli( 'status --format=json' );
 	$rows  = json_decode( $out, true );
@@ -695,6 +698,7 @@ if ( ! $server_apcu ) {
 	t( 'HTTP: χαλασμένο αρχείο κατάστασης: 200 χωρίς PHP σφάλμα, μετρά κανονικά', 200 === $code && 'CACHED PAGE' === $body && in_array( 429, $c, true ), "$code $body " . implode( ',', $c ) );
 	// Locked by another process.
 	file_put_contents( $pdir . '/breaker/precheck_files.json', wp_json_encode( array( 'until' => time() + 600 ) ) );
+	touch( $pdir . '/breaker/precheck_files.json', time() + 600 ); // 3.12.9: its time is the end (PNCP_Breaker::open()).
 	$locker = proc_open(
 		array( PHP_BINARY, '-r', '$a = fopen( $argv[1], "c+" ); flock( $a, LOCK_EX ); echo "locked\n"; sleep( 4 );', $pdir . '/breaker/precheck_files.json' ),
 		array( 1 => array( 'pipe', 'w' ) ),

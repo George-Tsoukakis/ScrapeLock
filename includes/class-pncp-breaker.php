@@ -13,8 +13,9 @@
  * - only when neither exists, small files in the pre-cache check's data folder (breaker/), written to a temporary
  *   file renamed over the old one: never a lock. When Redis is configured but does not answer, nothing is stored
  *   (the breaker works within the request only): never the disk.
- * A check reads the state once per request (one APCu / Redis read, or one stat() of a missing file). Writes happen
- * only when a feature trips. WordPress shows what tripped in Site Health, on the ScrapeLock page and in
+ * A check reads the state once per request (one APCu / Redis read, or one stat() of the state file: a file's
+ * modification time is the end of its suspension, so a closed breaker never opens a file). Writes happen only when
+ * a feature trips. WordPress shows what tripped in Site Health, on the ScrapeLock page and in
  * `wp scrapelock breaker` (PNCP_Breaker_Status).
  *
  * @package ScrapeLock
@@ -170,6 +171,9 @@ final class PNCP_Breaker {
 	 * @param object $redis A Redis instance.
 	 */
 	public static function use_redis( $redis ) {
+		if ( 'redis' === self::$kind && self::$redis === $redis ) {
+			return; // The same connection again (the check tells it once per request): what was read stays.
+		}
 		self::$redis = $redis;
 		self::$kind  = 'redis';
 		self::$memo  = array();
@@ -195,20 +199,26 @@ final class PNCP_Breaker {
 			return self::$kind;
 		}
 		$config = self::redis_config();
-		if ( $config ) {
-			$redis = self::wp_redis();
-			if ( null === $redis ) {
-				$redis = self::connect( $config );
-			}
-			if ( null !== $redis ) {
-				self::$redis = $redis;
-				self::$kind  = 'redis';
-				return self::$kind;
-			}
+		// In WordPress the object cache's own connection comes first, also when its server has a password (which
+		// config.json never holds): the pre-cache check then keeps the state in the same server, through the
+		// connection of its counters (use_redis()).
+		$redis = self::wp_redis();
+		if ( null === $redis && $config ) {
+			$redis = self::connect( $config );
 		}
-		if ( function_exists( 'apcu_enabled' ) && apcu_enabled() ) {
+		$counters = null === $redis ? self::precheck_redis() : null;
+		if ( null === $redis && is_object( $counters ) ) {
+			$redis = $counters;
+		}
+		if ( null !== $redis ) {
+			self::$redis = $redis;
+			self::$kind  = 'redis';
+			return self::$kind;
+		}
+		// Not WP-CLI's APCu: it belongs to one process and is gone when the command ends.
+		if ( function_exists( 'apcu_enabled' ) && apcu_enabled() && 'cli' !== PHP_SAPI ) {
 			self::$kind = 'apcu';
-		} elseif ( $config ) {
+		} elseif ( $config || false === $counters ) {
 			self::$kind = 'none'; // Redis is there but does not answer: never the disk instead.
 		} else {
 			self::$kind = '' !== self::dir() ? 'files' : 'none';
@@ -350,8 +360,17 @@ final class PNCP_Breaker {
 	 */
 	public static function open( $name ) {
 		if ( ! isset( self::$memo[ $name ] ) ) {
-			$state               = self::valid( $name ) ? self::get( 'state_' . $name ) : array();
-			self::$memo[ $name ] = isset( $state['until'] ) ? (int) $state['until'] : 0;
+			if ( ! self::valid( $name ) ) {
+				self::$memo[ $name ] = 0;
+			} elseif ( 'files' === self::kind() ) {
+				// One stat(): the state file's modification time is the end of the suspension (set()); a file
+				// whose time has passed (or a missing one) means closed, and is never opened here.
+				$until               = @filemtime( self::file( 'state_' . $name ) );
+				self::$memo[ $name ] = false === $until ? 0 : (int) $until;
+			} else {
+				$state               = self::get( 'state_' . $name );
+				self::$memo[ $name ] = isset( $state['until'] ) ? (int) $state['until'] : 0;
+			}
 		}
 		return self::$memo[ $name ] > self::now();
 	}
@@ -665,7 +684,16 @@ final class PNCP_Breaker {
 						return;
 					}
 					$tmp = $file . '.' . getmypid() . '-' . mt_rand() . '.tmp';
-					if ( false !== @file_put_contents( $tmp, (string) json_encode( $value ) ) && ! @rename( $tmp, $file ) ) {
+					if ( false === @file_put_contents( $tmp, (string) json_encode( $value ) ) ) {
+						@unlink( $tmp );
+						return;
+					}
+					// A state's file carries the end of its suspension as its modification time: open() reads
+					// only that (one stat()), never the file.
+					if ( 0 === strpos( $key, 'state_' ) && isset( $value['until'] ) ) {
+						@touch( $tmp, (int) $value['until'] );
+					}
+					if ( ! @rename( $tmp, $file ) ) {
 						@unlink( $tmp );
 					}
 					break;
@@ -759,6 +787,29 @@ final class PNCP_Breaker {
 			return null;
 		}
 		return $redis instanceof Redis ? $redis : null;
+	}
+
+	/**
+	 * WordPress: the Redis connection of the pre-cache check's counters (PNCP_Precheck::runtime_config(), the
+	 * server of the object cache as written into its line in wp-config.php), for an object cache without
+	 * redis_instance(). Null when the check has no Redis server, false when it has one that does not answer.
+	 *
+	 * @return object|false|null
+	 */
+	private static function precheck_redis() {
+		if ( ! function_exists( 'get_option' ) || ! class_exists( 'PNCP_Precheck', false ) || ! class_exists( 'Redis', false ) ) {
+			return null;
+		}
+		try {
+			$c = PNCP_Precheck::runtime_config();
+			if ( empty( $c['redis'] ) || ! class_exists( 'PNCP_Precheck_Runtime', false ) ) {
+				return null;
+			}
+			$redis = PNCP_Precheck_Runtime::redis( $c );
+		} catch ( Throwable $e ) {
+			return false;
+		}
+		return $redis instanceof Redis ? $redis : false;
 	}
 
 	/**
