@@ -435,6 +435,9 @@ final class PNCP_Defer {
 		$minute = (int) floor( time() / MINUTE_IN_SECONDS );
 		if ( hash_equals( self::signature( $minute ), $sig ) || hash_equals( self::signature( $minute - 1 ), $sig ) ) {
 			self::flush();
+			// The circuit breaker's state lives in this PHP-FPM's APCu too: its copy for WP-CLI, and a reset that
+			// WP-CLI asked for, are done here as well when no admin page or WP-Cron event of PHP-FPM comes by.
+			PNCP_Breaker_Status::sync();
 		}
 	}
 

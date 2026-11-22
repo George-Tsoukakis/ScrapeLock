@@ -480,6 +480,10 @@ if ( ! extension_loaded( 'apcu' ) && ! function_exists( 'apcu_enabled' ) ) {
 		function apcu_delete( $k ) { unset( $GLOBALS["pncp_t_apcu"][ $k ] ); return true; }'
 	);
 	$GLOBALS['pncp_t_apcu_on'] = true;
+	$as_fpm = static function () {
+		return apcu_enabled(); // 3.12.9: as in PHP-FPM (WP-CLI's own APCu is never used).
+	};
+	add_filter( 'pncp_breaker_apcu', $as_fpm );
 	PNCP_Breaker::forget();
 	PNCP_Breaker::setup( $tmp );
 	$files_before = glob( $tmp . '/breaker/*' );
@@ -493,6 +497,19 @@ if ( ! extension_loaded( 'apcu' ) && ! function_exists( 'apcu_enabled' ) ) {
 	$hc = PNCP_Breaker_Status::health_counters();
 	remove_filter( 'pncp_precheck_apcu_sapis', $sapis );
 	t( 'Site Health «ScrapeLock counters»: APCu ενεργό (στο FPM) → good, «APCu (inferred)»', 'good' === $hc['status'] && false !== strpos( $hc['description'], 'APCu (inferred)' ) && false !== strpos( $hc['label'], 'APCu' ), wp_json_encode( $hc ) );
+	// 3.12.9: wp-cron.php asked by PNCP_Defer (DISABLE_WP_CRON, queues in APCu) also makes the copy for WP-CLI and
+	// carries out a reset that WP-CLI asked for (PNCP_Breaker_Status::sync()).
+	PNCP_Breaker::trip( 'precheck_files', 444 );
+	file_put_contents( $tmp . '/breaker/_reset.json', wp_json_encode( array( 'name' => '', 'history' => false ) ) );
+	$dsig = new ReflectionMethod( 'PNCP_Defer', 'signature' );
+	$dsig->setAccessible( true );
+	$_GET['pncp_flush'] = $dsig->invoke( null, (int) floor( time() / MINUTE_IN_SECONDS ) );
+	PNCP_Defer::flush_signed();
+	unset( $_GET['pncp_flush'] );
+	$snap = json_decode( (string) @file_get_contents( $tmp . '/breaker/_snapshot.json' ), true );
+	t( 'APCu: το wp-cron.php του PNCP_Defer κάνει και το reset του WP-CLI και το αντίγραφο (_snapshot.json)', ! PNCP_Breaker::open( 'precheck_files' ) && ! is_file( $tmp . '/breaker/_reset.json' ) && is_array( $snap ) && 'apcu' === $snap['kind'] && isset( $snap['rows']['precheck_files'] ), wp_json_encode( $snap ) );
+	PNCP_Breaker::reset( '', true );
+	@unlink( $tmp . '/breaker/_snapshot.json' );
 	PNCP_Breaker::record_backend( 'redis' );
 	$hc = PNCP_Breaker_Status::health_counters();
 	t( 'record_backend( redis ) από τους μετρητές: Site Health «Redis» χωρίς «inferred», με τη γραμμή του breaker', 'good' === $hc['status'] && false !== strpos( $hc['description'], 'Counters: Redis.' ) && false !== strpos( $hc['description'], 'Circuit breaker: Nothing tripped' ), wp_json_encode( $hc ) );
@@ -502,6 +519,7 @@ if ( ! extension_loaded( 'apcu' ) && ! function_exists( 'apcu_enabled' ) ) {
 	PNCP_Breaker::setup( $tmp );
 	PNCP_Breaker::record_backend( 'apcu' );
 	t( 'record_backend(): ποτέ στον δίσκο (store αρχείων)', array() === PNCP_Breaker::recorded_backend() && ! is_file( $tmp . '/breaker/_backend.json' ) );
+	remove_filter( 'pncp_breaker_apcu', $as_fpm );
 } else {
 	echo "skip APCu stub (το APCu υπάρχει)\n";
 }

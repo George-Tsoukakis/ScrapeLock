@@ -215,8 +215,13 @@ final class PNCP_Breaker {
 			self::$kind  = 'redis';
 			return self::$kind;
 		}
-		// Not WP-CLI's APCu: it belongs to one process and is gone when the command ends.
-		if ( function_exists( 'apcu_enabled' ) && apcu_enabled() && 'cli' !== PHP_SAPI ) {
+		// Not WP-CLI's APCu: it belongs to one process and is gone when the command ends (filter
+		// `pncp_breaker_apcu`).
+		$apcu = function_exists( 'apcu_enabled' ) && apcu_enabled() && 'cli' !== PHP_SAPI;
+		if ( function_exists( 'apply_filters' ) ) {
+			$apcu = (bool) apply_filters( 'pncp_breaker_apcu', $apcu );
+		}
+		if ( $apcu ) {
 			self::$kind = 'apcu';
 		} elseif ( $config || false === $counters ) {
 			self::$kind = 'none'; // Redis is there but does not answer: never the disk instead.
