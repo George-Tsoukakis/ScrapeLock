@@ -4,7 +4,7 @@ Tags: ai crawlers, anti-scraping, bot protection, rate limit, content protection
 Requires at least: 6.2
 Tested up to: 7.2
 Requires PHP: 7.4
-Stable tag: 3.12.8
+Stable tag: 3.12.9
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -88,7 +88,7 @@ Whatever a visitor sees has already reached their device, so nothing stops a det
 * Presets (Balanced, Strict, Maximum) with undo, settings export and import, and a block log with a 24-hour summary and automatic deletion.
 * **3.7:** visitors from AI assistants (ChatGPT, Perplexity, Claude, Gemini…) per assistant and page, counted on your server without personal data.
 * **Traffic (3.12):** every request, from the Bunny CDN logs, your web server's access log or WordPress itself: User-Agents by family, pages answering 404 or 5xx with the links that lead there, visitors, CSV and email alerts. Kept only in your database; off until you start it.
-* WP-CLI: `wp scrapelock status`, `block`, `unblock`, `blocked`, `emergency`, `log`, `check --ip=<ip>` (what ScrapeLock would answer, without side effects), `settings`, `lockdown status`, `reputation`, `crowdsec`, `ai-referrals`, in 3.8 `attacks`, `attack-report`, `login`, `harden`, `bunny` and `stealth`, in 3.12 `traffic`, in 3.12.6 `rules`, `cdn` and `verify-file`, in 3.12.7 `cache`, and in 3.12.8 `stealth check` and `stealth debug`.
+* WP-CLI: `wp scrapelock status`, `block`, `unblock`, `blocked`, `emergency`, `log`, `check --ip=<ip>` (what ScrapeLock would answer, without side effects), `settings`, `lockdown status`, `reputation`, `crowdsec`, `ai-referrals`, in 3.8 `attacks`, `attack-report`, `login`, `harden`, `bunny` and `stealth`, in 3.12 `traffic`, in 3.12.6 `rules`, `cdn` and `verify-file`, in 3.12.7 `cache`, in 3.12.8 `stealth check` and `stealth debug`, and in 3.12.9 `precheck` and `breaker`.
 * Abilities API (WordPress 6.9+) for administrators: read the summary, block or unblock an IP and start Emergency Mode from an AI agent or MCP client. None of them unlocks Lockdown.
 
 = On the page and images =
@@ -411,6 +411,15 @@ No, on purpose: only an app code, a recovery code or the SCRAPELOCK_UNLOCK line 
 
 == Changelog ==
 
+= 3.12.9 =
+* Fix: on a server whose disk stalls (iowait), requests waited in ScrapeLock's own file and database work (the pre-cache check's counter files, the cleanup of old minutes, the site-wide page count written with update_option) until PHP-FPM ran out of workers and the web server answered 504. With APCu or a Redis object cache, a visitor's request now makes no file access and no database query of ScrapeLock at all: the pre-cache check keeps its counters, bans, strikes, probe memory, nonces, events and its configuration in APCu or Redis; in WordPress the log rows, new bans, attack records, Traffic rows, AI referrals and the automatic Emergency Mode wait in the object cache or APCu and a scheduled event writes them to the database once a minute, and ScrapeLock's options and bans are read from there. Checked with strace on Nginx + PHP-FPM: 0 system calls on uploads/scrapelock and 0 queries of ScrapeLock per guest request. In a load test with the disk frozen for 20 seconds (30 requests a second, 20 PHP workers) no response took more than 1 second and none was a 504 (3.12.8: 69).
+* Fix: without APCu or Redis, the pre-cache check never waits for a lock: counters are appended to their files, bans and strikes are replaced whole (written to a new file, then renamed), events are appended without a lock, and the old minutes are removed by the hourly event (without WP-Cron by one request a minute, at most 25 ms and never waiting).
+* New: a circuit breaker. A counting or storage step of a visitor's request that takes longer than 200 ms (the pre-cache check, the site-wide page count; DNS verification of crawlers: 1 second) is suspended for 10 minutes: requests pass without it, bans already in place still apply. Site Health shows what was suspended and why ("ScrapeLock counting and storage speed") and where the counters are kept ("ScrapeLock counters"); the ScrapeLock page has "Resume counting now". Filters `pncp_breaker_ms` and `pncp_breaker_minutes`.
+* New: `wp scrapelock precheck [status|sync|cleanup]` (which store the pre-cache check uses, asked of the web server's PHP since WP-CLI cannot see its APCu; the copy of the bans between memory and the files; the hourly cleanup for a system cron job) and `wp scrapelock breaker [status|reset]`.
+* Change: where the object cache is Redis (Redis Object Cache's `WP_REDIS_*` constants or `WP_REDIS_CONFIG`) and PHP has the Redis extension, the pre-cache check's line in wp-config.php now also carries the Redis connection (the password masked): the check runs before the rest of wp-config.php. ScrapeLock writes the new line itself after the update; turn Redis off for the check with `define( 'SCRAPELOCK_PRECHECK_REDIS', false );`.
+* Fix: with "Early check" on, APCu and no persistent object cache, the early check no longer reads four ScrapeLock options from the database in every request.
+* Greek translation of the new texts.
+
 = 3.12.8 =
 * Fix: with Stealth on Nginx, the pages kept the inner wp-content of WP Rocket's minified files (/assets/<alias>/cache/min/1/wp-content/themes/…) when Stealth had been tested before 3.12.6 or before WP Rocket was active. The pages were rewritten with the words of the last "Test again", while the rules shown and installed (and their "up to date" status) were made from the current map. ScrapeLock now tests a new map by itself and uses it as soon as the server serves its rules (the check address answers their fingerprint and the self-test passes), then empties the page caches. A new base folder still needs "Test again".
 * Fix: an address already made new by an earlier pass with fewer words gets the codes of the words it still carries, so every pass gives the same result.
@@ -625,6 +634,9 @@ No, on purpose: only an app code, a recovery code or the SCRAPELOCK_UNLOCK line 
 The changes of 3.5.0 and earlier versions are in changelog.txt in the plugin folder.
 
 == Upgrade Notice ==
+
+= 3.12.9 =
+Recommended: APCu for PHP-FPM, or a Redis object cache (Redis Object Cache with the PHP Redis extension): then ScrapeLock never touches the disk or the database in a visitor's request. The pre-cache check's line in wp-config.php gets the Redis connection: ScrapeLock rewrites it itself after the update (scheduled event or next admin page; `wp scrapelock precheck` shows the store in use). If wp-config.php is not writable, copy the new line from Settings → Pre-cache check. New: `wp scrapelock precheck status|sync|cleanup`, `wp scrapelock breaker`. Settings kept; server and Stealth rules unchanged.
 
 = 3.12.8 =
 After updating, copy the Stealth rules again (Server rules → Stealth, nginx -t, reload) or run `wp scrapelock rules install --stealth=<file>`, then `wp scrapelock stealth test` once, then `wp scrapelock cdn purge --all --minify --yes`. Until then the notice stays and pages keep their addresses. Server rules unchanged; settings kept.
