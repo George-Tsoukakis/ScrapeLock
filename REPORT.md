@@ -1,3 +1,96 @@
+# ScrapeLock 3.12.9 — ούτε δίσκος ούτε βάση στο αίτημα του επισκέπτη (APCu / Redis), circuit breaker, `wp scrapelock precheck | breaker`
+
+Η αναφορά μένει στο αποθετήριο (`/REPORT.md export-ignore`): δεν μπαίνει στο zip του plugin. `<site>` είναι ο φάκελος του ιστότοπου στο aaPanel· τίποτα από τον live server (domain, IP, paths, κωδικοί) δεν είναι στον κώδικα, στις δοκιμές ή εδώ.
+
+## H1. Η αιτία των 504
+
+- **Τι έδειξε ο server.** Στο slow log της 21/11, 37 αιτήματα πάνω από 30 s με το ScrapeLock στη στοίβα· στην κορυφή της στοίβας `fclose()` / `ftruncate()` στο `increment()` του ελέγχου πριν από την cache, `scandir()` / `unlink()` στο `cleanup()`, και `update_option()` (μέσω `mysqli_query`) στο `PNCP_Surge`. Το `sar` την ίδια ώρα: iowait 71–99 %, ~1,4 tps, await 72 ms, και swap (ο mysqld με 565 MB στο swap, pswpout 510/s σε μία στάση). Δηλαδή **ο δίσκος «πάγωνε»** για δευτερόλεπτα· δεν ήταν φορτίο ούτε `flock()` χωρίς `LOCK_NB` (μια αναμονή σε κλειδαριά θα έδειχνε `flock()` στην κορυφή, όχι `fclose` / `ftruncate` / `scandir` / `unlink` / `mysqli_query`).
+- **Γιατί έπεφτε όλο το site.** Το ScrapeLock έκανε σε **κάθε** αίτημα επισκέπτη δική του δουλειά σε αρχεία (μετρητές, νέο αρχείο ανά IP και λεπτό, events.log, καθάρισμα των παλιών λεπτών από το πρώτο αίτημα κάθε λεπτού) και στη βάση (μέτρηση όλου του site, αρχείο, αποκλεισμοί, Traffic). Όταν ο δίσκος σταματούσε, κάθε worker που έφτανε εκεί έμενε σε αναμονή δίσκου (κατάσταση D) μέχρι να ξαναπάρει μπροστά· με ένα pool 20 workers για δύο sites, γέμιζε μέσα σε λίγα δευτερόλεπτα και ο Nginx απαντούσε 504.
+- **Το δεύτερο site** του ίδιου pool είχε στο slow log `fclose()` στη γραμμή 955 του runtime, που στις 3.12.6–3.12.8 δεν είναι `fclose`: τρέχει παλιά έκδοση 3.5.x. Οι workers που κολλούσαν εκεί έπαιρναν θέσεις και από το πρώτο site.
+
+## H2. Τι άλλαξε
+
+Η απαίτηση του κατόχου: με Redis ή APCu, **κανένα** αρχείο και **κανένα** query του ScrapeLock μέσα σε αίτημα επισκέπτη· δίσκος και βάση μόνο από cron / WP-CLI / wp-admin, ή ως εναλλακτική όταν δεν υπάρχει ούτε Redis ούτε APCu. Τρεις κλάδοι, ενωμένοι και ελεγμένοι μαζί:
+
+- **Έλεγχος πριν από την cache** (`PNCP_Precheck_Runtime`, k1): store με τη σειρά APCu (μόνο όπου το μοιράζονται όλες οι διεργασίες: PHP-FPM, Apache) → Redis του object cache → αρχεία. Στη μνήμη: μετρητές, αποκλεισμοί, strikes, μνήμη probes, nonces, events και η ίδια η ρύθμιση. Η σύνδεση Redis περνά με τη γραμμή του wp-config.php (ο κωδικός μασκαρισμένος), 50 ms για σύνδεση και απάντηση, αλλιώς τα αρχεία για εκείνο το αίτημα. Χωρίς μνήμη: καμία κλειδαριά που περιμένει (μετρητές με append, αποκλεισμοί / strikes με νέο αρχείο και rename, events χωρίς `LOCK_EX`), καθάρισμα μόνο από το ωριαίο event (χωρίς WP-Cron ένα αίτημα το λεπτό, ως 25 ms, `LOCK_NB`). `wp scrapelock precheck status|sync|cleanup`.
+- **WordPress** (`PNCP_Defer`, k2): ό,τι πρέπει να κρατηθεί από ένα αίτημα επισκέπτη (γραμμές αρχείου, νέοι αποκλεισμοί, καταγραφές επιθέσεων, γραμμές Traffic, AI referrals, η κατάσταση του αυτόματου Emergency Mode) μπαίνει σε ουρά στο object cache ή στο APCu· ένα event κάθε λεπτό το γράφει στη βάση, στο δικό του αίτημα. Οι ρυθμίσεις, οι αποκλεισμοί και τα transients του ScrapeLock διαβάζονται από εκεί.
+- **Circuit breaker** (`PNCP_Breaker`, `PNCP_Breaker_Status`, k3): βήμα μέτρησης ή αποθήκευσης πάνω από 200 ms (έλεγχος πριν από την cache, μέτρηση σελίδων όλου του site· DNS των crawlers 1 s) σταματά για 10 λεπτά, τα αιτήματα περνούν χωρίς αυτό, οι αποκλεισμοί ισχύουν. Site Health «ScrapeLock counting and storage speed» και «ScrapeLock counters», ειδοποίηση με «Resume counting now», `wp scrapelock breaker [status|reset]`.
+
+**Διορθώσεις της ένωσης** (ξεχωριστά commits, με δοκιμές):
+1. Ο breaker του ελέγχου μαθαίνει πρώτα το store (`breaker_hooks()`) και ονομάζεται από αυτό (`precheck_apcu|redis|files`): με Redis κρατά την κατάστασή του στη σύνδεση των μετρητών, ποτέ σε `<data>/breaker/*.json` (η δοκιμή φορτίου είχε μετρήσει ανάγνωση του `precheck_files.json` σε 100/100 αιτήματα, Redis χωρίς APCu). Με αρχεία, ο χρόνος τροποποίησης του αρχείου κατάστασης είναι το τέλος της παύσης: ένα κλειστό ή ανοιχτό breaker κοστίζει ένα `stat()`, ποτέ άνοιγμα αρχείου. Στο WordPress ο breaker παίρνει τη σύνδεση Redis του object cache και όταν ο server έχει κωδικό. Το APCu του WP-CLI (ιδιωτικό της εντολής) δεν χρησιμοποιείται πια.
+2. Η μέτρηση σελίδων όλου του site (`PNCP_Bots::surge()`) και η αποθήκευση της κατάστασής της (`PNCP_Surge::save()`) κάτω από `PNCP_Breaker::guard( 'surge' )`: σε παύση η σελίδα δεν μετριέται (το λεπτό δεν κλείνει, άρα καμία αυτόματη έναρξη από μισή μέτρηση) και η κατάσταση δεν γράφεται.
+3. Οι τρεις «γέφυρες» προς το WP-CLI δεν συγκρούονται: `ops.log` + υπογεγραμμένο `?pncp_precheck_sync` (αποκλεισμοί και ρύθμιση του ελέγχου), `breaker/_snapshot.json` / `_reset.json` (breaker), ουρές στο APCu που αδειάζει το `wp-cron.php?pncp_flush` του `PNCP_Defer`. Το τελευταίο κάνει τώρα και το αντίγραφο / reset του breaker, για site με WP-Cron από WP-CLI. Κανένα από αυτά σε αίτημα επισκέπτη (επιβεβαιωμένο με strace).
+4. Με **strace** στον worker του PHP-FPM βρέθηκαν και διορθώθηκαν: (α) με «Early check» και APCu χωρίς object cache, ο πρώιμος έλεγχος έτρεχε πριν από το `PNCP_Defer::init()` και ρωτούσε τη βάση για 4 options σε κάθε αίτημα· (β) ένα `stat()` του config.json κάθε 10 s σε κάποιο αίτημα επισκέπτη: τώρα κανένα όσο το αντίγραφο της ρύθμισης είναι φρέσκο (το WordPress το ξαναβάζει κάθε ώρα και σε κάθε αλλαγή), και ποτέ δύο μαζί· (γ) τα αντίγραφα των options στο APCu έληγαν και το επόμενο αίτημα ρωτούσε τη βάση: τα ανανεώνει το event του λεπτού· (δ) το hook `setted_transient` (deprecated στο WordPress 6.8) έγραφε notice.
+5. Μετά την ενημέρωση η γραμμή του wp-config.php αλλάζει (σύνδεση Redis). Αν το αρχείο δεν γράφεται, η σελίδα ρυθμίσεων έλεγε «Add these lines» ενώ οι παλιές γραμμές υπάρχουν και τρέχουν (με δεύτερες ο έλεγχος θα έτρεχε δύο φορές): τώρα ζητά να **αντικατασταθούν**, και το «Counters:» λέει και «Redis».
+
+## H3. Μετρήσεις
+
+**strace + μέτρηση queries** (πραγματικός Nginx 1.24 + PHP-FPM 8.3, ένας worker υπό strace, έλεγχος πριν από την cache και πρώιμος έλεγχος ενεργοί, όριο 20 / λεπτό, αποκλεισμός στην πρώτη παραβίαση· νέοι και γνωστοί επισκέπτες, ένας πάνω από το όριο: 429 και μετά 403):
+
+| store | αιτήματα | system calls στο uploads/scrapelock | queries του ScrapeLock |
+|---|---|---|---|
+| APCu (χωρίς object cache) | 316 | 0 | 0 |
+| Redis object cache + phpredis, χωρίς APCu | 315 | 0 | 0 |
+| κανένα (εναλλακτική με αρχεία, για σύγκριση) | 81 | 3.851 (~47 / αίτημα) | 1.030 (~13 / αίτημα) |
+
+Το ίδιο ελέγχει πλέον η δοκιμή `t_3129_strace` (και ένα λεπτό αργότερα, μετά το event).
+
+**Δοκιμή φορτίου** (ξεχωριστό σενάριο: δύο sites σε ένα pool όπως live, Redis object cache στο πρώτο, 30 αιτήματα/s, 50 ταυτόχρονα, ο δίσκος «παγωμένος» για 20 s με `fsfreeze`, 90 s ανά σενάριο· 3.12.9 στο commit της ένωσης, πριν από την προετοιμασία της έκδοσης):
+
+| σενάριο | 3.12.8: 504 / > 1 s / p99 | 3.12.9: 504 / > 1 s / p99 |
+|---|---|---|
+| APCu + Redis, 20 workers, πάγωμα uploads και βάσης | 69 / 127 / 10 s | **0 / 0 / 98 ms** (max 155 ms) |
+| APCu, πάγωμα uploads | 11 / 60 / 4,2 s | **0 / 0 / 97 ms** |
+| APCu, πάγωμα βάσης | 80 / 139 / 10 s | **0 / 0 / 100 ms** |
+| APCu, 5 workers, πάγωμα uploads | 50 / 111 / 10 s | **0 / 0 / 95 ms** |
+| Redis χωρίς APCu (μόνο το πρώτο site), πάγωμα uploads / βάσης / και των δύο | — | **0 / 0 / 95–103 ms** |
+| χωρίς APCu, δεύτερο site χωρίς Redis (αρχεία) | 97 / 140 / 10 s | 100 / 193 / 10 s (η εναλλακτική με αρχεία δεν γλιτώνει από παγωμένο δίσκο) |
+
+Στο slow log του σεναρίου με APCu + Redis: 0 εγγραφές `class-pncp`.
+
+## Όρια
+
+- **Ο breaker δεν σώζει το πρώτο πάγωμα.** Μετρά μια λειτουργία όταν τελειώσει· ένα `write()` που περιμένει δίσκο σε κατάσταση D κρατά τον worker μέχρι να ξαναπάρει μπροστά ο δίσκος. Ανοίγει μετά, για τα επόμενα 10 λεπτά. Μόνο APCu ή Redis βγάζουν το ScrapeLock από τον δίσκο.
+- **Χάνονται δεδομένα αν ο Redis αδειάσει** (flush, restart χωρίς persistence) ή το PHP-FPM ξεκινήσει ξανά (APCu) **πριν από το event του λεπτού**: οι γραμμές αρχείου, Traffic, AI referrals και επιθέσεων που περίμεναν στην ουρά (το πολύ ενός λεπτού, ή μέχρι το επόμενο event αν το WP-Cron δεν τρέχει), και οι αποκλεισμοί του ελέγχου πριν από την cache μετά το τελευταίο ωριαίο αντίγραφο στα αρχεία (οι παλαιότεροι ξαναμπαίνουν μόνοι τους).
+- **Το WordPress το ίδιο** χρειάζεται τη βάση (π.χ. `alloptions` χωρίς object cache): με παγωμένη βάση τα αιτήματα που φτάνουν στο WordPress περιμένουν όπως πριν· το ScrapeLock δεν προσθέτει δικά του. Οι σελίδες της page cache και ο έλεγχος πριν από αυτήν δεν τη χρειάζονται.
+- **Το δεύτερο site τρέχει παλιά 3.5.x** (το `fclose()` στη γραμμή 955 του slow log): πρέπει να ενημερωθεί στην 3.12.9, αλλιώς οι workers του κολλούν σε κάθε πάγωμα και παίρνουν θέσεις και από το πρώτο site (ίδιο pool). Χωρίς Redis εκεί, μόνο το APCu το βγάζει από τον δίσκο.
+- Η ρύθμιση του ελέγχου συγκρίνεται με το config.json (ένα `stat()`, ένα αίτημα τη φορά) μόνο όταν το WordPress δεν την ξανάβαλε στο store για 2 ώρες (π.χ. WP-Cron από WP-CLI με APCu και καμία σελίδα διαχείρισης).
+- Ο έλεγχος μιλά με έναν server Redis (όχι Cluster / Sentinel / shards). Η δοκιμή strace χρησιμοποιεί ένα μικρό drop-in Redis των δοκιμών (`tests/lib/object-cache-redis.php`), όχι το ίδιο το Redis Object Cache.
+- Με APCu το WP-CLI δεν βλέπει τη μνήμη του PHP-FPM: `wp scrapelock breaker` δείχνει αντίγραφο (ως 2 ωρών) και το `reset` γίνεται από την επόμενη σελίδα διαχείρισης ή event του PHP-FPM.
+
+## Έλεγχος αναβάθμισης 3.12.8 → 3.12.9
+
+Από το πραγματικό zip της release v3.12.8 (`gh api`, asset `scrapelock-3.12.8.zip`), εγκατεστημένο ως κανονικός φάκελος πίσω από Nginx + PHP-FPM με **APCu ενεργό** και Redis object cache, με ρυθμίσεις όπως live (έλεγχος πριν από την cache, πρώιμος έλεγχος, Stealth ενεργό με τους κανόνες του εγκατεστημένους με `rules install --stealth=…`). Τα αρχεία αντικαταστάθηκαν με το zip της 3.12.9 όπως κάνει ο upgrader:
+- **η γραμμή του wp-config.php ξαναγράφτηκε μόνη της** (το upgrade των αρχείων έτρεξε στο WP-Cron που ξεκίνησε η πρώτη επίσκεψη) με τη σύνδεση Redis (`'path' => …, 'prefix' => …`)· `wp scrapelock precheck`: «web server store: apcu», «seen in requests: apcu», Redis «ok»·
+- ρυθμίσεις **ίδιες** (byte προς byte το `pncp_settings`), Stealth ίδιο (μόνο το «seen: nginx» συμπληρώθηκε), οι διευθύνσεις της σελίδας για επισκέπτη ίδιες (`/assets/…`, 0 wp-content)·
+- το όριο σελίδων ίδιο (60 × 200, μετά 429), Site Health: «ScrapeLock counts in memory (APCu)», «counting and storage are fast»·
+- κανένα PHP μήνυμα του ScrapeLock σε wp-admin, Site Health, σελίδα ScrapeLock και αιτήματα επισκεπτών.
+- Αν το wp-config.php δεν γράφεται: η σελίδα ρυθμίσεων δείχνει τη νέα γραμμή και ζητά να αντικαταστήσει τις παλιές (`t_precheck`).
+
+## Δοκιμές της έκδοσης
+
+- **php -l**, **phpcs** (phpcs.xml.dist, `--warning-severity=0`) 0 σφάλματα, **PHPStan** όπως στο CI (`phpstan.neon.dist`, phpstan 2.1.56) χωρίς σφάλματα (δύο `is_callable()` πάντα αληθή της ένωσης k1/k3 διορθώθηκαν).
+- **Νέες δοκιμές**: `t_3129_precheck_io` (k1, + k: ο breaker στον Redis των μετρητών χωρίς αρχείο, και με αρχεία μόνο `stat()`), `t_3129_requests` (k2), `t_3129_breaker` (k3, + surge, + το reset / αντίγραφο μέσω του `wp-cron.php` του `PNCP_Defer`), `t_3129_strace` (δικός του Nginx + PHP-FPM υπό strace, APCu και Redis: 0 system calls στο uploads/scrapelock, 0 queries του ScrapeLock· SKIP χωρίς php-fpm / nginx / strace), `t_precheck` (+ παλιές γραμμές στο wp-config.php), `t_load` (k4: πάγωμα δίσκου με `FREEZE_MOUNT`, μόνο με `LOAD=1`).
+- **Όλο το `tests/run-all.sh` σε φρέσκο MariaDB** (nginx, php-fpm, redis-server, strace παρόντα, ως root): 57 ok, 1 skip (t_traffic_ms), αποτυχίες μόνο οι γνωστές τοπικές (t_http: inline styles, data-cfasync, Applebot PTR ×2, CF-Connecting-IP, αυτόματο Emergency ×2· t_metadata_paths «fake Applebot»· t_lockdown «busy» ×2), και δύο από το ότι έτρεχαν ταυτόχρονα δύο σουίτες: t_3129_breaker (ο ιδιωτικός redis-server της δοκιμής στη θύρα 16391 κοινός στις δύο) και t_3129_precheck_io b) (p99 28 ms με φορτίο 6 σε 4 CPU)· μόνες τους ξανά: 75 και 45 PASS, t_precheck 66 PASS.
+- **SQLite όπως στο CI** (wp-sqlite-db, ένας `php -S` με τον router), **ως χρήστης χωρίς δικαιώματα root** (όπως ο runner του CI· οι δοκιμές με nginx / redis-server / strace τρέχουν ή κάνουν SKIP κανονικά): 58 ok, 1 skip, αποτυχίες t_http (inline styles, data-cfasync) και t_site_files στο SQLite (γνωστές), και t_watermark / t_precheck από αρχείο του /tmp που είχε αφήσει η σουίτα root και από τη σειρά της νέας δοκιμής (διορθώθηκε)· ξανά ως ο ίδιος χρήστης: t_watermark 53, t_precheck 66 PASS. t_3129_strace 22 PASS και ως μη root.
+- **Χωρίς nginx / php-fpm στο PATH** (`/usr/sbin`, `/sbin`, `/usr/local/sbin` έξω), φρέσκο MariaDB: 58 ok, 2 skip (t_traffic_ms, t_3129_strace), μόνο οι γνωστές αποτυχίες.
+- **Δοκιμή φορτίου k4** (ξεχωριστός agent, στο c545b89): 0 × 504 και κανένα αίτημα πάνω από 1 s με APCu ή Redis, με πάγωμα δίσκου.
+- **Zip** όπως στο release.yml (`git archive`): Version 3.12.9, `languages/scrapelock-el.mo` μέσα, χωρίς tests/, .po, REPORT.md.
+
+## Τι κάνει ο κάτοχος μετά την ενημέρωση
+
+Τίποτα υποχρεωτικό: η γραμμή του wp-config.php ξαναγράφεται μόνη της (event μετά την πρώτη επίσκεψη ή η επόμενη σελίδα του wp-admin). Συνιστάται:
+1. **APCu στο PHP 8.3 του aaPanel** (App Store → PHP 8.3 → Setting → Install extensions → apcu) και restart του PHP· ή αρκεί ο Redis object cache που ήδη υπάρχει.
+2. Έλεγχος:
+```
+wp --allow-root --skip-themes scrapelock precheck
+wp --allow-root --skip-themes scrapelock breaker
+```
+(«web server store: apcu» ή «redis»· Site Health → «ScrapeLock counters».) Αν η σελίδα ρυθμίσεων λέει «runs with the lines of an earlier version», αντιγράψτε τις νέες γραμμές στη θέση των παλιών.
+3. **Ενημέρωση του δεύτερου site** στην 3.12.9 (και APCu ή Redis object cache και εκεί).
+4. Προαιρετικά `request_slowlog_timeout = 5s` στο pool, και για system cron χωρίς WP-Cron: `wp scrapelock precheck cleanup` κάθε ώρα.
+
+
 # ScrapeLock 3.12.8 — ο νέος χάρτης του Stealth σε Nginx, `stealth check | debug`, το `cdn purge` και με τις caches των plugins
 
 Η αναφορά μένει στο αποθετήριο (`/REPORT.md export-ignore`): δεν μπαίνει στο zip του plugin. `<site>` είναι το όνομα φακέλου του ιστότοπου στο aaPanel, `<αρχείο>` το αρχείο των κανόνων Stealth στον server (π.χ. `extension/<site>/z-scrapelock-stealth.conf`)· τίποτα από τον live server (domain, IP, paths, slugs, κωδικοί) δεν είναι στον κώδικα, στις δοκιμές ή εδώ.
