@@ -21,7 +21,9 @@
  *      the WordPress folder (handed over, 0644) and a new .conf (stays root's); cache status
  *      --save-constant on a copy of wp-config.php at 0440 (kept);
  *   and no *.tmp file left anywhere.
- * Not as root: the modes are checked, the owner checks are SKIP.
+ * As root on a site whose files belong to another user, WordPress itself would not write (no "direct" method):
+ * first checked that wp-config.php is then left alone, then FS_METHOD 'direct' is set for the rest, as on the
+ * servers where 3.12.9's failure showed up. Not as root: the modes are checked, the owner checks are SKIP.
  *
  *   WP_DIR=/path/to/wordpress BASE=http://127.0.0.1:8099 WP_CLI="wp --path=… --allow-root" php t_3130_owner_files.php
  *
@@ -105,6 +107,18 @@ function cli( $args, $env = '' ) {
 }
 
 $root = PNCP_File_Owner::is_root();
+// WordPress writes files itself only with the "direct" method: a file it creates must have the owner of its own
+// files (get_filesystem_method()). As root on a site owned by another user (here, or PHP-FPM's www-data), it is
+// not, and ScrapeLock refuses to write, as WordPress does (checked in A). The 3.12.9 failure needs a site where
+// root may write, as with FS_METHOD 'direct' in wp-config.php (common) or a site owned by root: the test sets that.
+$direct = 'direct' === get_filesystem_method( array(), ABSPATH );
+if ( ! $direct && ! defined( 'FS_METHOD' ) ) {
+	echo '# WordPress would not write here as uid ' . ( function_exists( 'posix_geteuid' ) ? posix_geteuid() : getmyuid() ) . " (its files belong to another user): FS_METHOD 'direct' set for the test\n";
+}
+// The mode WordPress gives new files (WP_Filesystem() defines it; not yet when nothing was written).
+if ( ! defined( 'FS_CHMOD_FILE' ) ) {
+	define( 'FS_CHMOD_FILE', ( fileperms( ABSPATH . 'index.php' ) & 0777 | 0644 ) );
+}
 $me   = function_exists( 'posix_geteuid' ) ? posix_geteuid() : getmyuid();
 $mg   = function_exists( 'posix_getegid' ) ? posix_getegid() : getmygid();
 // As root: everything belongs to uid/gid 33 (www-data), as on a server where PHP-FPM runs as www-data.
@@ -178,6 +192,18 @@ $base_uid = $root ? $uid : $me;
 $base_gid = $root ? $gid : $mg;
 
 /* ---------- A. wp-config.php ---------- */
+
+if ( ! $direct && ! defined( 'FS_METHOD' ) ) {
+	// Without FS_METHOD: refused, as WordPress itself would not write here, and the file left as it was.
+	$file = $fake . '/wp-config.php';
+	$orig = "<?php\ndefine( 'DB_NAME', 'x' );\n";
+	seed( $file, $orig, 0640 );
+	$ok = call( 'PNCP_Precheck', 'write_config', $file, PNCP_Precheck::block() . $orig, $orig );
+	t( 'A WordPress would not write here: wp-config.php left as it was', ! $ok && $orig === file_get_contents( $file ) );
+	same( 'A WordPress would not write here: wp-config.php kept', $file, $uid, $gid, 0640 );
+	unlink( $file );
+	define( 'FS_METHOD', 'direct' );
+}
 
 foreach ( array( 0640, 0644, 0440 ) as $mode ) {
 	$file = $fake . '/wp-config.php';

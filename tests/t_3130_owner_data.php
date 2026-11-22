@@ -8,7 +8,7 @@
  * files of WP_DIR, an uploads folder of its own (UPLOADS) with uploads/scrapelock owned by that user. In it, a data
  * folder as 3.12.9 left it after a run as root (the folder and strikes/ root's, 0700, a strike file root's 0600)
  * and a ban file of the site's owner with 0640. Then, in child processes as root with umask 077 (WordPress loaded
- * on the fake folder):
+ * on the fake folder, with FS_METHOD 'direct' when WordPress would not write there as root):
  *   - the pre-cache check (PNCP_Precheck_Runtime): hit() (the minute's folder, the counter, .new, .net-), crossed()
  *     (.over), strike(), ban() (new and replaced), probe_seen(), event() (events.log), sync_bans() with APCu (bans
  *     copied into the files), sweep() (.sweep.lock), the hourly cleanup() (.cleaned and the repair of 3.12.9's root
@@ -35,7 +35,15 @@ if ( isset( $argv[1] ) && '--child' === $argv[1] ) {
 	define( 'UPLOADS', 'up' );
 	define( 'WP_USE_THEMES', false );
 	require $fake . '/wp-load.php';
-	$out  = array();
+	$out = array();
+	// WordPress (WP_Filesystem: geo, Verify files) writes as root only with the "direct" method, which it picks when
+	// a file it creates has the owner of its own files; here they belong to WP_DIR's owner. As on the servers where
+	// 3.12.9 left root's files (FS_METHOD 'direct' in wp-config.php, or a site owned by root), it may write.
+	require_once ABSPATH . 'wp-admin/includes/file.php';
+	$out['fs_method'] = get_filesystem_method( array(), ABSPATH );
+	if ( 'direct' !== $out['fs_method'] && ! defined( 'FS_METHOD' ) ) {
+		define( 'FS_METHOD', 'direct' );
+	}
 	$call = static function ( $class, $method, ...$args ) {
 		$m = new ReflectionMethod( $class, $method );
 		$m->setAccessible( true );
