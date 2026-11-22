@@ -71,6 +71,11 @@ final class PNCP_Log {
 	const MAX_BANS = 500;
 
 	/**
+	 * 3.12.9: at most this many bans are kept in the store for visitors' requests (keep_bans()).
+	 */
+	const LOAD_BANS = 20000;
+
+	/**
 	 * The status code stored for a "would block" entry of "Monitor only" (PNCP_Options::monitoring()): the
 	 * request was let through. A real block always has 403 or 429, so no new column is needed.
 	 */
@@ -127,6 +132,10 @@ final class PNCP_Log {
 		add_action( self::CRON . '_more', array( __CLASS__, 'cleanup' ) );
 		add_action( 'admin_init', array( __CLASS__, 'privacy_policy' ) );
 		add_action( 'admin_init', array( __CLASS__, 'admin_maintenance' ) );
+		// 3.12.9: what visitors' requests queued in the object cache or APCu (PNCP_Defer).
+		PNCP_Defer::handle( 'log', array( __CLASS__, 'store_deferred' ), array( __CLASS__, 'deferred_ready' ) );
+		PNCP_Defer::handle( 'ban', array( __CLASS__, 'store_deferred_bans' ) );
+		add_action( 'pncp_defer_flush', array( __CLASS__, 'keep_bans' ) );
 	}
 
 	/**
@@ -444,6 +453,11 @@ final class PNCP_Log {
 			self::$monitored = true;
 		}
 
+		if ( PNCP_Defer::active() ) {
+			self::add_deferred( (string) $reason, (int) $code, (string) $ip, (string) $account );
+			return;
+		}
+
 		// The code is part of the key: a "would block" entry and a real block are never counted in the same row.
 		$minute = (int) floor( time() / MINUTE_IN_SECONDS );
 		$account = self::account_column() ? mb_substr( (string) $account, 0, 60 ) : '';
@@ -519,6 +533,122 @@ final class PNCP_Log {
 			if ( '' !== $ip && self::uas_column() ) {
 				self::cache_set( $key . '_u', array( md5( $ua ) ), 2 * MINUTE_IN_SECONDS );
 			}
+		}
+	}
+
+	/**
+	 * 3.12.9: add() in a visitor's request on a site with a persistent object cache or APCu (PNCP_Defer): the
+	 * event goes to a queue there, grouped per minute as in the table (one row per IP, reason and code, with its
+	 * hits and different User-Agents), and the scheduled event writes the rows once their minute is over
+	 * (store_deferred()). The same budget of new rows per minute applies, past it the "Many IPs" row of the reason.
+	 * No database query, no wait (add() without a store waited up to 0.2 s for another request's row id).
+	 *
+	 * @param string $reason  Reason.
+	 * @param int    $code    HTTP status code.
+	 * @param string $ip      IP.
+	 * @param string $account Username of a per-account limit ('' = none).
+	 */
+	private static function add_deferred( $reason, $code, $ip, $account ) {
+		$minute  = (int) floor( time() / MINUTE_IN_SECONDS );
+		$ttl     = 5 * MINUTE_IN_SECONDS;
+		$account = mb_substr( $account, 0, 60 );
+		$ua      = PNCP_Bots::user_agent();
+		$key     = 'pncp_lq_' . md5( $ip . '|' . $reason . '|' . $code . '|' . $minute . ( '' !== $account ? '|' . $account : '' ) );
+		if ( ! PNCP_Defer::add( $key, 1, $ttl ) ) {
+			// This minute's row is queued already (its own, or the "Many IPs" one it went to): one more hit.
+			$row = PNCP_Defer::get( $key );
+			if ( is_string( $row ) && 0 === strpos( $row, 'pncp_lq_' ) ) {
+				PNCP_Defer::incr( $row . '_h', 1, $ttl );
+				return;
+			}
+			PNCP_Defer::incr( $key . '_h', 1, $ttl );
+			$seen = PNCP_Defer::get( $key . '_u' );
+			if ( is_array( $seen ) && count( $seen ) < 50 && ! in_array( md5( $ua ), $seen, true ) ) {
+				$seen[] = md5( $ua );
+				PNCP_Defer::set( $key . '_u', $seen, $ttl );
+				PNCP_Defer::incr( $key . '_v', 1, $ttl );
+			}
+			return;
+		}
+		$path = '' !== $ip ? (string) wp_parse_url( self::request_uri(), PHP_URL_PATH ) : '';
+		if ( 'ban' !== $reason && 'manual' !== $reason && PNCP_Defer::incr( 'pncp_lq_rows_' . $minute, 1, $ttl ) > self::rows_per_minute() ) {
+			// Over the budget: this minute's row of the reason (and code) for "Many IPs".
+			$many = 'pncp_lq_' . md5( $reason . '|' . $code . '|' . $minute );
+			PNCP_Defer::set( $key, $many, $ttl );
+			if ( ! PNCP_Defer::add( $many, 1, $ttl ) ) {
+				PNCP_Defer::incr( $many . '_h', 1, $ttl );
+				return;
+			}
+			$key     = $many;
+			$ip      = '';
+			$ua      = '';
+			$account = '';
+			$path    = '';
+		} else {
+			PNCP_Defer::set( $key . '_u', array( md5( $ua ) ), $ttl );
+		}
+		PNCP_Defer::push(
+			'log',
+			array(
+				'k'       => $key,
+				'm'       => $minute,
+				'ip'      => substr( $ip, 0, 45 ),
+				'reason'  => substr( $reason, 0, 20 ),
+				'code'    => $code,
+				'path'    => mb_substr( $path, 0, 255 ),
+				'ua'      => mb_substr( $ua, 0, 255 ),
+				'account' => $account,
+			)
+		);
+	}
+
+	/**
+	 * 3.12.9: is a queued log row ready to be written? Only once its minute is over (and 5 seconds more): its
+	 * hits are still being counted until then.
+	 *
+	 * @param mixed $row Queued row.
+	 * @return bool
+	 */
+	public static function deferred_ready( $row ) {
+		return ! is_array( $row ) || ! isset( $row['m'] ) || time() >= ( (int) $row['m'] + 1 ) * MINUTE_IN_SECONDS + 5;
+	}
+
+	/**
+	 * 3.12.9: writes the log rows the visitors' requests queued (PNCP_Defer::flush()), with their hits.
+	 *
+	 * @param array<int, mixed> $rows Queued rows.
+	 */
+	public static function store_deferred( $rows ) {
+		global $wpdb;
+		if ( ! self::ready() ) {
+			return;
+		}
+		$uas     = self::uas_column();
+		$account = self::account_column();
+		foreach ( $rows as $row ) {
+			if ( ! is_array( $row ) || ! isset( $row['k'], $row['m'], $row['reason'], $row['code'] ) ) {
+				continue;
+			}
+			$data    = array(
+				'created' => gmdate( 'Y-m-d H:i:s', (int) $row['m'] * MINUTE_IN_SECONDS ),
+				'ip'      => (string) $row['ip'],
+				'reason'  => (string) $row['reason'],
+				'code'    => (int) $row['code'],
+				'hits'    => 1 + (int) PNCP_Defer::get( $row['k'] . '_h' ),
+				'path'    => (string) $row['path'],
+				'ua'      => (string) $row['ua'],
+			);
+			$formats = array( '%s', '%s', '%s', '%d', '%d', '%s', '%s' );
+			if ( $uas ) {
+				$data['uas'] = max( 1, min( 65535, 1 + (int) PNCP_Defer::get( $row['k'] . '_v' ) ) );
+				$formats[]   = '%d';
+			}
+			if ( $account && '' !== (string) $row['account'] ) {
+				$data['account'] = (string) $row['account'];
+				$formats[]       = '%s';
+			}
+			// phpcs:ignore WordPress.DB.DirectDatabaseQuery -- Plugin table.
+			$wpdb->insert( self::table(), $data, $formats );
 		}
 	}
 
@@ -1286,6 +1416,13 @@ final class PNCP_Log {
 				return self::$banned[ $bankey ];
 			}
 		}
+		// 3.12.9: every ban in effect is in the store (keep_bans()), each under its IP: one that is not there is not
+		// banned, with no query in a visitor's request. Only after the store was emptied (until the next run of the
+		// scheduled event) is the table asked, as before.
+		if ( PNCP_Defer::active() && self::bans_kept() ) {
+			self::$banned[ $bankey ] = false;
+			return false;
+		}
 		// phpcs:ignore WordPress.DB.DirectDatabaseQuery -- Plugin table; the cache is above.
 		$until = (int) $wpdb->get_var( $wpdb->prepare( 'SELECT until_ts FROM %i WHERE ip = %s', self::bans_table(), $bankey ) );
 		if ( class_exists( 'PNCP_Bots', false ) && PNCP_Bots::explaining() ) {
@@ -1353,7 +1490,60 @@ final class PNCP_Log {
 	 * @return int Seconds.
 	 */
 	private static function apcu_ban_ttl( $until ) {
+		if ( $until > time() ) {
+			// 3.12.9: a ban as long as it lasts: a visitor's request does not ask the table again (bans_kept()), so
+			// the answer must not go before the ban does. The scheduled event brings in bans stored from WP-CLI or
+			// another server every minute (keep_bans()); a ban lifted from another server ends here with the
+			// cached answer (on a site served by several servers each with its own APCu).
+			return max( 1, $until - time() );
+		}
 		return $until > time() ? max( 1, min( MINUTE_IN_SECONDS, $until - time() ) ) : MINUTE_IN_SECONDS;
+	}
+
+	/**
+	 * 3.12.9: the store's key that says every ban in effect is in it (with APCu, for the stamp of the last change
+	 * made from WP-CLI, see apcu_ban_key()).
+	 *
+	 * @return string
+	 */
+	private static function bans_kept_key() {
+		return 'pncp_bans_kept' . ( wp_using_ext_object_cache() ? '' : '_' . (string) get_option( self::BANS_STAMP_OPTION, '' ) );
+	}
+
+	/**
+	 * 3.12.9: are all bans in effect in the store (keep_bans())?
+	 *
+	 * @return bool
+	 */
+	private static function bans_kept() {
+		return false !== PNCP_Defer::get( self::bans_kept_key() );
+	}
+
+	/**
+	 * 3.12.9: the scheduled event (PNCP_Defer::flush()) puts every ban in effect into the store, each under its IP,
+	 * so that a visitor's request answers is_banned() from there alone. With an object cache once (every ban
+	 * stored or lifted later changes its entry there); with APCu on every run, since a ban stored from WP-CLI
+	 * or another server does not reach this server's APCu otherwise. More than LOAD_BANS bans: not done, and the
+	 * table is asked per IP as before.
+	 */
+	public static function keep_bans() {
+		if ( '' === PNCP_Defer::store() || PNCP_Defer::active() || ! self::ready() || ( wp_using_ext_object_cache() && self::bans_kept() ) ) {
+			return;
+		}
+		$bans = self::active_bans( self::LOAD_BANS + 1 );
+		if ( count( $bans ) > self::LOAD_BANS ) {
+			PNCP_Defer::delete( self::bans_kept_key() );
+			return;
+		}
+		$now = time();
+		foreach ( $bans as $bankey => $ban ) {
+			if ( wp_using_ext_object_cache() ) {
+				wp_cache_set( 'pncp_ban_' . md5( (string) $bankey ), (int) $ban['until'], 'pncp', max( 1, (int) $ban['until'] - $now ) );
+			} else {
+				apcu_store( self::apcu_ban_key( (string) $bankey ), (int) $ban['until'], max( 1, (int) $ban['until'] - $now ) );
+			}
+		}
+		PNCP_Defer::set( self::bans_kept_key(), $now, wp_using_ext_object_cache() ? 0 : 3 * MINUTE_IN_SECONDS );
 	}
 
 	/**
@@ -1434,6 +1624,21 @@ final class PNCP_Log {
 	 */
 	private static function store_ban( $ip, $until, $reason, $since ) {
 		global $wpdb;
+		if ( PNCP_Defer::active() ) {
+			// 3.12.9: in a visitor's request with a persistent store: in effect at once through the store (every
+			// request reads bans from there), written to the table, the pre-cache check's file and the CDN by the
+			// scheduled event (store_deferred_bans()). Never shorter than the ban the store holds.
+			if ( wp_using_ext_object_cache() ) {
+				$until = max( (int) $until, (int) wp_cache_get( 'pncp_ban_' . md5( $ip ), 'pncp' ) );
+				wp_cache_set( 'pncp_ban_' . md5( $ip ), $until, 'pncp', max( 1, $until - time() ) );
+			} else {
+				$until = max( (int) $until, (int) apcu_fetch( self::apcu_ban_key( $ip ) ) );
+				apcu_store( self::apcu_ban_key( $ip ), $until, self::apcu_ban_ttl( $until ) );
+			}
+			self::$banned[ $ip ] = true;
+			PNCP_Defer::push( 'ban', array( $ip, $until, (string) $reason, (int) $since ) );
+			return;
+		}
 		// phpcs:ignore WordPress.DB.DirectDatabaseQuery -- Atomic write to the plugin table.
 		$ok = $wpdb->query(
 			$wpdb->prepare(
@@ -1484,6 +1689,23 @@ final class PNCP_Log {
 		 * @param int    $until Expiry.
 		 */
 		do_action( 'pncp_bans_changed', $ip, $until );
+	}
+
+	/**
+	 * 3.12.9: the bans visitors' requests decided (store_ban()), written by the scheduled event as store_ban()
+	 * writes them without a store: the table, the latest expiry, the pre-cache check's file, the CDN.
+	 *
+	 * @param array<int, mixed> $rows Queued bans: [ban key, until, reason, since].
+	 */
+	public static function store_deferred_bans( $rows ) {
+		if ( ! self::ready() ) {
+			return;
+		}
+		foreach ( $rows as $row ) {
+			if ( is_array( $row ) && 4 === count( $row ) && (int) $row[1] > time() ) {
+				self::store_ban( (string) $row[0], (int) $row[1], (string) $row[2], (int) $row[3] );
+			}
+		}
 	}
 
 	/**

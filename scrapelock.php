@@ -2,7 +2,7 @@
 /**
  * Plugin Name:       ScrapeLock – Content & AI Bot Protection
  * Description:       Protects your content: makes copying text and images harder, hides the text in the REST API, GraphQL and RSS, blocks scrapers, AI bots and fake Googlebots, temporarily blocks persistent IPs, protects XML feeds with a token and adds an optional watermark. Lockdown freezes every change to the site until it is unlocked with an authenticator app. Forms, cart, checkout and search engines are not affected.
- * Version:           3.12.8
+ * Version:           3.12.9
  * Requires at least: 6.2
  * Requires PHP:      7.4
  * Author:            CodeBunny
@@ -19,7 +19,7 @@ if ( defined( 'PNCP_VERSION' ) ) {
 	return;
 }
 
-define( 'PNCP_VERSION', '3.12.8' );
+define( 'PNCP_VERSION', '3.12.9' );
 define( 'PNCP_FILE', __FILE__ );
 define( 'PNCP_DIR', plugin_dir_path( __FILE__ ) );
 define( 'PNCP_URL', plugin_dir_url( __FILE__ ) );
@@ -34,7 +34,8 @@ spl_autoload_register(
 			return;
 		}
 		$file = PNCP_DIR . 'includes/class-' . str_replace( '_', '-', strtolower( $class ) ) . '.php';
-		if ( is_readable( $file ) ) {
+		// 3.12.9: a class opcache already holds is loaded without asking the disk first.
+		if ( ( function_exists( 'opcache_is_script_cached' ) && @opcache_is_script_cached( $file ) ) || is_readable( $file ) ) { // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged -- opcache.restrict_api may refuse it: then the disk is asked.
 			require_once $file;
 		}
 	}
@@ -46,6 +47,9 @@ if ( is_admin() ) {
 	PNCP_Rules_State::init(); // 3.12.3: the notice when the server rules on the server are out of date.
 }
 
+// 3.12.9: queues in the object cache or APCu, written by a scheduled event (first: it also answers ScrapeLock's
+// options from APCu where there is no object cache).
+PNCP_Defer::init();
 // 3.12.6: a verification file (/builtwith.txt, /google….html…) is answered before every check of the plugin.
 PNCP_Verify_Files::maybe_serve();
 PNCP_Verify_Files::init();
@@ -78,6 +82,7 @@ if ( $pncp_backend ) {
 	PNCP_Integrity::init();
 	PNCP_Health::init();
 	PNCP_Wizard::watch(); // 3.12.6: "For my site" notes the settings chosen against its proposals.
+	PNCP_Breaker_Status::init(); // 3.12.9: the circuit breaker's notice, "Resume counting" and hourly tidy-up.
 } else {
 	// The file check's hourly event is kept scheduled while the site is locked (PNCP_Integrity::ensure_cron()).
 	add_action(
@@ -219,7 +224,7 @@ function pncp_deactivate_site() {
 	// wp_unschedule_hook() removes every event of a hook, whatever its arguments: some carry some (the missing
 	// IP lists, the image to clean up, the numbers in the surge email), which wp_clear_scheduled_hook() would
 	// only remove when given the same ones.
-	foreach ( array( PNCP_Ip::CRON, PNCP_Log::CRON, PNCP_Log::CRON . '_more', PNCP_Integrity::OFFICIAL, PNCP_Integrity::RESUME, PNCP_Surge::MAIL, PNCP_Surge::MAIL_ALERT, PNCP_Watermark::CRON_UNMARK, 'pncp_background_purge', 'pncp_upgrade_files', PNCP_Crowdsec::CRON, PNCP_Bunny::CRON, 'pncp_attack_report_weekly', PNCP_Traffic::CRON ) as $pncp_hook ) {
+	foreach ( array( PNCP_Ip::CRON, PNCP_Log::CRON, PNCP_Log::CRON . '_more', PNCP_Integrity::OFFICIAL, PNCP_Integrity::RESUME, PNCP_Surge::MAIL, PNCP_Surge::MAIL_ALERT, PNCP_Defer::CRON, PNCP_Watermark::CRON_UNMARK, 'pncp_background_purge', 'pncp_upgrade_files', PNCP_Crowdsec::CRON, PNCP_Bunny::CRON, 'pncp_attack_report_weekly', PNCP_Traffic::CRON ) as $pncp_hook ) {
 		wp_unschedule_hook( $pncp_hook );
 	}
 	// The blocks ScrapeLock made at the CDN go away with it (the bans themselves end with the plugin).

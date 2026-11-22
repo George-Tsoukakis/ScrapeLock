@@ -1941,7 +1941,16 @@ final class PNCP_Bots {
 			$name = implode( '.', array_reverse( str_split( bin2hex( $packed ) ) ) ) . '.ip6.arpa';
 		}
 		// dns_get_record() returns false on a failed lookup, and an empty array for NXDOMAIN / no data.
-		$records = @dns_get_record( $name, DNS_PTR ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged -- DNS failure = no verdict.
+		// 3.12.9: under the circuit breaker: a lookup slower than 1 s suspends DNS verification for 10 minutes (a
+		// failed lookup meanwhile: no verdict, retried later), so a stalled resolver cannot hold every PHP worker.
+		$records = PNCP_Breaker::guard(
+			'dns',
+			static function () use ( $name ) {
+				return @dns_get_record( $name, DNS_PTR ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged -- DNS failure = no verdict.
+			},
+			false,
+			'PTR lookup'
+		);
 		if ( false === $records ) {
 			return '';
 		}
@@ -2141,7 +2150,14 @@ final class PNCP_Bots {
 			return array_values( array_filter( array_map( array( 'PNCP_Ip', 'normalize' ), $pre ) ) );
 		}
 		$ips     = array();
-		$records = @dns_get_record( $host, DNS_A | DNS_AAAA ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged -- DNS failure = no verdict.
+		$records = PNCP_Breaker::guard( // 3.12.9: as reverse_dns().
+			'dns',
+			static function () use ( $host ) {
+				return @dns_get_record( $host, DNS_A | DNS_AAAA ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged -- DNS failure = no verdict.
+			},
+			false,
+			'A/AAAA lookup'
+		);
 		if ( is_array( $records ) ) {
 			foreach ( $records as $record ) {
 				foreach ( array( 'ip', 'ipv6' ) as $field ) {
@@ -2285,7 +2301,17 @@ final class PNCP_Bots {
 			}
 			$step = max( 1, $step );
 		}
-		$count = self::hit( '', 'surge', 'site', $step );
+		// 3.12.9: under the circuit breaker (PNCP_Breaker): a count slower than its threshold suspends it for 10
+		// minutes. Suspended, nothing is counted (0): the minute is not closed, so the automatic Emergency Mode
+		// does not start from a partial count (fail open); an Emergency Mode already on stays on.
+		$count = (int) PNCP_Breaker::guard(
+			'surge',
+			static function () use ( $step ) {
+				return self::hit( '', 'surge', 'site', $step );
+			},
+			0,
+			'site-wide page count'
+		);
 		if ( $step === $count ) {
 			// The first count of this minute (3.4.3: the first sample): it closes the previous minute.
 			PNCP_Surge::observe( 1, $minute, self::peek( 'surge', 'site', $minute - 1 ), $s );

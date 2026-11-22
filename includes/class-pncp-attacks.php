@@ -143,6 +143,7 @@ final class PNCP_Attacks {
 		add_action( 'admin_post_pncp_attacks_export', array( __CLASS__, 'handle_export' ) );
 		add_action( 'admin_post_pncp_attacks_clear', array( __CLASS__, 'handle_clear' ) );
 		self::hook();
+		PNCP_Defer::handle( 'attack', array( __CLASS__, 'store_deferred' ) ); // 3.12.9: see flush().
 	}
 
 	/**
@@ -568,6 +569,20 @@ final class PNCP_Attacks {
 		if ( self::in_web_request() ) {
 			self::classify_request();
 		}
+		// 3.12.9: without a persistent store the rows are written after the visitor has the whole response.
+		if ( self::$buffer && ! PNCP_Defer::active() && doing_action( 'shutdown' ) ) {
+			add_action( 'shutdown', array( __CLASS__, 'flush_late' ), 3 );
+			return;
+		}
+		self::flush();
+	}
+
+	/**
+	 * 3.12.9: shutdown, once WordPress has emptied the output buffers: the response is finished first
+	 * (PNCP_Defer::finish_request()), then the records are written.
+	 */
+	public static function flush_late() {
+		PNCP_Defer::finish_request();
 		self::flush();
 	}
 
@@ -768,7 +783,6 @@ final class PNCP_Attacks {
 	 * past WRITES_PER_MINUTE writes in the minute, nothing is stored.
 	 */
 	public static function flush() {
-		global $wpdb;
 		if ( ! self::$buffer ) {
 			return;
 		}
@@ -791,15 +805,52 @@ final class PNCP_Attacks {
 			return; // A flood: the log, the bans and the limits still deal with it.
 		}
 		$overflow = (int) PNCP_Log::cache_get( 'pncp_at_n_' . $minute ) >= max( 10, (int) apply_filters( 'pncp_attack_rows_per_minute', self::ROWS_PER_MINUTE ) );
-		$hour     = (int) ( floor( time() / HOUR_IN_SECONDS ) * HOUR_IN_SECONDS );
-		$now      = time();
+		$hour = (int) ( floor( time() / HOUR_IN_SECONDS ) * HOUR_IN_SECONDS );
+		$now  = time();
+		if ( $overflow ) {
+			foreach ( $entries as $key => $entry ) {
+				$entries[ $key ]['ip']     = '';
+				$entries[ $key ]['detail'] = '';
+				$entries[ $key ]['path']   = self::overflow_path( $entry['path'] );
+			}
+		}
+		// 3.12.9: in a visitor's request with a persistent object cache or APCu, queued there and written by the
+		// scheduled event (store_deferred()).
+		if ( PNCP_Defer::active() ) {
+			PNCP_Defer::push( 'attack', array( $hour, $now, array_values( $entries ) ) );
+			return;
+		}
+		self::write( $entries, $hour, $now );
+	}
+
+	/**
+	 * 3.12.9: writes the records visitors' requests queued (PNCP_Defer::flush()).
+	 *
+	 * @param array<int, mixed> $rows Queued rows: [hour, time, entries].
+	 */
+	public static function store_deferred( $rows ) {
+		if ( ! self::ready() || ! PNCP_Log::ready() ) {
+			return;
+		}
+		foreach ( $rows as $row ) {
+			if ( is_array( $row ) && 3 === count( $row ) && is_array( $row[2] ) ) {
+				self::write( $row[2], (int) $row[0], (int) $row[1] );
+			}
+		}
+	}
+
+	/**
+	 * Adds the entries to their rows of the hour.
+	 *
+	 * @param array<int|string, array<string, mixed>> $entries Entries.
+	 * @param int                                     $hour    The hour (Unix time).
+	 * @param int                                     $now     When they happened.
+	 */
+	private static function write( $entries, $hour, $now ) {
+		global $wpdb;
+		$minute   = (int) floor( $now / MINUTE_IN_SECONDS );
 		$suppress = $wpdb->suppress_errors( true );
 		foreach ( $entries as $entry ) {
-			if ( $overflow ) {
-				$entry['ip']     = '';
-				$entry['detail'] = '';
-				$entry['path']   = self::overflow_path( $entry['path'] );
-			}
 			$k = md5( $entry['category'] . '|' . $entry['path'] . '|' . $entry['ip'] . '|' . $entry['detail'] );
 			// phpcs:ignore WordPress.DB.DirectDatabaseQuery -- Plugin table, one atomic counter per row of the hour.
 			$done = $wpdb->query(

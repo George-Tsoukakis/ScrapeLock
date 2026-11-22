@@ -283,6 +283,41 @@ ScrapeLock — δοκιμές σε πραγματικό WordPress (όχι stubs)
                     notice and WP-CLI (stealth status / check: rules, map, next) say to copy the Stealth rules again
                     with the command, a waiting map is taken up only once the new rules are served; Apache: the same
                     map with other rules written into .htaccess again by the refresh the upgrade schedules
+  t_3129_precheck_io.php 3.12.9: the pre-cache check never waits for the disk (its own php -S servers on free ports,
+                    no request to BASE): a counter / .new / events.log locked by another process (answered at once, still
+                    counted); 50 processes on one counter (no call that slept took 100 ms, exact count, one violation,
+                    a ban file never read empty); no cleanup in the request, the sweep without WP-Cron within its
+                    budget and LOCK_NB; 5,000 old minute files; APCu (counter names as before, bans, events, nonces and
+                    the configuration in APCu, no file of the data folder touched under strace, the folder renamed away
+                    and the limits still work, WP-CLI's ops.log through the signed sync request); Redis with a
+                    redis-server of the test on a Unix socket (the same, Redis stopped mid-run, back empty, a socket
+                    that never answers); the Redis connection in the wp-config.php line (password masked); k) the
+                    circuit breaker of the check in the counters' Redis (strace: no file), and with the files one
+                    stat() of its state file, never an open. SKIP parts without APCu / redis-server / strace
+  t_3129_requests.php 3.12.9: what a visitor's request costs (lib/probe-3129.php, copied into mu-plugins for the test,
+                    notes ScrapeLock's own queries and file access for requests with X-PNCP-Probe): without an object
+                    cache a known visitor's page views write only the counters of the limits (and the surge state at
+                    most once a minute); with one (REDIS_DROPIN, else lib/object-cache-stub.php) no query, read or
+                    write, and no file access of ScrapeLock: page views of a known and a new visitor, a refused AI
+                    bot, the trap and its ban (in effect at once), an AI referral, Traffic's WordPress rows; the
+                    scheduled event (PNCP_Defer::flush()) then writes them to the database; the automatic Emergency
+                    Mode starts at once without a query, closes a minute in < 5 ms and is stored by that event
+  t_3129_breaker.php 3.12.9: circuit breaker (PNCP_Breaker): a slow operation (usleep 250 ms, or a threshold of 0.001 ms
+                    through the filter for the pre-cache check over HTTP) suspends it for 10 minutes (clock set by the
+                    test): skipped meanwhile, back after; the pre-cache check passes without counting (hit()/strike()/
+                    new files) while bans still apply; Site Health («counting and storage speed», «ScrapeLock counters»),
+                    the notice, `wp scrapelock status` / `breaker` / `breaker reset` (with APCu on the test server through
+                    WP-CLI's copy and request); 10,000 closed checks < 50 ms; damaged or locked state file (no error,
+                    no wait); stores: files, APCu (stub when the extension is missing), use_store(), Redis when
+                    phpredis and redis-server exist (a private one on port 16391), Redis down = never the disk; the
+                    site-wide page count and its state (automatic Emergency Mode) under the breaker "surge"
+  t_3129_strace.php 3.12.9: a guest's request on Nginx + PHP-FPM (its own, on a free port, as the user that runs it)
+                    with the pre-cache and the early check on: with APCu, and with a Redis object cache
+                    (lib/object-cache-redis.php on a redis-server of the test, no APCu), page views of new and known
+                    visitors, one over the limit (429, the ban, 403): no system call on uploads/scrapelock (strace of
+                    the worker) and no query of ScrapeLock (lib/probe-3129.php), also a minute later after the
+                    scheduled event; without either store the same requests use both (control). SKIP without
+                    php-fpm / nginx / a working strace, parts without APCu / phpredis + redis-server
   t_cli.php         wp scrapelock … μέσα από το πραγματικό wp (χρειάζεται WP_CLI, αλλιώς SKIP)
   t_bunny_rules.php Edge Rules στο Bunny μέσα στα όριά του (το πολύ 5 μοτίβα ανά συνθήκη) με ψεύτικο API που δίνει
                     HTTP 400 όπως το πραγματικό: χωρισμός, κλείδωμα/Remove, rollback, Monitor only, sync, προεπισκόπηση,
@@ -332,4 +367,6 @@ Ubuntu 24.04 (ως root, ΜΟΝΟ σε μηχάνημα δοκιμών):
   t_cache.php         WP Super Cache: κανόνες server πριν από την cache, 403 / feeds εκτός cache, purge
   t_security.php      CSRF, δικαιώματα, open redirect, XSS / SQLi, header injection, παρακάμψεις feeds, άμεσα αρχεία
   t_load.php          επιβάρυνση, ακρίβεια ορίου (200 ταυτόχρονα), 3000 αιτήματα bot, 1500 ταυτόχρονοι αποκλεισμοί,
-                      με και χωρίς Redis (lib/burst.php: curl_multi)
+                      με και χωρίς Redis (lib/burst.php: curl_multi)· 3.12.9: με FREEZE_MOUNT (το uploads σε δικό του
+                      σύστημα αρχείων, π.χ. loop ext4, ως root) «παγωμένος δίσκος» (fsfreeze 5 δευτ.) κατά τη διάρκεια
+                      20 ταυτόχρονων επισκεπτών: με Redis κανένα 5xx και κανένα αίτημα πάνω από 1 δευτ.

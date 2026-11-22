@@ -2,14 +2,14 @@
 # This file is distributed under the GPL-2.0-or-later.
 msgid ""
 msgstr ""
-"Project-Id-Version: ScrapeLock – Content & AI Bot Protection 3.12.8\n"
+"Project-Id-Version: ScrapeLock – Content & AI Bot Protection 3.12.9\n"
 "Report-Msgid-Bugs-To: https://wordpress.org/support/plugin/scrapelock\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
 "MIME-Version: 1.0\n"
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
-"POT-Creation-Date: 2026-11-21T17:50:35+00:00\n"
+"POT-Creation-Date: 2026-11-22T01:16:58+00:00\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "X-Generator: WP-CLI 2.12.0\n"
 "X-Domain: scrapelock\n"
@@ -151,7 +151,7 @@ msgid "Stricter page limit for visitors who have not shown they are people"
 msgstr ""
 
 #: includes/class-pncp-admin-fields.php:80
-#: includes/class-pncp-options.php:2401
+#: includes/class-pncp-options.php:2406
 msgid "Countries with a stricter page limit"
 msgstr ""
 
@@ -162,7 +162,7 @@ msgid "Watch for attacks spread over many IPs (automatic Emergency Mode)"
 msgstr ""
 
 #: includes/class-pncp-admin-fields.php:82
-#: includes/class-pncp-log.php:315
+#: includes/class-pncp-log.php:324
 #: includes/class-pncp-wizard.php:1117
 msgid "Pages per minute"
 msgstr ""
@@ -185,13 +185,13 @@ msgid "Opt-out declaration from AI training and text and data mining (TDM)"
 msgstr ""
 
 #: includes/class-pncp-admin-fields.php:86
-#: includes/class-pncp-admin.php:2157
-#: includes/class-pncp-health.php:1849
+#: includes/class-pncp-admin.php:2171
+#: includes/class-pncp-health.php:1858
 msgid "Full text"
 msgstr ""
 
 #: includes/class-pncp-admin-fields.php:91
-#: includes/class-pncp-admin.php:2359
+#: includes/class-pncp-admin.php:2373
 #: includes/class-pncp-setting-labels.php:175
 msgid "Watermark new images"
 msgstr ""
@@ -226,7 +226,7 @@ msgid "The stricter page limit below"
 msgstr ""
 
 #: includes/class-pncp-admin-fields.php:102
-#: includes/class-pncp-admin.php:2501
+#: includes/class-pncp-admin.php:2515
 #: includes/class-pncp-setting-labels.php:106
 msgid "Limit failed sign-ins"
 msgstr ""
@@ -244,7 +244,7 @@ msgid "Count IPs that are too fast at the CDN toward a temporary block"
 msgstr ""
 
 #: includes/class-pncp-admin-fields.php:105
-#: includes/class-pncp-admin.php:3257
+#: includes/class-pncp-admin.php:3271
 #: includes/class-pncp-setting-labels.php:38
 msgid "Record where bots and attackers hit the site"
 msgstr ""
@@ -288,6 +288,7 @@ msgstr[1] ""
 
 #: includes/class-pncp-admin-fields.php:314
 #: includes/class-pncp-admin-tabs.php:150
+#: includes/class-pncp-breaker-status.php:332
 msgid "More"
 msgstr ""
 
@@ -364,10 +365,10 @@ msgid "Bots & limits"
 msgstr ""
 
 #: includes/class-pncp-admin-tabs.php:102
-#: includes/class-pncp-attacks.php:1821
+#: includes/class-pncp-attacks.php:1872
 #: includes/class-pncp-bunny.php:4601
 #: includes/class-pncp-hardening.php:2595
-#: includes/class-pncp-health.php:163
+#: includes/class-pncp-health.php:172
 #: includes/class-pncp-login.php:1693
 #: includes/class-pncp-rules-state.php:636
 #: includes/class-pncp-site-files.php:611
@@ -390,33 +391,33 @@ msgstr ""
 #: includes/class-pncp-admin-traffic.php:203
 #: includes/class-pncp-admin.php:1383
 #: includes/class-pncp-attack-report.php:162
-#: includes/class-pncp-attacks.php:1451
+#: includes/class-pncp-attacks.php:1502
 msgid "24 hours"
 msgstr ""
 
 #: includes/class-pncp-admin-traffic.php:204
-#: includes/class-pncp-admin.php:2298
-#: includes/class-pncp-admin.php:3226
-#: includes/class-pncp-admin.php:3268
+#: includes/class-pncp-admin.php:2312
+#: includes/class-pncp-admin.php:3240
+#: includes/class-pncp-admin.php:3282
 #: includes/class-pncp-attack-report.php:163
-#: includes/class-pncp-attacks.php:1452
+#: includes/class-pncp-attacks.php:1503
 msgid "7 days"
 msgstr ""
 
 #: includes/class-pncp-admin-traffic.php:205
-#: includes/class-pncp-admin.php:2299
-#: includes/class-pncp-admin.php:3227
-#: includes/class-pncp-admin.php:3269
+#: includes/class-pncp-admin.php:2313
+#: includes/class-pncp-admin.php:3241
+#: includes/class-pncp-admin.php:3283
 #: includes/class-pncp-attack-report.php:164
-#: includes/class-pncp-attacks.php:1453
+#: includes/class-pncp-attacks.php:1504
 #: includes/class-pncp-hardening.php:2335
 msgid "30 days"
 msgstr ""
 
 #: includes/class-pncp-admin-traffic.php:206
-#: includes/class-pncp-admin.php:3270
+#: includes/class-pncp-admin.php:3284
 #: includes/class-pncp-attack-report.php:165
-#: includes/class-pncp-attacks.php:1454
+#: includes/class-pncp-attacks.php:1505
 msgid "90 days"
 msgstr ""
 
@@ -470,7 +471,7 @@ msgstr ""
 
 #: includes/class-pncp-admin-traffic.php:542
 #: includes/class-pncp-admin.php:985
-#: includes/class-pncp-admin.php:2959
+#: includes/class-pncp-admin.php:2973
 #: includes/class-pncp-setting-labels.php:140
 msgid "Pages"
 msgstr ""
@@ -496,7 +497,7 @@ msgid "Next →"
 msgstr ""
 
 #: includes/class-pncp-admin-traffic.php:657
-#: includes/class-pncp-admin.php:4003
+#: includes/class-pncp-admin.php:4017
 #: includes/class-pncp-wizard.php:1404
 msgid "Undo"
 msgstr ""
@@ -529,8 +530,8 @@ msgstr ""
 #: includes/class-pncp-admin-traffic.php:2082
 #: includes/class-pncp-admin-traffic.php:2119
 #: includes/class-pncp-admin-traffic.php:2207
-#: includes/class-pncp-admin.php:3035
-#: includes/class-pncp-admin.php:3299
+#: includes/class-pncp-admin.php:3049
+#: includes/class-pncp-admin.php:3313
 #: includes/class-pncp-attack-report.php:1782
 #: includes/class-pncp-bunny.php:4050
 #: includes/class-pncp-bunny.php:4496
@@ -555,7 +556,7 @@ msgid "Period"
 msgstr ""
 
 #: includes/class-pncp-admin-traffic.php:720
-#: includes/class-pncp-admin.php:3186
+#: includes/class-pncp-admin.php:3200
 msgid "From"
 msgstr ""
 
@@ -633,7 +634,7 @@ msgstr ""
 #: includes/class-pncp-admin-traffic.php:1443
 #: includes/class-pncp-admin-traffic.php:1526
 #: includes/class-pncp-admin-traffic.php:2225
-#: includes/class-pncp-admin.php:3037
+#: includes/class-pncp-admin.php:3051
 #: includes/class-pncp-attack-report.php:1782
 #: includes/class-pncp-cli.php:477
 #: includes/class-pncp-tester-view.php:67
@@ -642,21 +643,21 @@ msgid "User-Agent"
 msgstr ""
 
 #: includes/class-pncp-admin-traffic.php:760
-#: includes/class-pncp-admin.php:2313
-#: includes/class-pncp-admin.php:3036
-#: includes/class-pncp-admin.php:3298
+#: includes/class-pncp-admin.php:2327
+#: includes/class-pncp-admin.php:3050
+#: includes/class-pncp-admin.php:3312
 msgid "Path"
 msgstr ""
 
 #: includes/class-pncp-admin-traffic.php:761
 #: includes/class-pncp-admin-traffic.php:2081
 #: includes/class-pncp-admin-traffic.php:2225
-#: includes/class-pncp-admin.php:2988
-#: includes/class-pncp-admin.php:3033
-#: includes/class-pncp-admin.php:3462
+#: includes/class-pncp-admin.php:3002
+#: includes/class-pncp-admin.php:3047
+#: includes/class-pncp-admin.php:3476
 #: includes/class-pncp-attack-report.php:1627
 #: includes/class-pncp-attack-report.php:1718
-#: includes/class-pncp-attacks.php:1640
+#: includes/class-pncp-attacks.php:1691
 #: includes/class-pncp-bunny.php:4103
 #: includes/class-pncp-cli.php:476
 #: includes/class-pncp-lockdown.php:2993
@@ -929,7 +930,7 @@ msgid "Who visits"
 msgstr ""
 
 #: includes/class-pncp-admin-traffic.php:1165
-#: includes/class-pncp-admin.php:2940
+#: includes/class-pncp-admin.php:2954
 msgid "Top User-Agents"
 msgstr ""
 
@@ -1055,7 +1056,7 @@ msgid "Families"
 msgstr ""
 
 #: includes/class-pncp-admin-traffic.php:1416
-#: includes/class-pncp-attacks.php:1485
+#: includes/class-pncp-attacks.php:1536
 msgid "All"
 msgstr ""
 
@@ -1064,15 +1065,15 @@ msgstr ""
 #: includes/class-pncp-admin-traffic.php:1861
 #: includes/class-pncp-admin-traffic.php:1997
 #: includes/class-pncp-admin-traffic.php:2119
-#: includes/class-pncp-admin.php:3300
+#: includes/class-pncp-admin.php:3314
 #: includes/class-pncp-attack-report.php:1360
 #: includes/class-pncp-attack-report.php:1436
 #: includes/class-pncp-attack-report.php:1579
 #: includes/class-pncp-attack-report.php:1613
 #: includes/class-pncp-attack-report.php:1782
 #: includes/class-pncp-attack-report.php:1854
-#: includes/class-pncp-attacks.php:1606
-#: includes/class-pncp-attacks.php:1714
+#: includes/class-pncp-attacks.php:1657
+#: includes/class-pncp-attacks.php:1765
 #: includes/class-pncp-bunny.php:4496
 #: includes/class-pncp-login.php:1617
 msgid "IPs"
@@ -1083,10 +1084,10 @@ msgstr ""
 #: includes/class-pncp-admin-traffic.php:1864
 #: includes/class-pncp-admin-traffic.php:1867
 #: includes/class-pncp-admin-traffic.php:2085
-#: includes/class-pncp-admin.php:3466
+#: includes/class-pncp-admin.php:3480
 #: includes/class-pncp-attack-report.php:1633
 #: includes/class-pncp-attack-report.php:1725
-#: includes/class-pncp-attacks.php:1643
+#: includes/class-pncp-attacks.php:1694
 msgid "Last seen"
 msgstr ""
 
@@ -1192,7 +1193,7 @@ msgid "No “Block” button: %s"
 msgstr ""
 
 #: includes/class-pncp-admin-traffic.php:1600
-#: includes/class-pncp-admin.php:3983
+#: includes/class-pncp-admin.php:3997
 #: includes/class-pncp-traffic-actions.php:541
 msgid "The action was not completed: reload the page and try again."
 msgstr ""
@@ -1212,7 +1213,7 @@ msgid "Block this User-Agent"
 msgstr ""
 
 #: includes/class-pncp-admin-traffic.php:1610
-#: includes/class-pncp-admin.php:3406
+#: includes/class-pncp-admin.php:3420
 msgid "Always allow this User-Agent"
 msgstr ""
 
@@ -1304,9 +1305,9 @@ msgid "Redirect"
 msgstr ""
 
 #: includes/class-pncp-admin-traffic.php:1760
-#: includes/class-pncp-admin.php:2244
-#: includes/class-pncp-admin.php:2250
-#: includes/class-pncp-admin.php:2842
+#: includes/class-pncp-admin.php:2258
+#: includes/class-pncp-admin.php:2264
+#: includes/class-pncp-admin.php:2856
 #: includes/class-pncp-hardening.php:2515
 #: includes/class-pncp-lockdown.php:4553
 #: includes/class-pncp-stealth-status.php:772
@@ -1396,7 +1397,7 @@ msgstr ""
 #: includes/class-pncp-attack-report.php:1433
 #: includes/class-pncp-attack-report.php:1602
 #: includes/class-pncp-attack-report.php:1842
-#: includes/class-pncp-attacks.php:1603
+#: includes/class-pncp-attacks.php:1654
 #: includes/class-pncp-cli.php:478
 #: includes/class-pncp-tester.php:706
 #: includes/class-pncp-verify-files.php:635
@@ -1504,13 +1505,13 @@ msgstr ""
 
 #. translators: %s: company, e.g. Anthropic or Cloudflare
 #: includes/class-pncp-admin-traffic.php:2062
-#: includes/class-pncp-admin.php:3370
+#: includes/class-pncp-admin.php:3384
 #, php-format
 msgid "Official %s address"
 msgstr ""
 
 #: includes/class-pncp-admin-traffic.php:2077
-#: includes/class-pncp-admin.php:2936
+#: includes/class-pncp-admin.php:2950
 msgid "Top IPs"
 msgstr ""
 
@@ -1523,7 +1524,7 @@ msgstr ""
 #: includes/class-pncp-admin.php:70
 #: includes/class-pncp-admin.php:71
 #: includes/class-pncp-admin.php:871
-#: includes/class-pncp-log.php:2049
+#: includes/class-pncp-log.php:2271
 #: includes/class-pncp-self-check.php:470
 #: includes/class-pncp-status.php:434
 msgid "ScrapeLock"
@@ -1542,7 +1543,7 @@ msgstr ""
 
 #. translators: %s: IP address
 #: includes/class-pncp-admin-traffic.php:2184
-#: includes/class-pncp-admin.php:3379
+#: includes/class-pncp-admin.php:3393
 msgid "Block permanently"
 msgstr ""
 
@@ -1555,7 +1556,7 @@ msgid "Export CSV"
 msgstr ""
 
 #: includes/class-pncp-admin-traffic.php:2225
-#: includes/class-pncp-admin.php:3032
+#: includes/class-pncp-admin.php:3046
 msgid "Time"
 msgstr ""
 
@@ -1653,7 +1654,7 @@ msgid "Attacks"
 msgstr ""
 
 #: includes/class-pncp-admin.php:161
-#: includes/class-pncp-admin.php:2666
+#: includes/class-pncp-admin.php:2680
 #: includes/class-pncp-hardening.php:2310
 #: includes/class-pncp-health.php:120
 #: includes/class-pncp-self-check.php:1239
@@ -1663,7 +1664,7 @@ msgstr ""
 #: includes/class-pncp-admin.php:162
 #: includes/class-pncp-admin.php:883
 #: includes/class-pncp-cli.php:357
-#: includes/class-pncp-health.php:1949
+#: includes/class-pncp-health.php:1958
 #: includes/class-pncp-integrity.php:1927
 #: includes/class-pncp-lockdown.php:4021
 #: includes/class-pncp-status.php:603
@@ -1742,7 +1743,7 @@ msgstr ""
 #: includes/class-pncp-admin.php:858
 #: includes/class-pncp-admin.php:1320
 #: includes/class-pncp-cli.php:492
-#: includes/class-pncp-health.php:1902
+#: includes/class-pncp-health.php:1911
 msgid "Emergency Mode"
 msgstr ""
 
@@ -1755,18 +1756,18 @@ msgid "Off:"
 msgstr ""
 
 #: includes/class-pncp-admin.php:583
-#: includes/class-pncp-health.php:1900
+#: includes/class-pncp-health.php:1909
 msgid "Protection"
 msgstr ""
 
 #: includes/class-pncp-admin.php:584
-#: includes/class-pncp-health.php:1919
+#: includes/class-pncp-health.php:1928
 #: includes/class-pncp-status.php:474
 msgid "Early check"
 msgstr ""
 
 #: includes/class-pncp-admin.php:586
-#: includes/class-pncp-health.php:1920
+#: includes/class-pncp-health.php:1929
 #: includes/class-pncp-status.php:477
 #: includes/class-pncp-wizard.php:623
 msgid "Pre-cache check"
@@ -1775,7 +1776,7 @@ msgstr ""
 #: includes/class-pncp-admin.php:587
 #: includes/class-pncp-admin.php:1436
 #: includes/class-pncp-admin.php:1581
-#: includes/class-pncp-health.php:1906
+#: includes/class-pncp-health.php:1915
 #: includes/class-pncp-tester.php:811
 msgid "Human check"
 msgstr ""
@@ -1789,7 +1790,7 @@ msgid "Headless browsers"
 msgstr ""
 
 #: includes/class-pncp-admin.php:594
-#: includes/class-pncp-health.php:1947
+#: includes/class-pncp-health.php:1956
 #: includes/class-pncp-status.php:480
 msgid "Only through the CDN"
 msgstr ""
@@ -1875,7 +1876,7 @@ msgid "Content, scraping and site protection"
 msgstr ""
 
 #: includes/class-pncp-admin.php:878
-#: includes/class-pncp-admin.php:2822
+#: includes/class-pncp-admin.php:2836
 #: includes/class-pncp-stealth-status.php:731
 msgid "Status:"
 msgstr ""
@@ -1921,7 +1922,7 @@ msgid "Blocked, 24 h"
 msgstr ""
 
 #: includes/class-pncp-admin.php:924
-#: includes/class-pncp-admin.php:2980
+#: includes/class-pncp-admin.php:2994
 #: includes/class-pncp-cli.php:110
 msgid "IPs blocked now"
 msgstr ""
@@ -2194,28 +2195,28 @@ msgid "Not allowed"
 msgstr ""
 
 #: includes/class-pncp-admin.php:1067
-#: includes/class-pncp-health.php:1913
+#: includes/class-pncp-health.php:1922
 #: includes/class-pncp-setting-labels.php:91
 msgid "Who is excluded"
 msgstr ""
 
 #: includes/class-pncp-admin.php:1074
-#: includes/class-pncp-health.php:1842
+#: includes/class-pncp-health.php:1851
 msgid "Logged-in contributors, authors, editors, shop managers and administrators (anyone who can write posts)"
 msgstr ""
 
 #: includes/class-pncp-admin.php:1075
-#: includes/class-pncp-health.php:1843
+#: includes/class-pncp-health.php:1852
 msgid "Logged-in editors and administrators"
 msgstr ""
 
 #: includes/class-pncp-admin.php:1076
-#: includes/class-pncp-health.php:1844
+#: includes/class-pncp-health.php:1853
 msgid "Administrators only"
 msgstr ""
 
 #: includes/class-pncp-admin.php:1077
-#: includes/class-pncp-health.php:1845
+#: includes/class-pncp-health.php:1854
 msgid "Nobody (for testing the protection)"
 msgstr ""
 
@@ -2525,7 +2526,7 @@ msgid "AI"
 msgstr ""
 
 #: includes/class-pncp-admin.php:1434
-#: includes/class-pncp-admin.php:2499
+#: includes/class-pncp-admin.php:2513
 msgid "Sign-in"
 msgstr ""
 
@@ -2558,7 +2559,7 @@ msgid "Network and CDN"
 msgstr ""
 
 #: includes/class-pncp-admin.php:1442
-#: includes/class-pncp-health.php:1946
+#: includes/class-pncp-health.php:1955
 msgid "Blocking at the CDN"
 msgstr ""
 
@@ -2642,7 +2643,7 @@ msgid "Blocks Chrome running without a window when it says so in its headers (�
 msgstr ""
 
 #: includes/class-pncp-admin.php:1479
-#: includes/class-pncp-log.php:333
+#: includes/class-pncp-log.php:342
 #: includes/class-pncp-setting-labels.php:166
 #: includes/class-pncp-status.php:451
 msgid "Bot trap"
@@ -3132,8 +3133,8 @@ msgid "Pages per minute for these countries (0 = off):"
 msgstr ""
 
 #: includes/class-pncp-admin.php:1604
-#: includes/class-pncp-admin.php:1982
-#: includes/class-pncp-health.php:1935
+#: includes/class-pncp-admin.php:1996
+#: includes/class-pncp-health.php:1944
 msgid "CrowdSec blocklist"
 msgstr ""
 
@@ -3147,8 +3148,8 @@ msgstr ""
 #: includes/class-pncp-admin.php:1772
 #: includes/class-pncp-admin.php:1809
 #: includes/class-pncp-edge.php:2686
-#: includes/class-pncp-health.php:1868
-#: includes/class-pncp-health.php:1888
+#: includes/class-pncp-health.php:1877
+#: includes/class-pncp-health.php:1897
 #: includes/class-pncp-setting-labels.php:218
 #: includes/class-pncp-status-state.php:247
 #: includes/class-pncp-stealth.php:3057
@@ -3245,7 +3246,7 @@ msgid "On a VPS or a dedicated server, fail2ban can read these lines and block t
 msgstr ""
 
 #: includes/class-pncp-admin.php:1648
-#: includes/class-pncp-admin.php:2763
+#: includes/class-pncp-admin.php:2777
 msgid "PHP cannot write to the system log here: enable openlog() and syslog() in php.ini."
 msgstr ""
 
@@ -3274,7 +3275,7 @@ msgid "Most sites never need to change these."
 msgstr ""
 
 #: includes/class-pncp-admin.php:1665
-#: includes/class-pncp-health.php:1916
+#: includes/class-pncp-health.php:1925
 #: includes/class-pncp-setting-labels.php:100
 #: includes/class-pncp-wizard.php:1105
 msgid "Real visitor IP"
@@ -3638,50 +3639,59 @@ msgstr ""
 msgid "Running: wp-config.php loads the check before the page cache."
 msgstr ""
 
-#: includes/class-pncp-admin.php:1920
+#: includes/class-pncp-admin.php:1923
+msgid "Counters: Redis."
+msgstr ""
+
+#: includes/class-pncp-admin.php:1925
 msgid "Counters: APCu."
 msgstr ""
 
-#: includes/class-pncp-admin.php:1920
+#: includes/class-pncp-admin.php:1925
 msgid "Counters: files in uploads/scrapelock."
 msgstr ""
 
-#: includes/class-pncp-admin.php:1927
+#: includes/class-pncp-admin.php:1933
 msgid "Not running: the folder uploads/scrapelock could not be created (the server does not allow direct file writes). The normal check works as before."
 msgstr ""
 
-#: includes/class-pncp-admin.php:1929
-msgid "Not running yet: wp-config.php could not be changed (not writable, or it does not start with “<?php” on its own line). Add these lines right after the first line (<?php) of wp-config.php, then reload this page:"
+#: includes/class-pncp-admin.php:1937
+msgid "The pre-cache check runs with the lines of an earlier version: wp-config.php could not be changed. Replace the ScrapeLock lines (from “// BEGIN ScrapeLock pre-cache check” to “// END ScrapeLock pre-cache check”) at the top of wp-config.php with these, then reload this page:"
 msgstr ""
 
-#: includes/class-pncp-admin.php:1933
+#: includes/class-pncp-admin.php:1941
+#: includes/class-pncp-admin.php:1947
 msgid "If you remove the setting later, remove the lines too: without the plugin they do nothing."
 msgstr ""
 
-#: includes/class-pncp-admin.php:1953
+#: includes/class-pncp-admin.php:1943
+msgid "Not running yet: wp-config.php could not be changed (not writable, or it does not start with “<?php” on its own line). Add these lines right after the first line (<?php) of wp-config.php, then reload this page:"
+msgstr ""
+
+#: includes/class-pncp-admin.php:1967
 msgid "Bunny CDN detected. REMOTE_ADDR already holds the visitor's IP (the server replaced it), so “REMOTE_ADDR” is the right choice."
 msgstr ""
 
-#: includes/class-pncp-admin.php:1962
+#: includes/class-pncp-admin.php:1976
 msgid "The site is behind Bunny CDN, but all visitors appear with a Bunny address."
 msgstr ""
 
-#: includes/class-pncp-admin.php:1963
+#: includes/class-pncp-admin.php:1977
 msgid "Then limits and blocks hit Bunny itself, i.e. many visitors at once. Use the X-Real-IP header, trusted only when the request comes from a Bunny edge server (the official list is downloaded now)."
 msgstr ""
 
-#: includes/class-pncp-admin.php:1965
+#: includes/class-pncp-admin.php:1979
 msgid "Use X-Real-IP from Bunny (recommended)"
 msgstr ""
 
 #. translators: 1: number of addresses, as words and figures; 2: number of ranges, likewise; 3: date
-#: includes/class-pncp-admin.php:1987
+#: includes/class-pncp-admin.php:2001
 #, php-format
 msgid "%1$s and %2$s, updated %3$s."
 msgstr ""
 
 #. translators: %s: number of IP addresses
-#: includes/class-pncp-admin.php:1989
+#: includes/class-pncp-admin.php:2003
 #, php-format
 msgid "%s address"
 msgid_plural "%s addresses"
@@ -3689,259 +3699,259 @@ msgstr[0] ""
 msgstr[1] ""
 
 #. translators: %s: number of IP ranges
-#: includes/class-pncp-admin.php:1991
+#: includes/class-pncp-admin.php:2005
 #, php-format
 msgid "%s range"
 msgid_plural "%s ranges"
 msgstr[0] ""
 msgstr[1] ""
 
-#: includes/class-pncp-admin.php:1996
+#: includes/class-pncp-admin.php:2010
 msgid "Not downloaded yet."
 msgstr ""
 
 #. translators: 1: date, 2: error message
-#: includes/class-pncp-admin.php:2005
+#: includes/class-pncp-admin.php:2019
 #, php-format
 msgid "Last attempt failed (%1$s): %2$s"
 msgstr ""
 
-#: includes/class-pncp-admin.php:2014
+#: includes/class-pncp-admin.php:2028
 msgid "Sync now"
 msgstr ""
 
-#: includes/class-pncp-admin.php:2046
+#: includes/class-pncp-admin.php:2060
 msgid "Official IP lists"
 msgstr ""
 
-#: includes/class-pncp-admin.php:2055
+#: includes/class-pncp-admin.php:2069
 msgid "not used with the current “Real visitor IP” setting (the built-in list is enough to detect Cloudflare)"
 msgstr ""
 
-#: includes/class-pncp-admin.php:2057
+#: includes/class-pncp-admin.php:2071
 msgid "built-in list (not downloaded yet)"
 msgstr ""
 
-#: includes/class-pncp-admin.php:2059
+#: includes/class-pncp-admin.php:2073
 msgid "not used with the current settings"
 msgstr ""
 
-#: includes/class-pncp-admin.php:2061
+#: includes/class-pncp-admin.php:2075
 msgid "not downloaded yet, no verification until then"
 msgstr ""
 
-#: includes/class-pncp-admin.php:2063
+#: includes/class-pncp-admin.php:2077
 msgid "not downloaded yet, only DNS is used"
 msgstr ""
 
 #. translators: 1: number of addresses, 2: date
-#: includes/class-pncp-admin.php:2069
+#: includes/class-pncp-admin.php:2083
 #, php-format
 msgid "%1$s addresses, updated %2$s"
 msgstr ""
 
-#: includes/class-pncp-admin.php:2082
+#: includes/class-pncp-admin.php:2096
 msgid "Refresh lists now"
 msgstr ""
 
-#: includes/class-pncp-admin.php:2086
+#: includes/class-pncp-admin.php:2100
 msgid "Country database"
 msgstr ""
 
-#: includes/class-pncp-admin.php:2089
+#: includes/class-pncp-admin.php:2103
 msgid "Downloads DB-IP Lite now (about 5 MB, it may take up to a minute). It is also refreshed automatically once a month."
 msgstr ""
 
-#: includes/class-pncp-admin.php:2090
+#: includes/class-pncp-admin.php:2104
 msgid "Download now"
 msgstr ""
 
-#: includes/class-pncp-admin.php:2121
+#: includes/class-pncp-admin.php:2135
 #: includes/class-pncp-status.php:453
 msgid "Protected feeds"
 msgstr ""
 
-#: includes/class-pncp-admin.php:2124
+#: includes/class-pncp-admin.php:2138
 #: includes/class-pncp-setting-labels.php:118
 msgid "Paths that are not public (one per line, * means “anything”), e.g. /skroutz.xml, /feeds/*.xml, or a feed served with a query, e.g. /?feed=skroutz:"
 msgstr ""
 
-#: includes/class-pncp-admin.php:2125
+#: includes/class-pncp-admin.php:2139
 #: includes/class-pncp-setting-labels.php:117
 msgid "Or allowed IPs / CIDR of the service (one per line):"
 msgstr ""
 
-#: includes/class-pncp-admin.php:2125
+#: includes/class-pncp-admin.php:2139
 msgid "No valid token or allowed IP: 403. PHP feeds only."
 msgstr ""
 
-#: includes/class-pncp-admin.php:2125
+#: includes/class-pncp-admin.php:2139
 msgid "Without a valid token or an allowed IP it returns 403. Applies to feeds generated by PHP. For static .xml files see the “Server rules” tab."
 msgstr ""
 
-#: includes/class-pncp-admin.php:2130
+#: includes/class-pncp-admin.php:2144
 #: includes/class-pncp-tester.php:235
 msgid "REST API"
 msgstr ""
 
-#: includes/class-pncp-admin.php:2133
+#: includes/class-pncp-admin.php:2147
 #: includes/class-pncp-setting-labels.php:137
 msgid "Hide the text (content, excerpt) of posts, pages and products from visitors"
 msgstr ""
 
-#: includes/class-pncp-admin.php:2133
+#: includes/class-pncp-admin.php:2147
 msgid "Forms, oEmbed and SEO plugins keep working; writers still see the text."
 msgstr ""
 
-#: includes/class-pncp-admin.php:2133
+#: includes/class-pncp-admin.php:2147
 msgid "REST stays open for forms, oEmbed, SEO plugins and your own endpoints. Users who can write posts see the text normally. Exceptions from code: filter pncp_rest_hide_content."
 msgstr ""
 
-#: includes/class-pncp-admin.php:2134
+#: includes/class-pncp-admin.php:2148
 #: includes/class-pncp-setting-labels.php:97
 msgid "Hide the REST API map from visitors"
 msgstr ""
 
-#: includes/class-pncp-admin.php:2134
+#: includes/class-pncp-admin.php:2148
 msgid "/wp-json/ stops listing your routes; every route still works."
 msgstr ""
 
-#: includes/class-pncp-admin.php:2134
+#: includes/class-pncp-admin.php:2148
 msgid "/wp-json/ no longer lists the namespaces and routes (a map of your plugins), and the page head and the Link header no longer point to the REST API and to oEmbed. Every route keeps working when called; logged-in users see everything. Leave it off if an app or service reads /wp-json/ to discover your site."
 msgstr ""
 
-#: includes/class-pncp-admin.php:2139
+#: includes/class-pncp-admin.php:2153
 #: includes/class-pncp-tester.php:236
 msgid "GraphQL"
 msgstr ""
 
-#: includes/class-pncp-admin.php:2142
+#: includes/class-pncp-admin.php:2156
 #: includes/class-pncp-setting-labels.php:95
 msgid "Hide the text in WPGraphQL (content, excerpt, product descriptions)"
 msgstr ""
 
-#: includes/class-pncp-admin.php:2143
+#: includes/class-pncp-admin.php:2157
 msgid "WPGraphQL is active: the bot check, blocks and the REST / GraphQL limit apply too."
 msgstr ""
 
-#: includes/class-pncp-admin.php:2143
+#: includes/class-pncp-admin.php:2157
 msgid "WPGraphQL is not installed; the setting will apply if you install it."
 msgstr ""
 
-#: includes/class-pncp-admin.php:2148
-#: includes/class-pncp-admin.php:2154
+#: includes/class-pncp-admin.php:2162
+#: includes/class-pncp-admin.php:2168
 #: includes/class-pncp-setting-labels.php:92
 msgid "RSS / Atom feeds"
 msgstr ""
 
-#: includes/class-pncp-admin.php:2156
-#: includes/class-pncp-health.php:1848
+#: includes/class-pncp-admin.php:2170
+#: includes/class-pncp-health.php:1857
 msgid "Short excerpt only, with a link to the post (recommended)"
 msgstr ""
 
-#: includes/class-pncp-admin.php:2158
-#: includes/class-pncp-health.php:1850
+#: includes/class-pncp-admin.php:2172
+#: includes/class-pncp-health.php:1859
 msgid "Disabled"
 msgstr ""
 
-#: includes/class-pncp-admin.php:2161
+#: includes/class-pncp-admin.php:2175
 #: includes/class-pncp-setting-labels.php:93
 msgid "Full text: add “The post … first appeared on …” at the end"
 msgstr ""
 
-#: includes/class-pncp-admin.php:2161
+#: includes/class-pncp-admin.php:2175
 msgid "Republishing sites then link back to the original article."
 msgstr ""
 
-#: includes/class-pncp-admin.php:2161
+#: includes/class-pncp-admin.php:2175
 msgid "Sites that republish the feed automatically then link back to the original article, so search engines see where it first appeared."
 msgstr ""
 
-#: includes/class-pncp-admin.php:2162
+#: includes/class-pncp-admin.php:2176
 #: includes/class-pncp-setting-labels.php:102
 msgid "Lists of articles: an excerpt and a link instead of the full text"
 msgstr ""
 
-#: includes/class-pncp-admin.php:2162
+#: includes/class-pncp-admin.php:2176
 msgid "Lists show an excerpt and a link; article pages do not change."
 msgstr ""
 
-#: includes/class-pncp-admin.php:2162
+#: includes/class-pncp-admin.php:2176
 msgid "Many themes print the whole text of every article on the home page, in categories, archives and search, so one request gives a scraper ten articles. With this on, visitors see an excerpt and a “Read the full article” link there, and each article has to be opened (and counted toward the page limit) on its own. The article pages do not change; the staff in “Who is excluded” see the full text. Changes how your lists look, so check them after turning it on. Always on in Emergency Mode."
 msgstr ""
 
-#: includes/class-pncp-admin.php:2167
+#: includes/class-pncp-admin.php:2181
 #: includes/class-pncp-attack-report.php:1632
 msgid "XML-RPC"
 msgstr ""
 
-#: includes/class-pncp-admin.php:2169
+#: includes/class-pncp-admin.php:2183
 #: includes/class-pncp-setting-labels.php:86
 msgid "Turn off pingbacks"
 msgstr ""
 
-#: includes/class-pncp-admin.php:2169
+#: includes/class-pncp-admin.php:2183
 msgid "Removes the pingback methods and header; other XML-RPC keeps working."
 msgstr ""
 
-#: includes/class-pncp-admin.php:2169
+#: includes/class-pncp-admin.php:2183
 msgid "pingback.ping stays open even when XML-RPC is \"disabled\", and is used to make your site send requests to other sites or to check which pages exist. This removes the two pingback methods and the X-Pingback header; other XML-RPC methods (e.g. Jetpack) keep working. You no longer receive pingbacks from other blogs."
 msgstr ""
 
-#: includes/class-pncp-admin.php:2173
+#: includes/class-pncp-admin.php:2187
 msgid "Versions"
 msgstr ""
 
-#: includes/class-pncp-admin.php:2175
+#: includes/class-pncp-admin.php:2189
 #: includes/class-pncp-setting-labels.php:96
 msgid "Hide that the site runs on WordPress, as far as possible"
 msgstr ""
 
-#: includes/class-pncp-admin.php:2175
+#: includes/class-pncp-admin.php:2189
 msgid "Removes the WordPress traces scanners look for, for signed-out visitors."
 msgstr ""
 
-#: includes/class-pncp-admin.php:2175
+#: includes/class-pncp-admin.php:2189
 msgid "For visitors who are not signed in: everything “Hide the versions” below does, plus no REST API, oEmbed, RSD and shortlink links in the page head and headers, no emoji script, no X-Pingback and “X-Redirect-By: WordPress” headers. Tools such as BuiltWith and Wappalyzer, and scanners, look for these first. Everything keeps working. It cannot hide everything: the addresses of themes and plugins (/wp-content/…) still show it, and the hosting and DNS of a site are public anyway. Add the Nginx or Apache rules (Server rules tab) to refuse readme.html and license.txt too."
 msgstr ""
 
-#: includes/class-pncp-admin.php:2177
+#: includes/class-pncp-admin.php:2191
 #: includes/class-pncp-setting-labels.php:98
 msgid "Hide the versions of WordPress, PHP and the plugins"
 msgstr ""
 
-#: includes/class-pncp-admin.php:2177
+#: includes/class-pncp-admin.php:2191
 msgid "Removes generator tags, X-Powered-By and ?ver= numbers scanners look up."
 msgstr ""
 
-#: includes/class-pncp-admin.php:2177
+#: includes/class-pncp-admin.php:2191
 msgid "Scanners read these versions and look them up in lists of known vulnerabilities. This removes the “generator” tag from the page head and the feeds, the X-Powered-By header with the PHP version, and replaces “?ver=7.1.3” on CSS and JS files with a code that changes when the version changes, so caches still work. The readme and changelog files of WordPress and the plugins are static files: the Nginx and Apache rules in the “Server rules” tab refuse them. It does not fix any vulnerability: keep WordPress and the plugins updated."
 msgstr ""
 
-#: includes/class-pncp-admin.php:2181
+#: includes/class-pncp-admin.php:2195
 msgid "Uploads"
 msgstr ""
 
-#: includes/class-pncp-admin.php:2183
-#: includes/class-pncp-health.php:1928
+#: includes/class-pncp-admin.php:2197
+#: includes/class-pncp-health.php:1937
 #: includes/class-pncp-setting-labels.php:64
 msgid "No PHP in the uploads folder"
 msgstr ""
 
-#: includes/class-pncp-admin.php:2183
+#: includes/class-pncp-admin.php:2197
 msgid "Refuses every PHP file under uploads, where backdoors usually land."
 msgstr ""
 
-#: includes/class-pncp-admin.php:2183
+#: includes/class-pncp-admin.php:2197
 msgid "Files uploaded to the site (images, documents) never need to run as code. A backdoor uploaded through a vulnerable plugin usually lands in the uploads folder, so this refuses every PHP file there. On Apache it is written into the .htaccess of the uploads folder at once; on Nginx add the rule from the “Server rules” tab. If a plugin of yours really runs PHP from the uploads folder (rare), leave it off."
 msgstr ""
 
-#: includes/class-pncp-admin.php:2202
+#: includes/class-pncp-admin.php:2216
 msgid "REST routes open to everyone"
 msgstr ""
 
 #. translators: %d: number of routes
-#: includes/class-pncp-admin.php:2204
+#: includes/class-pncp-admin.php:2218
 #, php-format
 msgid "%d route can be called without logging in, because its permission is open to everyone. Check after installing a plugin or updating WordPress whether a new one gives out content or data it should not."
 msgid_plural "%d routes can be called without logging in, because their permission is open to everyone. Check after installing a plugin or updating WordPress whether a new one gives out content or data it should not."
@@ -3949,278 +3959,279 @@ msgstr[0] ""
 msgstr[1] ""
 
 #. translators: %d: number of routes
-#: includes/class-pncp-admin.php:2204
+#: includes/class-pncp-admin.php:2218
 msgid "Routes with their own permission check (e.g. published posts) are not listed: their text is covered by \"Hide the text\" above."
 msgstr ""
 
-#: includes/class-pncp-admin.php:2206
+#: includes/class-pncp-admin.php:2220
 msgid "Show the routes"
 msgstr ""
 
-#: includes/class-pncp-admin.php:2209
+#: includes/class-pncp-admin.php:2223
 msgid "Namespace"
 msgstr ""
 
-#: includes/class-pncp-admin.php:2209
+#: includes/class-pncp-admin.php:2223
 msgid "Route"
 msgstr ""
 
-#: includes/class-pncp-admin.php:2209
+#: includes/class-pncp-admin.php:2223
 msgid "Methods"
 msgstr ""
 
-#: includes/class-pncp-admin.php:2240
+#: includes/class-pncp-admin.php:2254
 msgid "Access token"
 msgstr ""
 
-#: includes/class-pncp-admin.php:2243
+#: includes/class-pncp-admin.php:2257
 msgid "New token. Copy it now: it will not be shown again."
 msgstr ""
 
-#: includes/class-pncp-admin.php:2245
+#: includes/class-pncp-admin.php:2259
 msgid "Header for ERP / API:"
 msgstr ""
 
-#: includes/class-pncp-admin.php:2245
+#: includes/class-pncp-admin.php:2259
 msgid "or"
 msgstr ""
 
-#: includes/class-pncp-admin.php:2247
+#: includes/class-pncp-admin.php:2261
 msgid "URL for Skroutz, BestPrice, Google Merchant (they accept only URLs):"
 msgstr ""
 
-#: includes/class-pncp-admin.php:2259
+#: includes/class-pncp-admin.php:2273
 msgid "There is no token. Create one to give the services access."
-msgstr ""
-
-#. translators: 1: last 4 characters, 2: date
-#: includes/class-pncp-admin.php:2264
-#, php-format
-msgid "Active token ending in …%1$s, since %2$s. Only its hash is stored, so it cannot be shown again."
 msgstr ""
 
 #. translators: 1: last 4 characters, 2: date
 #: includes/class-pncp-admin.php:2278
 #, php-format
+msgid "Active token ending in …%1$s, since %2$s. Only its hash is stored, so it cannot be shown again."
+msgstr ""
+
+#. translators: 1: last 4 characters, 2: date
+#: includes/class-pncp-admin.php:2292
+#, php-format
 msgid "The previous token (…%1$s) is still valid until %2$s, so you have time to change the URL in the services."
 msgstr ""
 
-#: includes/class-pncp-admin.php:2287
+#: includes/class-pncp-admin.php:2301
 msgid "Revoke the previous one now"
 msgstr ""
 
-#: includes/class-pncp-admin.php:2294
+#: includes/class-pncp-admin.php:2308
 msgid "Keep the current token valid for:"
 msgstr ""
 
-#: includes/class-pncp-admin.php:2296
+#: includes/class-pncp-admin.php:2310
 msgid "Not at all (revoke immediately)"
 msgstr ""
 
-#: includes/class-pncp-admin.php:2297
-#: includes/class-pncp-admin.php:3225
+#: includes/class-pncp-admin.php:2311
+#: includes/class-pncp-admin.php:3239
 msgid "1 day"
 msgstr ""
 
-#: includes/class-pncp-admin.php:2302
+#: includes/class-pncp-admin.php:2316
 msgid "Create token"
 msgstr ""
 
-#: includes/class-pncp-admin.php:2302
+#: includes/class-pncp-admin.php:2316
 msgid "New token (rotate)"
 msgstr ""
 
-#: includes/class-pncp-admin.php:2305
+#: includes/class-pncp-admin.php:2319
 msgid "Use the header where you can; the URL only for services that need it."
 msgstr ""
 
-#: includes/class-pncp-admin.php:2305
+#: includes/class-pncp-admin.php:2319
 msgid "Header for ERP and your own integrations (not visible in logs and history). Token in the URL for Skroutz, BestPrice and Google Merchant, which accept only URLs."
 msgstr ""
 
-#: includes/class-pncp-admin.php:2308
+#: includes/class-pncp-admin.php:2322
 msgid "Access per feed"
 msgstr ""
 
-#: includes/class-pncp-admin.php:2314
+#: includes/class-pncp-admin.php:2328
 msgid "Successes"
 msgstr ""
 
-#: includes/class-pncp-admin.php:2315
+#: includes/class-pncp-admin.php:2329
 msgid "Last access"
 msgstr ""
 
-#: includes/class-pncp-admin.php:2316
+#: includes/class-pncp-admin.php:2330
 msgid "Via"
 msgstr ""
 
-#: includes/class-pncp-admin.php:2317
+#: includes/class-pncp-admin.php:2331
 msgid "Denials"
 msgstr ""
 
-#: includes/class-pncp-admin.php:2323
+#: includes/class-pncp-admin.php:2337
 msgid "header"
 msgstr ""
 
-#: includes/class-pncp-admin.php:2324
+#: includes/class-pncp-admin.php:2338
 msgid "token in URL"
 msgstr ""
 
-#: includes/class-pncp-admin.php:2325
+#: includes/class-pncp-admin.php:2339
 msgid "allowed IP"
 msgstr ""
 
-#: includes/class-pncp-admin.php:2326
+#: includes/class-pncp-admin.php:2340
 msgid "administrator"
 msgstr ""
 
-#: includes/class-pncp-admin.php:2334
+#: includes/class-pncp-admin.php:2348
 msgid "Never"
 msgstr ""
 
-#: includes/class-pncp-admin.php:2356
+#: includes/class-pncp-admin.php:2370
 msgid "Watermark"
 msgstr ""
 
-#: includes/class-pncp-admin.php:2359
+#: includes/class-pncp-admin.php:2373
 msgid "Added to generated sizes; existing images: use the tool below."
 msgstr ""
 
-#: includes/class-pncp-admin.php:2359
+#: includes/class-pncp-admin.php:2373
 msgid "It is added to the sizes WordPress generates (thumbnails, medium, large). For existing images, use the tool below. The site icon, the logo and the watermark itself never get it."
 msgstr ""
 
-#: includes/class-pncp-admin.php:2361
+#: includes/class-pncp-admin.php:2375
 msgid "The PHP GD library is missing, so no watermark is applied: ask your host to enable it."
 msgstr ""
 
-#: includes/class-pncp-admin.php:2363
+#: includes/class-pncp-admin.php:2377
 #: includes/class-pncp-setting-labels.php:176
 msgid "Watermark the full-size image too"
 msgstr ""
 
-#: includes/class-pncp-admin.php:2363
+#: includes/class-pncp-admin.php:2377
 msgid "Otherwise the full image stays clean and downloadable. Originals are kept."
 msgstr ""
 
-#: includes/class-pncp-admin.php:2363
+#: includes/class-pncp-admin.php:2377
 msgid "Without this, the full image stays clean and can be downloaded from its URL. The clean original is kept in a hidden folder, so it can always be restored."
 msgstr ""
 
-#: includes/class-pncp-admin.php:2364
+#: includes/class-pncp-admin.php:2378
 #: includes/class-pncp-setting-labels.php:181
 msgid "Watermark WooCommerce product images too"
 msgstr ""
 
-#: includes/class-pncp-admin.php:2366
+#: includes/class-pncp-admin.php:2380
 msgid "Not recommended: Google Merchant Center, Skroutz and BestPrice reject product images with a watermark, and feeds usually show the full-size image. For products, hotlink protection (“Server rules” tab) is a better choice. If a watermarked image later becomes a product image, logo or icon, the watermark is removed automatically."
 msgstr ""
 
-#: includes/class-pncp-admin.php:2370
+#: includes/class-pncp-admin.php:2384
 msgid "Appearance"
 msgstr ""
 
-#: includes/class-pncp-admin.php:2373
+#: includes/class-pncp-admin.php:2387
 #: includes/class-pncp-setting-labels.php:177
 msgid "PNG image ID from the Media Library (0 = the site's domain as text):"
 msgstr ""
 
-#: includes/class-pncp-admin.php:2373
+#: includes/class-pncp-admin.php:2387
 msgid "A transparent PNG, e.g. the logo; the ID is in its Library address."
 msgstr ""
 
-#: includes/class-pncp-admin.php:2373
+#: includes/class-pncp-admin.php:2387
 msgid "A PNG with a transparent background is recommended (e.g. the logo). The ID appears in the address when you open the image in the Library."
 msgstr ""
 
-#: includes/class-pncp-admin.php:2376
+#: includes/class-pncp-admin.php:2390
 #: includes/class-pncp-setting-labels.php:180
 msgid "Position:"
 msgstr ""
 
-#: includes/class-pncp-admin.php:2382
+#: includes/class-pncp-admin.php:2396
 msgid "Bottom right"
 msgstr ""
 
-#: includes/class-pncp-admin.php:2383
+#: includes/class-pncp-admin.php:2397
 msgid "Bottom left"
 msgstr ""
 
-#: includes/class-pncp-admin.php:2384
+#: includes/class-pncp-admin.php:2398
 msgid "Top right"
 msgstr ""
 
-#: includes/class-pncp-admin.php:2385
+#: includes/class-pncp-admin.php:2399
 msgid "Top left"
 msgstr ""
 
-#: includes/class-pncp-admin.php:2386
+#: includes/class-pncp-admin.php:2400
 msgid "Centre"
 msgstr ""
 
-#: includes/class-pncp-admin.php:2387
+#: includes/class-pncp-admin.php:2401
 msgid "Repeat diagonally across the whole image (hard to remove)"
 msgstr ""
 
-#: includes/class-pncp-admin.php:2393
+#: includes/class-pncp-admin.php:2407
 #: includes/class-pncp-setting-labels.php:182
 msgid "Size (% of the image width):"
 msgstr ""
 
-#: includes/class-pncp-admin.php:2393
+#: includes/class-pncp-admin.php:2407
 msgid "With diagonal repeat, the size of each repetition."
 msgstr ""
 
-#: includes/class-pncp-admin.php:2394
+#: includes/class-pncp-admin.php:2408
 #: includes/class-pncp-setting-labels.php:179
 msgid "Opacity (%):"
 msgstr ""
 
-#: includes/class-pncp-admin.php:2395
+#: includes/class-pncp-admin.php:2409
 #: includes/class-pncp-setting-labels.php:178
 msgid "Only on sizes with width from (px):"
 msgstr ""
 
-#: includes/class-pncp-admin.php:2395
+#: includes/class-pncp-admin.php:2409
 msgid "Small thumbnails stay clean."
 msgstr ""
 
-#: includes/class-pncp-admin.php:2413
+#: includes/class-pncp-admin.php:2427
 msgid "Existing images"
 msgstr ""
 
 #. translators: %s: count
-#: includes/class-pncp-admin.php:2414
+#: includes/class-pncp-admin.php:2428
 #, php-format
 msgid "JPEG / PNG / WebP images in the library: %s."
 msgstr ""
 
 #. translators: %s: count
-#: includes/class-pncp-admin.php:2415
+#: includes/class-pncp-admin.php:2429
 msgid "Back up the uploads folder first. An interrupted run resumes where it stopped."
 msgstr ""
 
 #. translators: %s: count
-#: includes/class-pncp-admin.php:2415
+#: includes/class-pncp-admin.php:2429
 msgid "Each image is regenerated from the clean original, so a watermark is never added twice, not even on images watermarked by version 1.x. If the page closes midway, click again: it resumes where it stopped. Keep a backup of the uploads folder before you start."
 msgstr ""
 
-#: includes/class-pncp-admin.php:2417
+#: includes/class-pncp-admin.php:2431
 msgid "The watermark is off: “Apply” will leave the images clean. Enable it and save first."
 msgstr ""
 
-#: includes/class-pncp-admin.php:2420
+#: includes/class-pncp-admin.php:2434
 msgid "Apply watermark"
 msgstr ""
 
-#: includes/class-pncp-admin.php:2421
+#: includes/class-pncp-admin.php:2435
 msgid "Remove watermark"
 msgstr ""
 
-#: includes/class-pncp-admin.php:2448
+#: includes/class-pncp-admin.php:2462
 #: includes/class-pncp-attack-report.php:520
-#: includes/class-pncp-attacks.php:1288
-#: includes/class-pncp-health.php:586
+#: includes/class-pncp-attacks.php:1339
+#: includes/class-pncp-breaker-status.php:344
+#: includes/class-pncp-health.php:595
 #: includes/class-pncp-rules-state.php:617
 #: includes/class-pncp-self-check.php:1273
 #: includes/class-pncp-site-files.php:356
@@ -4231,601 +4242,601 @@ msgstr ""
 msgid "You are not allowed to do this."
 msgstr ""
 
-#: includes/class-pncp-admin.php:2499
+#: includes/class-pncp-admin.php:2513
 msgid "Password guessing on wp-login.php, XML-RPC and the REST API; the sign-in address."
 msgstr ""
 
-#: includes/class-pncp-admin.php:2500
+#: includes/class-pncp-admin.php:2514
 #: includes/class-pncp-attack-report.php:1629
 #: includes/class-pncp-login.php:1616
 msgid "Failed sign-ins"
 msgstr ""
 
-#: includes/class-pncp-admin.php:2501
+#: includes/class-pncp-admin.php:2515
 msgid "Counts wrong passwords on wp-login.php, XML-RPC and application passwords."
 msgstr ""
 
-#: includes/class-pncp-admin.php:2501
+#: includes/class-pncp-admin.php:2515
 msgid "Counts wrong passwords on wp-login.php, XML-RPC (each call of a system.multicall, the way bots try hundreds of passwords in one request) and application passwords. Too many from one IP block it for a while; too many for one username pause that username."
 msgstr ""
 
-#: includes/class-pncp-admin.php:2502
+#: includes/class-pncp-admin.php:2516
 #: includes/class-pncp-setting-labels.php:107
 msgid "Failed sign-ins per IP before it is blocked:"
 msgstr ""
 
-#: includes/class-pncp-admin.php:2502
+#: includes/class-pncp-admin.php:2516
 msgid "Failures for an account already used from that IP do not count."
 msgstr ""
 
-#: includes/class-pncp-admin.php:2502
+#: includes/class-pncp-admin.php:2516
 msgid "Within the time below. Failures for an account that already signed in from that IP do not count, so a person who forgot the password is not blocked."
 msgstr ""
 
-#: includes/class-pncp-admin.php:2503
+#: includes/class-pncp-admin.php:2517
 #: includes/class-pncp-setting-labels.php:112
 msgid "…within this many minutes:"
 msgstr ""
 
-#: includes/class-pncp-admin.php:2504
+#: includes/class-pncp-admin.php:2518
 #: includes/class-pncp-setting-labels.php:104
 msgid "Block the IP for (minutes):"
 msgstr ""
 
-#: includes/class-pncp-admin.php:2504
+#: includes/class-pncp-admin.php:2518
 msgid "Covers the whole site; listed under “Blocked IPs”."
 msgstr ""
 
-#: includes/class-pncp-admin.php:2505
+#: includes/class-pncp-admin.php:2519
 #: includes/class-pncp-setting-labels.php:110
 msgid "Failed sign-ins per username before it is paused (0 = off):"
 msgstr ""
 
-#: includes/class-pncp-admin.php:2505
+#: includes/class-pncp-admin.php:2519
 msgid "Counted across all IPs; unknown usernames are paused too."
 msgstr ""
 
-#: includes/class-pncp-admin.php:2505
+#: includes/class-pncp-admin.php:2519
 msgid "Counted from all IPs together: password guessing spread over many addresses. Usernames that do not exist are paused too, so the answer does not tell which exist."
 msgstr ""
 
-#: includes/class-pncp-admin.php:2506
+#: includes/class-pncp-admin.php:2520
 #: includes/class-pncp-setting-labels.php:111
 msgid "Pause the username for (minutes):"
 msgstr ""
 
-#: includes/class-pncp-admin.php:2506
+#: includes/class-pncp-admin.php:2520
 msgid "Its owner can still use known places or the emailed one-time link."
 msgstr ""
 
-#: includes/class-pncp-admin.php:2506
+#: includes/class-pncp-admin.php:2520
 msgid "Its owner can still sign in from where they signed in before, and with the one-time link emailed to the account."
 msgstr ""
 
-#: includes/class-pncp-admin.php:2507
+#: includes/class-pncp-admin.php:2521
 #: includes/class-pncp-setting-labels.php:109
 msgid "Email the account a link to sign in during a pause"
 msgstr ""
 
-#: includes/class-pncp-admin.php:2507
+#: includes/class-pncp-admin.php:2521
 msgid "One email per pause; the link works once, within 24 hours."
 msgstr ""
 
-#: includes/class-pncp-admin.php:2507
+#: includes/class-pncp-admin.php:2521
 msgid "Once per pause. The link works once, for 24 hours, and lets that browser sign in for 30 days."
 msgstr ""
 
-#: includes/class-pncp-admin.php:2508
+#: includes/class-pncp-admin.php:2522
 #: includes/class-pncp-setting-labels.php:105
 msgid "One error message for a wrong username, email or password"
 msgstr ""
 
-#: includes/class-pncp-admin.php:2508
+#: includes/class-pncp-admin.php:2522
 msgid "Sign-in errors no longer tell bots which usernames exist."
 msgstr ""
 
-#: includes/class-pncp-admin.php:2508
+#: includes/class-pncp-admin.php:2522
 msgid "WordPress says “The username … is not registered” for an unknown user, which tells bots which usernames exist. “Lost your password” answers the same way for unknown accounts too."
 msgstr ""
 
-#: includes/class-pncp-admin.php:2509
+#: includes/class-pncp-admin.php:2523
 msgid "Blocked IPs, paused usernames and the usernames tried"
 msgstr ""
 
-#: includes/class-pncp-admin.php:2511
+#: includes/class-pncp-admin.php:2525
 #: includes/class-pncp-login.php:1557
 #: includes/class-pncp-setting-labels.php:108
 msgid "Sign-in address"
 msgstr ""
 
-#: includes/class-pncp-admin.php:2514
+#: includes/class-pncp-admin.php:2528
 msgid "Move the sign-in page to this address (empty = wp-login.php):"
 msgstr ""
 
-#: includes/class-pncp-admin.php:2518
+#: includes/class-pncp-admin.php:2532
 msgid "Visitors then get “page not found” at wp-login.php and /wp-admin/. Write it down."
 msgstr ""
 
-#: includes/class-pncp-admin.php:2519
+#: includes/class-pncp-admin.php:2533
 msgid "wp-login.php and /wp-admin/ then answer “page not found” to visitors who are not signed in, so password-guessing bots find nothing there; links, emails and redirects use the new address. Write it down. If you lose it, add define( 'SCRAPELOCK_LOGIN_SLUG_OFF', true ); to wp-config.php. In Monitor only both addresses work. Letters, digits, “-” and “_”; not login, admin or an address a page already has."
 msgstr ""
 
-#: includes/class-pncp-admin.php:2522
+#: includes/class-pncp-admin.php:2536
 msgid "Sign in at:"
 msgstr ""
 
-#: includes/class-pncp-admin.php:2534
+#: includes/class-pncp-admin.php:2548
 msgid "Stealth is on."
 msgstr ""
 
-#: includes/class-pncp-admin.php:2534
+#: includes/class-pncp-admin.php:2548
 msgid "More: Stealth."
 msgstr ""
 
-#: includes/class-pncp-admin.php:2535
+#: includes/class-pncp-admin.php:2549
 msgid "Neutral addresses instead of /wp-content/, plus both settings here."
 msgstr ""
 
-#: includes/class-pncp-admin.php:2537
+#: includes/class-pncp-admin.php:2551
 msgid "Stealth settings"
 msgstr ""
 
-#: includes/class-pncp-admin.php:2538
+#: includes/class-pncp-admin.php:2552
 msgid "It also gives visitors and tools such as BuiltWith and Wappalyzer neutral addresses instead of /wp-content/ and /wp-includes/, another REST prefix and /sitemap.xml, and refuses readme.html, after testing the server rules. It includes the two settings here."
 msgstr ""
 
-#: includes/class-pncp-admin.php:2555
+#: includes/class-pncp-admin.php:2569
 msgid "The attack record"
 msgstr ""
 
-#: includes/class-pncp-admin.php:2560
+#: includes/class-pncp-admin.php:2574
 msgid "Recording is off: only what was there before is shown."
 msgstr ""
 
 #. translators: %s: number of days
-#: includes/class-pncp-admin.php:2562
+#: includes/class-pncp-admin.php:2576
 #, php-format
 msgid "Recording is on; IPs and usernames tried are deleted after %s day."
 msgid_plural "Recording is on; IPs and usernames tried are deleted after %s days."
 msgstr[0] ""
 msgstr[1] ""
 
-#: includes/class-pncp-admin.php:2565
+#: includes/class-pncp-admin.php:2579
 msgid "Attack record settings"
 msgstr ""
 
-#: includes/class-pncp-admin.php:2568
+#: includes/class-pncp-admin.php:2582
 msgid "Delete the whole attack record? This cannot be undone."
 msgstr ""
 
-#: includes/class-pncp-admin.php:2568
-#: includes/class-pncp-attacks.php:1767
+#: includes/class-pncp-admin.php:2582
+#: includes/class-pncp-attacks.php:1818
 msgid "Delete the attack record"
 msgstr ""
 
-#: includes/class-pncp-admin.php:2570
+#: includes/class-pncp-admin.php:2584
 msgid "Unlock the site on the Lockdown tab to delete it."
 msgstr ""
 
-#: includes/class-pncp-admin.php:2596
+#: includes/class-pncp-admin.php:2610
 msgid "Collect"
 msgstr ""
 
-#: includes/class-pncp-admin.php:2599
+#: includes/class-pncp-admin.php:2613
 msgid "Collect traffic (every request the site answers)"
 msgstr ""
 
-#: includes/class-pncp-admin.php:2599
+#: includes/class-pncp-admin.php:2613
 msgid "Off: nothing is read, stored or scheduled."
 msgstr ""
 
-#: includes/class-pncp-admin.php:2599
+#: includes/class-pncp-admin.php:2613
 msgid "The requests come from the Bunny CDN logs while their import is on, from the access log below, or from WordPress itself. Only one source is counted at a time, so a request seen by two of them is never counted twice."
 msgstr ""
 
-#: includes/class-pncp-admin.php:2600
+#: includes/class-pncp-admin.php:2614
 #: includes/class-pncp-setting-labels.php:165
 msgid "Also record the pages WordPress serves itself"
 msgstr ""
 
-#: includes/class-pncp-admin.php:2600
+#: includes/class-pncp-admin.php:2614
 msgid "Fallback without a CDN or access log; misses cached pages."
 msgstr ""
 
-#: includes/class-pncp-admin.php:2600
+#: includes/class-pncp-admin.php:2614
 msgid "One row per page that PHP answers, at the end of the request, with its response time. Pages served from a page cache (WP Rocket, the CDN) never reach PHP, so they are missing here; wp-admin, AJAX, cron, signed-in administrators and the site's requests to itself are left out."
 msgstr ""
 
-#: includes/class-pncp-admin.php:2602
+#: includes/class-pncp-admin.php:2616
 msgid "An email when errors or a source stop look wrong."
 msgstr ""
 
-#: includes/class-pncp-admin.php:2607
+#: includes/class-pncp-admin.php:2621
 msgid "Send the alerts to:"
 msgstr ""
 
-#: includes/class-pncp-admin.php:2611
+#: includes/class-pncp-admin.php:2625
 msgid "Empty = the site's admin email; separate several with commas."
 msgstr ""
 
-#: includes/class-pncp-admin.php:2617
+#: includes/class-pncp-admin.php:2631
 msgid "Access log"
 msgstr ""
 
-#: includes/class-pncp-admin.php:2622
+#: includes/class-pncp-admin.php:2636
 msgid "Full path of the Nginx or Apache access log; empty = not read."
 msgstr ""
 
-#: includes/class-pncp-admin.php:2622
+#: includes/class-pncp-admin.php:2636
 msgid "The \"combined\" log format and its common variants are read, also rotated files (.1, .1.gz), every 15 minutes, from where the last run stopped. The first run reads the last 4 MB. PHP must be allowed to read the file (permissions, open_basedir). Use “Test this path” below before saving."
 msgstr ""
 
-#: includes/class-pncp-admin.php:2628
+#: includes/class-pncp-admin.php:2642
 msgid "Keep"
 msgstr ""
 
-#: includes/class-pncp-admin.php:2631
+#: includes/class-pncp-admin.php:2645
 #: includes/class-pncp-setting-labels.php:164
 msgid "Keep each request for (days):"
 msgstr ""
 
-#: includes/class-pncp-admin.php:2631
+#: includes/class-pncp-admin.php:2645
 msgid "Single requests, for the Requests view and every filter."
 msgstr ""
 
-#: includes/class-pncp-admin.php:2631
+#: includes/class-pncp-admin.php:2645
 msgid "Whole days in the site's time zone, plus today. At most one million requests are kept; the oldest go first."
 msgstr ""
 
-#: includes/class-pncp-admin.php:2632
+#: includes/class-pncp-admin.php:2646
 #: includes/class-pncp-setting-labels.php:161
 msgid "Keep the daily traffic figures for (days):"
 msgstr ""
 
-#: includes/class-pncp-admin.php:2632
+#: includes/class-pncp-admin.php:2646
 msgid "Totals per day, for the longer periods."
 msgstr ""
 
-#: includes/class-pncp-admin.php:2637
+#: includes/class-pncp-admin.php:2651
 msgid "IP addresses"
 msgstr ""
 
-#: includes/class-pncp-admin.php:2643
+#: includes/class-pncp-admin.php:2657
 #: includes/class-pncp-setting-labels.php:162
 msgid "IP addresses in the traffic record:"
 msgstr ""
 
-#: includes/class-pncp-admin.php:2645
+#: includes/class-pncp-admin.php:2659
 msgid "Full addresses"
 msgstr ""
 
-#: includes/class-pncp-admin.php:2646
+#: includes/class-pncp-admin.php:2660
 msgid "Masked (the last part removed)"
 msgstr ""
 
-#: includes/class-pncp-admin.php:2649
+#: includes/class-pncp-admin.php:2663
 msgid "Masked addresses cannot be blocked or checked from here."
 msgstr ""
 
-#: includes/class-pncp-admin.php:2667
+#: includes/class-pncp-admin.php:2681
 #: includes/class-pncp-login.php:1535
 msgid "Sign-in protection"
 msgstr ""
 
-#: includes/class-pncp-admin.php:2668
-#: includes/class-pncp-health.php:1943
+#: includes/class-pncp-admin.php:2682
+#: includes/class-pncp-health.php:1952
 #: includes/class-pncp-stealth-status.php:720
 msgid "Stealth"
 msgstr ""
 
-#: includes/class-pncp-admin.php:2692
+#: includes/class-pncp-admin.php:2706
 msgid "Generated for this site: they cover cached pages and files PHP never sees. Test on staging first."
 msgstr ""
 
-#: includes/class-pncp-admin.php:2693
+#: includes/class-pncp-admin.php:2707
 msgid "The plugin only checks requests that reach PHP. Pages from page cache, images and static files are served directly by the server or the CDN. The rules below are generated for your site, with the current settings. Test them on staging first."
 msgstr ""
 
 #. translators: %s: the server's addresses
-#: includes/class-pncp-admin.php:2695
+#: includes/class-pncp-admin.php:2709
 #, php-format
 msgid "The server's own addresses are never blocked by these rules: %s."
 msgstr ""
 
-#: includes/class-pncp-admin.php:2696
+#: includes/class-pncp-admin.php:2710
 msgid "So the site's own requests (its self-checks, cron, cache preloads) always pass. 127.0.0.1, ::1 and private addresses count only when no proxy passed the request on. Behind a CDN (Bunny, Cloudflare) the server's own requests through the public address arrive from the CDN's edge: with real_ip in Nginx (real_ip_header and set_real_ip_from for the edges) or mod_remoteip in Apache, the web server sees the server's own address and they pass; without it they come from the edge, and only the plugin's signature (in PHP) lets them through. More addresses: SCRAPELOCK_SERVER_IPS in wp-config.php."
 msgstr ""
 
-#: includes/class-pncp-admin.php:2697
+#: includes/class-pncp-admin.php:2711
 msgid "No Cloudflare token is stored: add the rules in your own Cloudflare account."
 msgstr ""
 
-#: includes/class-pncp-admin.php:2702
+#: includes/class-pncp-admin.php:2716
 #: includes/class-pncp-self-check.php:477
 msgid "Cloudflare"
 msgstr ""
 
-#: includes/class-pncp-admin.php:2704
+#: includes/class-pncp-admin.php:2718
 msgid "Pages from the Cloudflare cache skip ScrapeLock: add the WAF rules below to cover them."
 msgstr ""
 
-#: includes/class-pncp-admin.php:2705
+#: includes/class-pncp-admin.php:2719
 msgid "APO and “Cache Everything”: pages served from the Cloudflare cache never reach the plugin, so the bot list, limits and the trap do not apply to them. The WAF rules below apply before the cache. ScrapeLock tells the Cloudflare plugin not to cache blocks and private feeds, and purges its cache when you save the settings."
 msgstr ""
 
-#: includes/class-pncp-admin.php:2707
+#: includes/class-pncp-admin.php:2721
 msgid "Security → WAF → Custom rules → Create rule → Edit expression; paste it, choose the action shown."
 msgstr ""
 
-#: includes/class-pncp-admin.php:2715
+#: includes/class-pncp-admin.php:2729
 #: includes/class-pncp-hardening.php:2494
 #: includes/class-pncp-stealth-status.php:749
 #: includes/class-pncp-stealth.php:3142
 msgid "Apache (.htaccess, above # BEGIN WordPress)"
 msgstr ""
 
-#: includes/class-pncp-admin.php:2721
+#: includes/class-pncp-admin.php:2735
 #: includes/class-pncp-stealth-status.php:740
 #: includes/class-pncp-stealth.php:3140
 msgid "Nginx"
 msgstr ""
 
-#: includes/class-pncp-admin.php:2723
+#: includes/class-pncp-admin.php:2737
 msgid "Optional: stops bots before PHP and the cache. Skip it on shared hosting."
 msgstr ""
 
-#: includes/class-pncp-admin.php:2723
+#: includes/class-pncp-admin.php:2737
 msgid "Optional: they stop the bots before PHP and the page cache, so the server does less work. Without access to the Nginx configuration (shared hosting) skip them: the plugin and the pre-cache check still protect the pages. The names carry this site's suffix, so several WordPress sites can use their rules on the same Nginx."
 msgstr ""
 
-#: includes/class-pncp-admin.php:2726
+#: includes/class-pncp-admin.php:2740
 msgid "1) Inside http { }: a new file in a folder that nginx.conf includes there, e.g."
 msgstr ""
 
-#: includes/class-pncp-admin.php:2728
+#: includes/class-pncp-admin.php:2742
 msgid "Debian / Ubuntu, CentOS / RHEL, Plesk and most servers:"
 msgstr ""
 
-#: includes/class-pncp-admin.php:2729
+#: includes/class-pncp-admin.php:2743
 msgid "aaPanel:"
 msgstr ""
 
-#: includes/class-pncp-admin.php:2734
+#: includes/class-pncp-admin.php:2748
 msgid "2) Inside the site's server { } (HTTPS, and HTTP if it serves pages), before other location blocks:"
 msgstr ""
 
-#: includes/class-pncp-admin.php:2736
+#: includes/class-pncp-admin.php:2750
 msgid "Your own server: the site's file, e.g. /etc/nginx/sites-available/, or a file it includes."
 msgstr ""
 
-#: includes/class-pncp-admin.php:2737
+#: includes/class-pncp-admin.php:2751
 msgid "aaPanel: Website → the site → Config, right below #SSL-END, or a file in /www/server/panel/vhost/nginx/extension/<site>/ when Config includes that folder above its location lines; only one of the two (twice, nginx -t fails)."
 msgstr ""
 
-#: includes/class-pncp-admin.php:2738
+#: includes/class-pncp-admin.php:2752
 msgid "aaPanel, BT Panel and CloudPanel often put the WordPress rewrite at server level: part 2 goes above its include (aaPanel's extension include at the top already is)."
 msgstr ""
 
-#: includes/class-pncp-admin.php:2739
+#: includes/class-pncp-admin.php:2753
 msgid "Plesk: Websites & Domains → Apache & nginx Settings → Additional nginx directives."
 msgstr ""
 
-#: includes/class-pncp-admin.php:2740
+#: includes/class-pncp-admin.php:2754
 msgid "Other panels: the place they give for custom server { } directives."
 msgstr ""
 
-#: includes/class-pncp-admin.php:2745
+#: includes/class-pncp-admin.php:2759
 msgid "3) Run nginx -t, and reload Nginx only if it says “test is successful”."
 msgstr ""
 
-#: includes/class-pncp-admin.php:2746
+#: includes/class-pncp-admin.php:2760
 msgid "4) Check the status above; when it says “out of date”, copy the named part again."
 msgstr ""
 
-#: includes/class-pncp-admin.php:2747
+#: includes/class-pncp-admin.php:2761
 msgid "3) Run nginx -t: only if it says “test is successful”, reload Nginx (nginx -s reload or systemctl reload nginx). If it shows an error, nothing has changed yet: remove what you added. 4) Check the status above. After every change of the settings that changes the rules, it says “out of date”: copy the part it names again."
 msgstr ""
 
-#: includes/class-pncp-admin.php:2754
+#: includes/class-pncp-admin.php:2768
 msgid "fail2ban (VPS and dedicated servers)"
 msgstr ""
 
-#: includes/class-pncp-admin.php:2755
+#: includes/class-pncp-admin.php:2769
 msgid "Turn on Bots and limits → Temporary block → “Write each temporary block to the system log”."
 msgstr ""
 
-#: includes/class-pncp-admin.php:2756
+#: includes/class-pncp-admin.php:2770
 msgid "Save the filter and the jail, then run fail2ban-client reload."
 msgstr ""
 
-#: includes/class-pncp-admin.php:2757
+#: includes/class-pncp-admin.php:2771
 msgid "With “Write each temporary block to the system log” on (Bots and limits → Temporary block), every block ScrapeLock makes is also written to the system log, and fail2ban blocks the IP in the firewall for the same time: the scraper no longer reaches the web server at all. 1) Save the filter, 2) save the jail (check logpath for your system), 3) run fail2ban-client reload, 4) fail2ban-client status scrapelock shows the blocked IPs."
 msgstr ""
 
-#: includes/class-pncp-admin.php:2761
+#: includes/class-pncp-admin.php:2775
 msgid "The option is off: turn it on under Bots and limits → Temporary block."
 msgstr ""
 
-#: includes/class-pncp-admin.php:2823
+#: includes/class-pncp-admin.php:2837
 #: includes/class-pncp-hardening.php:2327
 #: includes/class-pncp-rules-state.php:657
 #: includes/class-pncp-stealth-status.php:732
 msgid "Check again"
 msgstr ""
 
-#: includes/class-pncp-admin.php:2840
+#: includes/class-pncp-admin.php:2854
 #: includes/class-pncp-hardening.php:2513
 #: includes/class-pncp-stealth-status.php:770
 msgid "Rules to copy"
 msgstr ""
 
-#: includes/class-pncp-admin.php:2869
+#: includes/class-pncp-admin.php:2883
 msgid "Requests that the settings would refuse are let through and logged as “Would block”. Check them below: an app, a feed reader or a service you rely on should be added to “Always allowed” before blocking starts."
 msgstr ""
 
-#: includes/class-pncp-admin.php:2881
+#: includes/class-pncp-admin.php:2895
 msgid "All events"
 msgstr ""
 
-#: includes/class-pncp-admin.php:2882
+#: includes/class-pncp-admin.php:2896
 #: includes/class-pncp-tester.php:174
 #: includes/class-pncp-tester.php:540
 msgid "Blocked"
 msgstr ""
 
-#: includes/class-pncp-admin.php:2883
+#: includes/class-pncp-admin.php:2897
 msgid "Would block (Monitor only)"
 msgstr ""
 
 #. translators: %s: time
-#: includes/class-pncp-admin.php:2906
+#: includes/class-pncp-admin.php:2920
 #, php-format
 msgid "Figures counted at %s (they are counted again every 5 minutes)."
 msgstr ""
 
-#: includes/class-pncp-admin.php:2912
+#: includes/class-pncp-admin.php:2926
 msgid "Refresh"
 msgstr ""
 
-#: includes/class-pncp-admin.php:2915
-#: includes/class-pncp-admin.php:2950
+#: includes/class-pncp-admin.php:2929
+#: includes/class-pncp-admin.php:2964
 msgid "Last 24 hours"
 msgstr ""
 
 #. translators: %s: count
-#: includes/class-pncp-admin.php:2918
+#: includes/class-pncp-admin.php:2932
 #, php-format
 msgid "%s requests would have been blocked"
 msgstr ""
 
 #. translators: %s: count
-#: includes/class-pncp-admin.php:2920
+#: includes/class-pncp-admin.php:2934
 #, php-format
 msgid "%s blocked requests"
 msgstr ""
 
 #. translators: %s: count
-#: includes/class-pncp-admin.php:2924
+#: includes/class-pncp-admin.php:2938
 #, php-format
 msgid "%s more would have been blocked (Monitor only)"
 msgstr ""
 
-#: includes/class-pncp-admin.php:2932
+#: includes/class-pncp-admin.php:2946
 msgid "By reason"
 msgstr ""
 
-#: includes/class-pncp-admin.php:2942
+#: includes/class-pncp-admin.php:2956
 msgid "A known bot name here was fake or could not be verified."
 msgstr ""
 
-#: includes/class-pncp-admin.php:2942
+#: includes/class-pncp-admin.php:2956
 msgid "Verified search engines and AI bots are never blocked, so they never appear here: a known bot name in this list was a fake one or could not be verified."
 msgstr ""
 
-#: includes/class-pncp-admin.php:2946
+#: includes/class-pncp-admin.php:2960
 msgid "What they try to copy"
 msgstr ""
 
-#: includes/class-pncp-admin.php:2947
+#: includes/class-pncp-admin.php:2961
 msgid "Blocked requests by address: real pages, made-up addresses and scanned files."
 msgstr ""
 
-#: includes/class-pncp-admin.php:2947
+#: includes/class-pncp-admin.php:2961
 msgid "The blocked requests grouped by address. “Pages” exist on your site: what scrapers were after. “Addresses that do not exist” are random strings and guesses. “Files” are scanners looking for passwords, backups or admin areas. No content leaks in the last two, they only show what was tried."
 msgstr ""
 
-#: includes/class-pncp-admin.php:2951
+#: includes/class-pncp-admin.php:2965
 msgid "Last 7 days"
 msgstr ""
 
-#: includes/class-pncp-admin.php:2963
+#: includes/class-pncp-admin.php:2977
 msgid "Addresses that do not exist"
 msgstr ""
 
-#: includes/class-pncp-admin.php:2966
+#: includes/class-pncp-admin.php:2980
 msgid "A real page here? Add its prefix in “Content addresses” to count it as “Pages”."
 msgstr ""
 
-#: includes/class-pncp-admin.php:2966
+#: includes/class-pncp-admin.php:2980
 msgid "Pages of plugins that WordPress does not know (e.g. a community or forum) count as “Pages” when you add their prefix in “Content addresses” (“Log settings”, at the bottom of this tab)."
 msgstr ""
 
-#: includes/class-pncp-admin.php:2970
+#: includes/class-pncp-admin.php:2984
 msgid "Files and admin paths"
 msgstr ""
 
-#: includes/class-pncp-admin.php:2976
+#: includes/class-pncp-admin.php:2990
 msgid "The log is kept for 1 day, so the 7-day view shows only the last day. Change “Keep the block log for” under “Log settings” below to see more."
 msgstr ""
 
-#: includes/class-pncp-admin.php:2982
-#: includes/class-pncp-admin.php:3452
+#: includes/class-pncp-admin.php:2996
+#: includes/class-pncp-admin.php:3466
 #: includes/class-pncp-attack-report.php:1599
 msgid "None."
 msgstr ""
 
-#: includes/class-pncp-admin.php:2989
-#: includes/class-pncp-admin.php:3034
-#: includes/class-pncp-attacks.php:1689
+#: includes/class-pncp-admin.php:3003
+#: includes/class-pncp-admin.php:3048
+#: includes/class-pncp-attacks.php:1740
 msgid "Reason"
 msgstr ""
 
-#: includes/class-pncp-admin.php:2990
+#: includes/class-pncp-admin.php:3004
 msgid "Expires"
 msgstr ""
 
-#: includes/class-pncp-admin.php:2991
-#: includes/class-pncp-admin.php:3467
+#: includes/class-pncp-admin.php:3005
+#: includes/class-pncp-admin.php:3481
 #: includes/class-pncp-bunny.php:4516
 #: includes/class-pncp-bunny.php:4563
 #: includes/class-pncp-hardening.php:2337
 msgid "Action"
 msgstr ""
 
-#: includes/class-pncp-admin.php:3004
+#: includes/class-pncp-admin.php:3018
 #: includes/class-pncp-login.php:1586
 msgid "Unblock"
 msgstr ""
 
-#: includes/class-pncp-admin.php:3015
+#: includes/class-pncp-admin.php:3029
 msgid "Unblock all"
 msgstr ""
 
-#: includes/class-pncp-admin.php:3023
+#: includes/class-pncp-admin.php:3037
 msgid "Latest events"
 msgstr ""
 
-#: includes/class-pncp-admin.php:3026
+#: includes/class-pncp-admin.php:3040
 msgid "No events."
 msgstr ""
 
-#: includes/class-pncp-admin.php:3051
+#: includes/class-pncp-admin.php:3065
 msgid "Too many different IPs in this minute: their requests are added up in one row."
 msgstr ""
 
-#: includes/class-pncp-admin.php:3051
+#: includes/class-pncp-admin.php:3065
 msgid "Many IPs"
 msgstr ""
 
-#: includes/class-pncp-admin.php:3069
+#: includes/class-pncp-admin.php:3083
 #: includes/class-pncp-tester.php:174
 msgid "Would block"
 msgstr ""
 
 #. translators: 1: reason the request was blocked, 2: HTTP status code (e.g. 403)
-#: includes/class-pncp-admin.php:3074
+#: includes/class-pncp-admin.php:3088
 #, php-format
 msgid "%1$s (%2$s)"
 msgstr ""
 
 #. translators: %s: username
-#: includes/class-pncp-admin.php:3084
+#: includes/class-pncp-admin.php:3098
 #, php-format
 msgid "Account: %s"
 msgstr ""
 
 #. translators: %s: number of different User-Agents
-#: includes/class-pncp-admin.php:3103
+#: includes/class-pncp-admin.php:3117
 #, php-format
 msgid "%s different User-Agent in this minute"
 msgid_plural "%s different User-Agents in this minute"
@@ -4833,55 +4844,55 @@ msgstr[0] ""
 msgstr[1] ""
 
 #. translators: %s: number of days
-#: includes/class-pncp-admin.php:3122
+#: includes/class-pncp-admin.php:3136
 #, php-format
 msgid "The log is deleted automatically after %s day (see “Log settings” below)."
 msgid_plural "The log is deleted automatically after %s days (see “Log settings” below)."
 msgstr[0] ""
 msgstr[1] ""
 
-#: includes/class-pncp-admin.php:3130
+#: includes/class-pncp-admin.php:3144
 msgid "Delete log"
 msgstr ""
 
-#: includes/class-pncp-admin.php:3154
+#: includes/class-pncp-admin.php:3168
 msgid "Visitors from AI assistants (last 30 days)"
 msgstr ""
 
-#: includes/class-pncp-admin.php:3156
+#: includes/class-pncp-admin.php:3170
 msgid "Not counted: “Count visitors who come from AI assistants” is off in “Log settings” below."
 msgstr ""
 
-#: includes/class-pncp-admin.php:3158
+#: includes/class-pncp-admin.php:3172
 msgid "No visits from ChatGPT, Perplexity, Claude, Gemini, Copilot or other assistants yet. They are counted when a reader clicks a link to your site in an answer."
 msgstr ""
 
 #. translators: %s: number of visits
-#: includes/class-pncp-admin.php:3165
+#: includes/class-pncp-admin.php:3179
 #, php-format
 msgid "%s visit from AI assistants."
 msgid_plural "%s visits from AI assistants."
 msgstr[0] ""
 msgstr[1] ""
 
-#: includes/class-pncp-admin.php:3171
+#: includes/class-pncp-admin.php:3185
 msgid "AI search bots are blocked on this site (“Allow AI search engines and assistants” is off), so these readers came from answers based on older copies or other sources."
 msgstr ""
 
-#: includes/class-pncp-admin.php:3175
+#: includes/class-pncp-admin.php:3189
 msgid "Assistant"
 msgstr ""
 
-#: includes/class-pncp-admin.php:3176
-#: includes/class-pncp-admin.php:3185
+#: includes/class-pncp-admin.php:3190
+#: includes/class-pncp-admin.php:3199
 msgid "Visits"
 msgstr ""
 
-#: includes/class-pncp-admin.php:3182
+#: includes/class-pncp-admin.php:3196
 msgid "Pages they sent readers to"
 msgstr ""
 
-#: includes/class-pncp-admin.php:3184
+#: includes/class-pncp-admin.php:3198
 #: includes/class-pncp-cli.php:479
 #: includes/class-pncp-tester.php:208
 #: includes/class-pncp-tester.php:232
@@ -4889,167 +4900,167 @@ msgstr ""
 msgid "Page"
 msgstr ""
 
-#: includes/class-pncp-admin.php:3198
+#: includes/class-pncp-admin.php:3212
 msgid "Delete these counts"
 msgstr ""
 
-#: includes/class-pncp-admin.php:3201
+#: includes/class-pncp-admin.php:3215
 msgid "Counted here without cookies or personal data; kept for 90 days."
 msgstr ""
 
-#: includes/class-pncp-admin.php:3201
+#: includes/class-pncp-admin.php:3215
 msgid "Counted on this server, without cookies or personal data: one count per day and page, for a page view whose referrer is an AI assistant or whose address carries its utm_source. Pages served by a page cache without reaching WordPress are not counted. Kept for 90 days."
 msgstr ""
 
-#: includes/class-pncp-admin.php:3215
+#: includes/class-pncp-admin.php:3229
 msgid "Log settings"
 msgstr ""
 
-#: includes/class-pncp-admin.php:3218
+#: includes/class-pncp-admin.php:3232
 #: includes/class-pncp-setting-labels.php:103
 msgid "Keep the block log for"
 msgstr ""
 
-#: includes/class-pncp-admin.php:3229
+#: includes/class-pncp-admin.php:3243
 msgid "The log keeps IP and User-Agent, i.e. personal data (GDPR). It is deleted automatically."
 msgstr ""
 
-#: includes/class-pncp-admin.php:3235
+#: includes/class-pncp-admin.php:3249
 #: includes/class-pncp-wizard.php:1109
 msgid "Content addresses"
 msgstr ""
 
-#: includes/class-pncp-admin.php:3237
+#: includes/class-pncp-admin.php:3251
 #: includes/class-pncp-setting-labels.php:77
 msgid "Content addresses: path prefixes of pages that other plugins show, one per line, e.g. /hub/space/"
 msgstr ""
 
-#: includes/class-pncp-admin.php:3237
+#: includes/class-pncp-admin.php:3251
 msgid "Only for the log: these count as “Pages”. Nothing is blocked by it."
 msgstr ""
 
-#: includes/class-pncp-admin.php:3237
+#: includes/class-pncp-admin.php:3251
 msgid "Only for the log: blocked requests under these addresses count as “Pages”. Routes that plugins register as WordPress rewrite rules, and all posts, pages, products and terms, are found without this. Nothing is blocked or allowed because of it."
 msgstr ""
 
-#: includes/class-pncp-admin.php:3249
+#: includes/class-pncp-admin.php:3263
 msgid "AI assistants"
 msgstr ""
 
-#: includes/class-pncp-admin.php:3251
+#: includes/class-pncp-admin.php:3265
 #: includes/class-pncp-setting-labels.php:34
 msgid "Count visitors who come from AI assistants (ChatGPT, Perplexity, Claude, Gemini, Copilot…)"
 msgstr ""
 
-#: includes/class-pncp-admin.php:3251
+#: includes/class-pncp-admin.php:3265
 msgid "One count per day and page; no IP, User-Agent or cookie is stored."
 msgstr ""
 
-#: includes/class-pncp-admin.php:3255
+#: includes/class-pncp-admin.php:3269
 #: includes/class-pncp-health.php:116
-#: includes/class-pncp-health.php:1939
+#: includes/class-pncp-health.php:1948
 msgid "Attack record"
 msgstr ""
 
-#: includes/class-pncp-admin.php:3257
+#: includes/class-pncp-admin.php:3271
 msgid "Sign-in failures, wp-admin visits, probes and attack patterns; shown on Attacks."
 msgstr ""
 
-#: includes/class-pncp-admin.php:3257
+#: includes/class-pncp-admin.php:3271
 msgid "Failed sign-ins and the usernames tried, wp-login.php and wp-admin visits that do not sign in, XML-RPC calls, scanner and plugin probes, username enumeration and attack patterns in the address, also when nothing is refused. Kept per hour, address and IP; a normal page view writes nothing. Shown on the Attacks tab."
 msgstr ""
 
-#: includes/class-pncp-admin.php:3261
+#: includes/class-pncp-admin.php:3275
 #: includes/class-pncp-setting-labels.php:39
 msgid "Keep the attack record for"
 msgstr ""
 
-#: includes/class-pncp-admin.php:3272
+#: includes/class-pncp-admin.php:3286
 msgid "It keeps IP addresses and the usernames tried (personal data). Deleted automatically."
 msgstr ""
 
-#: includes/class-pncp-admin.php:3278
+#: includes/class-pncp-admin.php:3292
 msgid "Attack report by email"
 msgstr ""
 
-#: includes/class-pncp-admin.php:3280
+#: includes/class-pncp-admin.php:3294
 #: includes/class-pncp-setting-labels.php:134
 msgid "Weekly attack report by email"
 msgstr ""
 
-#: includes/class-pncp-admin.php:3280
+#: includes/class-pncp-admin.php:3294
 msgid "Every Monday, a 7-day summary to the site's administration email."
 msgstr ""
 
-#: includes/class-pncp-admin.php:3280
+#: includes/class-pncp-admin.php:3294
 msgid "Every Monday, a plain-text summary of the last 7 days (attacks, wp-admin and sign-in attempts, the addresses attacked most, the usernames tried) to the site's administration email, with a link to the Attacks tab."
 msgstr ""
 
-#: includes/class-pncp-admin.php:3294
-#: includes/class-pncp-admin.php:3321
-#: includes/class-pncp-admin.php:3495
-#: includes/class-pncp-admin.php:3517
+#: includes/class-pncp-admin.php:3308
+#: includes/class-pncp-admin.php:3335
+#: includes/class-pncp-admin.php:3509
+#: includes/class-pncp-admin.php:3531
 msgid "Nothing."
 msgstr ""
 
 #. translators: %s: IP ranges, e.g. 160.79.104.0/21
-#: includes/class-pncp-admin.php:3344
+#: includes/class-pncp-admin.php:3358
 #, php-format
 msgid "(plus the published outbound range %s)"
 msgstr ""
 
-#: includes/class-pncp-admin.php:3347
+#: includes/class-pncp-admin.php:3361
 msgid "Not refreshed for over a week: bots not on it are let through instead of being called fake until it is refreshed"
 msgstr ""
 
-#: includes/class-pncp-admin.php:3359
+#: includes/class-pncp-admin.php:3373
 msgid "Blocked permanently"
 msgstr ""
 
-#: includes/class-pncp-admin.php:3371
+#: includes/class-pncp-admin.php:3385
 msgid "No “Block permanently” here: the address is in an official list, so blocking it would also stop that company's search bots, or every visitor behind a CDN. Its training crawlers are already blocked by the bot list (User-Agent)."
 msgstr ""
 
-#: includes/class-pncp-admin.php:3395
+#: includes/class-pncp-admin.php:3409
 msgid "Always allowed now"
 msgstr ""
 
-#: includes/class-pncp-admin.php:3404
+#: includes/class-pncp-admin.php:3418
 msgid "Part of the User-Agent to allow"
 msgstr ""
 
-#: includes/class-pncp-admin.php:3439
+#: includes/class-pncp-admin.php:3453
 msgid "Persistent IPs (last 7 days)"
 msgstr ""
 
 #. translators: %s: number of requests
-#: includes/class-pncp-admin.php:3445
+#: includes/class-pncp-admin.php:3459
 #, php-format
 msgid "IPs with two or more temporary blocks or %s blocked requests: block them permanently."
 msgstr ""
 
-#: includes/class-pncp-admin.php:3463
+#: includes/class-pncp-admin.php:3477
 #: includes/class-pncp-wizard.php:1116
 msgid "Temporary blocks"
 msgstr ""
 
-#: includes/class-pncp-admin.php:3464
+#: includes/class-pncp-admin.php:3478
 msgid "Blocked requests"
 msgstr ""
 
-#: includes/class-pncp-admin.php:3465
+#: includes/class-pncp-admin.php:3479
 msgid "Main reason"
 msgstr ""
 
-#: includes/class-pncp-admin.php:3526
+#: includes/class-pncp-admin.php:3540
 msgid "Fake: not from the official addresses"
 msgstr ""
 
-#: includes/class-pncp-admin.php:3528
+#: includes/class-pncp-admin.php:3542
 msgid "Known bot name, not verified"
 msgstr ""
 
-#: includes/class-pncp-admin.php:3551
+#: includes/class-pncp-admin.php:3565
 #: includes/class-pncp-ai-search-list.php:85
 #: includes/class-pncp-bot-match.php:199
 #: includes/class-pncp-bunny.php:3909
@@ -5067,213 +5078,213 @@ msgstr ""
 msgid "You are not allowed to change this setting."
 msgstr ""
 
-#: includes/class-pncp-admin.php:3816
+#: includes/class-pncp-admin.php:3830
 msgid "Connection test passed: blocking at the CDN works. The details are under “Blocking at the CDN”."
 msgstr ""
 
-#: includes/class-pncp-admin.php:3891
+#: includes/class-pncp-admin.php:3905
 #: includes/class-pncp-edge.php:2542
 msgid "OK"
 msgstr ""
 
-#: includes/class-pncp-admin.php:3892
+#: includes/class-pncp-admin.php:3906
 msgid "Warning"
 msgstr ""
 
-#: includes/class-pncp-admin.php:3893
+#: includes/class-pncp-admin.php:3907
 msgid "Problem"
 msgstr ""
 
-#: includes/class-pncp-admin.php:3894
+#: includes/class-pncp-admin.php:3908
 msgid "Not checked"
 msgstr ""
 
 #. translators: %s: date and time
-#: includes/class-pncp-admin.php:3898
+#: includes/class-pncp-admin.php:3912
 #, php-format
 msgid "Connection check (%s)"
 msgstr ""
 
-#: includes/class-pncp-admin.php:3913
+#: includes/class-pncp-admin.php:3927
 msgid "What to do:"
 msgstr ""
 
-#: includes/class-pncp-admin.php:3921
-#: includes/class-pncp-admin.php:3924
+#: includes/class-pncp-admin.php:3935
+#: includes/class-pncp-admin.php:3938
 msgid "Copy diagnostics"
 msgstr ""
 
-#: includes/class-pncp-admin.php:3922
+#: includes/class-pncp-admin.php:3936
 msgid "For a support request: the result of each step, the zone, the plan, the versions and Cloudflare's Ray IDs. It holds no token."
 msgstr ""
 
-#: includes/class-pncp-admin.php:3943
+#: includes/class-pncp-admin.php:3957
 msgid "Preset applied."
 msgstr ""
 
-#: includes/class-pncp-admin.php:3944
+#: includes/class-pncp-admin.php:3958
 msgid "Settings imported."
 msgstr ""
 
-#: includes/class-pncp-admin.php:3945
+#: includes/class-pncp-admin.php:3959
 msgid "The tab was reset to its defaults."
 msgstr ""
 
-#: includes/class-pncp-admin.php:3946
+#: includes/class-pncp-admin.php:3960
 msgid "The earlier settings were restored."
 msgstr ""
 
-#: includes/class-pncp-admin.php:3947
+#: includes/class-pncp-admin.php:3961
 msgid "Nothing changed: the settings were already like that."
 msgstr ""
 
-#: includes/class-pncp-admin.php:3948
+#: includes/class-pncp-admin.php:3962
 msgid "Import cancelled. Nothing changed."
 msgstr ""
 
-#: includes/class-pncp-admin.php:3949
+#: includes/class-pncp-admin.php:3963
 msgid "No file was received. Choose the JSON file exported from ScrapeLock and try again."
 msgstr ""
 
-#: includes/class-pncp-admin.php:3950
+#: includes/class-pncp-admin.php:3964
 msgid "Nothing changed: the file is not a ScrapeLock settings export, so export it again."
 msgstr ""
 
-#: includes/class-pncp-admin.php:3951
+#: includes/class-pncp-admin.php:3965
 msgid "Nothing changed: the checked file expired after 15 minutes, so choose it again."
 msgstr ""
 
-#: includes/class-pncp-admin.php:3952
+#: includes/class-pncp-admin.php:3966
 msgid "Nothing changed: only the last 5 versions are kept, so choose another one."
 msgstr ""
 
-#: includes/class-pncp-admin.php:3953
+#: includes/class-pncp-admin.php:3967
 msgid "New token created."
 msgstr ""
 
-#: includes/class-pncp-admin.php:3954
+#: includes/class-pncp-admin.php:3968
 msgid "Previous token revoked."
 msgstr ""
 
-#: includes/class-pncp-admin.php:3955
+#: includes/class-pncp-admin.php:3969
 msgid "Block lifted."
 msgstr ""
 
-#: includes/class-pncp-admin.php:3956
+#: includes/class-pncp-admin.php:3970
 msgid "Log deleted."
 msgstr ""
 
-#: includes/class-pncp-admin.php:3957
+#: includes/class-pncp-admin.php:3971
 msgid "Figures counted again."
 msgstr ""
 
-#: includes/class-pncp-admin.php:3958
+#: includes/class-pncp-admin.php:3972
 msgid "The IP was added to the always-blocked IPs (“Bots and limits” → “Always blocked”). You can remove it there."
 msgstr ""
 
-#: includes/class-pncp-admin.php:3959
+#: includes/class-pncp-admin.php:3973
 msgid "The IP is already in the always-blocked IPs."
 msgstr ""
 
-#: includes/class-pncp-admin.php:3960
+#: includes/class-pncp-admin.php:3974
 msgid "The always-blocked IPs already have 200 lines. Combine addresses into CIDR ranges there first."
 msgstr ""
 
-#: includes/class-pncp-admin.php:3961
+#: includes/class-pncp-admin.php:3975
 msgid "The User-Agent was added to “Always allowed User-Agents” (“Bots and limits” → “Always allowed”). You can remove it there. The page limits still apply to it."
 msgstr ""
 
-#: includes/class-pncp-admin.php:3962
+#: includes/class-pncp-admin.php:3976
 #: includes/class-pncp-bot-match.php:230
 msgid "This User-Agent is already always allowed."
 msgstr ""
 
-#: includes/class-pncp-admin.php:3963
+#: includes/class-pncp-admin.php:3977
 msgid "The always-allowed User-Agents already have 200 lines. Remove some there first."
 msgstr ""
 
-#: includes/class-pncp-admin.php:3964
+#: includes/class-pncp-admin.php:3978
 msgid "Not added: use the name of the app or service, e.g. “Dart/” or “okhttp”, not a browser word or “@”."
 msgstr ""
 
-#: includes/class-pncp-admin.php:3965
+#: includes/class-pncp-admin.php:3979
 msgid "Not blocked: this is the server, your own, a private, an always-allowed or an official (search engine, CDN) address."
 msgstr ""
 
-#: includes/class-pncp-admin.php:3966
+#: includes/class-pncp-admin.php:3980
 msgid "IP lists refreshed."
 msgstr ""
 
-#: includes/class-pncp-admin.php:3967
+#: includes/class-pncp-admin.php:3981
 msgid "CrowdSec blocklist updated."
 msgstr ""
 
-#: includes/class-pncp-admin.php:3968
+#: includes/class-pncp-admin.php:3982
 msgid "The CrowdSec blocklist was not updated and the previous one stays: see the reason under “Official IP lists”."
 msgstr ""
 
-#: includes/class-pncp-admin.php:3969
+#: includes/class-pncp-admin.php:3983
 msgid "The counts of visits from AI assistants were deleted."
 msgstr ""
 
-#: includes/class-pncp-admin.php:3970
+#: includes/class-pncp-admin.php:3984
 msgid "Country database downloaded."
 msgstr ""
 
-#: includes/class-pncp-admin.php:3971
+#: includes/class-pncp-admin.php:3985
 msgid "The country database could not be downloaded, so the previous one stays: try “Download now” later."
 msgstr ""
 
-#: includes/class-pncp-admin.php:3972
+#: includes/class-pncp-admin.php:3986
 msgid "The real visitor IP is now read from CF-Connecting-IP, only for requests from Cloudflare."
 msgstr ""
 
-#: includes/class-pncp-admin.php:3973
+#: includes/class-pncp-admin.php:3987
 msgid "The real visitor IP is now read from X-Real-IP, only for requests from Bunny CDN."
 msgstr ""
 
-#: includes/class-pncp-admin.php:3974
+#: includes/class-pncp-admin.php:3988
 msgid "X-Real-IP stays untrusted until the Bunny address list downloads: use “Refresh now” under “Official IP lists”."
 msgstr ""
 
-#: includes/class-pncp-admin.php:3975
+#: includes/class-pncp-admin.php:3989
 msgid "Some IP lists kept their previous version because the download failed: use “Refresh now” under “Official IP lists”."
 msgstr ""
 
-#: includes/class-pncp-admin.php:3976
+#: includes/class-pncp-admin.php:3990
 msgid "Connected to the CDN and tested. Temporary blocks are sent to it only while “Send temporary blocks to the CDN” is on (under “Blocking at the CDN”)."
 msgstr ""
 
-#: includes/class-pncp-admin.php:3977
+#: includes/class-pncp-admin.php:3991
 msgid "Blocking at the CDN is off. The blocks ScrapeLock made there are being removed in the background."
 msgstr ""
 
-#: includes/class-pncp-admin.php:3978
+#: includes/class-pncp-admin.php:3992
 msgid "Nothing was saved: enter a valid zone ID (Cloudflare: 32 characters 0–9 and a–f; Bunny CDN: a number)."
 msgstr ""
 
-#: includes/class-pncp-admin.php:3979
+#: includes/class-pncp-admin.php:3993
 msgid "Nothing was saved: enter the API token (letters, digits, “-” and “_”)."
 msgstr ""
 
-#: includes/class-pncp-admin.php:3980
+#: includes/class-pncp-admin.php:3994
 msgid "The connection test failed, so nothing was saved."
 msgstr ""
 
-#: includes/class-pncp-admin.php:4014
+#: includes/class-pncp-admin.php:4028
 msgid "The old feed token still works but can no longer be shown since 2.1: create a new token if you did not save it."
 msgstr ""
 
-#: includes/class-pncp-admin.php:4016
+#: includes/class-pncp-admin.php:4030
 msgid "Feeds and token"
 msgstr ""
 
-#: includes/class-pncp-admin.php:4020
+#: includes/class-pncp-admin.php:4034
 msgid "Trusted Proxy settings"
 msgstr ""
 
 #. translators: %s: link "Trusted Proxy settings"
-#: includes/class-pncp-admin.php:4025
+#: includes/class-pncp-admin.php:4039
 #, php-format
 msgid "ScrapeLock reads the visitor IP from a header without checking the proxy (as in 1.4), so it can be spoofed: fix it in the %s."
 msgstr ""
@@ -5439,7 +5450,7 @@ msgstr ""
 #: includes/class-pncp-attack-report.php:1443
 #: includes/class-pncp-attack-report.php:1605
 #: includes/class-pncp-attack-report.php:1845
-#: includes/class-pncp-attacks.php:1611
+#: includes/class-pncp-attacks.php:1662
 #: includes/class-pncp-bunny.php:4498
 msgid "(many addresses)"
 msgstr ""
@@ -5503,12 +5514,12 @@ msgstr ""
 #: includes/class-pncp-attack-report.php:962
 #: includes/class-pncp-attack-report.php:1105
 #: includes/class-pncp-attack-report.php:1563
-#: includes/class-pncp-attacks.php:1426
+#: includes/class-pncp-attacks.php:1477
 msgid "failed sign-ins"
 msgstr ""
 
 #: includes/class-pncp-attack-report.php:963
-#: includes/class-pncp-attacks.php:1425
+#: includes/class-pncp-attacks.php:1476
 msgid "addresses"
 msgstr ""
 
@@ -5555,7 +5566,7 @@ msgid "would be refused"
 msgstr ""
 
 #: includes/class-pncp-attack-report.php:1109
-#: includes/class-pncp-attacks.php:1424
+#: includes/class-pncp-attacks.php:1475
 msgid "refused"
 msgstr ""
 
@@ -5570,7 +5581,7 @@ msgid "The attack record is missing from this installation."
 msgstr ""
 
 #: includes/class-pncp-attack-report.php:1130
-#: includes/class-pncp-attacks.php:1418
+#: includes/class-pncp-attacks.php:1469
 msgid "The table of the attack record does not exist yet. It is created on the next admin page, if the database user may create tables."
 msgstr ""
 
@@ -5587,11 +5598,11 @@ msgstr ""
 #: includes/class-pncp-attack-report.php:1348
 #: includes/class-pncp-attack-report.php:1428
 #: includes/class-pncp-attack-report.php:1713
-#: includes/class-pncp-attacks.php:1509
-#: includes/class-pncp-attacks.php:1565
-#: includes/class-pncp-attacks.php:1600
-#: includes/class-pncp-attacks.php:1637
-#: includes/class-pncp-attacks.php:1734
+#: includes/class-pncp-attacks.php:1560
+#: includes/class-pncp-attacks.php:1616
+#: includes/class-pncp-attacks.php:1651
+#: includes/class-pncp-attacks.php:1688
+#: includes/class-pncp-attacks.php:1785
 msgid "Nothing recorded in this period."
 msgstr ""
 
@@ -5651,20 +5662,20 @@ msgstr ""
 
 #: includes/class-pncp-attack-report.php:1357
 #: includes/class-pncp-attack-report.php:1434
-#: includes/class-pncp-attacks.php:1483
-#: includes/class-pncp-attacks.php:1568
-#: includes/class-pncp-attacks.php:1604
+#: includes/class-pncp-attacks.php:1534
+#: includes/class-pncp-attacks.php:1619
+#: includes/class-pncp-attacks.php:1655
 msgid "Kind of attack"
 msgstr ""
 
 #: includes/class-pncp-attack-report.php:1358
-#: includes/class-pncp-attacks.php:1570
+#: includes/class-pncp-attacks.php:1621
 msgid "Share"
 msgstr ""
 
 #: includes/class-pncp-attack-report.php:1361
 #: includes/class-pncp-attack-report.php:1437
-#: includes/class-pncp-attacks.php:1607
+#: includes/class-pncp-attacks.php:1658
 msgid "Refused"
 msgstr ""
 
@@ -5727,7 +5738,7 @@ msgid "Block 24 h"
 msgstr ""
 
 #: includes/class-pncp-attack-report.php:1517
-#: includes/class-pncp-attacks.php:1665
+#: includes/class-pncp-attacks.php:1716
 msgid "Always block"
 msgstr ""
 
@@ -5740,12 +5751,12 @@ msgid "wp-login.php without signing in"
 msgstr ""
 
 #: includes/class-pncp-attack-report.php:1564
-#: includes/class-pncp-attacks.php:258
+#: includes/class-pncp-attacks.php:259
 msgid "wp-admin while logged out"
 msgstr ""
 
 #: includes/class-pncp-attack-report.php:1565
-#: includes/class-pncp-attacks.php:1429
+#: includes/class-pncp-attacks.php:1480
 msgid "XML-RPC calls"
 msgstr ""
 
@@ -5754,7 +5765,7 @@ msgid "Nobody tried wp-admin, the sign-in or XML-RPC in this period."
 msgstr ""
 
 #: includes/class-pncp-attack-report.php:1574
-#: includes/class-pncp-attacks.php:1685
+#: includes/class-pncp-attacks.php:1736
 msgid "Usernames tried"
 msgstr ""
 
@@ -5763,7 +5774,7 @@ msgid "No failed sign-in."
 msgstr ""
 
 #: includes/class-pncp-attack-report.php:1579
-#: includes/class-pncp-attacks.php:1685
+#: includes/class-pncp-attacks.php:1736
 #: includes/class-pncp-login.php:1595
 #: includes/class-pncp-login.php:1615
 msgid "Username"
@@ -5791,12 +5802,12 @@ msgid "Close"
 msgstr ""
 
 #: includes/class-pncp-attack-report.php:1611
-#: includes/class-pncp-attacks.php:1686
+#: includes/class-pncp-attacks.php:1737
 msgid "XML-RPC methods called"
 msgstr ""
 
 #: includes/class-pncp-attack-report.php:1613
-#: includes/class-pncp-attacks.php:1686
+#: includes/class-pncp-attacks.php:1737
 msgid "Method"
 msgstr ""
 
@@ -5854,7 +5865,7 @@ msgid "Filter IPs"
 msgstr ""
 
 #: includes/class-pncp-attack-report.php:1724
-#: includes/class-pncp-attacks.php:1642
+#: includes/class-pncp-attacks.php:1693
 msgid "What it tried"
 msgstr ""
 
@@ -5989,326 +6000,326 @@ msgstr ""
 msgid "Unknown --format. Use: text or csv."
 msgstr ""
 
-#: includes/class-pncp-attacks.php:256
+#: includes/class-pncp-attacks.php:257
 msgid "Failed sign-in"
 msgstr ""
 
-#: includes/class-pncp-attacks.php:257
+#: includes/class-pncp-attacks.php:258
 msgid "Sign-in page without signing in"
 msgstr ""
 
-#: includes/class-pncp-attacks.php:259
+#: includes/class-pncp-attacks.php:260
 msgid "XML-RPC call"
 msgstr ""
 
-#: includes/class-pncp-attacks.php:260
+#: includes/class-pncp-attacks.php:261
 msgid "Username enumeration"
 msgstr ""
 
-#: includes/class-pncp-attacks.php:261
-#: includes/class-pncp-log.php:334
+#: includes/class-pncp-attacks.php:262
+#: includes/class-pncp-log.php:343
 msgid "Scanner probe (.env, .git, backups…)"
 msgstr ""
 
-#: includes/class-pncp-attacks.php:262
+#: includes/class-pncp-attacks.php:263
 msgid "Plugin or theme probe"
 msgstr ""
 
-#: includes/class-pncp-attacks.php:263
+#: includes/class-pncp-attacks.php:264
 msgid "Installer or upgrade script"
 msgstr ""
 
-#: includes/class-pncp-attacks.php:264
+#: includes/class-pncp-attacks.php:265
 msgid "Attack pattern in the address (SQL, script, ../)"
 msgstr ""
 
-#: includes/class-pncp-attacks.php:265
+#: includes/class-pncp-attacks.php:266
 msgid "Refused by ScrapeLock"
 msgstr ""
 
-#: includes/class-pncp-attacks.php:266
+#: includes/class-pncp-attacks.php:267
 msgid "Attack seen at the CDN"
 msgstr ""
 
-#: includes/class-pncp-attacks.php:277
+#: includes/class-pncp-attacks.php:278
 msgid "Someone tried a password and it was wrong. Many from few addresses is password guessing: use strong passwords and two-factor sign-in, and block the addresses below."
 msgstr ""
 
-#: includes/class-pncp-attacks.php:278
+#: includes/class-pncp-attacks.php:279
 msgid "wp-login.php was opened or posted to without a sign-in that worked. Bots do this to find the sign-in form. Restrict wp-login.php at the server or the CDN if only a few people sign in."
 msgstr ""
 
-#: includes/class-pncp-attacks.php:279
+#: includes/class-pncp-attacks.php:280
 msgid "Requests for /wp-admin/ from someone not signed in. WordPress sends them to the sign-in page; many of them are scanners mapping the site."
 msgstr ""
 
-#: includes/class-pncp-attacks.php:280
+#: includes/class-pncp-attacks.php:281
 msgid "Calls to xmlrpc.php. system.multicall tries hundreds of passwords in one request. If no app or Jetpack uses XML-RPC, block xmlrpc.php at the server or the CDN."
 msgstr ""
 
-#: includes/class-pncp-attacks.php:281
+#: includes/class-pncp-attacks.php:282
 msgid "?author=N or the REST users list: collecting usernames to guess their passwords. Turn on “Hide usernames from visitors”."
 msgstr ""
 
-#: includes/class-pncp-attacks.php:282
+#: includes/class-pncp-attacks.php:283
 msgid "Requests for files that should never be public (.env, .git, backups, database dumps, phpMyAdmin). Turn on “Ban scanners on their first probe”."
 msgstr ""
 
-#: includes/class-pncp-attacks.php:283
+#: includes/class-pncp-attacks.php:284
 msgid "“Page not found” under /wp-content/plugins/ or /themes/: a scanner checking for plugins with known holes. Keep plugins up to date and delete the ones you do not use."
 msgstr ""
 
-#: includes/class-pncp-attacks.php:284
+#: includes/class-pncp-attacks.php:285
 msgid "Requests for install.php, setup-config.php or upgrade.php: looking for a site that is not set up yet, to take it over. WordPress runs these files before it loads plugins, so they are recorded only with “Early check” on (install.php and upgrade.php) or from the Bunny CDN logs; setup-config.php is seen only in the CDN or server logs. The “WordPress's own files” point on the Vulnerable points tab closes them."
 msgstr ""
 
-#: includes/class-pncp-attacks.php:285
+#: includes/class-pncp-attacks.php:286
 msgid "SQL, script, file-path or code patterns in the address. Recorded only, not blocked: a firewall at the server or the CDN can refuse them."
 msgstr ""
 
-#: includes/class-pncp-attacks.php:286
+#: includes/class-pncp-attacks.php:287
 msgid "Requests ScrapeLock refused (or, in Monitor only, would refuse). The detail is the reason, as in the Log."
 msgstr ""
 
-#: includes/class-pncp-attacks.php:287
+#: includes/class-pncp-attacks.php:288
 msgid "Attacks seen in the CDN’s logs, before they reached this server."
 msgstr ""
 
-#: includes/class-pncp-attacks.php:1340
+#: includes/class-pncp-attacks.php:1391
 msgid "The attack record was deleted."
 msgstr ""
 
-#: includes/class-pncp-attacks.php:1341
+#: includes/class-pncp-attacks.php:1392
 msgid "The site is locked: unlock it on the Lockdown tab to delete the attack record."
 msgstr ""
 
 #. translators: %s: number of days
-#: includes/class-pncp-attacks.php:1408
+#: includes/class-pncp-attacks.php:1459
 #, php-format
 msgid "Attacks on this site (last %s day)"
 msgid_plural "Attacks on this site (last %s days)"
 msgstr[0] ""
 msgstr[1] ""
 
-#: includes/class-pncp-attacks.php:1415
+#: includes/class-pncp-attacks.php:1466
 msgid "Not recording: “Record where bots and attackers hit the site” is off, or the protection is disabled."
 msgstr ""
 
-#: includes/class-pncp-attacks.php:1423
+#: includes/class-pncp-attacks.php:1474
 msgid "events"
 msgstr ""
 
-#: includes/class-pncp-attacks.php:1427
+#: includes/class-pncp-attacks.php:1478
 msgid "visits to the sign-in without signing in"
 msgstr ""
 
-#: includes/class-pncp-attacks.php:1428
+#: includes/class-pncp-attacks.php:1479
 msgid "wp-admin requests while logged out"
 msgstr ""
 
-#: includes/class-pncp-attacks.php:1438
+#: includes/class-pncp-attacks.php:1489
 msgid "Recorded on this server, also when nothing was refused: one row per hour, kind of attack, address and IP, with a count. Exempt staff, verified search engines and the server itself are not recorded. A normal page view writes nothing."
 msgstr ""
 
-#: includes/class-pncp-attacks.php:1490
+#: includes/class-pncp-attacks.php:1541
 msgid "Show"
 msgstr ""
 
 #. translators: 1: number of events, 2: highest value of one bar
-#: includes/class-pncp-attacks.php:1519
+#: includes/class-pncp-attacks.php:1570
 #, php-format
 msgid "%1$s events, at most %2$s in one bar"
 msgstr ""
 
-#: includes/class-pncp-attacks.php:1563
+#: includes/class-pncp-attacks.php:1614
 msgid "Where they hit, and how to close it"
 msgstr ""
 
-#: includes/class-pncp-attacks.php:1569
-#: includes/class-pncp-attacks.php:1605
-#: includes/class-pncp-attacks.php:1641
-#: includes/class-pncp-attacks.php:1713
+#: includes/class-pncp-attacks.php:1620
+#: includes/class-pncp-attacks.php:1656
+#: includes/class-pncp-attacks.php:1692
+#: includes/class-pncp-attacks.php:1764
 msgid "Events"
 msgstr ""
 
-#: includes/class-pncp-attacks.php:1571
+#: includes/class-pncp-attacks.php:1622
 msgid "What it means"
 msgstr ""
 
-#: includes/class-pncp-attacks.php:1598
+#: includes/class-pncp-attacks.php:1649
 msgid "Addresses attacked most"
 msgstr ""
 
-#: includes/class-pncp-attacks.php:1635
+#: includes/class-pncp-attacks.php:1686
 msgid "Addresses that attacked most"
 msgstr ""
 
-#: includes/class-pncp-attacks.php:1644
+#: includes/class-pncp-attacks.php:1695
 #: includes/class-pncp-login.php:1580
 #: includes/class-pncp-login.php:1598
 msgid "Actions"
 msgstr ""
 
-#: includes/class-pncp-attacks.php:1672
+#: includes/class-pncp-attacks.php:1723
 msgid "“Always block” adds the address to “Always-blocked IPs”. Addresses of home connections change hands: prefer it for data centers and for addresses that keep coming back."
 msgstr ""
 
-#: includes/class-pncp-attacks.php:1687
+#: includes/class-pncp-attacks.php:1738
 msgid "Plugins and themes looked for"
 msgstr ""
 
-#: includes/class-pncp-attacks.php:1687
+#: includes/class-pncp-attacks.php:1738
 msgid "Plugin or theme"
 msgstr ""
 
-#: includes/class-pncp-attacks.php:1688
+#: includes/class-pncp-attacks.php:1739
 msgid "Attack patterns"
 msgstr ""
 
-#: includes/class-pncp-attacks.php:1688
+#: includes/class-pncp-attacks.php:1739
 msgid "Pattern"
 msgstr ""
 
-#: includes/class-pncp-attacks.php:1689
+#: includes/class-pncp-attacks.php:1740
 msgid "Why ScrapeLock refused"
 msgstr ""
 
-#: includes/class-pncp-attacks.php:1692
+#: includes/class-pncp-attacks.php:1743
 msgid "SQL injection"
 msgstr ""
 
-#: includes/class-pncp-attacks.php:1693
+#: includes/class-pncp-attacks.php:1744
 msgid "Script injection (XSS)"
 msgstr ""
 
-#: includes/class-pncp-attacks.php:1694
+#: includes/class-pncp-attacks.php:1745
 msgid "File path traversal (../, /etc/passwd)"
 msgstr ""
 
-#: includes/class-pncp-attacks.php:1695
+#: includes/class-pncp-attacks.php:1746
 msgid "Code or command injection"
 msgstr ""
 
-#: includes/class-pncp-attacks.php:1700
+#: includes/class-pncp-attacks.php:1751
 msgid "What they tried"
 msgstr ""
 
-#: includes/class-pncp-attacks.php:1737
+#: includes/class-pncp-attacks.php:1788
 msgid "A real username in this list is a target: give that account a long, unique password and two-factor sign-in."
 msgstr ""
 
-#: includes/class-pncp-attacks.php:1752
+#: includes/class-pncp-attacks.php:1803
 msgid "Export or delete the attack record"
 msgstr ""
 
-#: includes/class-pncp-attacks.php:1757
+#: includes/class-pncp-attacks.php:1808
 msgid "Download as CSV"
 msgstr ""
 
 #. translators: %s: number of days
-#: includes/class-pncp-attacks.php:1775
+#: includes/class-pncp-attacks.php:1826
 #, php-format
 msgid "The CSV has the period shown above, one line per hour, kind of attack, address and IP. The record keeps IP addresses and the usernames tried, and is deleted automatically after %s day."
 msgid_plural "The CSV has the period shown above, one line per hour, kind of attack, address and IP. The record keeps IP addresses and the usernames tried, and is deleted automatically after %s days."
 msgstr[0] ""
 msgstr[1] ""
 
-#: includes/class-pncp-attacks.php:1781
+#: includes/class-pncp-attacks.php:1832
 msgid "While the site is locked it cannot be deleted."
 msgstr ""
 
-#: includes/class-pncp-attacks.php:1796
+#: includes/class-pncp-attacks.php:1847
 msgid "Attacks in the last 24 hours"
 msgstr ""
 
 #. translators: %s: number
-#: includes/class-pncp-attacks.php:1798
+#: includes/class-pncp-attacks.php:1849
 #, php-format
 msgid "Failed sign-ins: %s"
 msgstr ""
 
 #. translators: %s: number
-#: includes/class-pncp-attacks.php:1799
+#: includes/class-pncp-attacks.php:1850
 #, php-format
 msgid "wp-admin requests while logged out: %s"
 msgstr ""
 
 #. translators: %s: number
-#: includes/class-pncp-attacks.php:1800
+#: includes/class-pncp-attacks.php:1851
 #, php-format
 msgid "XML-RPC calls: %s"
 msgstr ""
 
 #. translators: %s: number
-#: includes/class-pncp-attacks.php:1801
+#: includes/class-pncp-attacks.php:1852
 #, php-format
 msgid "Scanner and plugin probes: %s"
 msgstr ""
 
 #. translators: %s: number
-#: includes/class-pncp-attacks.php:1802
+#: includes/class-pncp-attacks.php:1853
 #, php-format
 msgid "Different addresses: %s"
 msgstr ""
 
-#: includes/class-pncp-attacks.php:1804
+#: includes/class-pncp-attacks.php:1855
 msgid "Full report"
 msgstr ""
 
-#: includes/class-pncp-attacks.php:1818
+#: includes/class-pncp-attacks.php:1869
 msgid "No password guessing in the last 24 hours"
 msgstr ""
 
-#: includes/class-pncp-attacks.php:1824
+#: includes/class-pncp-attacks.php:1875
 msgid "ScrapeLock records failed sign-ins and XML-RPC calls. Fewer than 50 failed sign-ins in a day is normal background noise."
 msgstr ""
 
-#: includes/class-pncp-attacks.php:1829
+#: includes/class-pncp-attacks.php:1880
 msgid "ScrapeLock does not record attacks"
 msgstr ""
 
-#: includes/class-pncp-attacks.php:1830
+#: includes/class-pncp-attacks.php:1881
 msgid "Without the attack record you cannot see where bots try to sign in or what they look for. Turn on “Record where bots and attackers hit the site”."
 msgstr ""
 
 #. translators: 1: number of failed sign-ins, 2: number of XML-RPC calls
-#: includes/class-pncp-attacks.php:1839
+#: includes/class-pncp-attacks.php:1890
 #, php-format
 msgid "Failed sign-ins in the last 24 hours: %1$s, XML-RPC calls: %2$s (normal background noise)"
 msgstr ""
 
-#: includes/class-pncp-attacks.php:1843
-#: includes/class-pncp-attacks.php:1857
+#: includes/class-pncp-attacks.php:1894
+#: includes/class-pncp-attacks.php:1908
 msgid "See the attack report"
 msgstr ""
 
-#: includes/class-pncp-attacks.php:1847
+#: includes/class-pncp-attacks.php:1898
 msgid "Bots are guessing passwords on this site"
 msgstr ""
 
 #. translators: 1: number of failed sign-ins, 2: number of addresses, 3: number of XML-RPC calls
-#: includes/class-pncp-attacks.php:1851
+#: includes/class-pncp-attacks.php:1902
 #, php-format
 msgid "In the last 24 hours: %1$s failed sign-ins from %2$s addresses, and %3$s XML-RPC calls. Use strong passwords and two-factor sign-in, hide usernames from visitors, and block xmlrpc.php if nothing uses it."
 msgstr ""
 
 #. translators: %s: list of categories
-#: includes/class-pncp-attacks.php:1936
+#: includes/class-pncp-attacks.php:1987
 #, php-format
 msgid "Unknown --category. Use: %s."
 msgstr ""
 
-#: includes/class-pncp-attacks.php:1939
+#: includes/class-pncp-attacks.php:1990
 msgid "Unknown --top. Use: paths, ips, users or details."
 msgstr ""
 
-#: includes/class-pncp-attacks.php:1942
+#: includes/class-pncp-attacks.php:1993
 #: includes/class-pncp-bunny.php:4653
 msgid "Unknown --format. Use: table, json, csv, yaml or count."
 msgstr ""
 
 #. translators: 1: days, 2: events, 3: refused, 4: addresses, 5: failed sign-ins
-#: includes/class-pncp-attacks.php:1949
+#: includes/class-pncp-attacks.php:2000
 #, php-format
 msgid "Last %1$d days: %2$d events, %3$d refused, %4$d addresses, %5$d failed sign-ins."
 msgstr ""
@@ -6385,14 +6396,14 @@ msgstr ""
 
 #: includes/class-pncp-bots.php:411
 #: includes/class-pncp-bots.php:617
-#: includes/class-pncp-bots.php:2548
+#: includes/class-pncp-bots.php:2574
 #: includes/class-pncp-graphql.php:68
 msgid "Too many requests. Please try again in a minute."
 msgstr ""
 
 #: includes/class-pncp-bots.php:418
 #: includes/class-pncp-bots.php:617
-#: includes/class-pncp-bots.php:2550
+#: includes/class-pncp-bots.php:2576
 #: includes/class-pncp-graphql.php:76
 #: includes/class-pncp-login.php:978
 #: includes/class-pncp-login.php:1245
@@ -6407,8 +6418,192 @@ msgstr ""
 msgid "Too many cart requests. Please try again in a minute."
 msgstr ""
 
-#: includes/class-pncp-bots.php:2603
+#: includes/class-pncp-bots.php:2629
 msgid "Archive"
+msgstr ""
+
+#: includes/class-pncp-breaker-status.php:54
+msgid "Pre-cache check counters (files)"
+msgstr ""
+
+#: includes/class-pncp-breaker-status.php:55
+msgid "Pre-cache check counters (APCu)"
+msgstr ""
+
+#: includes/class-pncp-breaker-status.php:56
+msgid "Pre-cache check counters (Redis)"
+msgstr ""
+
+#: includes/class-pncp-breaker-status.php:57
+msgid "DNS verification of search engines"
+msgstr ""
+
+#: includes/class-pncp-breaker-status.php:58
+msgid "Site-wide page count"
+msgstr ""
+
+#: includes/class-pncp-breaker-status.php:71
+msgid "The server's DNS resolver answers slowly: check /etc/resolv.conf or use a local caching resolver."
+msgstr ""
+
+#: includes/class-pncp-breaker-status.php:74
+msgid "Redis answers slowly: check its latency (redis-cli --latency), its memory and that the server is not swapping."
+msgstr ""
+
+#: includes/class-pncp-breaker-status.php:77
+msgid "The disk stalls: install APCu (or use Redis) so counters stay in memory, check iowait and swap (sar, iostat), and raise pm.max_children if PHP workers run out."
+msgstr ""
+
+#: includes/class-pncp-breaker-status.php:79
+msgid "The server stalls: check the disk's iowait and swap (sar, iostat), the database load, and raise pm.max_children if PHP workers run out."
+msgstr ""
+
+#. translators: 1: feature, 2: date and time, 3: milliseconds, 4: the threshold in milliseconds
+#: includes/class-pncp-breaker-status.php:218
+#, php-format
+msgid "%1$s: one operation took %3$s ms at %2$s (limit %4$s ms)."
+msgstr ""
+
+#. translators: %s: date and time
+#: includes/class-pncp-breaker-status.php:226
+#, php-format
+msgid "Suspended until %s: requests pass without it."
+msgstr ""
+
+#: includes/class-pncp-breaker-status.php:227
+msgid "Working again."
+msgstr ""
+
+#. translators: %d: number of times
+#: includes/class-pncp-breaker-status.php:230
+#, php-format
+msgid "Tripped %d time in the last 24 hours."
+msgid_plural "Tripped %d times in the last 24 hours."
+msgstr[0] ""
+msgstr[1] ""
+
+#: includes/class-pncp-breaker-status.php:274
+msgid "Resume counting now"
+msgstr ""
+
+#: includes/class-pncp-breaker-status.php:286
+msgid "ScrapeLock counting and storage are fast"
+msgstr ""
+
+#: includes/class-pncp-breaker-status.php:289
+#: includes/class-pncp-breaker-status.php:429
+#: includes/class-pncp-site-files.php:611
+msgid "Performance"
+msgstr ""
+
+#. translators: %s: milliseconds
+#: includes/class-pncp-breaker-status.php:295
+#, php-format
+msgid "No counting or storage operation took longer than %s ms in the last 24 hours."
+msgstr ""
+
+#: includes/class-pncp-breaker-status.php:308
+msgid "ScrapeLock suspended slow counting"
+msgstr ""
+
+#: includes/class-pncp-breaker-status.php:308
+msgid "ScrapeLock counting was slow in the last 24 hours"
+msgstr ""
+
+#: includes/class-pncp-breaker-status.php:311
+msgid "An operation was too slow, so it is suspended for a while: requests pass without it, bans still apply."
+msgstr ""
+
+#: includes/class-pncp-breaker-status.php:312
+msgid "An operation was too slow and was suspended for a while; it works again."
+msgstr ""
+
+#: includes/class-pncp-breaker-status.php:331
+msgid "slow storage, so counting is suspended for a while. Visitors pass; bans still apply."
+msgstr ""
+
+#: includes/class-pncp-breaker-status.php:394
+msgid "files"
+msgstr ""
+
+#: includes/class-pncp-breaker-status.php:398
+msgid "(inferred)"
+msgstr ""
+
+#: includes/class-pncp-breaker-status.php:401
+msgid "WP-CLI cannot see PHP-FPM's APCu: Site Health shows what the site uses."
+msgstr ""
+
+#. translators: 1: Redis, APCu or files, 2: the circuit breaker's state
+#: includes/class-pncp-breaker-status.php:417
+#, php-format
+msgid "Counters: %1$s. Circuit breaker: %2$s."
+msgstr ""
+
+#. translators: %s: Redis or APCu
+#: includes/class-pncp-breaker-status.php:425
+#, php-format
+msgid "ScrapeLock counts in memory (%s)"
+msgstr ""
+
+#: includes/class-pncp-breaker-status.php:426
+msgid "ScrapeLock counts in files on the disk"
+msgstr ""
+
+#: includes/class-pncp-breaker-status.php:434
+msgid "Visitors' requests are counted without touching the disk."
+msgstr ""
+
+#: includes/class-pncp-breaker-status.php:435
+msgid "Install APCu or a Redis object cache so ScrapeLock never touches the disk in visitors' requests."
+msgstr ""
+
+#: includes/class-pncp-breaker-status.php:450
+msgid "Nothing tripped in the last 24 hours"
+msgstr ""
+
+#. translators: 1: feature, 2: time
+#: includes/class-pncp-breaker-status.php:456
+#, php-format
+msgid "%1$s suspended until %2$s"
+msgstr ""
+
+#. translators: 1: feature, 2: number of times
+#: includes/class-pncp-breaker-status.php:458
+#, php-format
+msgid "%1$s tripped %2$d× in 24 h"
+msgstr ""
+
+#: includes/class-pncp-breaker-status.php:473
+msgid "Unknown feature name."
+msgstr ""
+
+#: includes/class-pncp-breaker-status.php:478
+msgid "Asked: the next admin page or scheduled event resumes counting (the state is in PHP-FPM's APCu)."
+msgstr ""
+
+#. translators: %d: number of features
+#: includes/class-pncp-breaker-status.php:482
+#, php-format
+msgid "Counting resumed (%d feature was suspended)."
+msgid_plural "Counting resumed (%d features were suspended)."
+msgstr[0] ""
+msgstr[1] ""
+
+#: includes/class-pncp-breaker-status.php:486
+msgid "Use \"status\" or \"reset\"."
+msgstr ""
+
+#. translators: %s: store (redis, apcu, files)
+#: includes/class-pncp-breaker-status.php:509
+#, php-format
+msgid "Nothing tripped in the last 24 hours (store: %s)."
+msgstr ""
+
+#. translators: %s: date and time
+#: includes/class-pncp-breaker-status.php:514
+#, php-format
+msgid "PHP-FPM's state (APCu) as of %s."
 msgstr ""
 
 #: includes/class-pncp-bunny.php:182
@@ -6540,7 +6735,7 @@ msgid "“Allowed IPs for the login page at Bunny” was not changed: the new li
 msgstr ""
 
 #: includes/class-pncp-bunny.php:1854
-#: includes/class-pncp-options.php:2403
+#: includes/class-pncp-options.php:2408
 msgid "Allowed IPs for the login page at Bunny"
 msgstr ""
 
@@ -7284,7 +7479,7 @@ msgid "Locked at Bunny"
 msgstr ""
 
 #: includes/class-pncp-bunny.php:4580
-#: includes/class-pncp-health.php:1484
+#: includes/class-pncp-health.php:1493
 msgid "Lock at Bunny…"
 msgstr ""
 
@@ -8036,7 +8231,7 @@ msgstr ""
 
 #: includes/class-pncp-cli.php:297
 #: includes/class-pncp-cli.php:338
-#: includes/class-pncp-health.php:1835
+#: includes/class-pncp-health.php:1844
 #: includes/class-pncp-traffic-alerts.php:1162
 msgid "No"
 msgstr ""
@@ -8062,24 +8257,24 @@ msgid "Use: wp scrapelock lockdown status. Lockdown is locked and unlocked on th
 msgstr ""
 
 #: includes/class-pncp-cli.php:337
-#: includes/class-pncp-health.php:1834
+#: includes/class-pncp-health.php:1843
 msgid "Yes"
 msgstr ""
 
 #: includes/class-pncp-cli.php:342
-#: includes/class-pncp-health.php:1877
+#: includes/class-pncp-health.php:1886
 msgid "Off from the server (SCRAPELOCK_UNLOCK)"
 msgstr ""
 
 #: includes/class-pncp-cli.php:344
-#: includes/class-pncp-health.php:1879
+#: includes/class-pncp-health.php:1888
 msgid "Not set up"
 msgstr ""
 
 #: includes/class-pncp-cli.php:346
 #: includes/class-pncp-hardening.php:513
 #: includes/class-pncp-hardening.php:2526
-#: includes/class-pncp-health.php:1881
+#: includes/class-pncp-health.php:1890
 #: includes/class-pncp-lockdown.php:1898
 #: includes/class-pncp-lockdown.php:5056
 #: includes/class-pncp-status.php:586
@@ -8090,14 +8285,14 @@ msgstr ""
 #. translators: %s: date and time.
 #. translators: %s: time
 #: includes/class-pncp-cli.php:349
-#: includes/class-pncp-health.php:1884
+#: includes/class-pncp-health.php:1893
 #: includes/class-pncp-lockdown.php:4846
 #, php-format
 msgid "Unlocked until %s"
 msgstr ""
 
 #: includes/class-pncp-cli.php:351
-#: includes/class-pncp-health.php:1886
+#: includes/class-pncp-health.php:1895
 msgid "Not locked"
 msgstr ""
 
@@ -8122,17 +8317,17 @@ msgid "Lock line in wp-config.php"
 msgstr ""
 
 #: includes/class-pncp-cli.php:362
-#: includes/class-pncp-health.php:1950
+#: includes/class-pncp-health.php:1959
 msgid "Roles frozen while locked"
 msgstr ""
 
 #: includes/class-pncp-cli.php:363
-#: includes/class-pncp-health.php:1951
+#: includes/class-pncp-health.php:1960
 msgid "Roles that keep their work while locked"
 msgstr ""
 
 #: includes/class-pncp-cli.php:364
-#: includes/class-pncp-health.php:1948
+#: includes/class-pncp-health.php:1957
 msgid "File integrity fingerprint"
 msgstr ""
 
@@ -8284,7 +8479,7 @@ msgid "%1$d blocked requests in the last %2$d hours."
 msgstr ""
 
 #: includes/class-pncp-cli.php:686
-#: includes/class-pncp-cli.php:1748
+#: includes/class-pncp-cli.php:1807
 msgid "The site is locked: the settings cannot be changed until it is unlocked (with the authenticator app)."
 msgstr ""
 
@@ -8371,7 +8566,7 @@ msgstr[1] ""
 
 #. translators: %d: number of settings
 #: includes/class-pncp-cli.php:831
-#: includes/class-pncp-cli.php:1778
+#: includes/class-pncp-cli.php:1837
 #, php-format
 msgid "Change this %d setting?"
 msgid_plural "Change these %d settings?"
@@ -8379,13 +8574,13 @@ msgstr[0] ""
 msgstr[1] ""
 
 #: includes/class-pncp-cli.php:850
-#: includes/class-pncp-cli.php:1788
+#: includes/class-pncp-cli.php:1847
 msgid "Nothing was changed."
 msgstr ""
 
 #. translators: %d: number of settings
 #: includes/class-pncp-cli.php:854
-#: includes/class-pncp-cli.php:1792
+#: includes/class-pncp-cli.php:1851
 #, php-format
 msgid "%d setting changed. The previous settings were kept: \"wp scrapelock settings undo\" puts them back."
 msgid_plural "%d settings changed. The previous settings were kept: \"wp scrapelock settings undo\" puts them back."
@@ -8449,62 +8644,62 @@ msgstr ""
 msgid "Last error"
 msgstr ""
 
-#: includes/class-pncp-cli.php:1543
+#: includes/class-pncp-cli.php:1569
 msgid "Stealth is on: the new addresses were tested."
 msgstr ""
 
-#: includes/class-pncp-cli.php:1546
+#: includes/class-pncp-cli.php:1572
 msgid "Stealth is off."
 msgstr ""
 
-#: includes/class-pncp-cli.php:1549
+#: includes/class-pncp-cli.php:1575
 msgid "The new addresses work."
 msgstr ""
 
-#: includes/class-pncp-cli.php:1575
+#: includes/class-pncp-cli.php:1601
 msgid "The log could not be deleted."
 msgstr ""
 
-#: includes/class-pncp-cli.php:1575
+#: includes/class-pncp-cli.php:1601
 msgid "The Stealth debug log was deleted."
 msgstr ""
 
-#: includes/class-pncp-cli.php:1584
+#: includes/class-pncp-cli.php:1610
 msgid "Unknown action. Use: status, on, off, test, scan, rules, check or debug."
 msgstr ""
 
-#: includes/class-pncp-cli.php:1698
+#: includes/class-pncp-cli.php:1757
 msgid "Use: wp scrapelock wizard dismiss <setting> or wp scrapelock wizard restore <setting>."
 msgstr ""
 
-#: includes/class-pncp-cli.php:1704
+#: includes/class-pncp-cli.php:1763
 msgid "Dismissed: it is no longer listed, counted or applied, until its setting or the proposal changes."
 msgstr ""
 
-#: includes/class-pncp-cli.php:1704
+#: includes/class-pncp-cli.php:1763
 msgid "Restored: the proposal is listed again."
 msgstr ""
 
 #. translators: %s: the value now
-#: includes/class-pncp-cli.php:1718
+#: includes/class-pncp-cli.php:1777
 #, php-format
 msgid "%s (you chose this)"
 msgstr ""
 
 #. translators: %s: list of plugins and services
-#: includes/class-pncp-cli.php:1729
+#: includes/class-pncp-cli.php:1788
 #, php-format
 msgid "Found on this site: %s"
 msgstr ""
 
-#: includes/class-pncp-cli.php:1731
-#: includes/class-pncp-cli.php:1772
+#: includes/class-pncp-cli.php:1790
+#: includes/class-pncp-cli.php:1831
 #: includes/class-pncp-wizard.php:1245
 msgid "Nothing to change: the settings already suit what was found."
 msgstr ""
 
 #. translators: %d: number of dismissed proposals
-#: includes/class-pncp-cli.php:1737
+#: includes/class-pncp-cli.php:1796
 #, php-format
 msgid "%d dismissed proposal is not listed (--include-dismissed lists it)."
 msgid_plural "%d dismissed proposals are not listed (--include-dismissed lists them)."
@@ -8512,20 +8707,20 @@ msgstr[0] ""
 msgstr[1] ""
 
 #. translators: %1$s: setting name
-#: includes/class-pncp-cli.php:1755
+#: includes/class-pncp-cli.php:1814
 #, php-format
 msgid "\"%1$s\" is dismissed: \"wp scrapelock wizard restore %1$s\" lists it again."
 msgstr ""
 
 #. translators: %s: setting name
-#: includes/class-pncp-cli.php:1759
+#: includes/class-pncp-cli.php:1818
 #: includes/class-pncp-wizard.php:850
 #, php-format
 msgid "\"%s\" is not one of the proposals."
 msgstr ""
 
 #. translators: %s: list of formats
-#: includes/class-pncp-cli.php:1803
+#: includes/class-pncp-cli.php:1862
 #: includes/class-pncp-traffic-cli.php:80
 #, php-format
 msgid "Unknown --format. Use: %s."
@@ -10067,1041 +10262,1057 @@ msgstr ""
 msgid "ScrapeLock server rules"
 msgstr ""
 
-#: includes/class-pncp-health.php:133
+#: includes/class-pncp-health.php:134
+msgid "ScrapeLock counting and storage speed"
+msgstr ""
+
+#: includes/class-pncp-health.php:138
+msgid "ScrapeLock counters"
+msgstr ""
+
+#: includes/class-pncp-health.php:142
 msgid "ScrapeLock and Bunny CDN logs"
 msgstr ""
 
-#: includes/class-pncp-health.php:157
+#: includes/class-pncp-health.php:166
 msgid "Open the ScrapeLock settings"
 msgstr ""
 
-#: includes/class-pncp-health.php:181
+#: includes/class-pncp-health.php:190
 msgid "The ScrapeLock CrowdSec blocklist is off"
 msgstr ""
 
-#: includes/class-pncp-health.php:181
+#: includes/class-pncp-health.php:190
 msgid "Nothing is downloaded from CrowdSec or another blocklist."
 msgstr ""
 
 #. translators: %s: error message
-#: includes/class-pncp-health.php:187
+#: includes/class-pncp-health.php:196
 msgid "The ScrapeLock CrowdSec blocklist cannot be updated"
 msgstr ""
 
 #. translators: %s: error message
-#: includes/class-pncp-health.php:187
+#: includes/class-pncp-health.php:196
 #, php-format
 msgid "The last attempt failed: %s. Until it works again, the addresses already in the list expire one by one."
 msgstr ""
 
 #. translators: %s: number of addresses
-#: includes/class-pncp-health.php:190
+#: includes/class-pncp-health.php:199
 msgid "The ScrapeLock CrowdSec blocklist is up to date"
 msgstr ""
 
 #. translators: %s: number of addresses
-#: includes/class-pncp-health.php:190
+#: includes/class-pncp-health.php:199
 #, php-format
 msgid "%s addresses are in the list."
 msgstr ""
 
-#: includes/class-pncp-health.php:202
+#: includes/class-pncp-health.php:211
 msgid "The ScrapeLock limit for IPs that never opened a page is off"
 msgstr ""
 
-#: includes/class-pncp-health.php:202
+#: includes/class-pncp-health.php:211
 msgid "The REST API, the feeds and the sitemaps have only their usual limits."
 msgstr ""
 
-#: includes/class-pncp-health.php:206
+#: includes/class-pncp-health.php:215
 msgid "A page cache hides page views from the ScrapeLock API-only limit"
 msgstr ""
 
-#: includes/class-pncp-health.php:206
+#: includes/class-pncp-health.php:215
 msgid "A page cache plugin serves stored pages before WordPress loads, so ScrapeLock does not see that a visitor opened a page, and the visitor's own REST API reads (cart, search, forms that load data) count as if they came from a scraper. Turn on the pre-cache check or the human check, or raise the limit to 20 or more."
 msgstr ""
 
-#: includes/class-pncp-health.php:208
+#: includes/class-pncp-health.php:217
 msgid "The ScrapeLock limit for IPs that never opened a page is on"
 msgstr ""
 
-#: includes/class-pncp-health.php:208
+#: includes/class-pncp-health.php:217
 msgid "IPs that read only the REST API, GraphQL, the feeds or the sitemaps, without ever opening a page, get the stricter limit."
 msgstr ""
 
-#: includes/class-pncp-health.php:218
+#: includes/class-pncp-health.php:227
 msgid "ScrapeLock protection is on"
 msgstr ""
 
-#: includes/class-pncp-health.php:218
+#: includes/class-pncp-health.php:227
 msgid "Content, feeds and the REST API are protected and bots are checked."
 msgstr ""
 
-#: includes/class-pncp-health.php:220
+#: includes/class-pncp-health.php:229
 msgid "ScrapeLock protection is off"
 msgstr ""
 
-#: includes/class-pncp-health.php:220
+#: includes/class-pncp-health.php:229
 msgid "The plugin is active but protects nothing: content can be copied and bots are not checked."
 msgstr ""
 
-#: includes/class-pncp-health.php:234
+#: includes/class-pncp-health.php:243
 msgid "ScrapeLock Emergency Mode is off"
 msgstr ""
 
-#: includes/class-pncp-health.php:234
+#: includes/class-pncp-health.php:243
 msgid "The normal settings apply. Emergency Mode is started by hand (or by the automatic Emergency Mode, if you let it) during a scraping attack, and ends by itself."
 msgstr ""
 
-#: includes/class-pncp-health.php:237
+#: includes/class-pncp-health.php:246
 msgid "Stop Emergency Mode now"
 msgstr ""
 
 #. translators: %s: time left, e.g. "3 hours"
-#: includes/class-pncp-health.php:242
+#: includes/class-pncp-health.php:251
 #, php-format
 msgid "ScrapeLock Emergency Mode is on for another %s"
 msgstr ""
 
 #. translators: %s: date and time
-#: includes/class-pncp-health.php:245
+#: includes/class-pncp-health.php:254
 #, php-format
 msgid "Until %s, stricter limits and checks apply to everyone except verified search engines and exempt staff, and lists of articles may show excerpts instead of the full text. Real visitors and some services (feeds, apps, monitoring from data centers) can notice it. Stop it as soon as the attack is over."
 msgstr ""
 
-#: includes/class-pncp-health.php:262
+#: includes/class-pncp-health.php:271
 msgid "ScrapeLock blocks what its settings say"
 msgstr ""
 
-#: includes/class-pncp-health.php:262
+#: includes/class-pncp-health.php:271
 msgid "“Monitor only” is off: requests that the settings refuse are blocked."
 msgstr ""
 
-#: includes/class-pncp-health.php:264
+#: includes/class-pncp-health.php:273
 msgid "Every check runs, but a request the settings would refuse is let through and only logged as “Would block”. Scrapers are not stopped. Check the “Would block” entries in the Log, add the services you rely on to “Always allowed”, then turn “Monitor only” off."
 msgstr ""
 
 #. translators: %s: date and time
-#: includes/class-pncp-health.php:268
+#: includes/class-pncp-health.php:277
 #, php-format
 msgid "This is the first week of a new install: ScrapeLock starts blocking on its own on %s."
 msgstr ""
 
-#: includes/class-pncp-health.php:272
+#: includes/class-pncp-health.php:281
 msgid "See what would have been blocked"
 msgstr ""
 
-#: includes/class-pncp-health.php:273
+#: includes/class-pncp-health.php:282
 msgid "ScrapeLock is in “Monitor only” mode: nothing is blocked"
 msgstr ""
 
-#: includes/class-pncp-health.php:307
+#: includes/class-pncp-health.php:316
 msgid "The official IP lists are up to date"
 msgstr ""
 
-#: includes/class-pncp-health.php:307
+#: includes/class-pncp-health.php:316
 msgid "The lists of Google, Bing, Apple, DuckDuckGo and (when used) Cloudflare are refreshed every day."
 msgstr ""
 
 #. translators: %s: list names, e.g. "Google, Bing"
-#: includes/class-pncp-health.php:312
+#: includes/class-pncp-health.php:321
 #, php-format
 msgid "Never downloaded: %s."
 msgstr ""
 
 #. translators: %s: list names, e.g. "Google, Bing"
-#: includes/class-pncp-health.php:316
+#: includes/class-pncp-health.php:325
 #, php-format
 msgid "Not refreshed for more than 3 days: %s."
 msgstr ""
 
-#: includes/class-pncp-health.php:318
+#: includes/class-pncp-health.php:327
 msgid "Until they are, real search engines are verified with slower DNS lookups only, and the Cloudflare addresses come from the list built into the plugin. The lists are refreshed once a day through WordPress's scheduled tasks (cron): check that cron runs and that the server can reach the websites of Google, Bing, Apple, DuckDuckGo and Cloudflare, or use “Refresh lists now”."
 msgstr ""
 
-#: includes/class-pncp-health.php:319
+#: includes/class-pncp-health.php:328
 msgid "ScrapeLock official IP lists are missing or out of date"
 msgstr ""
 
-#: includes/class-pncp-health.php:330
+#: includes/class-pncp-health.php:339
 msgid "All visitors appear with a Cloudflare address"
 msgstr ""
 
-#: includes/class-pncp-health.php:330
+#: includes/class-pncp-health.php:339
 msgid "The site is behind Cloudflare, but ScrapeLock sees Cloudflare's address instead of the visitor's. Limits and blocks then hit Cloudflare itself, i.e. many visitors at once. Use CF-Connecting-IP (one click on the Bots tab)."
 msgstr ""
 
-#: includes/class-pncp-health.php:333
+#: includes/class-pncp-health.php:342
 msgid "All visitors appear with a Bunny CDN address"
 msgstr ""
 
-#: includes/class-pncp-health.php:333
+#: includes/class-pncp-health.php:342
 msgid "The site is behind Bunny CDN, but ScrapeLock sees Bunny's address instead of the visitor's. Limits and blocks then hit Bunny itself, i.e. many visitors at once. Use X-Real-IP from Bunny (one click on the Bots tab)."
 msgstr ""
 
-#: includes/class-pncp-health.php:338
+#: includes/class-pncp-health.php:347
 msgid "ScrapeLock sees a proxy's address for every visitor"
 msgstr ""
 
 #. translators: %s: the IP ranges
-#: includes/class-pncp-health.php:358
+#: includes/class-pncp-health.php:367
 msgid "ScrapeLock allowed or private IPs include ranges that are too wide"
 msgstr ""
 
 #. translators: %s: the IP ranges
-#: includes/class-pncp-health.php:358
+#: includes/class-pncp-health.php:367
 #, php-format
 msgid "These ranges in \"Always allowed IPs\" or the private URL IPs cover a large part of the internet: %s. Every visitor in them skips the protection. Remove them and list only your own addresses."
 msgstr ""
 
 #. translators: %s: the IP ranges
-#: includes/class-pncp-health.php:363
+#: includes/class-pncp-health.php:372
 msgid "ScrapeLock trusted proxies include ranges that are too wide"
 msgstr ""
 
 #. translators: %s: the IP ranges
-#: includes/class-pncp-health.php:363
+#: includes/class-pncp-health.php:372
 #, php-format
 msgid "These trusted proxy ranges cover a large part of the internet: %s. With them any visitor could choose its own IP with a header, so ScrapeLock ignores them. Remove them and list only the addresses of your own proxy or load balancer."
 msgstr ""
 
-#: includes/class-pncp-health.php:372
+#: includes/class-pncp-health.php:381
 msgid "Set a CDN shared secret for ScrapeLock"
 msgstr ""
 
-#: includes/class-pncp-health.php:372
+#: includes/class-pncp-health.php:381
 msgid "“Real visitor IP” is X-Forwarded-For with Cloudflare trusted, and no CDN shared secret is set. Anyone can send requests through Cloudflare (a Worker, a zone of their own) with any X-Forwarded-For, so ScrapeLock reads the visitor from CF-Connecting-IP and treats a request whose X-Forwarded-For does not match it as one whose IP may be forged: it is limited, but it earns no violations or bans and does not match the always-allowed or private IPs. Use CF-Connecting-IP as “Real visitor IP”, or have Cloudflare add the CDN shared secret to every request (a request header Transform Rule) and enter it on the Bots tab."
 msgstr ""
 
-#: includes/class-pncp-health.php:372
+#: includes/class-pncp-health.php:381
 msgid "“Real visitor IP” trusts a CDN edge (Bunny CDN) for a header, and no CDN shared secret is set. Anyone can point a pull zone of their own at this server and make it send any visitor IP, so ScrapeLock treats these IPs as possibly forged: they are limited, but earn no violations or bans and do not match the always-allowed or private IPs. Have the CDN add the CDN shared secret to every request (an edge rule) and enter it on the Bots tab."
 msgstr ""
 
-#: includes/class-pncp-health.php:374
+#: includes/class-pncp-health.php:383
 msgid "ScrapeLock sees the real visitor IP"
 msgstr ""
 
-#: includes/class-pncp-health.php:374
+#: includes/class-pncp-health.php:383
 msgid "No CDN was found hiding the visitors' addresses on this request."
 msgstr ""
 
-#: includes/class-pncp-health.php:385
+#: includes/class-pncp-health.php:394
 msgid "ScrapeLock “Only through the CDN” is not in use"
 msgstr ""
 
-#: includes/class-pncp-health.php:385
+#: includes/class-pncp-health.php:394
 msgid "Requests that go around the CDN are not refused. Turn it on (Bots tab) once the CDN sends the shared secret."
 msgstr ""
 
-#: includes/class-pncp-health.php:388
+#: includes/class-pncp-health.php:397
 msgid "“Only through the CDN” does not protect this site yet"
 msgstr ""
 
-#: includes/class-pncp-health.php:390
+#: includes/class-pncp-health.php:399
 msgid "ScrapeLock refuses requests that go around the CDN"
 msgstr ""
 
-#: includes/class-pncp-health.php:390
+#: includes/class-pncp-health.php:399
 msgid "Requests without the CDN shared secret get a 403."
 msgstr ""
 
-#: includes/class-pncp-health.php:401
+#: includes/class-pncp-health.php:410
 msgid "The ScrapeLock early check is off"
 msgstr ""
 
-#: includes/class-pncp-health.php:401
+#: includes/class-pncp-health.php:410
 msgid "Bots are checked when the plugin loads, as usual."
 msgstr ""
 
-#: includes/class-pncp-health.php:404
+#: includes/class-pncp-health.php:413
 msgid "The ScrapeLock early check is running"
 msgstr ""
 
-#: includes/class-pncp-health.php:404
+#: includes/class-pncp-health.php:413
 msgid "Its file in wp-content/mu-plugins is in place: bots are stopped before other plugins load."
 msgstr ""
 
-#: includes/class-pncp-health.php:406
+#: includes/class-pncp-health.php:415
 msgid "The ScrapeLock early check is on but not running"
 msgstr ""
 
-#: includes/class-pncp-health.php:406
+#: includes/class-pncp-health.php:415
 msgid "Its file in wp-content/mu-plugins is missing or out of date (the server does not allow direct file writes). Bots are still checked, only later. Save the settings again, or turn the setting off."
 msgstr ""
 
-#: includes/class-pncp-health.php:421
+#: includes/class-pncp-health.php:430
 msgid "A page cache answers before ScrapeLock"
 msgstr ""
 
-#: includes/class-pncp-health.php:421
+#: includes/class-pncp-health.php:430
 msgid "A page cache plugin serves stored pages before WordPress loads, so the bot list, the page limits and the blocks do not apply to them. Turn on the pre-cache check in the Bots tab."
 msgstr ""
 
-#: includes/class-pncp-health.php:423
+#: includes/class-pncp-health.php:432
 msgid "The ScrapeLock pre-cache check is off"
 msgstr ""
 
-#: includes/class-pncp-health.php:423
+#: includes/class-pncp-health.php:432
 msgid "Pages served from the page cache are not checked first; the normal check works as usual."
 msgstr ""
 
-#: includes/class-pncp-health.php:426
+#: includes/class-pncp-health.php:435
 msgid "The ScrapeLock pre-cache check is running"
 msgstr ""
 
-#: includes/class-pncp-health.php:426
+#: includes/class-pncp-health.php:435
 msgid "wp-config.php loads the check before the page cache."
 msgstr ""
 
-#: includes/class-pncp-health.php:428
+#: includes/class-pncp-health.php:437
 msgid "The ScrapeLock pre-cache check is on but not running"
 msgstr ""
 
-#: includes/class-pncp-health.php:428
+#: includes/class-pncp-health.php:437
 msgid "wp-config.php does not load it (it could not be changed, or the folder uploads/scrapelock could not be created). The normal check works as before; the Bots tab shows the lines to add by hand."
 msgstr ""
 
-#: includes/class-pncp-health.php:438
+#: includes/class-pncp-health.php:447
 msgid "ScrapeLock Lockdown is off from the server"
 msgstr ""
 
-#: includes/class-pncp-health.php:438
+#: includes/class-pncp-health.php:447
 msgid "SCRAPELOCK_UNLOCK is set in wp-config.php, so the lock is not applied. Connect the authenticator app again, then remove that line."
 msgstr ""
 
-#: includes/class-pncp-health.php:441
+#: includes/class-pncp-health.php:450
 msgid "ScrapeLock Lockdown data was changed outside WordPress"
 msgstr ""
 
-#: includes/class-pncp-health.php:441
+#: includes/class-pncp-health.php:450
 msgid "The lock state in the database no longer matches its signature or the guard file. If you did not change the keys in wp-config.php, someone changed the database directly; while the guard file says the site is locked, it stays locked. Check the site with a security scanner and change the database password."
 msgstr ""
 
-#: includes/class-pncp-health.php:444
+#: includes/class-pncp-health.php:453
 msgid "ScrapeLock Lockdown: the security keys are not in wp-config.php"
 msgstr ""
 
-#: includes/class-pncp-health.php:444
+#: includes/class-pncp-health.php:453
 msgid "AUTH_KEY and AUTH_SALT are not defined in wp-config.php, so WordPress keeps them in the database. Lockdown encrypts and signs its data with them: someone who can change the database could then also read them. Add the keys to wp-config.php (from https://api.wordpress.org/secret-key/1.1/salt/) and connect the authenticator app again."
 msgstr ""
 
-#: includes/class-pncp-health.php:449
+#: includes/class-pncp-health.php:458
 msgid "ScrapeLock Lockdown is kept by the line in wp-config.php"
 msgstr ""
 
-#: includes/class-pncp-health.php:449
+#: includes/class-pncp-health.php:458
 msgid "WordPress cannot write to wp-content/mu-plugins or any other folder of wp-content, so the lock is kept outside the database by the line SCRAPELOCK_LOCKED in wp-config.php: if the Lockdown data in the database is deleted or changed, the site stays locked. Someone who can change the database directly could still deactivate ScrapeLock itself, and the active plugins and the theme are not kept from the start of every request. Let the web server write to wp-content/mu-plugins, then lock the site again."
 msgstr ""
 
-#: includes/class-pncp-health.php:451
+#: includes/class-pncp-health.php:460
 msgid "ScrapeLock Lockdown is not protected yet"
 msgstr ""
 
-#: includes/class-pncp-health.php:451
+#: includes/class-pncp-health.php:460
 msgid "The site is locked, but WordPress cannot write to any folder of wp-content, and the lock line SCRAPELOCK_LOCKED for this lock is not in wp-config.php (it is missing, from an earlier lock, or not valid for this site): everything about the lock is in the database only, and someone who can change the database directly could delete it so that the site looks as if it had never been locked. Add the line shown on the Lockdown page to wp-config.php."
 msgstr ""
 
-#: includes/class-pncp-health.php:454
+#: includes/class-pncp-health.php:463
 msgid "ScrapeLock Lockdown: remove the lock line from wp-config.php"
 msgstr ""
 
-#: includes/class-pncp-health.php:454
+#: includes/class-pncp-health.php:463
 msgid "The site is unlocked, but wp-config.php still has the line SCRAPELOCK_LOCKED of the lock that has ended. Remove it: while it is there, if the Lockdown data is deleted from the database, the site locks again."
 msgstr ""
 
 #. translators: %s: folder of the lock file
-#: includes/class-pncp-health.php:459
+#: includes/class-pncp-health.php:468
 #, php-format
 msgid "The file wp-content/mu-plugins/scrapelock-lockdown-guard.php could not be written, so the lock is kept by a signed lock file in %s. If the Lockdown data in the database is deleted or changed the site stays locked, but someone who can change the database directly could still deactivate ScrapeLock itself, and the active plugins and the theme are not kept from the start of every request. Let the web server write to wp-content/mu-plugins, then lock the site again."
 msgstr ""
 
 #. translators: %s: folder of the lock file
-#: includes/class-pncp-health.php:464
+#: includes/class-pncp-health.php:473
 #, php-format
 msgid "The file wp-content/mu-plugins/scrapelock-lockdown-guard.php could not be written, and the signed lock file is not written yet, although %s can be written: for now everything about the lock is in the database only. ScrapeLock writes the lock file in its hourly check; to write it now, unlock and lock the site again."
 msgstr ""
 
-#: includes/class-pncp-health.php:466
+#: includes/class-pncp-health.php:475
 msgid "The file wp-content/mu-plugins/scrapelock-lockdown-guard.php could not be written, and no other folder of wp-content either: everything about the lock is in the database only. Someone who can change the database directly could delete it and open the lock without it being noticed. Let the web server write to wp-content/mu-plugins, then lock the site again."
 msgstr ""
 
-#: includes/class-pncp-health.php:468
+#: includes/class-pncp-health.php:477
 msgid "ScrapeLock Lockdown works without its guard file"
 msgstr ""
 
-#: includes/class-pncp-health.php:471
+#: includes/class-pncp-health.php:480
 msgid "ScrapeLock Lockdown is not set up"
 msgstr ""
 
-#: includes/class-pncp-health.php:471
+#: includes/class-pncp-health.php:480
 msgid "Lockdown is optional: it freezes changes to plugins, themes, users and settings until it is unlocked with an authenticator app."
 msgstr ""
 
-#: includes/class-pncp-health.php:474
+#: includes/class-pncp-health.php:483
 msgid "ScrapeLock Lockdown is unlocked"
 msgstr ""
 
-#: includes/class-pncp-health.php:474
+#: includes/class-pncp-health.php:483
 msgid "Changes to the site are allowed. Lock it again when you are done."
 msgstr ""
 
 #. translators: %d: number of updates.
-#: includes/class-pncp-health.php:482
+#: includes/class-pncp-health.php:491
 #, php-format
 msgid "The site is locked: %d update is waiting"
 msgid_plural "The site is locked: %d updates are waiting"
 msgstr[0] ""
 msgstr[1] ""
 
-#: includes/class-pncp-health.php:483
+#: includes/class-pncp-health.php:492
 msgid "While locked, updates are not installed, not even automatically (so WordPress also reports background updates as off). Unlock with the authenticator app, update, then lock again."
 msgstr ""
 
-#: includes/class-pncp-health.php:487
+#: includes/class-pncp-health.php:496
 msgid "The site is locked by ScrapeLock Lockdown"
 msgstr ""
 
-#: includes/class-pncp-health.php:487
+#: includes/class-pncp-health.php:496
 msgid "Plugins, themes, users and settings cannot be changed until it is unlocked with the authenticator app. Automatic updates wait too (so WordPress reports background updates as off)."
 msgstr ""
 
-#: includes/class-pncp-health.php:501
+#: includes/class-pncp-health.php:510
 msgid "The ScrapeLock file fingerprint was changed outside WordPress"
 msgstr ""
 
-#: includes/class-pncp-health.php:501
+#: includes/class-pncp-health.php:510
 #: includes/class-pncp-lockdown.php:902
 msgid "The fingerprint of the code files was changed or removed in the database while the site was locked, so new or changed files might have been hidden. Check the files with a security scanner; a new fingerprint is taken the next time you lock the site."
 msgstr ""
 
-#: includes/class-pncp-health.php:506
+#: includes/class-pncp-health.php:515
 msgid "The ScrapeLock file check has not run for more than 3 hours"
 msgstr ""
 
-#: includes/class-pncp-health.php:506
+#: includes/class-pncp-health.php:515
 msgid "The file check runs every hour through WordPress's scheduled tasks (cron). If DISABLE_WP_CRON is set in wp-config.php, add a real cron job that calls wp-cron.php, or run \"wp cron event run --due-now\" regularly."
 msgstr ""
 
 #. translators: %d: number of files.
-#: includes/class-pncp-health.php:514
+#: includes/class-pncp-health.php:523
 #, php-format
 msgid "ScrapeLock found %d changed code file"
 msgid_plural "ScrapeLock found %d changed code files"
 msgstr[0] ""
 msgstr[1] ""
 
-#: includes/class-pncp-health.php:515
+#: includes/class-pncp-health.php:524
 msgid "Code files were added or changed while the site was locked, or differ from the official copies on WordPress.org. Nobody can install or update anything while the site is locked, so a file you do not recognise is often a backdoor uploaded through a vulnerable plugin. The list is on the Lockdown tab."
 msgstr ""
 
-#: includes/class-pncp-health.php:520
+#: includes/class-pncp-health.php:529
 msgid "ScrapeLock file integrity is not active"
 msgstr ""
 
-#: includes/class-pncp-health.php:520
+#: includes/class-pncp-health.php:529
 msgid "The fingerprint of the code files is taken when the site is locked with Lockdown, and checked every hour while it stays locked."
 msgstr ""
 
-#: includes/class-pncp-health.php:522
+#: includes/class-pncp-health.php:531
 msgid "No changed code files"
 msgstr ""
 
-#: includes/class-pncp-health.php:522
+#: includes/class-pncp-health.php:531
 msgid "No code file was added or changed since the site was locked, and WordPress and its plugins from WordPress.org match their official copies."
 msgstr ""
 
-#: includes/class-pncp-health.php:573
+#: includes/class-pncp-health.php:582
 msgid "The site's requests to itself reach it"
 msgstr ""
 
-#: includes/class-pncp-health.php:576
+#: includes/class-pncp-health.php:585
 msgid "Something refuses the site's requests to itself on its public address"
 msgstr ""
 
-#: includes/class-pncp-health.php:576
+#: includes/class-pncp-health.php:585
 msgid "The site cannot reach itself"
 msgstr ""
 
-#: includes/class-pncp-health.php:604
+#: includes/class-pncp-health.php:613
 #: includes/class-pncp-site-files.php:291
 msgid "Check again now"
 msgstr ""
 
 #. translators: %d: HTTP status code, e.g. 403
-#: includes/class-pncp-health.php:753
+#: includes/class-pncp-health.php:762
 #, php-format
 msgid "HTTP %d"
 msgstr ""
 
-#: includes/class-pncp-health.php:759
+#: includes/class-pncp-health.php:768
 msgid "the uploads folder is not available"
 msgstr ""
 
-#: includes/class-pncp-health.php:762
+#: includes/class-pncp-health.php:771
 msgid "the uploads folder cannot be written"
 msgstr ""
 
-#: includes/class-pncp-health.php:765
+#: includes/class-pncp-health.php:774
 msgid "no test file could be written in the folders"
 msgstr ""
 
-#: includes/class-pncp-health.php:768
+#: includes/class-pncp-health.php:777
 msgid "the test files written in the folders could not be fetched"
 msgstr ""
 
-#: includes/class-pncp-health.php:771
+#: includes/class-pncp-health.php:780
 msgid "the uploads folder is served from another address"
 msgstr ""
 
-#: includes/class-pncp-health.php:773
+#: includes/class-pncp-health.php:782
 msgid "it redirects to another address"
 msgstr ""
 
-#: includes/class-pncp-health.php:790
+#: includes/class-pncp-health.php:799
 msgid "robots.txt asks every bot to stay away"
 msgstr ""
 
-#: includes/class-pncp-health.php:790
+#: includes/class-pncp-health.php:799
 msgid "“Discourage search engines from indexing this site” is on (Settings → Reading), so WordPress asks every bot to stay away and ScrapeLock adds nothing to robots.txt."
 msgstr ""
 
-#: includes/class-pncp-health.php:806
+#: includes/class-pncp-health.php:815
 msgid "robots.txt belongs to the main site of the network"
 msgstr ""
 
-#: includes/class-pncp-health.php:806
+#: includes/class-pncp-health.php:815
 msgid "In a network with sites in folders, crawlers read only the robots.txt of the main site, so the AI crawler lines come from the main site's ScrapeLock settings. The bot trap of this site is not listed there; polite crawlers are kept away from it by its nofollow link only."
 msgstr ""
 
-#: includes/class-pncp-health.php:872
+#: includes/class-pncp-health.php:881
 msgid "ScrapeLock adds nothing to robots.txt"
 msgstr ""
 
-#: includes/class-pncp-health.php:872
+#: includes/class-pncp-health.php:881
 msgid "Protection is off, or the bot trap, the AI crawler lines, the web archive lines and Content Signals are all off, so there is nothing to check."
 msgstr ""
 
-#: includes/class-pncp-health.php:1107
+#: includes/class-pncp-health.php:1116
 msgid "Your site also serves llms.txt, a list of your content written for AI tools, while ScrapeLock asks AI crawlers to stay away. ScrapeLock leaves llms.txt open to every bot and does not change it. If you do not want to offer your content to AI tools, remove it (the option of the plugin that makes it, or the file in the site's root folder)."
 msgstr ""
 
-#: includes/class-pncp-health.php:1109
+#: includes/class-pncp-health.php:1118
 msgid "It is a file in the site's root folder, so it replaces any llms.txt a plugin makes."
 msgstr ""
 
 #. translators: %s: address of robots.txt
-#: includes/class-pncp-health.php:1117
+#: includes/class-pncp-health.php:1126
 #, php-format
 msgid "%s returns a web page instead of a text file, so crawlers find no rules at all."
 msgstr ""
 
 #. translators: 1: address of robots.txt, 2: HTTP status code
-#: includes/class-pncp-health.php:1120
+#: includes/class-pncp-health.php:1129
 #, php-format
 msgid "%1$s answers with HTTP %2$d, so crawlers find no rules at all: the bot trap, AI crawler and Content-Signal lines that ScrapeLock adds are not sent."
 msgstr ""
 
-#: includes/class-pncp-health.php:1123
+#: includes/class-pncp-health.php:1132
 msgid "With plain permalinks (Settings → Permalinks) WordPress cannot answer /robots.txt itself: choose another permalink structure, or create the file with the lines below."
 msgstr ""
 
-#: includes/class-pncp-health.php:1126
+#: includes/class-pncp-health.php:1135
 msgid "The robots.txt WordPress would send, ScrapeLock's lines included:"
 msgstr ""
 
-#: includes/class-pncp-health.php:1130
+#: includes/class-pncp-health.php:1139
 msgid "On Nginx, a “location = /robots.txt” block without “try_files $uri /index.php?$args;” answers itself instead of passing the request to WordPress: add that line to it, or remove the block. Do not create a robots.txt file: it would replace the one WordPress makes, with its sitemap lines."
 msgstr ""
 
-#: includes/class-pncp-health.php:1132
+#: includes/class-pncp-health.php:1141
 msgid "The lines ScrapeLock adds:"
 msgstr ""
 
-#: includes/class-pncp-health.php:1134
+#: includes/class-pncp-health.php:1143
 msgid "No robots.txt is served"
 msgstr ""
 
 #. translators: 1: address of robots.txt, 2: why it could not be fetched
-#: includes/class-pncp-health.php:1141
+#: includes/class-pncp-health.php:1150
 #, php-format
 msgid "WordPress is in a folder, and crawlers read only %1$s, which WordPress does not make. ScrapeLock could not fetch it from the server (%2$s): check that it has the lines below."
 msgstr ""
 
-#: includes/class-pncp-health.php:1142
-#: includes/class-pncp-health.php:1148
+#: includes/class-pncp-health.php:1151
+#: includes/class-pncp-health.php:1157
 msgid "ScrapeLock could not check robots.txt"
 msgstr ""
 
 #. translators: 1: address of robots.txt, 2: why it could not be fetched
-#: includes/class-pncp-health.php:1145
+#: includes/class-pncp-health.php:1154
 #, php-format
 msgid "There is no robots.txt file in the site's root folder, so the web server should send the one WordPress makes, with ScrapeLock's lines. ScrapeLock could not fetch %1$s from the server to confirm it (%2$s). Open it in a browser to see what crawlers get."
 msgstr ""
 
 #. translators: %s: why the address could not be fetched
-#: includes/class-pncp-health.php:1167
+#: includes/class-pncp-health.php:1176
 #, php-format
 msgid "(Checked in the file itself: the address could not be fetched from the server: %s.)"
 msgstr ""
 
-#: includes/class-pncp-health.php:1171
+#: includes/class-pncp-health.php:1180
 msgid "The Disallow line for the bot trap. Polite crawlers that are not verified search engines (SEO tools, smaller search engines) may follow its hidden link and be blocked."
 msgstr ""
 
 #. translators: 1: number of AI crawlers missing, 2: number of AI crawlers ScrapeLock lists, 3: up to three crawler names
-#: includes/class-pncp-health.php:1175
+#: includes/class-pncp-health.php:1184
 #, php-format
 msgid "%1$d of %2$d AI crawlers, e.g. %3$s."
 msgstr ""
 
 #. translators: 1: number of web archives missing, 2: number of web archives ScrapeLock lists, 3: up to three crawler names
-#: includes/class-pncp-health.php:1179
+#: includes/class-pncp-health.php:1188
 #, php-format
 msgid "%1$d of %2$d web archives, e.g. %3$s."
 msgstr ""
 
-#: includes/class-pncp-health.php:1182
+#: includes/class-pncp-health.php:1191
 msgid "The Content-Signal line."
 msgstr ""
 
-#: includes/class-pncp-health.php:1184
+#: includes/class-pncp-health.php:1193
 msgid "The Content-Signal line has other values than your settings."
 msgstr ""
 
 #. translators: %s: address of robots.txt
-#: includes/class-pncp-health.php:1189
+#: includes/class-pncp-health.php:1198
 #, php-format
 msgid "%s has every line that the current ScrapeLock settings add (bot trap, AI crawlers, web archives, Content Signals, as they are turned on)."
 msgstr ""
 
-#: includes/class-pncp-health.php:1191
+#: includes/class-pncp-health.php:1200
 msgid "It is a file in the site's root folder, which WordPress and ScrapeLock cannot change: when an update of ScrapeLock adds AI crawlers, this test lists the lines to add."
 msgstr ""
 
-#: includes/class-pncp-health.php:1195
+#: includes/class-pncp-health.php:1204
 msgid "It has more than one Content-Signal line (a CDN may add its own); the companies that read them may take either."
 msgstr ""
 
-#: includes/class-pncp-health.php:1197
+#: includes/class-pncp-health.php:1206
 msgid "Crawlers get ScrapeLock's lines in robots.txt"
 msgstr ""
 
 #. translators: %s: address of robots.txt
-#: includes/class-pncp-health.php:1202
+#: includes/class-pncp-health.php:1211
 #, php-format
 msgid "WordPress is in a folder, and crawlers read only %s, which WordPress does not make. ScrapeLock's lines must be added to that file."
 msgstr ""
 
-#: includes/class-pncp-health.php:1204
+#: includes/class-pncp-health.php:1213
 msgid "There is a file robots.txt in the site's root folder. The web server sends that file instead of the robots.txt that WordPress makes, so the lines ScrapeLock adds do not reach crawlers."
 msgstr ""
 
 #. translators: %s: address of robots.txt
-#: includes/class-pncp-health.php:1207
+#: includes/class-pncp-health.php:1216
 #, php-format
 msgid "%s does not have every line that ScrapeLock adds. Another plugin, the theme, the host or the CDN may replace it."
 msgstr ""
 
-#: includes/class-pncp-health.php:1209
+#: includes/class-pncp-health.php:1218
 msgid "ScrapeLock still blocks AI crawlers and checks bots on the server: robots.txt is only the polite request, but without it polite crawlers cannot know what to avoid."
 msgstr ""
 
-#: includes/class-pncp-health.php:1211
+#: includes/class-pncp-health.php:1220
 msgid "Add these lines to the robots.txt file. If it already has a “User-agent: *” group, put the lines that follow “User-agent: *” below into that group. ScrapeLock never writes this file."
 msgstr ""
 
-#: includes/class-pncp-health.php:1214
+#: includes/class-pncp-health.php:1223
 msgid "Purge the page cache and the CDN cache, then check again. If the lines are still missing, find the plugin or the host setting that replaces robots.txt (SEO plugins often have a robots.txt editor) and add these lines there. Do not create a robots.txt file: it would replace the one WordPress makes, with its sitemap lines."
 msgstr ""
 
-#: includes/class-pncp-health.php:1216
+#: includes/class-pncp-health.php:1225
 msgid "Missing:"
 msgstr ""
 
-#: includes/class-pncp-health.php:1219
+#: includes/class-pncp-health.php:1228
 msgid "robots.txt does not have ScrapeLock's lines"
 msgstr ""
 
-#: includes/class-pncp-health.php:1237
+#: includes/class-pncp-health.php:1246
 msgid "ScrapeLock has no private folders yet"
 msgstr ""
 
-#: includes/class-pncp-health.php:1237
+#: includes/class-pncp-health.php:1246
 msgid "The clean originals of watermarked images, the pre-cache check's data and the country database are kept in folders of uploads that are created when those features are first used."
 msgstr ""
 
-#: includes/class-pncp-health.php:1263
+#: includes/class-pncp-health.php:1272
 msgid "the folder with the clean originals of watermarked images"
 msgstr ""
 
-#: includes/class-pncp-health.php:1264
+#: includes/class-pncp-health.php:1273
 msgid "the pre-cache check's data folder (counters, bans and visitor IP addresses)"
 msgstr ""
 
-#: includes/class-pncp-health.php:1265
+#: includes/class-pncp-health.php:1274
 msgid "the country database folder"
 msgstr ""
 
 #. translators: %s: list of folders, e.g. "the country database folder"
-#: includes/class-pncp-health.php:1286
+#: includes/class-pncp-health.php:1295
 #, php-format
 msgid "A test file was written in each folder and fetched from its web address; the server refused it: %s."
 msgstr ""
 
 #. translators: %s: list of folders
-#: includes/class-pncp-health.php:1289
+#: includes/class-pncp-health.php:1298
 #, php-format
 msgid "Could not be tested: %s."
 msgstr ""
 
-#: includes/class-pncp-health.php:1292
+#: includes/class-pncp-health.php:1301
 msgid "They are also refused at Bunny CDN by ScrapeLock's Edge Rule."
 msgstr ""
 
-#: includes/class-pncp-health.php:1294
+#: includes/class-pncp-health.php:1303
 msgid "ScrapeLock's private folders cannot be read from the web"
 msgstr ""
 
-#: includes/class-pncp-health.php:1299
+#: includes/class-pncp-health.php:1308
 msgid "The folder with the clean originals of watermarked images: the images can be downloaded without the watermark. Its random name is the only protection."
 msgstr ""
 
-#: includes/class-pncp-health.php:1300
+#: includes/class-pncp-health.php:1309
 msgid "The pre-cache check's data folder: it holds visitor IP addresses (personal data). Its random name is the only protection."
 msgstr ""
 
-#: includes/class-pncp-health.php:1301
+#: includes/class-pncp-health.php:1310
 msgid "The country database folder: the database files can be downloaded by anyone (public data, but the downloads cost bandwidth)."
 msgstr ""
 
-#: includes/class-pncp-health.php:1307
+#: includes/class-pncp-health.php:1316
 msgid "The uploads folder lists its content to visitors, so the random folder names are visible. Turn off directory listings (Nginx: autoindex off; Apache: Options -Indexes)."
 msgstr ""
 
-#: includes/class-pncp-health.php:1314
+#: includes/class-pncp-health.php:1323
 msgid "ScrapeLock's Edge Rule at Bunny CDN refuses these folders for every request that goes through Bunny. A request sent straight to the server (its IP address) still reads the files, as this test did: add these lines when you can."
 msgstr ""
 
-#: includes/class-pncp-health.php:1317
+#: includes/class-pncp-health.php:1326
 msgid "ScrapeLock's private folders are blocked at Bunny CDN"
 msgstr ""
 
-#: includes/class-pncp-health.php:1317
+#: includes/class-pncp-health.php:1326
 msgid "A test file in these folders could be downloaded from the server itself, but Bunny CDN refuses these folders to visitors."
 msgstr ""
 
-#: includes/class-pncp-health.php:1320
+#: includes/class-pncp-health.php:1329
 msgid "ScrapeLock's private folders can be read from the web"
 msgstr ""
 
-#: includes/class-pncp-health.php:1320
+#: includes/class-pncp-health.php:1329
 msgid "A test file in these folders could be downloaded from its web address, so anyone who finds the address can read the files."
 msgstr ""
 
-#: includes/class-pncp-health.php:1337
+#: includes/class-pncp-health.php:1346
 msgid "Nginx ignores the .htaccess files ScrapeLock puts in these folders. Add these lines to the server { } block of the site, above the other location blocks, then test the configuration (nginx -t) and reload Nginx:"
 msgstr ""
 
-#: includes/class-pncp-health.php:1341
+#: includes/class-pncp-health.php:1350
 msgid "Each folder has an .htaccess file that refuses every request, but the server ignores it. Let .htaccess files work in the uploads folder (AllowOverride All, or at least AuthConfig and Limit), or add these lines at the top of the .htaccess file in the folder of WordPress (they need only what WordPress's own permalinks need):"
 msgstr ""
 
-#: includes/class-pncp-health.php:1344
+#: includes/class-pncp-health.php:1353
 msgid "Refuse every request to these folders in the web server's configuration (ScrapeLock's .htaccess files work only on Apache and LiteSpeed). For Nginx, inside the server { } block, above the other location blocks:"
 msgstr ""
 
-#: includes/class-pncp-health.php:1346
+#: includes/class-pncp-health.php:1355
 msgid "For Apache or LiteSpeed, at the top of the .htaccess file in the folder of WordPress:"
 msgstr ""
 
-#: includes/class-pncp-health.php:1483
+#: includes/class-pncp-health.php:1492
 msgid "No access to the server's configuration? The site is connected to Bunny CDN: ScrapeLock can refuse these folders there with an Edge Rule. It protects only the requests that go through Bunny: a request sent straight to the server (its IP address) still reads the files, so add the lines above when you can."
 msgstr ""
 
 #. translators: %s: why the test file could not be fetched
-#: includes/class-pncp-health.php:1497
+#: includes/class-pncp-health.php:1506
 #, php-format
 msgid "ScrapeLock could not fetch a test file from the uploads folder of this server (%s), so it cannot tell whether its private folders are refused."
 msgstr ""
 
-#: includes/class-pncp-health.php:1499
+#: includes/class-pncp-health.php:1508
 msgid "On Apache and LiteSpeed the .htaccess file in each folder refuses every request, unless the server ignores .htaccess files."
 msgstr ""
 
-#: includes/class-pncp-health.php:1504
+#: includes/class-pncp-health.php:1513
 msgid "These lines refuse every request to ScrapeLock's private folders on Nginx (inside the server { } block of the site, above the other location blocks):"
 msgstr ""
 
-#: includes/class-pncp-health.php:1506
+#: includes/class-pncp-health.php:1515
 msgid "They are refused at Bunny CDN by ScrapeLock's Edge Rule, for the requests that go through Bunny."
 msgstr ""
 
-#: includes/class-pncp-health.php:1509
+#: includes/class-pncp-health.php:1518
 msgid "ScrapeLock could not test its private folders"
 msgstr ""
 
-#: includes/class-pncp-health.php:1678
+#: includes/class-pncp-health.php:1687
 msgid "ScrapeLock copy protection and watermark are off"
 msgstr ""
 
-#: includes/class-pncp-health.php:1678
+#: includes/class-pncp-health.php:1687
 msgid "Nothing to compare: when they are on, this test checks that the REST API, the feeds and WPGraphQL do not give the same content away."
 msgstr ""
 
-#: includes/class-pncp-health.php:1683
+#: includes/class-pncp-health.php:1692
 msgid "Watermarked images stay watermarked in every channel"
 msgstr ""
 
-#: includes/class-pncp-health.php:1683
+#: includes/class-pncp-health.php:1692
 msgid "The REST API, the feeds and WPGraphQL give the same watermarked image addresses as the pages, so they do not get around the watermark."
 msgstr ""
 
-#: includes/class-pncp-health.php:1687
+#: includes/class-pncp-health.php:1696
 msgid "The REST API gives the full text of posts, pages and products to anyone (for example /wp-json/wp/v2/posts)."
 msgstr ""
 
-#: includes/class-pncp-health.php:1690
+#: includes/class-pncp-health.php:1699
 msgid "The RSS / Atom feeds carry the full text of every new post."
 msgstr ""
 
-#: includes/class-pncp-health.php:1693
+#: includes/class-pncp-health.php:1702
 msgid "WPGraphQL gives the full text to anyone."
 msgstr ""
 
-#: includes/class-pncp-health.php:1696
+#: includes/class-pncp-health.php:1705
 msgid "Your content is not open in other channels"
 msgstr ""
 
-#: includes/class-pncp-health.php:1696
+#: includes/class-pncp-health.php:1705
 msgid "Copy protection is on, and the REST API, the feeds and WPGraphQL do not give the full text to visitors."
 msgstr ""
 
-#: includes/class-pncp-health.php:1698
+#: includes/class-pncp-health.php:1707
 msgid "Copy protection is on for the pages, but scrapers rarely copy from pages when the same text is available elsewhere."
 msgstr ""
 
-#: includes/class-pncp-health.php:1699
+#: includes/class-pncp-health.php:1708
 msgid "Turn these off in the “Feeds and API” tab, unless an app, a headless front end or a feed service needs them."
 msgstr ""
 
-#: includes/class-pncp-health.php:1700
+#: includes/class-pncp-health.php:1709
 msgid "Your content can still be taken through other channels"
 msgstr ""
 
-#: includes/class-pncp-health.php:1774
+#: includes/class-pncp-health.php:1783
 msgid "No other plugin does ScrapeLock's job"
 msgstr ""
 
-#: includes/class-pncp-health.php:1774
+#: includes/class-pncp-health.php:1783
 msgid "No other copy-protection, watermark or bot-blocking plugin is active. Security and firewall plugins are not counted: they work alongside ScrapeLock."
 msgstr ""
 
 #. translators: %s: plugin name
-#: includes/class-pncp-health.php:1782
+#: includes/class-pncp-health.php:1791
 #, php-format
 msgid "%s: two copy-protection scripts on the same page can cancel each other's exceptions (staff, accessibility tools, the source added to copied text) and do the work twice. ScrapeLock's copy settings are on the “On the page” tab."
 msgstr ""
 
 #. translators: %s: plugin name
-#: includes/class-pncp-health.php:1785
+#: includes/class-pncp-health.php:1794
 #, php-format
 msgid "%s: two watermark plugins can stamp an image twice, and restoring the originals with one can undo the other. ScrapeLock's watermark is on the Images tab."
 msgstr ""
 
 #. translators: %s: plugin name
-#: includes/class-pncp-health.php:1788
+#: includes/class-pncp-health.php:1797
 #, php-format
 msgid "%s: two plugins that block bots or AI crawlers can disagree (one allows AI search, the other refuses it), and both change robots.txt."
 msgstr ""
 
-#: includes/class-pncp-health.php:1797
+#: includes/class-pncp-health.php:1806
 msgid "Other plugins do the same job as ScrapeLock"
 msgstr ""
 
-#: includes/class-pncp-health.php:1797
+#: includes/class-pncp-health.php:1806
 msgid "Two plugins doing the same job on the same request make problems hard to explain. Keep one of them for each job."
 msgstr ""
 
 #. translators: %d: requests per minute
-#: includes/class-pncp-health.php:1868
+#: includes/class-pncp-health.php:1877
 #, php-format
 msgid "%d/min"
 msgstr ""
 
 #. translators: 1: CDN name, 2: number of addresses
-#: includes/class-pncp-health.php:1892
+#: includes/class-pncp-health.php:1901
 #, php-format
 msgid "%1$s, %2$d addresses blocked"
 msgstr ""
 
 #. translators: %s: error message
-#: includes/class-pncp-health.php:1895
-#: includes/class-pncp-health.php:2007
+#: includes/class-pncp-health.php:1904
+#: includes/class-pncp-health.php:2018
 #, php-format
 msgid "last error: %s"
 msgstr ""
 
-#: includes/class-pncp-health.php:1899
+#: includes/class-pncp-health.php:1908
 msgid "Version"
 msgstr ""
 
 #. translators: %s: date and time.
-#: includes/class-pncp-health.php:1902
-#: includes/class-pncp-health.php:1903
+#: includes/class-pncp-health.php:1911
+#: includes/class-pncp-health.php:1912
 #, php-format
 msgid "On until %s"
 msgstr ""
 
-#: includes/class-pncp-health.php:1903
+#: includes/class-pncp-health.php:1912
 msgid "Monitor only (nothing blocked)"
 msgstr ""
 
 #. translators: %s: date and time.
-#: includes/class-pncp-health.php:1904
+#: includes/class-pncp-health.php:1913
 msgid "Block the bot list"
 msgstr ""
 
-#: includes/class-pncp-health.php:1905
+#: includes/class-pncp-health.php:1914
 msgid "Browsers only"
 msgstr ""
 
-#: includes/class-pncp-health.php:1907
+#: includes/class-pncp-health.php:1916
 msgid "Limits per minute (pages, search, REST, 404, sitemaps)"
 msgstr ""
 
-#: includes/class-pncp-health.php:1908
+#: includes/class-pncp-health.php:1917
 msgid "Limit for data centers"
 msgstr ""
 
-#: includes/class-pncp-health.php:1909
+#: includes/class-pncp-health.php:1918
 msgid "WooCommerce limits per minute (cart / checkout, coupons)"
 msgstr ""
 
-#: includes/class-pncp-health.php:1910
-#: includes/class-pncp-options.php:2400
+#: includes/class-pncp-health.php:1919
+#: includes/class-pncp-options.php:2405
 msgid "Blocked countries"
 msgstr ""
 
-#: includes/class-pncp-health.php:1911
+#: includes/class-pncp-health.php:1920
 msgid "Countries with a stricter limit"
 msgstr ""
 
-#: includes/class-pncp-health.php:1914
+#: includes/class-pncp-health.php:1923
 msgid "Feeds"
 msgstr ""
 
-#: includes/class-pncp-health.php:1915
+#: includes/class-pncp-health.php:1924
 msgid "Content hidden in the REST API"
 msgstr ""
 
-#: includes/class-pncp-health.php:1917
+#: includes/class-pncp-health.php:1926
 msgid "Official IP lists updated"
 msgstr ""
 
-#: includes/class-pncp-health.php:1919
-#: includes/class-pncp-health.php:1920
+#: includes/class-pncp-health.php:1928
+#: includes/class-pncp-health.php:1929
 msgid "Running"
 msgstr ""
 
-#: includes/class-pncp-health.php:1921
+#: includes/class-pncp-health.php:1930
 msgid "Hide usernames"
 msgstr ""
 
-#: includes/class-pncp-health.php:1922
+#: includes/class-pncp-health.php:1931
 msgid "Pingbacks off"
 msgstr ""
 
-#: includes/class-pncp-health.php:1923
+#: includes/class-pncp-health.php:1932
 msgid "REST map hidden from visitors"
 msgstr ""
 
-#: includes/class-pncp-health.php:1924
+#: includes/class-pncp-health.php:1933
 msgid "Versions hidden"
 msgstr ""
 
-#: includes/class-pncp-health.php:1925
+#: includes/class-pncp-health.php:1934
 msgid "Excerpts in lists of articles"
 msgstr ""
 
-#: includes/class-pncp-health.php:1926
+#: includes/class-pncp-health.php:1935
 msgid "IPv6 /56 limit"
 msgstr ""
 
-#: includes/class-pncp-health.php:1927
+#: includes/class-pncp-health.php:1936
 msgid "Web archives blocked"
 msgstr ""
 
-#: includes/class-pncp-health.php:1930
+#: includes/class-pncp-health.php:1939
 msgid "SEO and marketing data crawlers blocked"
 msgstr ""
 
-#: includes/class-pncp-health.php:1931
+#: includes/class-pncp-health.php:1940
 msgid "Technology profilers blocked"
 msgstr ""
 
-#: includes/class-pncp-health.php:1932
+#: includes/class-pncp-health.php:1941
 msgid "Site opened by IP address refused"
 msgstr ""
 
-#: includes/class-pncp-health.php:1933
+#: includes/class-pncp-health.php:1942
 #: includes/class-pncp-wizard.php:1115
 msgid "IP reputation"
 msgstr ""
 
-#: includes/class-pncp-health.php:1934
+#: includes/class-pncp-health.php:1943
 msgid "Limit for IPs that never opened a page"
 msgstr ""
 
-#: includes/class-pncp-health.php:1936
+#: includes/class-pncp-health.php:1945
 msgid "Blocks written to the system log (fail2ban)"
 msgstr ""
 
-#: includes/class-pncp-health.php:1936
+#: includes/class-pncp-health.php:1945
 msgid "On, but syslog() is disabled"
 msgstr ""
 
-#: includes/class-pncp-health.php:1937
+#: includes/class-pncp-health.php:1946
 msgid "Visits from AI assistants counted"
 msgstr ""
 
-#: includes/class-pncp-health.php:1940
+#: includes/class-pncp-health.php:1949
 msgid "Failed sign-ins limited"
 msgstr ""
 
-#: includes/class-pncp-health.php:1941
+#: includes/class-pncp-health.php:1950
 msgid "Sign-in address moved"
 msgstr ""
 
-#: includes/class-pncp-health.php:1942
+#: includes/class-pncp-health.php:1951
 msgid "Vulnerable points locked"
 msgstr ""
 
-#: includes/class-pncp-health.php:1943
+#: includes/class-pncp-health.php:1952
 msgid "On, not working"
 msgstr ""
 
-#: includes/class-pncp-health.php:1944
+#: includes/class-pncp-health.php:1953
 msgid "Attacks imported from Bunny CDN's logs"
 msgstr ""
 
-#: includes/class-pncp-health.php:1945
+#: includes/class-pncp-health.php:1954
 msgid "Automatic Emergency Mode"
 msgstr ""
 
-#: includes/class-pncp-health.php:1945
+#: includes/class-pncp-health.php:1954
 msgid "Starts on its own"
 msgstr ""
 
-#: includes/class-pncp-health.php:1945
+#: includes/class-pncp-health.php:1954
 msgid "Alerts only"
 msgstr ""
 
-#: includes/class-pncp-health.php:2003
+#: includes/class-pncp-health.php:1961
+msgid "Counters stored in"
+msgstr ""
+
+#: includes/class-pncp-health.php:1962
+msgid "Circuit breaker (slow counting suspended)"
+msgstr ""
+
+#: includes/class-pncp-health.php:2014
 msgid "list"
 msgstr ""
 
 #. translators: 1: addresses, 2: ranges
-#: includes/class-pncp-health.php:2004
+#: includes/class-pncp-health.php:2015
 #, php-format
 msgid "%1$d addresses, %2$d ranges"
 msgstr ""
@@ -12407,221 +12618,221 @@ msgstr ""
 msgid "The authenticator app was removed from the Lockdown page and the lock is off. If it was not you, change the administrators' passwords."
 msgstr ""
 
-#: includes/class-pncp-log.php:307
+#: includes/class-pncp-log.php:316
 msgid "User-Agent in the bot list"
 msgstr ""
 
-#: includes/class-pncp-log.php:308
+#: includes/class-pncp-log.php:317
 #: includes/class-pncp-traffic-ua.php:74
 msgid "No User-Agent"
 msgstr ""
 
-#: includes/class-pncp-log.php:309
+#: includes/class-pncp-log.php:318
 msgid "Fake search engine"
 msgstr ""
 
-#: includes/class-pncp-log.php:310
+#: includes/class-pncp-log.php:319
 msgid "Fake AI search bot"
 msgstr ""
 
-#: includes/class-pncp-log.php:311
+#: includes/class-pncp-log.php:320
 msgid "No browser headers"
 msgstr ""
 
-#: includes/class-pncp-log.php:312
+#: includes/class-pncp-log.php:321
 msgid "Headless browser"
 msgstr ""
 
-#: includes/class-pncp-log.php:313
+#: includes/class-pncp-log.php:322
 msgid "Fake browser"
 msgstr ""
 
-#: includes/class-pncp-log.php:316
+#: includes/class-pncp-log.php:325
 msgid "Prefetches per minute"
 msgstr ""
 
-#: includes/class-pncp-log.php:317
+#: includes/class-pncp-log.php:326
 msgid "Media files per minute (images, video, fonts, CSS, JS)"
 msgstr ""
 
-#: includes/class-pncp-log.php:318
+#: includes/class-pncp-log.php:327
 msgid "Pages per minute for the IPv6 network (/56)"
 msgstr ""
 
-#: includes/class-pncp-log.php:319
+#: includes/class-pncp-log.php:328
 msgid "Pages per minute from data centers"
 msgstr ""
 
-#: includes/class-pncp-log.php:320
+#: includes/class-pncp-log.php:329
 msgid "Searches per minute"
 msgstr ""
 
-#: includes/class-pncp-log.php:321
+#: includes/class-pncp-log.php:330
 msgid "REST / GraphQL requests per minute"
 msgstr ""
 
-#: includes/class-pncp-log.php:322
+#: includes/class-pncp-log.php:331
 msgid "Sitemaps per minute"
 msgstr ""
 
-#: includes/class-pncp-log.php:323
+#: includes/class-pncp-log.php:332
 msgid "Pages per minute without the human check"
 msgstr ""
 
-#: includes/class-pncp-log.php:324
+#: includes/class-pncp-log.php:333
 msgid "Blocked country"
 msgstr ""
 
-#: includes/class-pncp-log.php:325
+#: includes/class-pncp-log.php:334
 msgid "Pages per minute for the stricter countries"
 msgstr ""
 
-#: includes/class-pncp-log.php:326
+#: includes/class-pncp-log.php:335
 msgid "“Page not found” (404) per minute"
 msgstr ""
 
-#: includes/class-pncp-log.php:327
+#: includes/class-pncp-log.php:336
 msgid "WooCommerce cart / checkout actions per minute"
 msgstr ""
 
-#: includes/class-pncp-log.php:328
+#: includes/class-pncp-log.php:337
 msgid "WooCommerce coupon attempts per minute"
 msgstr ""
 
-#: includes/class-pncp-log.php:329
+#: includes/class-pncp-log.php:338
 #: includes/class-pncp-wizard.php:1119
 msgid "Pages per minute per signed-in account"
 msgstr ""
 
-#: includes/class-pncp-log.php:330
+#: includes/class-pncp-log.php:339
 msgid "FluentCommunity REST reads per minute per member"
 msgstr ""
 
-#: includes/class-pncp-log.php:331
+#: includes/class-pncp-log.php:340
 msgid "IP in the always-blocked list"
 msgstr ""
 
-#: includes/class-pncp-log.php:332
+#: includes/class-pncp-log.php:341
 msgid "Referrer in the always-blocked list"
 msgstr ""
 
-#: includes/class-pncp-log.php:335
+#: includes/class-pncp-log.php:344
 msgid "New temporary block"
 msgstr ""
 
-#: includes/class-pncp-log.php:336
+#: includes/class-pncp-log.php:345
 msgid "Blocked by hand"
 msgstr ""
 
-#: includes/class-pncp-log.php:337
+#: includes/class-pncp-log.php:346
 msgid "Request from a blocked IP"
 msgstr ""
 
-#: includes/class-pncp-log.php:338
+#: includes/class-pncp-log.php:347
 msgid "Private URL without token"
 msgstr ""
 
-#: includes/class-pncp-log.php:339
+#: includes/class-pncp-log.php:348
 msgid "Not through the CDN (straight to the server)"
 msgstr ""
 
-#: includes/class-pncp-log.php:341
+#: includes/class-pncp-log.php:350
 msgid "Attack in the User-Agent (tags, Shellshock, Log4Shell, SQL)"
 msgstr ""
 
-#: includes/class-pncp-log.php:342
+#: includes/class-pncp-log.php:351
 msgid "Site opened by IP address instead of its name"
 msgstr ""
 
-#: includes/class-pncp-log.php:343
+#: includes/class-pncp-log.php:352
 msgid "Pages per minute for IPs with a bad reputation"
 msgstr ""
 
-#: includes/class-pncp-log.php:344
+#: includes/class-pncp-log.php:353
 msgid "API / feed / sitemap requests per minute without ever opening a page"
 msgstr ""
 
-#: includes/class-pncp-log.php:345
+#: includes/class-pncp-log.php:354
 msgid "IP in the CrowdSec blocklist"
 msgstr ""
 
-#: includes/class-pncp-log.php:346
+#: includes/class-pncp-log.php:355
 msgid "Pages per minute for IPs in the CrowdSec blocklist"
 msgstr ""
 
-#: includes/class-pncp-log.php:348
+#: includes/class-pncp-log.php:357
 msgid "Too many failed sign-ins (temporary block)"
 msgstr ""
 
-#: includes/class-pncp-log.php:349
+#: includes/class-pncp-log.php:358
 msgid "Sign-in to a paused username"
 msgstr ""
 
-#: includes/class-pncp-log.php:350
+#: includes/class-pncp-log.php:359
 msgid "wp-login.php or wp-admin while the sign-in page is moved"
 msgstr ""
 
-#: includes/class-pncp-log.php:352
+#: includes/class-pncp-log.php:361
 msgid "XML-RPC is locked (Vulnerable points)"
 msgstr ""
 
-#: includes/class-pncp-log.php:353
+#: includes/class-pncp-log.php:362
 msgid "wp-admin hidden from visitors (Vulnerable points)"
 msgstr ""
 
-#: includes/class-pncp-log.php:354
+#: includes/class-pncp-log.php:363
 msgid "Author archives are locked (Vulnerable points)"
 msgstr ""
 
-#: includes/class-pncp-log.php:356
+#: includes/class-pncp-log.php:365
 msgid "Too fast at Bunny CDN (seen in its logs)"
 msgstr ""
 
-#: includes/class-pncp-log.php:372
+#: includes/class-pncp-log.php:381
 msgid "Another check of ScrapeLock"
 msgstr ""
 
-#: includes/class-pncp-log.php:2050
+#: includes/class-pncp-log.php:2272
 msgid "To protect content from automated copying, when a request is blocked we record the IP address, the browser's User-Agent, the page and the time. This data is deleted automatically after a few days and is not used for any other purpose."
 msgstr ""
 
-#: includes/class-pncp-log.php:2051
+#: includes/class-pncp-log.php:2273
 msgid "If blocking at the CDN is turned on, the IP addresses that are blocked temporarily are also sent to our CDN provider (Cloudflare or Bunny CDN), with a short note that gives the reason and the end of the block, so the CDN can refuse them before they reach our server. Each one is removed from the CDN when the block ends. Nothing else about visitors is sent."
 msgstr ""
 
-#: includes/class-pncp-log.php:2052
+#: includes/class-pncp-log.php:2274
 msgid "So that administrators are never blocked by mistake, the IP addresses from which administrators used the site's dashboard in the last 30 days are kept; older ones are deleted automatically."
 msgstr ""
 
-#: includes/class-pncp-log.php:2054
+#: includes/class-pncp-log.php:2276
 msgid "If IP reputation is turned on, for each IP address (stored only as a one-way hash) we keep, for up to 7 days, when it last read pages, passed the automatic human check, was used to sign in, or was refused or blocked, to treat it more or less strictly. We count visits that come from AI assistants (such as ChatGPT or Perplexity) per day and page only, without any data about the visitor."
 msgstr ""
 
-#: includes/class-pncp-log.php:2055
+#: includes/class-pncp-log.php:2277
 msgid "If the CrowdSec blocklist is turned on, we download a list of IP addresses known for attacks and check visitors against it on our server; no data about visitors is sent to CrowdSec or the list's provider. If writing blocks to the system log is turned on, the IP addresses that are blocked temporarily are also written to our server's system log, so the server's firewall can block them for the same time."
 msgstr ""
 
-#: includes/class-pncp-log.php:2057
+#: includes/class-pncp-log.php:2279
 msgid "To see where the site is attacked, for failed sign-ins, visits to the sign-in page or the dashboard without signing in, XML-RPC calls and requests that look for weak points, we record the IP address, the address asked for, the time (per hour) and, for a failed sign-in, the username that was tried. This is deleted automatically after 7, 30 or 90 days and is not used for any other purpose."
 msgstr ""
 
-#: includes/class-pncp-log.php:2058
+#: includes/class-pncp-log.php:2280
 msgid "If the weekly attack report is turned on, a summary of the attack record (counts, the addresses attacked, the IP addresses that attacked most and the usernames tried) is emailed once a week to the site's administration email address."
 msgstr ""
 
-#: includes/class-pncp-log.php:2060
+#: includes/class-pncp-log.php:2282
 msgid "When a vulnerable point is locked (Vulnerable points), refused requests to it (XML-RPC, wp-admin while signed out, author archives) are written to the block log with the visitor's IP address and User-Agent, like other blocks. The list of changes keeps the username of the administrator who made each change."
 msgstr ""
 
-#: includes/class-pncp-log.php:2062
+#: includes/class-pncp-log.php:2284
 msgid "When a signed-in member goes over a per-account limit, the block log also keeps the member's username with that entry, deleted with the rest of the log."
 msgstr ""
 
-#: includes/class-pncp-log.php:2067
+#: includes/class-pncp-log.php:2289
 msgid "When you are signed in, ScrapeLock sets a cookie named pncp_si with the value 1 in your browser, so that this site's pages can tell that you are signed in even when they come from a cache. It contains no personal data, is removed when you sign out and lasts no longer than your sign-in."
 msgstr ""
 
-#: includes/class-pncp-log.php:2068
+#: includes/class-pncp-log.php:2290
 msgid "ScrapeLock Stealth changes the addresses of the theme, plugin and media files in the pages sent to visitors. It stores no data about visitors. Its self-test and scan only request this site's own public pages, from the site itself."
 msgstr ""
 
@@ -13051,147 +13262,147 @@ msgstr ""
 msgid "%1$s: %2$s"
 msgstr ""
 
-#: includes/class-pncp-options.php:1824
-#: includes/class-pncp-options.php:1833
+#: includes/class-pncp-options.php:1829
+#: includes/class-pncp-options.php:1838
 msgid "The content of this page is protected."
 msgstr ""
 
 #. translators: %s: the refused lines
-#: includes/class-pncp-options.php:1966
+#: includes/class-pncp-options.php:1971
 #, php-format
 msgid "These private URLs were not saved, because they would block the homepage or every page for all visitors: %s. Use the path of the feed (e.g. /skroutz.xml) or its query (e.g. /?feed=skroutz)."
 msgstr ""
 
-#: includes/class-pncp-options.php:2013
+#: includes/class-pncp-options.php:2018
 msgid "CrowdSec was not turned on: enter the address of your CrowdSec agent (LAPI) or of the blocklist first."
 msgstr ""
 
 #. translators: 1: what was typed, 2: why it cannot be used
-#: includes/class-pncp-options.php:2030
+#: includes/class-pncp-options.php:2035
 #, php-format
 msgid "Stealth: “%1$s” was not saved. %2$s"
 msgstr ""
 
-#: includes/class-pncp-options.php:2044
+#: includes/class-pncp-options.php:2049
 msgid "Stealth uses this address for its files or the REST API: choose another one."
 msgstr ""
 
-#: includes/class-pncp-options.php:2049
+#: includes/class-pncp-options.php:2054
 msgid "The sign-in address was not saved:"
 msgstr ""
 
-#: includes/class-pncp-options.php:2052
+#: includes/class-pncp-options.php:2057
 msgid "A page, post or category now has the same address as the sign-in page, so visitors cannot open it there. The sign-in address was kept; choose another one when you can."
 msgstr ""
 
-#: includes/class-pncp-options.php:2068
+#: includes/class-pncp-options.php:2073
 msgid "The access log path was not saved:"
 msgstr ""
 
 #. translators: %s: what was typed that is not an email address
-#: includes/class-pncp-options.php:2091
+#: includes/class-pncp-options.php:2096
 #, php-format
 msgid "The address for traffic alerts was not saved: “%s” is not an email address."
 msgstr ""
 
-#: includes/class-pncp-options.php:2102
+#: includes/class-pncp-options.php:2107
 msgid "“Only through the CDN” was not turned on: set a CDN shared secret first."
 msgstr ""
 
-#: includes/class-pncp-options.php:2102
+#: includes/class-pncp-options.php:2107
 msgid "“Only through the CDN” was not turned on: this request did not bring the secret in the X-ScrapeLock-CDN header, so the CDN does not send it yet (or you opened the site around the CDN). Add the header at the CDN, reload this page and try again."
 msgstr ""
 
 #. translators: %s: the refused lines
-#: includes/class-pncp-options.php:2161
+#: includes/class-pncp-options.php:2166
 #, php-format
 msgid "These trusted proxy ranges were not saved, because they are too wide (wider than /8 for IPv4 or /16 for IPv6): any visitor could then choose its own IP with a header and never be limited or blocked: %s. List only the addresses of your own proxy or load balancer."
 msgstr ""
 
 #. translators: %s: the refused lines
-#: includes/class-pncp-options.php:2163
+#: includes/class-pncp-options.php:2168
 #, php-format
 msgid "These always-allowed IP ranges were not saved, because they are too wide (wider than /8 for IPv4 or /16 for IPv6) and would let a large part of the internet past the protection: %s."
 msgstr ""
 
 #. translators: %s: the refused lines
-#: includes/class-pncp-options.php:2165
+#: includes/class-pncp-options.php:2170
 #, php-format
 msgid "These IP ranges for the private URLs were not saved, because they are too wide (wider than /8 for IPv4 or /16 for IPv6) and would open the private URLs to a large part of the internet: %s."
 msgstr ""
 
 #. translators: %s: the refused lines
-#: includes/class-pncp-options.php:2204
+#: includes/class-pncp-options.php:2209
 #, php-format
 msgid "These always-blocked IP ranges were not saved, because they are too wide (wider than /8 for IPv4 or /16 for IPv6) and would block a large part of the internet or every visitor: %s. Block single addresses or narrower ranges, e.g. 203.0.113.0/24."
 msgstr ""
 
 #. translators: 1: the IP of the administrator, 2: the ranges
-#: includes/class-pncp-options.php:2220
+#: includes/class-pncp-options.php:2225
 #, php-format
 msgid "Warning: your own IP (%1$s) is in these always-blocked IPs: %2$s. They were saved, but you can lock yourself out of this site (the early check and the pre-cache check refuse them before anyone is logged in), together with everyone on your network. If this is not intended, remove them, or add your IP to “Always allowed IPs”."
 msgstr ""
 
 #. translators: %s: country code
-#: includes/class-pncp-options.php:2236
+#: includes/class-pncp-options.php:2241
 #, php-format
 msgid "Warning: the blocked countries include %s, the country of your shop (WooCommerce → Settings → Store address). It was saved, but customers from your own country will be refused."
 msgstr ""
 
 #. translators: %s: country code
-#: includes/class-pncp-options.php:2246
+#: includes/class-pncp-options.php:2251
 #, php-format
 msgid "Warning: the blocked countries include %s, the country you are visiting from now. It was saved, but you will be refused once you log out, and so will visitors from there."
 msgstr ""
 
-#: includes/class-pncp-options.php:2396
+#: includes/class-pncp-options.php:2401
 msgid "Always allowed IPs"
 msgstr ""
 
-#: includes/class-pncp-options.php:2397
+#: includes/class-pncp-options.php:2402
 msgid "Always blocked IPs"
 msgstr ""
 
-#: includes/class-pncp-options.php:2398
+#: includes/class-pncp-options.php:2403
 msgid "Other trusted proxies"
 msgstr ""
 
-#: includes/class-pncp-options.php:2399
+#: includes/class-pncp-options.php:2404
 msgid "Allowed IPs of the private URLs"
 msgstr ""
 
 #. translators: 1: name of the setting, 2: the lines that were not saved
-#: includes/class-pncp-options.php:2422
+#: includes/class-pncp-options.php:2427
 #, php-format
 msgid "These lines of “%1$s” were not saved, because they are not an IP address or a CIDR range (e.g. 203.0.113.7 or 203.0.113.0/24): %2$s."
 msgstr ""
 
 #. translators: %s: name of the setting
-#: includes/class-pncp-options.php:2429
+#: includes/class-pncp-options.php:2434
 #, php-format
 msgid "Only the first 200 lines of “%s” were saved: a list holds at most 200 entries."
 msgstr ""
 
 #. translators: 1: name of the setting, 2: the entries that were not saved
-#: includes/class-pncp-options.php:2456
+#: includes/class-pncp-options.php:2461
 #, php-format
 msgid "These entries of “%1$s” were not saved, because they are not two-letter country codes (e.g. CN, RU): %2$s."
 msgstr ""
 
 #. translators: %s: the addresses that are ignored
-#: includes/class-pncp-options.php:2483
+#: includes/class-pncp-options.php:2488
 #, php-format
 msgid "In “Always allowed User-Agents”, these addresses after “@” are not valid IPs and are ignored: %s. An entry whose addresses are all invalid is never accepted."
 msgstr ""
 
 #. translators: %s: a line the administrator entered
-#: includes/class-pncp-options.php:2535
+#: includes/class-pncp-options.php:2540
 #, php-format
 msgid "“%s”"
 msgstr ""
 
 #. translators: 1: a list of lines, 2: how many more there are
-#: includes/class-pncp-options.php:2541
+#: includes/class-pncp-options.php:2546
 #, php-format
 msgid "%1$s and %2$d more"
 msgstr ""
@@ -13625,12 +13836,12 @@ msgstr ""
 msgid "AI training crawlers declared by Cloudflare (category “AI Crawler”; AI search and assistants are allowed)"
 msgstr ""
 
-#: includes/class-pncp-seal.php:3721
-#: includes/class-pncp-seal.php:3752
+#: includes/class-pncp-seal.php:3757
+#: includes/class-pncp-seal.php:3788
 msgid "This account cannot sign in while the site is locked: it was given administrator rights after the site was locked."
 msgstr ""
 
-#: includes/class-pncp-seal.php:3746
+#: includes/class-pncp-seal.php:3782
 msgid "This account cannot sign in while the site is locked: its password was changed after the site was locked."
 msgstr ""
 
@@ -14187,10 +14398,6 @@ msgstr ""
 
 #: includes/class-pncp-site-files.php:592
 msgid "This visit did not come through a CDN, or Wordfence read the same address as ScrapeLock. Open this page through the site's public address to check the CDN."
-msgstr ""
-
-#: includes/class-pncp-site-files.php:611
-msgid "Performance"
 msgstr ""
 
 #: includes/class-pncp-status-state.php:90
@@ -15137,29 +15344,29 @@ msgid "Some pages still show that the site runs on WordPress"
 msgstr ""
 
 #. translators: 1: pages per minute, 2: threshold, 3: minutes in a row
-#: includes/class-pncp-surge.php:242
+#: includes/class-pncp-surge.php:330
 #, php-format
 msgid "The site received %1$d pages per minute, above the %2$d that count as an attack, for %3$d minutes in a row. This can be a scraping attack spread over many IP addresses, or many real visitors at once (a newsletter, a link on a popular site). ScrapeLock has NOT changed anything."
 msgstr ""
 
-#: includes/class-pncp-surge.php:247
+#: includes/class-pncp-surge.php:335
 msgid "If it is an attack, open the ScrapeLock page and click “Start Emergency Mode”. It changes, until it ends:"
 msgstr ""
 
 #. translators: %s: site name
-#: includes/class-pncp-surge.php:255
+#: includes/class-pncp-surge.php:343
 #, php-format
 msgid "[%s] ScrapeLock: unusual traffic, start Emergency Mode?"
 msgstr ""
 
 #. translators: %s: site name
-#: includes/class-pncp-surge.php:276
+#: includes/class-pncp-surge.php:364
 #, php-format
 msgid "[%s] ScrapeLock: Emergency Mode started automatically"
 msgstr ""
 
 #. translators: 1: pages per minute, 2: threshold, 3: minutes in a row, 4: number of hours
-#: includes/class-pncp-surge.php:279
+#: includes/class-pncp-surge.php:367
 #, php-format
 msgid "The site received %1$d pages per minute, above the %2$d that count as an attack, for %3$d minutes in a row. ScrapeLock started Emergency Mode for %4$d hour: stricter limits and checks for everyone except verified search engines and exempt staff. It ends by itself; you can end it sooner from the ScrapeLock page."
 msgid_plural "The site received %1$d pages per minute, above the %2$d that count as an attack, for %3$d minutes in a row. ScrapeLock started Emergency Mode for %4$d hours: stricter limits and checks for everyone except verified search engines and exempt staff. It ends by itself; you can end it sooner from the ScrapeLock page."
@@ -16280,16 +16487,16 @@ msgid "Other"
 msgstr ""
 
 #. translators: 1: days single requests are kept, 2: days the daily figures are kept
-#: includes/class-pncp-traffic.php:230
+#: includes/class-pncp-traffic.php:231
 #, php-format
 msgid "If traffic statistics (Traffic) are turned on, each request the site answers is stored in our own database with its time, IP address, country, method, status, the address asked for, the referrer, the browser's User-Agent, its size and whether it came from the cache, to find errors, broken links and abusive bots. Single requests are deleted automatically after %1$s days and the daily figures after %2$s days. Signed-in administrators and the site's own requests are not recorded, and nothing is sent anywhere."
 msgstr ""
 
-#: includes/class-pncp-traffic.php:235
+#: includes/class-pncp-traffic.php:236
 msgid "IP addresses are stored masked: the last part of each address is removed before it is stored (IPv4 /24, IPv6 /48), so a single visitor cannot be told apart by address, also in exports and emails."
 msgstr ""
 
-#: includes/class-pncp-traffic.php:236
+#: includes/class-pncp-traffic.php:237
 msgid "IP addresses are stored in full while “Masked” is not chosen; then they can be used to block a single visitor."
 msgstr ""
 

@@ -261,7 +261,11 @@ final class PNCP_Seal {
 	 */
 	public static function fresh_option( $name, $network = false, $default = false ) {
 		$net = $network && is_multisite();
-		if ( ! wp_using_ext_object_cache() ) {
+		// 3.12.9: not in a visitor's request (PNCP_Defer::active()): there every option comes from the object cache,
+		// as WordPress itself reads them, never from the database (the request must not wait on a disk that stalls).
+		// A row changed behind WordPress's back is not in effect for visitors either while the cache holds the old
+		// one; wp-admin, cron and WP-CLI still compare the row itself.
+		if ( ! wp_using_ext_object_cache() || PNCP_Defer::active() ) {
 			return $net ? get_site_option( $name, $default ) : get_option( $name, $default );
 		}
 		global $wpdb;
@@ -1376,10 +1380,40 @@ final class PNCP_Seal {
 	 */
 	private static function beacon_file() {
 		if ( null === self::$file ) {
-			self::$file          = self::read_beacon_file();
+			self::$file          = self::kept_beacon_file();
 			self::$file_at_start = false !== self::$file;
 		}
 		return false === self::$file ? null : self::$file;
+	}
+
+	/**
+	 * 3.12.9: the lock file as read_beacon_file() finds it, kept for 5 minutes in a persistent object cache or
+	 * APCu (PNCP_Defer): a visitor's request reads the copy, never the disk (one check per folder on every page,
+	 * where the disk may stall). Written and removed only by ScrapeLock, which refreshes the copy (forget_beacon()).
+	 * Every other request (wp-admin, cron, WP-CLI) reads the disk and refreshes it.
+	 *
+	 * @return array<string, mixed>|false
+	 */
+	private static function kept_beacon_file() {
+		$key = 'pncp_beacon_' . md5( self::beacon_name() );
+		if ( PNCP_Defer::active() ) {
+			$kept = PNCP_Defer::get( $key );
+			if ( is_array( $kept ) || 0 === $kept ) {
+				return is_array( $kept ) ? $kept : false;
+			}
+		}
+		$file = self::read_beacon_file();
+		if ( '' !== PNCP_Defer::store() ) {
+			PNCP_Defer::set( $key, false === $file ? 0 : $file, 5 * MINUTE_IN_SECONDS );
+		}
+		return $file;
+	}
+
+	/**
+	 * 3.12.9: the lock file was written or removed: the copy kept for visitors' requests goes (kept_beacon_file()).
+	 */
+	private static function forget_beacon() {
+		PNCP_Defer::delete( 'pncp_beacon_' . md5( self::beacon_name() ) );
 	}
 
 	/**
@@ -1567,6 +1601,7 @@ final class PNCP_Seal {
 		self::$file_at_start = true;
 		self::$copy          = null === $copy ? false : $copy;
 		self::$current       = $rec;
+		self::forget_beacon();
 		return true;
 	}
 
@@ -1627,6 +1662,7 @@ final class PNCP_Seal {
 		foreach ( self::beacon_dirs() as $dir ) {
 			self::remove_beacon_in( $dir );
 		}
+		self::forget_beacon();
 		self::$file          = null;
 		self::$file_at_start = false;
 		self::beacon_file();

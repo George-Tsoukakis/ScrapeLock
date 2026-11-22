@@ -6,6 +6,8 @@
  *
  * Τυπώνει JSON: πλήθος ανά HTTP κωδικό, αιτήματα/δευτερόλεπτο, p50 / p95 / max σε ms.
  * IP: τιμή για το X-Test-IP (mu-test-harness). «random» / «random2» = διαφορετική IP σε κάθε αίτημα (δύο ξεχωριστά σύνολα).
+ * 3.12.9: BURST_XFF=1 στέλνει την ίδια IP και ως X-Forwarded-For (για τον έλεγχο πριν από την cache, που τρέχει πριν
+ * από το WordPress και δεν βλέπει το X-Test-IP· ο server εμπιστεύεται το 127.0.0.1 ως proxy).
  */
 
 $url    = $argv[1];
@@ -28,6 +30,9 @@ $make = static function ( $n ) use ( $url, $ip, $ua, $extra ) {
 		$h[]    = 'X-Test-IP: ' . $prefix . '.' . ( ( $n >> 8 ) & 255 ) . '.' . ( $n & 255 );
 	} else {
 		$h[] = 'X-Test-IP: ' . $ip;
+	}
+	if ( getenv( 'BURST_XFF' ) ) {
+		$h[] = 'X-Forwarded-For: ' . substr( end( $h ), strlen( 'X-Test-IP: ' ) );
 	}
 	$ch = curl_init( $url );
 	curl_setopt_array( $ch, array( CURLOPT_RETURNTRANSFER => true, CURLOPT_HTTPHEADER => $h, CURLOPT_TIMEOUT => 60 ) );
