@@ -91,7 +91,7 @@ final class PNCP_File_Owner {
 		$ok = true;
 		if ( is_array( $meta ) ) {
 			if ( ( (int) @fileperms( $path ) & 07777 ) !== $meta['mode'] ) { // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged
-				$ok = @chmod( $path, $meta['mode'] ) && $ok; // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged, WordPress.WP.AlternativeFunctions.file_system_operations_chmod
+				$ok = @chmod( $path, $meta['mode'] ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged, WordPress.WP.AlternativeFunctions.file_system_operations_chmod
 			}
 			$owner = array(
 				'uid' => $meta['uid'],
