@@ -219,12 +219,49 @@ final class PNCP_Defer {
 			add_filter( 'pre_option', array( __CLASS__, 'pre_option' ), 10, 3 );
 			$kept = $value === $none ? array( 'missing' => true ) : array( 'value' => $value );
 			apcu_store( PNCP_Log::apcu_key( $key ), $kept, self::OPTION_TTL );
+			self::remember_option( (string) $option );
 		}
 		if ( ! empty( $kept['missing'] ) ) {
 			self::not_there( array( (string) $option ) );
 			return false !== $default ? $default : $pre;
 		}
 		return false === $kept['value'] ? $pre : $kept['value'];
+	}
+
+	/**
+	 * Notes the name of an option that pre_option() copied into APCu, for refresh_copies(). Written only when a copy
+	 * was missing (a few times an hour), never on a hit.
+	 *
+	 * @param string $option Option.
+	 */
+	private static function remember_option( $option ) {
+		$names = apcu_fetch( PNCP_Log::apcu_key( 'pncp_opt_names' ) );
+		$names = is_array( $names ) ? $names : array();
+		if ( ! isset( $names[ $option ] ) && count( $names ) < 200 ) {
+			$names[ $option ] = true;
+			apcu_store( PNCP_Log::apcu_key( 'pncp_opt_names' ), $names, DAY_IN_SECONDS );
+		}
+	}
+
+	/**
+	 * The scheduled event, in PHP-FPM (APCu and no object cache): copies again the options and transients that
+	 * visitors' requests read (pre_option(), pre_transient()), before their copies end, so that a visitor's
+	 * request never has to ask the database for them while the event runs every minute.
+	 */
+	public static function refresh_copies() {
+		if ( 'apcu' !== self::store() || self::active() ) {
+			return;
+		}
+		$names = apcu_fetch( PNCP_Log::apcu_key( 'pncp_opt_names' ) );
+		foreach ( is_array( $names ) ? array_keys( $names ) : array() as $option ) {
+			$none  = new stdClass();
+			$value = get_option( (string) $option, $none );
+			$kept  = $value === $none ? array( 'missing' => true ) : array( 'value' => $value );
+			apcu_store( PNCP_Log::apcu_key( 'pncp_opt_' . md5( (string) $option ) ), $kept, self::OPTION_TTL );
+		}
+		foreach ( self::TRANSIENTS as $transient ) {
+			apcu_store( PNCP_Log::apcu_key( 'pncp_tr_' . md5( $transient ) ), array( 'value' => get_transient( $transient ) ), 3 * MINUTE_IN_SECONDS );
+		}
 	}
 
 	/**
@@ -541,6 +578,7 @@ final class PNCP_Defer {
 					$written += count( $rows );
 				}
 			}
+			self::refresh_copies();
 		} finally {
 			self::delete( 'pncp_dq_lock' );
 		}
