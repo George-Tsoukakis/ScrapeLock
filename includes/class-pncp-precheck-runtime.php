@@ -2236,13 +2236,13 @@ final class PNCP_Precheck_Runtime {
 		if ( ! class_exists( 'PNCP_Breaker', false ) ) {
 			return;
 		}
-		$use_redis = array( 'PNCP_Breaker', 'use_redis' );
-		$record    = array( 'PNCP_Breaker', 'record_backend' );
-		if ( 'redis' === self::store( $c ) && is_callable( $use_redis ) ) {
-			call_user_func( $use_redis, self::redis( $c ) );
-		}
-		if ( is_callable( $record ) ) {
-			call_user_func( $record, self::backend( $c ) );
+		try {
+			if ( 'redis' === self::store( $c ) ) {
+				PNCP_Breaker::use_redis( self::redis( $c ) );
+			}
+			PNCP_Breaker::record_backend( self::backend( $c ) );
+		} catch ( Throwable $e ) {
+			return; // The breaker is a help: the check goes on without it.
 		}
 	}
 
