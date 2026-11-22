@@ -208,6 +208,7 @@ final class PNCP_Rules {
 			$text
 		);
 		if ( $clean !== $text ) {
+			// owner: an in-place rewrite of the existing file (same inode), so it keeps its owner and mode.
 			file_put_contents( $file, $clean, LOCK_EX ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_file_put_contents -- Same file, same owner.
 		}
 	}

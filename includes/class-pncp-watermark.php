@@ -1485,11 +1485,15 @@ final class PNCP_Watermark {
 			imagecopy( $image, $layer, $x, $y, 0, 0, $dst_w, $dst_h );
 		}
 
+		$new = ! file_exists( $dest );
 		if ( ! self::save( $image, $dest, $mime ) ) {
 			return false;
 		}
 		if ( '' !== $icc ) {
 			self::jpeg_put_icc( $dest, $icc );
+		}
+		if ( $new ) {
+			self::keep_owner( $dest ); // 3.12.10: a size file that was missing, made now as root.
 		}
 		self::drop_stale_copies( $dest );
 		return true;
@@ -1559,6 +1563,7 @@ final class PNCP_Watermark {
 		if ( "\xFF\xE0" === substr( $data, 2, 2 ) ) {
 			$at = 4 + unpack( 'n', substr( $data, 4, 2 ) )[1]; // After APP0 (JFIF), where readers expect it.
 		}
+		// owner: an in-place rewrite of the file apply_to_file() has just written (same inode), whose owner it keeps.
 		file_put_contents( $file, substr( $data, 0, $at ) . $icc . substr( $data, $at ), LOCK_EX ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_file_put_contents -- The file just written.
 	}
 

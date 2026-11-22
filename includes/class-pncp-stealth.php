@@ -932,6 +932,7 @@ final class PNCP_Stealth {
 		if ( ! wp_is_writable( $file ) ) {
 			return false;
 		}
+		// owner: an in-place rewrite of the existing file (same inode), so it keeps its owner and mode.
 		$ok = false !== file_put_contents( $file, self::without_block( $text ), LOCK_EX ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_file_put_contents -- The site's own file, only our block goes.
 		clearstatcache();
 		return $ok;
@@ -957,6 +958,8 @@ final class PNCP_Stealth {
 		if ( null === $before ) {
 			wp_delete_file( $file );
 		} else {
+			// owner: the file existed ($before is its contents) and is rewritten in place (same inode), so it keeps
+			// its owner and mode.
 			file_put_contents( $file, $before, LOCK_EX ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_file_put_contents -- Puts back the site's own file.
 		}
 		clearstatcache();
@@ -1285,6 +1288,7 @@ final class PNCP_Stealth {
 				$inner = array_intersect( self::cache_words(), array_values( (array) $config['words'] ) );
 				$name  = 'pncp-wordpress-' . ( $inner ? implode( '-', $inner ) . '-' : '' ) . 'check-' . wp_generate_password( 8, false ) . '.css';
 				$body = '/* ' . wp_generate_password( 32, false ) . ' */';
+				// owner: a throwaway test file, deleted at the end of the test.
 				if ( wp_is_writable( $entry['dir'] ) && false !== file_put_contents( $entry['dir'] . '/' . $name, $body ) ) { // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_file_put_contents -- A temporary test file, deleted below.
 					$temp = $entry['dir'] . '/' . $name;
 					$file = $temp;

@@ -2333,6 +2333,7 @@ final class PNCP_Precheck_Runtime {
 			return 0;
 		}
 		$work = $file . '.' . substr( md5( uniqid( (string) mt_rand(), true ) ), 0, 10 ) . '.tmp';
+		// owner: ops.log is moved away to be read and deleted at once, nothing is written.
 		if ( ! @rename( $file, $work ) ) {
 			return 0;
 		}

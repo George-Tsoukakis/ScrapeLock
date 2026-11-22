@@ -684,9 +684,12 @@ final class PNCP_Cli_Server {
 		foreach ( $changed as $f ) {
 			$real = $f['real'];
 			// phpcs:disable WordPress.WP.AlternativeFunctions.rename_rename -- WP-CLI only: the web server's files named on the command line.
+			// owner: the installed file moves to .old and back as the same inode, so with its own owner and mode; the
+			// .new one got the installed file's owner and mode (PNCP_File_Owner::restore()) when it was written.
 			$ok = ( ! $f['existed'] || @rename( $real, $real . '.old' ) ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged -- Reported below.
 			if ( $ok && ! @rename( $real . '.new', $real ) ) { // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged -- Reported below.
 				if ( $f['existed'] ) {
+					// owner: the installed file back from .old, the same inode with its own owner and mode.
 					@rename( $real . '.old', $real ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged -- Best effort, reported below.
 				}
 				$ok = false;
