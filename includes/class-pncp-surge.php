@@ -425,8 +425,17 @@ final class PNCP_Surge {
 				return;
 			}
 		}
-		// breaker: surge
-		update_option( self::STATE, $state, false );
+		// 3.12.9: under the circuit breaker (PNCP_Breaker), as the count (PNCP_Bots::surge()): a write slower
+		// than its threshold suspends both. Suspended, the state is not written (fail open): the average of the
+		// minutes is kept by the next write, the limits and bans do not depend on it.
+		PNCP_Breaker::guard(
+			'surge',
+			static function () use ( $state ) {
+				update_option( self::STATE, $state, false );
+			},
+			null,
+			'surge state write'
+		);
 	}
 
 	/**

@@ -291,8 +291,9 @@ ScrapeLock — δοκιμές σε πραγματικό WordPress (όχι stubs)
                     the configuration in APCu, no file of the data folder touched under strace, the folder renamed away
                     and the limits still work, WP-CLI's ops.log through the signed sync request); Redis with a
                     redis-server of the test on a Unix socket (the same, Redis stopped mid-run, back empty, a socket
-                    that never answers); the Redis connection in the wp-config.php line (password masked). SKIP parts
-                    without APCu / redis-server / strace
+                    that never answers); the Redis connection in the wp-config.php line (password masked); k) the
+                    circuit breaker of the check in the counters' Redis (strace: no file), and with the files one
+                    stat() of its state file, never an open. SKIP parts without APCu / redis-server / strace
   t_3129_requests.php 3.12.9: what a visitor's request costs (lib/probe-3129.php, copied into mu-plugins for the test,
                     notes ScrapeLock's own queries and file access for requests with X-PNCP-Probe): without an object
                     cache a known visitor's page views write only the counters of the limits (and the surge state at
@@ -308,7 +309,8 @@ ScrapeLock — δοκιμές σε πραγματικό WordPress (όχι stubs)
                     the notice, `wp scrapelock status` / `breaker` / `breaker reset` (with APCu on the test server through
                     WP-CLI's copy and request); 10,000 closed checks < 50 ms; damaged or locked state file (no error,
                     no wait); stores: files, APCu (stub when the extension is missing), use_store(), Redis when
-                    phpredis and redis-server exist (a private one on port 16391), Redis down = never the disk
+                    phpredis and redis-server exist (a private one on port 16391), Redis down = never the disk; the
+                    site-wide page count and its state (automatic Emergency Mode) under the breaker "surge"
   t_cli.php         wp scrapelock … μέσα από το πραγματικό wp (χρειάζεται WP_CLI, αλλιώς SKIP)
   t_bunny_rules.php Edge Rules στο Bunny μέσα στα όριά του (το πολύ 5 μοτίβα ανά συνθήκη) με ψεύτικο API που δίνει
                     HTTP 400 όπως το πραγματικό: χωρισμός, κλείδωμα/Remove, rollback, Monitor only, sync, προεπισκόπηση,

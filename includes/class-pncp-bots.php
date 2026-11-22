@@ -2301,8 +2301,17 @@ final class PNCP_Bots {
 			}
 			$step = max( 1, $step );
 		}
-		// breaker: surge
-		$count = self::hit( '', 'surge', 'site', $step );
+		// 3.12.9: under the circuit breaker (PNCP_Breaker): a count slower than its threshold suspends it for 10
+		// minutes. Suspended, nothing is counted (0): the minute is not closed, so the automatic Emergency Mode
+		// does not start from a partial count (fail open); an Emergency Mode already on stays on.
+		$count = (int) PNCP_Breaker::guard(
+			'surge',
+			static function () use ( $step ) {
+				return self::hit( '', 'surge', 'site', $step );
+			},
+			0,
+			'site-wide page count'
+		);
 		if ( $step === $count ) {
 			// The first count of this minute (3.4.3: the first sample): it closes the previous minute.
 			PNCP_Surge::observe( 1, $minute, self::peek( 'surge', 'site', $minute - 1 ), $s );

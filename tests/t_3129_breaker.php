@@ -363,6 +363,47 @@ $forward = $fm->invoke( null, 'unknown.invalid' );
 t( 'DNS ανοιχτό: reverse_dns() = \'\' (χωρίς απόφαση), forward_ips() = null, χωρίς αναζήτηση', '' === $rdns && null === $forward && hrtime( true ) - $start < 5e6 );
 PNCP_Breaker::reset( 'dns' );
 
+/* ---------- 3.12.9: η μέτρηση σελίδων όλου του site (automatic Emergency Mode) κάτω από τον breaker ---------- */
+$one = static function () {
+	return 1;
+};
+add_filter( 'pncp_surge_sample', $one ); // Every page counted (without an object cache: 1 in 10 otherwise).
+$sm = new ReflectionMethod( 'PNCP_Bots', 'surge' );
+$sm->setAccessible( true );
+$pk = new ReflectionMethod( 'PNCP_Bots', 'peek' );
+$pk->setAccessible( true );
+$sv = new ReflectionMethod( 'PNCP_Surge', 'save' );
+$sv->setAccessible( true );
+$sminute = (int) floor( time() / MINUTE_IN_SECONDS );
+$before  = (int) $pk->invoke( null, 'surge', 'site', $sminute );
+PNCP_Breaker::trip( 'surge', 300 );
+$sm->invoke( null, PNCP_Options::stored() );
+$sm->invoke( null, PNCP_Options::stored() );
+t( 'surge ανοιχτό: η σελίδα δεν μετριέται (fail open, χωρίς Emergency Mode από μισή μέτρηση)', $before === (int) $pk->invoke( null, 'surge', 'site', $sminute ) && PNCP_Breaker::open( 'surge' ) );
+$saved_state = get_option( 'pncp_surge', null );
+$sv->invoke( null, array( 'minute' => 42, 'avg' => 1.5, 'samples' => 3, 'streak' => 0 ) );
+t( 'surge ανοιχτό: η κατάσταση δεν γράφεται (update_option παραλείπεται)', get_option( 'pncp_surge', null ) === $saved_state );
+PNCP_Breaker::reset( 'surge' );
+$sm->invoke( null, PNCP_Options::stored() );
+t( 'surge κλειστό: μετρά ξανά', (int) $pk->invoke( null, 'surge', 'site', $sminute ) > $before );
+$sv->invoke( null, array( 'minute' => 42, 'avg' => 1.5, 'samples' => 3, 'streak' => 0 ) );
+$written = get_option( 'pncp_surge', array() );
+t( 'surge κλειστό: η κατάσταση γράφεται', is_array( $written ) && 42 === (int) $written['minute'] );
+$tiny = static function ( $ms, $name ) {
+	return 'surge' === $name ? 0.000001 : $ms;
+};
+add_filter( 'pncp_breaker_ms', $tiny, 10, 2 );
+$sm->invoke( null, PNCP_Options::stored() );
+remove_filter( 'pncp_breaker_ms', $tiny, 10 );
+t( 'αργή μέτρηση surge (όριο 0.000001 ms): ανοίγει «surge» με την περιγραφή της', PNCP_Breaker::open( 'surge' ) && 'site-wide page count' === ( PNCP_Breaker::states()['surge']['what'] ?? '' ), wp_json_encode( PNCP_Breaker::states() ) );
+PNCP_Breaker::reset( 'surge', true );
+remove_filter( 'pncp_surge_sample', $one );
+if ( null === $saved_state ) {
+	delete_option( 'pncp_surge' );
+} else {
+	update_option( 'pncp_surge', $saved_state, false );
+}
+
 /* ---------- Δικός του store (όπως η σύνδεση Redis των μετρητών) ---------- */
 $mem = array();
 PNCP_Breaker::use_store(
