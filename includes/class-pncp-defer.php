@@ -58,6 +58,11 @@ final class PNCP_Defer {
 	 * Registers the hooks.
 	 */
 	public static function init() {
+		static $done = false;
+		if ( $done ) {
+			return; // Already from the early check (PNCP_Early::run()), which runs before the plugin.
+		}
+		$done = true;
 		if ( 'apcu' === self::store() ) {
 			// Without a persistent object cache WordPress asks the database again on every request for an option
 			// that is not autoloaded, or not there at all (an unlocked site has no Lockdown state): see pre_option().
@@ -70,7 +75,8 @@ final class PNCP_Defer {
 			foreach ( array( 'added_option', 'updated_option', 'deleted_option' ) as $hook ) {
 				add_action( $hook, array( __CLASS__, 'forget_option' ) );
 			}
-			add_action( 'setted_transient', array( __CLASS__, 'forget_transient' ) );
+			// WordPress 6.8 renamed "setted_transient" (deprecated: a notice whenever it has a callback).
+			add_action( version_compare( (string) get_bloginfo( 'version' ), '6.8', '>=' ) ? 'set_transient' : 'setted_transient', array( __CLASS__, 'forget_transient' ) );
 			add_action( 'deleted_transient', array( __CLASS__, 'forget_transient' ) );
 		}
 		add_filter( 'cron_schedules', array( __CLASS__, 'schedules' ) ); // phpcs:ignore WordPress.WP.CronInterval.CronSchedulesInterval -- One minute, only where a persistent store holds the queues.

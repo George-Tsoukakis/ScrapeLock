@@ -60,6 +60,9 @@ final class PNCP_Early {
 			}
 		}
 
+		// 3.12.9: before the first option is read: with APCu and no persistent object cache, ScrapeLock's options
+		// that are not autoloaded come from APCu, and what this check logs is queued (PNCP_Defer).
+		PNCP_Defer::init();
 		PNCP_Self_Check::set_layer( 'early' ); // 3.12.2: the diagnostics of the site's own requests.
 		$verdict = self::check();
 		$monitor = $verdict && PNCP_Options::monitoring();
